@@ -83,7 +83,7 @@ def generate_example_code(query_key, inputs):
         'amount': '1000000',
         'recipientId': f"'{test_data['identity_id']}'",
         'toAddress': "'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf'",
-        'whereClause': 'JSON.stringify([["normalizedParentDomainName", "==", "dash"]])',
+        'where': 'JSON.stringify([["normalizedParentDomainName", "==", "dash"]])',
         'orderBy': 'JSON.stringify([["normalizedLabel", "asc"]])',
         'groupContractPosition': '0',
         'groupContractPositions': '[0]',
@@ -662,6 +662,8 @@ h3 {
     font-size: 0.9em;
     margin-bottom: 10px;
     position: relative;
+    white-space: pre-wrap;
+    overflow-x: auto;
 }
 
 .run-button {

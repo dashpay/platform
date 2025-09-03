@@ -34,12 +34,11 @@ members = [
     "packages/token-history-contract",
     "packages/keyword-search-contract",
     "packages/wasm-drive-verify",
-    "packages/dash-platform-balance-checker"
+    "packages/dash-platform-balance-checker",
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
 
 [workspace.package]
 
-rust-version = "1.85"
-
+rust-version = "1.89"

@@ -222,7 +222,8 @@ class BaseTest {
       await this.page.locator('#statusBanner.loading').waitFor({ state: 'visible', timeout: 5000 });
       
       // Wait for loading to complete (either success or error)
-      await this.page.locator('#statusBanner.loading').waitFor({ state: 'hidden', timeout: 30000 });
+      // State transitions can take longer than queries, so use longer timeout
+      await this.page.locator('#statusBanner.loading').waitFor({ state: 'hidden', timeout: 85000 });
     } catch (error) {
       // Some queries execute so quickly they never show loading state
       // Check if the query already completed successfully or with an error

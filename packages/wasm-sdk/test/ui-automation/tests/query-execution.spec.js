@@ -195,6 +195,27 @@ function validateKeysResult(resultStr) {
     });
 }
 
+function validateIdentitiesContractKeysResult(resultStr) {
+  expect(() => JSON.parse(resultStr)).not.toThrow();
+  const contractKeysData = JSON.parse(resultStr);
+  expect(contractKeysData).toBeDefined();
+  expect(Array.isArray(contractKeysData)).toBe(true);
+  
+  contractKeysData.forEach(identityResult => {
+    expect(identityResult).toHaveProperty('identityId');
+    expect(identityResult).toHaveProperty('keys');
+    expect(Array.isArray(identityResult.keys)).toBe(true);
+    
+    identityResult.keys.forEach(key => {
+      expect(key).toHaveProperty('keyId');
+      expect(key).toHaveProperty('purpose');
+      expect(key).toHaveProperty('keyType');
+      expect(key).toHaveProperty('publicKeyData');
+      expect(key).toHaveProperty('securityLevel');
+    });
+  });
+}
+
 function validateIdentitiesResult(resultStr) {
   expect(() => JSON.parse(resultStr)).not.toThrow();
   const identitiesData = JSON.parse(resultStr);
@@ -1270,7 +1291,7 @@ test.describe('WASM SDK Query Execution Tests', () => {
       { name: 'getIdentityNonce', hasProofSupport: true, validateFn: (result) => validateNumericResult(result, 'nonce') },
       { name: 'getIdentityContractNonce', hasProofSupport: true, validateFn: (result) => validateNumericResult(result, 'nonce') },
       { name: 'getIdentityByPublicKeyHash', hasProofSupport: true, validateFn: validateIdentityResult },
-      { name: 'getIdentitiesContractKeys', hasProofSupport: true, validateFn: validateKeysResult },
+      { name: 'getIdentitiesContractKeys', hasProofSupport: true, validateFn: validateIdentitiesContractKeysResult },
       { name: 'getIdentitiesBalances', hasProofSupport: true, validateFn: validateBalancesResult },
       { name: 'getIdentityBalanceAndRevision', hasProofSupport: true, validateFn: validateBalanceAndRevisionResult },
       { name: 'getIdentityByNonUniquePublicKeyHash', hasProofSupport: true, validateFn: validateIdentitiesResult },
