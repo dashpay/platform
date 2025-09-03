@@ -1,0 +1,260 @@
+name: Emergency Rollback WASM SDK
+
+on:
+  workflow_dispatch:
+    inputs:
+      problematic_version:
+        description: 'Version to rollback from (e.g., 0.1.0)'
+        required: true
+        type: string
+      rollback_to_version:
+        description: 'Version to rollback to (e.g., 0.0.9)'
+        required: true  
+        type: string
+      rollback_reason:
+        description: 'Reason for rollback'
+        required: true
+        type: choice
+        options:
+        - security-vulnerability
+        - breaking-changes
+        - performance-regression
+        - wasm-loading-issues
+        - data-corruption
+        - cdn-distribution-problems
+        default: 'breaking-changes'
+      emergency:
+        description: 'Emergency rollback (skip some validation)'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  validate-rollback:
+    runs-on: ubuntu-latest
+    name: Validate Rollback Request
+    outputs:
+      can_rollback: ${{ steps.validate.outputs.can_rollback }}
+      rollback_commit: ${{ steps.validate.outputs.rollback_commit }}
+      
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0  # Need full history for rollback
+        
+    - name: Validate rollback parameters
+      id: validate
+      run: |
+        echo "🔍 Validating rollback request..."
+        
+        PROBLEMATIC_VERSION="${{ github.event.inputs.problematic_version }}"
+        ROLLBACK_VERSION="${{ github.event.inputs.rollback_to_version }}"
+        
+        # Find the commit for the rollback version
+        ROLLBACK_TAG="wasm-sdk-v${ROLLBACK_VERSION}"
+        if git tag -l | grep -q "^${ROLLBACK_TAG}$"; then
+          ROLLBACK_COMMIT=$(git rev-list -n 1 "$ROLLBACK_TAG")
+          echo "✅ Found rollback target: $ROLLBACK_TAG ($ROLLBACK_COMMIT)"
+          echo "can_rollback=true" >> $GITHUB_OUTPUT
+          echo "rollback_commit=$ROLLBACK_COMMIT" >> $GITHUB_OUTPUT
+        else
+          echo "❌ Rollback tag not found: $ROLLBACK_TAG"
+          echo "Available tags:"
+          git tag -l "wasm-sdk-v*" | head -10
+          echo "can_rollback=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+        
+        # Check if problematic version exists
+        PROBLEMATIC_TAG="wasm-sdk-v${PROBLEMATIC_VERSION}"
+        if git tag -l | grep -q "^${PROBLEMATIC_TAG}$"; then
+          echo "✅ Problematic version confirmed: $PROBLEMATIC_TAG"
+        else
+          echo "⚠️  Problematic version tag not found: $PROBLEMATIC_TAG"
+        fi
+        
+        echo "📋 Rollback Summary:"
+        echo "   From: v$PROBLEMATIC_VERSION"
+        echo "   To: v$ROLLBACK_VERSION" 
+        echo "   Reason: ${{ github.event.inputs.rollback_reason }}"
+        echo "   Emergency: ${{ github.event.inputs.emergency }}"
+
+  emergency-rollback:
+    needs: validate-rollback
+    runs-on: ubuntu-latest
+    if: needs.validate-rollback.outputs.can_rollback == 'true'
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        registry-url: 'https://registry.npmjs.org'
+        
+    - name: Setup Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        target: wasm32-unknown-unknown
+        
+    - name: Install wasm-pack
+      run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+      
+    - name: Checkout rollback commit
+      run: |
+        echo "🔄 Checking out rollback commit..."
+        git checkout ${{ needs.validate-rollback.outputs.rollback_commit }}
+        git log -1 --oneline
+        
+    - name: Build rollback version
+      working-directory: packages/wasm-sdk
+      run: |
+        echo "📦 Building rollback version..."
+        chmod +x build-optimized.sh
+        ./build-optimized.sh
+        
+    - name: Prepare rollback package
+      working-directory: packages/wasm-sdk/pkg
+      run: |
+        ROLLBACK_VERSION="${{ github.event.inputs.rollback_to_version }}-rollback.$(date +%s)"
+        echo "📝 Setting rollback version: $ROLLBACK_VERSION"
+        
+        # Update package version for rollback
+        npm version "$ROLLBACK_VERSION" --no-git-tag-version
+        
+        echo "ROLLBACK_PACKAGE_VERSION=$ROLLBACK_VERSION" >> $GITHUB_ENV
+        
+        # Validate package
+        echo "🔍 Validating rollback package..."
+        test -f dash_wasm_sdk_bg.wasm
+        test -f dash_wasm_sdk.js
+        test -f dash_wasm_sdk.d.ts
+        test -f package.json
+        echo "✅ Package validation passed"
+        
+    - name: Security audit rollback
+      if: github.event.inputs.emergency != 'true'
+      working-directory: packages/wasm-sdk/pkg
+      run: |
+        echo "🔍 Running security audit on rollback..."
+        npm audit --audit-level=moderate || echo "⚠️  Security audit failed (proceeding with rollback)"
+        
+    - name: Test rollback package
+      if: github.event.inputs.emergency != 'true'
+      working-directory: packages/wasm-sdk/pkg
+      run: |
+        echo "🧪 Testing rollback package..."
+        
+        # Pack and test install
+        npm pack
+        mkdir -p /tmp/test-rollback
+        cd /tmp/test-rollback
+        npm init -y
+        
+        PACK_FILE=$(find $GITHUB_WORKSPACE/packages/wasm-sdk/pkg -name "*.tgz" | head -1)
+        npm install "$PACK_FILE"
+        
+        echo "✅ Rollback package test passed"
+        
+    - name: Publish rollback
+      working-directory: packages/wasm-sdk/pkg  
+      run: |
+        echo "🚀 Publishing rollback version..."
+        npm publish --access public --tag latest
+        echo "✅ Rollback published: v$ROLLBACK_PACKAGE_VERSION"
+      env:
+        NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        
+    - name: Create rollback issue
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const title = `🚨 EMERGENCY ROLLBACK - WASM SDK v${{ github.event.inputs.problematic_version }}`;
+          const body = `
+          ## 🚨 EMERGENCY ROLLBACK EXECUTED
+          
+          **Rollback Details:**
+          - **Problematic Version**: v${{ github.event.inputs.problematic_version }}
+          - **Rolled Back To**: v${{ env.ROLLBACK_PACKAGE_VERSION }}
+          - **Reason**: ${{ github.event.inputs.rollback_reason }}
+          - **Emergency Mode**: ${{ github.event.inputs.emergency }}
+          - **Executed By**: @${{ github.actor }}
+          - **Timestamp**: ${new Date().toISOString()}
+          
+          **Status**: ✅ COMPLETED
+          
+          **Actions Taken:**
+          - [x] Rolled back npm package to v${{ env.ROLLBACK_PACKAGE_VERSION }}
+          - [x] Package published to npm registry
+          - [x] CDN propagation initiated
+          
+          **For Users:**
+          - **CDN users**: No action needed (automatically updated)
+          - **npm users**: Run \`npm install @dashevo/dash-wasm-sdk@latest\`
+          
+          **Next Steps:**
+          - [ ] Monitor CDN propagation (5-10 minutes)
+          - [ ] Verify rollback functionality  
+          - [ ] Investigate root cause of v${{ github.event.inputs.problematic_version }}
+          - [ ] Prepare hotfix release
+          - [ ] Update documentation
+          
+          **Support:**
+          If you encounter issues with the rollback, please comment on this issue or create a new issue.
+          
+          ---
+          _This rollback was executed via automated workflow: ${{ github.run_id }}_
+          `;
+          
+          await github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: title,
+            body: body,
+            labels: ['rollback', 'emergency', 'wasm-sdk', 'high-priority'],
+            assignees: [context.actor]
+          });
+          
+    - name: Verify CDN propagation
+      run: |
+        echo "🌐 Verifying CDN availability..."
+        sleep 30  # Give CDNs time to start propagation
+        
+        VERSION="${{ env.ROLLBACK_PACKAGE_VERSION }}"
+        
+        # Test unpkg (may take a few minutes)
+        echo "Testing unpkg CDN..."
+        if curl -f "https://unpkg.com/@dashevo/dash-wasm-sdk@$VERSION/package.json" > /dev/null 2>&1; then
+          echo "✅ unpkg: Available"
+        else
+          echo "⏳ unpkg: Not yet available (normal delay)"
+        fi
+        
+        # Test jsDelivr
+        echo "Testing jsDelivr CDN..."  
+        if curl -f "https://cdn.jsdelivr.net/npm/@dashevo/dash-wasm-sdk@$VERSION/package.json" > /dev/null 2>&1; then
+          echo "✅ jsDelivr: Available"
+        else
+          echo "⏳ jsDelivr: Not yet available (normal delay)"
+        fi
+        
+        echo ""
+        echo "📋 Rollback Summary:"
+        echo "   Package: @dashevo/dash-wasm-sdk@$VERSION"
+        echo "   Registry: https://www.npmjs.com/package/@dashevo/dash-wasm-sdk"
+        echo "   CDN propagation: 5-10 minutes expected"
+        echo "   Status: Rollback complete ✅"
+        
+    - name: Cleanup
+      if: always()
+      run: |
+        echo "🧹 Cleaning up..."
+        rm -f packages/wasm-sdk/pkg/*.tgz
+        echo "✅ Cleanup complete"

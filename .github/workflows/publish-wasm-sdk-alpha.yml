@@ -46,9 +46,18 @@ jobs:
         chmod +x build-optimized.sh
         ./build-optimized.sh
         
-    - name: Audit package security
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+      
+    - name: Audit Rust dependencies
+      working-directory: packages/wasm-sdk
+      run: cargo audit --deny warnings
+      
+    - name: Audit npm package security
       working-directory: packages/wasm-sdk/pkg
-      run: npm audit --audit-level=moderate
+      run: |
+        npm audit --audit-level=moderate
+        echo "✅ npm security audit passed"
       
     - name: Validate package integrity
       working-directory: packages/wasm-sdk/pkg
@@ -107,33 +116,54 @@ jobs:
       env:
         NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         
+    - name: Generate release notes
+      working-directory: packages/wasm-sdk
+      run: |
+        node scripts/generate-release-notes.js > release-notes.md
+        echo "RELEASE_NOTES<<EOF" >> $GITHUB_ENV
+        cat release-notes.md >> $GITHUB_ENV
+        echo "EOF" >> $GITHUB_ENV
+        
     - name: Create GitHub Release
+      id: create_release
       uses: actions/create-release@v1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: wasm-sdk-v${{ github.event.inputs.version_type || 'alpha' }}
         release_name: WASM SDK ${{ github.event.inputs.version_type || 'alpha' }} Release
-        body: |
-          ## WASM SDK Alpha Release
-          
-          High-performance WebAssembly SDK for Dash Platform development.
-          
-          ### Features
-          - Identity management and operations
-          - Document operations with state transitions  
-          - Data contract interactions
-          - Browser-optimized WebAssembly implementation
-          
-          ### Installation
-          ```bash
-          npm install @dashevo/dash-wasm-sdk@alpha
-          ```
-          
-          ### Documentation
-          - [API Reference](https://dashplatform.readme.io/)
-          - [GitHub Repository](https://github.com/dashpay/platform)
-          
-          Please report issues at: https://github.com/dashpay/platform/issues
+        body: ${{ env.RELEASE_NOTES }}
         draft: false
         prerelease: ${{ contains(github.event.inputs.version_type, 'alpha') || contains(github.event.inputs.version_type, 'beta') }}
+        
+    - name: Upload CHANGELOG
+      if: steps.create_release.outputs.upload_url
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: packages/wasm-sdk/CHANGELOG.md
+        asset_name: CHANGELOG.md
+        asset_content_type: text/markdown
+        
+    - name: Verify CDN availability
+      run: |
+        echo "🔄 Waiting for CDN propagation..."
+        sleep 30
+        
+        # Get package version
+        PKG_VERSION=$(node -e "console.log(JSON.parse(require('fs').readFileSync('packages/wasm-sdk/pkg/package.json')).version)")
+        
+        # Test unpkg
+        echo "🌐 Testing unpkg CDN..."
+        UNPKG_URL="https://unpkg.com/@dashevo/dash-wasm-sdk@${PKG_VERSION}/package.json"
+        curl -f "$UNPKG_URL" > /dev/null && echo "✅ unpkg: Available" || echo "⏳ unpkg: Not yet available"
+        
+        # Test jsDelivr
+        echo "🌐 Testing jsDelivr CDN..."
+        JSDELIVR_URL="https://cdn.jsdelivr.net/npm/@dashevo/dash-wasm-sdk@${PKG_VERSION}/package.json"
+        curl -f "$JSDELIVR_URL" > /dev/null && echo "✅ jsDelivr: Available" || echo "⏳ jsDelivr: Not yet available"
+        
+        echo "ℹ️  CDN propagation can take 5-10 minutes"
+        echo "ℹ️  Check CDN_USAGE.md for usage examples"

@@ -1,0 +1,120 @@
+name: Security Audit
+
+on:
+  schedule:
+    # Run security audit daily at 2 AM UTC
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/wasm-sdk/Cargo.toml'
+      - 'packages/wasm-sdk/Cargo.lock'
+      - 'packages/wasm-sdk/pkg/package.json'
+
+jobs:
+  security-audit:
+    runs-on: ubuntu-latest
+    name: Security Audit
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Setup Rust
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: stable
+        
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install cargo-audit
+      run: cargo install cargo-audit
+      
+    - name: Cache cargo audit database
+      uses: actions/cache@v3
+      with:
+        path: ~/.cargo/advisory-db
+        key: cargo-audit-db-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          cargo-audit-db-
+          
+    - name: Audit Rust dependencies
+      working-directory: packages/wasm-sdk
+      run: |
+        echo "🔍 Auditing Rust dependencies..."
+        cargo audit --color never --format json > rust-audit.json || true
+        cargo audit --deny warnings
+        echo "✅ Rust security audit passed"
+        
+    - name: Audit npm dependencies (if package exists)
+      working-directory: packages/wasm-sdk
+      run: |
+        if [ -d "pkg" ] && [ -f "pkg/package.json" ]; then
+          cd pkg
+          echo "🔍 Auditing npm dependencies..."
+          npm audit --audit-level=moderate --format=json > ../npm-audit.json || true
+          npm audit --audit-level=moderate
+          echo "✅ npm security audit passed"
+        else
+          echo "ℹ️ No pkg directory found, skipping npm audit"
+        fi
+        
+    - name: Upload audit results
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: security-audit-results
+        path: |
+          packages/wasm-sdk/rust-audit.json
+          packages/wasm-sdk/npm-audit.json
+        retention-days: 30
+        
+    - name: Create security issue on failure
+      if: failure()
+      uses: actions/github-script@v6
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const title = `Security vulnerability detected in WASM SDK`;
+          const body = `
+          🚨 **Security Audit Failed**
+          
+          The automated security audit for the WASM SDK has detected potential vulnerabilities.
+          
+          **Details:**
+          - Workflow: ${{ github.workflow }}
+          - Run ID: ${{ github.run_id }}
+          - Commit: ${{ github.sha }}
+          
+          **Action Required:**
+          1. Review the audit results in the workflow logs
+          2. Update vulnerable dependencies
+          3. Test the fixes thoroughly
+          4. Re-run the security audit
+          
+          **Audit Results:**
+          Check the uploaded artifacts for detailed security audit results.
+          
+          _This issue was created automatically by the security audit workflow._
+          `;
+          
+          // Check if an issue already exists
+          const existingIssues = await github.rest.issues.listForRepo({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            labels: ['security', 'wasm-sdk'],
+            state: 'open'
+          });
+          
+          if (existingIssues.data.length === 0) {
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['security', 'wasm-sdk', 'high-priority']
+            });
+          }
