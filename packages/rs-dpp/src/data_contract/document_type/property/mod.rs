@@ -2043,13 +2043,15 @@ impl DocumentPropertyType {
                 };
 
                 if let Some(bytes) = decoded_bytes {
-                    let byte_len = bytes.len() as u16;
+                    let byte_len = bytes.len();
 
                     // Check if the decoded bytes meet the size constraints
                     let size_ok = match (property_sizes.min_size, property_sizes.max_size) {
-                        (Some(min), Some(max)) => byte_len >= min && byte_len <= max,
-                        (Some(min), None) => byte_len >= min,
-                        (None, Some(max)) => byte_len <= max,
+                        (Some(min), Some(max)) => {
+                            byte_len >= min as usize && byte_len <= max as usize
+                        }
+                        (Some(min), None) => byte_len >= min as usize,
+                        (None, Some(max)) => byte_len <= max as usize,
                         (None, None) => true,
                     };
 

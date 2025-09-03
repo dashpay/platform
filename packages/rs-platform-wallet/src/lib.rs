@@ -147,6 +147,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
             .add_managed_account_from_xpub(account_type, network, account_xpub)
     }
 
+    #[cfg(feature = "bls")]
     fn add_managed_bls_account(
         &mut self,
         wallet: &Wallet,
@@ -157,6 +158,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
             .add_managed_bls_account(wallet, account_type, network)
     }
 
+    #[cfg(feature = "bls")]
     fn add_managed_bls_account_with_passphrase(
         &mut self,
         wallet: &Wallet,
@@ -172,6 +174,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         )
     }
 
+    #[cfg(feature = "bls")]
     fn add_managed_bls_account_from_public_key(
         &mut self,
         account_type: AccountType,
@@ -185,6 +188,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         )
     }
 
+    #[cfg(feature = "eddsa")]
     fn add_managed_eddsa_account(
         &mut self,
         wallet: &Wallet,
@@ -195,6 +199,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
             .add_managed_eddsa_account(wallet, account_type, network)
     }
 
+    #[cfg(feature = "eddsa")]
     fn add_managed_eddsa_account_with_passphrase(
         &mut self,
         wallet: &Wallet,
@@ -210,6 +215,7 @@ impl ManagedAccountOperations for PlatformWalletInfo {
         )
     }
 
+    #[cfg(feature = "eddsa")]
     fn add_managed_eddsa_account_from_public_key(
         &mut self,
         account_type: AccountType,

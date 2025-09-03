@@ -53,7 +53,7 @@ this repository may be used on the following networks:
   - [rust](https://www.rust-lang.org/tools/install) v1.89+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
   - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v27.3+
     - if needed, set PROTOC environment variable to location of `protoc` binary
-  - [wasm-bingen toolchain](https://rustwasm.github.io/wasm-bindgen/):
+  - [wasm-bindgen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:
       - `brew install llvm`
       - LLVM installed from brew is keg only, and path to it must be provided in the profile file,

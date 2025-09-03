@@ -27,4 +27,6 @@ indexmap = "2.0"
 
 [features]
 default = []
+bls = ["key-wallet/bls"]
+eddsa = ["key-wallet/eddsa"]
 manager = ["key-wallet-manager"]

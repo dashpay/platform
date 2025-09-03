@@ -30,7 +30,7 @@
 ## Commit & Pull Request Guidelines
 - Conventional Commits for titles and commits: `<type>(scope): <description>` (e.g., `feat(sdk): add identity fetch`). Use `!` for breaking changes.
 - Keep PRs focused, link issues, include tests, and fill the PR template (`.github/PULL_REQUEST_TEMPLATE.md`).
-- Branching: bugfixes to `master`; new features to the current `vX-dev` branch.
+- Branching: bugfixes and new features to the current `vX-dev` branch.
 
 ## Agent-Specific Instructions
 - Use the `swift-rust-ffi-engineer` agent for all Swift/Rust FFI work, Swift wrappers, iOS SDK and SwiftExampleApp tasks, and Swift↔Rust type/memory debugging.
