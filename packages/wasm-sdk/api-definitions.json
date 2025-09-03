@@ -93,12 +93,6 @@
               "required": true
             },
             {
-              "name": "documentTypeName",
-              "type": "text",
-              "label": "Document Type (optional)",
-              "required": false
-            },
-            {
               "name": "purposes",
               "type": "multiselect",
               "label": "Key Purposes",

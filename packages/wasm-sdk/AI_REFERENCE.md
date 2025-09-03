@@ -72,7 +72,6 @@ const result = await sdk.getIdentityKeys("identityId");
 Parameters:
 - `identitiesIds` (array, required) - Identity IDs
 - `contractId` (text, required) - Contract ID
-- `documentTypeName` (text, optional) - Document Type (optional)
 - `purposes` (multiselect, optional) - Key Purposes
   - Options: `0` (Authentication), `1` (Encryption), `2` (Decryption), `3` (Transfer), `5` (Voting)
 

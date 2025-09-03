@@ -689,7 +689,6 @@ pub async fn get_identities_contract_keys(
     sdk: &WasmSdk,
     identities_ids: Vec<String>,
     contract_id: &str,
-    _document_type_name: Option<String>,
     purposes: Option<Vec<u32>>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::identity::Purpose;
@@ -1293,7 +1292,6 @@ pub async fn get_identities_contract_keys_with_proof_info(
     sdk: &WasmSdk,
     identities_ids: Vec<String>,
     contract_id: &str,
-    _document_type_name: Option<String>,
     purposes: Option<Vec<u32>>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::identity::Purpose;
