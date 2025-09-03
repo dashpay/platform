@@ -44,4 +44,3 @@ exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
 [workspace.package]
 
 rust-version = "1.89"
-

@@ -3248,7 +3248,7 @@ ${indentStr}]`;
           result = await sdk.tokenDestroyFrozen(
             values.contractId,
             Number(values.tokenPosition),
-            values.identityId, // identity whose frozen tokens to destroy
+            values.frozenIdentityId, // identity whose frozen tokens to destroy
             identityId, // destroyer ID
             privateKey,
             values.publicNote || null
@@ -3343,7 +3343,7 @@ ${indentStr}]`;
             values.documentType,
             values.documentId,
             identityId,
-            values.price || 0, // price in credits, 0 to remove price
+            BigInt(values.price || 0), // price in credits, 0 to remove price
             privateKey,
             0 // key_id - using 0 as default
           );
@@ -3477,7 +3477,7 @@ ${indentStr}]`;
             values.documentType,
             values.documentId,
             identityId,
-            values.price,
+            BigInt(values.price),
             privateKey,
             0 // key_id - using 0 as default
           );

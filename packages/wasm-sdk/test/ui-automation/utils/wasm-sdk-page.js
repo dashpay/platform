@@ -120,6 +120,18 @@ class WasmSdkPage extends BaseTest {
    * Fill a specific parameter by name
    */
   async fillParameterByName(paramName, value) {
+    // Special handling for multiselect checkboxes (like purposes)
+    if (paramName === 'purposes' && Array.isArray(value)) {
+      for (const purposeValue of value) {
+        const checkboxSelector = `input[name="purposes_${purposeValue}"][type="checkbox"]`;
+        const checkbox = this.page.locator(checkboxSelector);
+        if (await checkbox.count() > 0) {
+          await checkbox.check();
+        }
+      }
+      return;
+    }
+    
     // Special handling for array parameters that use dynamic input fields
     if (DYNAMIC_ARRAY_PARAMETERS[paramName]) {
       const enterValueInput = this.page.locator('input[placeholder="Enter value"]').first();
@@ -143,7 +155,12 @@ class WasmSdkPage extends BaseTest {
         `[placeholder*="${paramName}"]`,
         `label:has-text("${paramName}") + input`,
         `label:has-text("${paramName}") + select`,
-        `label:has-text("${paramName}") + textarea`
+        `label:has-text("${paramName}") + textarea`,
+        // Special cases for contract and document fields
+        `input[placeholder*="Contract ID"]`,
+        `input[placeholder*="Document Type"]`,
+        `textarea[placeholder*="JSON"]`,
+        `textarea[placeholder*="Schema"]`
       ];
       
       let found = false;
@@ -157,7 +174,27 @@ class WasmSdkPage extends BaseTest {
       }
       
       if (!found) {
-        console.warn(`⚠️  Could not find input for parameter: ${paramName}`);
+        console.warn(`⚠️  Could not find input for parameter: ${paramName}. Trying by label text...`);
+        
+        // Try finding by label text as last resort
+        const labelSelectors = [
+          `label:text-is("${paramName}") + input`,
+          `label:text-is("${paramName}") + textarea`,
+          `label:text-is("${paramName}") + select`
+        ];
+        
+        for (const selector of labelSelectors) {
+          const labelInput = this.page.locator(selector).first();
+          if (await labelInput.count() > 0) {
+            await this.fillInputByType(labelInput, value);
+            found = true;
+            break;
+          }
+        }
+        
+        if (!found) {
+          console.warn(`⚠️  Could not find input for parameter: ${paramName} - skipping`);
+        }
       }
     } else {
       await this.fillInputByType(input, value);
@@ -515,6 +552,243 @@ class WasmSdkPage extends BaseTest {
     await queryTypeSelect.waitFor({ state: 'visible' });
     const options = await queryTypeSelect.locator('option').allTextContents();
     return options.filter(option => option.trim() !== '' && option !== 'Select Query Type');
+  }
+
+  /**
+   * Set up a state transition test scenario
+   */
+  async setupStateTransition(category, transitionType, parameters = {}) {
+    // Set operation type to transitions
+    await this.setOperationType('transitions');
+    
+    // Set category and transition type
+    await this.setQueryCategory(category);
+    await this.setQueryType(transitionType);
+    
+    // Fill in parameters
+    if (Object.keys(parameters).length > 0) {
+      await this.fillStateTransitionParameters(parameters);
+    }
+    
+    return this;
+  }
+
+  /**
+   * Fill state transition parameters
+   */
+  async fillStateTransitionParameters(parameters) {
+    // Handle state transition specific parameters
+    for (const [key, value] of Object.entries(parameters)) {
+      if (key === 'assetLockProof') {
+        await this.fillAssetLockProof(value);
+      } else if (key === 'privateKey') {
+        await this.fillPrivateKey(value);
+      } else if (key === 'identityId') {
+        await this.fillIdentityId(value);
+      } else if (key === 'seedPhrase') {
+        await this.fillSeedPhrase(value);
+      } else if (key === 'identityIndex') {
+        await this.fillIdentityIndex(value);
+      } else if (key === 'keySelectionMode') {
+        // Skip keySelectionMode for now - only needed for identity create
+        console.log('Skipping keySelectionMode field (identity create only)');
+      } else if (key === 'documentFields') {
+        // Handle document fields - these need to be filled after schema fetch
+        console.log('Document fields will be handled after schema fetch');
+      } else if (key === 'description') {
+        // Skip description field - it's just for documentation
+        console.log('Skipping description field (documentation only)');
+      } else {
+        // Use the general parameter filling method for other parameters
+        await this.fillParameterByName(key, value);
+      }
+    }
+  }
+
+  /**
+   * Fill asset lock proof field
+   */
+  async fillAssetLockProof(assetLockProof) {
+    await this.fillInput(this.selectors.assetLockProof, assetLockProof);
+    console.log('Asset lock proof filled');
+  }
+
+  /**
+   * Fill private key field
+   */
+  async fillPrivateKey(privateKey) {
+    await this.fillInput(this.selectors.privateKey, privateKey);
+    console.log('Private key filled');
+  }
+
+  /**
+   * Fill identity ID field (for top-up transitions)
+   */
+  async fillIdentityId(identityId) {
+    await this.fillInput(this.selectors.identityId, identityId);
+    console.log('Identity ID filled');
+  }
+
+  /**
+   * Fill seed phrase field
+   */
+  async fillSeedPhrase(seedPhrase) {
+    const seedPhraseInput = this.page.locator('textarea[name="seedPhrase"]');
+    await seedPhraseInput.fill(seedPhrase);
+    console.log('Seed phrase filled');
+  }
+
+  /**
+   * Fill identity index field
+   */
+  async fillIdentityIndex(identityIndex) {
+    const identityIndexInput = this.page.locator('input[name="identityIndex"]');
+    await identityIndexInput.fill(identityIndex.toString());
+    console.log('Identity index filled');
+  }
+
+  /**
+   * Set key selection mode (simple/advanced)
+   */
+  async setKeySelectionMode(mode) {
+    const keySelectionSelect = this.page.locator('select[name="keySelectionMode"]');
+    await keySelectionSelect.selectOption(mode);
+    console.log(`Key selection mode set to: ${mode}`);
+  }
+
+  /**
+   * Execute state transition and get result (similar to executeQueryAndGetResult)
+   */
+  async executeStateTransitionAndGetResult() {
+    const success = await this.executeQuery(); // Same execute button works for transitions
+    const result = await this.getResultContent();
+    const hasError = await this.hasErrorResult();
+    
+    return {
+      success,
+      result,
+      hasError,
+      statusText: await this.getStatusBannerText()
+    };
+  }
+
+  /**
+   * Check if state transition authentication inputs are visible
+   */
+  async hasStateTransitionAuthInputs() {
+    const authInputs = this.page.locator(this.selectors.authenticationInputs);
+    const assetLockProofGroup = this.page.locator('#assetLockProofGroup');
+    
+    const authVisible = await authInputs.isVisible();
+    const assetLockVisible = await assetLockProofGroup.isVisible();
+    
+    return authVisible && assetLockVisible;
+  }
+
+  /**
+   * Fetch document schema and generate dynamic fields for document transitions
+   */
+  async fetchDocumentSchema() {
+    console.log('Attempting to fetch document schema...');
+    
+    // First check if the function exists and call it directly
+    try {
+      await this.page.evaluate(() => {
+        if (typeof window.fetchDocumentSchema === 'function') {
+          return window.fetchDocumentSchema();
+        } else {
+          throw new Error('fetchDocumentSchema function not found');
+        }
+      });
+      console.log('Called fetchDocumentSchema function directly');
+    } catch (error) {
+      console.error('Error calling fetchDocumentSchema:', error);
+      throw error;
+    }
+    
+    // Wait for schema to load and fields to be generated
+    await this.page.waitForTimeout(3000);
+    
+    // Check if dynamic fields container is visible
+    const dynamicFieldsContainer = this.page.locator('#dynamic_documentFields');
+    await dynamicFieldsContainer.waitFor({ state: 'visible', timeout: 15000 });
+    
+    console.log('Document schema fetched and fields generated');
+  }
+
+  /**
+   * Fill a specific document field by name
+   */
+  async fillDocumentField(fieldName, value) {
+    const fieldInput = this.page.locator(`#dynamic_documentFields input[data-field-name="${fieldName}"], #dynamic_documentFields textarea[data-field-name="${fieldName}"]`);
+    
+    // Convert value to string based on type
+    let stringValue = '';
+    if (value === null || value === undefined) {
+      stringValue = '';
+    } else if (typeof value === 'object') {
+      stringValue = JSON.stringify(value);
+    } else {
+      stringValue = value.toString();
+    }
+    
+    await fieldInput.fill(stringValue);
+    console.log(`Document field '${fieldName}' filled with value: ${stringValue}`);
+  }
+
+  /**
+   * Fill multiple document fields
+   */
+  async fillDocumentFields(fields) {
+    for (const [fieldName, value] of Object.entries(fields)) {
+      await this.fillDocumentField(fieldName, value);
+    }
+    console.log('All document fields filled');
+  }
+
+  /**
+   * Load existing document for replacement (gets revision and populates fields)
+   */
+  async loadExistingDocument() {
+    console.log('Loading existing document for replacement...');
+    
+    // Call the loadExistingDocument function directly via page.evaluate
+    try {
+      await this.page.evaluate(() => {
+        if (typeof window.loadExistingDocument === 'function') {
+          return window.loadExistingDocument();
+        } else {
+          throw new Error('loadExistingDocument function not found');
+        }
+      });
+      console.log('Existing document loaded successfully');
+    } catch (error) {
+      console.error('Error loading existing document:', error);
+      throw error;
+    }
+    
+    // Wait for the document to be loaded and fields to be populated
+    await this.page.waitForTimeout(3000);
+    
+    console.log('Document loaded and fields populated');
+  }
+
+  /**
+   * Fill complete state transition authentication (asset lock proof + private key)
+   */
+  async fillStateTransitionAuthentication(assetLockProof, privateKey, identityId = null) {
+    if (await this.hasStateTransitionAuthInputs()) {
+      if (assetLockProof) {
+        await this.fillAssetLockProof(assetLockProof);
+      }
+      if (privateKey) {
+        await this.fillPrivateKey(privateKey);
+      }
+      if (identityId) {
+        await this.fillIdentityId(identityId);
+      }
+      console.log('State transition authentication filled');
+    }
   }
 }
 
