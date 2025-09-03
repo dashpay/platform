@@ -1,16 +1,16 @@
 [package]
-name = "wasm-sdk"
+name = "dash-wasm-sdk"
 version = "0.1.0"
 edition = "2021"
 publish = false
-description = "WebAssembly SDK for Dash Platform - enabling browser applications to interact with Dash Platform identities, documents, and data contracts"
+description = "High-performance WebAssembly SDK for Dash Platform - Build browser applications with identity management, document operations, and decentralized data contracts. Optimized for modern web development."
 authors = ["Dash Core Group, Inc. <dev@dash.org>"]
 license = "MIT"
 repository = "https://github.com/dashpay/platform"
 documentation = "https://github.com/dashpay/platform/tree/master/packages/wasm-sdk"
 homepage = "https://dashplatform.readme.io/"
 readme = "README.md"
-keywords = ["dash", "platform", "blockchain", "wasm", "webassembly", "sdk", "dapi", "identity", "document"]
+keywords = ["dash", "platform", "blockchain", "wasm", "webassembly", "sdk", "dapi", "identity", "document", "browser"]
 categories = ["cryptography", "web-programming", "api-bindings", "wasm"]
 [lib]
 crate-type = ["cdylib"]
@@ -78,7 +78,11 @@ panic = "abort"
 debug = false
 lto = "fat"
 
-# Note: wasm-pack metadata configuration is handled automatically by wasm-pack
-# based on the package metadata above. Most wasm-pack specific metadata 
-# options are not needed as they are inferred from standard Cargo.toml fields.
+[package.metadata.wasm-pack.profile.release]
+# Optimize for size and performance
+wasm-opt = ["-Oz", "--enable-mutable-globals"]
+
+[package.metadata.wasm-pack.profile.dev]  
+# Development build optimizations  
+wasm-opt = false
 
