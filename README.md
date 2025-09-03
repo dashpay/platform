@@ -101,6 +101,7 @@ Check out:
 - Our [Dash Discord](https://discordapp.com/invite/PXbUxJB)
 - Our [CONTRIBUTING.md](CONTRIBUTING.md) to get started with setting up the
   repo.
+- Our concise contributor guide: [AGENTS.md](AGENTS.md) (repo structure, commands, style, tests).
 - Our [news](https://www.dash.org/news/) and [blog](https://www.dash.org/blog/) which contains release posts and
   explanations.
 

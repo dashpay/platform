@@ -5,6 +5,7 @@ import DashSDKFFI
 public class Wallet {
     private let handle: OpaquePointer
     internal let network: KeyWalletNetwork
+    private let ownsHandle: Bool
     
     // MARK: - Static Methods
     
@@ -98,6 +99,7 @@ public class Wallet {
         }
         
         self.handle = handle
+        self.ownsHandle = true
     }
     
     /// Create a wallet from seed bytes
@@ -108,6 +110,7 @@ public class Wallet {
     public init(seed: Data, network: KeyWalletNetwork = .mainnet,
                 accountOptions: AccountCreationOption = .default) throws {
         self.network = network
+        self.ownsHandle = true
         
         var error = FFIError()
         let walletPtr: OpaquePointer? = seed.withUnsafeBytes { seedBytes in
@@ -170,7 +173,8 @@ public class Wallet {
         }
         
         self.handle = handle
-        
+        self.ownsHandle = true
+
         // Now add the watch-only account with the provided xpub
         do {
             _ = try addAccount(type: .standardBIP44, index: 0, xpub: xpub)
@@ -212,14 +216,11 @@ public class Wallet {
         return wallet
     }
     
-    /// Private initializer for internal use
+    /// Private initializer for internal use (takes ownership)
     private init(handle: OpaquePointer, network: KeyWalletNetwork) {
         self.handle = handle
         self.network = network
-    }
-    
-    deinit {
-        wallet_free(handle)
+        self.ownsHandle = true
     }
     
     // MARK: - Wallet Properties
@@ -532,5 +533,19 @@ public class Wallet {
     
     internal var ffiHandle: OpaquePointer {
         return handle
+    }
+
+    // Non-owning initializer for wallets obtained from WalletManager
+    public init(nonOwningHandle handle: UnsafeRawPointer, network: KeyWalletNetwork) {
+        self.handle = OpaquePointer(handle)
+        self.network = network
+        self.ownsHandle = false
+    }
+
+
+    deinit {
+        if ownsHandle {
+            wallet_free(handle)
+        }
     }
 }

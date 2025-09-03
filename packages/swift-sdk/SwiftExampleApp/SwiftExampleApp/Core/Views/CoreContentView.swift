@@ -36,8 +36,8 @@ struct CoreContentView: View {
     private var safeMasternodeProgress: Double { min(max(walletService.masternodeProgress, 0.0), 1.0) }
     private var safeTransactionProgress: Double { min(max(walletService.transactionProgress, 0.0), 1.0) }
     
-    var body: some View {
-        List {
+var body: some View {
+    List {
             // Section 1: Sync Status
             Section("Sync Status") {
                 VStack(spacing: 16) {
@@ -158,6 +158,13 @@ struct CoreContentView: View {
                     .environmentObject(unifiedAppState)
                     .environment(\.modelContext, modelContext)
             }
+        }
+        .onAppear {
+            // Show detailed sync banner only on the Wallets root
+            unifiedAppState.showWalletsSyncDetails = true
+        }
+        .onDisappear {
+            unifiedAppState.showWalletsSyncDetails = false
         }
         // No local polling; rows bind to WalletService progress directly
     }

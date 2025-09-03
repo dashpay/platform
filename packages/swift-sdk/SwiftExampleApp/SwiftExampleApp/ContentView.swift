@@ -1,10 +1,16 @@
 import SwiftUI
 import SwiftData
 
+enum RootTab: Hashable {
+    case wallets, identities, friends, platform, settings
+}
+
 struct ContentView: View {
     @EnvironmentObject var unifiedState: UnifiedAppState
     @EnvironmentObject var walletService: WalletService
     
+    @State private var selectedTab: RootTab = .wallets
+
     var body: some View {
         if !unifiedState.isInitialized {
             VStack(spacing: 20) {
@@ -39,40 +45,45 @@ struct ContentView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            TabView {
+            TabView(selection: $selectedTab) {
                 // Tab 1: Wallets
                 CoreWalletView()
                     .tabItem {
                         Label("Wallets", systemImage: "wallet.pass")
                     }
+                    .tag(RootTab.wallets)
                 
                 // Tab 2: Identities
                 IdentitiesView()
                     .tabItem {
                         Label("Identities", systemImage: "person.circle")
                     }
+                    .tag(RootTab.identities)
                 
                 // Tab 3: Friends
                 FriendsView()
                     .tabItem {
                         Label("Friends", systemImage: "person.2")
                     }
+                    .tag(RootTab.friends)
                 
                 // Tab 4: Platform
                 PlatformView()
                     .tabItem {
                         Label("Platform", systemImage: "network")
                     }
+                    .tag(RootTab.platform)
                 
                 // Tab 5: Settings
                 SettingsView()
                     .tabItem {
                         Label("Settings", systemImage: "gearshape")
                     }
+                    .tag(RootTab.settings)
             }
             .overlay(alignment: .top) {
                 if walletService.isSyncing {
-                    GlobalSyncIndicator()
+                    GlobalSyncIndicator(showDetails: selectedTab == .wallets && unifiedState.showWalletsSyncDetails)
                         .environmentObject(walletService)
                 }
             }
@@ -82,37 +93,33 @@ struct ContentView: View {
 
 struct GlobalSyncIndicator: View {
     @EnvironmentObject var walletService: WalletService
+    let showDetails: Bool
     
     var body: some View {
         VStack(spacing: 0) {
             if let progress = walletService.detailedSyncProgress as? SyncProgress {
-                HStack {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                        .font(.caption)
-                        .symbolEffect(.pulse)
-                    
-                    Text("Syncing: \(Int(progress.progress * 100))%")
-                        .font(.caption)
-                    
-                    Spacer()
-                    
-                    Text("\(progress.current)/\(progress.total)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    
-                    Button(action: {
-                        walletService.stopSync()
-                    }) {
-                        Image(systemName: "xmark.circle.fill")
+                if showDetails {
+                    HStack {
+                        Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.caption)
+                            .symbolEffect(.pulse)
+                        Text("Syncing: \(Int(progress.progress * 100))%")
+                            .font(.caption)
+                        Spacer()
+                        Text("\(progress.current)/\(progress.total)")
+                            .font(.caption2)
                             .foregroundColor(.secondary)
+                        Button(action: { walletService.stopSync() }) {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
                     }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                    .background(Material.thin)
                 }
-                .padding(.horizontal)
-                .padding(.vertical, 8)
-                .background(Material.thin)
-                
-                // Progress bar
+                // Thin progress bar always shown
                 GeometryReader { geometry in
                     Rectangle()
                         .fill(Color.blue)
@@ -121,6 +128,8 @@ struct GlobalSyncIndicator: View {
                 .frame(height: 2)
             }
         }
+        // When not showing details, don't intercept touches (so back buttons work)
+        .allowsHitTesting(showDetails)
     }
 }
 

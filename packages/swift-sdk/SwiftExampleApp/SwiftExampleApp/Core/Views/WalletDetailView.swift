@@ -90,6 +90,7 @@ struct WalletDetailView: View {
         .task {
             await walletService.loadWallet(wallet)
         }
+        .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
 }
 
@@ -111,6 +112,9 @@ struct WalletInfoView: View {
     @State private var showError = false
     @State private var showDeleteConfirmation = false
     @State private var isDeleting = false
+    @State private var mainnetAccountCount: Int? = nil
+    @State private var testnetAccountCount: Int? = nil
+    @State private var devnetAccountCount: Int? = nil
     
     var body: some View {
         NavigationView {
@@ -225,17 +229,37 @@ struct WalletInfoView: View {
                         HStack {
                             Text("Wallet ID")
                             Spacer()
-                            Text(String(walletId.toHexString().prefix(16)) + "...")
-                                .font(.system(.caption, design: .monospaced))
+                            Text(walletId.toHexString())
+                                .font(.system(.footnote, design: .monospaced))
                                 .foregroundColor(.secondary)
+                                .textSelection(.enabled)
+                                .multilineTextAlignment(.trailing)
                         }
                     }
                     
-                    HStack {
-                        Text("Total Accounts")
-                        Spacer()
-                        Text("\(wallet.accounts.count)")
-                            .foregroundColor(.secondary)
+                    if mainnetEnabled {
+                        HStack {
+                            Text("Mainnet Accounts")
+                            Spacer()
+                            Text(mainnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if testnetEnabled {
+                        HStack {
+                            Text("Testnet Accounts")
+                            Spacer()
+                            Text(testnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if devnetEnabled {
+                        HStack {
+                            Text("Devnet Accounts")
+                            Spacer()
+                            Text(devnetAccountCount.map(String.init) ?? "–")
+                                .foregroundColor(.secondary)
+                        }
                     }
                 }
                 
@@ -272,6 +296,7 @@ struct WalletInfoView: View {
             }
             .onAppear {
                 loadNetworkStates()
+                Task { await loadAccountCounts() }
             }
             .alert("Error", isPresented: $showError) {
                 Button("OK") { }
@@ -297,6 +322,27 @@ struct WalletInfoView: View {
         mainnetEnabled = (networks & 1) != 0  // DASH
         testnetEnabled = (networks & 2) != 0  // TESTNET
         devnetEnabled = (networks & 8) != 0   // DEVNET
+    }
+
+    private func loadAccountCounts() async {
+        guard let manager = walletService.walletManager else { return }
+        if mainnetEnabled {
+            if let list = try? await manager.getAccounts(for: wallet, network: .mainnet) {
+                mainnetAccountCount = list.count
+            }
+        } else { mainnetAccountCount = nil }
+
+        if testnetEnabled {
+            if let list = try? await manager.getAccounts(for: wallet, network: .testnet) {
+                testnetAccountCount = list.count
+            }
+        } else { testnetAccountCount = nil }
+
+        if devnetEnabled {
+            if let list = try? await manager.getAccounts(for: wallet, network: .devnet) {
+                devnetAccountCount = list.count
+            }
+        } else { devnetAccountCount = nil }
     }
     
     private func saveWalletName() {
@@ -334,6 +380,7 @@ struct WalletInfoView: View {
             
             // Reload network states
             loadNetworkStates()
+            await loadAccountCounts()
             
             // TODO: Call FFI to actually add the network to the wallet
             // This would involve reinitializing the wallet with the new networks

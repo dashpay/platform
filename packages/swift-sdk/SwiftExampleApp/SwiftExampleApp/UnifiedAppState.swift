@@ -20,6 +20,8 @@ class TransitionState: ObservableObject {
 class UnifiedAppState: ObservableObject {
     @Published var isInitialized = false
     @Published var error: Error?
+    // Controls whether the detailed sync banner should be shown on Wallets tab
+    @Published var showWalletsSyncDetails: Bool = true
     
     // Services from Core
     let walletService: WalletService
@@ -75,11 +77,9 @@ class UnifiedAppState: ObservableObject {
                 do {
                     let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
                     let isTrusted = status.mode.lowercased() == "trusted"
-                    if isTrusted {
-                        try? walletService.disableMasternodeSync()
-                    }
+                    await MainActor.run { self.walletService.setMasternodesEnabled(!isTrusted) }
                 } catch {
-                    // Ignore status errors; SPV defaults remain
+                    // Ignore status errors; keep default (false) until known
                 }
             }
             

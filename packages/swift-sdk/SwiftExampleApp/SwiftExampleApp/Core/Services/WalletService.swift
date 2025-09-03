@@ -38,6 +38,8 @@ public class WalletService: ObservableObject {
     @Published var latestHeaderHeight: Int = 0
     @Published var latestFilterHeight: Int = 0
     @Published var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
+    // Control whether to sync masternode list (default false; enable only in non-trusted mode)
+    @Published var shouldSyncMasternodes: Bool = false
     
     private init() {}
     
@@ -63,11 +65,52 @@ public class WalletService: ObservableObject {
         // Capture current references on the main actor to avoid cross-actor hops later
         guard let client = spvClient, let mc = self.modelContainer else { return }
         let net = currentNetwork
+        let mnEnabled = shouldSyncMasternodes
         Task.detached(priority: .userInitiated) {
             do {
                 // Initialize the SPV client with proper configuration
                 let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
-                try client.initialize(dataDir: dataDir)
+                // Determine a start height based on checkpoint before the oldest (non-imported) wallet
+                var startHeight: UInt32? = nil
+                do {
+                    // Fetch wallets on main actor
+                    let wallets: [HDWallet] = try await MainActor.run {
+                        let descriptor = FetchDescriptor<HDWallet>()
+                        return try self.modelContainer?.mainContext.fetch(descriptor) ?? []
+                    }
+                    // Filter to current network
+                    let filtered = wallets.filter { w in
+                        switch net {
+                        case .mainnet: return (w.networks & 1) != 0
+                        case .testnet: return (w.networks & 2) != 0
+                        case .devnet: return (w.networks & 8) != 0
+                        }
+                    }
+                    // Prefer oldest non-imported wallet
+                    let candidate = filtered.filter { !$0.isImported }.sorted { $0.createdAt < $1.createdAt }.first
+                    if let cand = candidate {
+                        let ts = UInt32(cand.createdAt.timeIntervalSince1970)
+                        if let h = client.getCheckpointHeight(beforeTimestamp: ts) {
+                            startHeight = h
+                        }
+                    } else {
+                        // Fallback for imported-only
+                        switch net {
+                        case .mainnet:
+                            startHeight = 730_000
+                        case .testnet, .devnet:
+                            startHeight = 0
+                        }
+                    }
+                } catch {
+                    // If fetch fails, fall back per-network
+                    switch net {
+                    case .mainnet: startHeight = 730_000
+                    case .testnet, .devnet: startHeight = 0
+                    }
+                }
+
+                try client.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: startHeight)
 
                 // Start the SPV client
                 try client.start()
@@ -119,7 +162,7 @@ public class WalletService: ObservableObject {
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil) async throws -> HDWallet {
+    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil, networks: [Network]? = nil) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -141,7 +184,8 @@ public class WalletService: ObservableObject {
                 label: label,
                 network: dashNetwork,
                 mnemonic: mnemonic,
-                pin: pin
+                pin: pin,
+                networks: networks
             )
             
             print("Wallet created by WalletManager, ID: \(wallet.id)")
@@ -168,11 +212,6 @@ public class WalletService: ObservableObject {
         
         // Update balance
         updateBalance()
-        
-        // Start sync if needed
-        if wallet.syncProgress < 1.0 {
-            await startSync()
-        }
     }
     
     private func loadCurrentWallet() {
@@ -199,8 +238,16 @@ public class WalletService: ObservableObject {
     }
 
     // MARK: - Trusted Mode / Masternode Sync
-    public func disableMasternodeSync() throws {
-        try spvClient?.setMasternodeSyncEnabled(false)
+    public func setMasternodesEnabled(_ enabled: Bool) {
+        shouldSyncMasternodes = enabled
+        // Try to apply immediately if the client exists
+        do { try spvClient?.setMasternodeSyncEnabled(enabled) } catch { /* ignore */ }
+    }
+    public func disableMasternodeSync() {
+        setMasternodesEnabled(false)
+    }
+    public func enableMasternodeSync() {
+        setMasternodesEnabled(true)
     }
     
     // MARK: - Sync Management

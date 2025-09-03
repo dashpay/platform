@@ -1,7 +1,9 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct CreateWalletView: View {
     @Environment(\.dismiss) var dismiss
+    @Environment(\.modelContext) private var modelContext
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
     
@@ -13,6 +15,11 @@ struct CreateWalletView: View {
     @State private var isCreating: Bool = false
     @State private var error: Error? = nil
     @FocusState private var focusedField: Field?
+    
+    // Seed backup flow
+    @State private var showBackupScreen: Bool = false
+    @State private var generatedMnemonic: String = ""
+    @State private var selectedWordCount: Int = 12
     
     // Network selection states
     @State private var createForMainnet: Bool = false
@@ -128,9 +135,26 @@ struct CreateWalletView: View {
                 Text("Options")
             }
             
+            if !showImportOption {
+                Section {
+                    Picker("Word Count", selection: $selectedWordCount) {
+                        Text("12 words").tag(12)
+                        Text("15 words").tag(15)
+                        Text("18 words").tag(18)
+                        Text("21 words").tag(21)
+                        Text("24 words").tag(24)
+                    }
+                    .pickerStyle(.menu)
+                } header: {
+                    Text("Seed Phrase Length")
+                } footer: {
+                    Text("Choose the number of words for the generated recovery phrase.")
+                }
+            }
+
             if showImportOption {
                 Section {
-                    TextField("Enter 12-word mnemonic phrase", text: $importMnemonic, axis: .vertical)
+                    TextField("Enter recovery phrase (12–24 words)", text: $importMnemonic, axis: .vertical)
                         .textInputAutocapitalization(.never)
                         .autocorrectionDisabled()
                         .lineLimit(3...6)
@@ -153,7 +177,7 @@ struct CreateWalletView: View {
             
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button("Create") {
-                    createWallet()
+                    onCreateTapped()
                 }
                 .disabled(!canCreateWallet)
             }
@@ -176,6 +200,20 @@ struct CreateWalletView: View {
         .onAppear {
             setupInitialNetworkSelection()
         }
+        // Hidden navigation link to push backup screen
+        .overlay(
+            NavigationLink(
+                destination: SeedBackupView(
+                    mnemonic: generatedMnemonic,
+                    onConfirm: {
+                        createWallet(using: generatedMnemonic)
+                    }
+                ),
+                isActive: $showBackupScreen,
+                label: { EmptyView() }
+            )
+            .opacity(0)
+        )
     }
     
     private var canCreateWallet: Bool {
@@ -202,7 +240,22 @@ struct CreateWalletView: View {
         }
     }
     
-    private func createWallet() {
+    private func onCreateTapped() {
+        // If importing, go straight to creation with provided mnemonic
+        if showImportOption {
+            createWallet(using: importMnemonic)
+            return
+        }
+        // Otherwise, generate and show backup/confirmation screen
+        do {
+            generatedMnemonic = try SwiftDashSDK.Mnemonic.generate(wordCount: UInt32(selectedWordCount))
+            showBackupScreen = true
+        } catch {
+            self.error = error
+        }
+    }
+
+    private func createWallet(using mnemonic: String?) {
         guard !walletLabel.isEmpty,
               walletPin == confirmPin,
               walletPin.count >= 4 && walletPin.count <= 6 else {
@@ -219,48 +272,40 @@ struct CreateWalletView: View {
             do {
                 print("=== STARTING WALLET CREATION ===")
                 
-                let mnemonic: String? = showImportOption && !importMnemonic.isEmpty ? importMnemonic : nil
+                let mnemonic: String? = (showImportOption ? importMnemonic : mnemonic)
                 print("Has mnemonic: \(mnemonic != nil)")
                 print("PIN length: \(walletPin.count)")
                 print("Import option enabled: \(showImportOption)")
                 
-                // Create wallets for selected networks
-                var createdWalletCount = 0
-                
-                if createForMainnet {
-                    let wallet = try await walletService.createWallet(
-                        label: "\(walletLabel) (Mainnet)",
-                        mnemonic: mnemonic,
-                        pin: walletPin,
-                        network: Network.mainnet
-                    )
-                    print("Mainnet wallet created: \(wallet.id)")
-                    createdWalletCount += 1
+                // Determine primary network to create the wallet in (SDK enforces unique wallet per mnemonic)
+                let selectedNetworks: [Network] = [
+                    createForMainnet ? Network.mainnet : nil,
+                    createForTestnet ? Network.testnet : nil,
+                    (createForDevnet && shouldShowDevnet) ? Network.devnet : nil,
+                ].compactMap { $0 }
+
+                guard let primaryNetwork = selectedNetworks.first else {
+                    throw WalletError.walletError("No network selected")
                 }
-                
-                if createForTestnet {
-                    let wallet = try await walletService.createWallet(
-                        label: "\(walletLabel) (Testnet)",
-                        mnemonic: mnemonic,
-                        pin: walletPin,
-                        network: Network.testnet
-                    )
-                    print("Testnet wallet created: \(wallet.id)")
-                    createdWalletCount += 1
-                }
-                
-                if createForDevnet && shouldShowDevnet {
-                    let wallet = try await walletService.createWallet(
-                        label: "\(walletLabel) (Devnet)",
-                        mnemonic: mnemonic,
-                        pin: walletPin,
-                        network: Network.devnet
-                    )
-                    print("Devnet wallet created: \(wallet.id)")
-                    createdWalletCount += 1
-                }
-                
-                print("=== WALLET CREATION SUCCESS - Created \(createdWalletCount) wallet(s) ===")
+
+                // Create exactly one wallet in the SDK; do not append network to label
+                let wallet = try await walletService.createWallet(
+                    label: walletLabel,
+                    mnemonic: mnemonic,
+                    pin: walletPin,
+                    network: primaryNetwork,
+                    networks: selectedNetworks
+                )
+
+                // Update wallet.networks bitfield to reflect all user selections
+                var networksBitfield: UInt32 = 0
+                if createForMainnet { networksBitfield |= 1 }
+                if createForTestnet { networksBitfield |= 2 }
+                if createForDevnet && shouldShowDevnet { networksBitfield |= 8 }
+                wallet.networks = networksBitfield
+                try? modelContext.save()
+
+                print("=== WALLET CREATION SUCCESS - Created 1 wallet for \(primaryNetwork.displayName) ===")
                 
                 await MainActor.run {
                     dismiss()

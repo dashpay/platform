@@ -57,7 +57,7 @@ class WalletManager: ObservableObject {
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String) async throws -> HDWallet {
+    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
@@ -75,26 +75,32 @@ class WalletManager: ObservableObject {
             print("Generating new mnemonic...")
             do {
                 finalMnemonic = try SwiftDashSDK.Mnemonic.generate(wordCount: 12)
-                print("Generated mnemonic: \(finalMnemonic)")
+                // Do not log mnemonic to console
             } catch {
                 print("Failed to generate mnemonic: \(error)")
                 throw WalletError.seedGenerationFailed
             }
         }
         
-        // Add wallet through SDK
+        // Add wallet through SDK (with bitfield networks) and capture serialized bytes for persistence
         let walletId: Data
+        let serializedBytes: Data
         do {
-            // Convert Network to KeyWalletNetwork
-            let keyWalletNetwork = network.toKeyWalletNetwork()
-            
-            // Add wallet using SDK's WalletManager
-            walletId = try sdkWalletManager.addWallet(
+            let selectedNetworks = networks ?? [network]
+            let keyWalletNetworks = selectedNetworks.map { $0.toKeyWalletNetwork() }
+
+            // Add wallet using SDK's WalletManager with combined network bitfield and serialize
+            let result = try sdkWalletManager.addWalletAndSerialize(
                 mnemonic: finalMnemonic,
                 passphrase: nil,
-                network: keyWalletNetwork,
-                accountOptions: .default
+                networks: keyWalletNetworks,
+                birthHeight: 0,
+                accountOptions: .default,
+                downgradeToPublicKeyWallet: false,
+                allowExternalSigning: false
             )
+            walletId = result.walletId
+            serializedBytes = result.serializedWallet
             
             print("Wallet added with ID: \(walletId.hexString)")
         } catch {
@@ -103,15 +109,11 @@ class WalletManager: ObservableObject {
         }
         
         // Create HDWallet model for SwiftUI
-        let wallet = HDWallet(label: label, network: network)
+        let wallet = HDWallet(label: label, network: network, isImported: false)
         wallet.walletId = walletId
         
-        // Get the wallet from SDK to store serialized bytes
-        if let sdkWallet = try? sdkWalletManager.getWallet(id: walletId) {
-            // TODO: We need a way to serialize the wallet for persistence
-            // For now, just store the wallet ID
-            print("Got wallet from SDK")
-        }
+        // Persist serialized wallet bytes for restoration on next launch
+        wallet.serializedWalletBytes = serializedBytes
         
         // Store encrypted seed (if needed for UI purposes)
         do {
@@ -132,6 +134,19 @@ class WalletManager: ObservableObject {
         // Sync complete wallet state from Rust managed info
         try await syncWalletFromManagedInfo(for: wallet)
         
+        // If multiple networks were specified, set the bitfield accordingly
+        if let networks = networks {
+            var bitfield: UInt32 = 0
+            for n in networks {
+                switch n {
+                case .mainnet: bitfield |= 1
+                case .testnet: bitfield |= 2
+                case .devnet: bitfield |= 8
+                }
+            }
+            wallet.networks = bitfield
+        }
+
         // Save to database
         try modelContainer.mainContext.save()
         
@@ -142,7 +157,10 @@ class WalletManager: ObservableObject {
     }
     
     func importWallet(label: String, network: Network, mnemonic: String, pin: String) async throws -> HDWallet {
-        return try await createWallet(label: label, network: network, mnemonic: mnemonic, pin: pin)
+        let wallet = try await createWallet(label: label, network: network, mnemonic: mnemonic, pin: pin)
+        wallet.isImported = true
+        try modelContainer.mainContext.save()
+        return wallet
     }
     
     /// Restore a wallet from serialized bytes via SDK
@@ -262,38 +280,6 @@ class WalletManager: ObservableObject {
     
     // MARK: - Account Management
     
-    /// Determines if an account type should show balance in the UI
-    /// - Parameter accountIndex: The unique account index
-    /// - Returns: true if the account should show balance, false otherwise
-    public static func shouldShowBalance(for accountIndex: UInt32) -> Bool {
-        switch accountIndex {
-        case 0...999:        // BIP44 accounts (including main account at 0)
-            return true
-        case 1000...1999:    // CoinJoin accounts
-            return true
-        case 5000...5999:    // BIP32 accounts
-            return true
-        case 9000:           // Identity Registration
-            return false
-        case 9001:           // Identity Invitation
-            return false
-        case 9002:           // Identity Topup (Not Bound)
-            return false
-        case 9100...9199:    // Identity Topup accounts
-            return false
-        case 10000...10999:  // Provider Voting Keys
-            return false
-        case 11000:          // Provider Owner Keys
-            return false
-        case 11001:          // Provider Operator Keys (BLS)
-            return false
-        case 11002:          // Provider Platform Keys (EdDSA)
-            return false
-        default:
-            return false
-        }
-    }
-    
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
@@ -371,61 +357,52 @@ class WalletManager: ObservableObject {
     }
     
     /// Derive a private key as WIF from seed using a specific path (deferred to SDK)
-    public func derivePrivateKeyAsWIF(from seed: Data, path: String, network: Network) async throws -> String {
-        throw WalletError.notImplemented("Expose WIF derivation via SwiftDashSDK Wallet API")
-    }
-    
-    /// Derive a private key from seed using a specific path
-    public func derivePrivateKey(from seed: Data, path: String, network: Network) async throws -> Data {
-        throw WalletError.notImplemented("Expose key derivation via SwiftDashSDK Wallet API")
-    }
-    
-    /// Get the derivation path for an account based on its index
-    private func getDerivationPath(for accountIndex: UInt32, network: Network) -> String {
-        let coinType = network == .testnet ? "1'" : "5'"  // Dash coin type
-        
-        switch accountIndex {
-        case 0...999:
-            // BIP44 accounts
-            return "m/44'/\(coinType)/\(accountIndex)'"
-        case 1000...1999:
-            // CoinJoin accounts
-            let index = accountIndex - 1000
-            return "m/9'/\(coinType)/\(index)'"
-        case 5000...5999:
-            // BIP32 accounts
-            let index = accountIndex - 5000
-            return "m/\(index)'"
-        case 9000:
-            // Identity Registration
-            return "m/9'/\(coinType)/5'/0"
-        case 9001:
-            // Identity Invitation
-            return "m/9'/\(coinType)/5'/1"
-        case 9002:
-            // Identity Topup (Not Bound)
-            return "m/9'/\(coinType)/5'/2"
-        case 9100...9199:
-            // Identity Topup accounts
-            let index = accountIndex - 9100
-            return "m/9'/\(coinType)/5'/3/\(index)'"
-        case 10000...10999:
-            // Provider Voting Keys
-            let index = accountIndex - 10000
-            return "m/9'/\(coinType)/6'/\(index)'"
-        case 11000:
-            // Provider Owner Keys
-            return "m/9'/\(coinType)/7'/0"
-        case 11001:
-            // Provider Operator Keys (BLS)
-            return "m/9'/\(coinType)/7'/1"
-        case 11002:
-            // Provider Platform Keys (EdDSA)
-            return "m/9'/\(coinType)/7'/2"
-        default:
-            return "m/custom/\(accountIndex)'"
+    public func derivePrivateKeyAsWIF(for wallet: HDWallet, accountInfo: AccountInfo, addressIndex: UInt32) async throws -> String {
+        guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
+        let net = wallet.dashNetwork
+        // Obtain a non-owning Wallet wrapper from manager
+        guard let sdkWallet = try sdkWalletManager.getWallet(id: walletId, network: net.toKeyWalletNetwork()) else {
+            throw WalletError.walletError("Wallet not found in manager")
         }
+        
+        // Map category to AccountType and master path root
+        let coinType = (net == .testnet) ? "1'" : "5'"
+        let mapping: (AccountType, UInt32, String)? = {
+            switch accountInfo.category {
+            case .providerVotingKeys:
+                return (.providerVotingKeys, 0, "m/9'/\(coinType)/3'/1'")
+            case .providerOwnerKeys:
+                return (.providerOwnerKeys, 0, "m/9'/\(coinType)/3'/2'")
+            case .providerOperatorKeys:
+                return (.providerOperatorKeys, 0, "m/9'/\(coinType)/3'/3'")
+            case .providerPlatformKeys:
+                return (.providerPlatformKeys, 0, "m/9'/\(coinType)/3'/4'")
+            case .bip44:
+                let idx = accountInfo.index ?? 0
+                return (.standardBIP44, idx, "m/44'/\(coinType)/\(idx)'")
+            case .bip32:
+                let idx = accountInfo.index ?? 0
+                return (.standardBIP32, idx, "m/\(idx)'")
+            case .coinjoin:
+                let idx = (accountInfo.index ?? 1000) - 1000
+                return (.coinJoin, UInt32(idx), "m/9'/\(coinType)/4'/\(idx)'")
+            case .identityRegistration, .identityInvitation, .identityTopupNotBound, .identityTopup:
+                return nil
+            }
+        }()
+        
+        guard let (type, accountIndex, masterPath) = mapping else {
+            throw WalletError.notImplemented("Derivation not supported for this account type")
+        }
+        
+        // Get account and derive
+        let account = try sdkWallet.getAccount(type: type, index: accountIndex)
+        let wif = try account.derivePrivateKeyWIF(wallet: sdkWallet, masterPath: masterPath, index: addressIndex)
+        return wif
     }
+    
+    // Index-based derivation was removed. We now map paths by AccountCategory
+    // via derivationPath(for:index:network:) below to avoid conflating type with index.
 
     private func derivationPath(for category: AccountCategory, index: UInt32?, network: Network) -> String {
         let coinType = network == .testnet ? "1'" : "5'"
@@ -435,23 +412,24 @@ class WalletManager: ObservableObject {
         case .bip32:
             return "m/\((index ?? 0))'"
         case .coinjoin:
-            return "m/9'/\(coinType)/0'"
+            // Account-level path for coinjoin: m/9'/coinType/4'/account'
+            return "m/9'/\(coinType)/4'/\(index ?? 0)'"
         case .identityRegistration:
-            return "m/9'/\(coinType)/5'/0"
+            return "m/9'/\(coinType)/5'/1'/x"
         case .identityInvitation:
-            return "m/9'/\(coinType)/5'/1"
+            return "m/9'/\(coinType)/5'/3'/x"
         case .identityTopupNotBound:
-            return "m/9'/\(coinType)/5'/2"
+            return "m/9'/\(coinType)/5'/2'/x"
         case .identityTopup:
-            return "m/9'/\(coinType)/5'/3/\(index ?? 0)'"
+            return "m/9'/\(coinType)/5'/2'/\(index ?? 0)'/x"
         case .providerVotingKeys:
-            return "m/9'/\(coinType)/6'/0'"
+            return "m/9'/\(coinType)/3'/1'/x"
         case .providerOwnerKeys:
-            return "m/9'/\(coinType)/7'/0"
+            return "m/9'/\(coinType)/3'/2'/x"
         case .providerOperatorKeys:
-            return "m/9'/\(coinType)/7'/1"
+            return "m/9'/\(coinType)/3'/3'/x"
         case .providerPlatformKeys:
-            return "m/9'/\(coinType)/7'/2"
+            return "m/9'/\(coinType)/3'/4'/x"
         }
     }
     
@@ -459,11 +437,31 @@ class WalletManager: ObservableObject {
     // Removed old FFI-based helper; using SwiftDashSDK wrappers instead
     
     /// Get all accounts for a wallet from the FFI wallet manager
-    /// Returns account information including balances and address counts
-    func getAccounts(for wallet: HDWallet) async throws -> [AccountInfo] {
+    /// - Parameters:
+    ///   - wallet: The wallet model
+    ///   - network: Optional network override; defaults to wallet.dashNetwork
+    /// - Returns: Account information including balances and address counts
+    func getAccounts(for wallet: HDWallet, network: Network? = nil) async throws -> [AccountInfo] {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
-        let network = wallet.dashNetwork.toKeyWalletNetwork()
-        let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+        let effectiveNetwork = (network ?? wallet.dashNetwork).toKeyWalletNetwork()
+        let collection: ManagedAccountCollection
+        do {
+            collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: effectiveNetwork)
+        } catch let err as KeyWalletError {
+            // If the managed wallet info isn't found (e.g., after fresh start), try restoring from serialized bytes
+            if case .notFound = err, let bytes = wallet.serializedWalletBytes {
+                do {
+                    let restoredId = try sdkWalletManager.importWallet(from: bytes)
+                    if wallet.walletId != restoredId { wallet.walletId = restoredId }
+                    // Retry once after import
+                    collection = try sdkWalletManager.getManagedAccountCollection(walletId: wallet.walletId!, network: effectiveNetwork)
+                } catch {
+                    throw err
+                }
+            } else {
+                throw err
+            }
+        }
         var list: [AccountInfo] = []
 
         func counts(_ m: ManagedAccount) -> (Int, Int) {

@@ -46,6 +46,7 @@ public struct AddressDetail {
 // MARK: - Account Detail View
 struct AccountDetailView: View {
     @EnvironmentObject var walletService: WalletService
+    @EnvironmentObject var unifiedAppState: UnifiedAppState
     let wallet: HDWallet
     let account: AccountInfo
     
@@ -82,8 +83,8 @@ struct AccountDetailView: View {
                         xpubCard(xpub: xpub)
                     }
                     
-                    // Balance Card (if applicable)
-                    if WalletManager.shouldShowBalance(for: account.index ?? 0) {
+                    // Balance Card (only for BIP44/BIP32/CoinJoin)
+                    if shouldShowBalanceInDetail {
                         balanceCard()
                     }
                     
@@ -116,6 +117,7 @@ struct AccountDetailView: View {
                 }
             )
         }
+        .onAppear { unifiedAppState.showWalletsSyncDetails = false }
     }
     
     // MARK: - View Components
@@ -172,7 +174,7 @@ struct AccountDetailView: View {
         .cornerRadius(12)
         .shadow(color: Color.black.opacity(0.05), radius: 5, x: 0, y: 2)
     }
-    
+
     private func xpubCard(xpub: String) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -396,12 +398,13 @@ struct AccountDetailView: View {
                         .truncationMode(.middle)
                     
                     if !detail.publicKey.isEmpty {
-                        HStack {
+                        VStack(alignment: .leading, spacing: 2) {
                             Text("Public Key:")
                                 .font(.system(.caption2))
                                 .foregroundColor(.secondary)
-                            Text(String(detail.publicKey.prefix(16)) + "...")
+                            Text(detail.publicKey)
                                 .font(.system(.caption2, design: .monospaced))
+                                .textSelection(.enabled)
                                 .foregroundColor(.secondary)
                         }
                     }
@@ -638,44 +641,22 @@ struct AccountDetailView: View {
     
     private func derivePrivateKeyWithPIN(for detail: AddressDetail, pin: String) async {
         do {
-            // Use WalletStorage to retrieve the encrypted seed with PIN
-            let walletStorage = WalletStorage()
-            let seedData = try walletStorage.retrieveSeed(pin: pin)
-            
-            // Derive private key using the path
+            // Gate with PIN but derive via account-based FFI (no seed passage required)
             guard let walletManager = walletService.walletManager else {
                 throw WalletError.walletError("Wallet manager not available")
             }
-            
-            // Use the FFI function to derive private key from seed
-            let privateKeyData = try await walletManager.derivePrivateKey(
-                from: seedData,
-                path: detail.path,
-                network: wallet.dashNetwork
-            )
-            
-            // Generate hex format
-            let hexPrivateKey = privateKeyData.toHexString()
-            
-            // Generate WIF format
             let wifPrivateKey = try await walletManager.derivePrivateKeyAsWIF(
-                from: seedData,
-                path: detail.path,
-                network: wallet.dashNetwork
+                for: wallet,
+                accountInfo: account,
+                addressIndex: detail.index
             )
-            
             await MainActor.run {
                 self.showingPrivateKey = detail.path
-                self.privateKeyToShow = (hex: hexPrivateKey, wif: wifPrivateKey)
+                self.privateKeyToShow = (hex: "", wif: wifPrivateKey)
             }
         } catch {
             await MainActor.run {
-                // Check if it's a wrong PIN error
-                if error is WalletStorageError {
-                    errorMessage = "Invalid PIN. Please try again."
-                } else {
-                    errorMessage = "Failed to derive private key: \(error.localizedDescription)"
-                }
+                errorMessage = "Failed to derive private key: \(error.localizedDescription)"
             }
         }
     }
@@ -753,6 +734,18 @@ struct PINPromptView: View {
             }
             .padding()
             .navigationBarHidden(true)
+        }
+    }
+}
+
+// MARK: - Helpers
+private extension AccountDetailView {
+    var shouldShowBalanceInDetail: Bool {
+        switch account.category {
+        case .bip44, .bip32, .coinjoin:
+            return true
+        default:
+            return false
         }
     }
 }

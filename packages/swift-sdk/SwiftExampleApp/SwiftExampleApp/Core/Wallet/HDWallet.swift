@@ -11,6 +11,7 @@ public final class HDWallet: HDWalletModels {
     public var createdAt: Date
     public var lastSyncedHeight: Int
     public var isWatchOnly: Bool
+    public var isImported: Bool
     
     // FFI Wallet ID (32 bytes) - links to the rust-dashcore wallet
     public var walletId: Data?
@@ -34,7 +35,7 @@ public final class HDWallet: HDWalletModels {
     // Uses FFINetworks values: DASH(mainnet)=1, TESTNET=2, DEVNET=8
     public var networks: UInt32
     
-    init(label: String, network: Network, isWatchOnly: Bool = false) {
+    init(label: String, network: Network, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
         self.label = label
         self.network = network.rawValue
@@ -43,6 +44,7 @@ public final class HDWallet: HDWalletModels {
         self.isWatchOnly = isWatchOnly
         self.currentAccountIndex = 0
         self.syncProgress = 0.0
+        self.isImported = isImported
         
         // Initialize networks bitfield based on the initial network
         switch network {

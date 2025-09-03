@@ -183,36 +183,7 @@ public enum AccountCreationOption {
     }
 }
 
-// MARK: - Derivation Path Type
-
-/// DIP9 derivation path types
-public enum DerivationPathType: UInt32 {
-    case unknown = 0
-    case bip32 = 1
-    case bip44 = 2
-    case blockchainIdentities = 3
-    case providerFunds = 4
-    case providerVotingKeys = 5
-    case providerOperatorKeys = 6
-    case providerOwnerKeys = 7
-    case contactBasedFunds = 8
-    case contactBasedFundsRoot = 9
-    case contactBasedFundsExternal = 10
-    case identityCreditRegistrationFunding = 11
-    case identityCreditTopupFunding = 12
-    case identityCreditInvitationFunding = 13
-    case providerPlatformNodeKeys = 14
-    case coinJoin = 15
-    case root = 255
-    
-    var ffiValue: FFIDerivationPathType {
-        FFIDerivationPathType(rawValue: self.rawValue)
-    }
-    
-    init(ffiType: FFIDerivationPathType) {
-        self = DerivationPathType(rawValue: ffiType.rawValue) ?? .unknown
-    }
-}
+// Note: DerivationPathType removed (FFIDerivationPathType not present in current headers).
 
 // MARK: - Result Types
 

@@ -91,7 +91,7 @@ public class WalletManager {
                     return wallet_manager_add_wallet_from_mnemonic(
                         handle, mnemonicCStr, nil,
                         NetworkSet(network).ffiNetworks, &error)
-                }
+        }
             }
         }
         
@@ -106,6 +106,62 @@ public class WalletManager {
         }
         
         // Get the wallet IDs to return the newly added wallet ID
+        return try getWalletIds().last ?? Data()
+    }
+
+    /// Add a wallet from mnemonic for multiple networks (bitfield)
+    /// - Parameters:
+    ///   - mnemonic: The mnemonic phrase
+    ///   - passphrase: Optional BIP39 passphrase
+    ///   - networks: Networks to enable for this wallet
+    ///   - accountOptions: Account creation options
+    /// - Returns: The wallet ID
+    @discardableResult
+    public func addWallet(mnemonic: String, passphrase: String? = nil,
+                          networks: [KeyWalletNetwork],
+                          accountOptions: AccountCreationOption = .default) throws -> Data {
+        var error = FFIError()
+        let networkSet = NetworkSet(networks)
+
+        let success = mnemonic.withCString { mnemonicCStr in
+            if case .specificAccounts = accountOptions {
+                var options = accountOptions.toFFIOptions()
+                if let passphrase = passphrase {
+                    return passphrase.withCString { passphraseCStr in
+                        wallet_manager_add_wallet_from_mnemonic_with_options(
+                            handle, mnemonicCStr, passphraseCStr,
+                            networkSet.ffiNetworks, &options, &error)
+                    }
+                } else {
+                    return wallet_manager_add_wallet_from_mnemonic_with_options(
+                        handle, mnemonicCStr, nil,
+                        networkSet.ffiNetworks, &options, &error)
+                }
+            } else {
+                if let passphrase = passphrase {
+                    return passphrase.withCString { passphraseCStr in
+                        wallet_manager_add_wallet_from_mnemonic(
+                            handle, mnemonicCStr, passphraseCStr,
+                            networkSet.ffiNetworks, &error)
+                    }
+                } else {
+                    return wallet_manager_add_wallet_from_mnemonic(
+                        handle, mnemonicCStr, nil,
+                        networkSet.ffiNetworks, &error)
+                }
+            }
+        }
+
+        defer {
+            if error.message != nil {
+                error_message_free(error.message)
+            }
+        }
+
+        guard success else {
+            throw KeyWalletError(ffiError: error)
+        }
+
         return try getWalletIds().last ?? Data()
     }
     
@@ -144,37 +200,29 @@ public class WalletManager {
     /// Get a wallet by ID
     /// - Parameter walletId: The wallet ID (32 bytes)
     /// - Returns: The wallet if found
-    public func getWallet(id walletId: Data) throws -> Wallet? {
+    public func getWallet(id walletId: Data, network: KeyWalletNetwork) throws -> Wallet? {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
         }
-        
         var error = FFIError()
-        
         let walletPtr = walletId.withUnsafeBytes { idBytes in
             let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
         }
-        
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
         guard let ptr = walletPtr else {
-            // Check if it's a not found error
             if error.code == FFIErrorCode(rawValue: 10) { // NOT_FOUND
                 return nil
             }
             throw KeyWalletError(ffiError: error)
         }
-        
-        // Note: The returned wallet is a reference and should not be freed by the wrapper
-        // We need to handle this carefully - perhaps by creating a non-owning wrapper
-        // For now, we'll return nil as we need a different approach
-        wallet_free_const(ptr)
-        return nil
+        // Wrap as non-owning wallet; the manager retains ownership
+        let wallet = Wallet(nonOwningHandle: UnsafeRawPointer(ptr), network: network)
+        return wallet
     }
     
     /// Get the number of wallets
@@ -627,6 +675,89 @@ public class WalletManager {
         let serializedData = Data(bytes: bytesPtr, count: Int(walletBytesLen))
         let walletIdData = Data(walletId)
         
+        return (walletId: walletIdData, serializedWallet: serializedData)
+    }
+
+    /// Add a wallet from mnemonic for multiple networks and return serialized bytes
+    /// - Parameters:
+    ///   - mnemonic: The mnemonic phrase
+    ///   - passphrase: Optional BIP39 passphrase
+    ///   - networks: Networks to enable for this wallet
+    ///   - birthHeight: Optional birth height for wallet
+    ///   - accountOptions: Account creation options
+    ///   - downgradeToPublicKeyWallet: If true, creates a watch-only or externally signable wallet
+    ///   - allowExternalSigning: If true AND downgradeToPublicKeyWallet is true, creates an externally signable wallet
+    /// - Returns: Tuple containing (walletId: Data, serializedWallet: Data)
+    public func addWalletAndSerialize(
+        mnemonic: String,
+        passphrase: String? = nil,
+        networks: [KeyWalletNetwork],
+        birthHeight: UInt32 = 0,
+        accountOptions: AccountCreationOption = .default,
+        downgradeToPublicKeyWallet: Bool = false,
+        allowExternalSigning: Bool = false
+    ) throws -> (walletId: Data, serializedWallet: Data) {
+        var error = FFIError()
+        var walletBytesPtr: UnsafeMutablePointer<UInt8>?
+        var walletBytesLen: size_t = 0
+        var walletId = [UInt8](repeating: 0, count: 32)
+
+        let networkSet = NetworkSet(networks)
+
+        let success = mnemonic.withCString { mnemonicCStr in
+            var options = accountOptions.toFFIOptions()
+
+            if let passphrase = passphrase {
+                return passphrase.withCString { passphraseCStr in
+                    wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                        handle,
+                        mnemonicCStr,
+                        passphraseCStr,
+                        networkSet.ffiNetworks,
+                        birthHeight,
+                        &options,
+                        downgradeToPublicKeyWallet,
+                        allowExternalSigning,
+                        &walletBytesPtr,
+                        &walletBytesLen,
+                        &walletId,
+                        &error
+                    )
+                }
+            } else {
+                return wallet_manager_add_wallet_from_mnemonic_return_serialized_bytes(
+                    handle,
+                    mnemonicCStr,
+                    nil,
+                    networkSet.ffiNetworks,
+                    birthHeight,
+                    &options,
+                    downgradeToPublicKeyWallet,
+                    allowExternalSigning,
+                    &walletBytesPtr,
+                    &walletBytesLen,
+                    &walletId,
+                    &error
+                )
+            }
+        }
+
+        defer {
+            if error.message != nil {
+                error_message_free(error.message)
+            }
+            if let ptr = walletBytesPtr {
+                wallet_manager_free_wallet_bytes(ptr, walletBytesLen)
+            }
+        }
+
+        guard success, let bytesPtr = walletBytesPtr else {
+            throw KeyWalletError(ffiError: error)
+        }
+
+        let serializedData = Data(bytes: bytesPtr, count: Int(walletBytesLen))
+        let walletIdData = Data(walletId)
+
         return (walletId: walletIdData, serializedWallet: serializedData)
     }
     

@@ -134,7 +134,7 @@ public class SPVClient: ObservableObject {
     
     // MARK: - Client Lifecycle
     
-    public func initialize(dataDir: String? = nil, masternodesEnabled: Bool? = nil) throws {
+    public func initialize(dataDir: String? = nil, masternodesEnabled: Bool? = nil, startHeight: UInt32? = nil) throws {
         guard client == nil else {
             throw SPVError.alreadyInitialized
         }
@@ -185,11 +185,46 @@ public class SPVClient: ObservableObject {
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 1)) // BloomFilter
 
+        // Set user agent to include SwiftDashSDK version from the framework bundle
+        do {
+            let bundle = Bundle(for: SPVClient.self)
+            let version = (bundle.infoDictionary?["CFBundleShortVersionString"] as? String)
+                ?? (bundle.infoDictionary?["CFBundleVersion"] as? String)
+                ?? "dev"
+            let ua = "SwiftDashSDK/\(version)"
+            // Always print what we're about to set for easier debugging
+            print("Setting user agent to \(ua)")
+            let rc = dash_spv_ffi_config_set_user_agent(configPtr, ua)
+            if rc != 0 {
+                if let cErr = dash_spv_ffi_get_last_error() {
+                    let err = String(cString: cErr)
+                    print("[SPV][Config] Failed to set user agent (rc=\(rc)): \(err)")
+                } else {
+                    print("[SPV][Config] Failed to set user agent (rc=\(rc))")
+                }
+                throw SPVError.configurationFailed
+            }
+            if swiftLoggingEnabled { print("[SPV][Config] User-Agent=\(ua)") }
+        }
+
         // Optionally override masternode sync behavior
         if let m = masternodesEnabled {
             self.masternodeSyncEnabled = m
         }
         _ = dash_spv_ffi_config_set_masternode_sync_enabled(configPtr, masternodeSyncEnabled)
+
+        // Optionally set a starting height checkpoint
+        if let h = startHeight {
+            // Align to the last checkpoint at or below the requested height
+            let netFromConfig = dash_spv_ffi_config_get_network(configPtr)
+            var cpOutHeight: UInt32 = 0
+            var cpOutHash = [UInt8](repeating: 0, count: 32)
+            let rc: Int32 = cpOutHash.withUnsafeMutableBufferPointer { buf in
+                dash_spv_ffi_checkpoint_before_height(netFromConfig, h, &cpOutHeight, buf.baseAddress)
+            }
+            let finalHeight: UInt32 = (rc == 0 && cpOutHeight > 0) ? cpOutHeight : h
+            _ = dash_spv_ffi_config_set_start_from_height(configPtr, finalHeight)
+        }
         
         // Create client
         client = dash_spv_ffi_client_new(configPtr)
@@ -505,6 +540,24 @@ public class SPVClient: ObservableObject {
         var outHash = [UInt8](repeating: 0, count: 32)
         let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
             dash_spv_ffi_checkpoint_latest(ffiNet, &outHeight, buf.baseAddress)
+        }
+        guard rc == 0 else { return nil }
+        return outHeight
+    }
+
+    /// Returns the checkpoint height at or before a given UNIX timestamp (seconds) for this network
+    public func getCheckpointHeight(beforeTimestamp timestamp: UInt32) -> UInt32? {
+        let ffiNet: FFINetwork
+        switch network {
+        case DashSDKNetwork(rawValue: 0): ffiNet = FFINetwork(rawValue: 0)
+        case DashSDKNetwork(rawValue: 1): ffiNet = FFINetwork(rawValue: 1)
+        case DashSDKNetwork(rawValue: 2): ffiNet = FFINetwork(rawValue: 3)
+        default: ffiNet = FFINetwork(rawValue: 1)
+        }
+        var outHeight: UInt32 = 0
+        var outHash = [UInt8](repeating: 0, count: 32)
+        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
+            dash_spv_ffi_checkpoint_before_timestamp(ffiNet, timestamp, &outHeight, buf.baseAddress)
         }
         guard rc == 0 else { return nil }
         return outHeight
