@@ -82,7 +82,36 @@ export class WasmOperationError extends WasmSDKError {
 }
 
 /**
- * Configuration validator and defaults
+ * Constants for configuration validation and defaults
+ */
+export const NETWORK_TYPES = Object.freeze(['mainnet', 'testnet']);
+
+export const DEFAULT_CONFIG = Object.freeze({
+  network: 'testnet',
+  transport: {
+    url: 'https://52.12.176.90:1443/',
+    timeout: 30000,
+    retries: 3
+  },
+  proofs: true,
+  version: null, // Use latest
+  settings: {
+    connect_timeout_ms: 10000,
+    timeout_ms: 30000,
+    retries: 3,
+    ban_failed_address: true
+  }
+});
+
+export const SDK_VERSION = Object.freeze({
+  MAJOR: 1,
+  MINOR: 0,
+  PATCH: 0,
+  VERSION_STRING: '1.0.0'
+});
+
+/**
+ * Enhanced configuration validator with comprehensive validation
  */
 class ConfigManager {
   constructor(config = {}) {
@@ -90,22 +119,8 @@ class ConfigManager {
   }
 
   _validateConfig(config) {
-    const defaults = {
-      network: 'testnet',
-      transport: {
-        url: 'https://52.12.176.90:1443/',
-        timeout: 30000,
-        retries: 3
-      },
-      proofs: true,
-      version: null, // Use latest
-      settings: {
-        connect_timeout_ms: 10000,
-        timeout_ms: 30000,
-        retries: 3,
-        ban_failed_address: true
-      }
-    };
+    // Deep clone defaults to avoid mutation
+    const defaults = JSON.parse(JSON.stringify(DEFAULT_CONFIG));
 
     // Merge with defaults
     const merged = {
@@ -115,21 +130,189 @@ class ConfigManager {
       settings: { ...defaults.settings, ...(config.settings || {}) }
     };
 
-    // Validate network
-    if (!['mainnet', 'testnet'].includes(merged.network)) {
-      throw new WasmInitializationError(`Invalid network: ${merged.network}. Must be 'mainnet' or 'testnet'`);
-    }
-
-    // Validate transport URL
-    if (!merged.transport.url || typeof merged.transport.url !== 'string') {
-      throw new WasmInitializationError('Transport URL must be a valid string');
-    }
+    // Enhanced validation
+    this._validateNetwork(merged.network);
+    this._validateTransport(merged.transport);
+    this._validateSettings(merged.settings);
+    this._validateProofs(merged.proofs);
+    this._validateVersion(merged.version);
 
     return merged;
   }
 
+  _validateNetwork(network) {
+    if (!NETWORK_TYPES.includes(network)) {
+      throw new WasmInitializationError(
+        `Invalid network: ${network}. Must be one of: ${NETWORK_TYPES.join(', ')}`, 
+        { 
+          providedNetwork: network, 
+          validNetworks: NETWORK_TYPES 
+        }
+      );
+    }
+  }
+
+  _validateTransport(transport) {
+    if (!transport || typeof transport !== 'object') {
+      throw new WasmInitializationError(
+        'Transport configuration must be an object', 
+        { providedTransport: transport }
+      );
+    }
+
+    // Validate URL
+    if (!transport.url || typeof transport.url !== 'string') {
+      throw new WasmInitializationError(
+        'Transport URL must be a non-empty string', 
+        { providedUrl: transport.url }
+      );
+    }
+
+    // Validate URL format
+    try {
+      new URL(transport.url);
+    } catch (error) {
+      throw new WasmInitializationError(
+        `Invalid transport URL format: ${transport.url}`, 
+        { 
+          providedUrl: transport.url, 
+          originalError: error.message 
+        }
+      );
+    }
+
+    // Validate timeout
+    if (transport.timeout !== undefined) {
+      if (!Number.isInteger(transport.timeout) || transport.timeout < 1000 || transport.timeout > 300000) {
+        throw new WasmInitializationError(
+          'Transport timeout must be an integer between 1000 and 300000 milliseconds', 
+          { 
+            providedTimeout: transport.timeout,
+            validRange: { min: 1000, max: 300000 }
+          }
+        );
+      }
+    }
+
+    // Validate retries
+    if (transport.retries !== undefined) {
+      if (!Number.isInteger(transport.retries) || transport.retries < 0 || transport.retries > 10) {
+        throw new WasmInitializationError(
+          'Transport retries must be an integer between 0 and 10', 
+          { 
+            providedRetries: transport.retries,
+            validRange: { min: 0, max: 10 }
+          }
+        );
+      }
+    }
+  }
+
+  _validateSettings(settings) {
+    if (!settings || typeof settings !== 'object') {
+      throw new WasmInitializationError(
+        'Settings must be an object', 
+        { providedSettings: settings }
+      );
+    }
+
+    const validationRules = {
+      connect_timeout_ms: { min: 1000, max: 60000, type: 'integer' },
+      timeout_ms: { min: 1000, max: 300000, type: 'integer' },
+      retries: { min: 0, max: 10, type: 'integer' },
+      ban_failed_address: { type: 'boolean' }
+    };
+
+    for (const [key, rules] of Object.entries(validationRules)) {
+      const value = settings[key];
+      if (value === undefined) continue;
+
+      if (rules.type === 'integer') {
+        if (!Number.isInteger(value) || value < rules.min || value > rules.max) {
+          throw new WasmInitializationError(
+            `Setting ${key} must be an integer between ${rules.min} and ${rules.max}`, 
+            { 
+              settingKey: key,
+              providedValue: value,
+              validRange: { min: rules.min, max: rules.max }
+            }
+          );
+        }
+      } else if (rules.type === 'boolean') {
+        if (typeof value !== 'boolean') {
+          throw new WasmInitializationError(
+            `Setting ${key} must be a boolean`, 
+            { 
+              settingKey: key,
+              providedValue: value,
+              expectedType: 'boolean'
+            }
+          );
+        }
+      }
+    }
+  }
+
+  _validateProofs(proofs) {
+    if (proofs !== undefined && typeof proofs !== 'boolean') {
+      throw new WasmInitializationError(
+        'Proofs setting must be a boolean', 
+        { 
+          providedProofs: proofs,
+          expectedType: 'boolean'
+        }
+      );
+    }
+  }
+
+  _validateVersion(version) {
+    if (version !== null && version !== undefined) {
+      if (!Number.isInteger(version) || version < 0) {
+        throw new WasmInitializationError(
+          'Version must be null or a non-negative integer', 
+          { 
+            providedVersion: version,
+            expectedType: 'null or non-negative integer'
+          }
+        );
+      }
+    }
+  }
+
   get(key) {
     return key.split('.').reduce((obj, k) => obj?.[k], this.config);
+  }
+
+  /**
+   * Get a deep clone of the configuration to prevent mutations
+   */
+  getConfig() {
+    return JSON.parse(JSON.stringify(this.config));
+  }
+
+  /**
+   * Validate a partial configuration update
+   */
+  validatePartialConfig(partialConfig) {
+    if (!partialConfig || typeof partialConfig !== 'object') {
+      throw new WasmInitializationError(
+        'Configuration must be an object',
+        { providedConfig: partialConfig }
+      );
+    }
+
+    // Create a merged config for validation
+    const testConfig = {
+      ...this.config,
+      ...partialConfig,
+      transport: { ...this.config.transport, ...(partialConfig.transport || {}) },
+      settings: { ...this.config.settings, ...(partialConfig.settings || {}) }
+    };
+
+    // Run validation on the merged config
+    this._validateConfig(testConfig);
+    
+    return testConfig;
   }
 }
 
@@ -282,19 +465,65 @@ export class WasmSDK {
   }
 
   /**
-   * Wrap WASM operations with error handling
+   * Wrap WASM operations with enhanced error handling and debugging context
    * @private
    */
   async _wrapOperation(operation, operationName, ...args) {
     this._ensureInitialized();
     
+    const startTime = Date.now();
+    const debugContext = {
+      operationName,
+      argumentCount: args.length,
+      networkConfig: this._configManager.get('network'),
+      proofsEnabled: this._configManager.get('proofs'),
+      startTime: new Date().toISOString()
+    };
+
     try {
-      return await operation(this._wasmSdk, ...args);
+      const result = await operation(this._wasmSdk, ...args);
+      
+      // Add performance metrics for debugging
+      const duration = Date.now() - startTime;
+      if (duration > 5000) { // Log slow operations
+        console.warn(`Slow operation detected: ${operationName} took ${duration}ms`);
+      }
+
+      return result;
     } catch (error) {
-      throw new WasmOperationError(
+      const duration = Date.now() - startTime;
+      debugContext.duration = duration;
+      debugContext.endTime = new Date().toISOString();
+
+      // Use ErrorMapper for sophisticated error handling
+      throw ErrorMapper.createContextualError(
         `Operation ${operationName} failed: ${error.message}`,
         operationName,
-        { args, originalError: error }
+        { args: args.map((arg, i) => ({ index: i, type: typeof arg })) }, // Don't log actual values for security
+        error
+      );
+    }
+  }
+
+  /**
+   * Enhanced synchronous operation wrapper with error handling
+   * @private  
+   */
+  _wrapSyncOperation(operation, operationName, ...args) {
+    const debugContext = {
+      operationName,
+      argumentCount: args.length,
+      timestamp: new Date().toISOString()
+    };
+
+    try {
+      return operation(...args);
+    } catch (error) {
+      throw ErrorMapper.createContextualError(
+        `Synchronous operation ${operationName} failed: ${error.message}`,
+        operationName,
+        { args: args.map((arg, i) => ({ index: i, type: typeof arg })) },
+        error
       );
     }
   }
@@ -419,14 +648,7 @@ export class WasmSDK {
    * @returns {boolean} Whether the username is valid
    */
   isDpnsUsernameValid(username) {
-    try {
-      return dpns_is_valid_username(username);
-    } catch (error) {
-      throw new WasmOperationError(`DPNS username validation failed: ${error.message}`, 'isDpnsUsernameValid', {
-        username,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(dpns_is_valid_username, 'isDpnsUsernameValid', username);
   }
 
   /**
@@ -435,14 +657,7 @@ export class WasmSDK {
    * @returns {boolean} Whether the username is contested
    */
   isDpnsUsernameContested(username) {
-    try {
-      return dpns_is_contested_username(username);
-    } catch (error) {
-      throw new WasmOperationError(`DPNS username contested check failed: ${error.message}`, 'isDpnsUsernameContested', {
-        username,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(dpns_is_contested_username, 'isDpnsUsernameContested', username);
   }
 
   /**
@@ -451,14 +666,7 @@ export class WasmSDK {
    * @returns {string} Homograph-safe string
    */
   dpnsConvertToHomographSafe(input) {
-    try {
-      return dpns_convert_to_homograph_safe(input);
-    } catch (error) {
-      throw new WasmOperationError(`DPNS homograph conversion failed: ${error.message}`, 'dpnsConvertToHomographSafe', {
-        input,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(dpns_convert_to_homograph_safe, 'dpnsConvertToHomographSafe', input);
   }
 
   /**
@@ -556,15 +764,7 @@ export class WasmSDK {
    * @returns {string} Token ID
    */
   calculateTokenId(contractId, tokenPosition) {
-    try {
-      return calculate_token_id_from_contract(contractId, tokenPosition);
-    } catch (error) {
-      throw new WasmOperationError(`Token ID calculation failed: ${error.message}`, 'calculateTokenId', {
-        contractId,
-        tokenPosition,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(calculate_token_id_from_contract, 'calculateTokenId', contractId, tokenPosition);
   }
 
   /**
@@ -601,16 +801,7 @@ export class WasmSDK {
    */
   deriveKey(mnemonic, passphrase, path, network = null) {
     const targetNetwork = network || this._configManager.get('network');
-    
-    try {
-      return derive_key_from_seed_with_extended_path(mnemonic, passphrase, path, targetNetwork);
-    } catch (error) {
-      throw new WasmOperationError(`Key derivation failed: ${error.message}`, 'deriveKey', {
-        path,
-        network: targetNetwork,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(derive_key_from_seed_with_extended_path, 'deriveKey', mnemonic, passphrase, path, targetNetwork);
   }
 
   /**
@@ -626,27 +817,17 @@ export class WasmSDK {
    */
   deriveDashPayContactKey(mnemonic, passphrase, senderIdentityId, receiverIdentityId, account, addressIndex, network = null) {
     const targetNetwork = network || this._configManager.get('network');
-    
-    try {
-      return derive_dashpay_contact_key(
-        mnemonic,
-        passphrase,
-        senderIdentityId,
-        receiverIdentityId,
-        account,
-        addressIndex,
-        targetNetwork
-      );
-    } catch (error) {
-      throw new WasmOperationError(`DashPay contact key derivation failed: ${error.message}`, 'deriveDashPayContactKey', {
-        senderIdentityId,
-        receiverIdentityId,
-        account,
-        addressIndex,
-        network: targetNetwork,
-        originalError: error
-      });
-    }
+    return this._wrapSyncOperation(
+      derive_dashpay_contact_key, 
+      'deriveDashPayContactKey', 
+      mnemonic, 
+      passphrase, 
+      senderIdentityId, 
+      receiverIdentityId, 
+      account, 
+      addressIndex, 
+      targetNetwork
+    );
   }
 
   // ===== EPOCH OPERATIONS =====
@@ -729,7 +910,7 @@ export class WasmSDK {
    * @returns {Object} Current configuration
    */
   getConfig() {
-    return { ...this._configManager.config };
+    return this._configManager.getConfig();
   }
 
   /**
@@ -754,6 +935,92 @@ export class WasmSDK {
  * Export default instance creation helper
  */
 export default WasmSDK;
+
+/**
+ * Type guard functions for error handling
+ */
+export function isWasmSDKError(error) {
+  return error instanceof WasmSDKError;
+}
+
+export function isWasmInitializationError(error) {
+  return error instanceof WasmInitializationError;
+}
+
+export function isWasmOperationError(error) {
+  return error instanceof WasmOperationError;
+}
+
+/**
+ * Enhanced error mapping from WASM to JavaScript Error objects
+ */
+export class ErrorMapper {
+  static mapWasmError(wasmError, operationName, additionalContext = {}) {
+    if (!wasmError) {
+      return new WasmOperationError(
+        `Unknown error in operation: ${operationName}`,
+        operationName,
+        additionalContext
+      );
+    }
+
+    const errorMessage = wasmError.message || wasmError.toString();
+    const context = {
+      ...additionalContext,
+      wasmErrorType: typeof wasmError,
+      timestamp: new Date().toISOString(),
+      operationName
+    };
+
+    // Map specific WASM error patterns to appropriate JavaScript errors
+    if (errorMessage.includes('initialization') || errorMessage.includes('init')) {
+      return new WasmInitializationError(errorMessage, context);
+    }
+
+    if (errorMessage.includes('network') || errorMessage.includes('connection')) {
+      context.errorCategory = 'network';
+    } else if (errorMessage.includes('validation') || errorMessage.includes('invalid')) {
+      context.errorCategory = 'validation';
+    } else if (errorMessage.includes('timeout')) {
+      context.errorCategory = 'timeout';
+    } else if (errorMessage.includes('proof')) {
+      context.errorCategory = 'proof_verification';
+    } else {
+      context.errorCategory = 'unknown';
+    }
+
+    return new WasmOperationError(errorMessage, operationName, context);
+  }
+
+  static createContextualError(message, operationName, inputData, originalError) {
+    const context = {
+      inputData: this._sanitizeInputData(inputData),
+      timestamp: new Date().toISOString(),
+      originalError: originalError?.message || originalError?.toString(),
+      stackTrace: originalError?.stack
+    };
+
+    return new WasmOperationError(message, operationName, context);
+  }
+
+  static _sanitizeInputData(data) {
+    if (!data) return data;
+
+    // Create a copy and remove sensitive data
+    const sanitized = Array.isArray(data) ? [...data] : { ...data };
+    
+    // Remove potentially sensitive fields
+    const sensitiveFields = ['privateKey', 'mnemonic', 'passphrase', 'password', 'secret'];
+    
+    for (const field of sensitiveFields) {
+      if (field in sanitized) {
+        sanitized[field] = '[REDACTED]';
+      }
+    }
+
+    return sanitized;
+  }
+}
 
 /**
  * Re-export utility functions for direct use if needed
