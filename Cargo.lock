@@ -1427,7 +1427,7 @@ dependencies = [
 
 [[package]]
 name = "dash-network"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bincode_derive",
@@ -1497,7 +1497,7 @@ dependencies = [
 
 [[package]]
 name = "dash-spv"
-version = "0.1.0"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1524,7 +1524,7 @@ dependencies = [
 
 [[package]]
 name = "dash-spv-ffi"
-version = "0.1.0"
+version = "0.40.0"
 dependencies = [
  "cbindgen 0.26.0",
  "dash-spv",
@@ -1546,7 +1546,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1571,11 +1571,11 @@ dependencies = [
 
 [[package]]
 name = "dashcore-private"
-version = "0.39.6"
+version = "0.40.0"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1587,7 +1587,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore-private",
@@ -3388,7 +3388,7 @@ dependencies = [
 
 [[package]]
 name = "key-wallet"
-version = "0.40.0-dev"
+version = "0.40.0"
 dependencies = [
  "aes",
  "base58ck",
@@ -3415,7 +3415,7 @@ dependencies = [
 
 [[package]]
 name = "key-wallet-ffi"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "cbindgen 0.29.0",
  "dash-network",
@@ -3430,7 +3430,7 @@ dependencies = [
 
 [[package]]
 name = "key-wallet-manager"
-version = "0.1.0"
+version = "0.40.0"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",

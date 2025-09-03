@@ -754,7 +754,7 @@ dependencies = [
 
 [[package]]
 name = "dash-network"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -799,7 +799,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -824,11 +824,11 @@ dependencies = [
 
 [[package]]
 name = "dashcore-private"
-version = "0.39.6"
+version = "0.40.0"
 
 [[package]]
 name = "dashcore-rpc"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -840,7 +840,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore-rpc-json"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode",
  "dashcore",
@@ -854,7 +854,7 @@ dependencies = [
 
 [[package]]
 name = "dashcore_hashes"
-version = "0.39.6"
+version = "0.40.0"
 dependencies = [
  "bincode",
  "dashcore-private",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "key-wallet"
-version = "0.40.0-dev"
+version = "0.40.0"
 dependencies = [
  "base58ck",
  "bip39",
