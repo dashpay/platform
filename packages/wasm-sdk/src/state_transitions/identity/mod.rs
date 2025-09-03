@@ -28,13 +28,15 @@ impl WasmSdk {
     /// * `asset_lock_proof` - The asset lock proof (transaction hex)
     /// * `asset_lock_proof_private_key` - The private key that controls the asset lock
     /// * `public_keys` - JSON array of public keys to add to the identity. Each key object requirements:
-    ///   - ECDSA_SECP256K1 and BLS12_381: Require `privateKeyHex` or `privateKeyWif` for signing
+    ///   - ECDSA_SECP256K1: Requires `privateKeyHex` or `privateKeyWif` for signing
+    ///   - BLS12_381: Requires `privateKeyHex` for signing (WIF format not supported)
     ///   - ECDSA_HASH160: Accepts either `privateKeyHex` (to derive hash) or `data` field (base64-encoded 20-byte hash)
     ///
     /// # Implementation Notes
     ///
     /// This function uses SimpleSigner to provide individual signatures for each public key as required.
-    /// Each ECDSA_SECP256K1 and BLS12_381 key will be signed with its corresponding private key,
+    /// Each ECDSA_SECP256K1 key will be signed with its corresponding private key (from privateKeyHex or privateKeyWif),
+    /// and each BLS12_381 key will be signed with its corresponding private key (from privateKeyHex only),
     /// ensuring unique signatures per key as required by DPP validation.
     ///
     /// # Returns
