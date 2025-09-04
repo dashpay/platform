@@ -63,10 +63,7 @@ impl DriveDocumentQueryFilter<'_> {
             StateTransition::Batch(batch) => {
                 for transition in batch.transitions_iter() {
                     if let BatchedTransitionRef::Document(document_transition) = transition {
-                        if self.matches_document_state_transition(
-                            batch.owner_id(),
-                            document_transition,
-                        ) {
+                        if self.matches_document_state_transition(document_transition) {
                             return true;
                         }
                     }
@@ -80,15 +77,14 @@ impl DriveDocumentQueryFilter<'_> {
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document_state_transition(
         &self,
-        owner_id: Identifier,
         document_transition: &DocumentTransition,
     ) -> bool {
         match document_transition {
             DocumentTransition::Create(create) => {
-                self.matches_document(owner_id, create.base(), create.data())
+                self.matches_document(create.base(), create.data())
             }
             DocumentTransition::Replace(replace) => {
-                self.matches_document(owner_id, replace.base(), replace.data())
+                self.matches_document(replace.base(), replace.data())
             }
             DocumentTransition::Delete(_) => {
                 todo!()
@@ -108,7 +104,6 @@ impl DriveDocumentQueryFilter<'_> {
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document(
         &self,
-        _owner_id: Identifier,
         document_base_transition: &DocumentBaseTransition,
         document_data: &BTreeMap<String, Value>,
     ) -> bool {
@@ -297,10 +292,9 @@ mod tests {
         });
 
         let document_data = BTreeMap::new();
-        let owner_id = Identifier::from([4u8; 32]);
 
         // Should match since contract ID and type name are correct
-        assert!(filter.matches_document(owner_id, &document_base, &document_data));
+        assert!(filter.matches_document(&document_base, &document_data));
 
         // Test with wrong contract ID
         let wrong_document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
@@ -310,7 +304,7 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        assert!(!filter.matches_document(owner_id, &wrong_document_base, &document_data));
+        assert!(!filter.matches_document(&wrong_document_base, &document_data));
     }
 
     #[test]
@@ -345,9 +339,8 @@ mod tests {
         });
 
         let document_data = BTreeMap::new();
-        let owner_id = Identifier::from([4u8; 32]);
 
-        assert!(filter.matches_document(owner_id, &matching_doc, &document_data));
+        assert!(filter.matches_document(&matching_doc, &document_data));
 
         // Test with different ID
         let non_matching_doc = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
@@ -357,7 +350,7 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        assert!(!filter.matches_document(owner_id, &non_matching_doc, &document_data));
+        assert!(!filter.matches_document(&non_matching_doc, &document_data));
     }
 
     #[test]
@@ -395,23 +388,21 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        let owner_id = Identifier::from([4u8; 32]);
-
         // Test with matching data
         let mut matching_data = BTreeMap::new();
         matching_data.insert("name".to_string(), Value::Text("example".to_string()));
 
-        assert!(filter.matches_document(owner_id, &document_base, &matching_data));
+        assert!(filter.matches_document(&document_base, &matching_data));
 
         // Test with non-matching data
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("name".to_string(), Value::Text("different".to_string()));
 
-        assert!(!filter.matches_document(owner_id, &document_base, &non_matching_data));
+        assert!(!filter.matches_document(&document_base, &non_matching_data));
 
         // Test with missing field
         let empty_data = BTreeMap::new();
-        assert!(!filter.matches_document(owner_id, &document_base, &empty_data));
+        assert!(!filter.matches_document(&document_base, &empty_data));
     }
 
     #[test]
@@ -447,17 +438,15 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        let owner_id = Identifier::from([4u8; 32]);
-
         // Test with value in list
         let mut matching_data = BTreeMap::new();
         matching_data.insert("status".to_string(), Value::Text("active".to_string()));
-        assert!(filter.matches_document(owner_id, &document_base, &matching_data));
+        assert!(filter.matches_document(&document_base, &matching_data));
 
         // Test with value not in list
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("status".to_string(), Value::Text("completed".to_string()));
-        assert!(!filter.matches_document(owner_id, &document_base, &non_matching_data));
+        assert!(!filter.matches_document(&document_base, &non_matching_data));
     }
 
     #[test]
@@ -489,22 +478,20 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        let owner_id = Identifier::from([4u8; 32]);
-
         // Test with value greater than threshold
         let mut greater_data = BTreeMap::new();
         greater_data.insert("score".to_string(), Value::U64(75));
-        assert!(filter.matches_document(owner_id, &document_base, &greater_data));
+        assert!(filter.matches_document(&document_base, &greater_data));
 
         // Test with value equal to threshold (should fail for GreaterThan)
         let mut equal_data = BTreeMap::new();
         equal_data.insert("score".to_string(), Value::U64(50));
-        assert!(!filter.matches_document(owner_id, &document_base, &equal_data));
+        assert!(!filter.matches_document(&document_base, &equal_data));
 
         // Test with value less than threshold
         let mut less_data = BTreeMap::new();
         less_data.insert("score".to_string(), Value::U64(25));
-        assert!(!filter.matches_document(owner_id, &document_base, &less_data));
+        assert!(!filter.matches_document(&document_base, &less_data));
     }
 
     #[test]
@@ -535,32 +522,30 @@ mod tests {
             identity_contract_nonce: 0,
         });
 
-        let owner_id = Identifier::from([4u8; 32]);
-
         // Test value in range
         let mut in_range = BTreeMap::new();
         in_range.insert("value".to_string(), Value::U64(15));
-        assert!(filter.matches_document(owner_id, &document_base, &in_range));
+        assert!(filter.matches_document(&document_base, &in_range));
 
         // Test lower bound (inclusive)
         let mut lower_bound = BTreeMap::new();
         lower_bound.insert("value".to_string(), Value::U64(10));
-        assert!(filter.matches_document(owner_id, &document_base, &lower_bound));
+        assert!(filter.matches_document(&document_base, &lower_bound));
 
         // Test upper bound (inclusive)
         let mut upper_bound = BTreeMap::new();
         upper_bound.insert("value".to_string(), Value::U64(20));
-        assert!(filter.matches_document(owner_id, &document_base, &upper_bound));
+        assert!(filter.matches_document(&document_base, &upper_bound));
 
         // Test below range
         let mut below = BTreeMap::new();
         below.insert("value".to_string(), Value::U64(5));
-        assert!(!filter.matches_document(owner_id, &document_base, &below));
+        assert!(!filter.matches_document(&document_base, &below));
 
         // Test above range
         let mut above = BTreeMap::new();
         above.insert("value".to_string(), Value::U64(25));
-        assert!(!filter.matches_document(owner_id, &document_base, &above));
+        assert!(!filter.matches_document(&document_base, &above));
     }
 
     #[test]
