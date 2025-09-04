@@ -804,6 +804,16 @@ export default {
         dapi: {
           type: 'object',
           properties: {
+            deprecated: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+              },
+              required: ['enabled'],
+              additionalProperties: false,
+            },
             api: {
               type: 'object',
               properties: {
