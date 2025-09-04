@@ -401,8 +401,6 @@ const testData = {
             documentTypeName: "domain",
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             indexName: "parentNameAndLabel",
-            resultType: "documents",
-            allowIncludeLockedAndAbstainingVoteTally: false,
             limit: 10,
             offset: 0,
             orderAscending: true
