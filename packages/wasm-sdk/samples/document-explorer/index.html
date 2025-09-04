@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document Explorer - Dash Platform WASM SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>📄 Document Explorer</h1>
+            <p>Browse and query Dash Platform documents with advanced filtering</p>
+            <div class="network-selector">
+                <label>Network:</label>
+                <select id="networkSelect">
+                    <option value="testnet" selected>Testnet</option>
+                    <option value="mainnet">Mainnet</option>
+                </select>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Initializing...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Contract Selection -->
+            <section class="contract-section">
+                <div class="card">
+                    <h3>📋 Data Contract Selection</h3>
+                    <div class="contract-selector">
+                        <div class="preset-contracts">
+                            <h4>System Contracts</h4>
+                            <div class="contract-buttons">
+                                <button class="contract-btn" data-contract="dpns" data-name="DPNS">
+                                    🌐 DPNS
+                                </button>
+                                <button class="contract-btn" data-contract="dashpay" data-name="DashPay">
+                                    💬 DashPay
+                                </button>
+                                <button class="contract-btn" data-contract="withdrawals" data-name="Withdrawals">
+                                    💰 Withdrawals
+                                </button>
+                            </div>
+                        </div>
+                        
+                        <div class="custom-contract">
+                            <h4>Custom Contract</h4>
+                            <div class="input-group">
+                                <input type="text" id="customContractId" placeholder="Enter contract ID...">
+                                <button id="loadContractBtn" class="btn btn-primary">Load Contract</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="contractInfo" class="contract-info" style="display: none;">
+                        <h4>Contract Information</h4>
+                        <div id="contractDetails" class="contract-details"></div>
+                        <div id="documentTypes" class="document-types"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Document Query Builder -->
+            <section class="query-section">
+                <div class="card">
+                    <h3>🔍 Document Query Builder</h3>
+                    
+                    <div class="query-form" id="queryForm" style="display: none;">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="documentTypeSelect">Document Type:</label>
+                                <select id="documentTypeSelect">
+                                    <option value="">Select document type...</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="limitInput">Limit:</label>
+                                <input type="number" id="limitInput" value="10" min="1" max="100">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="offsetInput">Offset:</label>
+                                <input type="number" id="offsetInput" value="0" min="0">
+                            </div>
+                        </div>
+
+                        <!-- Where Clause Builder -->
+                        <div class="where-builder">
+                            <h4>🎯 Filter Conditions (WHERE)</h4>
+                            <div id="whereConditions" class="conditions-container">
+                                <div class="condition-row">
+                                    <select class="field-select">
+                                        <option value="">Select field...</option>
+                                    </select>
+                                    <select class="operator-select">
+                                        <option value="=">=</option>
+                                        <option value="!="≠</option>
+                                        <option value=">">&gt;</option>
+                                        <option value=">=">&ge;</option>
+                                        <option value="<">&lt;</option>
+                                        <option value="<=">&le;</option>
+                                        <option value="in">in</option>
+                                        <option value="startsWith">starts with</option>
+                                    </select>
+                                    <input type="text" class="value-input" placeholder="Enter value...">
+                                    <button type="button" class="btn btn-remove" onclick="removeCondition(this)">×</button>
+                                </div>
+                            </div>
+                            <button type="button" id="addConditionBtn" class="btn btn-secondary btn-small">+ Add Condition</button>
+                        </div>
+
+                        <!-- Order By Builder -->
+                        <div class="orderby-builder">
+                            <h4>📊 Sort Order (ORDER BY)</h4>
+                            <div id="orderByConditions" class="conditions-container">
+                                <div class="orderby-row">
+                                    <select class="field-select">
+                                        <option value="">Select field...</option>
+                                    </select>
+                                    <select class="direction-select">
+                                        <option value="asc">Ascending</option>
+                                        <option value="desc">Descending</option>
+                                    </select>
+                                    <button type="button" class="btn btn-remove" onclick="removeOrderBy(this)">×</button>
+                                </div>
+                            </div>
+                            <button type="button" id="addOrderByBtn" class="btn btn-secondary btn-small">+ Add Sort Field</button>
+                        </div>
+
+                        <div class="query-actions">
+                            <button id="executeQueryBtn" class="btn btn-primary">🚀 Execute Query</button>
+                            <button id="clearQueryBtn" class="btn btn-secondary">🗑️ Clear All</button>
+                            <button id="exportQueryBtn" class="btn btn-secondary">📋 Copy Query</button>
+                        </div>
+
+                        <!-- Generated Query Display -->
+                        <div id="generatedQuery" class="generated-query" style="display: none;">
+                            <h4>Generated Query</h4>
+                            <pre id="queryCode"></pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section">
+                <div class="card">
+                    <h3>📊 Query Results</h3>
+                    
+                    <div id="resultsHeader" class="results-header" style="display: none;">
+                        <div class="results-info">
+                            <span id="resultsCount">0 documents found</span>
+                            <span id="queryTime"></span>
+                        </div>
+                        <div class="results-actions">
+                            <button id="exportResultsBtn" class="btn btn-secondary btn-small">📥 Export JSON</button>
+                            <button id="exportCsvBtn" class="btn btn-secondary btn-small">📊 Export CSV</button>
+                        </div>
+                    </div>
+
+                    <div id="resultsContainer" class="results-container">
+                        <div class="empty-state">
+                            <div class="empty-icon">📄</div>
+                            <h4>No Query Executed</h4>
+                            <p>Select a contract and document type to start exploring documents</p>
+                        </div>
+                    </div>
+
+                    <div id="loadingResults" class="loading-message" style="display: none;">
+                        <div class="spinner"></div>
+                        <span>Executing query...</span>
+                    </div>
+
+                    <div id="errorResults" class="error-message" style="display: none;"></div>
+                </div>
+            </section>
+
+            <!-- Document Details Modal -->
+            <div id="documentModal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h3>📋 Document Details</h3>
+                        <button class="modal-close" onclick="closeDocumentModal()">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div id="documentDetails"></div>
+                    </div>
+                    <div class="modal-footer">
+                        <button class="btn btn-secondary" onclick="closeDocumentModal()">Close</button>
+                        <button id="exportDocumentBtn" class="btn btn-primary">Export Document</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Query History -->
+            <section class="history-section">
+                <div class="card">
+                    <h3>🕒 Query History</h3>
+                    <div class="history-controls">
+                        <button id="clearHistoryBtn" class="btn btn-small">Clear History</button>
+                        <button id="exportHistoryBtn" class="btn btn-small">Export History</button>
+                    </div>
+                    <div id="queryHistory" class="query-history">
+                        <div class="history-entry">
+                            <span class="timestamp">[System]</span>
+                            <span class="query">Document Explorer initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by Dash Platform WASM SDK | <a href="../../README.md">Documentation</a></p>
+        </footer>
+    </div>
+
+    <script type="module" src="contract-schemas.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

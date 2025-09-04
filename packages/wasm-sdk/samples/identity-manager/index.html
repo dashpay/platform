@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Identity Manager - Dash Platform WASM SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>🔐 Identity Manager</h1>
+            <p>Manage Dash Platform identities with ease</p>
+            <div class="network-selector">
+                <label>Network:</label>
+                <select id="networkSelect">
+                    <option value="testnet" selected>Testnet</option>
+                    <option value="mainnet">Mainnet</option>
+                </select>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Initializing...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- SDK Status Section -->
+            <section class="status-section">
+                <div class="status-card" id="sdkStatus">
+                    <h3>📡 SDK Status</h3>
+                    <div id="statusDetails">
+                        <div class="status-item">
+                            <span class="label">Connection:</span>
+                            <span id="connectionStatus">Connecting...</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Network:</span>
+                            <span id="currentNetwork">-</span>
+                        </div>
+                        <div class="status-item">
+                            <span class="label">Block Height:</span>
+                            <span id="blockHeight">-</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Identity Lookup Section -->
+            <section class="lookup-section">
+                <div class="card">
+                    <h3>🔍 Identity Lookup</h3>
+                    <div class="form-group">
+                        <label for="identityIdInput">Identity ID:</label>
+                        <div class="input-group">
+                            <input 
+                                type="text" 
+                                id="identityIdInput" 
+                                placeholder="Enter identity ID (Base58)"
+                                class="identity-input"
+                            >
+                            <button id="lookupBtn" class="btn btn-primary">
+                                Lookup
+                            </button>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-small" onclick="loadSampleIdentity()">Use Sample ID</button>
+                            <button class="btn btn-small" onclick="clearInput()">Clear</button>
+                        </div>
+                    </div>
+
+                    <div id="identityResults" class="results-container" style="display: none;">
+                        <h4>Identity Details</h4>
+                        <div id="identityData" class="data-display"></div>
+                        
+                        <div class="action-buttons">
+                            <button id="checkBalanceBtn" class="btn btn-secondary">Check Balance</button>
+                            <button id="viewKeysBtn" class="btn btn-secondary">View Keys</button>
+                            <button id="exportDataBtn" class="btn btn-secondary">Export Data</button>
+                        </div>
+                    </div>
+
+                    <div id="errorMessage" class="error-message" style="display: none;"></div>
+                    <div id="loadingMessage" class="loading-message" style="display: none;">
+                        <div class="spinner"></div>
+                        <span>Loading identity data...</span>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Identity Balance Section -->
+            <section class="balance-section" id="balanceSection" style="display: none;">
+                <div class="card">
+                    <h3>💰 Balance Information</h3>
+                    <div id="balanceResults" class="balance-display">
+                        <div class="balance-item">
+                            <span class="label">Current Balance:</span>
+                            <span id="currentBalance" class="balance-value">-</span>
+                        </div>
+                        <div class="balance-item">
+                            <span class="label">Balance in DASH:</span>
+                            <span id="balanceInDash" class="balance-value">-</span>
+                        </div>
+                        <div class="balance-item">
+                            <span class="label">Revision:</span>
+                            <span id="identityRevision" class="balance-value">-</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Public Keys Section -->
+            <section class="keys-section" id="keysSection" style="display: none;">
+                <div class="card">
+                    <h3>🔑 Public Keys</h3>
+                    <div id="keysResults" class="keys-display"></div>
+                </div>
+            </section>
+
+            <!-- Identity Creation Section -->
+            <section class="creation-section">
+                <div class="card">
+                    <h3>➕ Create New Identity</h3>
+                    <div class="warning-banner">
+                        ⚠️ Identity creation requires asset lock proof and private keys. This is for demonstration purposes.
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="assetLockProof">Asset Lock Proof (Transaction Hex):</label>
+                        <textarea 
+                            id="assetLockProof" 
+                            placeholder="Enter asset lock transaction hex..."
+                            rows="3"
+                        ></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="assetLockPrivateKey">Asset Lock Private Key:</label>
+                        <input 
+                            type="password" 
+                            id="assetLockPrivateKey" 
+                            placeholder="Private key in hex format"
+                        >
+                    </div>
+
+                    <div class="form-group">
+                        <label for="publicKeysJson">Public Keys (JSON):</label>
+                        <textarea 
+                            id="publicKeysJson" 
+                            placeholder="Enter public keys JSON array..."
+                            rows="4"
+                        ></textarea>
+                        <button class="btn btn-small" onclick="generateSampleKeys()">Generate Sample Keys</button>
+                    </div>
+
+                    <button id="createIdentityBtn" class="btn btn-primary" disabled>
+                        Create Identity
+                    </button>
+
+                    <div id="creationResults" class="results-container" style="display: none;">
+                        <h4>Identity Creation Result</h4>
+                        <div id="creationData" class="data-display"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Recent Operations Log -->
+            <section class="log-section">
+                <div class="card">
+                    <h3>📋 Operations Log</h3>
+                    <div class="log-controls">
+                        <button class="btn btn-small" onclick="clearLog()">Clear Log</button>
+                        <button class="btn btn-small" onclick="exportLog()">Export Log</button>
+                    </div>
+                    <div id="operationsLog" class="log-display">
+                        <div class="log-entry">
+                            <span class="timestamp">[System]</span>
+                            <span class="message">Identity Manager initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by Dash Platform WASM SDK | <a href="../../README.md">Documentation</a></p>
+        </footer>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Token Transfer - Dash Platform WASM SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>🪙 Token Transfer</h1>
+            <p>Manage and transfer tokens on Dash Platform</p>
+            <div class="network-selector">
+                <label>Network:</label>
+                <select id="networkSelect">
+                    <option value="testnet" selected>Testnet</option>
+                    <option value="mainnet">Mainnet</option>
+                </select>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Initializing...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Token Portfolio Section -->
+            <section class="portfolio-section">
+                <div class="card">
+                    <h3>💼 Token Portfolio</h3>
+                    <div class="portfolio-controls">
+                        <div class="input-group">
+                            <input type="text" id="portfolioIdentityId" placeholder="Enter identity ID to view portfolio...">
+                            <button id="loadPortfolioBtn" class="btn btn-primary">Load Portfolio</button>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-small" onclick="loadSamplePortfolio()">Use Sample Identity</button>
+                            <button class="btn btn-small" onclick="clearPortfolio()">Clear</button>
+                        </div>
+                    </div>
+
+                    <div id="portfolioResults" class="portfolio-display" style="display: none;">
+                        <div class="portfolio-header">
+                            <h4>Token Holdings</h4>
+                            <div class="portfolio-stats">
+                                <span id="totalTokens">0 tokens</span>
+                                <span id="totalValue">$0.00 USD</span>
+                            </div>
+                        </div>
+                        <div id="tokenList" class="token-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Token Information Section -->
+            <section class="token-info-section">
+                <div class="card">
+                    <h3>🔍 Token Information</h3>
+                    <div class="token-lookup">
+                        <div class="lookup-methods">
+                            <div class="method-option">
+                                <h4>By Contract & Position</h4>
+                                <div class="form-group">
+                                    <label>Contract ID:</label>
+                                    <input type="text" id="tokenContractId" placeholder="Enter token contract ID...">
+                                </div>
+                                <div class="form-group">
+                                    <label>Token Position:</label>
+                                    <input type="number" id="tokenPosition" value="0" min="0">
+                                </div>
+                                <button id="calculateTokenIdBtn" class="btn btn-primary">Calculate Token ID</button>
+                            </div>
+
+                            <div class="method-option">
+                                <h4>Direct Token Lookup</h4>
+                                <div class="form-group">
+                                    <label>Token ID:</label>
+                                    <input type="text" id="directTokenId" placeholder="Enter token ID...">
+                                </div>
+                                <button id="getTokenInfoBtn" class="btn btn-primary">Get Token Info</button>
+                            </div>
+                        </div>
+
+                        <div id="tokenInfoResults" class="token-info-display" style="display: none;">
+                            <h4>Token Details</h4>
+                            <div id="tokenDetails" class="token-details"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Token Transfer Section -->
+            <section class="transfer-section">
+                <div class="card">
+                    <h3>💸 Token Transfer</h3>
+                    <div class="warning-banner">
+                        ⚠️ Token transfers require state transitions and private keys. This is for demonstration purposes only.
+                    </div>
+
+                    <div class="transfer-form">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="fromIdentityId">From Identity:</label>
+                                <input type="text" id="fromIdentityId" placeholder="Sender identity ID...">
+                            </div>
+                            <div class="form-group">
+                                <label for="toIdentityId">To Identity:</label>
+                                <input type="text" id="toIdentityId" placeholder="Recipient identity ID...">
+                            </div>
+                        </div>
+
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="transferTokenId">Token ID:</label>
+                                <input type="text" id="transferTokenId" placeholder="Token to transfer...">
+                            </div>
+                            <div class="form-group">
+                                <label for="transferAmount">Amount:</label>
+                                <input type="number" id="transferAmount" min="1" placeholder="Amount to transfer...">
+                            </div>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="transferPrivateKey">Private Key:</label>
+                            <input type="password" id="transferPrivateKey" placeholder="Private key for signing...">
+                        </div>
+
+                        <div class="transfer-preview" id="transferPreview" style="display: none;">
+                            <h4>Transfer Preview</h4>
+                            <div id="previewDetails" class="preview-details"></div>
+                            <div class="preview-actions">
+                                <button id="executeTransferBtn" class="btn btn-primary">Execute Transfer</button>
+                                <button id="cancelTransferBtn" class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </div>
+
+                        <button id="previewTransferBtn" class="btn btn-primary">Preview Transfer</button>
+                    </div>
+
+                    <div id="transferResults" class="transfer-results" style="display: none;">
+                        <h4>Transfer Result</h4>
+                        <div id="transferData" class="transfer-data"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Token Pricing Section -->
+            <section class="pricing-section">
+                <div class="card">
+                    <h3>📈 Token Pricing</h3>
+                    <div class="pricing-controls">
+                        <div class="form-group">
+                            <label for="pricingContractId">Contract ID:</label>
+                            <input type="text" id="pricingContractId" placeholder="Enter contract ID...">
+                        </div>
+                        <div class="form-group">
+                            <label for="pricingTokenPosition">Token Position:</label>
+                            <input type="number" id="pricingTokenPosition" value="0" min="0">
+                        </div>
+                        <button id="getPricingBtn" class="btn btn-primary">Get Pricing Info</button>
+                    </div>
+
+                    <div id="pricingResults" class="pricing-display" style="display: none;">
+                        <div class="pricing-grid">
+                            <div class="pricing-item">
+                                <span class="label">Current Price:</span>
+                                <span id="currentPrice" class="price-value">-</span>
+                            </div>
+                            <div class="pricing-item">
+                                <span class="label">Total Supply:</span>
+                                <span id="totalSupply" class="price-value">-</span>
+                            </div>
+                            <div class="pricing-item">
+                                <span class="label">Market Cap:</span>
+                                <span id="marketCap" class="price-value">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Multi-Identity Balances -->
+            <section class="multi-balance-section">
+                <div class="card">
+                    <h3>🔄 Bulk Balance Check</h3>
+                    <div class="bulk-controls">
+                        <div class="form-group">
+                            <label for="identityList">Identity IDs (one per line):</label>
+                            <textarea id="identityList" placeholder="Enter identity IDs, one per line..." rows="5"></textarea>
+                        </div>
+                        <div class="form-group">
+                            <label for="bulkTokenIds">Token IDs to check (comma-separated):</label>
+                            <input type="text" id="bulkTokenIds" placeholder="Enter token IDs separated by commas...">
+                        </div>
+                        <button id="bulkBalanceBtn" class="btn btn-primary">Check All Balances</button>
+                    </div>
+
+                    <div id="bulkResults" class="bulk-results" style="display: none;">
+                        <div class="bulk-header">
+                            <h4>Bulk Balance Results</h4>
+                            <button id="exportBulkBtn" class="btn btn-secondary btn-small">Export CSV</button>
+                        </div>
+                        <div id="bulkBalanceList" class="bulk-balance-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Operations Log -->
+            <section class="log-section">
+                <div class="card">
+                    <h3>📋 Operations Log</h3>
+                    <div class="log-controls">
+                        <button class="btn btn-small" onclick="clearTransferLog()">Clear Log</button>
+                        <button class="btn btn-small" onclick="exportTransferLog()">Export Log</button>
+                    </div>
+                    <div id="transferLog" class="log-display">
+                        <div class="log-entry">
+                            <span class="timestamp">[System]</span>
+                            <span class="message">Token Transfer application initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by Dash Platform WASM SDK | <a href="../../README.md">Documentation</a></p>
+        </footer>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-large"></div>
+            <span id="loadingText">Processing...</span>
+        </div>
+    </div>
+
+    <div id="errorModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>❌ Error</h3>
+                <button class="modal-close" onclick="closeErrorModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="errorDetails" class="error-details"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeErrorModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DPNS Resolver - Dash Platform WASM SDK</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+</head>
+<body>
+    <div class="app-container">
+        <header class="app-header">
+            <h1>🌐 DPNS Resolver</h1>
+            <p>Dash Platform Name Service - Username Resolution & Registration</p>
+            <div class="network-selector">
+                <label>Network:</label>
+                <select id="networkSelect">
+                    <option value="testnet" selected>Testnet</option>
+                    <option value="mainnet">Mainnet</option>
+                </select>
+                <div class="status-indicator" id="statusIndicator">
+                    <span class="status-dot"></span>
+                    <span id="statusText">Initializing...</span>
+                </div>
+            </div>
+        </header>
+
+        <main class="main-content">
+            <!-- Username Resolution Section -->
+            <section class="resolution-section">
+                <div class="card">
+                    <h3>🔍 Username Resolution</h3>
+                    <div class="resolution-controls">
+                        <div class="input-group">
+                            <input type="text" id="usernameInput" placeholder="Enter username (e.g., alice)" class="username-input">
+                            <button id="resolveBtn" class="btn btn-primary">Resolve</button>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-small" onclick="loadSampleUsername()">Try Sample</button>
+                            <button class="btn btn-small" onclick="clearUsername()">Clear</button>
+                        </div>
+                        <div class="validation-info" id="validationInfo" style="display: none;"></div>
+                    </div>
+
+                    <div id="resolutionResults" class="resolution-display" style="display: none;">
+                        <div class="resolution-header">
+                            <h4>Resolution Results</h4>
+                            <div class="resolution-status">
+                                <span id="resolutionStatus" class="status-badge">Found</span>
+                                <span id="resolutionTime" class="time-badge">0ms</span>
+                            </div>
+                        </div>
+                        <div id="resolvedData" class="resolved-data"></div>
+                        <div class="resolution-actions">
+                            <button id="reverseResolveBtn" class="btn btn-secondary">Reverse Resolve</button>
+                            <button id="viewDomainBtn" class="btn btn-secondary">View Domain Details</button>
+                            <button id="exportResolveBtn" class="btn btn-secondary">Export Data</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Username Validation Section -->
+            <section class="validation-section">
+                <div class="card">
+                    <h3>✅ Username Validation</h3>
+                    <div class="validation-controls">
+                        <div class="input-group">
+                            <input type="text" id="validateUsernameInput" placeholder="Enter username to validate..." class="username-input">
+                            <button id="validateBtn" class="btn btn-primary">Validate</button>
+                        </div>
+                        <div class="validation-options">
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="checkAvailability">
+                                Check Availability
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="checkContested">
+                                Check if Contested
+                            </label>
+                            <label class="checkbox-label">
+                                <input type="checkbox" id="checkHomograph">
+                                Check Homograph Safety
+                            </label>
+                        </div>
+                    </div>
+
+                    <div id="validationResults" class="validation-display" style="display: none;">
+                        <div class="validation-grid">
+                            <div class="validation-item">
+                                <span class="validation-label">Format Valid:</span>
+                                <span id="formatValid" class="validation-value">-</span>
+                            </div>
+                            <div class="validation-item">
+                                <span class="validation-label">Available:</span>
+                                <span id="availabilityStatus" class="validation-value">-</span>
+                            </div>
+                            <div class="validation-item">
+                                <span class="validation-label">Contested:</span>
+                                <span id="contestedStatus" class="validation-value">-</span>
+                            </div>
+                            <div class="validation-item">
+                                <span class="validation-label">Homograph Safe:</span>
+                                <span id="homographStatus" class="validation-value">-</span>
+                            </div>
+                        </div>
+                        <div id="validationDetails" class="validation-details"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Reverse Resolution Section -->
+            <section class="reverse-section">
+                <div class="card">
+                    <h3>🔄 Reverse Resolution</h3>
+                    <div class="reverse-controls">
+                        <div class="input-group">
+                            <input type="text" id="identityResolveInput" placeholder="Enter identity ID..." class="identity-input">
+                            <button id="reverseResolveDirectBtn" class="btn btn-primary">Find Username</button>
+                        </div>
+                        <div class="quick-actions">
+                            <button class="btn btn-small" onclick="loadSampleIdentityForReverse()">Use Sample ID</button>
+                            <button class="btn btn-small" onclick="clearReverseInput()">Clear</button>
+                        </div>
+                    </div>
+
+                    <div id="reverseResults" class="reverse-display" style="display: none;">
+                        <h4>Associated Usernames</h4>
+                        <div id="usernameList" class="username-list"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Registration Cost Calculator -->
+            <section class="registration-section">
+                <div class="card">
+                    <h3>💰 Registration Cost Calculator</h3>
+                    <div class="registration-controls">
+                        <div class="form-group">
+                            <label for="registrationUsername">Username to Register:</label>
+                            <input type="text" id="registrationUsername" placeholder="Enter desired username..." class="username-input">
+                        </div>
+                        
+                        <div class="cost-factors">
+                            <h4>Cost Factors</h4>
+                            <div class="factor-grid">
+                                <div class="factor-item">
+                                    <span class="factor-label">Length:</span>
+                                    <span id="usernameLength" class="factor-value">0 characters</span>
+                                </div>
+                                <div class="factor-item">
+                                    <span class="factor-label">Base Cost:</span>
+                                    <span id="baseCost" class="factor-value">- credits</span>
+                                </div>
+                                <div class="factor-item">
+                                    <span class="factor-label">Length Multiplier:</span>
+                                    <span id="lengthMultiplier" class="factor-value">1x</span>
+                                </div>
+                                <div class="factor-item">
+                                    <span class="factor-label">Total Cost:</span>
+                                    <span id="totalCost" class="factor-value">- credits</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <button id="calculateCostBtn" class="btn btn-primary">Calculate Registration Cost</button>
+                    </div>
+
+                    <div id="registrationResults" class="registration-display" style="display: none;">
+                        <div class="cost-summary">
+                            <h4>Registration Cost Summary</h4>
+                            <div id="costBreakdown" class="cost-breakdown"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Domain Browser Section -->
+            <section class="browser-section">
+                <div class="card">
+                    <h3>🌍 Domain Browser</h3>
+                    <div class="browser-controls">
+                        <div class="filter-options">
+                            <div class="form-group">
+                                <label for="domainFilter">Filter by:</label>
+                                <select id="domainFilter">
+                                    <option value="recent">Recent Registrations</option>
+                                    <option value="short">Short Names (≤5 chars)</option>
+                                    <option value="long">Long Names (>10 chars)</option>
+                                    <option value="owner">By Owner ID</option>
+                                </select>
+                            </div>
+                            
+                            <div class="form-group" id="ownerFilterGroup" style="display: none;">
+                                <label for="ownerFilter">Owner ID:</label>
+                                <input type="text" id="ownerFilter" placeholder="Enter owner identity ID...">
+                            </div>
+                            
+                            <div class="form-group">
+                                <label for="domainLimit">Results:</label>
+                                <select id="domainLimit">
+                                    <option value="10">10 domains</option>
+                                    <option value="25" selected>25 domains</option>
+                                    <option value="50">50 domains</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <button id="browseDomainBtn" class="btn btn-primary">Browse Domains</button>
+                    </div>
+
+                    <div id="browserResults" class="browser-display" style="display: none;">
+                        <div class="browser-header">
+                            <h4>Domain Registry</h4>
+                            <div class="browser-stats">
+                                <span id="domainCount">0 domains</span>
+                                <span id="browseTime">0ms</span>
+                            </div>
+                        </div>
+                        <div id="domainGrid" class="domain-grid"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- DPNS Statistics -->
+            <section class="stats-section">
+                <div class="card">
+                    <h3>📊 DPNS Network Statistics</h3>
+                    <button id="refreshStatsBtn" class="btn btn-primary">Refresh Statistics</button>
+                    
+                    <div id="dpnsStats" class="stats-display" style="display: none;">
+                        <div class="stats-grid">
+                            <div class="stat-card">
+                                <div class="stat-icon">🌐</div>
+                                <div class="stat-content">
+                                    <span class="stat-value" id="totalDomains">-</span>
+                                    <span class="stat-label">Total Domains</span>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">⚡</div>
+                                <div class="stat-content">
+                                    <span class="stat-value" id="recentDomains">-</span>
+                                    <span class="stat-label">Last 24h</span>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">📏</div>
+                                <div class="stat-content">
+                                    <span class="stat-value" id="averageLength">-</span>
+                                    <span class="stat-label">Avg Length</span>
+                                </div>
+                            </div>
+                            <div class="stat-card">
+                                <div class="stat-icon">🔥</div>
+                                <div class="stat-content">
+                                    <span class="stat-value" id="contestedDomains">-</span>
+                                    <span class="stat-label">Contested</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Operations Log -->
+            <section class="log-section">
+                <div class="card">
+                    <h3>📋 Operations Log</h3>
+                    <div class="log-controls">
+                        <button class="btn btn-small" onclick="clearDpnsLog()">Clear Log</button>
+                        <button class="btn btn-small" onclick="exportDpnsLog()">Export Log</button>
+                        <button class="btn btn-small" onclick="toggleLogLevel()">Toggle Debug</button>
+                    </div>
+                    <div id="dpnsLog" class="log-display">
+                        <div class="log-entry">
+                            <span class="timestamp">[System]</span>
+                            <span class="message">DPNS Resolver initialized</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <footer class="app-footer">
+            <p>Powered by Dash Platform WASM SDK | <a href="../../README.md">Documentation</a></p>
+        </footer>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-large"></div>
+            <span id="loadingText">Processing...</span>
+        </div>
+    </div>
+
+    <!-- Domain Details Modal -->
+    <div id="domainModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>🌐 Domain Details</h3>
+                <button class="modal-close" onclick="closeDomainModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="domainDetails" class="domain-details"></div>
+                <div class="domain-actions">
+                    <button id="resolveFromModalBtn" class="btn btn-primary">Resolve This Domain</button>
+                    <button id="exportDomainBtn" class="btn btn-secondary">Export Domain Data</button>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeDomainModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Username Validation Modal -->
+    <div id="validationModal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3>✅ Validation Results</h3>
+                <button class="modal-close" onclick="closeValidationModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="fullValidationResults" class="validation-full"></div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeValidationModal()">Close</button>
+                <button id="proceedToResolveBtn" class="btn btn-primary" onclick="proceedToResolve()">Resolve This Name</button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="validation.js"></script>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

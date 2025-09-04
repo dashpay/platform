@@ -1,0 +1,36 @@
+{
+  "name": "wasm-sdk-cross-browser-tests",
+  "version": "1.0.0",
+  "description": "Cross-platform browser compatibility tests for Dash Platform WASM SDK",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium-latest",
+    "test:firefox": "playwright test --project=firefox-latest",
+    "test:webkit": "playwright test --project=webkit-latest",
+    "test:edge": "playwright test --project=edge-latest",
+    "test:mobile": "playwright test --project=mobile-chrome-android --project=mobile-safari-ios",
+    "test:compatibility": "playwright test --grep @cross-browser",
+    "test:performance": "playwright test --grep @performance-targets",
+    "test:mobile-only": "playwright test --grep @mobile-compatibility",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --headed --debug",
+    "test:report": "playwright show-report cross-browser-report",
+    "install-browsers": "playwright install",
+    "install-deps": "playwright install-deps",
+    "setup": "npm run install-deps && npm run install-browsers"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.40.0"
+  },
+  "keywords": [
+    "dash",
+    "platform", 
+    "wasm",
+    "browser",
+    "compatibility",
+    "testing",
+    "playwright"
+  ]
+}
