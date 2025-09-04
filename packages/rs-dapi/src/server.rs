@@ -59,7 +59,9 @@ impl DapiServer {
             drive_client.clone(),
             tenderdash_client.clone(),
             config.clone(),
-        );
+            streaming_service.subscriber_manager.clone(),
+        )
+        .await;
 
         // Create Dash Core RPC client
         let core_client = CoreClient::new(
@@ -69,7 +71,8 @@ impl DapiServer {
         )
         .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 
-        let core_service = CoreServiceImpl::new(streaming_service, config.clone(), core_client);
+        let core_service =
+            CoreServiceImpl::new(streaming_service, config.clone(), core_client).await;
 
         let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
@@ -116,7 +119,9 @@ impl DapiServer {
             drive_client.clone(),
             tenderdash_client.clone(),
             config.clone(),
-        );
+            streaming_service.subscriber_manager.clone(),
+        )
+        .await;
 
         let core_client = CoreClient::new(
             config.dapi.core.rpc_url.clone(),
@@ -126,7 +131,7 @@ impl DapiServer {
         .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 
         let core_service =
-            CoreServiceImpl::new(streaming_service.clone(), config.clone(), core_client);
+            CoreServiceImpl::new(streaming_service.clone(), config.clone(), core_client).await;
 
         let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());

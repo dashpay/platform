@@ -2,9 +2,9 @@
 // This module handles real-time streaming of blockchain data from ZMQ to gRPC clients
 
 mod block_header_stream;
+mod bloom;
 mod masternode_list_stream;
 mod subscriber_manager;
-mod bloom;
 mod transaction_stream;
 mod zmq_listener;
 
@@ -17,7 +17,7 @@ use tokio::time::{sleep, Duration};
 use tracing::{error, info, trace, warn};
 
 pub(crate) use subscriber_manager::{
-    FilterType, StreamingMessage, SubscriberManager, SubscriptionType,
+    FilterType, StreamingEvent, SubscriberManager, SubscriptionHandle,
 };
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 
@@ -29,7 +29,6 @@ pub struct StreamingServiceImpl {
     pub config: Arc<Config>,
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
-    pub block_notify: broadcast::Sender<()>,
     /// Background workers; aborted when the last reference is dropped
     pub workers: Arc<JoinSet<()>>,
 }
@@ -57,19 +56,28 @@ impl StreamingServiceImpl {
         trace!("Creating streaming service with custom ZMQ listener");
         let subscriber_manager = Arc::new(SubscriberManager::new());
 
-        let (block_notify, _) = broadcast::channel(32);
-
         // Prepare background workers set
         let mut workers = JoinSet::new();
 
-        // Spawn ZMQ subscribe + process loop
-        workers.spawn(Self::zmq_subscribe_and_process_worker(
+        // Spawn Core ZMQ subscribe + process loop
+        workers.spawn(Self::core_zmq_subscription_worker(
             zmq_listener.clone(),
             subscriber_manager.clone(),
-            block_notify.clone(),
         ));
 
-        info!("Starting streaming service background tasks");
+        // Spawn Tenderdash transaction forwarder worker
+        let td_client = tenderdash_client.clone();
+        let sub_mgr = subscriber_manager.clone();
+        workers.spawn(Self::tenderdash_transactions_subscription_worker(
+            td_client, sub_mgr,
+        ));
+        let td_client = tenderdash_client.clone();
+        let sub_mgr = subscriber_manager.clone();
+        workers.spawn(Self::tenderdash_block_subscription_worker(
+            td_client, sub_mgr,
+        ));
+
+        info!("Started streaming service background tasks");
 
         Ok(Self {
             drive_client,
@@ -77,16 +85,72 @@ impl StreamingServiceImpl {
             config,
             zmq_listener,
             subscriber_manager,
-            block_notify,
             workers: Arc::new(workers),
         })
     }
 
+    /// Background worker: subscribe to Tenderdash transactions and forward to subscribers
+    async fn tenderdash_transactions_subscription_worker(
+        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        subscriber_manager: Arc<SubscriberManager>,
+    ) {
+        trace!("Starting Tenderdash tx forwarder loop");
+        let mut transaction_rx = tenderdash_client.subscribe_to_transactions();
+        loop {
+            match transaction_rx.recv().await {
+                Ok(event) => {
+                    subscriber_manager
+                        .notify(StreamingEvent::PlatformTx { event })
+                        .await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!(
+                        "Tenderdash event receiver lagged, skipped {} events",
+                        skipped
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    warn!("Tenderdash event receiver closed");
+                    break;
+                }
+            }
+        }
+    }
+
+    /// Background worker: subscribe to Tenderdash transactions and forward to subscribers
+    async fn tenderdash_block_subscription_worker(
+        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        subscriber_manager: Arc<SubscriberManager>,
+    ) {
+        trace!("Starting Tenderdash block forwarder loop");
+        let mut block_rx = tenderdash_client.subscribe_to_blocks();
+        loop {
+            match block_rx.recv().await {
+                Ok(event) => {
+                    subscriber_manager
+                        .notify(StreamingEvent::PlatformBlock { event })
+                        .await;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
+                    warn!(
+                        "Tenderdash block event receiver lagged, skipped {} events",
+                        skipped
+                    );
+                    continue;
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                    warn!("Tenderdash block event receiver closed");
+                    break;
+                }
+            }
+        }
+    }
+
     /// Background worker: subscribe to ZMQ and process events, with retry/backoff
-    async fn zmq_subscribe_and_process_worker(
+    async fn core_zmq_subscription_worker(
         zmq_listener: Arc<dyn ZmqListenerTrait>,
         subscriber_manager: Arc<SubscriberManager>,
-        block_notify: broadcast::Sender<()>,
     ) {
         trace!("Starting ZMQ subscribe/process loop");
         let mut backoff = Duration::from_secs(1);
@@ -95,12 +159,7 @@ impl StreamingServiceImpl {
             match zmq_listener.subscribe().await {
                 Ok(zmq_events) => {
                     trace!("ZMQ listener started successfully, processing events");
-                    Self::process_zmq_events(
-                        zmq_events,
-                        subscriber_manager.clone(),
-                        block_notify.clone(),
-                    )
-                    .await;
+                    Self::process_zmq_events(zmq_events, subscriber_manager.clone()).await;
                     // processing ended; mark unhealthy and retry after short delay
                     warn!("ZMQ event processing ended; restarting after {:?}", backoff);
                     sleep(backoff).await;
@@ -120,7 +179,6 @@ impl StreamingServiceImpl {
     async fn process_zmq_events(
         mut zmq_events: broadcast::Receiver<ZmqEvent>,
         subscriber_manager: Arc<SubscriberManager>,
-        block_notify: broadcast::Sender<()>,
     ) {
         trace!("Starting ZMQ event processing loop");
         while let Ok(event) = zmq_events.recv().await {
@@ -128,38 +186,36 @@ impl StreamingServiceImpl {
                 ZmqEvent::RawTransaction { data } => {
                     trace!("Processing raw transaction event");
                     subscriber_manager
-                        .notify_transaction_subscribers(&data)
+                        .notify(StreamingEvent::CoreRawTransaction { data })
                         .await;
                 }
                 ZmqEvent::RawBlock { data } => {
                     trace!("Processing raw block event");
-                    subscriber_manager.notify_block_subscribers(&data).await;
-                    let _ = block_notify.send(());
+                    subscriber_manager
+                        .notify(StreamingEvent::CoreRawBlock { data })
+                        .await;
                 }
                 ZmqEvent::RawTransactionLock { data } => {
                     trace!("Processing transaction lock event");
                     subscriber_manager
-                        .notify_instant_lock_subscribers(&data)
+                        .notify(StreamingEvent::CoreInstantLock { data })
                         .await;
                 }
                 ZmqEvent::RawChainLock { data } => {
                     trace!("Processing chain lock event");
                     subscriber_manager
-                        .notify_chain_lock_subscribers(&data)
+                        .notify(StreamingEvent::CoreChainLock { data })
                         .await;
                 }
                 ZmqEvent::HashBlock { hash } => {
                     trace!("Processing new block hash event");
-                    subscriber_manager.notify_new_block_subscribers(&hash).await;
-                    let _ = block_notify.send(());
+                    subscriber_manager
+                        .notify(StreamingEvent::CoreNewBlockHash { hash })
+                        .await;
                 }
             }
         }
         trace!("ZMQ event processing loop ended");
-    }
-
-    pub fn subscribe_blocks(&self) -> broadcast::Receiver<()> {
-        self.block_notify.subscribe()
     }
 
     /// Returns current health of the ZMQ streaming pipeline

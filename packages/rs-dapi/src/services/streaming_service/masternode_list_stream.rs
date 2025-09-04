@@ -4,9 +4,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
-use crate::services::streaming_service::{
-    FilterType, StreamingMessage, StreamingServiceImpl, SubscriptionType,
-};
+use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_masternode_list_impl(
@@ -20,24 +18,15 @@ impl StreamingServiceImpl {
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Create message channel for internal communication
-        let (message_tx, mut message_rx) = mpsc::unbounded_channel::<StreamingMessage>();
-
         // Add subscription to manager
-        let subscription_id = self
-            .subscriber_manager
-            .add_subscription(filter, SubscriptionType::MasternodeList, message_tx)
-            .await;
-
-        info!("Started masternode list subscription: {}", subscription_id);
+        let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
 
         // Spawn task to convert internal messages to gRPC responses
-        let subscriber_manager = self.subscriber_manager.clone();
-        let sub_id = subscription_id.clone();
+        let sub_handle = subscription_handle.clone();
         tokio::spawn(async move {
-            while let Some(message) = message_rx.recv().await {
+            while let Some(message) = sub_handle.recv().await {
                 let response = match message {
-                    StreamingMessage::MasternodeListDiff { data } => {
+                    StreamingEvent::CoreMasternodeListDiff { data } => {
                         let response = MasternodeListResponse {
                             masternode_list_diff: data,
                         };
@@ -53,15 +42,11 @@ impl StreamingServiceImpl {
                 if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from masternode list subscription: {}",
-                        sub_id
+                        sub_handle.id()
                     );
                     break;
                 }
             }
-
-            // Clean up subscription when client disconnects
-            subscriber_manager.remove_subscription(&sub_id).await;
-            info!("Cleaned up masternode list subscription: {}", sub_id);
         });
 
         // Send initial full masternode list

@@ -16,6 +16,10 @@ pub struct TransactionEvent {
     pub tx: Option<Vec<u8>>,
 }
 
+/// Block event placeholder (TODO)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BlockEvent {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TransactionResult {
     Success,

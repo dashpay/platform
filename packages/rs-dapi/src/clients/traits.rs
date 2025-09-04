@@ -7,6 +7,7 @@ use super::tenderdash_client::{
     UnconfirmedTxsResponse,
 };
 use super::tenderdash_websocket::TransactionEvent;
+use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::error::DAPIResult;
 
 #[async_trait]
@@ -22,5 +23,6 @@ pub trait TenderdashClientTrait: Send + Sync + Debug {
 
     // WebSocket functionality for waitForStateTransitionResult
     fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent>;
+    fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent>;
     fn is_websocket_connected(&self) -> bool;
 }

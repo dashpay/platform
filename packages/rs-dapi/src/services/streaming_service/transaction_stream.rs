@@ -8,9 +8,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
 use crate::services::streaming_service::bloom::bloom_flags_from_int;
-use crate::services::streaming_service::subscriber_manager::{
-    FilterType, StreamingMessage, SubscriptionType,
-};
+use crate::services::streaming_service::subscriber_manager::{FilterType, StreamingEvent};
 use crate::services::streaming_service::StreamingServiceImpl;
 
 impl StreamingServiceImpl {
@@ -61,27 +59,20 @@ impl StreamingServiceImpl {
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Create message channel for internal communication
-        let (message_tx, mut message_rx) = mpsc::unbounded_channel::<StreamingMessage>();
-
         // Add subscription to manager
-        let subscription_id = self
-            .subscriber_manager
-            .add_subscription(filter, SubscriptionType::TransactionsWithProofs, message_tx)
-            .await;
+        let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
 
-        info!("Started transaction subscription: {}", subscription_id);
+        info!(
+            "Started transaction subscription: {}",
+            subscription_handle.id()
+        );
 
         // Spawn task to convert internal messages to gRPC responses
-        let subscriber_manager = self.subscriber_manager.clone();
-        let sub_id = subscription_id.clone();
+        let sub_handle = subscription_handle.clone();
         tokio::spawn(async move {
-            while let Some(message) = message_rx.recv().await {
+            while let Some(message) = sub_handle.recv().await {
                 let response = match message {
-                    StreamingMessage::Transaction {
-                        tx_data,
-                        merkle_proof: _,
-                    } => {
+                    StreamingEvent::CoreRawTransaction { data: tx_data } => {
                         let raw_transactions = RawTransactions {
                             transactions: vec![tx_data],
                         };
@@ -94,7 +85,7 @@ impl StreamingServiceImpl {
 
                         Ok(response)
                     }
-                    StreamingMessage::MerkleBlock { data } => {
+                    StreamingEvent::CoreRawBlock { data } => {
                         let response = TransactionsWithProofsResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data)
@@ -103,7 +94,7 @@ impl StreamingServiceImpl {
 
                         Ok(response)
                     }
-                    StreamingMessage::InstantLock { data } => {
+                    StreamingEvent::CoreInstantLock { data } => {
                         let instant_lock_messages = InstantSendLockMessages {
                             messages: vec![data],
                         };
@@ -125,15 +116,13 @@ impl StreamingServiceImpl {
                 if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from transaction subscription: {}",
-                        sub_id
+                        sub_handle.id()
                     );
                     break;
                 }
             }
-
-            // Clean up subscription when client disconnects
-            subscriber_manager.remove_subscription(&sub_id).await;
-            info!("Cleaned up transaction subscription: {}", sub_id);
+            // Drop of the handle will remove the subscription automatically
+            info!("Cleaned up transaction subscription: {}", sub_handle.id());
         });
 
         // Handle historical data if requested

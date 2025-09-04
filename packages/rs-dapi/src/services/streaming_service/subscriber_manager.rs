@@ -1,9 +1,10 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use std::sync::{Arc, Weak};
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 use tracing::{debug, trace, warn};
 
+use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
 
@@ -15,10 +16,18 @@ pub type SubscriptionId = String;
 pub enum FilterType {
     /// Bloom filter for transaction matching with update flags; filter is persisted/mutable
     CoreBloomFilter(Arc<std::sync::RwLock<CoreBloomFilter>>, BloomFlags),
+    /// All platform transactions (Tenderdash)
+    PlatformAllTxs,
+    /// All Tenderdash platform blocks
+    PlatformAllBlocks,
+    /// Single platform transaction by uppercase hex hash
+    PlatformTxId(String),
     /// All blocks filter (no filtering)
     CoreAllBlocks,
     /// All masternodes filter (no filtering)
     CoreAllMasternodes,
+    /// New Core block hash notifications (for cache invalidation)
+    CoreNewBlockHash,
 }
 
 /// Subscription information for a streaming client
@@ -26,39 +35,88 @@ pub enum FilterType {
 pub struct Subscription {
     pub id: SubscriptionId,
     pub filter: FilterType,
-    pub sender: mpsc::UnboundedSender<StreamingMessage>,
-    pub subscription_type: SubscriptionType,
+    pub sender: mpsc::UnboundedSender<StreamingEvent>,
 }
 
-/// Types of streaming subscriptions
-#[derive(Debug, Clone, PartialEq)]
-pub enum SubscriptionType {
-    TransactionsWithProofs,
-    BlockHeadersWithChainLocks,
-    MasternodeList,
+/// RAII handle: dropping the last clone removes the subscription.
+#[derive(Clone)]
+pub struct SubscriptionHandle<T>(Arc<SubscriptionHandleInner<T>>);
+
+impl<T> SubscriptionHandle<T> {
+    pub fn id(&self) -> &str {
+        &self.0.id
+    }
+}
+
+struct SubscriptionHandleInner<T> {
+    subs: Weak<RwLock<HashMap<SubscriptionId, Subscription>>>,
+    id: SubscriptionId,
+    rx: Mutex<mpsc::UnboundedReceiver<T>>, // guarded receiver
+}
+
+impl<T> Drop for SubscriptionHandleInner<T> {
+    fn drop(&mut self) {
+        if let Some(subs) = self.subs.upgrade() {
+            let id = self.id.clone();
+            tokio::spawn(async move {
+                let mut map = subs.write().await;
+                if map.remove(&id).is_some() {
+                    debug!("Removed subscription (Drop): {}", id);
+                }
+            });
+        }
+    }
+}
+
+/// Incoming events from various sources to dispatch to subscribers
+#[derive(Debug, Clone)]
+pub enum StreamingEvent {
+    /// Core raw transaction bytes
+    CoreRawTransaction { data: Vec<u8> },
+    /// Core raw block bytes
+    CoreRawBlock { data: Vec<u8> },
+    /// Core InstantSend lock
+    CoreInstantLock { data: Vec<u8> },
+    /// Core ChainLock
+    CoreChainLock { data: Vec<u8> },
+    /// New block hash event (for side-effects like cache invalidation)
+    CoreNewBlockHash { hash: Vec<u8> },
+    /// Tenderdash platform transaction event
+    PlatformTx { event: TransactionEvent },
+    /// Tenderdash platform block event
+    PlatformBlock { event: BlockEvent },
+    /// Masternode list diff bytes
+    CoreMasternodeListDiff { data: Vec<u8> },
 }
 
 /// Messages sent to streaming clients
 #[derive(Debug, Clone)]
 pub enum StreamingMessage {
     /// Raw transaction data with merkle proof
-    Transaction {
+    CoreTransaction {
         tx_data: Vec<u8>,
         merkle_proof: Option<Vec<u8>>,
     },
     /// Merkle block data
-    MerkleBlock { data: Vec<u8> },
+    CoreMerkleBlock { data: Vec<u8> },
     /// InstantSend lock message
-    InstantLock { data: Vec<u8> },
+    CoreInstantLock { data: Vec<u8> },
     /// Block header data
-    BlockHeader { data: Vec<u8> },
+    CoreBlockHeader { data: Vec<u8> },
     /// Chain lock data
-    ChainLock { data: Vec<u8> },
+    CoreChainLock { data: Vec<u8> },
     /// Masternode list diff data
     MasternodeListDiff { data: Vec<u8> },
+    /// New Core block hash notification
+    CoreNewBlockHash { hash: Vec<u8> },
+    /// Platform transaction event (Tenderdash)
+    PlatformTx { event: TransactionEvent },
+    /// Platform block event (Tenderdash)
+    PlatformBlock {},
 }
 
 /// Manages all active streaming subscriptions
+#[derive(Debug)]
 pub struct SubscriberManager {
     subscriptions: Arc<RwLock<HashMap<SubscriptionId, Subscription>>>,
     subscription_counter: AtomicU64,
@@ -72,147 +130,126 @@ impl SubscriberManager {
         }
     }
 
-    /// Add a new subscription
-    pub async fn add_subscription(
-        &self,
-        filter: FilterType,
-        subscription_type: SubscriptionType,
-        sender: mpsc::UnboundedSender<StreamingMessage>,
-    ) -> SubscriptionId {
+    /// Add a new subscription and return a handle that can receive messages
+    pub async fn add_subscription(&self, filter: FilterType) -> SubscriptionHandle<StreamingEvent> {
+        let (sender, receiver) = mpsc::unbounded_channel::<StreamingEvent>();
         let id = self.generate_subscription_id();
         let subscription = Subscription {
             id: id.clone(),
             filter,
             sender,
-            subscription_type: subscription_type.clone(),
         };
 
         self.subscriptions
             .write()
             .await
             .insert(id.clone(), subscription);
-        debug!("Added subscription: {} of type {:?}", id, subscription_type);
+        debug!("Added subscription: {}", id);
 
-        id
+        SubscriptionHandle(Arc::new(SubscriptionHandleInner::<StreamingEvent> {
+            subs: Arc::downgrade(&self.subscriptions),
+            id,
+            rx: Mutex::new(receiver),
+        }))
     }
 
     /// Remove a subscription
-    pub async fn remove_subscription(&self, id: &SubscriptionId) {
+    pub async fn remove_subscription(&self, id: &str) {
         if self.subscriptions.write().await.remove(id).is_some() {
             debug!("Removed subscription: {}", id);
         }
     }
+}
 
+impl<T> SubscriptionHandle<T> {
+    /// Receive the next streaming message for this subscription
+    pub async fn recv(&self) -> Option<T> {
+        let mut rx = self.0.rx.lock().await;
+        rx.recv().await
+    }
+
+    /// Map this handle into a new handle of another type by applying `f` to each message.
+    /// Consumes the original handle.
+    pub fn map<U, F>(self, f: F) -> SubscriptionHandle<U>
+    where
+        T: Send + 'static,
+        U: Send + 'static,
+        F: Fn(T) -> U + Send + 'static,
+    {
+        self.filter_map(move |v| Some(f(v)))
+    }
+
+    /// Filter-map: only mapped Some values are forwarded to the new handle. Consumes `self`.
+    pub fn filter_map<U, F>(self, f: F) -> SubscriptionHandle<U>
+    where
+        T: Send + 'static,
+        U: Send + 'static,
+        F: Fn(T) -> Option<U> + Send + 'static,
+    {
+        let (tx, rx) = mpsc::unbounded_channel::<U>();
+        // Keep original handle alive in the background pump task
+        tokio::spawn(async move {
+            let this = self;
+
+            loop {
+                tokio::select! {
+                    biased;
+                    _ = tx.closed() => {
+                        break;
+                    }
+                    msg_opt = this.recv() => {
+                        match msg_opt {
+                            Some(msg) => {
+                                if let Some(mapped) = f(msg) {
+                                    if tx.send(mapped).is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                            None => break,
+                        }
+                    }
+                }
+            }
+            // dropping `this` will remove the subscription
+        });
+
+        SubscriptionHandle(Arc::new(SubscriptionHandleInner::<U> {
+            subs: Weak::new(), // mapped handle doesn't own subscription removal
+            id: String::from("mapped"),
+            rx: Mutex::new(rx),
+        }))
+    }
+}
+
+impl SubscriberManager {
     /// Get the number of active subscriptions
     pub async fn subscription_count(&self) -> usize {
         self.subscriptions.read().await.len()
     }
 
-    /// Notify transaction subscribers with matching filters
-    pub async fn notify_transaction_subscribers(&self, tx_data: &[u8]) {
+    /// Unified notify entrypoint routing events to subscribers based on the filter
+    pub async fn notify(&self, event: StreamingEvent) {
         let subscriptions = self.subscriptions.read().await;
-        trace!("Notifying transaction subscribers: {} bytes", tx_data.len());
 
-        for subscription in subscriptions.values() {
-            if subscription.subscription_type != SubscriptionType::TransactionsWithProofs {
-                continue;
-            }
-
-            if self.matches_filter(&subscription.filter, tx_data) {
-                let message = StreamingMessage::Transaction {
-                    tx_data: tx_data.to_vec(),
-                    merkle_proof: None, // TODO: Generate merkle proof
-                };
-
-                if let Err(e) = subscription.sender.send(message) {
+        let mut dead_subs = vec![];
+        for (id, subscription) in subscriptions.iter() {
+            if Self::event_matches_filter(&subscription.filter, &event) {
+                if let Err(e) = subscription.sender.send(event.clone()) {
+                    dead_subs.push(id.clone());
                     warn!(
-                        "Failed to send transaction to subscriber {}: {}",
+                        "Failed to send event to subscription {}: {}; removing subscription",
                         subscription.id, e
                     );
                 }
             }
         }
-    }
+        drop(subscriptions); // release read lock before acquiring write lock
 
-    /// Notify block subscribers
-    pub async fn notify_block_subscribers(&self, block_data: &[u8]) {
-        let subscriptions = self.subscriptions.read().await;
-
-        for subscription in subscriptions.values() {
-            if subscription.subscription_type == SubscriptionType::TransactionsWithProofs {
-                // Send merkle block for transaction filtering
-                let message = StreamingMessage::MerkleBlock {
-                    data: block_data.to_vec(),
-                };
-
-                if let Err(e) = subscription.sender.send(message) {
-                    warn!(
-                        "Failed to send merkle block to subscriber {}: {}",
-                        subscription.id, e
-                    );
-                }
-            } else if subscription.subscription_type == SubscriptionType::BlockHeadersWithChainLocks
-            {
-                // Extract and send block header
-                let message = StreamingMessage::BlockHeader {
-                    data: self.extract_block_header(block_data),
-                };
-
-                if let Err(e) = subscription.sender.send(message) {
-                    warn!(
-                        "Failed to send block header to subscriber {}: {}",
-                        subscription.id, e
-                    );
-                }
-            }
+        // Clean up dead subscriptions
+        for sub in dead_subs.iter() {
+            self.remove_subscription(sub);
         }
-    }
-
-    /// Notify instant lock subscribers
-    pub async fn notify_instant_lock_subscribers(&self, lock_data: &[u8]) {
-        let subscriptions = self.subscriptions.read().await;
-
-        for subscription in subscriptions.values() {
-            if subscription.subscription_type == SubscriptionType::TransactionsWithProofs {
-                let message = StreamingMessage::InstantLock {
-                    data: lock_data.to_vec(),
-                };
-
-                if let Err(e) = subscription.sender.send(message) {
-                    warn!(
-                        "Failed to send instant lock to subscriber {}: {}",
-                        subscription.id, e
-                    );
-                }
-            }
-        }
-    }
-
-    /// Notify chain lock subscribers
-    pub async fn notify_chain_lock_subscribers(&self, lock_data: &[u8]) {
-        let subscriptions = self.subscriptions.read().await;
-
-        for subscription in subscriptions.values() {
-            if subscription.subscription_type == SubscriptionType::BlockHeadersWithChainLocks {
-                let message = StreamingMessage::ChainLock {
-                    data: lock_data.to_vec(),
-                };
-
-                if let Err(e) = subscription.sender.send(message) {
-                    warn!(
-                        "Failed to send chain lock to subscriber {}: {}",
-                        subscription.id, e
-                    );
-                }
-            }
-        }
-    }
-
-    /// Notify new block subscribers (hash-based notifications)
-    pub async fn notify_new_block_subscribers(&self, _block_hash: &[u8]) {
-        // This triggers cache invalidation and other block-related processing
-        debug!("New block notification received");
-        // TODO: Implement cache invalidation and other block processing
     }
 
     /// Generate a unique subscription ID
@@ -222,31 +259,38 @@ impl SubscriberManager {
     }
 
     /// Check if data matches the subscription filter
-    fn matches_filter(&self, filter: &FilterType, data: &[u8]) -> bool {
+    fn core_tx_matches_filter(filter: &FilterType, raw_tx: &[u8]) -> bool {
         match filter {
-            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(data) {
+            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(raw_tx) {
                 Ok(tx) => match f_lock.write() {
                     Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
                     Err(_) => false,
                 },
                 Err(_) => match f_lock.read() {
-                    Ok(guard) => guard.contains(data),
+                    Ok(guard) => guard.contains(raw_tx),
                     Err(_) => false,
                 },
             },
-            FilterType::CoreAllBlocks => true,
-            FilterType::CoreAllMasternodes => true,
+            _ => false,
         }
     }
 
-    /// Extract block header from full block data
-    fn extract_block_header(&self, block_data: &[u8]) -> Vec<u8> {
-        // TODO: Implement proper block header extraction
-        // For now, return first 80 bytes (typical block header size)
-        if block_data.len() >= 80 {
-            block_data[..80].to_vec()
-        } else {
-            block_data.to_vec()
+    fn event_matches_filter(filter: &FilterType, event: &StreamingEvent) -> bool {
+        use StreamingEvent::*;
+        match (filter, event) {
+            (FilterType::PlatformAllTxs, PlatformTx { .. }) => true,
+            (FilterType::PlatformTxId(id), PlatformTx { event }) => &event.hash == id,
+            (FilterType::PlatformAllBlocks, PlatformBlock { .. }) => true,
+            (FilterType::CoreNewBlockHash, CoreNewBlockHash { .. }) => true,
+            (FilterType::CoreAllBlocks, CoreRawBlock { .. }) => true,
+            (FilterType::CoreAllBlocks, CoreChainLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreRawTransaction { data }) => {
+                Self::core_tx_matches_filter(filter, data)
+            }
+            (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
+            (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
+            _ => false,
         }
     }
 }
@@ -269,19 +313,12 @@ mod tests {
     #[tokio::test]
     async fn test_subscription_management() {
         let manager = SubscriberManager::new();
-        let (sender, _receiver) = mpsc::unbounded_channel();
 
-        let id = manager
-            .add_subscription(
-                FilterType::CoreAllBlocks,
-                SubscriptionType::BlockHeadersWithChainLocks,
-                sender,
-            )
-            .await;
+        let handle = manager.add_subscription(FilterType::CoreAllBlocks).await;
 
         assert_eq!(manager.subscription_count().await, 1);
 
-        manager.remove_subscription(&id).await;
+        manager.remove_subscription(handle.id()).await;
         assert_eq!(manager.subscription_count().await, 0);
     }
 
@@ -299,7 +336,6 @@ mod tests {
     #[tokio::test]
     async fn test_non_tx_bytes_fallbacks_to_contains() {
         let manager = SubscriberManager::new();
-        let (sender, mut receiver) = mpsc::unbounded_channel();
 
         // Create a filter with all bits set so contains() returns true for any data
         let filter = FilterType::CoreBloomFilter(
@@ -315,26 +351,25 @@ mod tests {
             BloomFlags::None,
         );
 
-        let _id = manager
-            .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
-            .await;
+        let handle = manager.add_subscription(filter).await;
 
         // Send non-transaction bytes
         let payload = vec![1u8, 2, 3, 4, 5, 6, 7, 8];
-        manager.notify_transaction_subscribers(&payload).await;
+        manager
+            .notify(StreamingEvent::CoreRawTransaction {
+                data: payload.clone(),
+            })
+            .await;
 
         // We should receive one transaction message with the same bytes
-        let msg = timeout(Duration::from_millis(200), receiver.recv())
+        let msg = timeout(Duration::from_millis(200), handle.recv())
             .await
             .expect("timed out")
             .expect("channel closed");
 
         match msg {
-            StreamingMessage::Transaction {
-                tx_data,
-                merkle_proof: _,
-            } => {
-                assert_eq!(tx_data, payload);
+            StreamingEvent::CoreRawTransaction { data } => {
+                assert_eq!(data, payload);
             }
             other => panic!("unexpected message: {:?}", other),
         }
@@ -345,7 +380,6 @@ mod tests {
         // This test describes desired behavior and is expected to FAIL with the current
         // implementation because filter updates are not persisted (filter is cloned per check).
         let manager = SubscriberManager::new();
-        let (sender, mut receiver) = mpsc::unbounded_channel();
 
         // Build TX A with a P2PKH output whose hash160 we seed into the filter
         let h160 = PubkeyHash::from_byte_array([0x44; 20]);
@@ -393,24 +427,30 @@ mod tests {
             BloomFlags::All,
         );
 
-        let _id = manager
-            .add_subscription(filter, SubscriptionType::TransactionsWithProofs, sender)
-            .await;
+        let handle = manager.add_subscription(filter).await;
 
         // Notify with TX A (should match by output pushdata)
         let tx_a_bytes = serialize(&tx_a);
-        manager.notify_transaction_subscribers(&tx_a_bytes).await;
-        let _first = timeout(Duration::from_millis(200), receiver.recv())
+        manager
+            .notify(StreamingEvent::CoreRawTransaction {
+                data: tx_a_bytes.clone(),
+            })
+            .await;
+        let _first = timeout(Duration::from_millis(200), handle.recv())
             .await
             .expect("timed out waiting for first match")
             .expect("channel closed");
 
         // Notify with TX B: desired behavior is to match due to persisted outpoint update
         let tx_b_bytes = serialize(&tx_b);
-        manager.notify_transaction_subscribers(&tx_b_bytes).await;
+        manager
+            .notify(StreamingEvent::CoreRawTransaction {
+                data: tx_b_bytes.clone(),
+            })
+            .await;
 
         // Expect a second message (this will FAIL until persistence is implemented)
-        let _second = timeout(Duration::from_millis(400), receiver.recv())
+        let _second = timeout(Duration::from_millis(400), handle.recv())
             .await
             .expect("timed out waiting for second match (persistence missing?)")
             .expect("channel closed");

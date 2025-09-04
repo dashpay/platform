@@ -70,6 +70,7 @@ macro_rules! drive_method {
 
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
+use crate::services::streaming_service::FilterType;
 
 /// Platform service implementation with modular method delegation
 #[derive(Clone)]
@@ -79,28 +80,39 @@ pub struct PlatformServiceImpl {
     pub websocket_client: Arc<TenderdashWebSocketClient>,
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
+    pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
 }
 
 impl PlatformServiceImpl {
-    pub fn new(
+    pub async fn new(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
         config: Arc<Config>,
+        subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
         // Create WebSocket client
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(
             config.dapi.tenderdash.websocket_uri.clone(),
             1000,
         ));
+        {
+            let ws = websocket_client.clone();
+            tokio::spawn(async move {
+                let _ = ws.connect_and_listen().await;
+            });
+        }
 
-        let block_rx = websocket_client.subscribe_blocks();
+        let invalidation_subscription = subscriber_manager
+            .add_subscription(FilterType::PlatformAllBlocks)
+            .await;
 
         Self {
             drive_client,
             tenderdash_client,
             websocket_client,
             config,
-            platform_cache: crate::cache::LruResponseCache::new(1024, block_rx),
+            platform_cache: crate::cache::LruResponseCache::new(1024, invalidation_subscription),
+            subscriber_manager,
         }
     }
 }

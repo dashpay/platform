@@ -3,9 +3,11 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
+
+use crate::services::streaming_service::SubscriptionHandle;
 #[derive(Clone)]
 pub struct LruResponseCache {
     inner: Arc<Mutex<LruCache<[u8; 32], CachedValue>>>,
@@ -22,14 +24,14 @@ struct CachedValue {
 
 impl LruResponseCache {
     /// Create a cache and start a background worker that clears the cache
-    /// whenever a signal is received on the provided broadcast receiver.
-    pub fn new(capacity: usize, mut rx: broadcast::Receiver<()>) -> Self {
+    /// whenever a signal is received on the provided receiver.
+    pub fn new<T: Send + 'static>(capacity: usize, receiver: SubscriptionHandle<T>) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
         let inner = Arc::new(Mutex::new(LruCache::new(cap)));
         let inner_clone = inner.clone();
         let mut workers = tokio::task::join_set::JoinSet::new();
         workers.spawn(async move {
-            while rx.recv().await.is_ok() {
+            while receiver.recv().await.is_some() {
                 inner_clone.lock().await.clear();
             }
             tracing::debug!("Cache invalidation task exiting");

@@ -3,7 +3,7 @@
 use crate::cache::LruResponseCache;
 use crate::clients::CoreClient;
 use crate::config::Config;
-use crate::services::streaming_service::StreamingServiceImpl;
+use crate::services::streaming_service::{FilterType, StreamingServiceImpl};
 use dapi_grpc::core::v0::{
     core_server::Core, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetBestBlockHeightRequest,
@@ -29,17 +29,21 @@ pub struct CoreServiceImpl {
 }
 
 impl CoreServiceImpl {
-    pub fn new(
+    pub async fn new(
         streaming_service: Arc<StreamingServiceImpl>,
         config: Arc<Config>,
         core_client: CoreClient,
     ) -> Self {
-        let rx = streaming_service.subscribe_blocks();
+        let invalidation_subscription = streaming_service
+            .subscriber_manager
+            .add_subscription(FilterType::CoreNewBlockHash)
+            .await;
+
         Self {
             streaming_service,
             config,
             core_client,
-            core_cache: LruResponseCache::new(1024, rx),
+            core_cache: LruResponseCache::new(1024, invalidation_subscription),
         }
     }
 }

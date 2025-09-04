@@ -4,11 +4,9 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, info};
+use tracing::debug;
 
-use crate::services::streaming_service::{
-    FilterType, StreamingMessage, StreamingServiceImpl, SubscriptionType,
-};
+use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
@@ -37,32 +35,18 @@ impl StreamingServiceImpl {
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Create message channel for internal communication
-        let (message_tx, mut message_rx) = mpsc::unbounded_channel::<StreamingMessage>();
-
         // Add subscription to manager
-        let subscription_id = self
-            .subscriber_manager
-            .add_subscription(
-                filter,
-                SubscriptionType::BlockHeadersWithChainLocks,
-                message_tx,
-            )
-            .await;
-
-        info!("Started block header subscription: {}", subscription_id);
+        let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
 
         // Spawn task to convert internal messages to gRPC responses
-        let subscriber_manager = self.subscriber_manager.clone();
-        let sub_id = subscription_id.clone();
+        let sub_handle = subscription_handle.clone();
         tokio::spawn(async move {
-            while let Some(message) = message_rx.recv().await {
+            while let Some(message) = sub_handle.recv().await {
                 let response = match message {
-                    StreamingMessage::BlockHeader { data } => {
+                    StreamingEvent::CoreRawBlock { data } => {
                         let block_headers = BlockHeaders {
                             headers: vec![data],
                         };
-
                         let response = BlockHeadersWithChainLocksResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers)
@@ -71,7 +55,7 @@ impl StreamingServiceImpl {
 
                         Ok(response)
                     }
-                    StreamingMessage::ChainLock { data } => {
+                    StreamingEvent::CoreChainLock { data } => {
                         let response = BlockHeadersWithChainLocksResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data)
@@ -89,15 +73,11 @@ impl StreamingServiceImpl {
                 if tx.send(response).is_err() {
                     debug!(
                         "Client disconnected from block header subscription: {}",
-                        sub_id
+                        sub_handle.id()
                     );
                     break;
                 }
             }
-
-            // Clean up subscription when client disconnects
-            subscriber_manager.remove_subscription(&sub_id).await;
-            info!("Cleaned up block header subscription: {}", sub_id);
         });
 
         // Handle historical data if requested

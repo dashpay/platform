@@ -1,5 +1,6 @@
 use super::error_mapping::build_state_transition_error;
 use crate::services::platform_service::PlatformServiceImpl;
+use crate::services::streaming_service::FilterType;
 use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_request, wait_for_state_transition_result_response, Proof,
     ResponseMetadata, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
@@ -45,12 +46,15 @@ impl PlatformServiceImpl {
             return Err(Status::unavailable("Tenderdash is not available"));
         }
 
-        // RACE-FREE IMPLEMENTATION: Subscribe BEFORE checking existing state
+        // RACE-FREE IMPLEMENTATION: Subscribe via subscription manager BEFORE checking existing state
         trace!(
-            "Subscribing to transaction events for hash: {}",
+            "Subscribing (manager) to platform tx for hash: {}",
             hash_string
         );
-        let mut event_receiver = self.tenderdash_client.subscribe_to_transactions();
+        let sub_handle = self
+            .subscriber_manager
+            .add_subscription(FilterType::PlatformTxId(hash_string.clone()))
+            .await;
 
         // Check if transaction already exists (after subscription is active)
         trace!("Checking existing transaction for hash: {}", hash_string);
@@ -78,29 +82,26 @@ impl PlatformServiceImpl {
 
         // Filter events to find our specific transaction
         loop {
-            match timeout(timeout_duration, event_receiver.recv()).await {
-                Ok(Ok(transaction_event)) => {
-                    if transaction_event.hash == hash_string {
-                        info!(
-                            "Received matching transaction event for hash: {}",
-                            hash_string
-                        );
-                        return self
-                            .build_response_from_event(transaction_event, v0.prove)
-                            .await;
-                    } else {
-                        trace!(
-                            "Received non-matching transaction event: {} (waiting for: {})",
-                            transaction_event.hash,
-                            hash_string
-                        );
-                        // Continue waiting for the right transaction
-                        continue;
-                    }
+            match timeout(timeout_duration, sub_handle.recv()).await {
+                Ok(Some(crate::services::streaming_service::StreamingEvent::PlatformTx {
+                    event,
+                })) => {
+                    info!(
+                        "Received matching transaction event for hash: {}",
+                        hash_string
+                    );
+                    return self.build_response_from_event(event, v0.prove).await;
                 }
-                Ok(Err(e)) => {
-                    warn!("Error receiving transaction event: {}", e);
+                Ok(Some(message)) => {
+                    // Ignore other message types
+                    warn!(?message, "Received non-matching message, ignoring; this should not happen due to filtering");
                     continue;
+                }
+                Ok(None) => {
+                    warn!("Platform tx subscription channel closed unexpectedly");
+                    return Err(Status::unavailable(
+                        "Platform tx subscription channel closed unexpectedly",
+                    ));
                 }
                 Err(_) => {
                     // Timeout occurred
