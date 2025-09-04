@@ -526,9 +526,6 @@ pub async fn get_token_perpetual_distribution_last_claim(
     token_id: &str,
 ) -> Result<JsValue, JsError> {
     
-    
-    
-    
     // Parse IDs
     let identity_identifier = Identifier::from_string(
         identity_id,
@@ -709,7 +706,6 @@ pub async fn get_identities_token_balances_with_proof_info(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
     
-    
     // Parse token ID
     let token_identifier = Identifier::from_string(
         token_id,
@@ -771,7 +767,6 @@ pub async fn get_identities_token_balances_with_proof_info(
 
 #[wasm_bindgen]
 pub async fn get_token_statuses_with_proof_info(sdk: &WasmSdk, token_ids: Vec<String>) -> Result<JsValue, JsError> {
-    
     
     // Parse token IDs
     let tokens: Result<Vec<Identifier>, _> = token_ids
