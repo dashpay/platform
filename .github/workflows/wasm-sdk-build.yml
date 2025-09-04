@@ -148,12 +148,107 @@ jobs:
           echo "Checking build output..."
           ls -lah pkg/
           # Verify required files exist
-          test -f pkg/wasm_sdk_bg.wasm
+          test -f pkg/dash_wasm_sdk_bg.wasm
           test -f pkg/optimized.wasm
-          test -f pkg/wasm_sdk.js
-          test -f pkg/wasm_sdk.d.ts
+          test -f pkg/dash_wasm_sdk.js
+          test -f pkg/dash_wasm_sdk.d.ts
           test -f pkg/package.json
           echo "Build verification successful!"
+
+      - name: Measure and track bundle sizes
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "📦 Bundle Size Analysis" | tee bundle-sizes.txt
+          echo "=========================" | tee -a bundle-sizes.txt
+          echo "" | tee -a bundle-sizes.txt
+          
+          # Measure unoptimized WASM size
+          if [ -f pkg/dash_wasm_sdk_bg.wasm ]; then
+            UNOPT_SIZE=$(wc -c < pkg/dash_wasm_sdk_bg.wasm)
+            UNOPT_SIZE_MB=$(echo "scale=2; $UNOPT_SIZE / 1024 / 1024" | bc)
+            echo "🔧 Unoptimized WASM: ${UNOPT_SIZE} bytes (${UNOPT_SIZE_MB} MB)" | tee -a bundle-sizes.txt
+          fi
+          
+          # Measure optimized WASM size  
+          if [ -f pkg/optimized.wasm ]; then
+            OPT_SIZE=$(wc -c < pkg/optimized.wasm)
+            OPT_SIZE_MB=$(echo "scale=2; $OPT_SIZE / 1024 / 1024" | bc)
+            echo "⚡ Optimized WASM: ${OPT_SIZE} bytes (${OPT_SIZE_MB} MB)" | tee -a bundle-sizes.txt
+            
+            # Calculate optimization savings
+            if [ -n "$UNOPT_SIZE" ]; then
+              SAVINGS=$((UNOPT_SIZE - OPT_SIZE))
+              SAVINGS_PCT=$(echo "scale=1; $SAVINGS * 100 / $UNOPT_SIZE" | bc)
+              echo "💾 Optimization savings: ${SAVINGS} bytes (${SAVINGS_PCT}%)" | tee -a bundle-sizes.txt
+            fi
+          fi
+          
+          # Measure JavaScript bindings
+          if [ -f pkg/dash_wasm_sdk.js ]; then
+            JS_SIZE=$(wc -c < pkg/dash_wasm_sdk.js)
+            JS_SIZE_KB=$(echo "scale=1; $JS_SIZE / 1024" | bc)
+            echo "📄 JavaScript bindings: ${JS_SIZE} bytes (${JS_SIZE_KB} KB)" | tee -a bundle-sizes.txt
+          fi
+          
+          # Measure TypeScript definitions
+          if [ -f pkg/dash_wasm_sdk.d.ts ]; then
+            TS_SIZE=$(wc -c < pkg/dash_wasm_sdk.d.ts)
+            TS_SIZE_KB=$(echo "scale=1; $TS_SIZE / 1024" | bc)
+            echo "📝 TypeScript definitions: ${TS_SIZE} bytes (${TS_SIZE_KB} KB)" | tee -a bundle-sizes.txt
+          fi
+          
+          # Calculate total package size
+          TOTAL_SIZE=$(find pkg/ -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
+          TOTAL_SIZE_MB=$(echo "scale=2; $TOTAL_SIZE / 1024 / 1024" | bc)
+          echo "" | tee -a bundle-sizes.txt
+          echo "📦 Total package size: ${TOTAL_SIZE} bytes (${TOTAL_SIZE_MB} MB)" | tee -a bundle-sizes.txt
+          
+          # Add size thresholds and warnings
+          echo "" | tee -a bundle-sizes.txt
+          echo "🚨 Size Thresholds:" | tee -a bundle-sizes.txt
+          
+          # Warn if optimized WASM exceeds 10MB
+          if [ -n "$OPT_SIZE" ] && [ "$OPT_SIZE" -gt 10485760 ]; then
+            echo "⚠️  WARNING: Optimized WASM exceeds 10MB (${OPT_SIZE_MB} MB)" | tee -a bundle-sizes.txt
+          else
+            echo "✅ Optimized WASM size acceptable (< 10MB)" | tee -a bundle-sizes.txt
+          fi
+          
+          # Warn if total package exceeds 15MB
+          if [ "$TOTAL_SIZE" -gt 15728640 ]; then
+            echo "⚠️  WARNING: Total package exceeds 15MB (${TOTAL_SIZE_MB} MB)" | tee -a bundle-sizes.txt
+          else
+            echo "✅ Total package size acceptable (< 15MB)" | tee -a bundle-sizes.txt
+          fi
+          
+          echo "" | tee -a bundle-sizes.txt
+          echo "Bundle size analysis complete!" | tee -a bundle-sizes.txt
+
+      - name: Add bundle size to job summary
+        if: always()
+        working-directory: packages/wasm-sdk
+        run: |
+          echo "## 📦 Bundle Size Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ -f bundle-sizes.txt ]; then
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            cat bundle-sizes.txt >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Add download links for size tracking
+            echo "📊 **Size tracking**: Bundle size data available in build artifacts" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "⚠️ Bundle size data not available" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Upload bundle size data
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bundle-size-report
+          path: packages/wasm-sdk/bundle-sizes.txt
+          retention-days: 30
 
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
@@ -188,10 +283,10 @@ jobs:
 
           # Verify all required files exist
           required_files=(
-            "pkg/wasm_sdk_bg.wasm"
+            "pkg/dash_wasm_sdk_bg.wasm"
             "pkg/optimized.wasm"
-            "pkg/wasm_sdk.js"
-            "pkg/wasm_sdk.d.ts"
+            "pkg/dash_wasm_sdk.js"
+            "pkg/dash_wasm_sdk.d.ts"
             "pkg/package.json"
           )
 

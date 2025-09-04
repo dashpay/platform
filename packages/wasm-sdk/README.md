@@ -5,39 +5,107 @@ This package provides WebAssembly bindings for the Dash Platform SDK, allowing J
 ## Overview
 
 The WASM JS SDK provides:
-- **Queries**: Read-only operations to fetch data from Dash Platform
+- **Queries**: Read-only operations to fetch data from Dash Platform  
 - **State Transitions**: Write operations to modify state on Dash Platform
+- **Modern JavaScript API**: Clean wrapper with configuration-driven initialization
+- **TypeScript Support**: Full type definitions with JSDoc documentation
+- **Resource Management**: Automatic WASM memory management and cleanup
+
+## Installation
+
+```bash
+npm install @dashevo/dash-wasm-sdk
+```
 
 ## Usage
 
-### Quick Start
-
-1. Build the WASM module:
-   ```bash
-   ./build.sh
-   ```
-
-2. Serve the demo application:
-   ```bash
-   python3 -m http.server 8888
-   ```
-
-3. Open http://localhost:8888 in your browser
-
-### Integration
+### Modern API (Recommended)
 
 ```javascript
-import init, { WasmSdk } from './pkg/wasm_sdk.js';
+import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+
+// Create and configure SDK
+const sdk = new WasmSDK({
+    network: 'testnet',
+    transport: {
+        url: 'https://52.12.176.90:1443/',
+        timeout: 30000
+    },
+    proofs: true,
+    debug: false
+});
+
+// Initialize and use
+await sdk.initialize();
+
+// Query operations
+const identity = await sdk.getIdentity(identityId);
+const documents = await sdk.getDocuments(contractId, 'note', {
+    where: [['ownerId', '=', identityId]],
+    limit: 10
+});
+
+// Always cleanup when done
+await sdk.destroy();
+```
+
+### TypeScript Support
+
+```typescript
+import { WasmSDK, WasmSDKConfig, Identity, Document } from '@dashevo/dash-wasm-sdk';
+
+const config: WasmSDKConfig = {
+    network: 'testnet',
+    transport: { timeout: 30000 },
+    proofs: true
+};
+
+const sdk = new WasmSDK(config);
+await sdk.initialize();
+
+const identity: Identity | null = await sdk.getIdentity(identityId);
+const documents: Document[] = await sdk.getDocuments(contractId, 'note');
+```
+
+### Configuration Options
+
+The SDK supports flexible configuration:
+
+```javascript
+// Testnet with default settings
+const sdk = new WasmSDK({ network: 'testnet' });
+
+// Mainnet with custom endpoint
+const sdk = new WasmSDK({
+    network: 'mainnet',
+    transport: {
+        url: 'https://my-custom-node.example.com:1443/',
+        timeout: 60000,
+        retries: 5
+    }
+});
+
+// Multiple endpoints with failover
+const sdk = new WasmSDK({
+    transport: {
+        urls: [
+            'https://primary.example.com:1443/',
+            'https://fallback.example.com:1443/'
+        ]
+    }
+});
+```
+
+### Legacy API (Raw WASM Bindings)
+
+```javascript
+import init, { WasmSdkBuilder } from '@dashevo/dash-wasm-sdk';
 
 // Initialize WASM module
 await init();
 
-// Create SDK instance
-const transport = { 
-    url: "https://52.12.176.90:1443/", // testnet
-    network: "testnet"
-};
-const sdk = await WasmSdk.new(transport, true); // true = enable proofs
+// Create SDK instance using builder pattern
+const sdk = await WasmSdkBuilder.new_testnet().build();
 
 // Example query
 const identity = await sdk.get_identity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");

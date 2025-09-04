@@ -104,6 +104,47 @@ if [ -f "$SCRIPT_DIR/bundlesize.json" ] && command -v bundlesize &> /dev/null; t
 fi
 
 # Show final bundle info
+# Copy JavaScript wrapper files
+echo -e "${YELLOW}Integrating JavaScript wrapper files...${NC}"
+if [ -d "../src-js" ]; then
+    echo "Copying JavaScript wrapper to pkg directory..."
+    
+    # Copy wrapper files
+    cp ../src-js/*.js . 2>/dev/null || echo "No .js wrapper files found"
+    cp ../src-js/*.d.ts . 2>/dev/null || echo "No .d.ts wrapper files found"
+    
+    # Update package.json to use wrapper as entry point
+    if [ -f "package.json" ] && command -v node >/dev/null 2>&1; then
+        node -e "
+        const fs = require('fs');
+        const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+        if (fs.existsSync('index.js')) {
+            pkg.main = 'index.js';
+            pkg.module = 'index.js'; 
+            if (fs.existsSync('types.d.ts')) {
+                pkg.types = 'types.d.ts';
+            }
+            pkg.files = pkg.files || [];
+            const wrapperFiles = ['index.js', 'config-manager.js', 'resource-manager.js', 'error-handler.js'];
+            if (fs.existsSync('types.d.ts')) wrapperFiles.push('types.d.ts');
+            wrapperFiles.forEach(file => {
+                if (fs.existsSync(file) && !pkg.files.includes(file)) {
+                    pkg.files.push(file);
+                }
+            });
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+            console.log('  ✅ Package configured to use JavaScript wrapper as entry point');
+        } else {
+            console.log('  ℹ️  JavaScript wrapper not found, using WASM bindings');
+        }
+        "
+    fi
+    
+    echo -e "${GREEN}JavaScript wrapper integration complete!${NC}"
+else
+    echo -e "${YELLOW}No JavaScript wrapper found (src-js directory missing)${NC}"
+fi
+
 echo -e "${GREEN}Build complete! Final bundle info:${NC}"
 ls -lah *.wasm *.js *.d.ts
 
