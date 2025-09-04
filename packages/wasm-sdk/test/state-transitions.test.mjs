@@ -310,18 +310,6 @@ await test('identity_withdraw - requires balance', async () => {
     }
 });
 
-// await test('identity_put - causes panic in WASM', async () => {
-//     try {
-//         const result = await wasmSdk.identity_put(sdk);
-//         throw new Error('Should have panicked');
-//     } catch (error) {
-//         if (error.message.includes('Should have panicked')) {
-//             throw error;
-//         }
-//         console.log('   Expected panic (known issue)');
-//     }
-// });
-
 // Document State Transitions
 describe('Document State Transitions');
 
