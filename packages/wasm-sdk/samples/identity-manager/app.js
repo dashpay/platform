@@ -3,7 +3,15 @@
  * Demonstrates identity management operations using the WASM SDK
  */
 
-import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/dash_wasm_sdk.js';
+import init, { 
+    WasmSdk, 
+    WasmSdkBuilder, 
+    identity_fetch,
+    get_identity_balance,
+    get_identity_keys,
+    prefetch_trusted_quorums_mainnet,
+    prefetch_trusted_quorums_testnet
+} from '../../pkg/wasm_sdk.js';
 
 class IdentityManager {
     constructor() {
@@ -88,19 +96,27 @@ class IdentityManager {
             // Initialize WASM module
             await init();
 
-            // Create SDK builder based on network
+            // Prefetch trusted quorums (required for WASM)
+            this.updateStatus('connecting', 'Prefetching trusted quorums...');
+            if (this.currentNetwork === 'mainnet') {
+                await prefetch_trusted_quorums_mainnet();
+            } else {
+                await prefetch_trusted_quorums_testnet();
+            }
+
+            // Create trusted SDK builder (WASM only supports trusted mode)
             let builder;
             if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet();
+                builder = WasmSdkBuilder.new_mainnet_trusted();
             } else {
-                builder = WasmSdkBuilder.new_testnet();
+                builder = WasmSdkBuilder.new_testnet_trusted();
             }
 
             // Build SDK instance
             this.sdk = builder.build();
             this.isInitialized = true;
 
-            this.updateStatus('connected', `Connected to ${this.currentNetwork}`);
+            this.updateStatus('connected', `Connected to ${this.currentNetwork} (trusted mode)`);
             this.logOperation('SDK', `Successfully connected to ${this.currentNetwork}`, 'success');
 
             // Update network info in UI
@@ -168,7 +184,7 @@ class IdentityManager {
             this.logOperation('Identity', `Looking up ID: ${identityId}`);
 
             // Fetch identity from network
-            const identity = await this.sdk.get_identity(identityId);
+            const identity = await identity_fetch(this.sdk, identityId);
             
             if (identity) {
                 this.currentIdentity = { id: identityId, data: identity };
@@ -226,7 +242,7 @@ class IdentityManager {
             this.logOperation('Balance', `Checking balance for ${this.currentIdentity.id}`);
 
             // Get identity balance
-            const balanceResult = await this.sdk.get_identity_balance(this.currentIdentity.id);
+            const balanceResult = await get_identity_balance(this.sdk, this.currentIdentity.id);
             
             if (balanceResult !== null && balanceResult !== undefined) {
                 this.displayBalance(balanceResult);
@@ -269,7 +285,8 @@ class IdentityManager {
             this.logOperation('Keys', `Retrieving keys for ${this.currentIdentity.id}`);
 
             // Get identity keys
-            const keysResult = await this.sdk.get_identity_keys(
+            const keysResult = await get_identity_keys(
+                this.sdk,
                 this.currentIdentity.id,
                 'all',
                 null, // specificKeyIds

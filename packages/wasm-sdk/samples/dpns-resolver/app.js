@@ -3,7 +3,7 @@
  * Demonstrates DPNS operations including username resolution, validation, and registration cost calculation
  */
 
-import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/dash_wasm_sdk.js';
+import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/wasm_sdk.js';
 import { DPNSValidator } from './validation.js';
 
 class DPNSResolver {
@@ -147,9 +147,9 @@ class DPNSResolver {
             // Create SDK builder based on network
             let builder;
             if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet();
+                builder = WasmSdkBuilder.new_mainnet_trusted();
             } else {
-                builder = WasmSdkBuilder.new_testnet();
+                builder = WasmSdkBuilder.new_testnet_trusted();
             }
 
             // Build SDK instance

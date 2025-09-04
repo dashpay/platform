@@ -115,7 +115,7 @@ export class SharedSdkClient {
     
     // Proxy methods to match SDK interface
     get_identity(...args) {
-        return this.execute('get_identity', ...args);
+        return this.execute('identity_fetch', ...args);
     }
     
     get_identity_keys(...args) {

@@ -3,7 +3,7 @@
  * Demonstrates token operations, portfolio management, and transfer capabilities
  */
 
-import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/dash_wasm_sdk.js';
+import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/wasm_sdk.js';
 
 class TokenTransfer {
     constructor() {
@@ -103,9 +103,9 @@ class TokenTransfer {
             // Create SDK builder based on network
             let builder;
             if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet();
+                builder = WasmSdkBuilder.new_mainnet_trusted();
             } else {
-                builder = WasmSdkBuilder.new_testnet();
+                builder = WasmSdkBuilder.new_testnet_trusted();
             }
 
             // Build SDK instance

@@ -7,6 +7,9 @@ const connections = new Set();
 // Import the WASM SDK
 importScripts('./pkg/wasm_sdk.js');
 
+// Import with correct variable name
+const wasm_bindgen = self.wasm_bindgen;
+
 async function initializeSdk() {
     if (isInitialized) return sdk;
     
@@ -23,7 +26,7 @@ async function initializeSdk() {
             postMessage({ type: 'progress', percent: 50, text: 'Initializing SDK...' });
             
             // Use the same initialization as index.html
-            sdk = await wasm_bindgen.WasmSdkBuilder.new_testnet().build();
+            sdk = wasm_bindgen.WasmSdkBuilder.new_testnet().build();
             
             postMessage({ type: 'progress', percent: 90, text: 'Finalizing...' });
             
@@ -77,8 +80,35 @@ self.onconnect = function(e) {
                         await initializeSdk();
                     }
                     
-                    // Execute the SDK method
-                    const result = await sdk[method](...args);
+                    // Map method names to correct WASM functions
+                    let result;
+                    switch (method) {
+                        case 'identity_fetch':
+                            result = await wasm_bindgen.identity_fetch(sdk, ...args);
+                            break;
+                        case 'get_identity_balance':
+                            result = await wasm_bindgen.get_identity_balance(sdk, ...args);
+                            break;
+                        case 'get_identity_keys':
+                            result = await wasm_bindgen.get_identity_keys(sdk, ...args);
+                            break;
+                        case 'get_data_contract':
+                            result = await wasm_bindgen.data_contract_fetch(sdk, ...args);
+                            break;
+                        case 'get_documents':
+                            result = await wasm_bindgen.get_documents(sdk, ...args);
+                            break;
+                        default:
+                            // Try to call the method directly if it exists
+                            if (typeof wasm_bindgen[method] === 'function') {
+                                result = await wasm_bindgen[method](sdk, ...args);
+                            } else if (typeof sdk[method] === 'function') {
+                                result = await sdk[method](...args);
+                            } else {
+                                throw new Error(`Method ${method} not found`);
+                            }
+                    }
+                    
                     port.postMessage({ 
                         type: 'result', 
                         id, 

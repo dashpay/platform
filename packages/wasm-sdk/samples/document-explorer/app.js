@@ -3,7 +3,7 @@
  * Demonstrates advanced document querying with filtering and sorting
  */
 
-import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/dash_wasm_sdk.js';
+import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/wasm_sdk.js';
 import { KNOWN_CONTRACTS, getContractSchema, getDocumentFields, getQueryableFields, getSampleQueries, formatFieldValue } from './contract-schemas.js';
 
 class DocumentExplorer {
@@ -95,9 +95,9 @@ class DocumentExplorer {
             // Create SDK builder based on network
             let builder;
             if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet();
+                builder = WasmSdkBuilder.new_mainnet_trusted();
             } else {
-                builder = WasmSdkBuilder.new_testnet();
+                builder = WasmSdkBuilder.new_testnet_trusted();
             }
 
             // Build SDK instance

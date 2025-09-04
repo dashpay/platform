@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Fixed Identity Lookup</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .result { background: #f5f5f5; padding: 15px; margin: 10px 0; border-radius: 5px; }
+        .error { background: #ffe6e6; border-left: 4px solid #ff4444; }
+        .success { background: #e6ffe6; border-left: 4px solid #44ff44; }
+        .loading { background: #e6f3ff; border-left: 4px solid #4444ff; }
+        button { padding: 10px 20px; margin: 5px; font-size: 16px; }
+        input { padding: 8px; margin: 5px; width: 400px; font-family: monospace; }
+    </style>
+</head>
+<body>
+    <h1>🧪 Test Fixed Identity Lookup</h1>
+    <p>This page tests the identity lookup fix using the standardized WASM bindings.</p>
+
+    <div>
+        <label>Identity ID:</label><br>
+        <input type="text" id="identityId" value="DcoJJ3W9dauwLD51vzNuXJ9vna2T7mprVm7wbgVYifNq" placeholder="Enter identity ID">
+        <button onclick="testIdentityLookup()">Test Identity Lookup</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div id="results"></div>
+
+    <script type="module">
+        import init, { 
+            WasmSdkBuilder, 
+            identity_fetch,
+            get_identity_balance,
+            get_identity_keys
+        } from './pkg/wasm_sdk.js';
+
+        let sdk = null;
+        let isInitialized = false;
+
+        // Initialize WASM SDK
+        async function initializeSdk() {
+            if (isInitialized) return sdk;
+            
+            addResult('Initializing WASM SDK...', 'loading');
+            
+            try {
+                await init();
+                addResult('✅ WASM module loaded successfully', 'success');
+                
+                sdk = WasmSdkBuilder.new_testnet().build();
+                addResult('✅ SDK built for testnet', 'success');
+                
+                isInitialized = true;
+                return sdk;
+            } catch (error) {
+                addResult(`❌ SDK initialization failed: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // Test identity lookup using fixed API
+        window.testIdentityLookup = async function() {
+            const identityId = document.getElementById('identityId').value.trim();
+            
+            if (!identityId) {
+                addResult('❌ Please enter an identity ID', 'error');
+                return;
+            }
+
+            try {
+                addResult(`🔍 Looking up identity: ${identityId}`, 'loading');
+                
+                // Initialize SDK if needed
+                if (!isInitialized) {
+                    await initializeSdk();
+                }
+
+                // Use the correct WASM function (this was the fix!)
+                addResult('📡 Calling identity_fetch(sdk, identityId)...', 'loading');
+                const identity = await identity_fetch(sdk, identityId);
+
+                if (identity) {
+                    addResult('✅ Identity found successfully!', 'success');
+                    
+                    // Get identity details
+                    try {
+                        const identityJson = identity.toJSON ? identity.toJSON() : identity;
+                        addResult(`📋 Identity Details:\n${JSON.stringify(identityJson, null, 2)}`, 'success');
+                    } catch (e) {
+                        addResult(`📋 Identity found but couldn't convert to JSON: ${e.message}`, 'success');
+                        addResult(`   Raw identity: ${identity}`, 'success');
+                    }
+
+                    // Test balance lookup
+                    try {
+                        addResult('💰 Fetching balance...', 'loading');
+                        const balance = await get_identity_balance(sdk, identityId);
+                        addResult(`✅ Balance: ${JSON.stringify(balance)}`, 'success');
+                    } catch (e) {
+                        addResult(`⚠️ Balance lookup failed: ${e.message}`, 'error');
+                    }
+
+                } else {
+                    addResult('❌ Identity not found', 'error');
+                }
+
+            } catch (error) {
+                addResult(`💥 Identity lookup failed: ${error.message}`, 'error');
+                console.error('Full error details:', error);
+                
+                // Check if it's the old API error
+                if (error.message.includes('get_identity is not a function')) {
+                    addResult('🔧 This is the API mismatch error we were fixing!', 'error');
+                    addResult('   The fix should have resolved this.', 'error');
+                } else if (error.message.includes('fetch')) {
+                    addResult('🌐 This appears to be a network connectivity issue', 'error');
+                    addResult('   The API fix is working, but network access is needed.', 'error');
+                }
+            }
+        }
+
+        window.clearResults = function() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function addResult(message, type = '') {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `result ${type}`;
+            div.style.whiteSpace = 'pre-wrap';
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            results.appendChild(div);
+            results.scrollTop = results.scrollHeight;
+        }
+
+        // Initialize on page load
+        window.addEventListener('load', async () => {
+            addResult('🚀 Page loaded. Ready to test identity lookup fix.', 'loading');
+            addResult('💡 The fix ensures we use identity_fetch() instead of get_identity()', 'loading');
+            
+            try {
+                await initializeSdk();
+                addResult('🎉 SDK ready! Click "Test Identity Lookup" to verify the fix.', 'success');
+            } catch (error) {
+                addResult('⚠️ SDK initialization failed on page load. Will retry on button click.', 'error');
+            }
+        });
+    </script>
+</body>
+</html>

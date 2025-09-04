@@ -1716,11 +1716,8 @@ ${indentStr}]`;
             }
           }
         } else if (shouldContinue) {
-          if (network === 'mainnet') {
-            newSdk = await WasmSdkBuilder.new_mainnet().build();
-          } else {
-            newSdk = await WasmSdkBuilder.new_testnet().build();
-          }
+          // WASM only supports trusted mode - this fallback should never be reached
+          throw new Error('WASM SDK requires trusted mode. Non-trusted fallback is not supported.');
         }
         
         if (shouldContinue && currentRequestToken === initRequestCounter) {
