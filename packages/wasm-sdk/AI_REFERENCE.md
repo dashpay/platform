@@ -1099,7 +1099,6 @@ Parameters (in addition to identity/key):
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Purchase
 - `totalAgreedPrice` (text, optional) - Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided
-- `keyId` (number, required) - Key ID (for signing)
 
 Example:
 ```javascript
@@ -1177,7 +1176,7 @@ const result = await sdk.tokenUnfreeze(identityHex, /* params */, privateKeyHex)
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID whose frozen tokens to destroy
+- `frozenIdentityId` (text, required) - Identity ID whose frozen tokens to destroy
 - `publicNote` (text, optional) - Public Note
 
 Example:
