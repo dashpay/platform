@@ -111,11 +111,11 @@
           - name: http_services
             domains: [ "*" ]
             routes:
-              # rs-dapi core streaming endpoints (now exposed directly)
+              # Core streaming endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
-                  cluster: rs_dapi
+                  cluster: {{= (it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled) ? 'dapi_core_streams' : 'rs_dapi' }}
                   idle_timeout: 300s
                   # Upstream response timeout
                   timeout: 600s
@@ -123,18 +123,19 @@
                     # Entire stream/request timeout
                     max_stream_duration: 600s
                     grpc_timeout_header_max: 600s
-              # rs-dapi Core endpoints (now exposed directly)
+              # Core endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
                 route:
-                  cluster: rs_dapi
+                  cluster: {{= (it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled) ? 'dapi_api' : 'rs_dapi' }}
                   # Upstream response timeout
                   timeout: 15s
               # rs-dapi waitForStateTransitionResult endpoint with bigger timeout (now exposed directly)
+              {{ useDeprecated = it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled; }}
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
-                  cluster: rs_dapi
+                  cluster: {{= useDeprecated ? 'dapi_api' : 'rs_dapi' }}
                   idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                   # Upstream response timeout
                   timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
@@ -146,10 +147,11 @@
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Platform"
                 route:
-                  cluster: rs_dapi
+                  cluster: {{= useDeprecated ? 'dapi_api' : 'rs_dapi' }}
                   # Upstream response timeout
                   timeout: 10s
               
+              {{? !useDeprecated }}
               # Deprecated DAPI routes (moved under /deprecated prefix)
               # DAPI core streaming endpoints
               - match:
@@ -224,6 +226,7 @@
                   prefix_rewrite: "/org.dash.platform.dapi.v0.Platform"
                   # Upstream response timeout
                   timeout: 10s
+              {{?}}
               # Static responses of unsupported api versions
               # core static response
               - match:
@@ -241,13 +244,14 @@
                       value: "Specified service version is not supported"
                 direct_response:
                   status: 204
-              # JSON RPC endpoints (rs-dapi now exposed directly)
+              # JSON RPC endpoint
               - match:
                   path: "/"
                 route:
-                  cluster: rs_dapi_json_rpc
+                  cluster: {{= useDeprecated ? 'dapi_json_rpc' : 'rs_dapi_json_rpc' }}
                   # Upstream response timeout
                   timeout: 10s
+              {{? !useDeprecated }}
               # Deprecated JSON RPC endpoints
               - match:
                   path: "/deprecated"
@@ -257,6 +261,7 @@
                   prefix_rewrite: "/"
                   # Upstream response timeout
                   timeout: 10s
+              {{?}}
             {{? it.platform.gateway.rateLimiter.enabled }}
             rate_limits:
               - actions:

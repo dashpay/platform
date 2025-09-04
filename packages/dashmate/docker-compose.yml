@@ -161,7 +161,7 @@ services:
       - 3004
       - 3005
     profiles:
-      - platform
+      - platform-dapi-deprecated
 
   dapi_core_streams:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -190,7 +190,7 @@ services:
     command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
-      - platform
+      - platform-dapi-deprecated
 
   # Uses existing configuration variables but deploys on different port (3010)
   rs_dapi:
@@ -222,7 +222,7 @@ services:
       - 3010  # gRPC (different from current DAPI to avoid conflict)
       - 9091  # Health
     profiles:
-      - platform
+      - platform-dapi-rs
 
   gateway:
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
@@ -238,10 +238,7 @@ services:
       - ${PLATFORM_GATEWAY_METRICS_HOST:?err}:${PLATFORM_GATEWAY_METRICS_PORT:?err}:9090
       - ${PLATFORM_GATEWAY_ADMIN_HOST:?err}:${PLATFORM_GATEWAY_ADMIN_PORT:?err}:9901
     depends_on:
-      - dapi_api
-      - dapi_core_streams
       - drive_abci
-      - rs_dapi
     networks:
       - default
       - gateway_rate_limiter

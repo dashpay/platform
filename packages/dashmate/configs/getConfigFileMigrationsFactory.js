@@ -1107,6 +1107,20 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         return configFile;
       }
       ,
+      // Introduce DAPI selection flag (defaults to rs-dapi)
+      '2.1.0-dev.3': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.dapi.deprecated) {
+              options.platform.dapi.deprecated = defaultConfig.get('platform.dapi.deprecated');
+            } else if (typeof options.platform.dapi.deprecated.enabled === 'undefined') {
+              options.platform.dapi.deprecated.enabled = defaultConfig.get('platform.dapi.deprecated.enabled');
+            }
+          });
+        return configFile;
+      },
       '2.0.2-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {

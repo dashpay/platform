@@ -230,6 +230,12 @@ export default function getBaseConfigFactory() {
           },
         },
         dapi: {
+          // Controls whether to use the deprecated JS DAPI stack
+          // If enabled = true -> use old DAPI (JS)
+          // If enabled = false -> use rs-dapi (Rust) [default]
+          deprecated: {
+            enabled: false,
+          },
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
