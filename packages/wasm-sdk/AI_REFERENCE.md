@@ -356,8 +356,6 @@ Parameters:
 - `documentTypeName` (text, required) - Document Type
 - `dataContractId` (text, required) - Data Contract ID
 - `indexName` (text, required) - Index Name
-- `resultType` (text, required) - Result Type
-- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
 - `startAtValue` (text, optional) - Start At Value
 - `limit` (number, optional) - Limit
 - `offset` (number, optional) - Offset
@@ -365,7 +363,7 @@ Parameters:
 
 Example:
 ```javascript
-const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName", "resultType");
+const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName");
 ```
 
 **Get Contested Resource Vote State** - `getContestedResourceVoteState`

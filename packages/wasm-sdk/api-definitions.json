@@ -530,18 +530,6 @@
               "required": true
             },
             {
-              "name": "resultType",
-              "type": "text",
-              "label": "Result Type",
-              "required": true
-            },
-            {
-              "name": "allowIncludeLockedAndAbstainingVoteTally",
-              "type": "checkbox",
-              "label": "Allow Include Locked and Abstaining Vote Tally",
-              "required": false
-            },
-            {
               "name": "startAtValue",
               "type": "text",
               "label": "Start At Value",
