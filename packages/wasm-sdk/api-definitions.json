@@ -1875,12 +1875,6 @@
               "type": "text",
               "label": "Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided",
               "required": false
-            },
-            {
-              "name": "keyId",
-              "type": "number",
-              "label": "Key ID (for signing)",
-              "required": true
             }
           ]
         },
