@@ -79,7 +79,8 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
         ));
     }
 
-    let signer = &*(signer_handle as *const SingleKeySigner);
+    // Treat the handle as a VTableSigner and use its Signer impl
+    let signer = &*(signer_handle as *const crate::signer::VTableSigner);
     let data_slice = std::slice::from_raw_parts(data, data_len);
 
     // Create a dummy identity public key for signing

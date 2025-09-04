@@ -227,31 +227,16 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
         let provider_wrapper = &*(config.context_provider as *const ContextProviderWrapper);
         builder = builder.with_context_provider(provider_wrapper.provider());
     } else if !config.core_sdk_handle.is_null() {
-        // Try to create context provider from global callbacks
+        // Use registered global callbacks if available; otherwise return an error
         if let Some(callback_provider) =
             crate::context_callbacks::CallbackContextProvider::from_global()
         {
             builder = builder.with_context_provider(callback_provider);
         } else {
-            // Fallback to deprecated method (which will also check for global callbacks)
-            use crate::context_provider::dash_sdk_context_provider_from_core;
-
-            let context_provider_handle = dash_sdk_context_provider_from_core(
-                config.core_sdk_handle,
-                std::ptr::null(),
-                std::ptr::null(),
-                std::ptr::null(),
-            );
-
-            if context_provider_handle.is_null() {
-                return DashSDKResult::error(DashSDKError::new(
-                    DashSDKErrorCode::InternalError,
-                    "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
-                ));
-            }
-
-            let provider_wrapper = &*(context_provider_handle as *const ContextProviderWrapper);
-            builder = builder.with_context_provider(provider_wrapper.provider());
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                "Failed to create context provider. Make sure to call dash_sdk_register_context_callbacks first.".to_string(),
+            ));
         }
     } else {
         // No context provider specified - try to use global callbacks if available
@@ -754,10 +739,15 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
 
     if !dump_dir_str.is_empty() {
         let path = std::path::PathBuf::from(dump_dir_str);
+        eprintln!(
+            "🔵 dash_sdk_create_handle_with_mock: loading mock vectors from {}",
+            path.display()
+        );
         builder = builder.with_dump_dir(&path);
     }
 
-    // Build SDK
+    // Build SDK inside the runtime context to satisfy any async initialization paths
+    let _guard = runtime.enter();
     let sdk_result = builder.build();
 
     match sdk_result {
@@ -765,6 +755,12 @@ pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
             let wrapper = Box::new(SDKWrapper::new(sdk, runtime));
             Box::into_raw(wrapper) as *mut SDKHandle
         }
-        Err(_) => std::ptr::null_mut(),
+        Err(e) => {
+            eprintln!(
+                "❌ dash_sdk_create_handle_with_mock: failed to build mock SDK: {}",
+                e
+            );
+            std::ptr::null_mut()
+        }
     }
 }

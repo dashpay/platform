@@ -439,8 +439,9 @@ mod tests {
         let document_type_name = CString::new("testDoc").unwrap();
         let put_settings = create_put_settings();
 
-        let key_handle = Box::into_raw(Box::new(identity_public_key))
-            as *const crate::types::IdentityPublicKeyHandle;
+        // Do not double-box the identity public key; pass the inner box directly
+        let key_handle =
+            Box::into_raw(identity_public_key) as *const crate::types::IdentityPublicKeyHandle;
 
         let result = unsafe {
             dash_sdk_document_replace_on_platform(

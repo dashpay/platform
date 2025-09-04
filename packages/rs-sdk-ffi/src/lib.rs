@@ -1,4 +1,7 @@
 //! Dash Unified SDK FFI bindings
+#![allow(ambiguous_glob_reexports)]
+#![allow(hidden_glob_reexports)]
+#![allow(unexpected_cfgs)]
 //!
 //! This crate provides C-compatible FFI bindings for both Dash Core (SPV) and Platform SDKs,
 //! enabling cross-platform applications to interact with the complete Dash ecosystem through C interfaces.

@@ -246,7 +246,7 @@ pub unsafe extern "C" fn dash_sdk_document_search(
                     ))
                 }
             };
-            DashSDKResult::success(c_str.into_raw() as *mut std::os::raw::c_void)
+            DashSDKResult::success_string(c_str.into_raw())
         }
         Err(e) => DashSDKResult::error(e.into()),
     }

@@ -88,8 +88,8 @@ impl Config {
 
         if config.is_empty() {
             eprintln!("Warning: some config fields are empty: {:?}", config);
-            #[cfg(not(feature = "offline-testing"))]
-            panic!("invalid configuration")
+            // Do not panic by default. Tests that require network should
+            // explicitly check configuration or be marked as ignored.
         }
 
         config

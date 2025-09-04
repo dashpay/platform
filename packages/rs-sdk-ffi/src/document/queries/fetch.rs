@@ -92,10 +92,10 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
             let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
         }
-        Ok(None) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::NotFound,
-            "Document not found".to_string(),
-        )),
+        Ok(None) => {
+            // Mirror rs-sdk semantics: return success with no data when not found
+            DashSDKResult::success(std::ptr::null_mut())
+        }
         Err(e) => DashSDKResult::error(e.into()),
     }
 }
@@ -157,10 +157,10 @@ pub unsafe extern "C" fn dash_sdk_document_fetch(
             let handle = Box::into_raw(Box::new(document)) as *mut DocumentHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
         }
-        Ok(None) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::NotFound,
-            "Document not found".to_string(),
-        )),
+        Ok(None) => {
+            // Mirror rs-sdk semantics: return success with no data when not found
+            DashSDKResult::success(std::ptr::null_mut())
+        }
         Err(e) => DashSDKResult::error(e.into()),
     }
 }

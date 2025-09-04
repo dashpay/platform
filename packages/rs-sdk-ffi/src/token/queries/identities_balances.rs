@@ -17,7 +17,7 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
-/// - `identity_ids`: Comma-separated list of Base58-encoded identity IDs
+/// - `identity_ids`: Either a comma-separated list OR a JSON array of Base58-encoded identity IDs
 /// - `token_id`: Base58-encoded token ID
 ///
 /// # Returns
@@ -47,18 +47,42 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_token_balances(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    // Parse comma-separated identity IDs
-    let identity_ids: Result<Vec<Identifier>, DashSDKError> = ids_str
-        .split(',')
-        .map(|id_str| {
-            Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
-                DashSDKError::new(
+    // Parse identity IDs: accept JSON array ["id1","id2"] or comma-separated "id1,id2"
+    let identity_ids: Result<Vec<Identifier>, DashSDKError> =
+        if ids_str.trim_start().starts_with('[') {
+            // JSON array
+            let arr: Result<Vec<String>, _> = serde_json::from_str(ids_str);
+            match arr {
+                Ok(items) => items
+                    .into_iter()
+                    .map(|id_str| {
+                        Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
+                            DashSDKError::new(
+                                DashSDKErrorCode::InvalidParameter,
+                                format!("Invalid identity ID: {}", e),
+                            )
+                        })
+                    })
+                    .collect(),
+                Err(e) => Err(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid identity ID: {}", e),
-                )
-            })
-        })
-        .collect();
+                    format!("Invalid identity IDs JSON: {}", e),
+                )),
+            }
+        } else {
+            // Comma-separated
+            ids_str
+                .split(',')
+                .map(|id_str| {
+                    Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
+                        DashSDKError::new(
+                            DashSDKErrorCode::InvalidParameter,
+                            format!("Invalid identity ID: {}", e),
+                        )
+                    })
+                })
+                .collect()
+        };
 
     let identity_ids = match identity_ids {
         Ok(ids) => ids,

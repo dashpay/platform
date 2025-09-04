@@ -54,8 +54,10 @@ pub mod test_utils {
     ) -> *mut u8 {
         let signature = vec![0u8; 64];
         *result_len = signature.len();
-        let ptr = signature.as_ptr() as *mut u8;
-        std::mem::forget(signature);
+        let ptr = libc::malloc(signature.len()) as *mut u8;
+        if !ptr.is_null() {
+            std::ptr::copy_nonoverlapping(signature.as_ptr(), ptr, signature.len());
+        }
         ptr
     }
 

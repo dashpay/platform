@@ -53,17 +53,18 @@ fn test_protocol_version_upgrade_state() {
 fn test_protocol_version_upgrade_vote_status() {
     setup_logs();
 
-    let cfg = Config::new();
+    let _cfg = Config::new();
     let handle = create_test_sdk_handle("test_version_upgrade_vote_status");
 
-    // Use the masternode ProTxHash from config
-    let pro_tx_hash = to_c_string(&cfg.masternode_owner_pro_reg_tx_hash);
+    // Use zero proTxHash and limit 2 to align with rs-sdk vectors
+    let pro_tx_hash =
+        to_c_string("0000000000000000000000000000000000000000000000000000000000000000");
 
     unsafe {
         let result = dash_sdk_protocol_version_get_upgrade_vote_status(
             handle,
             pro_tx_hash.as_ptr(),
-            10, // count
+            2, // count
         );
 
         let json_str = assert_success_with_data(result);

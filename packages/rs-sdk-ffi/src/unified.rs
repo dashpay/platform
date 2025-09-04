@@ -1,4 +1,5 @@
 //! Unified SDK coordination module
+#![allow(unexpected_cfgs)]
 //!
 //! This module provides unified functions that coordinate between Core SDK and Platform SDK
 //! when both are available. It manages initialization, state synchronization, and

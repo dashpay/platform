@@ -202,7 +202,7 @@ fn get_contested_resource_voters_for_identity(
             vote_poll,
             contestant_id,
             offset: None,
-            limit: Some(count as u16),
+            limit: if count > 0 { Some(count as u16) } else { None },
             start_at: None,
             order_ascending,
         };

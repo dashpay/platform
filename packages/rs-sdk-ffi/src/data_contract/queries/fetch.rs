@@ -48,10 +48,10 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch(
             let handle = Box::into_raw(Box::new(contract)) as *mut DataContractHandle;
             DashSDKResult::success(handle as *mut std::os::raw::c_void)
         }
-        Ok(None) => DashSDKResult::error(DashSDKError::new(
-            DashSDKErrorCode::NotFound,
-            "Data contract not found".to_string(),
-        )),
+        Ok(None) => {
+            // Mirror rs-sdk semantics: return success with no data when not found
+            DashSDKResult::success(std::ptr::null_mut())
+        }
         Err(e) => DashSDKResult::error(e.into()),
     }
 }

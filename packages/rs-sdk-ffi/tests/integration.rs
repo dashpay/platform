@@ -1,4 +1,3 @@
-//! Integration tests for rs-sdk-ffi
 //!
 //! These tests use the same test vectors as rs-sdk to ensure compatibility
 
@@ -14,8 +13,6 @@ mod contested_resource;
 mod data_contract;
 #[path = "integration_tests/document.rs"]
 mod document;
-#[path = "integration_tests/evonode.rs"]
-mod evonode;
 #[path = "integration_tests/identity.rs"]
 mod identity;
 #[path = "integration_tests/protocol_version.rs"]

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 mod fetch;
 mod fetch_json;
 mod fetch_many;

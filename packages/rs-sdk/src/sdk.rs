@@ -826,6 +826,14 @@ impl Default for SdkBuilder {
 }
 
 impl SdkBuilder {
+    /// Enable or disable proofs on requests.
+    ///
+    /// In mock/offline testing with recorded vectors, set to false to match dumps
+    /// that were captured without proofs.
+    pub fn with_proofs(mut self, proofs: bool) -> Self {
+        self.proofs = proofs;
+        self
+    }
     /// Create a new SdkBuilder with provided address list.
     pub fn new(addresses: AddressList) -> Self {
         Self {

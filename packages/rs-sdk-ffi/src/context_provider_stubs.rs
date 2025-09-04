@@ -3,8 +3,17 @@
 //! These are temporary stubs for testing compilation.
 //! In production, these symbols would be provided by linking against the Core SDK library.
 
-use super::context_provider::{CoreSDKHandle, FFIDashSpvClient, FFIResult};
+use super::context_provider::CoreSDKHandle;
 use std::ffi::c_char;
+
+// Local test-only definitions for stubs
+#[repr(C)]
+pub struct FFIResult {
+    pub error_code: i32,
+    pub error_message: *const c_char,
+}
+
+type FFIDashSpvClient = std::ffi::c_void;
 
 #[cfg(test)]
 #[no_mangle]

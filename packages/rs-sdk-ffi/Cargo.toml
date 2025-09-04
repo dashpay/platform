@@ -17,12 +17,7 @@ simple-signer = { path = "../simple-signer" }
 
 # Core SDK integration (always included for unified SDK)
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
-key-wallet-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
-
-# Key and wallet management
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
-secp256k1 = "0.30"
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -46,8 +41,6 @@ hex = "0.4"
 libc = "0.2"
 
 # Cryptography
-ed25519-dalek = "2.1.0"
-subtle = "2.6"
 getrandom = "0.2"
 
 # Concurrency

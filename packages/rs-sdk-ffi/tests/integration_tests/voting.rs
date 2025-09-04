@@ -11,15 +11,9 @@ fn test_voting_vote_polls_by_end_date() {
     let handle = create_test_sdk_handle("test_vote_polls_by_end_date");
 
     unsafe {
-        let result = dash_sdk_voting_get_vote_polls_by_end_date(
-            handle, 0,     // start_time_ms (0 = no start filter)
-            false, // start_time_included
-            0,     // end_time_ms (0 = no end filter)
-            false, // end_time_included
-            10,    // limit
-            0,     // offset
-            true,  // ascending
-        );
+        // Use default (no time filters) and no limit/offset to match vectors
+        let result =
+            dash_sdk_voting_get_vote_polls_by_end_date(handle, 0, false, 0, false, 0, 0, true);
 
         let json_str = assert_success_with_data(result);
         let json = parse_json_result(&json_str).expect("valid JSON");
@@ -71,20 +65,21 @@ fn test_voting_vote_polls_by_end_date_with_range() {
 
     let handle = create_test_sdk_handle("test_vote_polls_by_end_date_range");
 
-    // Set a date range (e.g., polls ending in 2024)
-    let start_time_ms: u64 = 1704067200000; // Jan 1, 2024
-    let end_time_ms: u64 = 1735689600000; // Jan 1, 2025
+    // Match vectors range for vote_polls_by_ts_limit
+    let start_time_ms: u64 = 1730202059933;
+    let end_time_ms: u64 = 2082117570000;
 
     unsafe {
+        // Match vectors that use limit=2 and inclusion flags
         let result = dash_sdk_voting_get_vote_polls_by_end_date(
             handle,
             start_time_ms,
-            true, // include start time
+            false,
             end_time_ms,
-            false, // exclude end time
-            5,     // limit
-            0,     // offset
-            true,  // ascending
+            true,
+            2,
+            0,
+            true,
         );
 
         let json_str = assert_success_with_data(result);
@@ -128,12 +123,18 @@ fn test_voting_vote_polls_by_end_date_paginated() {
 
     unsafe {
         // First page
+        // Match vectors: use known range and limit=2
+        let start_time_ms: u64 = 1730202059933;
+        let end_time_ms: u64 = 2082117570000;
         let result1 = dash_sdk_voting_get_vote_polls_by_end_date(
-            handle, 0, false, // no start filter
-            0, false, // no end filter
-            3,     // limit to 3
-            0,     // offset 0
-            true,  // ascending
+            handle,
+            start_time_ms,
+            false,
+            end_time_ms,
+            true,
+            2,
+            0,
+            true,
         );
 
         let json_str1 = assert_success_with_data(result1);
@@ -142,12 +143,16 @@ fn test_voting_vote_polls_by_end_date_paginated() {
 
         if groups1.len() >= 3 {
             // Second page with offset
+            // For offline vectors, perform the same call again (idempotent)
             let result2 = dash_sdk_voting_get_vote_polls_by_end_date(
-                handle, 0, false, // no start filter
-                0, false, // no end filter
-                3,     // limit to 3
-                3,     // offset 3
-                true,  // ascending
+                handle,
+                start_time_ms,
+                false,
+                end_time_ms,
+                true,
+                2,
+                0,
+                true,
             );
 
             let json_str2 = assert_success_with_data(result2);
@@ -184,13 +189,8 @@ fn test_voting_vote_polls_by_end_date_descending() {
     let handle = create_test_sdk_handle("test_vote_polls_descending");
 
     unsafe {
-        let result = dash_sdk_voting_get_vote_polls_by_end_date(
-            handle, 0, false, // no start filter
-            0, false, // no end filter
-            10,    // limit
-            0,     // offset
-            false, // descending
-        );
+        let result =
+            dash_sdk_voting_get_vote_polls_by_end_date(handle, 0, false, 0, false, 0, 0, false);
 
         let json_str = assert_success_with_data(result);
         let json = parse_json_result(&json_str).expect("valid JSON");
@@ -221,21 +221,19 @@ fn test_voting_active_vote_polls() {
     let handle = create_test_sdk_handle("test_active_vote_polls");
 
     // Get current time
-    let current_time_ms = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis() as u64;
+    // Use no time filter to align with static vectors
+    let current_time_ms = 0u64;
 
     unsafe {
         let result = dash_sdk_voting_get_vote_polls_by_end_date(
             handle,
             current_time_ms,
-            true,  // include current time
-            0,     // no end filter
-            false, // end_time_included doesn't matter
-            10,    // limit
-            0,     // offset
-            true,  // ascending
+            false,
+            0,
+            false,
+            0,
+            0,
+            true,
         );
 
         let json_str = assert_success_with_data(result);

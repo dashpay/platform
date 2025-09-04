@@ -191,7 +191,8 @@ fn get_contested_resource_vote_state(
         let query = ContestedDocumentVotePollDriveQuery {
             vote_poll,
             result_type,
-            limit: Some(count as u16),
+            // Match rs-sdk vectors: treat count=0 as no limit (null)
+            limit: if count > 0 { Some(count as u16) } else { None },
             start_at: None,
             allow_include_locked_and_abstaining_vote_tally,
             offset: None,

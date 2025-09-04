@@ -139,7 +139,7 @@ fn get_contested_resources(
 
         let contract_id = dash_sdk::platform::Identifier::new(contract_id);
 
-        // Parse start index values
+        // Parse start index values: hex-like -> Bytes, otherwise Text to match vectors
         let start_index_values = if start_index_values_json.is_null() {
             Vec::new()
         } else {
@@ -153,13 +153,20 @@ fn get_contested_resources(
 
             start_values_array
                 .into_iter()
-                .map(|hex_str| {
-                    hex::decode(&hex_str).map_err(|e| format!("Failed to decode start index value: {}", e))
+                .map(|val| {
+                    if val.chars().all(|c| c.is_ascii_hexdigit()) && val.len() % 2 == 0 {
+                        match hex::decode(&val) {
+                            Ok(bytes) => Ok(Value::Bytes(bytes)),
+                            Err(_) => Ok(Value::Text(val)),
+                        }
+                    } else {
+                        Ok(Value::Text(val))
+                    }
                 })
-                .collect::<Result<Vec<Vec<u8>>, String>>()?
+                .collect::<Result<Vec<Value>, String>>()?
         };
 
-        // Parse end index values
+        // Parse end index values: hex-like -> Bytes, otherwise Text
         let end_index_values = if end_index_values_json.is_null() {
             Vec::new()
         } else {
@@ -173,20 +180,28 @@ fn get_contested_resources(
 
             end_values_array
                 .into_iter()
-                .map(|hex_str| {
-                    hex::decode(&hex_str).map_err(|e| format!("Failed to decode end index value: {}", e))
+                .map(|val| {
+                    if val.chars().all(|c| c.is_ascii_hexdigit()) && val.len() % 2 == 0 {
+                        match hex::decode(&val) {
+                            Ok(bytes) => Ok(Value::Bytes(bytes)),
+                            Err(_) => Ok(Value::Text(val)),
+                        }
+                    } else {
+                        Ok(Value::Text(val))
+                    }
                 })
-                .collect::<Result<Vec<Vec<u8>>, String>>()?
+                .collect::<Result<Vec<Value>, String>>()?
         };
 
         let query = VotePollsByDocumentTypeQuery {
             contract_id,
             document_type_name: document_type_name_str.to_string(),
             index_name: index_name_str.to_string(),
-            start_index_values: start_index_values.into_iter().map(Value::from).collect(),
-            end_index_values: end_index_values.into_iter().map(Value::from).collect(),
+            start_index_values,
+            end_index_values,
             start_at_value: None,
-            limit: Some(count as u16),
+            // Match vectors: treat count=0 as no limit (null)
+            limit: if count > 0 { Some(count as u16) } else { None },
             order_ascending,
         };
 

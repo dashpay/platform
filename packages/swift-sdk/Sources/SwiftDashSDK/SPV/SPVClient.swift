@@ -98,7 +98,8 @@ public class SPVClient: ObservableObject {
     public weak var delegate: SPVClientDelegate?
     
     // FFI handles
-    private var client: UnsafeMutablePointer<FFIDashSpvClient>?
+    // Treat SPV client as an opaque handle to avoid relying on the C struct name
+    private var client: OpaquePointer?
     private var config: OpaquePointer?
     
     // Callback context
@@ -323,7 +324,7 @@ public class SPVClient: ObservableObject {
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
         // Start sync in the background to avoid blocking the main thread
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+        let workItem = DispatchWorkItem { [weak self] in
             guard let self = self, let client = self.client else { return }
             let result = dash_spv_ffi_client_sync_to_tip_with_progress(
                 client,
@@ -340,6 +341,7 @@ public class SPVClient: ObservableObject {
                 }
             }
         }
+        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
     }
     
     public func cancelSync() {

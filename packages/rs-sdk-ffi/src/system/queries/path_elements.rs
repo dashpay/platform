@@ -98,10 +98,12 @@ fn get_path_elements(
         let path_array: Vec<String> = serde_json::from_str(path_str)
             .map_err(|e| format!("Failed to parse path JSON: {}", e))?;
 
+        // Accept either hex-encoded bytes or plain strings for path elements
         let path: Path = path_array
             .into_iter()
-            .map(|hex_str| {
-                hex::decode(&hex_str).map_err(|e| format!("Failed to decode path element: {}", e))
+            .map(|s| match hex::decode(&s) {
+                Ok(bytes) => Ok(bytes),
+                Err(_) => Ok(s.into_bytes()),
             })
             .collect::<Result<Vec<Vec<u8>>, String>>()?;
 
@@ -109,10 +111,12 @@ fn get_path_elements(
         let keys_array: Vec<String> = serde_json::from_str(keys_str)
             .map_err(|e| format!("Failed to parse keys JSON: {}", e))?;
 
+        // Accept either hex-encoded bytes or plain strings for keys
         let keys: Vec<Vec<u8>> = keys_array
             .into_iter()
-            .map(|hex_str| {
-                hex::decode(&hex_str).map_err(|e| format!("Failed to decode key: {}", e))
+            .map(|s| match hex::decode(&s) {
+                Ok(bytes) => Ok(bytes),
+                Err(_) => Ok(s.into_bytes()),
             })
             .collect::<Result<Vec<Vec<u8>>, String>>()?;
 

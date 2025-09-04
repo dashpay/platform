@@ -21,11 +21,9 @@ fn main() -> Result<(), PlatformWalletError> {
     // The platform wallet can be used with WalletManager (requires "manager" feature)
     #[cfg(feature = "manager")]
     {
-        use key_wallet_manager::spv_wallet_manager::SPVWalletManager;
         use key_wallet_manager::wallet_manager::WalletManager;
 
-        let mut wallet_manager = WalletManager::<PlatformWalletInfo>::new();
-        let spv_manager = SPVWalletManager::with_base(wallet_manager);
+        let _wallet_manager = WalletManager::<PlatformWalletInfo>::new();
         println!("Platform wallet successfully integrated with wallet managers!");
     }
 

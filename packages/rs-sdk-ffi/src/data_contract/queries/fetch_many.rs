@@ -38,18 +38,41 @@ pub unsafe extern "C" fn dash_sdk_data_contracts_fetch_many(
         Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
     };
 
-    // Parse comma-separated contract IDs
-    let identifiers: Result<Vec<Identifier>, DashSDKError> = ids_str
-        .split(',')
-        .map(|id_str| {
-            Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
-                DashSDKError::new(
-                    DashSDKErrorCode::InvalidParameter,
-                    format!("Invalid contract ID: {}", e),
-                )
-            })
-        })
-        .collect();
+    // Accept either a JSON array of strings or a comma-separated list
+    let identifiers: Result<Vec<Identifier>, DashSDKError> =
+        if ids_str.trim_start().starts_with('[') {
+            match serde_json::from_str::<Vec<String>>(ids_str) {
+                Ok(list) => list
+                    .into_iter()
+                    .map(|s| {
+                        Identifier::from_string(s.as_str(), Encoding::Base58).map_err(|e| {
+                            DashSDKError::new(
+                                DashSDKErrorCode::InvalidParameter,
+                                format!("Invalid contract ID: {}", e),
+                            )
+                        })
+                    })
+                    .collect(),
+                Err(e) => {
+                    return DashSDKResult::error(DashSDKError::new(
+                        DashSDKErrorCode::InvalidParameter,
+                        format!("Invalid JSON array of IDs: {}", e),
+                    ))
+                }
+            }
+        } else {
+            ids_str
+                .split(',')
+                .map(|id_str| {
+                    Identifier::from_string(id_str.trim(), Encoding::Base58).map_err(|e| {
+                        DashSDKError::new(
+                            DashSDKErrorCode::InvalidParameter,
+                            format!("Invalid contract ID: {}", e),
+                        )
+                    })
+                })
+                .collect()
+        };
 
     let identifiers = match identifiers {
         Ok(ids) => ids,
