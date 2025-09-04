@@ -348,6 +348,12 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
     document_type_name: &str,
     index_name: &str,
     index_values: Vec<JsValue>,
+    // TODO: Implement result_type parameter properly
+    // Currently unused - should map to protobuf ResultType enum:
+    // - "documents" -> 0 (DOCUMENTS)
+    // - "vote_tally" -> 1 (VOTE_TALLY)
+    // - "documents_and_vote_tally" -> 2 (DOCUMENTS_AND_VOTE_TALLY)
+    // See: https://github.com/dashpay/platform/issues/2760
     _result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
@@ -408,6 +414,8 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
                 index_values: index_values_bytes,
+                // TODO: This should use the _result_type parameter instead of allow_include_locked_and_abstaining_vote_tally
+                // Current logic is incorrect - these are independent concerns
                 result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) { 0 } else { 1 },
                 allow_include_locked_and_abstaining_vote_tally: allow_include_locked_and_abstaining_vote_tally.unwrap_or(false),
                 start_at_identifier_info,
@@ -703,6 +711,12 @@ pub async fn get_contested_resource_vote_state(
     document_type_name: &str,
     index_name: &str,
     index_values: Vec<JsValue>,
+    // TODO: Implement result_type parameter properly
+    // Currently unused - should map to protobuf ResultType enum:
+    // - "documents" -> 0 (DOCUMENTS)
+    // - "vote_tally" -> 1 (VOTE_TALLY)
+    // - "documents_and_vote_tally" -> 2 (DOCUMENTS_AND_VOTE_TALLY)
+    // See: https://github.com/dashpay/platform/issues/2760
     _result_type: &str,
     allow_include_locked_and_abstaining_vote_tally: Option<bool>,
     start_at_identifier_info: Option<String>,
@@ -761,6 +775,8 @@ pub async fn get_contested_resource_vote_state(
                 document_type_name: document_type_name.to_string(),
                 index_name: index_name.to_string(),
                 index_values: index_values_bytes,
+                // TODO: This should use the _result_type parameter instead of allow_include_locked_and_abstaining_vote_tally
+                // Current logic is incorrect - these are independent concerns
                 result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) { 0 } else { 1 },
                 allow_include_locked_and_abstaining_vote_tally: allow_include_locked_and_abstaining_vote_tally.unwrap_or(false),
                 start_at_identifier_info,
