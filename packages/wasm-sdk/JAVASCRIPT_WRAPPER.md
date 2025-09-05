@@ -57,6 +57,29 @@ npm install @dashevo/dash-wasm-sdk
 yarn add @dashevo/dash-wasm-sdk
 ```
 
+### Node.js Environment Setup
+
+For command line scripts and Node.js applications:
+
+```javascript
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { webcrypto } from 'crypto';
+
+// Required for WASM in Node.js
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+if (!global.crypto) global.crypto = webcrypto;
+
+import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+
+// For CLI usage, you may need to manually load WASM binary
+import init from '@dashevo/dash-wasm-sdk/pkg/wasm_sdk.js';
+const wasmPath = join(__dirname, 'node_modules/@dashevo/dash-wasm-sdk/pkg/wasm_sdk_bg.wasm');
+await init(readFileSync(wasmPath));
+```
+
 ### Browser CDN (Alternative)
 
 ```html

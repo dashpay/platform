@@ -96,6 +96,50 @@ const sdk = new WasmSDK({
 });
 ```
 
+### Command Line Usage
+
+For Node.js applications and command line scripts:
+
+```bash
+# Identity lookup using .env configuration
+node examples/identity-lookup.mjs
+
+# Or specify custom identity
+node examples/identity-lookup.mjs <your-identity-id>
+```
+
+**Node.js Script Example:**
+```javascript
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+import { webcrypto } from 'crypto';
+
+// Set up environment
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+if (!global.crypto) global.crypto = webcrypto;
+
+// Import WASM SDK
+import init, { 
+    WasmSdkBuilder, 
+    identity_fetch,
+    prefetch_trusted_quorums_testnet
+} from '@dashevo/dash-wasm-sdk';
+
+// Initialize for command line
+const wasmPath = join(__dirname, 'node_modules/@dashevo/dash-wasm-sdk/pkg/wasm_sdk_bg.wasm');
+await init(readFileSync(wasmPath));
+
+// Use trusted mode (required for WASM)
+await prefetch_trusted_quorums_testnet();
+const sdk = WasmSdkBuilder.new_testnet_trusted().build();
+
+// Lookup identity
+const identity = await identity_fetch(sdk, identityId);
+console.log('Identity:', identity.toJSON());
+```
+
 ### Legacy API (Raw WASM Bindings)
 
 ```javascript
@@ -105,7 +149,7 @@ import init, { WasmSdkBuilder } from '@dashevo/dash-wasm-sdk';
 await init();
 
 // Create SDK instance using builder pattern
-const sdk = await WasmSdkBuilder.new_testnet().build();
+const sdk = WasmSdkBuilder.new_testnet_trusted().build();
 
 // Example query
 const identity = await sdk.get_identity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");
