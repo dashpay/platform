@@ -148,6 +148,7 @@ pub mod identity_token_balance_drive_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity_token_info_drive_query;
 
+#[cfg(any(feature = "server", feature = "verify"))]
 mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
