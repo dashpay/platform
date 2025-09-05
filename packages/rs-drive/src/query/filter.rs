@@ -1,3 +1,13 @@
+//! DriveDocumentQueryFilter and related functionality
+//!
+//! This module defines the `DriveDocumentQueryFilter` struct, which is used to filter
+//! document state transitions based on specified criteria. It includes methods to check
+//! if a state transition or document matches the filter, as well as utility functions for
+//! evaluating where clauses.
+//!
+//! The filter is primarily used in the context of clients subscribing to document events
+//! in Platform.
+
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
@@ -18,7 +28,12 @@ use indexmap::IndexMap;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause};
 
 #[cfg(any(feature = "server", feature = "verify"))]
-/// Drive document query filter
+/// DriveDocumentQueryFilter is meant to enable clients to subscribe to certain document events in Platform.
+///
+/// Clients will send their desired filter to a node running Tenderdash, who will run the filter on
+/// the state transitions of an accepted block (before the state transitions are actually executed).
+///
+/// If a state transition matches the filter, the node will signal the client.
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveDocumentQueryFilter<'a> {
     /// DataContract
@@ -56,7 +71,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DriveDocumentQueryFilter<'a> {
 }
 
 impl DriveDocumentQueryFilter<'_> {
-    /// Figures out if a document matches the query
+    /// Figures out if a state transition matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_state_transition(&self, state_transition: &StateTransition) -> bool {
         match state_transition {
@@ -74,6 +89,7 @@ impl DriveDocumentQueryFilter<'_> {
         }
     }
 
+    /// Figures out if a document state transition matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document_state_transition(
         &self,
@@ -100,7 +116,8 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
     }
-    /// Figures out if a document matches the query
+
+    /// Figures out if a document matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document(
         &self,
@@ -112,7 +129,7 @@ impl DriveDocumentQueryFilter<'_> {
             return false;
         }
 
-        // Check document type
+        // Check document type name
         if document_base_transition.document_type_name() != self.document_type.name() {
             return false;
         }
@@ -145,7 +162,6 @@ impl DriveDocumentQueryFilter<'_> {
                     return false;
                 }
             } else {
-                // Field doesn't exist in document
                 return false;
             }
         }
@@ -158,7 +174,6 @@ impl DriveDocumentQueryFilter<'_> {
                     return false;
                 }
             } else {
-                // Field doesn't exist in document
                 return false;
             }
         }
@@ -171,7 +186,6 @@ impl DriveDocumentQueryFilter<'_> {
                     return false;
                 }
             } else {
-                // Field doesn't exist in document
                 return false;
             }
         }
