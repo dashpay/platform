@@ -44,7 +44,7 @@ pub enum DapiError {
     Http(#[from] axum::http::Error),
 
     #[error("WebSocket error: {0}")]
-    WebSocket(#[from] tokio_tungstenite::tungstenite::Error),
+    WebSocket(#[from] Box<tokio_tungstenite::tungstenite::Error>),
 
     #[error("Task join error: {0}")]
     TaskJoin(#[from] tokio::task::JoinError),
@@ -115,6 +115,12 @@ pub type DAPIResult<T> = std::result::Result<T, DapiError>;
 impl From<Box<dyn std::error::Error + Send + Sync>> for DapiError {
     fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
         Self::Internal(err.to_string())
+    }
+}
+
+impl From<tokio_tungstenite::tungstenite::Error> for DapiError {
+    fn from(err: tokio_tungstenite::tungstenite::Error) -> Self {
+        Self::WebSocket(Box::new(err))
     }
 }
 

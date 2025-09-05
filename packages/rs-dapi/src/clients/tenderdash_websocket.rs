@@ -182,7 +182,7 @@ pub struct TenderdashWebSocketClient {
     ws_url: String,
     event_sender: broadcast::Sender<TransactionEvent>,
     is_connected: Arc<AtomicBool>,
-    block_sender: broadcast::Sender<()>,
+    block_sender: broadcast::Sender<BlockEvent>,
 }
 
 impl TenderdashWebSocketClient {
@@ -206,7 +206,7 @@ impl TenderdashWebSocketClient {
         self.is_connected.load(Ordering::Relaxed)
     }
 
-    pub fn subscribe_blocks(&self) -> broadcast::Receiver<()> {
+    pub fn subscribe_blocks(&self) -> broadcast::Receiver<BlockEvent> {
         self.block_sender.subscribe()
     }
 
@@ -321,7 +321,7 @@ impl TenderdashWebSocketClient {
         // NewBlock notifications include a query matching NewBlock
         if let Some(query) = result.get("query").and_then(|q| q.as_str()) {
             if query.contains("NewBlock") {
-                let _ = self.block_sender.send(());
+                let _ = self.block_sender.send(BlockEvent {});
                 return Ok(());
             }
         }

@@ -1,5 +1,6 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use super::traits::TenderdashClientTrait;
+use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::error::{DAPIResult, DapiError};
 use async_trait::async_trait;
 use reqwest::Client;
@@ -370,6 +371,15 @@ impl TenderdashClientTrait for TenderdashClient {
     fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.subscribe()
+        } else {
+            // Return a receiver that will never receive messages
+            let (_, rx) = broadcast::channel(1);
+            rx
+        }
+    }
+    fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent> {
+        if let Some(ws_client) = &self.websocket_client {
+            ws_client.subscribe_blocks()
         } else {
             // Return a receiver that will never receive messages
             let (_, rx) = broadcast::channel(1);

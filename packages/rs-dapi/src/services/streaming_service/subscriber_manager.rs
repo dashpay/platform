@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
-use tracing::{debug, trace, warn};
+use tokio::sync::{mpsc, Mutex, RwLock};
+use tracing::{debug, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
@@ -87,32 +87,6 @@ pub enum StreamingEvent {
     PlatformBlock { event: BlockEvent },
     /// Masternode list diff bytes
     CoreMasternodeListDiff { data: Vec<u8> },
-}
-
-/// Messages sent to streaming clients
-#[derive(Debug, Clone)]
-pub enum StreamingMessage {
-    /// Raw transaction data with merkle proof
-    CoreTransaction {
-        tx_data: Vec<u8>,
-        merkle_proof: Option<Vec<u8>>,
-    },
-    /// Merkle block data
-    CoreMerkleBlock { data: Vec<u8> },
-    /// InstantSend lock message
-    CoreInstantLock { data: Vec<u8> },
-    /// Block header data
-    CoreBlockHeader { data: Vec<u8> },
-    /// Chain lock data
-    CoreChainLock { data: Vec<u8> },
-    /// Masternode list diff data
-    MasternodeListDiff { data: Vec<u8> },
-    /// New Core block hash notification
-    CoreNewBlockHash { hash: Vec<u8> },
-    /// Platform transaction event (Tenderdash)
-    PlatformTx { event: TransactionEvent },
-    /// Platform block event (Tenderdash)
-    PlatformBlock {},
 }
 
 /// Manages all active streaming subscriptions
@@ -248,7 +222,7 @@ impl SubscriberManager {
 
         // Clean up dead subscriptions
         for sub in dead_subs.iter() {
-            self.remove_subscription(sub);
+            self.remove_subscription(sub).await;
         }
     }
 

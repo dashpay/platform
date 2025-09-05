@@ -1,4 +1,4 @@
-use crate::DAPIResult;
+use crate::{clients::tenderdash_websocket::BlockEvent, DAPIResult};
 use async_trait::async_trait;
 
 use crate::clients::{
@@ -98,6 +98,12 @@ impl TenderdashClientTrait for MockTenderdashClient {
     fn subscribe_to_transactions(
         &self,
     ) -> tokio::sync::broadcast::Receiver<crate::clients::TransactionEvent> {
+        // Return a receiver that will never receive messages for testing
+        let (_, rx) = tokio::sync::broadcast::channel(1);
+        rx
+    }
+
+    fn subscribe_to_blocks(&self) -> tokio::sync::broadcast::Receiver<BlockEvent> {
         // Return a receiver that will never receive messages for testing
         let (_, rx) = tokio::sync::broadcast::channel(1);
         rx

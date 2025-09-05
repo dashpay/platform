@@ -101,6 +101,8 @@ Legend:
 ## P2 — Cleanup & Consistency
 
 - [ ] Unify error types (`src/error.rs` vs `src/errors/mod.rs`) into one `DapiError`
+- [ ] Refactor error conversions: remove `impl From<Box<dyn std::error::Error + Send + Sync>> for DapiError` and map external errors explicitly to `DapiError` across the codebase
+  - Files: `src/error.rs`, `src/clients/*`, `src/services/*`, `src/server.rs`
 - [ ] Remove remaining `TODO` placeholders or convert into tracked tasks here
 - [ ] Harden Tenderdash WebSocket reconnection/backoff
 - [ ] Consistent config naming and documentation, align with Dashmate
