@@ -42,7 +42,9 @@ pub struct DriveDocumentQueryFilter<'a> {
 
 impl<'a> From<DriveDocumentQueryFilter<'a>> for DriveDocumentQuery<'a> {
     fn from(value: DriveDocumentQueryFilter<'a>) -> Self {
-        let document_type = value.contract.document_type_for_name(&value.document_type_name)
+        let document_type = value
+            .contract
+            .document_type_for_name(&value.document_type_name)
             .expect("Document type should exist in contract");
         DriveDocumentQuery {
             contract: value.contract,
