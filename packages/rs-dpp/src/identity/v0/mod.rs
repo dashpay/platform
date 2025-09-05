@@ -30,7 +30,6 @@ use bincode::{Decode, Encode};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
 pub struct IdentityV0 {
     pub id: Identifier,
     #[cfg_attr(

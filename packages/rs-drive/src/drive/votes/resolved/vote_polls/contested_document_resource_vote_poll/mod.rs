@@ -257,7 +257,7 @@ impl ContestedDocumentResourceVotePollWithContractInfo {
     ///
     /// This method returns an `Error::Protocol` variant with `ProtocolError::DataContractError`
     /// if there is an issue retrieving the document type.
-    pub fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef<'_>, Error> {
         self.contract
             .as_ref()
             .document_type_for_name(self.document_type_name.as_str())
@@ -317,7 +317,7 @@ impl ContestedDocumentResourceVotePollWithContractInfoAllowBorrowed<'_> {
     ///
     /// This method returns an `Error::Protocol` variant with `ProtocolError::DataContractError`
     /// if there is an issue retrieving the document type.
-    pub fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub fn document_type(&self) -> Result<DocumentTypeRef<'_>, Error> {
         self.contract
             .as_ref()
             .document_type_for_name(self.document_type_name.as_str())
