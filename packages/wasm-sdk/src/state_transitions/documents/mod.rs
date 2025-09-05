@@ -185,6 +185,15 @@ impl WasmSdk {
         
         Ok(result_obj.into())
     }
+    
+    /// Get the next revision for a document, handling errors for missing revisions and overflow
+    fn get_next_revision(document: &dash_sdk::platform::Document) -> Result<u64, JsValue> {
+        let current_revision = document.revision()
+            .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
+        
+        current_revision.checked_add(1)
+            .ok_or_else(|| JsValue::from_str("Document revision overflow"))
+    }
 }
 
 #[wasm_bindgen]
@@ -499,7 +508,6 @@ impl WasmSdk {
     /// * `document_data` - The new document data as a JSON string
     /// * `revision` - The current revision of the document
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -514,7 +522,6 @@ impl WasmSdk {
         document_data: String,
         revision: u64,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -785,7 +792,6 @@ impl WasmSdk {
     /// * `document_id` - The ID of the document to delete
     /// * `owner_id` - The identity ID of the document owner
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -798,7 +804,6 @@ impl WasmSdk {
         document_id: String,
         owner_id: String,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -835,7 +840,8 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch document: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
         
-        let current_revision = existing_doc.revision().unwrap_or(0);
+        let current_revision = existing_doc.revision()
+            .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
         
         // Fetch the identity to get the correct key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
@@ -911,7 +917,6 @@ impl WasmSdk {
     /// * `owner_id` - The current owner's identity ID
     /// * `recipient_id` - The new owner's identity ID
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -925,7 +930,6 @@ impl WasmSdk {
         owner_id: String,
         recipient_id: String,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -965,6 +969,26 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch document: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
         
+        // Get the current revision and increment it
+        let next_revision = Self::get_next_revision(&document)?;
+        
+        // Create a modified document with incremented revision for the transfer transition
+        let transfer_document = Document::V0(DocumentV0 {
+            id: document.id(),
+            owner_id: document.owner_id(),
+            properties: document.properties().clone(),
+            revision: Some(next_revision),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+        });
+        
         // Fetch the identity to get the correct key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
             .await
@@ -983,7 +1007,7 @@ impl WasmSdk {
         
         // Create a transfer transition
         let transition = BatchTransition::new_document_transfer_transition_from_document(
-            document,
+            transfer_document,
             document_type_ref,
             recipient_identifier,
             matching_key,
@@ -1026,7 +1050,6 @@ impl WasmSdk {
     /// * `buyer_id` - The buyer's identity ID
     /// * `price` - The purchase price in credits
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -1040,7 +1063,6 @@ impl WasmSdk {
         buyer_id: String,
         price: u64,
         private_key_wif: String,
-        key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1089,6 +1111,26 @@ impl WasmSdk {
             )));
         }
         
+        // Get the current revision and increment it
+        let next_revision = Self::get_next_revision(&document)?;
+        
+        // Create a modified document with incremented revision for the purchase transition
+        let purchase_document = Document::V0(DocumentV0 {
+            id: document.id(),
+            owner_id: document.owner_id(),
+            properties: document.properties().clone(),
+            revision: Some(next_revision),
+            created_at: document.created_at(),
+            updated_at: document.updated_at(),
+            transferred_at: document.transferred_at(),
+            created_at_block_height: document.created_at_block_height(),
+            updated_at_block_height: document.updated_at_block_height(),
+            transferred_at_block_height: document.transferred_at_block_height(),
+            created_at_core_block_height: document.created_at_core_block_height(),
+            updated_at_core_block_height: document.updated_at_core_block_height(),
+            transferred_at_core_block_height: document.transferred_at_core_block_height(),
+        });
+        
         // Fetch buyer identity
         let buyer_identity = dash_sdk::platform::Identity::fetch(&sdk, buyer_identifier)
             .await
@@ -1107,7 +1149,7 @@ impl WasmSdk {
         
         // Create document purchase transition
         let transition = BatchTransition::new_document_purchase_transition_from_document(
-            document.into(),
+            purchase_document,
             document_type_ref,
             buyer_identifier,
             price as Credits,
@@ -1172,7 +1214,6 @@ impl WasmSdk {
     /// * `owner_id` - The owner's identity ID
     /// * `price` - The price in credits (0 to remove price)
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -1186,7 +1227,6 @@ impl WasmSdk {
         owner_id: String,
         price: u64,
         private_key_wif: String,
-        key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1226,25 +1266,15 @@ impl WasmSdk {
             return Err(JsValue::from_str("Only the document owner can set its price"));
         }
         
-        // Get existing document properties and convert to mutable map
-        let mut properties = existing_doc.properties().clone();
+        // Get the current revision and increment it
+        let next_revision = Self::get_next_revision(&existing_doc)?;
         
-        // Update the price in the document properties
-        let price_value = if price > 0 {
-            PlatformValue::U64(price)
-        } else {
-            PlatformValue::Null
-        };
-        
-        properties.insert("$price".to_string(), price_value);
-        
-        // Create updated document with new properties
-        let new_revision = existing_doc.revision().unwrap_or(0) + 1;
-        let updated_doc = Document::V0(DocumentV0 {
-            id: doc_id,
-            owner_id: owner_identifier,
-            properties,
-            revision: Some(new_revision),
+        // Create a modified document with incremented revision for the price update transition
+        let price_update_document = Document::V0(DocumentV0 {
+            id: existing_doc.id(),
+            owner_id: existing_doc.owner_id(),
+            properties: existing_doc.properties().clone(),
+            revision: Some(next_revision),
             created_at: existing_doc.created_at(),
             updated_at: existing_doc.updated_at(),
             transferred_at: existing_doc.transferred_at(),
@@ -1272,22 +1302,12 @@ impl WasmSdk {
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
         
-        // Generate entropy for the state transition
-        let entropy_bytes = {
-            let mut entropy = [0u8; 32];
-            if let Some(window) = web_sys::window() {
-                if let Ok(crypto) = window.crypto() {
-                    let _ = crypto.get_random_values_with_u8_array(&mut entropy);
-                }
-            }
-            entropy
-        };
-        
-        // Create the price update transition
-        let transition = BatchTransition::new_document_replacement_transition_from_document(
-            updated_doc,
+        // Create the price update transition using the dedicated method
+        let transition = BatchTransition::new_document_update_price_transition_from_document(
+            price_update_document,
             document_type_ref,
-            matching_key,
+            price,
+            &matching_key,
             identity_contract_nonce,
             UserFeeIncrease::default(),
             None, // token_payment_info
@@ -1295,7 +1315,7 @@ impl WasmSdk {
             sdk.version(),
             None, // options
         )
-        .map_err(|e| JsValue::from_str(&format!("Failed to create transition: {}", e)))?;
+        .map_err(|e| JsValue::from_str(&format!("Failed to create price update transition: {}", e)))?;
         
         // The transition is already signed, convert to StateTransition
         let state_transition: StateTransition = transition.into();

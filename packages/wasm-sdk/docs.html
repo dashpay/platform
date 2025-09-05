@@ -983,13 +983,13 @@
                 </div>
                 <div class="parameter">
                     <span class="param-name">Where Clause (JSON)</span>
-                    <span class="param-type">text</span>
+                    <span class="param-type">json</span>
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: [[&quot;normalizedParentDomainName&quot;, &quot;==&quot;, &quot;dash&quot;], [&quot;normalizedLabel&quot;, &quot;==&quot;, &quot;therea1s11mshaddy5&quot;]]</small>
                 </div>
                 <div class="parameter">
                     <span class="param-name">Order By (JSON)</span>
-                    <span class="param-type">text</span>
+                    <span class="param-type">json</span>
                     <span class="param-optional">(optional)</span>
                     <br><small>Example: [[&quot;$createdAt&quot;, &quot;desc&quot;]]</small>
                 </div>
@@ -2638,11 +2638,6 @@ const result = await sdk.identityTopUp(identityId, assetLockProof, assetLockProo
                     <span class="param-name">Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided</span>
                     <span class="param-type">text</span>
                     <span class="param-optional">(optional)</span>
-                </div>
-                <div class="parameter">
-                    <span class="param-name">Key ID (for signing)</span>
-                    <span class="param-type">number</span>
-                    <span class="param-required">(required)</span>
                 </div>
             </div>
             

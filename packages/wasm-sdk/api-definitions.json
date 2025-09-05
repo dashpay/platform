@@ -399,15 +399,15 @@
               "placeholder": "domain"
             },
             {
-              "name": "whereClause",
-              "type": "text",
+              "name": "where",
+              "type": "json",
               "label": "Where Clause (JSON)",
               "required": false,
               "placeholder": "[[\"normalizedParentDomainName\", \"==\", \"dash\"], [\"normalizedLabel\", \"==\", \"therea1s11mshaddy5\"]]"
             },
             {
               "name": "orderBy",
-              "type": "text",
+              "type": "json",
               "label": "Order By (JSON)",
               "required": false,
               "placeholder": "[[\"$createdAt\", \"desc\"]]"
@@ -1875,12 +1875,6 @@
               "type": "text",
               "label": "Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided",
               "required": false
-            },
-            {
-              "name": "keyId",
-              "type": "number",
-              "label": "Key ID (for signing)",
-              "required": true
             }
           ]
         },
@@ -2079,7 +2073,7 @@
               "required": true
             },
             {
-              "name": "identityId",
+              "name": "frozenIdentityId",
               "type": "text",
               "label": "Identity ID whose frozen tokens to destroy",
               "required": true

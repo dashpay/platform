@@ -266,9 +266,9 @@ Parameters:
   - Example: `GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec`
 - `documentType` (text, required) - Document Type
   - Example: `domain`
-- `whereClause` (text, optional) - Where Clause (JSON)
+- `where` (json, optional) - Where Clause (JSON)
   - Example: `[["normalizedParentDomainName", "==", "dash"], ["normalizedLabel", "==", "therea1s11mshaddy5"]]`
-- `orderBy` (text, optional) - Order By (JSON)
+- `orderBy` (json, optional) - Order By (JSON)
   - Example: `[["$createdAt", "desc"]]`
 - `limit` (number, optional) - Limit
 
@@ -1097,7 +1097,6 @@ Parameters (in addition to identity/key):
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Purchase
 - `totalAgreedPrice` (text, optional) - Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided
-- `keyId` (number, required) - Key ID (for signing)
 
 Example:
 ```javascript
@@ -1175,7 +1174,7 @@ const result = await sdk.tokenUnfreeze(identityHex, /* params */, privateKeyHex)
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID whose frozen tokens to destroy
+- `frozenIdentityId` (text, required) - Identity ID whose frozen tokens to destroy
 - `publicNote` (text, optional) - Public Note
 
 Example:
