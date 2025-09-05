@@ -217,6 +217,52 @@ impl<'a> WhereClause {
         self.field == "$id"
     }
 
+    /// Evaluate this clause against a provided `Value`
+    pub fn matches_value(&self, value: &Value) -> bool {
+        match &self.operator {
+            WhereOperator::Equal => value == &self.value,
+            WhereOperator::GreaterThan => value > &self.value,
+            WhereOperator::GreaterThanOrEquals => value >= &self.value,
+            WhereOperator::LessThan => value < &self.value,
+            WhereOperator::LessThanOrEquals => value <= &self.value,
+            WhereOperator::In => match &self.value {
+                Value::Array(array) => array.contains(value),
+                _ => false,
+            },
+            WhereOperator::Between => match &self.value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    value >= &bounds[0] && value <= &bounds[1]
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeBounds => match &self.value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    value > &bounds[0] && value < &bounds[1]
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeLeft => match &self.value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    value > &bounds[0] && value <= &bounds[1]
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeRight => match &self.value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    value >= &bounds[0] && value < &bounds[1]
+                }
+                _ => false,
+            },
+            WhereOperator::StartsWith => {
+                if let (Value::Text(text), Value::Text(prefix)) = (value, &self.value) {
+                    text.starts_with(prefix.as_str())
+                } else {
+                    false
+                }
+            }
+        }
+    }
+
     /// Returns the where clause `in` values if they are an array of values, else an error
     pub fn in_values(&self) -> Result<Cow<Vec<Value>>, Error> {
         let in_values = match &self.value {
