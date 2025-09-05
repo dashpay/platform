@@ -69,6 +69,11 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 log = "0.4"
 
+[features]
+# Compile stubbed Core SDK FFI symbols for tests if needed.
+# Off by default to avoid symbol clashes when linking dash-spv-ffi.
+ffi_core_stubs = []
+
 [[test]]
 name = "integration"
 path = "tests/integration.rs"

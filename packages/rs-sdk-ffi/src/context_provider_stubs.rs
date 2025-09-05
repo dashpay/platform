@@ -15,7 +15,7 @@ pub struct FFIResult {
 
 type FFIDashSpvClient = std::ffi::c_void;
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ffi_core_stubs"))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_quorum_public_key(
     _client: *mut FFIDashSpvClient,
@@ -36,7 +36,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_quorum_public_key(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ffi_core_stubs"))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
     _client: *mut FFIDashSpvClient,
@@ -53,7 +53,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ffi_core_stubs"))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
     _client: *mut FFIDashSpvClient,
@@ -62,7 +62,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
     std::ptr::null_mut()
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "ffi_core_stubs"))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_release_core_handle(_handle: *mut CoreSDKHandle) {
     // Stub implementation - nothing to do
