@@ -12,7 +12,6 @@ use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::platform_value::Value;
 use dpp::version::LATEST_PLATFORM_VERSION;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -29,21 +28,25 @@ use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperat
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// DriveDocumentQueryFilter struct for filtering document state transitions
+///
+/// Full contract is needed to validate filters
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveDocumentQueryFilter<'a> {
     /// DataContract
     pub contract: &'a DataContract,
-    /// Document type
-    pub document_type: DocumentTypeRef<'a>,
+    /// Document type name
+    pub document_type_name: String,
     /// Internal clauses
     pub internal_clauses: InternalClauses,
 }
 
 impl<'a> From<DriveDocumentQueryFilter<'a>> for DriveDocumentQuery<'a> {
     fn from(value: DriveDocumentQueryFilter<'a>) -> Self {
+        let document_type = value.contract.document_type_for_name(&value.document_type_name)
+            .expect("Document type should exist in contract");
         DriveDocumentQuery {
             contract: value.contract,
-            document_type: value.document_type,
+            document_type,
             internal_clauses: value.internal_clauses,
             offset: None,
             limit: None,
@@ -59,7 +62,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DriveDocumentQueryFilter<'a> {
     fn from(value: DriveDocumentQuery<'a>) -> Self {
         DriveDocumentQueryFilter {
             contract: value.contract,
-            document_type: value.document_type,
+            document_type_name: value.document_type.name().to_string(),
             internal_clauses: value.internal_clauses,
         }
     }
@@ -125,7 +128,7 @@ impl DriveDocumentQueryFilter<'_> {
         }
 
         // Check document type name
-        if document_base_transition.document_type_name() != self.document_type.name() {
+        if document_base_transition.document_type_name() != &self.document_type_name {
             return false;
         }
 
@@ -279,14 +282,11 @@ mod tests {
         // Get a test contract from fixtures
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         // Create a filter with no clauses (should match if contract and type match)
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses: InternalClauses::default(),
         };
 
@@ -320,9 +320,6 @@ mod tests {
     fn test_matches_document_with_primary_key_equal() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         let target_id = Identifier::from([42u8; 32]);
 
@@ -335,7 +332,7 @@ mod tests {
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses,
         };
 
@@ -368,9 +365,6 @@ mod tests {
     fn test_matches_document_with_field_filters() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         // Test Equal operator
         let mut equal_clauses = BTreeMap::new();
@@ -388,7 +382,7 @@ mod tests {
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses,
         };
 
@@ -421,9 +415,6 @@ mod tests {
     fn test_matches_document_with_in_operator() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         let allowed_values = vec![
             Value::Text("active".to_string()),
@@ -439,7 +430,7 @@ mod tests {
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses,
         };
 
@@ -466,9 +457,6 @@ mod tests {
     fn test_matches_document_with_range_operators() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         // Test GreaterThan
         let mut internal_clauses = InternalClauses::default();
@@ -480,7 +468,7 @@ mod tests {
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses,
         };
 
@@ -512,9 +500,6 @@ mod tests {
     fn test_matches_document_with_between_operator() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.range_clause = Some(WhereClause {
@@ -525,7 +510,7 @@ mod tests {
 
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses,
         };
 
@@ -567,9 +552,6 @@ mod tests {
     fn test_validate_filter() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("indexedDocument")
-            .expect("document type should exist");
 
         // Test valid filter with indexed field
         let mut internal_clauses = InternalClauses::default();
@@ -586,7 +568,7 @@ mod tests {
 
         let valid_filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "indexedDocument".to_string(),
             internal_clauses,
         };
 
@@ -610,7 +592,7 @@ mod tests {
 
         let invalid_filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "indexedDocument".to_string(),
             internal_clauses,
         };
 
@@ -629,7 +611,7 @@ mod tests {
 
         let primary_key_filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "indexedDocument".to_string(),
             internal_clauses,
         };
 
@@ -643,9 +625,6 @@ mod tests {
     fn test_conversion_between_filter_and_query() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
-        let document_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("document type should exist");
 
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.primary_key_equal_clause = Some(WhereClause {
@@ -656,7 +635,7 @@ mod tests {
 
         let original_filter = DriveDocumentQueryFilter {
             contract: &contract,
-            document_type,
+            document_type_name: "niceDocument".to_string(),
             internal_clauses: internal_clauses.clone(),
         };
 
@@ -665,7 +644,7 @@ mod tests {
 
         // Check that core fields are preserved
         assert_eq!(query.contract.id(), contract.id());
-        assert_eq!(query.document_type.name(), document_type.name());
+        assert_eq!(query.document_type.name(), "niceDocument");
         assert_eq!(query.internal_clauses, internal_clauses);
 
         // Check that optional fields are set to defaults
