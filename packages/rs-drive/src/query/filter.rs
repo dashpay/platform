@@ -14,26 +14,21 @@ use dpp::data_contract::DataContract;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::platform_value::Value;
-use dpp::prelude::Identifier;
+use dpp::version::LATEST_PLATFORM_VERSION;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::StateTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use indexmap::IndexMap;
-use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause};
+use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
 
 #[cfg(any(feature = "server", feature = "verify"))]
-/// DriveDocumentQueryFilter is meant to enable clients to subscribe to certain document events in Platform.
-///
-/// Clients will send their desired filter to a node running Tenderdash, who will run the filter on
-/// the state transitions of an accepted block (before the state transitions are actually executed).
-///
-/// If a state transition matches the filter, the node will signal the client.
+/// DriveDocumentQueryFilter struct for filtering document state transitions
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveDocumentQueryFilter<'a> {
     /// DataContract
@@ -71,7 +66,7 @@ impl<'a> From<DriveDocumentQuery<'a>> for DriveDocumentQueryFilter<'a> {
 }
 
 impl DriveDocumentQueryFilter<'_> {
-    /// Figures out if a state transition matches the filter
+    /// Checks if a state transition matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_state_transition(&self, state_transition: &StateTransition) -> bool {
         match state_transition {
@@ -89,7 +84,7 @@ impl DriveDocumentQueryFilter<'_> {
         }
     }
 
-    /// Figures out if a document state transition matches the filter
+    /// Checks if a document state transition matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document_state_transition(
         &self,
@@ -117,7 +112,7 @@ impl DriveDocumentQueryFilter<'_> {
         }
     }
 
-    /// Figures out if a document matches the filter
+    /// Checks if a document (base transition and data) matches the filter
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn matches_document(
         &self,
@@ -196,8 +191,6 @@ impl DriveDocumentQueryFilter<'_> {
     /// Helper function to evaluate a where clause against a value
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_where_clause(&self, clause: &WhereClause, value: &Value) -> bool {
-        use crate::query::WhereOperator;
-
         match &clause.operator {
             WhereOperator::Equal => value == &clause.value,
             WhereOperator::GreaterThan => value > &clause.value,
@@ -265,21 +258,21 @@ impl DriveDocumentQueryFilter<'_> {
         }
     }
 
+    /// Validates that the filter's clauses are valid for the document type
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn validate(&self) -> bool {
-        // Do stuff like make sure that any filters defined actually align with the document type etc
-        // There should already be methods for this elsewhere in the codebase that we can just use
-        true
+        // Convert the filter to a query to reuse find_best_index logic
+        let query: DriveDocumentQuery = self.clone().into();
+        query.find_best_index(LATEST_PLATFORM_VERSION).is_ok()
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
+    use dpp::prelude::Identifier;
+    use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
     use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::LATEST_PLATFORM_VERSION;
-    use std::collections::BTreeMap;
 
     #[test]
     fn test_matches_document_basic() {
@@ -298,11 +291,12 @@ mod tests {
         };
 
         // Create matching document base
-        let document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         let document_data = BTreeMap::new();
@@ -311,11 +305,12 @@ mod tests {
         assert!(filter.matches_document(&document_base, &document_data));
 
         // Test with wrong contract ID
-        let wrong_document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let wrong_document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: Identifier::from([99u8; 32]), // Wrong ID
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         assert!(!filter.matches_document(&wrong_document_base, &document_data));
@@ -334,7 +329,7 @@ mod tests {
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.primary_key_equal_clause = Some(WhereClause {
             field: "$id".to_string(),
-            operator: crate::query::WhereOperator::Equal,
+            operator: WhereOperator::Equal,
             value: Value::Identifier(target_id.to_buffer()),
         });
 
@@ -345,11 +340,12 @@ mod tests {
         };
 
         // Test with matching ID
-        let matching_doc = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let matching_doc = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: target_id,
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         let document_data = BTreeMap::new();
@@ -357,11 +353,12 @@ mod tests {
         assert!(filter.matches_document(&matching_doc, &document_data));
 
         // Test with different ID
-        let non_matching_doc = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let non_matching_doc = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([99u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         assert!(!filter.matches_document(&non_matching_doc, &document_data));
@@ -381,7 +378,7 @@ mod tests {
             "name".to_string(),
             WhereClause {
                 field: "name".to_string(),
-                operator: crate::query::WhereOperator::Equal,
+                operator: WhereOperator::Equal,
                 value: Value::Text("example".to_string()),
             },
         );
@@ -395,11 +392,12 @@ mod tests {
             internal_clauses,
         };
 
-        let document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         // Test with matching data
@@ -435,7 +433,7 @@ mod tests {
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.in_clause = Some(WhereClause {
             field: "status".to_string(),
-            operator: crate::query::WhereOperator::In,
+            operator: WhereOperator::In,
             value: Value::Array(allowed_values),
         });
 
@@ -445,11 +443,12 @@ mod tests {
             internal_clauses,
         };
 
-        let document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         // Test with value in list
@@ -475,7 +474,7 @@ mod tests {
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.range_clause = Some(WhereClause {
             field: "score".to_string(),
-            operator: crate::query::WhereOperator::GreaterThan,
+            operator: WhereOperator::GreaterThan,
             value: Value::U64(50),
         });
 
@@ -485,11 +484,12 @@ mod tests {
             internal_clauses,
         };
 
-        let document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         // Test with value greater than threshold
@@ -519,7 +519,7 @@ mod tests {
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.range_clause = Some(WhereClause {
             field: "value".to_string(),
-            operator: crate::query::WhereOperator::Between,
+            operator: WhereOperator::Between,
             value: Value::Array(vec![Value::U64(10), Value::U64(20)]),
         });
 
@@ -529,11 +529,12 @@ mod tests {
             internal_clauses,
         };
 
-        let document_base = DocumentBaseTransition::V0(DocumentBaseTransitionV0 {
+        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
             id: Identifier::from([3u8; 32]),
             document_type_name: "niceDocument".to_string(),
             data_contract_id: contract.id(),
             identity_contract_nonce: 0,
+            token_payment_info: None,
         });
 
         // Test value in range
@@ -563,6 +564,82 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_filter() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let document_type = contract
+            .document_type_for_name("indexedDocument")
+            .expect("document type should exist");
+
+        // Test valid filter with indexed field
+        let mut internal_clauses = InternalClauses::default();
+        let mut equal_clauses = BTreeMap::new();
+        equal_clauses.insert(
+            "firstName".to_string(),
+            WhereClause {
+                field: "firstName".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("Alice".to_string()),
+            },
+        );
+        internal_clauses.equal_clauses = equal_clauses;
+
+        let valid_filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type,
+            internal_clauses,
+        };
+
+        assert!(
+            valid_filter.validate(),
+            "Filter with indexed field should be valid"
+        );
+
+        // Test invalid filter with non-indexed field
+        let mut internal_clauses = InternalClauses::default();
+        let mut equal_clauses = BTreeMap::new();
+        equal_clauses.insert(
+            "nonExistentField".to_string(),
+            WhereClause {
+                field: "nonExistentField".to_string(),
+                operator: WhereOperator::Equal,
+                value: Value::Text("value".to_string()),
+            },
+        );
+        internal_clauses.equal_clauses = equal_clauses;
+
+        let invalid_filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type,
+            internal_clauses,
+        };
+
+        assert!(
+            !invalid_filter.validate(),
+            "Filter with non-indexed field should be invalid"
+        );
+
+        // Test valid filter with only primary key
+        let mut internal_clauses = InternalClauses::default();
+        internal_clauses.primary_key_equal_clause = Some(WhereClause {
+            field: "$id".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier([42u8; 32]),
+        });
+
+        let primary_key_filter = DriveDocumentQueryFilter {
+            contract: &contract,
+            document_type,
+            internal_clauses,
+        };
+
+        assert!(
+            primary_key_filter.validate(),
+            "Filter with only primary key should be valid"
+        );
+    }
+
+    #[test]
     fn test_conversion_between_filter_and_query() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
@@ -573,7 +650,7 @@ mod tests {
         let mut internal_clauses = InternalClauses::default();
         internal_clauses.primary_key_equal_clause = Some(WhereClause {
             field: "$id".to_string(),
-            operator: crate::query::WhereOperator::Equal,
+            operator: WhereOperator::Equal,
             value: Value::Identifier([42u8; 32]),
         });
 
