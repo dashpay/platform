@@ -13,6 +13,39 @@ import init, {
     prefetch_trusted_quorums_testnet
 } from '../../pkg/wasm_sdk.js';
 
+// Key type mapping (from Dash Platform specification)
+function mapKeyType(type) {
+    const keyTypes = {
+        0: 'ECDSA_SECP256K1',
+        1: 'BLS12_381',
+        2: 'ECDSA_HASH160',
+        3: 'BIP13_SCRIPT_HASH'
+    };
+    return keyTypes[type] || `Unknown Type (${type})`;
+}
+
+// Key purpose mapping (from Dash Platform specification)  
+function mapKeyPurpose(purpose) {
+    const keyPurposes = {
+        0: 'AUTHENTICATION',
+        1: 'ENCRYPTION', 
+        2: 'DECRYPTION',
+        3: 'WITHDRAW'
+    };
+    return keyPurposes[purpose] || `Unknown Purpose (${purpose})`;
+}
+
+// Security level mapping (from Dash Platform specification)
+function mapSecurityLevel(level) {
+    const securityLevels = {
+        0: 'MASTER',
+        1: 'CRITICAL', 
+        2: 'HIGH',
+        3: 'MEDIUM'
+    };
+    return securityLevels[level] || `Unknown Level (${level})`;
+}
+
 class IdentityManager {
     constructor() {
         this.sdk = null;
@@ -207,9 +240,8 @@ class IdentityManager {
         const resultsContainer = document.getElementById('identityResults');
         const identityData = document.getElementById('identityData');
 
-        // Format identity data for display
-        const formattedData = this.formatIdentityData(identity);
-        identityData.textContent = formattedData;
+        // Create formatted web display instead of raw JSON
+        identityData.innerHTML = this.createIdentityDisplay(identity);
 
         resultsContainer.style.display = 'block';
 
@@ -217,18 +249,79 @@ class IdentityManager {
         resultsContainer.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
 
+    createIdentityDisplay(identity) {
+        const data = identity.toJSON();
+        
+        return `
+            <table class="info-table">
+                <tr>
+                    <td class="label">ID:</td>
+                    <td class="value"><code>${data.id}</code></td>
+                </tr>
+                <tr>
+                    <td class="label">Balance:</td>
+                    <td class="value"><strong>${(data.balance || 0).toLocaleString()}</strong> credits</td>
+                </tr>
+                <tr>
+                    <td class="label">Revision:</td>
+                    <td class="value">${data.revision !== undefined ? data.revision : 'N/A'}</td>
+                </tr>
+                <tr>
+                    <td class="label">Public Keys:</td>
+                    <td class="value">${data.publicKeys?.length || 0}</td>
+                </tr>
+            </table>
+
+            ${data.publicKeys && data.publicKeys.length > 0 ? `
+                <table class="keys-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Type</th>
+                            <th>Purpose</th>
+                            <th>Security</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${data.publicKeys.map(key => `
+                            <tr>
+                                <td>${key.id}</td>
+                                <td>${mapKeyType(key.type)}</td>
+                                <td>${mapKeyPurpose(key.purpose)}</td>
+                                <td>${mapSecurityLevel(key.securityLevel)}</td>
+                                <td>${key.disabledAt ? 'Disabled' : 'Active'}</td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            ` : ''}
+        `;
+    }
+
     formatIdentityData(identity) {
-        return JSON.stringify({
-            id: identity.id || 'N/A',
-            publicKeys: identity.publicKeys || [],
-            balance: identity.balance || 0,
-            revision: identity.revision || 0,
-            metadata: {
-                publicKeyCount: identity.publicKeys?.length || 0,
-                balanceInCredits: identity.balance || 0,
-                balanceInDash: this.creditsToOash(identity.balance || 0)
-            }
-        }, null, 2);
+        // Get complete identity data like CLI does
+        const data = identity.toJSON();
+        
+        // Add human-readable key information
+        if (data.publicKeys) {
+            data.publicKeys = data.publicKeys.map(key => ({
+                ...key,
+                typeLabel: mapKeyType(key.type),
+                purposeLabel: mapKeyPurpose(key.purpose), 
+                securityLevelLabel: mapSecurityLevel(key.securityLevel)
+            }));
+        }
+        
+        // Add summary metadata
+        data.summary = {
+            balanceInCredits: data.balance || 0,
+            balanceInDash: this.creditsToOash(data.balance || 0),
+            publicKeyCount: data.publicKeys?.length || 0,
+            network: this.currentNetwork
+        };
+        
+        return JSON.stringify(data, null, 2);
     }
 
     async checkBalance() {
@@ -353,7 +446,7 @@ class IdentityManager {
         
         const keyType = document.createElement('span');
         keyType.className = 'key-type';
-        keyType.textContent = this.getKeyTypeName(key.type);
+        keyType.textContent = mapKeyType(key.type);
         
         keyHeader.appendChild(keyId);
         keyHeader.appendChild(keyType);
@@ -361,11 +454,13 @@ class IdentityManager {
         const keyDetails = document.createElement('div');
         keyDetails.className = 'key-details';
 
-        // Key details
+        // Key details with proper mapping
         const details = [
-            { label: 'Purpose', value: this.getKeyPurpose(key.purpose) },
-            { label: 'Security Level', value: key.securityLevel || 'N/A' },
-            { label: 'Read Only', value: key.readOnly ? 'Yes' : 'No' }
+            { label: 'Purpose', value: mapKeyPurpose(key.purpose) },
+            { label: 'Security Level', value: mapSecurityLevel(key.securityLevel) },
+            { label: 'Read Only', value: key.readOnly ? 'Yes' : 'No' },
+            { label: 'Disabled At', value: key.disabledAt || 'Active' },
+            { label: 'Contract Bounds', value: key.contractBounds || 'None' }
         ];
 
         details.forEach(detail => {
