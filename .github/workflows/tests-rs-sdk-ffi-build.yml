@@ -42,6 +42,14 @@ jobs:
         run: |
           rustup target add ${{ matrix.target }}
 
+      - name: Install Protobuf (protoc)
+        uses: arduino/setup-protoc@v2
+        with:
+          version: "32.0"
+
+      - name: Verify protoc
+        run: protoc --version
+
       - name: Build FFI library
         working-directory: packages/rs-sdk-ffi
         run: |
