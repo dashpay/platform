@@ -482,6 +482,7 @@ COPY --parents \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     /platform/
