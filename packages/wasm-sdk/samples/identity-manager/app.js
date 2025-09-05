@@ -3,15 +3,7 @@
  * Demonstrates identity management operations using the WASM SDK
  */
 
-import init, { 
-    WasmSdk, 
-    WasmSdkBuilder, 
-    identity_fetch,
-    get_identity_balance,
-    get_identity_keys,
-    prefetch_trusted_quorums_mainnet,
-    prefetch_trusted_quorums_testnet
-} from '../../pkg/wasm_sdk.js';
+import { WasmSDK } from '../../src-js/index.js';
 
 // Key type mapping (from Dash Platform specification)
 function mapKeyType(type) {
@@ -50,6 +42,7 @@ class IdentityManager {
     constructor() {
         this.sdk = null;
         this.currentNetwork = 'testnet';
+        this.useProofs = true; // Default to using proofs
         this.isInitialized = false;
         this.currentIdentity = null;
         
@@ -81,6 +74,13 @@ class IdentityManager {
         networkSelect.addEventListener('change', async (e) => {
             this.currentNetwork = e.target.value;
             await this.initializeSDK();
+        });
+
+        // Proof verification toggle
+        const proofsToggle = document.getElementById('proofsToggle');
+        proofsToggle.addEventListener('change', async (e) => {
+            this.useProofs = e.target.checked;
+            await this.initializeSDK(); // Reinitialize with new proof setting
         });
 
         // Identity lookup
@@ -126,30 +126,21 @@ class IdentityManager {
             this.updateStatus('connecting', 'Initializing SDK...');
             this.logOperation('SDK', `Initializing for ${this.currentNetwork} network`);
 
-            // Initialize WASM module
-            await init();
+            // Use JavaScript wrapper instead of raw WASM
+            this.sdk = new WasmSDK({
+                network: this.currentNetwork,
+                proofs: this.useProofs,
+                debug: true,
+                transport: {
+                    timeout: 60000,
+                    retries: 5
+                }
+            });
 
-            // Prefetch trusted quorums (required for WASM)
-            this.updateStatus('connecting', 'Prefetching trusted quorums...');
-            if (this.currentNetwork === 'mainnet') {
-                await prefetch_trusted_quorums_mainnet();
-            } else {
-                await prefetch_trusted_quorums_testnet();
-            }
-
-            // Create trusted SDK builder (WASM only supports trusted mode)
-            let builder;
-            if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet_trusted();
-            } else {
-                builder = WasmSdkBuilder.new_testnet_trusted();
-            }
-
-            // Build SDK instance
-            this.sdk = builder.build();
+            await this.sdk.initialize();
             this.isInitialized = true;
 
-            this.updateStatus('connected', `Connected to ${this.currentNetwork} (trusted mode)`);
+            this.updateStatus('connected', `Connected to ${this.currentNetwork} (proofs: ${this.useProofs ? 'enabled' : 'disabled'})`);
             this.logOperation('SDK', `Successfully connected to ${this.currentNetwork}`, 'success');
 
             // Update network info in UI
@@ -216,8 +207,8 @@ class IdentityManager {
             this.hideError();
             this.logOperation('Identity', `Looking up ID: ${identityId}`);
 
-            // Fetch identity from network
-            const identity = await identity_fetch(this.sdk, identityId);
+            // Fetch identity from network using JavaScript wrapper
+            const identity = await this.sdk.getIdentity(identityId);
             
             if (identity) {
                 this.currentIdentity = { id: identityId, data: identity };

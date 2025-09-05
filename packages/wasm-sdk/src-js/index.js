@@ -287,10 +287,13 @@ export class WasmSDK {
     async getIdentity(identityId) {
         ErrorUtils.validateRequired({ identityId }, ['identityId']);
         
+        const useProofs = this.configManager.getProofs();
+        const methodName = useProofs ? 'identity_fetch' : 'identity_fetch_unproved';
+        
         return this._executeOperation(
-            () => this.wasmModule.identity_fetch(this.wasmSdk, identityId),
-            'identity_fetch',
-            { identityId }
+            () => this.wasmModule[methodName](this.wasmSdk, identityId),
+            methodName,
+            { identityId, proofs: useProofs }
         );
     }
 

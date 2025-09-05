@@ -101,43 +101,41 @@ const sdk = new WasmSDK({
 For Node.js applications and command line scripts:
 
 ```bash
-# Identity lookup using .env configuration
+# Identity lookup using .env configuration (proofs enabled by default)
 node examples/identity-lookup.mjs
 
-# Or specify custom identity
-node examples/identity-lookup.mjs <your-identity-id>
+# Specify custom identity
+node examples/identity-lookup.mjs <identity-id>
+
+# Disable proof verification for faster lookups
+node examples/identity-lookup.mjs <identity-id> --no-proofs
 ```
 
-**Node.js Script Example:**
+**Node.js Script Example (JavaScript Wrapper - Recommended):**
 ```javascript
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { webcrypto } from 'crypto';
+import { WasmSDK } from '@dashevo/dash-wasm-sdk';
 
-// Set up environment
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-if (!global.crypto) global.crypto = webcrypto;
+// Create and configure SDK (proofs enabled by default)
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true,  // Default: proof verification enabled
+    transport: { timeout: 60000 }
+});
 
-// Import WASM SDK
-import init, { 
-    WasmSdkBuilder, 
-    identity_fetch,
-    prefetch_trusted_quorums_testnet
-} from '@dashevo/dash-wasm-sdk';
+// Initialize and use
+await sdk.initialize();
 
-// Initialize for command line
-const wasmPath = join(__dirname, 'node_modules/@dashevo/dash-wasm-sdk/pkg/wasm_sdk_bg.wasm');
-await init(readFileSync(wasmPath));
-
-// Use trusted mode (required for WASM)
-await prefetch_trusted_quorums_testnet();
-const sdk = WasmSdkBuilder.new_testnet_trusted().build();
-
-// Lookup identity
-const identity = await identity_fetch(sdk, identityId);
+// Lookup identity (wrapper handles proof verification internally)
+const identity = await sdk.getIdentity(identityId);
 console.log('Identity:', identity.toJSON());
+
+// Example with proof verification disabled
+const fastSdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false  // Faster lookups without proof verification
+});
+await fastSdk.initialize();
+const identity2 = await fastSdk.getIdentity(identityId);
 ```
 
 ### Legacy API (Raw WASM Bindings)

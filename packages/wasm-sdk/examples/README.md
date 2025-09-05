@@ -11,28 +11,39 @@ This directory contains command line scripts demonstrating how to use the Dash P
 A complete command line tool for looking up identity information from Dash Platform.
 
 **Features:**
-- ✅ Identity lookup with proof verification
-- ✅ Balance checking  
-- ✅ Public key enumeration
-- ✅ Proper error handling
-- ✅ Uses trusted mode (required for WASM)
+- ✅ Uses modern JavaScript wrapper (`WasmSDK`)
+- ✅ Configurable proof verification (enabled by default)
+- ✅ Complete identity data with proper key mapping
+- ✅ `.env` file configuration support
+- ✅ Rich JSON output with formatted display
+- ✅ Command line proof control (`--no-proofs` flag)
 
 **Usage:**
 
 ```bash
-# Use identity from .env file
+# Use identity from .env file (proofs enabled by default)
 node examples/identity-lookup.mjs
 
-# Or specify custom identity ID
+# Specify custom identity ID
 node examples/identity-lookup.mjs <identity-id>
+
+# Disable proof verification for faster lookups
+node examples/identity-lookup.mjs <identity-id> --no-proofs
 
 # Examples
 node examples/identity-lookup.mjs DcoJJ3W9JauwLD51vzNuXJ9vnaZT7mprVm7wbgVYifNq
+node examples/identity-lookup.mjs DcoJJ3W9JauwLD51vzNuXJ9vnaZT7mprVm7wbgVYifNq --no-proofs
 ```
+
+**Proof Verification Control:**
+
+The script supports both proof verification modes:
+- **Default:** Proofs enabled (cryptographic verification)
+- **Fast Mode:** Use `--no-proofs` flag for faster lookups without verification
 
 **Environment Configuration:**
 
-The script reads configuration from `.env` file in the wasm-sdk directory:
+Uses modern JavaScript wrapper with `.env` configuration:
 ```bash
 # .env file contents
 NETWORK=testnet
@@ -170,14 +181,28 @@ Follow this pattern for new command line examples:
 
 ## Integration
 
-This script can be integrated into larger Node.js applications:
+This script demonstrates modern JavaScript wrapper usage for Node.js applications:
 
 ```javascript
-import { initializeSdk, lookupIdentity } from './examples/identity-lookup-cli.mjs';
+import { WasmSDK } from '@dashevo/dash-wasm-sdk';
 
-const sdk = await initializeSdk('testnet');
-const identity = await lookupIdentity(sdk, identityId);
-// Use identity data...
+// With proof verification (default)
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true  // Default: proof verification enabled
+});
+
+await sdk.initialize();
+const identity = await sdk.getIdentity(identityId);
+
+// Without proof verification (faster)
+const fastSdk = new WasmSDK({
+    network: 'testnet', 
+    proofs: false  // Disable for faster lookups
+});
+
+await fastSdk.initialize();
+const identityFast = await fastSdk.getIdentity(identityId);
 ```
 
 ## Security Notes
