@@ -389,6 +389,7 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
@@ -476,6 +477,7 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \

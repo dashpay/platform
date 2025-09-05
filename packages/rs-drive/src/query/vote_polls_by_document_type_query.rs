@@ -142,7 +142,7 @@ impl VotePollsByDocumentTypeQuery {
     pub fn resolve_with_known_contracts_provider(
         &self,
         known_contracts_provider_fn: &ContractLookupFn,
-    ) -> Result<ResolvedVotePollsByDocumentTypeQuery, Error> {
+    ) -> Result<ResolvedVotePollsByDocumentTypeQuery<'_>, Error> {
         let VotePollsByDocumentTypeQuery {
             contract_id,
             document_type_name,
@@ -263,7 +263,7 @@ impl VotePollsByDocumentTypeQuery {
 }
 
 impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
-    pub(crate) fn document_type(&self) -> Result<DocumentTypeRef, Error> {
+    pub(crate) fn document_type(&self) -> Result<DocumentTypeRef<'_>, Error> {
         Ok(self
             .contract
             .as_ref()

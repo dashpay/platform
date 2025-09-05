@@ -58,7 +58,7 @@ impl DataContractV0Getters for DataContractV1 {
         })
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef<'_>, DataContractError> {
         self.document_type_optional_for_name(name).ok_or_else(|| {
             DataContractError::DocumentTypeNotFound(
                 "can not get document type from contract".to_string(),
@@ -66,7 +66,7 @@ impl DataContractV0Getters for DataContractV1 {
         })
     }
 
-    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef<'_>> {
         self.document_types
             .get(name)
             .map(|document_type| document_type.as_ref())

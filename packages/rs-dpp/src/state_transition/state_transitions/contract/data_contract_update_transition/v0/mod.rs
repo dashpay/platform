@@ -29,7 +29,6 @@ use crate::{data_contract::DataContract, identity::KeyID, ProtocolError};
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
-
 pub struct DataContractUpdateTransitionV0 {
     #[cfg_attr(
         feature = "state-transition-serde-conversion",

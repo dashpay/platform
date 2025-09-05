@@ -110,7 +110,7 @@ impl FeeRefunds {
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<[u8; 32], CreditsPerEpoch> {
+    pub fn iter(&self) -> Iter<'_, [u8; 32], CreditsPerEpoch> {
         self.0.iter()
     }
 

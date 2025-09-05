@@ -1,16 +1,12 @@
-use std::collections::BTreeMap;
-
 use crate::drive::contract::paths::{contract_keeping_history_root_path, contract_root_path};
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
 use platform_version::version::PlatformVersion;
 
-use crate::error::query::QuerySyntaxError;
 use grovedb::GroveDb;
 
 impl Drive {
@@ -68,7 +64,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
         };
-        let (root_hash, mut proved_key_values) = match result.map_err(GroveDB) {
+        let (root_hash, mut proved_key_values) = match result.map_err(Error::GroveDB) {
             Ok(ok_result) => ok_result,
             Err(e) => {
                 return if contract_known_keeps_history.is_none() {
