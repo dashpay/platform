@@ -508,7 +508,6 @@ impl WasmSdk {
     /// * `document_data` - The new document data as a JSON string
     /// * `revision` - The current revision of the document
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -523,7 +522,6 @@ impl WasmSdk {
         document_data: String,
         revision: u64,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -794,7 +792,6 @@ impl WasmSdk {
     /// * `document_id` - The ID of the document to delete
     /// * `owner_id` - The identity ID of the document owner
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -807,7 +804,6 @@ impl WasmSdk {
         document_id: String,
         owner_id: String,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -921,7 +917,6 @@ impl WasmSdk {
     /// * `owner_id` - The current owner's identity ID
     /// * `recipient_id` - The new owner's identity ID
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -935,7 +930,6 @@ impl WasmSdk {
         owner_id: String,
         recipient_id: String,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1056,7 +1050,6 @@ impl WasmSdk {
     /// * `buyer_id` - The buyer's identity ID
     /// * `price` - The purchase price in credits
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -1070,7 +1063,6 @@ impl WasmSdk {
         buyer_id: String,
         price: u64,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
@@ -1222,7 +1214,6 @@ impl WasmSdk {
     /// * `owner_id` - The owner's identity ID
     /// * `price` - The price in credits (0 to remove price)
     /// * `private_key_wif` - The private key in WIF format for signing
-    /// * `key_id` - The key ID to use for signing
     ///
     /// # Returns
     ///
@@ -1236,7 +1227,6 @@ impl WasmSdk {
         owner_id: String,
         price: u64,
         private_key_wif: String,
-        _key_id: u32,
     ) -> Result<JsValue, JsValue> {
         let sdk = self.inner_clone();
         
