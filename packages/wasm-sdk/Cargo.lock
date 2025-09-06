@@ -1523,8 +1523,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "611077565b279965fa34897787ae52f79471f0476db785116cceb92077f237ad"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1545,8 +1544,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ab159c3f82b0387f6a27a54930b18aa594b507013de947c8e909cf61abb75fe"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1556,8 +1554,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3dce2f34c6bfddb3a26696b42e6169f986330513e0e9f4c5d7ba290d09867a5e"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -1569,8 +1566,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4580e54da0031d2f36e50312f3361005099bceeb8adb0f6ccbf87a0880cd1b08"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1590,8 +1586,7 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d61e09bb3055358974ceb65b91752064979450092014d91a6bc4a52d77887ea"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "hex",
 ]
@@ -1599,8 +1594,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2d61d27c76d49758b365a9e4a9da7f995f976b9525626bf645aef258024defd2"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "thiserror 2.0.15",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1609,8 +1603,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "3.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eaebfe3c1e5f263f14fd25ab060543b31eb4b9d6bdc44fe220e88df6be7ddf59"
+source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
 dependencies = [
  "hex",
  "itertools 0.14.0",
