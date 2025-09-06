@@ -30,7 +30,7 @@ dpp = { package = "dpp", path = "../rs-dpp", features = [
   "state-transitions",
 ], default-features = false, optional = true }
 thiserror = { version = "2.0.12" }
-tracing = { version = "0.1.37", default-features = false, features = [] }
+tracing = { version = "0.1.41", default-features = false, features = [] }
 derive_more = { version = "1.0", features = ["from"] }
 hex = { version = "0.4.3" }
 

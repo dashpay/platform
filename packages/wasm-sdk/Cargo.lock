@@ -1047,6 +1047,7 @@ dependencies = [
  "sha2",
  "strum",
  "thiserror 2.0.15",
+ "tracing",
 ]
 
 [[package]]

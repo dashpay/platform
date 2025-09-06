@@ -32,7 +32,7 @@ serde = { version = "1.0.219", default-features = false, features = [
   "rc",
 ], optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
-tracing = { version = "0.1.40" }
+tracing = { version = "0.1.41" }
 hex = { version = "0.4.3" }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }

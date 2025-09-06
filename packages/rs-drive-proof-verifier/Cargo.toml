@@ -37,7 +37,7 @@ platform-serialization = { path = "../rs-platform-serialization" }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.4.0", tag = "v1.4.0", features = [
   "crypto",
 ], default-features = false }
-tracing = { version = "0.1.37" }
+tracing = { version = "0.1.41" }
 serde = { version = "1.0.219", default-features = false, optional = true }
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 hex = { version = "0.4.3" }

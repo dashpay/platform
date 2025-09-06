@@ -1842,9 +1842,9 @@ dependencies = [
  "serde_repr",
  "sha2",
  "strum 0.26.3",
- "test-case",
  "thiserror 2.0.15",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

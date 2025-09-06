@@ -239,30 +239,24 @@ impl TrustedHttpContextProvider {
         let response = match self.client.get(&url).send().await {
             Ok(resp) => resp,
             Err(e) => {
-                eprintln!("🔴 HTTP request failed: {:?}", e);
-                eprintln!("🔴 URL: {}", url);
+                tracing::error!(error = ?e, url = %url, "HTTP request failed");
                 if let Some(source) = e.source() {
-                    eprintln!("🔴 Error source: {:?}", source);
+                    tracing::error!(?source, "Error source");
                     if let Some(inner) = source.source() {
-                        eprintln!("🔴 Inner error: {:?}", inner);
+                        tracing::error!(?inner, "Inner error");
                     }
                 }
 
-                // Check for specific error types
-                if e.is_connect() {
-                    eprintln!("🔴 Connection error - unable to connect to host");
-                } else if e.is_timeout() {
-                    eprintln!("🔴 Request timeout");
+                // Check for specific error types (connect detection not available across all reqwest versions)
+                if e.is_timeout() {
+                    tracing::error!("Request timeout");
                 } else if e.is_request() {
-                    eprintln!("🔴 Error building the request");
+                    tracing::error!("Error building the request");
                 } else if e.is_body() {
-                    eprintln!("🔴 Error reading response body");
+                    tracing::error!("Error reading response body");
                 } else if e.is_decode() {
-                    eprintln!("🔴 Error decoding response");
+                    tracing::error!("Error decoding response");
                 }
-
-                // Try to get more details
-                eprintln!("🔴 Full error chain: {}", e);
 
                 return Err(e.into());
             }

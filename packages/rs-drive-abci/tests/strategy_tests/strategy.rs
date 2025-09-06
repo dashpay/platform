@@ -1623,10 +1623,7 @@ impl NetworkStrategy {
         // Handle the Result returned by identity_state_transitions_for_block
         let (mut identities, mut state_transitions) = match identity_state_transitions_result {
             Ok(transitions) => transitions.into_iter().unzip(),
-            Err(error) => {
-                eprintln!("Error creating identity state transitions: {:?}", error);
-                (vec![], vec![])
-            }
+            Err(error) => (vec![], vec![]),
         };
 
         current_identities.append(&mut identities);

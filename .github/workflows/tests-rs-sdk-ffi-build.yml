@@ -47,8 +47,14 @@ jobs:
         with:
           version: "32.0"
 
-      - name: Verify protoc
-        run: protoc --version
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          protoc --version
+          # Ensure build scripts see an absolute PROTOC path (some parse parent dirs)
+          echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
+          # Enable backtraces for clearer failure logs if any build.rs panics
+          echo "RUST_BACKTRACE=1" >> "$GITHUB_ENV"
 
       - name: Build FFI library
         working-directory: packages/rs-sdk-ffi
