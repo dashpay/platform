@@ -25,6 +25,10 @@ jobs:
           password: ${{ secrets.DOCKERHUB_TOKEN }}
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Pre-pull protoc Docker image for gRPC codegen
+        run: docker pull rvolosatovs/protoc:4.0.0
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
       - name: Setup Node.JS
         uses: ./.github/actions/nodejs
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}

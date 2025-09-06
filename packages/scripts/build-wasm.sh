@@ -234,9 +234,11 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
         fi
     else
         # Minimal optimization for development builds
+        # Explicitly enable bulk memory to support memory.copy emitted by newer toolchains
         wasm-opt \
             --strip-producers \
             -O2 \
+            --enable-bulk-memory \
             "$WASM_PATH" \
             -o \
             "$WASM_PATH"
