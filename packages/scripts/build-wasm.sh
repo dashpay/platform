@@ -234,11 +234,14 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
         fi
     else
         # Minimal optimization for development builds
-        # Explicitly enable bulk memory to support memory.copy emitted by newer toolchains
+        # Explicitly enable features used by newer toolchains:
+        # - bulk memory (memory.copy)
+        # - non-trapping float-to-int (i32/i64.trunc_sat_fXX_[su])
         wasm-opt \
             --strip-producers \
             -O2 \
             --enable-bulk-memory \
+            --enable-nontrapping-float-to-int \
             "$WASM_PATH" \
             -o \
             "$WASM_PATH"

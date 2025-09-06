@@ -15,7 +15,8 @@ pub struct FFIResult {
 
 type FFIDashSpvClient = std::ffi::c_void;
 
-#[cfg(all(test, feature = "ffi_core_stubs"))]
+// Only compile stubs for tests when explicitly enabled AND dash-spv FFI is not linked.
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_quorum_public_key(
     _client: *mut FFIDashSpvClient,
@@ -36,7 +37,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_quorum_public_key(
     }
 }
 
-#[cfg(all(test, feature = "ffi_core_stubs"))]
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
     _client: *mut FFIDashSpvClient,
@@ -53,7 +54,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_platform_activation_height(
     }
 }
 
-#[cfg(all(test, feature = "ffi_core_stubs"))]
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
     _client: *mut FFIDashSpvClient,
@@ -62,7 +63,7 @@ pub unsafe extern "C" fn ffi_dash_spv_get_core_handle(
     std::ptr::null_mut()
 }
 
-#[cfg(all(test, feature = "ffi_core_stubs"))]
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 #[no_mangle]
 pub unsafe extern "C" fn ffi_dash_spv_release_core_handle(_handle: *mut CoreSDKHandle) {
     // Stub implementation - nothing to do

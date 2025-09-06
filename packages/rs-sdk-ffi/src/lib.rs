@@ -57,7 +57,8 @@ pub use unified::*;
 pub use utils::*;
 pub use voting::*;
 
-// Re-export all Core SDK functions and types for unified access
+// Re-export all Core SDK functions and types for unified access when linked
+#[cfg(feature = "dash_spv")]
 pub use dash_spv_ffi::*;
 
 /// Initialize the FFI library.
