@@ -88,7 +88,14 @@ jobs:
 
       - name: Build FFI library
         working-directory: packages/rs-sdk-ffi
+        env:
+          BLST_PORTABLE: "1"
+          IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+          IPHONESIMULATOR_DEPLOYMENT_TARGET: "18.0"
+          RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
         run: |
+          echo "Using BLST_PORTABLE=${BLST_PORTABLE} to avoid iOS linker issues"
+          echo "Minimum iOS deployment target: ${IPHONEOS_DEPLOYMENT_TARGET} (RUSTFLAGS=${RUSTFLAGS})"
           cargo build --release --target ${{ matrix.target }}
 
       - name: Verify build output
