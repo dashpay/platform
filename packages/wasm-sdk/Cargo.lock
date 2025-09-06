@@ -1030,6 +1030,7 @@ dependencies = [
  "indexmap 2.10.0",
  "integer-encoding",
  "itertools 0.13.0",
+ "key-wallet",
  "lazy_static",
  "nohash-hasher",
  "num_enum 0.7.4",

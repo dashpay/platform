@@ -3,7 +3,7 @@
 //! This module implements DIP14, which extends BIP32 to support 256-bit derivation indices
 //! instead of the standard 31-bit limitation.
 
-use dash_sdk::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use dash_sdk::dpp::dashcore::secp256k1::{self, Secp256k1, SecretKey, PublicKey, Scalar};
 use dash_sdk::dpp::dashcore::Network;
 use hmac::{Hmac, Mac};
@@ -12,7 +12,7 @@ use std::convert::TryInto;
 use dash_sdk::dpp::dashcore::hashes::{sha256, ripemd160, Hash};
 use hex;
 use dash_sdk::dpp::dashcore;
-use dash_sdk::key_wallet;
+use dash_sdk::dpp::key_wallet;
 
 type HmacSha512 = Hmac<Sha512>;
 
