@@ -42,14 +42,35 @@ jobs:
         run: |
           rustup target add ${{ matrix.target }}
 
-      - name: Install Protobuf (protoc)
-        uses: arduino/setup-protoc@v2
+      - name: Restore cached Protobuf (protoc)
+        id: cache-protoc
+        uses: actions/cache@v4
         with:
-          version: "32.0"
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Install Protobuf (protoc) if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
 
       - name: Verify protoc and export env
         run: |
           set -euxo pipefail
+          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
           protoc --version
           # Ensure build scripts see an absolute PROTOC path (some parse parent dirs)
           echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
