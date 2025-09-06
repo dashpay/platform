@@ -41,6 +41,7 @@ runs:
         components: ${{ inputs.components }}
 
     - name: Get protoc arch
+      if: runner.os == 'Linux'
       shell: bash
       id: protoc_arch
       run: |
@@ -59,29 +60,40 @@ runs:
             ;;
         esac
 
-    - name: Restore cached protoc
+    - name: Restore cached protoc (v32.0)
+      if: runner.os == 'Linux'
       id: cache-protoc
       uses: actions/cache@v4
       with:
         path: |
-          ${{ env.HOME }}/.local/protoc-27.3/bin
-          ${{ env.HOME }}/.local/protoc-27.3/include
-        key: protoc/27.3/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
+          ${{ env.HOME }}/.local/protoc-32.0/bin
+          ${{ env.HOME }}/.local/protoc-32.0/include
+        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
-    - name: Install protoc (cached)
+    - name: Install protoc (cached v32.0)
+      if: runner.os == 'Linux'
       id: deps-protoc
       shell: bash
       run: |
         set -euxo pipefail
-        PROTOC_DIR="${HOME}/.local/protoc-27.3"
+        PROTOC_DIR="${HOME}/.local/protoc-32.0"
         if [ ! -x "${PROTOC_DIR}/bin/protoc" ]; then
           mkdir -p "${PROTOC_DIR}"
           curl -fsSL -o /tmp/protoc.zip \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
+            "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
           unzip -o /tmp/protoc.zip -d "${PROTOC_DIR}"
         fi
         echo "${PROTOC_DIR}/bin" >> "$GITHUB_PATH"
         echo "PROTOC=${PROTOC_DIR}/bin/protoc" >> "$GITHUB_ENV"
+
+    - name: Save cached protoc (v32.0)
+      if: runner.os == 'Linux' && steps.cache-protoc.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ env.HOME }}/.local/protoc-32.0/bin
+          ${{ env.HOME }}/.local/protoc-32.0/include
+        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
     - name: Set HOME variable to github context
       shell: bash

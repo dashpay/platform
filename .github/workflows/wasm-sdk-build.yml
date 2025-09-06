@@ -49,29 +49,38 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Cache and install protoc (v27.3)
+      - name: Cache and install protoc (v32.0)
         uses: actions/cache@v4
         id: cache-protoc
         with:
           path: |
-            ${{ env.HOME }}/.local/protoc-27.3/bin
-            ${{ env.HOME }}/.local/protoc-27.3/include
-          key: protoc/27.3/${{ runner.os }}/x86_64
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/x86_64
 
-      - name: Install protoc if cache miss
+      - name: Install protoc v32.0 if cache miss
         if: steps.cache-protoc.outputs.cache-hit != 'true'
         run: |
           set -euxo pipefail
-          PROTOC_DIR="${HOME}/.local/protoc-27.3"
+          PROTOC_DIR="${HOME}/.local/protoc-32.0"
           mkdir -p "$PROTOC_DIR"
           curl -fsSL -o /tmp/protoc.zip \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-x86_64.zip"
+            "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip"
           unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
 
-      - name: Export protoc to PATH
+      - name: Save cached protoc v32.0
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/x86_64
+
+      - name: Export protoc v32.0 to PATH
         run: |
-          echo "${HOME}/.local/protoc-27.3/bin" >> $GITHUB_PATH
-          echo "PROTOC=${HOME}/.local/protoc-27.3/bin/protoc" >> $GITHUB_ENV
+          echo "${HOME}/.local/protoc-32.0/bin" >> $GITHUB_PATH
+          echo "PROTOC=${HOME}/.local/protoc-32.0/bin/protoc" >> $GITHUB_ENV
 
       - name: Install clang and llvm
         run: |
@@ -115,6 +124,13 @@ jobs:
             "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz"
           tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
           mv "${HOME}/.cache/binaryen/binaryen-version_121" "${HOME}/.cache/binaryen/version_121"
+
+      - name: Save cached wasm-opt
+        if: steps.cache-binaryen.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.HOME }}/.cache/binaryen/version_121
+          key: binaryen/version_121/${{ runner.os }}/x86_64
 
       - name: Export wasm-opt to PATH
         run: |

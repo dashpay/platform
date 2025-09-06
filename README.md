@@ -51,7 +51,7 @@ this repository may be used on the following networks:
   - [node.js](https://nodejs.org/) v20
   - [docker](https://docs.docker.com/get-docker/) v20.10+
   - [rust](https://www.rust-lang.org/tools/install) v1.89+, with wasm32 target (`rustup target add wasm32-unknown-unknown`)
-  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v27.3+
+  - [protoc - protobuf compiler](https://github.com/protocolbuffers/protobuf/releases) v32.0+
     - if needed, set PROTOC environment variable to location of `protoc` binary
   - [wasm-bindgen toolchain](https://rustwasm.github.io/wasm-bindgen/):
     - **IMPORTANT (OSX only)**: built-in `llvm` on OSX does not work, needs to be installed from brew:

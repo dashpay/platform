@@ -66,12 +66,21 @@ jobs:
             "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
           unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
 
+      - name: Save cached Protobuf (protoc)
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
       - name: Verify protoc and export env
         run: |
           set -euxo pipefail
-          echo "$HOME/.local/protoc-32.0/bin" >> "$GITHUB_PATH"
+          export PATH="$HOME/.local/protoc-32.0/bin:$PATH"
           echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
-          protoc --version
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
           # Ensure build scripts see an absolute PROTOC path (some parse parent dirs)
           echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
           # Enable backtraces for clearer failure logs if any build.rs panics
