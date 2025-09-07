@@ -21,6 +21,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Resolve HOME path for caching
+      id: resolved_home
+      shell: bash
+      run: |
+        echo "home=$HOME" >> "$GITHUB_OUTPUT"
+
     - name: Extract Rust toolchain version from rust-toolchain.toml
       shell: bash
       id: rust_toolchain
@@ -66,8 +72,8 @@ runs:
       uses: actions/cache@v4
       with:
         path: |
-          ${{ env.HOME }}/.local/protoc-32.0/bin
-          ${{ env.HOME }}/.local/protoc-32.0/include
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
         key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
     - name: Install protoc (cached v32.0)
@@ -91,8 +97,8 @@ runs:
       uses: actions/cache/save@v4
       with:
         path: |
-          ${{ env.HOME }}/.local/protoc-32.0/bin
-          ${{ env.HOME }}/.local/protoc-32.0/include
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
         key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
     - name: Set HOME variable to github context
@@ -104,9 +110,9 @@ runs:
       if: inputs.cache == 'true'
       with:
         path: |
-          ${{ env.HOME }}/.cargo/registry/index
-          ${{ env.HOME }}/.cargo/registry/cache
-          ${{ env.HOME }}/.cargo/git
+          ${{ steps.resolved_home.outputs.home }}/.cargo/registry/index
+          ${{ steps.resolved_home.outputs.home }}/.cargo/registry/cache
+          ${{ steps.resolved_home.outputs.home }}/.cargo/git
         key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}

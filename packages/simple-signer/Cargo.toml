@@ -16,3 +16,4 @@ bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 dpp = { path = "../rs-dpp", default-features = false, features = ["ed25519-dalek"] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }
+tracing = "0.1.41"

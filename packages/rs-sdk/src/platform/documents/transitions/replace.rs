@@ -15,6 +15,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
+use tracing::trace;
 
 /// A builder to configure and broadcast document replace transitions
 pub struct DocumentReplaceTransitionBuilder {
@@ -200,36 +201,27 @@ impl Sdk {
         signing_key: &IdentityPublicKey,
         signer: &S,
     ) -> Result<DocumentReplaceResult, Error> {
-        eprintln!("📝 [DOCUMENT REPLACE SDK] Starting document replace");
-        eprintln!(
-            "📝 [DOCUMENT REPLACE SDK] Document ID: {}",
-            replace_document_transition_builder.document.id()
-        );
-        eprintln!(
-            "📝 [DOCUMENT REPLACE SDK] Document revision: {}",
-            replace_document_transition_builder
-                .document
-                .revision()
-                .unwrap_or(0)
+        trace!(
+            document_id = %replace_document_transition_builder.document.id(),
+            document_revision = replace_document_transition_builder.document.revision().unwrap_or(0),
+            "document_replace: start"
         );
 
         let platform_version = self.version();
 
         let put_settings = replace_document_transition_builder.settings;
 
-        eprintln!("📝 [DOCUMENT REPLACE SDK] Signing state transition...");
+        trace!("document_replace: signing state transition");
         let state_transition = replace_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
-        eprintln!("✅ [DOCUMENT REPLACE SDK] State transition signed");
+        trace!("document_replace: state transition signed");
 
-        eprintln!(
-            "📝 [DOCUMENT REPLACE SDK] Broadcasting state transition and waiting for response..."
-        );
+        trace!("document_replace: broadcasting and awaiting response");
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)
             .await?;
-        eprintln!("✅ [DOCUMENT REPLACE SDK] Broadcast completed");
+        trace!("document_replace: broadcast completed");
 
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {

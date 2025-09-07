@@ -92,19 +92,7 @@ impl Sdk {
 
         // Convert ContestedResources to our ContestedDpnsUsername format
         let mut usernames = Vec::new();
-
-        // Debug: print the structure to understand what we're getting
-        #[cfg(test)]
-        {
-            println!(
-                "DEBUG: Contested resources count: {}",
-                contested_resources.0.len()
-            );
-            for resource in contested_resources.0.iter() {
-                println!("DEBUG: Resource value: {:?}", resource.0);
-            }
-        }
-
+        
         // The ContestedResources contains a Vec of ContestedResource items
         for contested_resource in contested_resources.0.iter() {
             // Extract the label from the contested resource

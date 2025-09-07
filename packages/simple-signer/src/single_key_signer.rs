@@ -7,6 +7,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
+use tracing::{debug, warn};
 
 /// A simple signer that uses a single private key
 /// This is designed for WASM and other single-key use cases
@@ -78,16 +79,13 @@ impl Signer for SingleKeySigner {
         // Only support ECDSA keys for now
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                eprintln!(
-                    "we are about to sign {} with {}",
-                    hex::encode(data),
-                    hex::encode(&self.private_key.inner.secret_bytes())
-                );
+                // Do not log private key material. Log data fingerprint only.
+                debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
                 let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
                 Ok(signature.to_vec().into())
             }
             _ => {
-                eprintln!("wrong key type: {:?}", identity_public_key.key_type());
+                warn!(key_type = ?identity_public_key.key_type(), "SingleKeySigner: unsupported key type");
                 Err(ProtocolError::Generic(format!(
                     "SingleKeySigner only supports ECDSA keys, got {:?}",
                     identity_public_key.key_type()

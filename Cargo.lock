@@ -5820,6 +5820,7 @@ dependencies = [
  "bincode 2.0.0-rc.3",
  "dpp",
  "hex",
+ "tracing",
 ]
 
 [[package]]
