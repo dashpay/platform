@@ -4,9 +4,7 @@
 
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
-use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
-use dash_sdk::dpp::platform_value::{Identifier, BinaryData, string_encoding::Encoding};
+use dash_sdk::dpp::platform_value::{Identifier, string_encoding::Encoding};
 use dash_sdk::dpp::prelude::UserFeeIncrease;
 use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
@@ -15,7 +13,6 @@ use dash_sdk::dpp::tokens::calculate_token_id;
 use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
-use simple_signer::SingleKeySigner;
 use serde_wasm_bindgen::to_value;
 use serde_json;
 use wasm_bindgen::prelude::*;
@@ -909,7 +906,7 @@ impl WasmSdk {
                     .map_err(|e| JsValue::from_str(&format!("Failed to fetch token price: {:?}", e)))?;
                 
                 // Use js_sys to work with JavaScript objects
-                use js_sys::{Object, Reflect, Array};
+                use js_sys::{Reflect, Array};
                 
                 // Get the prices array from the result
                 let prices_prop = Reflect::get(&prices, &JsValue::from_str("prices"))

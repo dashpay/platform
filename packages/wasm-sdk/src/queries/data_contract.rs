@@ -1,6 +1,6 @@
 use crate::dpp::DataContractWasm;
 use crate::sdk::WasmSdk;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+use crate::queries::ProofMetadataResponse;
 use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use dash_sdk::platform::query::LimitQuery;
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};

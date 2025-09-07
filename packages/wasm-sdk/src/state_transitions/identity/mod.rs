@@ -17,7 +17,6 @@ use web_sys;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::dpp::prelude::AssetLockProof;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 
 #[wasm_bindgen]
 impl WasmSdk {

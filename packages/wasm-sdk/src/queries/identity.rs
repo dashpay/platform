@@ -1,18 +1,15 @@
 use crate::dpp::IdentityWasm;
 use crate::sdk::WasmSdk;
 use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
-use dash_sdk::platform::{Fetch, FetchMany, FetchUnproved, Identifier, Identity};
+use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
 use js_sys::Array;
 use rs_dapi_client::IntoInner;
-use std::collections::BTreeMap;
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
-use dash_sdk::dpp::identity::KeyID;
 
 // Proof info functions are now included below
 
@@ -692,13 +689,12 @@ pub async fn get_identities_contract_keys(
     sdk: &WasmSdk,
     identities_ids: Vec<String>,
     contract_id: &str,
-    document_type_name: Option<String>,
     purposes: Option<Vec<u32>>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::identity::Purpose;
     
     // Convert string IDs to Identifiers
-    let identity_ids: Vec<Identifier> = identities_ids
+    let _identity_ids: Vec<Identifier> = identities_ids
         .iter()
         .map(|id| Identifier::from_string(
             id,
@@ -1296,7 +1292,6 @@ pub async fn get_identities_contract_keys_with_proof_info(
     sdk: &WasmSdk,
     identities_ids: Vec<String>,
     contract_id: &str,
-    _document_type_name: Option<String>,
     purposes: Option<Vec<u32>>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::dpp::identity::Purpose;

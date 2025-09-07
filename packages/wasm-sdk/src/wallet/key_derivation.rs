@@ -7,7 +7,6 @@ use serde::{Serialize, Deserialize};
 use bip39::{Mnemonic, Language};
 use rand::{RngCore, thread_rng};
 use std::str::FromStr;
-use serde_json;
 
 /// Dash coin type for BIP44 (mainnet)
 pub const DASH_COIN_TYPE: u32 = 5;
@@ -196,7 +195,7 @@ pub fn mnemonic_to_seed(mnemonic: &str, passphrase: Option<String>) -> Result<Ve
 /// Derive a key from mnemonic phrase using BIP39/BIP44
 #[wasm_bindgen]
 pub fn derive_key_from_seed_phrase(mnemonic: &str, passphrase: Option<String>, network: &str) -> Result<JsValue, JsError> {
-    use dashcore::hashes::sha256;
+    
     use crate::wallet::key_generation::KeyPair;
     
     // Get seed from mnemonic
@@ -460,8 +459,8 @@ pub fn derivation_path_dip13_testnet(account: u32) -> JsValue {
 /// Get child public key from extended public key
 #[wasm_bindgen]
 pub fn derive_child_public_key(
-    xpub: &str,
-    index: u32,
+    _xpub: &str,
+    _index: u32,
     hardened: bool,
 ) -> Result<String, JsError> {
     if hardened {
@@ -474,7 +473,7 @@ pub fn derive_child_public_key(
 
 /// Convert extended private key to extended public key
 #[wasm_bindgen]
-pub fn xprv_to_xpub(xprv: &str) -> Result<String, JsError> {
+pub fn xprv_to_xpub(_xprv: &str) -> Result<String, JsError> {
     // TODO: Implement conversion
     Err(JsError::new("Extended key conversion not yet implemented"))
 }

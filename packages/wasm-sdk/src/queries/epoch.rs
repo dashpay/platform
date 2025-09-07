@@ -1,9 +1,8 @@
 use crate::sdk::WasmSdk;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+use crate::queries::ProofMetadataResponse;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
 use dash_sdk::platform::{FetchMany, LimitQuery};
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
@@ -166,7 +165,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     epoch: u16,
     ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::{ProposerBlockCountById, ProposerBlockCounts};
+    use drive_proof_verifier::types::ProposerBlockCountById;
     
     // Parse the ProTxHash strings
     let pro_tx_hashes: Vec<ProTxHash> = ids
@@ -346,7 +345,7 @@ pub async fn get_finalized_epoch_infos_with_proof_info(
     ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
-    use drive_proof_verifier::types::FinalizedEpochInfos;
+    
     
     if start_epoch.is_none() {
         return Err(JsError::new("start_epoch is required for finalized epoch queries"));

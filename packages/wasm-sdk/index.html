@@ -2241,7 +2241,6 @@ ${indentStr}]`;
               sdk,
               values.identitiesIds,
               values.contractId,
-              values.documentTypeName || undefined,
               purposes
             );
             // Result is already a JS object from serde_wasm_bindgen
@@ -2250,7 +2249,6 @@ ${indentStr}]`;
               sdk,
               values.identitiesIds,
               values.contractId,
-              values.documentTypeName || undefined,
               purposes
             );
             // Result is already a JS object from serde_wasm_bindgen
@@ -2776,8 +2774,6 @@ ${indentStr}]`;
               values.documentTypeName,
               values.dataContractId,
               values.indexName,
-              values.resultType,
-              values.allowIncludeLockedAndAbstainingVoteTally,
               startAtValue,
               values.limit,
               values.offset,
@@ -2789,8 +2785,6 @@ ${indentStr}]`;
               values.documentTypeName,
               values.dataContractId,
               values.indexName,
-              values.resultType,
-              values.allowIncludeLockedAndAbstainingVoteTally,
               startAtValue,
               values.limit,
               values.offset,

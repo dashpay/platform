@@ -2,7 +2,6 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
 use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use dash_sdk::dpp::data_contract::group::Group;
@@ -528,7 +527,7 @@ pub async fn get_group_info_with_proof_info(
     data_contract_id: &str,
     group_contract_position: u32,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse data contract ID
     let contract_id = Identifier::from_string(
@@ -568,7 +567,7 @@ pub async fn get_group_infos_with_proof_info(
     start_at_info: JsValue,
     count: Option<u32>,
 ) -> Result<JsValue, JsError> {
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     // Parse contract ID
     let contract_id = Identifier::from_string(
