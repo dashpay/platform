@@ -92,7 +92,7 @@ impl Sdk {
 
         // Convert ContestedResources to our ContestedDpnsUsername format
         let mut usernames = Vec::new();
-        
+
         // The ContestedResources contains a Vec of ContestedResource items
         for contested_resource in contested_resources.0.iter() {
             // Extract the label from the contested resource

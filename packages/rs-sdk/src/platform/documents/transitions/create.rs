@@ -16,6 +16,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
+use tracing::trace;
 
 /// A builder to configure and broadcast document create transitions
 pub struct DocumentCreateTransitionBuilder {
@@ -214,16 +215,10 @@ impl Sdk {
             .sign(self, signing_key, signer, platform_version)
             .await?;
 
-        // Log the state transition for debugging
-        eprintln!("📝 [DOCUMENT CREATE] State transition created and signed");
-        eprintln!(
-            "📝 [DOCUMENT CREATE] State transition hex: {}",
-            hex::encode(state_transition.serialize_to_bytes()?)
-        );
-        eprintln!(
-            "📝 [DOCUMENT CREATE] State transition type: {:?}",
-            state_transition
-        );
+        // Low-level debug logging via tracing
+        trace!("document_create: state transition created and signed");
+        trace!(hex = %hex::encode(state_transition.serialize_to_bytes()?), "document_create: transition bytes");
+        trace!(transition = ?state_transition, "document_create: transition details");
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)

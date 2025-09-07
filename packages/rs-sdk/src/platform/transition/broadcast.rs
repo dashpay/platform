@@ -16,6 +16,7 @@ use drive::drive::Drive;
 use drive_proof_verifier::DataContractProvider;
 use rs_dapi_client::{DapiRequest, ExecutionError, InnerInto, IntoInner, RequestSettings};
 use rs_dapi_client::{ExecutionResponse, WrapToExecutionResult};
+use tracing::{trace, warn};
 
 #[async_trait::async_trait]
 pub trait BroadcastStateTransition {
@@ -35,15 +36,13 @@ pub trait BroadcastStateTransition {
 #[async_trait::async_trait]
 impl BroadcastStateTransition for StateTransition {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        eprintln!(
-            "🚀 [BROADCAST] Starting broadcast of state transition: {}",
-            self.name()
-        );
-        eprintln!(
-            "🚀 [BROADCAST] Transaction ID: {}",
-            self.transaction_id()
+        trace!(
+            state_transition = %self.name(),
+            transaction_id = %self
+                .transaction_id()
                 .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string())
+                .unwrap_or("UNKNOWN".to_string()),
+            "broadcast: start"
         );
 
         let retry_settings = match settings {
@@ -53,7 +52,7 @@ impl BroadcastStateTransition for StateTransition {
 
         // async fn retry_test_function(settings: RequestSettings) -> ExecutionResult<(), dash_sdk::Error>
         let factory = |request_settings: RequestSettings| async move {
-            eprintln!("🚀 [BROADCAST] Creating broadcast request...");
+            trace!("broadcast: creating request");
             let request =
                 self.broadcast_request_for_state_transition()
                     .map_err(|e| ExecutionError {
@@ -61,29 +60,29 @@ impl BroadcastStateTransition for StateTransition {
                         address: None,
                         retries: 0,
                     })?;
-            eprintln!("🚀 [BROADCAST] Executing broadcast request...");
+            trace!("broadcast: executing request");
             let result = request
                 .execute(sdk, request_settings)
                 .await
                 .map_err(|e| e.inner_into());
 
             match &result {
-                Ok(_) => eprintln!("✅ [BROADCAST] Broadcast successful"),
-                Err(e) => eprintln!("❌ [BROADCAST] Broadcast failed: {:?}", e),
+                Ok(_) => trace!("broadcast: request succeeded"),
+                Err(e) => warn!(error = ?e, "broadcast: request failed"),
             }
             result
         };
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
-        eprintln!("🚀 [BROADCAST] Starting retry mechanism...");
+        trace!("broadcast: starting retry mechanism");
         let result = retry(sdk.address_list(), retry_settings, factory)
             .await
             .into_inner()
             .map(|_| ());
 
         match &result {
-            Ok(_) => eprintln!("✅ [BROADCAST] Broadcast completed successfully"),
-            Err(e) => eprintln!("❌ [BROADCAST] Broadcast failed after retries: {:?}", e),
+            Ok(_) => trace!("broadcast: completed successfully"),
+            Err(e) => warn!(error = ?e, "broadcast: failed after retries"),
         }
         result
     }
@@ -92,12 +91,12 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
-        eprintln!("⏳ [WAIT] Starting wait for state transition result...");
-        eprintln!(
-            "⏳ [WAIT] Transaction ID: {}",
-            self.transaction_id()
+        trace!(
+            transaction_id = %self
+                .transaction_id()
                 .map(hex::encode)
-                .unwrap_or("UNKNOWN".to_string())
+                .unwrap_or("UNKNOWN".to_string()),
+            "wait: start"
         );
 
         let retry_settings = match settings {
@@ -107,7 +106,7 @@ impl BroadcastStateTransition for StateTransition {
 
         // prepare a factory that will generate closure which executes actual code
         let factory = |request_settings: RequestSettings| async move {
-            eprintln!("⏳ [WAIT] Creating wait request...");
+            trace!("wait: creating request");
             let request = self
                 .wait_for_state_transition_result_request()
                 .map_err(|e| ExecutionError {
@@ -116,9 +115,9 @@ impl BroadcastStateTransition for StateTransition {
                     retries: 0,
                 })?;
 
-            eprintln!("⏳ [WAIT] Executing wait request (this may take a while)...");
+            trace!("wait: executing request");
             let response = request.execute(sdk, request_settings).await.inner_into()?;
-            eprintln!("✅ [WAIT] Received response from platform");
+            trace!("wait: received response");
 
             let grpc_response: &WaitForStateTransitionResultResponse = &response.inner;
 
@@ -136,7 +135,7 @@ impl BroadcastStateTransition for StateTransition {
             };
 
             if let Some(e) = state_transition_broadcast_error {
-                eprintln!("❌ [WAIT] State transition broadcast error detected");
+                warn!("wait: state transition broadcast error detected");
                 let state_transition_broadcast_error: StateTransitionBroadcastError =
                     StateTransitionBroadcastError::try_from(e.clone())
                         .wrap_to_execution_result(&response)?
@@ -146,7 +145,7 @@ impl BroadcastStateTransition for StateTransition {
                     .wrap_to_execution_result(&response);
             }
 
-            eprintln!("⏳ [WAIT] Extracting metadata from response...");
+            trace!("wait: extracting metadata");
             let metadata = grpc_response
                 .metadata()
                 .wrap_to_execution_result(&response)?
@@ -154,16 +153,16 @@ impl BroadcastStateTransition for StateTransition {
             let block_info = block_info_from_metadata(metadata)
                 .wrap_to_execution_result(&response)?
                 .inner;
-            eprintln!("✅ [WAIT] Block info extracted: {:?}", block_info);
+            trace!(block_info = ?block_info, "wait: block info extracted");
 
-            eprintln!("⏳ [WAIT] Extracting proof from response...");
+            trace!("wait: extracting proof");
             let proof: &Proof = (*grpc_response)
                 .proof()
                 .wrap_to_execution_result(&response)?
                 .inner;
-            eprintln!(
-                "✅ [WAIT] Proof extracted, size: {} bytes",
-                proof.grovedb_proof.len()
+            trace!(
+                proof_size = proof.grovedb_proof.len(),
+                "wait: proof extracted"
             );
 
             let context_provider = sdk.context_provider().ok_or(ExecutionError {
@@ -174,7 +173,7 @@ impl BroadcastStateTransition for StateTransition {
                 retries: response.retries,
             })?;
 
-            eprintln!("⏳ [WAIT] Verifying state transition execution with proof...");
+            trace!("wait: verifying proof");
             let (_, result) = match Drive::verify_state_transition_was_executed_with_proof(
                 self,
                 &block_info,
@@ -204,8 +203,8 @@ impl BroadcastStateTransition for StateTransition {
             }?
             .inner;
 
-            eprintln!("✅ [WAIT] Proof verification successful");
-            eprintln!("⏳ [WAIT] Result variant: {}", result.to_string());
+            trace!("wait: proof verification successful");
+            trace!(result_variant = %result.to_string(), "wait: result variant");
 
             let variant_name = result.to_string();
             let conversion_result = T::try_from(result)
@@ -219,8 +218,8 @@ impl BroadcastStateTransition for StateTransition {
                 .wrap_to_execution_result(&response);
 
             match &conversion_result {
-                Ok(_) => eprintln!("✅ [WAIT] Successfully converted result to expected type"),
-                Err(e) => eprintln!("❌ [WAIT] Failed to convert result: {:?}", e),
+                Ok(_) => trace!("wait: converted result to expected type"),
+                Err(e) => warn!(error = ?e, "wait: failed to convert result"),
             }
             conversion_result
         };
@@ -229,18 +228,15 @@ impl BroadcastStateTransition for StateTransition {
         // run the future with or without timeout, depending on the settings
         let wait_timeout = settings.and_then(|s| s.wait_timeout);
 
-        eprintln!(
-            "⏳ [WAIT] Starting retry mechanism with timeout: {:?}",
-            wait_timeout
-        );
+        trace!(timeout = ?wait_timeout, "wait: starting retry mechanism");
 
         match wait_timeout {
             Some(timeout) => {
-                eprintln!("⏳ [WAIT] Waiting with timeout of {:?}", timeout);
+                trace!(?timeout, "wait: waiting with timeout");
                 tokio::time::timeout(timeout, future)
                     .await
                     .map_err(|e| {
-                        eprintln!("❌ [WAIT] TIMEOUT REACHED after {:?}", timeout);
+                        warn!(?timeout, "wait: timeout reached");
                         Error::TimeoutReached(
                             timeout,
                             format!("Timeout waiting for result of {} (tx id: {}) affecting object {}: {:?}",
@@ -253,7 +249,7 @@ impl BroadcastStateTransition for StateTransition {
                     .into_inner()
             }
             None => {
-                eprintln!("⏳ [WAIT] Waiting without timeout (may block indefinitely)");
+                trace!("wait: waiting without timeout");
                 future.await.into_inner()
             }
         }
@@ -264,17 +260,14 @@ impl BroadcastStateTransition for StateTransition {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
-        eprintln!(
-            "📡 [BROADCAST_AND_WAIT] Starting broadcast_and_wait for {}",
-            self.name()
-        );
-        eprintln!("📡 [BROADCAST_AND_WAIT] Step 1: Broadcasting...");
+        trace!(state_transition = %self.name(), "broadcast_and_wait: start");
+        trace!("broadcast_and_wait: step 1 - broadcasting");
         self.broadcast(sdk, settings).await?;
-        eprintln!("📡 [BROADCAST_AND_WAIT] Step 2: Waiting for response...");
+        trace!("broadcast_and_wait: step 2 - waiting for response");
         let result = self.wait_for_response::<T>(sdk, settings).await;
         match &result {
-            Ok(_) => eprintln!("✅ [BROADCAST_AND_WAIT] Complete success!"),
-            Err(e) => eprintln!("❌ [BROADCAST_AND_WAIT] Failed: {:?}", e),
+            Ok(_) => trace!("broadcast_and_wait: complete success"),
+            Err(e) => warn!(error = ?e, "broadcast_and_wait: failed"),
         }
         result
     }
