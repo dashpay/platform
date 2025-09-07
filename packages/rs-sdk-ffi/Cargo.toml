@@ -1,0 +1,87 @@
+[package]
+name = "rs-sdk-ffi"
+version = "2.0.0-rc.14"
+authors = ["Dash Core Group <dev@dash.org>"]
+edition = "2021"
+license = "MIT"
+description = "FFI bindings for Dash Platform SDK - C-compatible interface for cross-platform integration"
+
+[lib]
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[dependencies]
+dash-sdk = { path = "../rs-sdk", features = ["dpns-contract", "dashpay-contract"] }
+drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
+simple-signer = { path = "../simple-signer" }
+
+# Core SDK integration (always included for unified SDK)
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd", optional = true }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
+
+# FFI and serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
+
+# Async runtime
+tokio = { version = "1.41", features = ["rt-multi-thread", "macros"] }
+
+# Error handling
+thiserror = "2.0"
+
+# Logging
+tracing = "0.1.41"
+
+# Encoding
+bs58 = "0.5"
+hex = "0.4"
+
+# System APIs
+libc = "0.2"
+
+# Cryptography
+getrandom = "0.2"
+
+# Concurrency
+once_cell = "1.20"
+
+# HTTP client for diagnostics
+reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
+
+[build-dependencies]
+cbindgen = "0.27"
+
+[profile.release]
+lto = "fat"              # Enable cross-crate optimization
+codegen-units = 1        # Single codegen unit for better optimization
+strip = "symbols"        # Strip debug symbols for smaller size
+opt-level = "z"          # Optimize for size
+panic = "abort"          # Required for iOS
+
+[dev-dependencies]
+hex = "0.4"
+env_logger = "0.11"
+dotenvy = "0.15"
+envy = "0.4"
+zeroize = "1.8"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+log = "0.4"
+
+[features]
+default = ["dash_spv"]
+
+# Enable linking with dash-spv-ffi (Core SDK integration)
+dash_spv = ["dep:dash-spv-ffi"]
+
+# Optional mocks for development/testing; maps to dash-sdk's mocks
+mocks = ["dash-sdk/mocks"]
+
+# Compile stubbed Core SDK FFI symbols for tests if needed.
+# Will only be used when 'dash_spv' is disabled to avoid symbol clashes.
+ffi_core_stubs = []
+
+[[test]]
+name = "integration"
+path = "tests/integration.rs"

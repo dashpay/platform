@@ -118,7 +118,7 @@ impl<S: Signer> PutVote<S> for Vote {
                 return if e.to_string().contains("already exists") {
                     let vote =
                         Vote::fetch(sdk, VoteQuery::new(voter_pro_tx_hash, vote_poll_id)).await?;
-                    vote.ok_or(Error::DapiClientError(
+                    vote.ok_or(Error::Generic(
                         "vote was proved to not exist but was said to exist".to_string(),
                     ))
                 } else {

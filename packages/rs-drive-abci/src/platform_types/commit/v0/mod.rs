@@ -4,9 +4,9 @@ pub mod accessors;
 
 use crate::abci::AbciError;
 use crate::platform_types::cleaned_abci_messages::{cleaned_block_id, cleaned_commit_info};
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures;
 use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::validation::{SimpleValidationResult, ValidationResult};
 use tenderdash_abci::proto;
 use tenderdash_abci::proto::abci::CommitInfo;
@@ -139,10 +139,10 @@ mod test {
 
     use super::CommitV0;
     use crate::platform_types::cleaned_abci_messages::cleaned_commit_info::v0::CleanedCommitInfo;
-    use dashcore_rpc::{
+    use dpp::bls_signatures::PublicKey;
+    use dpp::dashcore_rpc::{
         dashcore::hashes::sha256, dashcore::hashes::Hash, dashcore_rpc_json::QuorumType,
     };
-    use dpp::bls_signatures::PublicKey;
 
     use tenderdash_abci::proto::types::{BlockId, PartSetHeader, StateId};
     use tenderdash_abci::signatures::{Hashable, Signable};

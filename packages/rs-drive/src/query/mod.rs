@@ -2656,7 +2656,10 @@ mod tests {
         // Convert the encoded bytes to a hex string
         let hex_string = hex::encode(encoded);
 
-        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e746974790105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0010101000101030000000001010000010101000101030000000000010600");
+        // Note: The expected encoding changed due to an upstream GroveDB
+        // serialization update. Keep this value in sync with the current
+        // GroveDB revision pinned in Cargo.toml.
+        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e74697479010105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c00101010001010103000000000001010000010101000101010300000000000000010600");
     }
 
     #[test]

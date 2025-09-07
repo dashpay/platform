@@ -207,7 +207,7 @@ impl ContestedDocumentVotePollDriveQuery {
         drive: &Drive,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ResolvedContestedDocumentVotePollDriveQuery, Error> {
+    ) -> Result<ResolvedContestedDocumentVotePollDriveQuery<'_>, Error> {
         let ContestedDocumentVotePollDriveQuery {
             vote_poll,
             result_type,

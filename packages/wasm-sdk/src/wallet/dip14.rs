@@ -3,14 +3,16 @@
 //! This module implements DIP14, which extends BIP32 to support 256-bit derivation indices
 //! instead of the standard 31-bit limitation.
 
-use dashcore::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use dashcore::secp256k1::{self, Secp256k1, SecretKey, PublicKey, Scalar};
-use dashcore::Network;
+use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
+use dash_sdk::dpp::dashcore::secp256k1::{self, Secp256k1, SecretKey, PublicKey, Scalar};
+use dash_sdk::dpp::dashcore::Network;
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 use std::convert::TryInto;
-use dashcore::hashes::{sha256, Hash};
+use dash_sdk::dpp::dashcore::hashes::{sha256, ripemd160, Hash};
 use hex;
+use dash_sdk::dpp::dashcore;
+use dash_sdk::dpp::key_wallet;
 
 type HmacSha512 = Hmac<Sha512>;
 
@@ -82,14 +84,14 @@ impl Dip14ExtendedPrivKey {
         
         let child_bytes: [u8; 4] = self.child_number[28..32].try_into()
             .map_err(|_| Dip14Error::InvalidIndex)?;
-        let child_number = dashcore::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
+        let child_number = key_wallet::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
         
         Ok(ExtendedPrivKey {
             network: self.network,
             depth: self.depth,
-            parent_fingerprint: dashcore::bip32::Fingerprint::from_bytes(self.parent_fingerprint),
+            parent_fingerprint: key_wallet::bip32::Fingerprint::from_bytes(self.parent_fingerprint),
             child_number,
-            chain_code: dashcore::bip32::ChainCode::from_bytes(self.chain_code),
+            chain_code: key_wallet::bip32::ChainCode::from_bytes(self.chain_code),
             private_key: self.private_key,
         })
     }
@@ -148,7 +150,7 @@ impl Dip14ExtendedPrivKey {
         let parent_pubkey = PublicKey::from_secret_key(&secp, &self.private_key);
         // Use sha256 then ripemd160 to create hash160
         let sha256_hash = sha256::Hash::hash(&parent_pubkey.serialize());
-        let parent_pubkey_hash = dashcore::hashes::ripemd160::Hash::hash(&sha256_hash[..]);
+        let parent_pubkey_hash = dash_sdk::dpp::dashcore::hashes::ripemd160::Hash::hash(&sha256_hash[..]);
         let mut parent_fingerprint = [0u8; 4];
         parent_fingerprint.copy_from_slice(&parent_pubkey_hash[0..4]);
         
@@ -198,14 +200,14 @@ impl Dip14ExtendedPubKey {
         
         let child_bytes: [u8; 4] = self.child_number[28..32].try_into()
             .map_err(|_| Dip14Error::InvalidIndex)?;
-        let child_number = dashcore::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
+        let child_number = key_wallet::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
         
         Ok(ExtendedPubKey {
             network: self.network,
             depth: self.depth,
-            parent_fingerprint: dashcore::bip32::Fingerprint::from_bytes(self.parent_fingerprint),
+            parent_fingerprint: key_wallet::bip32::Fingerprint::from_bytes(self.parent_fingerprint),
             child_number,
-            chain_code: dashcore::bip32::ChainCode::from_bytes(self.chain_code),
+            chain_code: key_wallet::bip32::ChainCode::from_bytes(self.chain_code),
             public_key: self.public_key,
         })
     }

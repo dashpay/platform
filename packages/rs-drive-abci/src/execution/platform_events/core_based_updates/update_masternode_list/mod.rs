@@ -74,7 +74,7 @@ mod test {
     use super::*;
     use crate::config::PlatformConfig;
     use crate::test::helpers::setup::TestPlatformBuilder;
-    use dashcore_rpc::json::MasternodeListDiff;
+    use dpp::dashcore_rpc::json::MasternodeListDiff;
     use std::env;
     use std::fs::File;
     use std::io::BufReader;

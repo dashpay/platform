@@ -1,0 +1,66 @@
+# cbindgen configuration for Dash SDK FFI (iOS without Core SDK conflicts)
+
+language = "C"
+pragma_once = true
+include_guard = "DASH_SDK_FFI_H"
+autogen_warning = "/* This file is auto-generated. Do not modify manually. */"
+include_version = true
+namespaces = []
+using_namespaces = []
+sys_includes = ["stdint.h", "stdbool.h"]
+includes = []
+no_includes = false
+cpp_compat = true
+documentation = true
+documentation_style = "c99"
+
+[defines]
+
+[export]
+include = ["dash_sdk_*", "dash_core_*", "dash_unified_sdk_*", "dash_spv_ffi_*"]
+# Exclude types that come from key-wallet-ffi to avoid duplication
+exclude = ["FFIAccountType", "FFIAccountTypePreference", "FFIAccountTypeUsed", "FFIAccountCreationOptionType"]
+prefix = ""
+item_types = ["enums", "structs", "unions", "typedefs", "opaque", "functions"]
+
+[export.rename]
+"SDKHandle" = "dash_sdk_handle_t"
+"SDKError" = "dash_sdk_error_t"
+
+[fn]
+args = "horizontal"
+rename_args = "snake_case"
+must_use = "DASH_SDK_WARN_UNUSED_RESULT"
+prefix = ""
+postfix = ""
+
+[struct]
+rename_fields = "snake_case"
+derive_constructor = false
+derive_eq = false
+derive_neq = false
+derive_lt = false
+derive_lte = false
+derive_gt = false
+derive_gte = false
+
+[enum]
+rename_variant_name_fields = "snake_case"
+add_sentinel = false
+prefix_with_name = true
+derive_helper_methods = false
+derive_const_casts = false
+derive_mut_casts = false
+cast_assert_name = "assert"
+must_use = "DASH_SDK_WARN_UNUSED_RESULT"
+
+[const]
+allow_static_const = true
+allow_constexpr = false
+sort_by = "name"
+
+[macro_expansion]
+bitflags = false
+
+[parse]
+parse_deps = false

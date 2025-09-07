@@ -1,10 +1,13 @@
-use dashcore::signer;
-use dashcore::PrivateKey;
+use dpp::dashcore;
+use dpp::dashcore::signer;
+use dpp::dashcore::Network;
+use dpp::dashcore::PrivateKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
+use tracing::{debug, warn};
 
 /// A simple signer that uses a single private key
 /// This is designed for WASM and other single-key use cases
@@ -18,6 +21,12 @@ impl SingleKeySigner {
     pub fn new(private_key_wif: &str) -> Result<Self, String> {
         let private_key = PrivateKey::from_wif(private_key_wif)
             .map_err(|e| format!("Invalid WIF private key: {}", e))?;
+        Ok(Self { private_key })
+    }
+
+    pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
+        let private_key = PrivateKey::from_slice(private_key_data, network)
+            .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(Self { private_key })
     }
 
@@ -70,13 +79,18 @@ impl Signer for SingleKeySigner {
         // Only support ECDSA keys for now
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                // Do not log private key material. Log data fingerprint only.
+                debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
                 let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
                 Ok(signature.to_vec().into())
             }
-            _ => Err(ProtocolError::Generic(format!(
-                "SingleKeySigner only supports ECDSA keys, got {:?}",
-                identity_public_key.key_type()
-            ))),
+            _ => {
+                warn!(key_type = ?identity_public_key.key_type(), "SingleKeySigner: unsupported key type");
+                Err(ProtocolError::Generic(format!(
+                    "SingleKeySigner only supports ECDSA keys, got {:?}",
+                    identity_public_key.key_type()
+                )))
+            }
         }
     }
 
@@ -86,7 +100,7 @@ impl Signer for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,
@@ -100,10 +114,10 @@ impl Signer for SingleKeySigner {
             }
             KeyType::ECDSA_HASH160 => {
                 // Compare hash160 of public key
-                use dashcore::hashes::{hash160, Hash};
+                use dpp::dashcore::hashes::{hash160, Hash};
 
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,

@@ -9,8 +9,8 @@ use dapi_grpc::platform::v0::{
     get_identity_by_public_key_hash_request, get_identity_by_public_key_hash_response,
     GetIdentityByPublicKeyHashRequest, Proof,
 };
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures::{Bls12381G2Impl, BlsError, Pairing, Signature};
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::methods::hash::IdentityPublicKeyHashMethodsV0;

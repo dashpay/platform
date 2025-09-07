@@ -6,10 +6,10 @@ use dpp::dashcore::ProTxHash;
 
 use crate::platform_types::platform_state::PlatformState;
 use crate::platform_types::validator::v0::NewValidatorIfMasternodeInState;
-use dashcore_rpc::json::QuorumInfoResult;
 use dpp::bls_signatures::PublicKey as BlsPublicKey;
 use dpp::core_types::validator::v0::ValidatorV0;
 pub use dpp::core_types::validator_set::v0::*;
+use dpp::dashcore_rpc::json::QuorumInfoResult;
 use std::collections::BTreeMap;
 use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;

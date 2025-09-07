@@ -14,10 +14,7 @@ use crate::document::errors::*;
 ))]
 use crate::state_transition::errors::InvalidIdentityPublicKeyTypeError;
 
-#[cfg(any(
-    all(feature = "state-transitions", feature = "validation"),
-    feature = "state-transition-validation"
-))]
+#[cfg(all(feature = "state-transitions", feature = "validation"))]
 use crate::state_transition::errors::StateTransitionError;
 
 #[cfg(any(

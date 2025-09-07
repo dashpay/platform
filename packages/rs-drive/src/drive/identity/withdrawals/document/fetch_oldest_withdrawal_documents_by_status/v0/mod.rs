@@ -498,21 +498,21 @@ mod tests {
             );
         }
 
-        println!(
-            "Total documents: {}, QUEUED documents: {}",
-            total_count, queued_count
-        );
+        // println!(
+        //     "Total documents: {}, QUEUED documents: {}",
+        //     total_count, queued_count
+        // );
 
         // Test the new function that fetches all documents grouped by status
         let documents_by_status = drive
             .fetch_oldest_withdrawal_documents_v0(Some(&transaction), &platform_version)
             .expect("to fetch all documents grouped by status");
 
-        // Check that we have documents for different statuses
-        println!("Documents grouped by status:");
-        for (status, docs) in &documents_by_status {
-            println!("  Status {}: {} documents", status, docs.len());
-        }
+        // // Check that we have documents for different statuses
+        // println!("Documents grouped by status:");
+        // for (status, docs) in &documents_by_status {
+        //     println!("  Status {}: {} documents", status, docs.len());
+        // }
 
         // Get QUEUED documents
         let queued_documents = documents_by_status
@@ -538,9 +538,9 @@ mod tests {
             );
         }
 
-        println!(
-            "Successfully fetched {} QUEUED documents sorted by updatedAt",
-            queued_documents.len()
-        );
+        // println!(
+        //     "Successfully fetched {} QUEUED documents sorted by updatedAt",
+        //     queued_documents.len()
+        // );
     }
 }
