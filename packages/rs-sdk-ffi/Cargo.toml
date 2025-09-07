@@ -10,7 +10,7 @@ description = "FFI bindings for Dash Platform SDK - C-compatible interface for c
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", features = ["mocks", "dpns-contract", "dashpay-contract"] }
+dash-sdk = { path = "../rs-sdk", features = ["dpns-contract", "dashpay-contract"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
 simple-signer = { path = "../simple-signer" }
@@ -74,6 +74,9 @@ default = ["dash_spv"]
 
 # Enable linking with dash-spv-ffi (Core SDK integration)
 dash_spv = ["dep:dash-spv-ffi"]
+
+# Optional mocks for development/testing; maps to dash-sdk's mocks
+mocks = ["dash-sdk/mocks"]
 
 # Compile stubbed Core SDK FFI symbols for tests if needed.
 # Will only be used when 'dash_spv' is disabled to avoid symbol clashes.

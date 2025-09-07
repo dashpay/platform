@@ -618,12 +618,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "crossbeam-utils"
-version = "0.8.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
-
-[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -687,13 +681,14 @@ dependencies = [
  "futures-core",
  "getrandom 0.2.16",
  "platform-version",
- "prost",
+ "prost 0.14.1",
  "serde",
  "serde_bytes",
  "serde_json",
  "tenderdash-proto",
  "tonic",
- "tonic-build",
+ "tonic-prost",
+ "tonic-prost-build",
 ]
 
 [[package]]
@@ -1286,6 +1281,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a3d7db9596fecd151c5f638c0ee5d5bd487b6e0ea232e5dc96d5250f6f94b1d"
 dependencies = [
  "crc32fast",
+ "libz-rs-sys",
  "miniz_oxide",
 ]
 
@@ -1523,7 +1519,7 @@ dependencies = [
 [[package]]
 name = "grovedb"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1544,7 +1540,7 @@ dependencies = [
 [[package]]
 name = "grovedb-costs"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "integer-encoding",
  "intmap",
@@ -1554,7 +1550,7 @@ dependencies = [
 [[package]]
 name = "grovedb-epoch-based-storage-flags"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "grovedb-costs",
  "hex",
@@ -1566,7 +1562,7 @@ dependencies = [
 [[package]]
 name = "grovedb-merk"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "bincode",
  "bincode_derive",
@@ -1586,7 +1582,7 @@ dependencies = [
 [[package]]
 name = "grovedb-path"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "hex",
 ]
@@ -1594,7 +1590,7 @@ dependencies = [
 [[package]]
 name = "grovedb-version"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "thiserror 2.0.15",
  "versioned-feature-core 1.0.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -1603,7 +1599,7 @@ dependencies = [
 [[package]]
 name = "grovedb-visualize"
 version = "3.0.0"
-source = "git+https://github.com/dashpay/grovedb?rev=435f4d1805cbc01f9e38dde65975404a05d153db#435f4d1805cbc01f9e38dde65975404a05d153db"
+source = "git+https://github.com/dashpay/grovedb?rev=1ecedf530fbc5b5e12edf1bc607bd288c187ddde#1ecedf530fbc5b5e12edf1bc607bd288c187ddde"
 dependencies = [
  "hex",
  "itertools 0.14.0",
@@ -1842,7 +1838,7 @@ dependencies = [
  "tokio",
  "tokio-rustls",
  "tower-service",
- "webpki-roots 1.0.2",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -2235,6 +2231,15 @@ name = "libc"
 version = "0.2.175"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6a82ae493e598baaea5209805c49bbf2ea7de956d50d7da0da1164f9c6d28543"
+
+[[package]]
+name = "libz-rs-sys"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "840db8cf39d9ec4dd794376f38acc40d0fc65eec2a8f484f7fd375b84602becd"
+dependencies = [
+ "zlib-rs",
+]
 
 [[package]]
 name = "linux-raw-sys"
@@ -2857,7 +2862,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2796faa41db3ec313a31f7624d9286acf277b52de526150b7e69f3debf891ee5"
 dependencies = [
  "bytes",
- "prost-derive",
+ "prost-derive 0.13.5",
+]
+
+[[package]]
+name = "prost"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7231bd9b3d3d33c86b58adbac74b5ec0ad9f496b19d22801d773636feaa95f3d"
+dependencies = [
+ "bytes",
+ "prost-derive 0.14.1",
 ]
 
 [[package]]
@@ -2873,8 +2888,30 @@ dependencies = [
  "once_cell",
  "petgraph",
  "prettyplease",
- "prost",
- "prost-types",
+ "prost 0.13.5",
+ "prost-types 0.13.5",
+ "regex",
+ "syn 2.0.106",
+ "tempfile",
+]
+
+[[package]]
+name = "prost-build"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac6c3320f9abac597dcbc668774ef006702672474aad53c6d596b62e487b40b1"
+dependencies = [
+ "heck",
+ "itertools 0.14.0",
+ "log",
+ "multimap",
+ "once_cell",
+ "petgraph",
+ "prettyplease",
+ "prost 0.14.1",
+ "prost-types 0.14.1",
+ "pulldown-cmark",
+ "pulldown-cmark-to-cmark",
  "regex",
  "syn 2.0.106",
  "tempfile",
@@ -2894,12 +2931,54 @@ dependencies = [
 ]
 
 [[package]]
+name = "prost-derive"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9120690fafc389a67ba3803df527d0ec9cbbc9cc45e4cc20b332996dfb672425"
+dependencies = [
+ "anyhow",
+ "itertools 0.14.0",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
 name = "prost-types"
 version = "0.13.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52c2c1bf36ddb1a1c396b3601a3cec27c2462e45f07c386894ec3ccf5332bd16"
 dependencies = [
- "prost",
+ "prost 0.13.5",
+]
+
+[[package]]
+name = "prost-types"
+version = "0.14.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b9b4db3d6da204ed77bb26ba83b6122a73aeb2e87e25fbf7ad2e84c4ccbf8f72"
+dependencies = [
+ "prost 0.14.1",
+]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e8bbe1a966bd2f362681a44f6edce3c2310ac21e4d5067a6e7ec396297a6ea0"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-to-cmark"
+version = "21.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5b6a0769a491a08b31ea5c62494a8f144ee0987d86d670a8af4df1e1b7cde75"
+dependencies = [
+ "pulldown-cmark",
 ]
 
 [[package]]
@@ -3118,7 +3197,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
- "webpki-roots 1.0.2",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -3769,8 +3848,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.4.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.4.0#e2dd15f39246081e7d569e585ab78ff5340116ac"
+version = "1.5.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9e3bcdc457ff5cbbd93be2fce510403d033c712b#9e3bcdc457ff5cbbd93be2fce510403d033c712b"
 dependencies = [
  "bytes",
  "hex",
@@ -3784,8 +3863,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.4.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.4.0#e2dd15f39246081e7d569e585ab78ff5340116ac"
+version = "1.5.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9e3bcdc457ff5cbbd93be2fce510403d033c712b#9e3bcdc457ff5cbbd93be2fce510403d033c712b"
 dependencies = [
  "bytes",
  "chrono",
@@ -3793,7 +3872,7 @@ dependencies = [
  "flex-error",
  "num-derive",
  "num-traits",
- "prost",
+ "prost 0.13.5",
  "serde",
  "subtle-encoding",
  "tenderdash-proto-compiler",
@@ -3802,11 +3881,11 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.4.0"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.4.0#e2dd15f39246081e7d569e585ab78ff5340116ac"
+version = "1.5.0-dev.1"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=9e3bcdc457ff5cbbd93be2fce510403d033c712b#9e3bcdc457ff5cbbd93be2fce510403d033c712b"
 dependencies = [
  "fs_extra",
- "prost-build",
+ "prost-build 0.13.5",
  "regex",
  "tempfile",
  "ureq",
@@ -4041,9 +4120,9 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.13.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e581ba15a835f4d9ea06c55ab1bd4dce26fc53752c69a04aac00703bfb49ba9"
+checksum = "eb7613188ce9f7df5bfe185db26c5814347d110db17920415cf2fbcad85e7203"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -4057,9 +4136,9 @@ dependencies = [
  "hyper-util",
  "percent-encoding",
  "pin-project",
- "prost",
  "rustls-native-certs",
- "socket2 0.5.10",
+ "socket2 0.6.0",
+ "sync_wrapper",
  "tokio",
  "tokio-rustls",
  "tokio-stream",
@@ -4067,28 +4146,53 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
- "webpki-roots 0.26.11",
+ "webpki-roots",
 ]
 
 [[package]]
 name = "tonic-build"
-version = "0.13.1"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eac6f67be712d12f0b41328db3137e0d0757645d8904b4cb7d51cd9c2279e847"
+checksum = "4c40aaccc9f9eccf2cd82ebc111adc13030d23e887244bc9cfa5d1d636049de3"
 dependencies = [
  "prettyplease",
  "proc-macro2",
- "prost-build",
- "prost-types",
  "quote",
  "syn 2.0.106",
 ]
 
 [[package]]
-name = "tonic-web-wasm-client"
-version = "0.7.1"
+name = "tonic-prost"
+version = "0.14.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "66e3bb7acca55e6790354be650f4042d418fcf8e2bc42ac382348f2b6bf057e5"
+checksum = "66bd50ad6ce1252d87ef024b3d64fe4c3cf54a86fb9ef4c631fdd0ded7aeaa67"
+dependencies = [
+ "bytes",
+ "prost 0.14.1",
+ "tonic",
+]
+
+[[package]]
+name = "tonic-prost-build"
+version = "0.14.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b4a16cba4043dc3ff43fcb3f96b4c5c154c64cbd18ca8dce2ab2c6a451d058a2"
+dependencies = [
+ "prettyplease",
+ "proc-macro2",
+ "prost-build 0.14.1",
+ "prost-types 0.14.1",
+ "quote",
+ "syn 2.0.106",
+ "tempfile",
+ "tonic-build",
+]
+
+[[package]]
+name = "tonic-web-wasm-client"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "898cd44be5e23e59d2956056538f1d6b3c5336629d384ffd2d92e76f87fb98ff"
 dependencies = [
  "base64 0.22.1",
  "byteorder",
@@ -4239,6 +4343,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "unicase"
+version = "2.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "75b844d17643ee918803943289730bec8aac480150456169e647ed0b576ba539"
+
+[[package]]
 name = "unicode-ident"
 version = "1.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4280,7 +4390,7 @@ dependencies = [
  "rustls-pki-types",
  "ureq-proto",
  "utf-8",
- "webpki-roots 1.0.2",
+ "webpki-roots",
 ]
 
 [[package]]
@@ -4559,15 +4669,6 @@ checksum = "5a6580f308b1fad9207618087a65c04e7a10bc77e02c8e84e9b00dd4b12fa0bb"
 dependencies = [
  "js-sys",
  "wasm-bindgen",
-]
-
-[[package]]
-name = "webpki-roots"
-version = "0.26.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
-dependencies = [
- "webpki-roots 1.0.2",
 ]
 
 [[package]]
@@ -5024,20 +5125,23 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "2.4.2"
+version = "4.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fabe6324e908f85a1c52063ce7aa26b68dcb7eb6dbc83a2d148403c9bc3eba50"
+checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
 dependencies = [
  "arbitrary",
  "crc32fast",
- "crossbeam-utils",
- "displaydoc",
  "flate2",
  "indexmap 2.10.0",
  "memchr",
- "thiserror 2.0.15",
  "zopfli",
 ]
+
+[[package]]
+name = "zlib-rs"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2f06ae92f42f5e5c42443fd094f245eb656abf56dd7cce9b8b263236565e00f2"
 
 [[package]]
 name = "zopfli"

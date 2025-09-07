@@ -33,7 +33,7 @@ simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 rust_decimal = "1.2.5"
 rust_decimal_macros = "1.25.0"
 mockall = { version = "0.13", optional = true }
-prost = { version = "0.13", default-features = false }
+prost = { version = "0.14", default-features = false }
 tracing = { version = "0.1.41", default-features = false, features = [] }
 clap = { version = "4.4.10", features = ["derive"] }
 envy = { version = "0.4.2" }
@@ -51,7 +51,7 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
   "registry",
   "tracing-log",
 ], optional = false }
-tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", version = "1.4.0", tag = "v1.4.0", features = [
+tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", rev = "9e3bcdc457ff5cbbd93be2fce510403d033c712b", features = [
   "grpc",
 ] }
 
