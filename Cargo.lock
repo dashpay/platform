@@ -1372,7 +1372,6 @@ dependencies = [
  "serde_json",
  "tenderdash-proto",
  "tonic 0.14.2",
- "tonic-prost",
  "tonic-prost-build",
 ]
 
