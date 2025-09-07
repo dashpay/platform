@@ -2,8 +2,7 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+use crate::queries::ProofMetadataResponse;
 use dash_sdk::platform::{Identifier, FetchMany};
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::tokens::status::TokenStatus;
@@ -526,9 +525,6 @@ pub async fn get_token_perpetual_distribution_last_claim(
     identity_id: &str,
     token_id: &str,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::platform::query::TokenLastClaimQuery;
-    use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
-    use dash_sdk::platform::Fetch;
     
     // Parse IDs
     let identity_identifier = Identifier::from_string(
@@ -709,7 +705,6 @@ pub async fn get_identities_token_balances_with_proof_info(
     token_id: &str,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
-    use drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances;
     
     // Parse token ID
     let token_identifier = Identifier::from_string(
@@ -772,7 +767,6 @@ pub async fn get_identities_token_balances_with_proof_info(
 
 #[wasm_bindgen]
 pub async fn get_token_statuses_with_proof_info(sdk: &WasmSdk, token_ids: Vec<String>) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::token_status::TokenStatuses;
     
     // Parse token IDs
     let tokens: Result<Vec<Identifier>, _> = token_ids

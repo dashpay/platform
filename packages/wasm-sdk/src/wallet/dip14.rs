@@ -52,10 +52,10 @@ pub struct Dip14ExtendedPrivKey {
 }
 
 // DIP14 Version bytes
-const DIP14_VERSION_MAINNET_PRIVATE: [u8; 4] = [0x04, 0x9e, 0xdd, 0x93]; // dpms
-const DIP14_VERSION_MAINNET_PUBLIC: [u8; 4] = [0x04, 0x9e, 0xdc, 0x93];  // dpmp
-const DIP14_VERSION_TESTNET_PRIVATE: [u8; 4] = [0x04, 0xa5, 0x90, 0x8e]; // dpts
-const DIP14_VERSION_TESTNET_PUBLIC: [u8; 4] = [0x04, 0xa5, 0x8f, 0x51];  // dptp
+const _DIP14_VERSION_MAINNET_PRIVATE: [u8; 4] = [0x04, 0x9e, 0xdd, 0x93]; // dpms
+const _DIP14_VERSION_MAINNET_PUBLIC: [u8; 4] = [0x04, 0x9e, 0xdc, 0x93];  // dpmp
+const _DIP14_VERSION_TESTNET_PRIVATE: [u8; 4] = [0x04, 0xa5, 0x90, 0x8e]; // dpts
+const _DIP14_VERSION_TESTNET_PUBLIC: [u8; 4] = [0x04, 0xa5, 0x8f, 0x51];  // dptp
 
 impl Dip14ExtendedPrivKey {
     /// Create from a standard BIP32 ExtendedPrivKey (for master key)

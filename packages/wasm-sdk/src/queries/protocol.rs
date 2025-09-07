@@ -2,7 +2,6 @@ use crate::sdk::WasmSdk;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -108,7 +107,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
 pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
-    use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+    use crate::queries::ProofMetadataResponse;
     
     let (upgrade_result, metadata, proof): (drive_proof_verifier::types::ProtocolVersionUpgrades, _, _) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(sdk.as_ref(), (), None)
         .await

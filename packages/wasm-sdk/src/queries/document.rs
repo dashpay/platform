@@ -1,10 +1,9 @@
 use crate::sdk::WasmSdk;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+use crate::queries::ProofMetadataResponse;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue, JsCast};
 use serde::{Serialize, Deserialize};
 use dash_sdk::platform::Fetch;
-use drive_proof_verifier::types::Documents;
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::document::DocumentV0Getters;
@@ -326,7 +325,7 @@ pub async fn get_documents_with_proof_info(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use dash_sdk::platform::FetchMany;
-    use drive_proof_verifier::types::Documents;
+    
     
     // Parse data contract ID
     let contract_id = Identifier::from_string(
@@ -670,7 +669,7 @@ pub async fn get_dpns_usernames_with_proof_info(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use dash_sdk::platform::FetchMany;
-    use drive_proof_verifier::types::Documents;
+    
     
     // DPNS contract ID on testnet
     const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";

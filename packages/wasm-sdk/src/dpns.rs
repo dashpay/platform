@@ -8,7 +8,6 @@ use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::prelude::Identifier;
 use simple_signer::SingleKeySigner;
-use std::sync::Mutex;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
