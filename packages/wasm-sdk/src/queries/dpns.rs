@@ -1,10 +1,9 @@
 use crate::sdk::WasmSdk;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
+use crate::queries::ProofMetadataResponse;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use serde::{Serialize, Deserialize};
-use serde::ser::Serialize as _;
-use dash_sdk::platform::{Fetch, FetchMany, Document};
+use dash_sdk::platform::{FetchMany, Document};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::document::DocumentV0Getters;
 
