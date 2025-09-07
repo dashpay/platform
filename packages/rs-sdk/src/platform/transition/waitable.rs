@@ -110,7 +110,7 @@ impl Waitable for Identity {
                     "attempt to create identity that already exists"
                 );
                 let identity = Identity::fetch(sdk, identity_id).await?;
-                identity.ok_or(Error::DapiClientError(
+                identity.ok_or(Error::Generic(
                     "identity was proved to not exist but was said to exist".to_string(),
                 ))
             }

@@ -36,7 +36,7 @@ pub enum Error {
     InvalidProvedResponse(String),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
-    DapiClientError(String),
+    DapiClientError(rs_dapi_client::DapiClientError),
     #[cfg(feature = "mocks")]
     /// DAPI mocks error
     #[error("Dapi mocks error: {0}")]
@@ -160,7 +160,8 @@ impl From<DapiClientError> for Error {
             }
         }
 
-        Self::DapiClientError(value.to_string())
+        // Preserve the original DAPI client error for structured inspection
+        Self::DapiClientError(value)
     }
 }
 
@@ -170,13 +171,14 @@ impl From<PlatformVersionError> for Error {
     }
 }
 
+// Retain legacy behavior for generic execution errors that are not DapiClientError
 impl<T> From<ExecutionError<T>> for Error
 where
     ExecutionError<T>: ToString,
 {
     fn from(value: ExecutionError<T>) -> Self {
-        // TODO: Improve error handling
-        Self::DapiClientError(value.to_string())
+        // Fallback to a generic string representation
+        Self::Generic(value.to_string())
     }
 }
 

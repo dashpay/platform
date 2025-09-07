@@ -167,7 +167,7 @@ impl Sdk {
                 DPNS_CONTRACT_ID,
                 dpp::platform_value::string_encoding::Encoding::Base58,
             )
-            .map_err(|e| Error::DapiClientError(format!("Invalid DPNS contract ID: {}", e)))?
+            .map_err(|e| Error::Generic(format!("Invalid DPNS contract ID: {}", e)))?
         };
 
         Ok(dpns_contract_id)
@@ -180,7 +180,7 @@ impl Sdk {
         // First check if the contract is available in the context provider
         let context_provider = self
             .context_provider()
-            .ok_or_else(|| Error::DapiClientError("Context provider not set".to_string()))?;
+            .ok_or_else(|| Error::Generic("Context provider not set".to_string()))?;
 
         match context_provider.get_data_contract(&dpns_contract_id, self.version())? {
             Some(contract) => Ok(contract),
@@ -188,7 +188,7 @@ impl Sdk {
                 // If not in context, fetch from platform
                 let contract = crate::platform::DataContract::fetch(self, dpns_contract_id)
                     .await?
-                    .ok_or_else(|| Error::DapiClientError("DPNS contract not found".to_string()))?;
+                    .ok_or_else(|| Error::Generic("DPNS contract not found".to_string()))?;
                 Ok(Arc::new(contract))
             }
         }
@@ -220,19 +220,13 @@ impl Sdk {
         let dpns_contract = self.fetch_dpns_contract().await?;
 
         // Get document types
-        let preorder_document_type =
-            dpns_contract
-                .document_type_for_name("preorder")
-                .map_err(|_| {
-                    Error::DapiClientError("DPNS preorder document type not found".to_string())
-                })?;
+        let preorder_document_type = dpns_contract
+            .document_type_for_name("preorder")
+            .map_err(|_| Error::Generic("DPNS preorder document type not found".to_string()))?;
 
-        let domain_document_type =
-            dpns_contract
-                .document_type_for_name("domain")
-                .map_err(|_| {
-                    Error::DapiClientError("DPNS domain document type not found".to_string())
-                })?;
+        let domain_document_type = dpns_contract
+            .document_type_for_name("domain")
+            .map_err(|_| Error::Generic("DPNS domain document type not found".to_string()))?;
 
         // Generate entropy and salt
         let mut rng = StdRng::from_entropy();
@@ -479,7 +473,7 @@ impl Sdk {
                     if let (Value::Text(k), Value::Identifier(id_bytes)) = (key, value) {
                         if k == "identity" {
                             return Ok(Some(Identifier::from_bytes(id_bytes).map_err(|e| {
-                                Error::DapiClientError(format!("Invalid identifier: {}", e))
+                                Error::Generic(format!("Invalid identifier: {}", e))
                             })?));
                         }
                     }

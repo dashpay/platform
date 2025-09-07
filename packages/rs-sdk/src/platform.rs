@@ -18,7 +18,6 @@ pub mod types;
 
 pub mod documents;
 pub mod dpns_usernames;
-mod fetch_with_contract_serialization;
 pub mod group_actions;
 pub mod tokens;
 
