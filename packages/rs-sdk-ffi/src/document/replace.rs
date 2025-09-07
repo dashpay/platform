@@ -20,6 +20,7 @@ use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 use std::sync::Arc;
+use tracing::{debug, error, info};
 
 /// Replace document on platform (broadcast state transition)
 #[no_mangle]
@@ -135,15 +136,11 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
             )
             .await
             .map_err(|e| {
-                eprintln!("❌ [DOCUMENT REPLACE] Failed to sign transition: {}", e);
-                eprintln!(
-                    "❌ [DOCUMENT REPLACE] Key ID used: {}",
-                    identity_public_key.id()
-                );
+                error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT REPLACE] failed to sign transition");
                 FFIError::InternalError(format!("Failed to create replace transition: {}", e))
             })?;
 
-        eprintln!("📝 [DOCUMENT REPLACE] State transition created, serializing...");
+        debug!("[DOCUMENT REPLACE] state transition created, serializing");
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
@@ -151,14 +148,8 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
             FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
         })?;
 
-        eprintln!(
-            "📝 [DOCUMENT REPLACE] Serialized state transition size: {} bytes",
-            serialized.len()
-        );
-        eprintln!(
-            "📝 [DOCUMENT REPLACE] State transition (hex): {}",
-            hex::encode(&serialized)
-        );
+        debug!(size = serialized.len(), "[DOCUMENT REPLACE] serialized transition size (bytes)");
+        debug!(hex = %hex::encode(&serialized), "[DOCUMENT REPLACE] state transition hex");
 
         Ok(serialized)
     });
@@ -196,7 +187,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
         ));
     }
 
-    eprintln!("📝 [DOCUMENT REPLACE] Starting document replace operation");
+    info!("[DOCUMENT REPLACE] starting document replace operation");
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let document = &*(document_handle as *const Document);
@@ -206,7 +197,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
     let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ [DOCUMENT REPLACE] Failed to parse contract ID: {}", e);
+            error!(error = %e, "[DOCUMENT REPLACE] failed to parse contract ID");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
@@ -214,24 +205,21 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!(
-                "❌ [DOCUMENT REPLACE] Failed to parse document type name: {}",
-                e
-            );
+            error!(error = %e, "[DOCUMENT REPLACE] failed to parse document type name");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
 
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
 
-    eprintln!(
-        "📝 [DOCUMENT REPLACE] Document type: {}",
-        document_type_name_str
+    debug!(
+        document_type = document_type_name_str,
+        "[DOCUMENT REPLACE] document type"
     );
-    eprintln!("📝 [DOCUMENT REPLACE] Document ID: {}", document.id());
-    eprintln!(
-        "📝 [DOCUMENT REPLACE] Document revision: {}",
-        document.revision().unwrap_or(0)
+    debug!(document_id = %document.id(), "[DOCUMENT REPLACE] document id");
+    debug!(
+        revision = document.revision().unwrap_or(0),
+        "[DOCUMENT REPLACE] document revision"
     );
 
     let result: Result<Document, FFIError> = wrapper.runtime.block_on(async {

@@ -219,7 +219,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             .map_err(|e| FFIError::InternalError(format!("Failed to deserialize contract: {}", e)))?
         };
 
-        eprintln!("🟦 FFI TOKEN MINT: Creating token mint transition builder");
+        tracing::debug!("FFI TOKEN MINT: creating token mint transition builder");
         // Create token mint transition builder
         let mut builder = TokenMintTransitionBuilder::new(
             Arc::new(data_contract),
@@ -227,62 +227,59 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
             minter_id.clone(),
             params.amount as TokenAmount,
         );
-        eprintln!("✅ FFI TOKEN MINT: Created builder with position: {}, minter_id: {}, amount: {}", 
-                 params.token_position, minter_id, params.amount);
+        tracing::debug!(position = params.token_position, %minter_id, amount = params.amount, "FFI TOKEN MINT: builder created");
 
         // Set optional recipient
         if let Some(recipient_id) = recipient_id {
-            eprintln!("🟦 FFI TOKEN MINT: Setting recipient ID: {}", recipient_id);
+            tracing::debug!(%recipient_id, "FFI TOKEN MINT: setting recipient id");
             builder = builder.issued_to_identity_id(recipient_id);
         }
 
         // Add optional public note
         if let Some(note) = public_note {
-            eprintln!("🟦 FFI TOKEN MINT: Adding public note");
+            tracing::debug!("FFI TOKEN MINT: adding public note");
             builder = builder.with_public_note(note);
         }
 
         // Add settings
         if let Some(settings) = settings {
-            eprintln!("🟦 FFI TOKEN MINT: Adding settings");
+            tracing::debug!("FFI TOKEN MINT: adding settings");
             builder = builder.with_settings(settings);
         }
 
         // Add user fee increase
         if user_fee_increase > 0 {
-            eprintln!("🟦 FFI TOKEN MINT: Adding user fee increase: {}", user_fee_increase);
+            tracing::debug!(user_fee_increase, "FFI TOKEN MINT: adding user fee increase");
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
 
         // Add state transition creation options
         if let Some(options) = creation_options {
-            eprintln!("🟦 FFI TOKEN MINT: Adding state transition creation options");
+            tracing::debug!("FFI TOKEN MINT: adding state transition creation options");
             builder = builder.with_state_transition_creation_options(options);
         }
 
-        eprintln!("🟦 FFI TOKEN MINT: Calling wrapper.sdk.token_mint...");
+        tracing::debug!("FFI TOKEN MINT: calling wrapper.sdk.token_mint");
         // Use SDK method to mint and wait
         let result = wrapper
             .sdk
             .token_mint(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
-                eprintln!("❌ FFI TOKEN MINT: Failed to mint token: {}", e);
+                tracing::error!(error = %e, "FFI TOKEN MINT: failed to mint token");
                 FFIError::InternalError(format!("Failed to mint token and wait: {}", e))
             })?;
-
-        eprintln!("✅ FFI TOKEN MINT: Token mint succeeded!");
+        tracing::info!("FFI TOKEN MINT: token mint succeeded");
         Ok(result)
     });
-
-    eprintln!("🟦 FFI TOKEN MINT: Async block completed, processing result");
+    tracing::debug!("FFI TOKEN MINT: async block completed");
     match result {
         Ok(_mint_result) => {
-            eprintln!("✅ FFI TOKEN MINT: Returning success result");
+            tracing::info!("FFI TOKEN MINT: returning success result");
             DashSDKResult::success(std::ptr::null_mut())
         }
         Err(e) => {
-            eprintln!("❌ FFI TOKEN MINT: Returning error result: {:?}", e);
+            tracing::error!(error = ?e, "FFI TOKEN MINT: returning error result");
             DashSDKResult::error(e.into())
         }
     }

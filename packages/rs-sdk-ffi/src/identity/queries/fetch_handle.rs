@@ -8,6 +8,7 @@ use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::Fetch;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use tracing::{debug, error, info, warn};
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResultDataType, IdentityHandle, SDKHandle};
@@ -30,7 +31,7 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
     sdk_handle: *const SDKHandle,
     identity_id: *const c_char,
 ) -> DashSDKResult {
-    eprintln!("🔵 dash_sdk_identity_fetch_handle: Called");
+    info!("dash_sdk_identity_fetch_handle: called");
 
     if sdk_handle.is_null() {
         return DashSDKResult::error(DashSDKError::new(
@@ -50,7 +51,10 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
 
     let id_str = match CStr::from_ptr(identity_id).to_str() {
         Ok(s) => {
-            eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity ID: '{}'", s);
+            debug!(
+                identity_id = s,
+                "dash_sdk_identity_fetch_handle: identity id"
+            );
             s
         }
         Err(e) => {
@@ -68,7 +72,7 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
         }
     };
 
-    eprintln!("🔵 dash_sdk_identity_fetch_handle: Fetching identity from network...");
+    debug!("dash_sdk_identity_fetch_handle: fetching identity");
     let result = wrapper.runtime.block_on(async {
         Identity::fetch(&wrapper.sdk, id)
             .await
@@ -77,32 +81,12 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
 
     match result {
         Ok(Some(identity)) => {
-            eprintln!("🔵 dash_sdk_identity_fetch_handle: Identity fetched successfully");
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch_handle: Identity ID: {:?}",
-                identity.id()
-            );
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch_handle: Identity balance: {}",
-                identity.balance()
-            );
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch_handle: Identity revision: {}",
-                identity.revision()
-            );
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch_handle: Number of public keys: {}",
-                identity.public_keys().len()
-            );
+            debug!("dash_sdk_identity_fetch_handle: identity fetched");
+            debug!(id = ?identity.id(), balance = identity.balance(), revision = identity.revision(), keys = identity.public_keys().len(), "dash_sdk_identity_fetch_handle: identity summary");
 
             // List all keys
             for (key_id, key) in identity.public_keys() {
-                eprintln!(
-                    "🔵 dash_sdk_identity_fetch_handle: Key {}: purpose={:?}, type={:?}",
-                    key_id,
-                    key.purpose(),
-                    key.key_type()
-                );
+                debug!(key_id, purpose = ?key.purpose(), key_type = ?key.key_type(), "dash_sdk_identity_fetch_handle: key");
             }
 
             // Verify we can find a transfer key
@@ -114,19 +98,16 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
             );
 
             match transfer_key {
-                Some(key) => eprintln!(
-                    "🔵 dash_sdk_identity_fetch_handle: Found transfer key with ID: {}",
-                    key.id()
+                Some(key) => debug!(
+                    key_id = key.id(),
+                    "dash_sdk_identity_fetch_handle: found transfer key"
                 ),
-                None => eprintln!("⚠️ dash_sdk_identity_fetch_handle: No transfer key found!"),
+                None => warn!("dash_sdk_identity_fetch_handle: no transfer key found"),
             }
 
             // Create handle from the fetched identity
             let handle = Box::into_raw(Box::new(identity)) as *mut IdentityHandle;
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch_handle: Created handle at: {:p}",
-                handle
-            );
+            debug!(ptr = ?handle, "dash_sdk_identity_fetch_handle: created handle");
 
             DashSDKResult::success_handle(
                 handle as *mut std::os::raw::c_void,
@@ -134,14 +115,14 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
             )
         }
         Ok(None) => {
-            eprintln!("❌ dash_sdk_identity_fetch_handle: Identity not found");
+            error!("dash_sdk_identity_fetch_handle: identity not found");
             DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::NotFound,
                 "Identity not found".to_string(),
             ))
         }
         Err(e) => {
-            eprintln!("❌ dash_sdk_identity_fetch_handle: Error: {:?}", e);
+            error!(error = ?e, "dash_sdk_identity_fetch_handle: error");
             DashSDKResult::error(e.into())
         }
     }

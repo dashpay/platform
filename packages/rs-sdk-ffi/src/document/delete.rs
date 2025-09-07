@@ -8,6 +8,7 @@ use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
+use tracing::{debug, error, info};
 
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
@@ -158,9 +159,15 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
 
         // Serialize the state transition with bincode
         let config = bincode::config::standard();
-        bincode::encode_to_vec(&state_transition, config).map_err(|e| {
+        let serialized = bincode::encode_to_vec(&state_transition, config).map_err(|e| {
             FFIError::InternalError(format!("Failed to serialize state transition: {}", e))
-        })
+        })?;
+        debug!(
+            size = serialized.len(),
+            "[DOCUMENT DELETE] serialized transition size (bytes)"
+        );
+        debug!(hex = %hex::encode(&serialized), "[DOCUMENT DELETE] state transition hex");
+        Ok(serialized)
     });
 
     match result {
@@ -198,7 +205,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
         ));
     }
 
-    eprintln!("🗑️ [DOCUMENT DELETE] Starting document delete operation");
+    info!("[DOCUMENT DELETE] starting document delete operation");
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
@@ -207,7 +214,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
     let document_id_str = match CStr::from_ptr(document_id).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ [DOCUMENT DELETE] Failed to parse document ID: {}", e);
+            error!(error = %e, "[DOCUMENT DELETE] failed to parse document ID");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
@@ -216,7 +223,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
     let owner_id_str = match CStr::from_ptr(owner_id).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ [DOCUMENT DELETE] Failed to parse owner ID: {}", e);
+            error!(error = %e, "[DOCUMENT DELETE] failed to parse owner ID");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
@@ -225,7 +232,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
     let contract_id_str = match CStr::from_ptr(data_contract_id).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ [DOCUMENT DELETE] Failed to parse contract ID: {}", e);
+            error!(error = %e, "[DOCUMENT DELETE] failed to parse contract ID");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
@@ -233,22 +240,22 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
     let document_type_name_str = match CStr::from_ptr(document_type_name).to_str() {
         Ok(s) => s,
         Err(e) => {
-            eprintln!(
-                "❌ [DOCUMENT DELETE] Failed to parse document type name: {}",
-                e
-            );
+            error!(error = %e, "[DOCUMENT DELETE] failed to parse document type name");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
 
     let identity_public_key = &*(identity_public_key_handle as *const IdentityPublicKey);
 
-    eprintln!(
-        "🗑️ [DOCUMENT DELETE] Document type: {}",
-        document_type_name_str
+    debug!(
+        document_type = document_type_name_str,
+        "[DOCUMENT DELETE] document type"
     );
-    eprintln!("🗑️ [DOCUMENT DELETE] Document ID: {}", document_id_str);
-    eprintln!("🗑️ [DOCUMENT DELETE] Owner ID: {}", owner_id_str);
+    debug!(
+        document_id = document_id_str,
+        "[DOCUMENT DELETE] document id"
+    );
+    debug!(owner_id = owner_id_str, "[DOCUMENT DELETE] owner id");
 
     let result: Result<Identifier, FFIError> = wrapper.runtime.block_on(async {
         // Parse identifiers (base58 encoded)
@@ -294,7 +301,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
             (*put_settings).user_fee_increase
         };
 
-        eprintln!("🗑️ [DOCUMENT DELETE] Building document delete transition...");
+        debug!("[DOCUMENT DELETE] building document delete transition");
 
         // Use DocumentDeleteTransitionBuilder::new with just IDs
         let mut builder = DocumentDeleteTransitionBuilder::new(
@@ -305,60 +312,38 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
         );
 
         if let Some(token_info) = token_payment_info_converted {
-            eprintln!("🗑️ [DOCUMENT DELETE] Adding token payment info");
+            debug!("[DOCUMENT DELETE] adding token payment info");
             builder = builder.with_token_payment_info(token_info);
         }
 
         if let Some(settings) = settings {
-            eprintln!("🗑️ [DOCUMENT DELETE] Adding put settings");
+            debug!("[DOCUMENT DELETE] adding put settings");
             builder = builder.with_settings(settings);
         }
 
         if user_fee_increase > 0 {
-            eprintln!(
-                "🗑️ [DOCUMENT DELETE] Setting user fee increase: {}",
-                user_fee_increase
-            );
+            debug!(user_fee_increase, "[DOCUMENT DELETE] setting user fee increase");
             builder = builder.with_user_fee_increase(user_fee_increase);
         }
 
         if let Some(options) = creation_options {
-            eprintln!("🗑️ [DOCUMENT DELETE] Adding state transition creation options");
+            debug!("[DOCUMENT DELETE] adding state transition creation options");
             builder = builder.with_state_transition_creation_options(options);
         }
 
-        eprintln!("🗑️ [DOCUMENT DELETE] Calling SDK document_delete method...");
-        eprintln!(
-            "🗑️ [DOCUMENT DELETE] Identity public key ID: {}",
-            identity_public_key.id()
-        );
-        eprintln!(
-            "🗑️ [DOCUMENT DELETE] Identity public key purpose: {:?}",
-            identity_public_key.purpose()
-        );
-        eprintln!(
-            "🗑️ [DOCUMENT DELETE] Identity public key security level: {:?}",
-            identity_public_key.security_level()
-        );
-        eprintln!(
-            "🗑️ [DOCUMENT DELETE] Identity public key type: {:?}",
-            identity_public_key.key_type()
-        );
+        debug!("[DOCUMENT DELETE] calling SDK document_delete");
+        debug!(key_id = identity_public_key.id(), purpose = ?identity_public_key.purpose(), security_level = ?identity_public_key.security_level(), key_type = ?identity_public_key.key_type(), "[DOCUMENT DELETE] identity public key info");
 
         let result = wrapper
             .sdk
             .document_delete(builder, &identity_public_key, signer)
             .await
             .map_err(|e| {
-                eprintln!("❌ [DOCUMENT DELETE] SDK call failed: {}", e);
-                eprintln!(
-                    "❌ [DOCUMENT DELETE] Failed with key ID: {}",
-                    identity_public_key.id()
-                );
+                error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT DELETE] SDK call failed");
                 FFIError::InternalError(format!("Failed to delete document and wait: {}", e))
             })?;
 
-        eprintln!("✅ [DOCUMENT DELETE] SDK call completed successfully");
+        info!("[DOCUMENT DELETE] SDK call completed successfully");
 
         let deleted_id = match result {
             dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(id) => id,
@@ -369,11 +354,11 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
     match result {
         Ok(_deleted_id) => {
-            eprintln!("✅ [DOCUMENT DELETE] Document delete completed successfully");
+            info!("[DOCUMENT DELETE] document delete completed successfully");
             DashSDKResult::success(std::ptr::null_mut())
         }
         Err(e) => {
-            eprintln!("❌ [DOCUMENT DELETE] Document delete failed: {:?}", e);
+            error!(error = ?e, "[DOCUMENT DELETE] document delete failed");
             DashSDKResult::error(e.into())
         }
     }

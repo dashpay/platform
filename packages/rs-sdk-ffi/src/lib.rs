@@ -101,7 +101,7 @@ pub extern "C" fn dash_sdk_enable_logging(level: u8) {
     // Note: env_logger initialization is done in SDK creation
     // We just set the environment variable here
 
-    eprintln!("🔵 Logging enabled at level: {}", log_level);
+    tracing::info!(level = log_level, "logging enabled");
 }
 
 /// Get the version of the Dash SDK FFI library

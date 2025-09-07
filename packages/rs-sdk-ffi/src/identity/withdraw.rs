@@ -13,6 +13,7 @@ use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKPutSettings, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::identity::signer::Signer;
+use tracing::{debug, error, info, warn};
 
 /// Withdraw credits from identity to a Dash address
 ///
@@ -50,43 +51,28 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         ));
     }
 
-    eprintln!("🔵 dash_sdk_identity_withdraw: Validating handles...");
-    eprintln!(
-        "🔵 dash_sdk_identity_withdraw: sdk_handle = {:p}",
-        sdk_handle
-    );
-    eprintln!(
-        "🔵 dash_sdk_identity_withdraw: identity_handle = {:p}",
-        identity_handle
-    );
-    eprintln!("🔵 dash_sdk_identity_withdraw: address = {:p}", address);
-    eprintln!(
-        "🔵 dash_sdk_identity_withdraw: signer_handle = {:p}",
-        signer_handle
-    );
-    eprintln!("🔵 dash_sdk_identity_withdraw: amount = {}", amount);
-    eprintln!(
-        "🔵 dash_sdk_identity_withdraw: core_fee_per_byte = {}",
-        core_fee_per_byte
-    );
-    eprintln!(
-        "🔵 dash_sdk_identity_withdraw: public_key_id = {}",
-        public_key_id
+    debug!(ptr = ?sdk_handle, "dash_sdk_identity_withdraw: validating handles");
+    debug!(ptr = ?identity_handle, "dash_sdk_identity_withdraw: identity_handle");
+    debug!(ptr = ?address, "dash_sdk_identity_withdraw: address ptr");
+    debug!(ptr = ?signer_handle, "dash_sdk_identity_withdraw: signer_handle");
+    debug!(
+        amount,
+        core_fee_per_byte, public_key_id, "dash_sdk_identity_withdraw: parameters"
     );
 
     let wrapper = &mut *(sdk_handle as *mut SDKWrapper);
 
     // Carefully validate the identity handle
-    eprintln!("🔵 dash_sdk_identity_withdraw: About to dereference identity handle...");
+    debug!("dash_sdk_identity_withdraw: dereferencing identity handle");
     let identity = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         &*(identity_handle as *const Identity)
     })) {
         Ok(identity) => {
-            eprintln!("🔵 dash_sdk_identity_withdraw: Identity handle dereferenced successfully");
+            debug!("dash_sdk_identity_withdraw: identity handle dereferenced");
             identity
         }
         Err(_) => {
-            eprintln!("❌ dash_sdk_identity_withdraw: Failed to dereference identity handle - invalid pointer");
+            error!("dash_sdk_identity_withdraw: failed to dereference identity handle - invalid pointer");
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 "Invalid identity handle - possible use after free".to_string(),
@@ -96,26 +82,17 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
 
     let signer = &*(signer_handle as *const crate::signer::VTableSigner);
 
-    eprintln!("🔵 dash_sdk_identity_withdraw: All handles dereferenced successfully");
+    debug!("dash_sdk_identity_withdraw: handles dereferenced successfully");
 
     // Try to access identity fields safely
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Identity ID = {:?}",
-            identity.id()
-        );
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Identity balance = {}",
-            identity.balance()
-        );
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Number of public keys = {}",
-            identity.public_keys().len()
-        );
+        debug!(id = ?identity.id(), balance = identity.balance(), keys = identity.public_keys().len(), "dash_sdk_identity_withdraw: identity summary");
     })) {
-        Ok(_) => eprintln!("🔵 dash_sdk_identity_withdraw: Identity fields accessed successfully"),
+        Ok(_) => debug!("dash_sdk_identity_withdraw: identity fields accessed"),
         Err(_) => {
-            eprintln!("❌ dash_sdk_identity_withdraw: Failed to access identity fields - corrupted identity");
+            error!(
+                "dash_sdk_identity_withdraw: failed to access identity fields - corrupted identity"
+            );
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InvalidParameter,
                 "Identity handle points to corrupted data".to_string(),
@@ -125,42 +102,29 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
 
     let address_str = match CStr::from_ptr(address).to_str() {
         Ok(s) => {
-            eprintln!("🔵 dash_sdk_identity_withdraw: address = '{}'", s);
-            eprintln!(
-                "🔵 dash_sdk_identity_withdraw: address length = {}",
-                s.len()
+            debug!(
+                address = s,
+                len = s.len(),
+                "dash_sdk_identity_withdraw: address"
             );
-            // Debug each character
-            for (i, ch) in s.chars().enumerate() {
-                eprintln!(
-                    "🔵 dash_sdk_identity_withdraw: char[{}] = '{}' (U+{:04X})",
-                    i, ch, ch as u32
-                );
-            }
             s
         }
         Err(e) => {
-            eprintln!(
-                "❌ dash_sdk_identity_withdraw: Failed to convert address C string: {}",
-                e
-            );
+            error!(error = %e, "dash_sdk_identity_withdraw: failed to convert address C string");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
 
     // Parse the address
-    eprintln!("🔵 dash_sdk_identity_withdraw: Parsing Dash address...");
+    debug!("dash_sdk_identity_withdraw: parsing Dash address");
     let withdraw_address =
         match Address::<dashcore::address::NetworkUnchecked>::from_str(address_str) {
             Ok(addr) => {
-                eprintln!("🔵 dash_sdk_identity_withdraw: Address parsed successfully");
+                debug!("dash_sdk_identity_withdraw: address parsed successfully");
                 addr.assume_checked()
             }
             Err(e) => {
-                eprintln!(
-                    "❌ dash_sdk_identity_withdraw: Failed to parse address: {}",
-                    e
-                );
+                error!(error = %e, "dash_sdk_identity_withdraw: failed to parse address");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!("Invalid Dash address: {}", e),
@@ -169,35 +133,24 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         };
 
     // Get public key if specified (0 means auto-select TRANSFER key)
-    eprintln!("🔵 dash_sdk_identity_withdraw: Determining signing key...");
+    debug!("dash_sdk_identity_withdraw: determining signing key");
     let signing_key = if public_key_id == 0 {
-        eprintln!("🔵 dash_sdk_identity_withdraw: Using auto-select (public_key_id = 0)");
+        debug!("dash_sdk_identity_withdraw: auto-select key (public_key_id = 0)");
         None
     } else {
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Looking for key with ID {}",
-            public_key_id
+        debug!(
+            public_key_id,
+            "dash_sdk_identity_withdraw: looking for key id"
         );
         match identity.get_public_key_by_id(public_key_id.into()) {
             Some(key) => {
-                eprintln!(
-                    "🔵 dash_sdk_identity_withdraw: Found key with ID {}",
-                    public_key_id
-                );
-                eprintln!(
-                    "🔵 dash_sdk_identity_withdraw: Key purpose: {:?}",
-                    key.purpose()
-                );
-                eprintln!(
-                    "🔵 dash_sdk_identity_withdraw: Key type: {:?}",
-                    key.key_type()
-                );
+                debug!(found_key_id = public_key_id, purpose = ?key.purpose(), key_type = ?key.key_type(), "dash_sdk_identity_withdraw: found key");
                 Some(key)
             }
             None => {
-                eprintln!(
-                    "❌ dash_sdk_identity_withdraw: Key with ID {} not found!",
-                    public_key_id
+                error!(
+                    public_key_id,
+                    "dash_sdk_identity_withdraw: key id not found"
                 );
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
@@ -206,7 +159,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             }
         }
     };
-    eprintln!("🔵 dash_sdk_identity_withdraw: Signing key determined");
+    debug!("dash_sdk_identity_withdraw: signing key determined");
 
     // Optional core fee per byte
     let core_fee = if core_fee_per_byte > 0 {
@@ -215,54 +168,37 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         None
     };
 
-    eprintln!("🔵 dash_sdk_identity_withdraw: About to enter async block");
+    debug!("dash_sdk_identity_withdraw: entering async block");
 
     // Check for transfer keys before proceeding
-    eprintln!("🔵 dash_sdk_identity_withdraw: Iterating through identity public keys...");
+    debug!("dash_sdk_identity_withdraw: iterating public keys");
     let mut transfer_key_found = false;
     for (key_id, key) in identity.public_keys() {
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Found key {}: purpose={:?}, type={:?}",
-            key_id,
-            key.purpose(),
-            key.key_type()
-        );
+        debug!(key_id, purpose = ?key.purpose(), key_type = ?key.key_type(), "dash_sdk_identity_withdraw: found key");
         if key.purpose() == dash_sdk::dpp::identity::Purpose::TRANSFER {
             transfer_key_found = true;
-            eprintln!(
-                "🔵 dash_sdk_identity_withdraw: Found TRANSFER key with ID {}",
-                key_id
-            );
+            debug!(key_id, "dash_sdk_identity_withdraw: found TRANSFER key");
         }
     }
 
     if !transfer_key_found && signing_key.is_none() {
-        eprintln!("⚠️ dash_sdk_identity_withdraw: WARNING - No transfer key found and no signing key specified!");
+        warn!("dash_sdk_identity_withdraw: no TRANSFER key found and no signing key specified");
     }
 
     let result: Result<u64, FFIError> = wrapper.runtime.block_on(async {
-        eprintln!("🔵 dash_sdk_identity_withdraw: Inside async block");
+        debug!("dash_sdk_identity_withdraw: inside async block");
 
         // Convert settings
-        eprintln!("🔵 dash_sdk_identity_withdraw: Converting put settings");
+        debug!("dash_sdk_identity_withdraw: converting put settings");
         let settings = convert_put_settings(put_settings);
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Settings converted: {:?}",
-            settings.is_some()
-        );
+        debug!(has_settings = settings.is_some(), "dash_sdk_identity_withdraw: settings converted");
 
         // Use Withdraw trait to withdraw credits
-        eprintln!("🔵 dash_sdk_identity_withdraw: Importing WithdrawFromIdentity trait");
+        debug!("dash_sdk_identity_withdraw: importing WithdrawFromIdentity trait");
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
-        eprintln!("🔵 dash_sdk_identity_withdraw: Trait imported");
+        debug!("dash_sdk_identity_withdraw: trait imported");
 
-        eprintln!("🔵 dash_sdk_identity_withdraw: About to call withdraw method");
-        eprintln!("🔵 dash_sdk_identity_withdraw: Parameters:");
-        eprintln!("  - withdraw_address: {:?}", withdraw_address);
-        eprintln!("  - amount: {}", amount);
-        eprintln!("  - core_fee: {:?}", core_fee);
-        eprintln!("  - signing_key present: {}", signing_key.is_some());
-        eprintln!("  - signer: {:p}", signer as *const _);
+        debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
 
         // Additional defensive check on the signing_key if present
         if let Some(ref key) = signing_key {
@@ -276,14 +212,14 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             // Try to access the key data to see if it crashes here
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 let _data = key.data();
-                eprintln!("  - Key data length: {} bytes", key.data().len());
+                debug!(len = key.data().len(), "dash_sdk_identity_withdraw: key data length");
             })) {
-                Ok(_) => eprintln!("  - Key data is accessible"),
-                Err(_) => eprintln!("  ❌ Key data access caused panic!"),
+                Ok(_) => debug!("dash_sdk_identity_withdraw: key data accessible"),
+                Err(_) => warn!("dash_sdk_identity_withdraw: key data access caused panic"),
             }
         }
 
-        eprintln!("🔵 dash_sdk_identity_withdraw: About to call SDK's withdraw method");
+        debug!("dash_sdk_identity_withdraw: calling SDK withdraw");
 
         let new_balance = identity
             .withdraw(
@@ -297,14 +233,11 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             )
             .await
             .map_err(|e| {
-                eprintln!("❌ dash_sdk_identity_withdraw: withdraw failed: {}", e);
+                error!(error = %e, "dash_sdk_identity_withdraw: withdraw failed");
                 FFIError::InternalError(format!("Failed to withdraw credits: {}", e))
             })?;
 
-        eprintln!(
-            "🔵 dash_sdk_identity_withdraw: Withdrawal successful! New balance: {}",
-            new_balance
-        );
+        info!(new_balance, "dash_sdk_identity_withdraw: withdrawal successful");
 
         Ok(new_balance)
     });

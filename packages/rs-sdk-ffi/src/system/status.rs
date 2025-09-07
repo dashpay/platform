@@ -11,10 +11,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 /// Get SDK status including mode and quorum count
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> DashSDKResult {
-    eprintln!("🔵 dash_sdk_get_status: Called");
+    tracing::info!("dash_sdk_get_status: called");
 
     if sdk_handle.is_null() {
-        eprintln!("❌ dash_sdk_get_status: SDK handle is null");
+        tracing::error!("dash_sdk_get_status: SDK handle is null");
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             "SDK handle is null".to_string(),
@@ -22,7 +22,7 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
     }
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    eprintln!("🔵 dash_sdk_get_status: Got SDK wrapper");
+    tracing::debug!("dash_sdk_get_status: got SDK wrapper");
 
     // Get network
     let network_str = match wrapper.sdk.network {
@@ -36,9 +36,9 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
     // Determine mode based on whether we have a trusted provider
     let (mode, quorum_count) = if let Some(ref provider) = wrapper.trusted_provider {
         let count = provider.get_cached_quorum_count();
-        eprintln!(
-            "🔵 dash_sdk_get_status: Got quorum count from trusted provider: {}",
-            count
+        tracing::debug!(
+            quorum_count = count,
+            "dash_sdk_get_status: trusted provider quorum count"
         );
         ("trusted", count)
     } else {
@@ -57,7 +57,7 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
     let json_str = match serde_json::to_string(&status) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ dash_sdk_get_status: Failed to serialize status: {}", e);
+            tracing::error!(error = %e, "dash_sdk_get_status: failed to serialize status");
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to serialize status: {}", e),
@@ -68,7 +68,7 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
     let c_str = match CString::new(json_str) {
         Ok(s) => s,
         Err(e) => {
-            eprintln!("❌ dash_sdk_get_status: Failed to create CString: {}", e);
+            tracing::error!(error = %e, "dash_sdk_get_status: failed to create CString");
             return DashSDKResult::error(DashSDKError::new(
                 DashSDKErrorCode::InternalError,
                 format!("Failed to create CString: {}", e),
@@ -76,6 +76,6 @@ pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> Da
         }
     };
 
-    eprintln!("✅ dash_sdk_get_status: Success");
+    tracing::info!("dash_sdk_get_status: success");
     DashSDKResult::success_string(c_str.into_raw())
 }

@@ -5,6 +5,7 @@ use dash_sdk::dpp::prelude::{Identifier, Identity};
 use dash_sdk::platform::Fetch;
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
+use tracing::{debug, error, info};
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
@@ -16,10 +17,10 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
     sdk_handle: *const SDKHandle,
     identity_id: *const c_char,
 ) -> DashSDKResult {
-    eprintln!("🔵 dash_sdk_identity_fetch: Called");
+    info!("dash_sdk_identity_fetch: called");
 
     if sdk_handle.is_null() {
-        eprintln!("❌ dash_sdk_identity_fetch: SDK handle is null");
+        error!("dash_sdk_identity_fetch: SDK handle is null");
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             "SDK handle is null".to_string(),
@@ -27,7 +28,7 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
     }
 
     if identity_id.is_null() {
-        eprintln!("❌ dash_sdk_identity_fetch: Identity ID is null");
+        error!("dash_sdk_identity_fetch: identity ID is null");
         return DashSDKResult::error(DashSDKError::new(
             DashSDKErrorCode::InvalidParameter,
             "Identity ID is null".to_string(),
@@ -35,46 +36,33 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
     }
 
     let wrapper = &*(sdk_handle as *const SDKWrapper);
-    eprintln!("🔵 dash_sdk_identity_fetch: Got SDK wrapper");
+    debug!("dash_sdk_identity_fetch: got SDK wrapper");
 
     let id_str = match CStr::from_ptr(identity_id).to_str() {
         Ok(s) => {
-            eprintln!("🔵 dash_sdk_identity_fetch: Identity ID string: '{}'", s);
-            eprintln!(
-                "🔵 dash_sdk_identity_fetch: Identity ID length: {}",
-                s.len()
+            debug!(
+                identity_id = s,
+                len = s.len(),
+                "dash_sdk_identity_fetch: identity id"
             );
-            // Debug each character to find the problematic one
-            for (i, ch) in s.chars().enumerate() {
-                eprintln!(
-                    "🔵 dash_sdk_identity_fetch: char[{}] = '{}' (U+{:04X})",
-                    i, ch, ch as u32
-                );
-            }
             s
         }
         Err(e) => {
-            eprintln!(
-                "❌ dash_sdk_identity_fetch: Failed to convert C string: {}",
-                e
-            );
+            error!(error = %e, "dash_sdk_identity_fetch: failed to convert C string");
             return DashSDKResult::error(FFIError::from(e).into());
         }
     };
 
     // Try to parse as hex first (64 chars), then as Base58
     let id = if id_str.len() == 64 && id_str.chars().all(|c| c.is_ascii_hexdigit()) {
-        eprintln!("🔵 dash_sdk_identity_fetch: Detected hex format, parsing...");
+        debug!("dash_sdk_identity_fetch: detected hex format");
         match Identifier::from_string(id_str, Encoding::Hex) {
             Ok(id) => {
-                eprintln!("🔵 dash_sdk_identity_fetch: Parsed hex identifier successfully");
+                debug!("dash_sdk_identity_fetch: parsed hex identifier");
                 id
             }
             Err(e) => {
-                eprintln!(
-                    "❌ dash_sdk_identity_fetch: Failed to parse hex identity ID: {}",
-                    e
-                );
+                error!(error = %e, "dash_sdk_identity_fetch: failed to parse hex identity id");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!("Invalid hex identity ID: {}", e),
@@ -82,17 +70,14 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
             }
         }
     } else {
-        eprintln!("🔵 dash_sdk_identity_fetch: Trying Base58 format...");
+        debug!("dash_sdk_identity_fetch: trying Base58 format");
         match Identifier::from_string(id_str, Encoding::Base58) {
             Ok(id) => {
-                eprintln!("🔵 dash_sdk_identity_fetch: Parsed Base58 identifier successfully");
+                debug!("dash_sdk_identity_fetch: parsed Base58 identifier");
                 id
             }
             Err(e) => {
-                eprintln!(
-                    "❌ dash_sdk_identity_fetch: Failed to parse Base58 identity ID: {}",
-                    e
-                );
+                error!(error = %e, "dash_sdk_identity_fetch: failed to parse Base58 identity id");
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::InvalidParameter,
                     format!(
@@ -104,15 +89,15 @@ pub unsafe extern "C" fn dash_sdk_identity_fetch(
         }
     };
 
-    eprintln!("🔵 dash_sdk_identity_fetch: About to fetch identity from network...");
+    debug!("dash_sdk_identity_fetch: fetching identity");
     let result = wrapper.runtime.block_on(async {
-        eprintln!("🔵 dash_sdk_identity_fetch: Inside async block");
+        debug!("dash_sdk_identity_fetch: inside async block");
         let fetch_result = Identity::fetch(&wrapper.sdk, id)
             .await
             .map_err(FFIError::from);
-        eprintln!(
-            "🔵 dash_sdk_identity_fetch: Fetch completed with result: {:?}",
-            fetch_result.is_ok()
+        debug!(
+            ok = fetch_result.is_ok(),
+            "dash_sdk_identity_fetch: fetch completed"
         );
         fetch_result
     });
