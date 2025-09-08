@@ -169,10 +169,7 @@ impl AssetLockProof {
         match proof_type_res {
             Ok(proof_type_int) => {
                 let proof_type = AssetLockProofType::try_from(proof_type_int);
-                match proof_type {
-                    Ok(pt) => Some(pt),
-                    Err(_) => None,
-                }
+                proof_type.ok()
             }
             Err(_) => None,
         }

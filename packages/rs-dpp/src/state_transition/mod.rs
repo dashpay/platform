@@ -295,7 +295,7 @@ pub struct StateTransitionSigningOptions {
 impl StateTransition {
     pub fn deserialize_from_bytes_in_version(
         bytes: &[u8],
-        platform_version: &PlatformVersion,
+        _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let state_transition = StateTransition::deserialize_from_bytes(bytes)?;
         #[cfg(all(feature = "state-transitions", feature = "validation"))]
@@ -304,8 +304,8 @@ impl StateTransition {
 
             // Tests are done with very high protocol ranges, while we could put this behind a feature,
             // that would probably be overkill.
-            if active_version_range.contains(&platform_version.protocol_version)
-                || platform_version.protocol_version > 268435456
+            if active_version_range.contains(&_platform_version.protocol_version)
+                || _platform_version.protocol_version > 268435456
             {
                 Ok(state_transition)
             } else {
@@ -313,7 +313,7 @@ impl StateTransition {
                     StateTransitionIsNotActiveError {
                         state_transition_type: state_transition.name(),
                         active_version_range,
-                        current_protocol_version: platform_version.protocol_version,
+                        current_protocol_version: _platform_version.protocol_version,
                     },
                 ))
             }

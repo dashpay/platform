@@ -1,4 +1,6 @@
 #![cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+#![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
 
 //! # wasm-drive-verify
 //!
@@ -103,7 +105,7 @@ pub mod transition_verification {
     pub use crate::state_transition::*;
 }
 
-use wasm_bindgen::prelude::*;
+// no prelude imports needed here; attribute uses full path
 
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[wasm_bindgen(start)]

@@ -306,7 +306,7 @@ impl DocumentPropertyType {
         let min_size = self.min_size()?;
         let max_size = self.max_size()?;
         if platform_version.protocol_version > 8 {
-            Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16)
+            Some(((min_size as u32 + max_size as u32).div_ceil(2)) as u16)
         } else {
             Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2)
         }
@@ -342,7 +342,9 @@ impl DocumentPropertyType {
             return Ok(None);
         };
         if platform_version.protocol_version > 8 {
-            Ok(Some(((min_size as u32 + max_size as u32 + 1) / 2) as u16))
+            Ok(Some(
+                ((min_size as u32 + max_size as u32).div_ceil(2)) as u16,
+            ))
         } else {
             Ok(Some(min_size.wrapping_add(max_size).wrapping_add(1) / 2))
         }

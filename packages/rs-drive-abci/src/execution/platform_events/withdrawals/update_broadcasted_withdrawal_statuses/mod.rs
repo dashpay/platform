@@ -28,7 +28,7 @@ where
     /// # Returns
     ///
     /// * `Result<(), Error>` - Returns an Ok(()) if the statuses are successfully updated.
-    ///                          Otherwise, it returns an Error.
+    ///   Otherwise, it returns an Error.
     ///
     /// # Errors
     ///

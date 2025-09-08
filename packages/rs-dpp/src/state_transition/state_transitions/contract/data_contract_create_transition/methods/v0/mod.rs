@@ -20,7 +20,7 @@ pub trait DataContractCreateTransitionMethodsV0 {
     /// * `signer` - A reference to an object implementing the `Signer` trait.
     /// * `platform_version` - The current platform version that should be used.
     /// * `feature_version` - You can set the feature version to a different version than the default for the current
-    ///  protocol version.
+    ///   protocol version.
     ///
     /// # Returns
     ///

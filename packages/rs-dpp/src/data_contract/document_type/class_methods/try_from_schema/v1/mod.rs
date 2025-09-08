@@ -77,6 +77,8 @@ impl DocumentTypeV1 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::ptr_arg)]
+    #[allow(clippy::unnecessary_operation)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
         name: &str,

@@ -93,7 +93,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    ///    For collections, returns Ok(None) if none of the requested objects were found.
+    ///   For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -123,7 +123,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    ///    For collections, returns Ok(None) if none of the requested objects were found.
+    ///   For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
