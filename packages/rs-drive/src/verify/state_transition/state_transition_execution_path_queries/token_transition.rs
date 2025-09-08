@@ -176,7 +176,7 @@ impl TryTransitionIntoPathQuery for TokenTransition {
                 vec![&group_signer_query, &success_query],
                 &platform_version.drive.grove_version,
             )
-            .map_err(Error::GroveDB)
+            .map_err(Error::from)
         } else {
             // if there is no group info that all we need is this query
             Ok(action_success_query)

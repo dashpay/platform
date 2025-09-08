@@ -9,6 +9,11 @@ use platform_version::version::PlatformVersion;
 
 use grovedb::GroveDb;
 
+// Type aliases to simplify complex return types
+type ContractBytes = Vec<u8>;
+type VerifiedContractWithBytes = Option<(DataContract, ContractBytes)>;
+type VerifyContractReturn = (RootHash, VerifiedContractWithBytes);
+
 impl Drive {
     /// Verifies that the contract is included in the proof.
     ///
@@ -38,7 +43,7 @@ impl Drive {
         in_multiple_contract_proof_form: bool,
         contract_id: [u8; 32],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<(DataContract, Vec<u8>)>), Error> {
+    ) -> Result<VerifyContractReturn, Error> {
         let path_query = match (
             in_multiple_contract_proof_form,
             contract_known_keeps_history.unwrap_or_default(),
@@ -64,7 +69,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
         };
-        let (root_hash, mut proved_key_values) = match result.map_err(Error::GroveDB) {
+        let (root_hash, mut proved_key_values) = match result.map_err(Error::from) {
             Ok(ok_result) => ok_result,
             Err(e) => {
                 return if contract_known_keeps_history.is_none() {
@@ -114,7 +119,7 @@ impl Drive {
                 .map(|element| {
                     element
                         .into_item_bytes()
-                        .map_err(Error::GroveDB)
+                        .map_err(Error::from)
                         .and_then(|bytes| {
                             // we don't need to validate the contract locally because it was proved to be in platform
                             // and hence it is valid
@@ -124,7 +129,7 @@ impl Drive {
                                     false,
                                     platform_version,
                                 )
-                                .map_err(Error::Protocol)?,
+                                .map_err(Error::from)?,
                                 bytes,
                             ))
                         })

@@ -176,7 +176,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
         )));
     };
 
-    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
+    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::from)
 }
 
 #[cfg(feature = "server")]

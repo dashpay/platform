@@ -56,7 +56,10 @@ impl Drive {
         ) {
             Ok(Some(Item(value, _))) => Ok(Some(value)),
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Ok(None) => Ok(None),
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)) => {
+                Ok(None)
+            }
 
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "Last moment was present but was not an item",

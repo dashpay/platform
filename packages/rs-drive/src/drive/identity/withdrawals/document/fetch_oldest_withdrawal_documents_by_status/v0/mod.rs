@@ -313,7 +313,7 @@ mod tests {
                     .expect("Failed to decode outputScript");
                 let _ = properties.insert(
                     "outputScript".to_string(),
-                    Value::Bytes(output_script_bytes.into()),
+                    Value::Bytes(output_script_bytes),
                 );
             }
 
@@ -433,9 +433,6 @@ mod tests {
             .filter(|s| !s.trim().is_empty())
             .collect();
 
-        let mut queued_count = 0;
-        let mut total_count = 0;
-
         for doc_json in documents {
             // Parse the document
             let doc_value: serde_json::Value =
@@ -447,9 +444,8 @@ mod tests {
                 .expect("status should be a number") as u8;
 
             if status == withdrawals_contract::WithdrawalStatus::QUEUED as u8 {
-                queued_count += 1;
+                // intentionally no-op: counts only used for debugging
             }
-            total_count += 1;
 
             let mut properties: Value = doc_value.clone().into();
 
@@ -461,7 +457,7 @@ mod tests {
                     .expect("Failed to decode outputScript");
                 let _ = properties.insert(
                     "outputScript".to_string(),
-                    Value::Bytes(output_script_bytes.into()),
+                    Value::Bytes(output_script_bytes),
                 );
             }
 
@@ -499,13 +495,12 @@ mod tests {
         }
 
         // println!(
-        //     "Total documents: {}, QUEUED documents: {}",
-        //     total_count, queued_count
+        //     "Total documents: printed only when debugging",
         // );
 
         // Test the new function that fetches all documents grouped by status
         let documents_by_status = drive
-            .fetch_oldest_withdrawal_documents_v0(Some(&transaction), &platform_version)
+            .fetch_oldest_withdrawal_documents_v0(Some(&transaction), platform_version)
             .expect("to fetch all documents grouped by status");
 
         // // Check that we have documents for different statuses

@@ -43,7 +43,7 @@ pub enum DataContractInfo<'a> {
 
     /// An owned version of a data contract. This variant is used when full ownership
     /// and possibly mutability of the data contract is necessary.
-    OwnedDataContract(DataContract),
+    OwnedDataContract(Box<DataContract>),
 }
 
 impl<'a> DataContractInfo<'a> {
@@ -99,7 +99,7 @@ pub enum DataContractOwnedResolvedInfo {
     /// An owned instance of a data contract. This variant provides full control
     /// and mutability over the data contract, suitable for scenarios requiring
     /// modifications or extended operations on the data contract.
-    OwnedDataContract(DataContract),
+    OwnedDataContract(Box<DataContract>),
 }
 
 impl DataContractOwnedResolvedInfo {
@@ -135,7 +135,7 @@ impl DataContractOwnedResolvedInfo {
             DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
                 fetch_info.contract.clone()
             }
-            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => owned,
+            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => *owned,
         }
     }
 }
@@ -160,7 +160,7 @@ pub enum DataContractResolvedInfo<'a> {
     /// An owned instance of a data contract. This variant provides full control
     /// and mutability over the data contract, suitable for scenarios requiring
     /// modifications or extended operations on the data contract.
-    OwnedDataContract(DataContract),
+    OwnedDataContract(Box<DataContract>),
 }
 
 impl<'a> From<&'a DataContractOwnedResolvedInfo> for DataContractResolvedInfo<'a> {
