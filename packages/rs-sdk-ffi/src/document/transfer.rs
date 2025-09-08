@@ -4,13 +4,12 @@ use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentTransferTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
@@ -166,7 +165,7 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -331,17 +330,15 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
 
         let result = wrapper
             .sdk
-            .document_transfer(builder, &identity_public_key, signer)
+            .document_transfer(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to transfer document and wait: {}", e))
             })?;
 
-        let transferred_document = match result {
-            dash_sdk::platform::documents::transitions::DocumentTransferResult::Document(doc) => {
-                doc
-            }
-        };
+        let dash_sdk::platform::documents::transitions::DocumentTransferResult::Document(
+            transferred_document,
+        ) = result;
 
         Ok(transferred_document)
     });

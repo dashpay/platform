@@ -2,7 +2,6 @@
 
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::Purpose;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::prelude::{Identifier, Identity};
 use std::ffi::CStr;
@@ -11,8 +10,7 @@ use std::os::raw::c_char;
 use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKPutSettings, IdentityHandle, SDKHandle};
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError, VTableSigner};
-use dash_sdk::dpp::identity::signer::Signer;
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Result structure for credit transfer operations
 #[repr(C)]
@@ -170,7 +168,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
             "🔵 dash_sdk_identity_transfer_credits: Looking for key with ID {}",
             public_key_id
         );
-        match from_identity.get_public_key_by_id(public_key_id.into()) {
+        match from_identity.get_public_key_by_id(public_key_id) {
             Some(key) => {
                 eprintln!(
                     "🔵 dash_sdk_identity_transfer_credits: Found key with ID {}",
@@ -242,7 +240,7 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
         eprintln!("🔵 dash_sdk_identity_transfer_credits: Defensive checks complete");
 
         // Additional check on the signing_key if present
-        if let Some(ref key) = signing_key {
+        if let Some(key) = signing_key {
             eprintln!("🔵 dash_sdk_identity_transfer_credits: Signing key details:");
             eprintln!("  - Key ID: {}", key.id());
             eprintln!("  - Purpose: {:?}", key.purpose());

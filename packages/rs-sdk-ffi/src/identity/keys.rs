@@ -1,7 +1,7 @@
 //! Identity key selection operations
 
 use crate::types::{IdentityHandle, IdentityPublicKeyHandle};
-use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{IdentityPublicKey, Purpose, SecurityLevel};
@@ -137,7 +137,7 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_get_id(
     }
 
     let key = &*(key_handle as *const IdentityPublicKey);
-    key.id().into()
+    key.id()
 }
 
 /// Create an identity public key handle from key data
@@ -231,7 +231,7 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
 
     // Create the identity public key
     let public_key = IdentityPublicKey::V0(IdentityPublicKeyV0 {
-        id: key_id.into(),
+        id: key_id,
         key_type,
         purpose,
         security_level,

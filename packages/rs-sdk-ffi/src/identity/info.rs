@@ -26,7 +26,7 @@ pub unsafe extern "C" fn dash_sdk_identity_get_info(
     let info = DashSDKIdentityInfo {
         id: id_str,
         balance: identity.balance(),
-        revision: identity.revision() as u64,
+        revision: identity.revision(),
         public_keys_count: identity.public_keys().len() as u32,
     };
 

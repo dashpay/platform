@@ -153,7 +153,7 @@ pub unsafe extern "C" fn dash_sdk_document_purchase(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -319,17 +319,15 @@ pub unsafe extern "C" fn dash_sdk_document_purchase_and_wait(
 
         let result = wrapper
             .sdk
-            .document_purchase(builder, &identity_public_key, signer)
+            .document_purchase(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to purchase document and wait: {}", e))
             })?;
 
-        let purchased_document = match result {
-            dash_sdk::platform::documents::transitions::DocumentPurchaseResult::Document(doc) => {
-                doc
-            }
-        };
+        let dash_sdk::platform::documents::transitions::DocumentPurchaseResult::Document(
+            purchased_document,
+        ) = result;
 
         Ok(purchased_document)
     });

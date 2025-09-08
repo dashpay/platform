@@ -148,7 +148,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -336,7 +336,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
         let result = wrapper
             .sdk
-            .document_delete(builder, &identity_public_key, signer)
+            .document_delete(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT DELETE] SDK call failed");
@@ -345,9 +345,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
         info!("[DOCUMENT DELETE] SDK call completed successfully");
 
-        let deleted_id = match result {
-            dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(id) => id,
-        };
+        let dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(deleted_id) = result;
 
         Ok(deleted_id)
     });

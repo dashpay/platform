@@ -105,7 +105,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
 
             // Prepare JSON if requested
             let json = if return_json {
-                match contract.to_json(&platform_version) {
+                match contract.to_json(platform_version) {
                     Ok(json_value) => match serde_json::to_string(&json_value) {
                         Ok(json_string) => match CString::new(json_string) {
                             Ok(c_str) => Some(c_str.into_raw()),

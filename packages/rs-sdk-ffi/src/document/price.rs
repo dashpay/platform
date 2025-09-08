@@ -13,13 +13,12 @@ use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentSetPriceTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 /// Update document price (broadcast state transition)
 #[no_mangle]
@@ -136,7 +135,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -272,17 +271,15 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 
         let result = wrapper
             .sdk
-            .document_set_price(builder, &identity_public_key, signer)
+            .document_set_price(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to update document price and wait: {}", e))
             })?;
 
-        let updated_document = match result {
-            dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(doc) => {
-                doc
-            }
-        };
+        let dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(
+            updated_document,
+        ) = result;
 
         Ok(updated_document)
     });

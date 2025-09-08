@@ -224,7 +224,7 @@ pub unsafe extern "C" fn dash_sdk_token_mint(
         let mut builder = TokenMintTransitionBuilder::new(
             Arc::new(data_contract),
             params.token_position as TokenContractPosition,
-            minter_id.clone(),
+            minter_id,
             params.amount as TokenAmount,
         );
         tracing::debug!(position = params.token_position, %minter_id, amount = params.amount, "FFI TOKEN MINT: builder created");

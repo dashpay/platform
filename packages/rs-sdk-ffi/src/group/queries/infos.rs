@@ -92,7 +92,7 @@ fn get_group_infos(
         // TODO: This function needs a contract_id parameter to work properly
         // Group::fetch_many requires a GroupInfosQuery which needs a contract_id
         // For now, returning empty result
-        return Ok(None);
+        Ok(None)
 
         /* Commented out until contract_id is added as parameter
         let query = dash_sdk::platform::LimitQuery {

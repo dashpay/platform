@@ -3,7 +3,6 @@
 use crate::types::{DashSDKPublicKeyHandle, DashSDKResultDataType, IdentityHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use std::ptr;
 
 /// Get a public key from an identity by its ID
 ///

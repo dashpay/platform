@@ -166,7 +166,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
             );
         }
 
-        Ok(serde_json::to_string(&json_obj).map_err(|e| FFIError::InternalError(e.to_string()))?)
+        serde_json::to_string(&json_obj).map_err(|e| FFIError::InternalError(e.to_string()))
     });
 
     match result {

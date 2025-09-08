@@ -1,7 +1,6 @@
 //! Identity creation operations
 
 use dash_sdk::dpp::prelude::Identity;
-use dash_sdk::platform::Fetch;
 
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResultDataType, IdentityHandle, SDKHandle};

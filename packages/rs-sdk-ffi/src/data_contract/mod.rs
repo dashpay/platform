@@ -84,7 +84,7 @@ pub unsafe extern "C" fn dash_sdk_data_contract_create(
             .map_err(|e| FFIError::InternalError(format!("Failed to create factory: {}", e)))?;
 
         // Get identity nonce
-        let identity_nonce = identity.revision() as u64;
+        let identity_nonce = identity.revision();
 
         // Create the data contract
         let created_contract = factory

@@ -12,7 +12,6 @@ use crate::identity::helpers::convert_put_settings;
 use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKPutSettings, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
-use dash_sdk::dpp::identity::signer::Signer;
 use tracing::{debug, error, info, warn};
 
 /// Withdraw credits from identity to a Dash address
@@ -142,7 +141,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
             public_key_id,
             "dash_sdk_identity_withdraw: looking for key id"
         );
-        match identity.get_public_key_by_id(public_key_id.into()) {
+        match identity.get_public_key_by_id(public_key_id) {
             Some(key) => {
                 debug!(found_key_id = public_key_id, purpose = ?key.purpose(), key_type = ?key.key_type(), "dash_sdk_identity_withdraw: found key");
                 Some(key)
@@ -201,7 +200,7 @@ pub unsafe extern "C" fn dash_sdk_identity_withdraw(
         debug!(?withdraw_address, amount, ?core_fee, has_signing_key = signing_key.is_some(), signer_ptr = ?(signer as *const _), "dash_sdk_identity_withdraw: calling withdraw method");
 
         // Additional defensive check on the signing_key if present
-        if let Some(ref key) = signing_key {
+        if let Some(key) = signing_key {
             eprintln!("🔵 dash_sdk_identity_withdraw: Signing key details:");
             eprintln!("  - Key ID: {}", key.id());
             eprintln!("  - Purpose: {:?}", key.purpose());

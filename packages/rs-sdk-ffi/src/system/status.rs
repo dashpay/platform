@@ -2,7 +2,6 @@
 
 use serde_json::json;
 use std::ffi::CString;
-use std::os::raw::c_char;
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;

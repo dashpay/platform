@@ -65,12 +65,12 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        use dash_sdk::platform::query::{Query, TokenLastClaimQuery};
+        use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::platform::Fetch;
 
         let query = TokenLastClaimQuery {
-            token_id: token_id.clone(),
-            identity_id: identity_id.clone(),
+            token_id: token_id,
+            identity_id: identity_id,
         };
 
         let last_claim = RewardDistributionMoment::fetch(&wrapper.sdk, query)

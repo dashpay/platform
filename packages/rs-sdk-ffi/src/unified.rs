@@ -5,10 +5,8 @@
 //! when both are available. It manages initialization, state synchronization, and
 //! cross-layer operations.
 
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
 use crate::types::{DashSDKConfig, SDKHandle};
 use dash_spv_ffi::{FFIClientConfig, FFIDashSpvClient};

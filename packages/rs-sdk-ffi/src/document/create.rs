@@ -1,9 +1,7 @@
 //! Document creation operations
 
 use crate::sdk::SDKWrapper;
-use crate::types::{
-    DashSDKResultDataType, DataContractHandle, DocumentHandle, IdentityHandle, SDKHandle,
-};
+use crate::types::{DashSDKResultDataType, DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -11,7 +9,7 @@ use dash_sdk::dpp::document::{Document, DocumentV0};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, Identity, Revision};
+use dash_sdk::dpp::prelude::Identifier;
 use drive_proof_verifier::ContextProvider;
 use std::collections::BTreeMap;
 use std::ffi::CStr;

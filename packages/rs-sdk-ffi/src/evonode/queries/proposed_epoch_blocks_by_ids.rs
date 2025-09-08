@@ -122,7 +122,7 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(&pro_tx_hash),
+                            hex::encode(pro_tx_hash),
                             count
                         )
                     })

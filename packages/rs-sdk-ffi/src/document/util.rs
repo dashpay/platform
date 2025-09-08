@@ -1,6 +1,6 @@
 use crate::sdk::SDKWrapper;
 use crate::{DashSDKError, DashSDKErrorCode, DocumentHandle, FFIError, SDKHandle};
-use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dash_sdk::dpp::document::{Document, DocumentV0Setters};
 use dash_sdk::dpp::platform_value::Value;
 use std::ffi::CStr;
 use std::os::raw::c_char;

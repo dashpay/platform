@@ -2,7 +2,7 @@
 
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::{
     DocumentCreateTransitionBuilder, DocumentReplaceTransitionBuilder,
 };
@@ -10,7 +10,6 @@ use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 use crate::document::helpers::{
     convert_state_transition_creation_options, convert_token_payment_info,
@@ -134,7 +133,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
             builder
                 .sign(
                     &wrapper.sdk,
-                    &identity_public_key,
+                    identity_public_key,
                     signer,
                     wrapper.sdk.version(),
                 )
@@ -166,7 +165,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
             builder
                 .sign(
                     &wrapper.sdk,
-                    &identity_public_key,
+                    identity_public_key,
                     signer,
                     wrapper.sdk.version(),
                 )
@@ -300,7 +299,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
 
             let result = wrapper
                 .sdk
-                .document_create(builder, &identity_public_key, signer)
+                .document_create(builder, identity_public_key, signer)
                 .await
                 .map_err(|e| {
                     FFIError::InternalError(format!("Failed to create document and wait: {}", e))
@@ -337,7 +336,7 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
 
             let result = wrapper
                 .sdk
-                .document_replace(builder, &identity_public_key, signer)
+                .document_replace(builder, identity_public_key, signer)
                 .await
                 .map_err(|e| {
                     FFIError::InternalError(format!("Failed to replace document and wait: {}", e))

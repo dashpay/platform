@@ -99,7 +99,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
 
     // Get signer from handle
     let signer_arc = Arc::from_raw(signer as *const VTableSigner);
-    let signer_clone = (*signer_arc).clone();
+    let signer_clone = (*signer_arc);
     // Don't drop the Arc, just forget it
     std::mem::forget(signer_arc);
 
@@ -144,7 +144,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
             // Convert to C strings
             let preorder_cstring = match utils::c_string_from(preorder_json) {
                 Ok(s) => s,
-                Err(e) => return DashSDKResult::error(e.into()),
+                Err(e) => return DashSDKResult::error(e),
             };
 
             let domain_cstring = match utils::c_string_from(domain_json) {
@@ -152,7 +152,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
                 Err(e) => {
                     // Clean up preorder string
                     let _ = std::ffi::CString::from_raw(preorder_cstring);
-                    return DashSDKResult::error(e.into());
+                    return DashSDKResult::error(e);
                 }
             };
 
@@ -163,7 +163,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
                         // Clean up previous strings
                         let _ = std::ffi::CString::from_raw(preorder_cstring);
                         let _ = std::ffi::CString::from_raw(domain_cstring);
-                        return DashSDKResult::error(e.into());
+                        return DashSDKResult::error(e);
                     }
                 };
 

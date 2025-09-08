@@ -141,7 +141,7 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(&pro_tx_hash),
+                            hex::encode(pro_tx_hash),
                             count
                         )
                     })
@@ -188,10 +188,9 @@ impl
             Some(Start::StartAfter(
                 AsRef::<[u8]>::as_ref(&start_after).to_vec(),
             ))
-        } else if let Some(start_at) = self.start_at {
-            Some(Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
         } else {
-            None
+            self.start_at
+                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
         };
 
         let request =

@@ -370,7 +370,7 @@ pub unsafe extern "C" fn dash_sdk_document_get_info(
         owner_id: owner_id_str,
         data_contract_id: data_contract_id_str,
         document_type: document_type_str,
-        revision: document.revision().map(|r| r as u64).unwrap_or(0),
+        revision: document.revision().map(|r| r).unwrap_or(0),
         created_at: document.created_at().map(|t| t as i64).unwrap_or(0),
         updated_at: document.updated_at().map(|t| t as i64).unwrap_or(0),
         data_fields_count: properties.len(),

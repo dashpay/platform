@@ -343,7 +343,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
         match network {
             Network::Testnet => {
                 // Use testnet addresses from WASM SDK
-                let default_addresses = vec![
+                let default_addresses = [
                     "https://52.12.176.90:1443",
                     "https://35.82.197.197:1443",
                     "https://44.240.98.102:1443",
@@ -372,7 +372,7 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
             }
             Network::Dash => {
                 // Use mainnet addresses from WASM SDK
-                let default_addresses = vec![
+                let default_addresses = [
                     "https://149.28.241.190:443",
                     "https://198.7.115.48:443",
                     "https://134.255.182.186:443",
@@ -683,7 +683,7 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
         match dash_sdk::dpp::data_contract::DataContract::versioned_deserialize(
             contract_data,
             false, // don't validate (we trust the data)
-            &platform_version,
+            platform_version,
         ) {
             Ok(contract) => {
                 eprintln!("✅ Successfully deserialized contract: {}", ids[i]);
