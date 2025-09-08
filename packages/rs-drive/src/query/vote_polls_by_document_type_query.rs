@@ -377,6 +377,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
     }
 
     /// Operations to construct a path query.
+    #[allow(dead_code)]
     pub(crate) fn construct_path_query(
         &self,
         platform_version: &PlatformVersion,

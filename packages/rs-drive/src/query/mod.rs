@@ -24,11 +24,7 @@ use {
             document_type::{DocumentTypeRef, Index, IndexProperty},
             DataContract,
         },
-        document::{
-            document_methods::DocumentMethodsV0,
-            Document, DocumentV0Getters,
-            serialization_traits::DocumentPlatformConversionMethodsV0,
-        },
+        document::{document_methods::DocumentMethodsV0, Document, DocumentV0Getters},
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
         version::PlatformVersion,
         ProtocolError,
@@ -45,6 +41,8 @@ use {
 #[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(feature = "server")]
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},

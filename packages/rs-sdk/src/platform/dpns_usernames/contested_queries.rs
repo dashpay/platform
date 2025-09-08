@@ -825,7 +825,7 @@ mod tests {
 
                 // If we got results, verify no duplicate names
                 let names: Vec<_> = contests.keys().cloned().collect();
-                let unique_names: HashSet<_> = names.iter().cloned().collect();
+                let unique_names: std::collections::HashSet<_> = names.iter().cloned().collect();
                 assert_eq!(
                     names.len(),
                     unique_names.len(),
@@ -982,7 +982,7 @@ mod tests {
 
         if let (Ok(non_resolved), Ok(contests)) = (&non_resolved_names, &current_contests) {
             // Get names from current contests map
-            let contest_names: HashSet<_> = contests.keys().cloned().collect();
+            let contest_names: std::collections::HashSet<_> = contests.keys().cloned().collect();
 
             println!("  Names from current contests: {}", contest_names.len());
             println!("  Names from non-resolved query: {}", non_resolved.len());

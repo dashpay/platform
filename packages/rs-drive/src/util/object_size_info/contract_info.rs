@@ -11,9 +11,11 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 use dpp::data_contract::DataContract;
 use dpp::identifier::Identifier;
+#[cfg(feature = "server")]
 use dpp::ProtocolError;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;

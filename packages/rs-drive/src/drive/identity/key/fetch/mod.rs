@@ -13,13 +13,13 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::{identity::{KeyID, Purpose, SecurityLevel}},
+    dpp::identity::{KeyID, Purpose, SecurityLevel},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
 };
 
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 #[cfg(feature = "server")]

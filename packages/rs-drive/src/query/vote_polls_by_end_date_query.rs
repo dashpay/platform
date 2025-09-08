@@ -10,7 +10,9 @@ use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-use crate::util::common::encode::{encode_u64, decode_u64};
+#[cfg(feature = "server")]
+use crate::util::common::encode::decode_u64;
+use crate::util::common::encode::encode_u64;
 use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;
