@@ -39,6 +39,10 @@ env:
 jobs:
   build-wasm-sdk:
     runs-on: ubuntu-latest
+    env:
+      BINARYEN_VERSION: version_124
+      BINARYEN_ARCH: x86_64
+      BINARYEN_SHA256: 0290c3779fedf592b8da0ded3032ff55c41a2b7bfa2d6bf7b7bac6f0e6e28963
 
     steps:
       - name: Checkout repository
@@ -103,8 +107,8 @@ jobs:
         uses: actions/cache@v4
         id: cache-binaryen
         with:
-          path: ${{ env.HOME }}/.cache/binaryen/version_124
-          key: binaryen/version_124/${{ runner.os }}/x86_64
+          path: ${{ env.HOME }}/.cache/binaryen/${{ env.BINARYEN_VERSION }}
+          key: binaryen/${{ env.BINARYEN_VERSION }}/${{ runner.os }}/${{ env.BINARYEN_ARCH }}
 
       - name: Install wasm-opt if cache miss
         if: steps.cache-binaryen.outputs.cache-hit != 'true'
@@ -112,13 +116,15 @@ jobs:
           set -euxo pipefail
           mkdir -p "${HOME}/.cache/binaryen"
           curl -fsSL -o /tmp/binaryen.tar.gz \
-            "https://github.com/WebAssembly/binaryen/releases/download/version_124/binaryen-version_124-x86_64-linux.tar.gz"
+            "https://github.com/WebAssembly/binaryen/releases/download/${BINARYEN_VERSION}/binaryen-${BINARYEN_VERSION}-${BINARYEN_ARCH}-linux.tar.gz"
+          # Verify checksum for security
+          echo "${BINARYEN_SHA256}  /tmp/binaryen.tar.gz" | sha256sum -c -
           tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
-          mv "${HOME}/.cache/binaryen/binaryen-version_124" "${HOME}/.cache/binaryen/version_124"
+          mv "${HOME}/.cache/binaryen/binaryen-${BINARYEN_VERSION}" "${HOME}/.cache/binaryen/${BINARYEN_VERSION}"
 
       - name: Export wasm-opt to PATH
         run: |
-          echo "${HOME}/.cache/binaryen/version_124/bin" >> $GITHUB_PATH
+          echo "${HOME}/.cache/binaryen/${BINARYEN_VERSION}/bin" >> $GITHUB_PATH
 
       - name: Build WASM SDK
         working-directory: packages/wasm-sdk
