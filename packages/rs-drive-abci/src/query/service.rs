@@ -67,7 +67,7 @@ use tracing::Instrument;
 /// Service to handle platform queries
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
-    event_bus: Arc<EventBus<PlatformEvent, PlatformFilterAdapter>>,
+    event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -81,7 +81,7 @@ impl QueryService {
     /// Creates new QueryService
     pub fn new(
         platform: Arc<Platform<DefaultCoreRPC>>,
-        event_bus: Arc<EventBus<PlatformEvent, PlatformFilterAdapter>>,
+        event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
     ) -> Self {
         Self {
             platform,

@@ -1,10 +1,14 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, EventBusApplication, PlatformApplication, TransactionalApplication,
+};
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::v0::BlockExecutionContextV0Getters;
 use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_request::v0::FinalizeBlockCleanedRequest;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::CoreRPCLike;
+use dapi_grpc::platform::v0::{platform_event_v0, PlatformEventV0};
 use dpp::dashcore::Network;
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
@@ -14,7 +18,10 @@ pub fn finalize_block<'a, A, C>(
     request: proto::RequestFinalizeBlock,
 ) -> Result<proto::ResponseFinalizeBlock, Error>
 where
-    A: PlatformApplication<C> + TransactionalApplication<'a> + BlockExecutionApplication,
+    A: PlatformApplication<C>
+        + TransactionalApplication<'a>
+        + BlockExecutionApplication
+        + EventBusApplication,
     C: CoreRPCLike,
 {
     let _timer = crate::metrics::abci_request_duration("finalize_block");
@@ -46,7 +53,7 @@ where
     let block_height = request_finalize_block.height;
 
     let block_finalization_outcome = app.platform().finalize_block_proposal(
-        request_finalize_block,
+        request_finalize_block.clone(),
         block_execution_context,
         transaction,
         platform_version,
@@ -96,5 +103,41 @@ where
         .committed_block_height_guard
         .store(block_height, Ordering::Relaxed);
 
+    let bus = app.event_bus().clone();
+    publish_block_committed_event(bus, &request_finalize_block)?;
+
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
+}
+
+fn publish_block_committed_event(
+    event_bus: crate::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    request_finalize_block: &FinalizeBlockCleanedRequest,
+) -> Result<(), Error> {
+    // Publish BlockCommitted platform event to the global event bus (best-effort)
+    let header_time = request_finalize_block.block.header.time;
+    let seconds = header_time.seconds as i128;
+    let nanos = header_time.nanos as i128;
+    let time_ms = (seconds * 1000) + (nanos / 1_000_000);
+
+    let meta = platform_event_v0::BlockMetadata {
+        height: request_finalize_block.height,
+        time_ms: time_ms as u64,
+        block_id_hash: request_finalize_block.block_id.hash.to_vec(),
+    };
+
+    // Number of txs in this block
+    let tx_count = request_finalize_block.block.data.txs.len() as u32;
+
+    let block_committed = platform_event_v0::BlockCommitted {
+        meta: Some(meta),
+        tx_count,
+    };
+
+    let event = PlatformEventV0 {
+        event: Some(platform_event_v0::Event::BlockCommitted(block_committed)),
+    };
+
+    event_bus.notify_sync(event);
+
+    Ok(())
 }

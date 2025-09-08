@@ -65,19 +65,19 @@ message PlatformFilterV0 {
 }
 
 message PlatformEventV0 {
-  message Metadata {
+  message BlockMetadata {
     uint64 height = 1 [ jstype = JS_STRING ];
     uint64 time_ms = 2 [ jstype = JS_STRING ];
     bytes block_id_hash = 3;
   }
 
-  message BlockCommittedV0 {
-    Metadata meta = 1;
+  message BlockCommitted {
+    BlockMetadata meta = 1;
     uint32 tx_count = 2;
   }
 
-  message StateTransitionResultV0 {
-    Metadata meta = 1;
+  message StateTransitionResult {
+    BlockMetadata meta = 1;
     bytes tx_hash = 2;
     bool success = 3;
     uint32 code = 4;
@@ -85,8 +85,8 @@ message PlatformEventV0 {
   }
 
   oneof event {
-    BlockCommittedV0 block_committed = 1;
-    StateTransitionResultV0 state_transition_result = 2;
+    BlockCommitted block_committed = 1;
+    StateTransitionResult state_transition_result = 2;
   }
 }
 

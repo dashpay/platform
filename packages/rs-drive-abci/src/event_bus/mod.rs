@@ -94,6 +94,21 @@ where
         }
     }
 
+    /// Publish an event to all subscribers whose filters match, using
+    /// the current Tokio runtime if available, otherwise log a warning.
+    ///
+    /// This is a best-effort, fire-and-forget variant of `notify`.
+    pub fn notify_sync(&self, event: E) {
+        let bus = self.clone();
+        if let Ok(handle) = tokio::runtime::Handle::try_current() {
+            handle.spawn(async move {
+                bus.notify(event).await;
+            });
+        } else {
+            tracing::warn!("unable to get tokio handle to publish event");
+        }
+    }
+
     /// Publish an event to all subscribers whose filters match.
     pub async fn notify(&self, event: E) {
         counter!(EVENTS_PUBLISHED_TOTAL).increment(1);
@@ -114,6 +129,7 @@ where
 
         for id in dead {
             counter!(EVENTS_DROPPED_TOTAL).increment(1);
+            tracing::debug!("removing dead subscription {}", id);
             self.remove_subscription(id).await;
         }
     }

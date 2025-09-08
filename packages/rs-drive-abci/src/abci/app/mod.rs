@@ -9,12 +9,22 @@ mod consensus;
 pub mod execution_result;
 mod full;
 
+use crate::event_bus::EventBus;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
+use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::DefaultCoreRPC;
 pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
+
+/// Provides access to the in-process Platform event bus
+pub trait EventBusApplication {
+    /// Returns the Platform `EventBus` used for publishing Platform events
+    fn event_bus(
+        &self,
+    ) -> &EventBus<dapi_grpc::platform::v0::PlatformEventV0, PlatformFilterAdapter>;
+}
 
 /// Platform-based ABCI application
 pub trait PlatformApplication<C = DefaultCoreRPC> {
