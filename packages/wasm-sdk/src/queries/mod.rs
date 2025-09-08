@@ -72,7 +72,7 @@ impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadata {
 impl From<dash_sdk::platform::proto::Proof> for ProofInfo {
     fn from(proof: dash_sdk::platform::proto::Proof) -> Self {
         use base64::{Engine as _, engine::general_purpose};
-        
+
         ProofInfo {
             grovedb_proof: general_purpose::STANDARD.encode(&proof.grovedb_proof),
             quorum_hash: hex::encode(&proof.quorum_hash),

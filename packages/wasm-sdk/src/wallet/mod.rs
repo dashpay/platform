@@ -1,5 +1,5 @@
 //! Wallet functionality for the WASM SDK
-//! 
+//!
 //! This module provides wallet-related operations including:
 //! - Key generation and management
 //! - Address derivation

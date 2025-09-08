@@ -40,7 +40,7 @@ pub async fn get_contested_resources(
         data_contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Parse result_type to get start_index_values
     // The result_type parameter actually specifies what we want to query
     // For contested domain names in DPNS, we query at the "dash" parent domain level
@@ -51,7 +51,7 @@ pub async fn get_contested_resources(
         // For other types, may need different index values
         vec![]
     };
-    
+
     // Create start_at_value_info if provided
     let start_at_value_info = start_at_value.map(|bytes| {
         get_contested_resources_request::get_contested_resources_request_v0::StartAtValueInfo {
@@ -59,7 +59,7 @@ pub async fn get_contested_resources(
             start_value_included: true,
         }
     });
-    
+
     // Create the gRPC request directly
     let request = GetContestedResourcesRequest {
         version: Some(get_contested_resources_request::Version::V0(
@@ -76,14 +76,14 @@ pub async fn get_contested_resources(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resources: {}", e)))?;
-    
+
     // For now, return a simple response structure
     // The actual response parsing would require the ContestedResource type
     let result = serde_json::json!({
@@ -95,7 +95,7 @@ pub async fn get_contested_resources(
             "protocolVersion": response.inner.metadata().ok().map(|m| m.protocol_version),
         }
     });
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     result.serialize(&serializer)
@@ -119,13 +119,13 @@ pub async fn get_contested_resource_voters_for_identity(
         contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Parse contestant ID
     let contestant_id = Identifier::from_string(
         contestant_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
     let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
     for value in index_values {
@@ -140,19 +140,19 @@ pub async fn get_contested_resource_voters_for_identity(
             return Err(JsError::new("Index values must be strings"));
         }
     }
-    
+
     // Parse start_at_voter_info if provided
     let start_at_identifier_info = if let Some(info_str) = start_at_voter_info {
         let info: serde_json::Value = serde_json::from_str(&info_str)
             .map_err(|e| JsError::new(&format!("Invalid start_at_voter_info JSON: {}", e)))?;
-        
+
         if let (Some(start_id), Some(included)) = (info.get("startIdentifier"), info.get("startIdentifierIncluded")) {
             let start_identifier = start_id.as_str()
                 .ok_or_else(|| JsError::new("startIdentifier must be a string"))?
                 .as_bytes()
                 .to_vec();
             let start_identifier_included = included.as_bool().unwrap_or(true);
-            
+
             Some(get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
                 start_identifier,
                 start_identifier_included,
@@ -163,7 +163,7 @@ pub async fn get_contested_resource_voters_for_identity(
     } else {
         None
     };
-    
+
     // Create the gRPC request
     let request = GetContestedResourceVotersForIdentityRequest {
         version: Some(get_contested_resource_voters_for_identity_request::Version::V0(
@@ -180,14 +180,14 @@ pub async fn get_contested_resource_voters_for_identity(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resource voters: {}", e)))?;
-    
+
     // For now, return a simple response structure
     let result = serde_json::json!({
         "voters": [],
@@ -198,7 +198,7 @@ pub async fn get_contested_resource_voters_for_identity(
             "protocolVersion": response.inner.metadata().ok().map(|m| m.protocol_version),
         }
     });
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     result.serialize(&serializer)
@@ -216,13 +216,13 @@ pub async fn get_contested_resource_identity_votes(
     // TODO: Implement get_contested_resource_identity_votes
     // This function should return all votes made by a specific identity
     let _ = (sdk, identity_id, limit, start_at_vote_poll_id_info, order_ascending);
-    
+
     // Return empty result for now
     let result = serde_json::json!({
         "votes": [],
         "metadata": {}
     });
-    
+
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
@@ -238,13 +238,13 @@ pub async fn get_vote_polls_by_end_date(
     // TODO: Implement get_vote_polls_by_end_date
     // This function should return vote polls filtered by end date
     let _ = (sdk, start_time_info, end_time_info, limit, order_ascending);
-    
+
     // Return empty result for now
     let result = serde_json::json!({
         "votePolls": [],
         "metadata": {}
     });
-    
+
     serde_wasm_bindgen::to_value(&result)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
@@ -263,13 +263,13 @@ pub async fn get_contested_resources_with_proof_info(
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use crate::queries::ProofMetadataResponse;
-    
+
     // Parse contract ID
     let contract_id = Identifier::from_string(
         data_contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Parse result_type to get start_index_values
     // The result_type parameter actually specifies what we want to query
     // For contested domain names in DPNS, we query at the "dash" parent domain level
@@ -280,7 +280,7 @@ pub async fn get_contested_resources_with_proof_info(
         // For other types, may need different index values
         vec![]
     };
-    
+
     // Create start_at_value_info if provided
     let start_at_value_info = start_at_value.map(|bytes| {
         get_contested_resources_request::get_contested_resources_request_v0::StartAtValueInfo {
@@ -288,7 +288,7 @@ pub async fn get_contested_resources_with_proof_info(
             start_value_included: true,
         }
     });
-    
+
     // Create the gRPC request directly - force prove=true for proof info
     let request = GetContestedResourcesRequest {
         version: Some(get_contested_resources_request::Version::V0(
@@ -305,32 +305,32 @@ pub async fn get_contested_resources_with_proof_info(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resources with proof: {}", e)))?;
-    
+
     // Extract metadata and proof from response
     let metadata = response.inner.metadata()
         .map_err(|e| JsError::new(&format!("Failed to get metadata: {:?}", e)))?;
-    
+
     let proof = response.inner.proof()
         .map_err(|e| JsError::new(&format!("Failed to get proof: {:?}", e)))?;
-    
+
     // For now, return a simple response structure
     let data = serde_json::json!({
         "contestedResources": []
     });
-    
+
     let response = ProofMetadataResponse {
         data,
         metadata: metadata.clone().into(),
         proof: proof.clone().into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)
@@ -357,25 +357,25 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
     _order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use crate::queries::ProofMetadataResponse;
-    
+
     // Parse contract ID
     let contract_id = Identifier::from_string(
         data_contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Parse start_at_identifier_info if provided
     let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
         let info: serde_json::Value = serde_json::from_str(&info_str)
             .map_err(|e| JsError::new(&format!("Invalid start_at_identifier_info JSON: {}", e)))?;
-        
+
         if let (Some(start_id), Some(included)) = (info.get("startIdentifier"), info.get("startIdentifierIncluded")) {
             let start_identifier = start_id.as_str()
                 .ok_or_else(|| JsError::new("startIdentifier must be a string"))?
                 .as_bytes()
                 .to_vec();
             let start_identifier_included = included.as_bool().unwrap_or(true);
-            
+
             Some(get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo {
                 start_identifier,
                 start_identifier_included,
@@ -386,7 +386,7 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
     } else {
         None
     };
-    
+
     // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
     let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
     for value in index_values {
@@ -401,7 +401,7 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
             return Err(JsError::new("Index values must be strings"));
         }
     }
-    
+
     // Create the gRPC request directly - force prove=true
     let request = GetContestedResourceVoteStateRequest {
         version: Some(get_contested_resource_vote_state_request::Version::V0(
@@ -420,21 +420,21 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resource vote state with proof: {}", e)))?;
-    
+
     // Extract metadata and proof from response
     let metadata = response.inner.metadata()
         .map_err(|e| JsError::new(&format!("Failed to get metadata: {:?}", e)))?;
-    
+
     let proof = response.inner.proof()
         .map_err(|e| JsError::new(&format!("Failed to get proof: {:?}", e)))?;
-    
+
     // Return a simple response structure
     let data = serde_json::json!({
         "contenders": [],
@@ -442,13 +442,13 @@ pub async fn get_contested_resource_vote_state_with_proof_info(
         "lockVoteTally": null,
         "finishedVoteInfo": null
     });
-    
+
     let response = ProofMetadataResponse {
         data,
         metadata: metadata.clone().into(),
         proof: proof.clone().into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)
@@ -468,18 +468,18 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use crate::queries::ProofMetadataResponse;
-    
+
     // Parse IDs
     let contract_id = Identifier::from_string(
         data_contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     let contestant_identifier = Identifier::from_string(
         contestant_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
     let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
     for value in index_values {
@@ -494,19 +494,19 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
             return Err(JsError::new("Index values must be strings"));
         }
     }
-    
+
     // Parse start_at_identifier_info if provided
     let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
         let info: serde_json::Value = serde_json::from_str(&info_str)
             .map_err(|e| JsError::new(&format!("Invalid start_at_identifier_info JSON: {}", e)))?;
-        
+
         if let (Some(start_id), Some(included)) = (info.get("startIdentifier"), info.get("startIdentifierIncluded")) {
             let start_identifier = start_id.as_str()
                 .ok_or_else(|| JsError::new("startIdentifier must be a string"))?
                 .as_bytes()
                 .to_vec();
             let start_identifier_included = included.as_bool().unwrap_or(true);
-            
+
             Some(get_contested_resource_voters_for_identity_request::get_contested_resource_voters_for_identity_request_v0::StartAtIdentifierInfo {
                 start_identifier,
                 start_identifier_included,
@@ -517,7 +517,7 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
     } else {
         None
     };
-    
+
     // Create the gRPC request directly - force prove=true
     let request = GetContestedResourceVotersForIdentityRequest {
         version: Some(get_contested_resource_voters_for_identity_request::Version::V0(
@@ -534,33 +534,33 @@ pub async fn get_contested_resource_voters_for_identity_with_proof_info(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resource voters with proof: {}", e)))?;
-    
+
     // Extract metadata and proof from response
     let metadata = response.inner.metadata()
         .map_err(|e| JsError::new(&format!("Failed to get metadata: {:?}", e)))?;
-    
+
     let proof = response.inner.proof()
         .map_err(|e| JsError::new(&format!("Failed to get proof: {:?}", e)))?;
-    
+
     // Return a simple response structure
     let data = serde_json::json!({
         "voters": [],
         "finishedResults": false
     });
-    
+
     let response = ProofMetadataResponse {
         data,
         metadata: metadata.clone().into(),
         proof: proof.clone().into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)
@@ -576,13 +576,13 @@ pub async fn get_contested_resource_identity_votes_with_proof_info(
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use crate::queries::ProofMetadataResponse;
-    
+
     // Parse identity ID
     let identity_identifier = Identifier::from_string(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Create the gRPC request directly - force prove=true
     let request = GetContestedResourceIdentityVotesRequest {
         version: Some(get_contested_resource_identity_votes_request::Version::V0(
@@ -596,33 +596,33 @@ pub async fn get_contested_resource_identity_votes_with_proof_info(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resource identity votes with proof: {}", e)))?;
-    
+
     // Extract metadata and proof from response
     let metadata = response.inner.metadata()
         .map_err(|e| JsError::new(&format!("Failed to get metadata: {:?}", e)))?;
-    
+
     let proof = response.inner.proof()
         .map_err(|e| JsError::new(&format!("Failed to get proof: {:?}", e)))?;
-    
+
     // Return a simple response structure
     let data = serde_json::json!({
         "votes": [],
         "finishedResults": false
     });
-    
+
     let response = ProofMetadataResponse {
         data,
         metadata: metadata.clone().into(),
         proof: proof.clone().into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)
@@ -639,9 +639,9 @@ pub async fn get_vote_polls_by_end_date_with_proof_info(
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use crate::queries::ProofMetadataResponse;
-    
+
     // Note: GetVotePollsByEndDateRequestV0 doesn't have start_at_poll_info, only offset
-    
+
     // Create the gRPC request directly - force prove=true
     let request = GetVotePollsByEndDateRequest {
         version: Some(get_vote_polls_by_end_date_request::Version::V0(
@@ -665,33 +665,33 @@ pub async fn get_vote_polls_by_end_date_with_proof_info(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get vote polls by end date with proof: {}", e)))?;
-    
+
     // Extract metadata and proof from response
     let metadata = response.inner.metadata()
         .map_err(|e| JsError::new(&format!("Failed to get metadata: {:?}", e)))?;
-    
+
     let proof = response.inner.proof()
         .map_err(|e| JsError::new(&format!("Failed to get proof: {:?}", e)))?;
-    
+
     // Return a simple response structure
     let data = serde_json::json!({
         "votePollsByTimestamps": {},
         "finishedResults": false
     });
-    
+
     let response = ProofMetadataResponse {
         data,
         metadata: metadata.clone().into(),
         proof: proof.clone().into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)
@@ -724,19 +724,19 @@ pub async fn get_contested_resource_vote_state(
         data_contract_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
-    
+
     // Parse start_at_identifier_info if provided
     let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
         let info: serde_json::Value = serde_json::from_str(&info_str)
             .map_err(|e| JsError::new(&format!("Invalid start_at_identifier_info JSON: {}", e)))?;
-        
+
         if let (Some(start_id), Some(included)) = (info.get("startIdentifier"), info.get("startIdentifierIncluded")) {
             let start_identifier = start_id.as_str()
                 .ok_or_else(|| JsError::new("startIdentifier must be a string"))?
                 .as_bytes()
                 .to_vec();
             let start_identifier_included = included.as_bool().unwrap_or(true);
-            
+
             Some(get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::StartAtIdentifierInfo {
                 start_identifier,
                 start_identifier_included,
@@ -747,7 +747,7 @@ pub async fn get_contested_resource_vote_state(
     } else {
         None
     };
-    
+
     // Convert JsValue index values to Vec<Vec<u8>> using bincode serialization
     let mut index_values_bytes: Vec<Vec<u8>> = Vec::new();
     for value in index_values {
@@ -762,7 +762,7 @@ pub async fn get_contested_resource_vote_state(
             return Err(JsError::new("Index values must be strings"));
         }
     }
-    
+
     // Create the gRPC request directly
     let request = GetContestedResourceVoteStateRequest {
         version: Some(get_contested_resource_vote_state_request::Version::V0(
@@ -781,14 +781,14 @@ pub async fn get_contested_resource_vote_state(
             },
         )),
     };
-    
+
     // Execute the request
     let response = sdk
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
         .map_err(|e| JsError::new(&format!("Failed to get contested resource vote state: {}", e)))?;
-    
+
     // Return a simple response structure
     let result = serde_json::json!({
         "contenders": [],
@@ -802,7 +802,7 @@ pub async fn get_contested_resource_vote_state(
             "protocolVersion": response.inner.metadata().ok().map(|m| m.protocol_version),
         }
     });
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     result.serialize(&serializer)

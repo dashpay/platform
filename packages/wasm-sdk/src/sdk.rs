@@ -53,22 +53,22 @@ impl WasmSdk {
     pub fn version(&self) -> u32 {
         self.0.version().protocol_version
     }
-    
+
     /// Get reference to the inner SDK for direct gRPC calls
     pub(crate) fn inner_sdk(&self) -> &Sdk {
         &self.0
     }
-    
+
     /// Get the network this SDK is configured for
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
     }
-    
+
     /// Test serialization of different object types
     #[wasm_bindgen(js_name = testSerialization)]
     pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
         use serde_wasm_bindgen::to_value;
-        
+
         match test_type {
             "simple" => {
                 let simple = serde_json::json!({
@@ -667,24 +667,24 @@ impl WasmSdkBuilder {
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
-    
+
     /// Configure platform version to use.
-    /// 
+    ///
     /// Available versions:
     /// - 1: Platform version 1
     /// - 2: Platform version 2
     /// - ... up to latest version
-    /// 
+    ///
     /// Defaults to latest version if not specified.
     pub fn with_version(self, version_number: u32) -> Result<Self, JsError> {
         let version = PlatformVersion::get(version_number)
             .map_err(|e| JsError::new(&format!("Invalid platform version {}: {}", version_number, e)))?;
-        
+
         Ok(WasmSdkBuilder(self.0.with_version(version)))
     }
-    
+
     /// Configure request settings for the SDK.
-    /// 
+    ///
     /// Settings include:
     /// - connect_timeout_ms: Timeout for establishing connection (in milliseconds)
     /// - timeout_ms: Timeout for single request (in milliseconds)
@@ -698,26 +698,26 @@ impl WasmSdkBuilder {
         ban_failed_address: Option<bool>,
     ) -> Self {
         let mut settings = RequestSettings::default();
-        
+
         if let Some(connect_timeout) = connect_timeout_ms {
             settings.connect_timeout = Some(Duration::from_millis(connect_timeout as u64));
         }
-        
+
         if let Some(timeout) = timeout_ms {
             settings.timeout = Some(Duration::from_millis(timeout as u64));
         }
-        
+
         if let Some(retries) = retries {
             settings.retries = Some(retries as usize);
         }
-        
+
         if let Some(ban) = ban_failed_address {
             settings.ban_failed_address = Some(ban);
         }
-        
+
         WasmSdkBuilder(self.0.with_settings(settings))
     }
-    
+
     // TODO: Add with_proofs method when it's available in the SDK builder
     // pub fn with_proofs(self, enable_proofs: bool) -> Self {
     //     WasmSdkBuilder(self.0.with_proofs(enable_proofs))

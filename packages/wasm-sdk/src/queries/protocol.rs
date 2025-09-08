@@ -24,20 +24,20 @@ struct ProtocolVersionUpgradeVoteStatus {
 pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
-    
+
     let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades = ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ())
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch protocol version upgrade state: {}", e)))?;
-    
+
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
-    
+
     // Find the next version with votes
     let mut next_version = None;
     let mut activation_height = None;
     let mut vote_count = None;
     let mut threshold_reached = false;
-    
+
     // The result is an IndexMap<u32, Option<u64>> where u32 is version and Option<u64> is activation height
     for (version, height_opt) in upgrade_result.iter() {
         if *version > current_version {
@@ -49,7 +49,7 @@ pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue
             break;
         }
     }
-    
+
     let state = ProtocolVersionUpgradeState {
         current_protocol_version: current_version,
         next_protocol_version: next_version,
@@ -57,7 +57,7 @@ pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue
         vote_count,
         threshold_reached,
     };
-    
+
     serde_wasm_bindgen::to_value(&state)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
@@ -72,7 +72,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
     use drive_proof_verifier::types::MasternodeProtocolVote;
     use dash_sdk::dpp::dashcore::ProTxHash;
     use std::str::FromStr;
-    
+
     // Parse the ProTxHash
     let start_hash = if start_pro_tx_hash.is_empty() {
         None
@@ -80,11 +80,11 @@ pub async fn get_protocol_version_upgrade_vote_status(
         Some(ProTxHash::from_str(start_pro_tx_hash)
             .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?)
     };
-    
+
     let votes_result = MasternodeProtocolVote::fetch_votes(sdk.as_ref(), start_hash, Some(count))
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch protocol version votes: {}", e)))?;
-    
+
     // Convert to our response format
     let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
         .into_iter()
@@ -96,7 +96,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
             })
         })
         .collect();
-    
+
     serde_wasm_bindgen::to_value(&votes)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
@@ -108,20 +108,20 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
     use crate::queries::ProofMetadataResponse;
-    
+
     let (upgrade_result, metadata, proof): (drive_proof_verifier::types::ProtocolVersionUpgrades, _, _) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(sdk.as_ref(), (), None)
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch protocol version upgrade state with proof: {}", e)))?;
-    
+
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
-    
+
     // Find the next version with votes
     let mut next_version = None;
     let mut activation_height = None;
     let mut vote_count = None;
     let mut threshold_reached = false;
-    
+
     for (version, height_opt) in upgrade_result.iter() {
         if *version > current_version {
             next_version = Some(*version);
@@ -131,7 +131,7 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -
             break;
         }
     }
-    
+
     let state = ProtocolVersionUpgradeState {
         current_protocol_version: current_version,
         next_protocol_version: next_version,
@@ -139,13 +139,13 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -
         vote_count,
         threshold_reached,
     };
-    
+
     let response = ProofMetadataResponse {
         data: state,
         metadata: metadata.into(),
         proof: proof.into(),
     };
-    
+
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response.serialize(&serializer)

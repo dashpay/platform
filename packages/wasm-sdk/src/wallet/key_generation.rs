@@ -1,5 +1,5 @@
 //! Key generation functionality for wallets
-//! 
+//!
 //! Provides key generation and address derivation without full HD wallet support
 
 use wasm_bindgen::prelude::*;
@@ -101,7 +101,7 @@ pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsError> {
 
     // Get address
     let address = Address::p2pkh(&PublicKey::from_slice(&public_key_bytes)
-        .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?, 
+        .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?,
         private_key.network);
 
     let key_pair = KeyPair {
@@ -185,7 +185,7 @@ pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, JsEr
     let secp = Secp256k1::new();
     let secret_key = SecretKey::from_slice(&private_key.inner.secret_bytes())
         .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
-    
+
     let message_hash = dash_sdk::dpp::dashcore::secp256k1::Message::from_digest(hash.to_byte_array());
     let signature = secp.sign_ecdsa(&message_hash, &secret_key);
 
