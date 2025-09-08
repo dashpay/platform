@@ -218,12 +218,12 @@ async function main() {
             console.log(`   📄 Fetching ${docType} documents...`);
             
             try {
-                // JavaScript wrapper now returns structured JSON response
+                // JavaScript wrapper now returns structured JSON response with complete WASM SDK data
                 const response = await sdk.getDocuments(contractId, docType, { getAllDocuments: true });
                 
                 results.documents[docType] = {
                     count: response.totalCount,
-                    documents: response.documents.map(doc => doc.id)
+                    documents: response.documents.map(doc => doc.$id || doc.id || doc.identifier)
                 };
                 
                 results.contract.totalDocuments += response.totalCount;
