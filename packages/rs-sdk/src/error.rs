@@ -14,6 +14,7 @@ use std::time::Duration;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly

@@ -357,7 +357,7 @@ impl Sdk {
     /// * the `self` instance is not a `Mock` variant,
     /// * the `self` instance is in use by another thread.
     #[cfg(feature = "mocks")]
-    pub fn mock(&mut self) -> MutexGuard<MockDashPlatformSdk> {
+    pub fn mock(&mut self) -> MutexGuard<'_, MockDashPlatformSdk> {
         if let Sdk {
             inner: SdkInstance::Mock { ref mock, .. },
             ..
@@ -577,7 +577,7 @@ impl Sdk {
     }
 
     /// Returns a future that resolves when the Sdk is cancelled (e.g. shutdown was requested).
-    pub fn cancelled(&self) -> WaitForCancellationFuture {
+    pub fn cancelled(&self) -> WaitForCancellationFuture<'_> {
         self.cancel_token.cancelled()
     }
 

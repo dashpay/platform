@@ -18,7 +18,7 @@ use drive::query::vote_poll_vote_state_query::{
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive::query::VotePollsByEndDateDriveQuery;
 use drive_proof_verifier::types::{Contenders, ContestedResource, VotePollsGroupedByTimestamp};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 // DPNS parent domain constant
 const DPNS_PARENT_DOMAIN: &str = "dash";
@@ -50,7 +50,7 @@ impl Sdk {
     ///
     /// * `limit` - Maximum number of results to return
     /// * `start_after` - Optional name to start after
-    /// (for pagination)
+    ///   (for pagination)
     ///
     /// # Returns
     ///
@@ -262,11 +262,7 @@ impl Sdk {
                 .any(|(contender_id, _)| contender_id == &identity_id);
 
             if is_contender {
-                let contenders = vote_state
-                    .contenders
-                    .into_iter()
-                    .map(|(id, _)| id)
-                    .collect();
+                let contenders = vote_state.contenders.into_keys().collect();
                 usernames_with_identity.push(ContestedDpnsUsername {
                     label: contested_label.clone(),
                     normalized_label: contested_label.to_lowercase(),
@@ -301,6 +297,7 @@ impl Sdk {
     }
 
     // Helper function to extract label from index values
+    #[allow(dead_code)]
     fn extract_label_from_index_values(index_values: &[Vec<u8>]) -> Option<String> {
         if index_values.len() >= 2 {
             String::from_utf8(index_values[1].clone()).ok()
@@ -455,18 +452,15 @@ impl Sdk {
             for (timestamp, polls) in result.0 {
                 let mut dpns_polls_count = 0;
 
-                for poll in polls {
-                    // Check if this is a DPNS contest
-                    if let VotePoll::ContestedDocumentResourceVotePoll(contested_poll) = poll {
-                        if contested_poll.contract_id == dpns_contract_id
-                            && contested_poll.document_type_name == "domain"
-                        {
-                            // Extract the contested name from index_values
-                            if contested_poll.index_values.len() >= 2 {
-                                if let Value::Text(label) = &contested_poll.index_values[1] {
-                                    name_to_end_time.insert(label.clone(), timestamp);
-                                    dpns_polls_count += 1;
-                                }
+                for VotePoll::ContestedDocumentResourceVotePoll(contested_poll) in polls {
+                    if contested_poll.contract_id == dpns_contract_id
+                        && contested_poll.document_type_name == "domain"
+                    {
+                        // Extract the contested name from index_values
+                        if contested_poll.index_values.len() >= 2 {
+                            if let Value::Text(label) = &contested_poll.index_values[1] {
+                                name_to_end_time.insert(label.clone(), timestamp);
+                                dpns_polls_count += 1;
                             }
                         }
                     }

@@ -193,7 +193,7 @@ impl MockResponse for DataContract {
 // FIXME: Seems that DataContract doesn't implement PlatformVersionedDecode + PlatformVersionEncode,
 // so we just use some methods implemented directly on these objects.
 impl MockResponse for (DataContract, Vec<u8>) {
-    fn mock_serialize(&self, sdk: &MockDashPlatformSdk) -> Vec<u8> {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
         self.1.clone()
     }
 

@@ -41,7 +41,7 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
+#[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
 #[cfg(feature = "server")]

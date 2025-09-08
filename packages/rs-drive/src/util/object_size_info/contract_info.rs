@@ -208,6 +208,7 @@ impl AsRef<DataContract> for DataContractResolvedInfo<'_> {
 }
 
 /// Enumerates methods for identifying or referencing document types, accommodating various application needs.
+#[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
 pub enum DocumentTypeInfo<'a> {
     /// Contains the document type name as an owned `String`, suitable for dynamic or mutable scenarios.
