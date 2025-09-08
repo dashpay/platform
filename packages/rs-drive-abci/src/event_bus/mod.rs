@@ -1,7 +1,7 @@
 //! Generic, clonable in-process event bus with pluggable filtering.
 //!
-//! Scope: type definitions and public API skeleton. Implementation will follow
-//! in subsequent steps (see EVENT-BUS.md TODOs).
+//! Provides a generic `EventBus<E, F>` and `Filter<E>` trait, with
+//! async subscribe/notify, RAII cleanup, and metrics instrumentation.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -179,9 +179,21 @@ where
             if Arc::strong_count(&self.rx) == 1 {
                 let bus = self.event_bus.clone();
                 let id = self.id;
-                std::thread::spawn(async move || {
-                    bus.remove_subscription(id).await;
-                });
+
+                // Prefer removing via Tokio if a runtime is available
+                if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                    handle.spawn(async move {
+                        bus.remove_subscription(id).await;
+                    });
+                } else {
+                    // Fallback: best-effort synchronous removal using try_write()
+                    if let Ok(mut subs) = bus.subs.try_write() {
+                        if subs.remove(&id).is_some() {
+                            counter!(UNSUBSCRIBE_TOTAL).increment(1);
+                            gauge!(ACTIVE_SUBSCRIPTIONS).set(subs.len() as f64);
+                        }
+                    }
+                }
             }
         }
     }
@@ -224,8 +236,6 @@ fn register_metrics_once() {
         );
     });
 }
-
-// (dropper indirection removed; cleanup happens directly in Drop via try_write)
 
 #[cfg(test)]
 mod tests {

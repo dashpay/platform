@@ -20,7 +20,13 @@ pub fn start(
     config: PlatformConfig,
     cancel: CancellationToken,
 ) {
-    let query_service = Arc::new(QueryService::new(Arc::clone(&platform)));
+    // Create a shared EventBus for platform events (filters adapted from gRPC filters)
+    let event_bus = Arc::new(crate::event_bus::EventBus::<
+        dapi_grpc::platform::v0::PlatformEventV0,
+        crate::query::PlatformFilterAdapter,
+    >::new());
+
+    let query_service = Arc::new(QueryService::new(Arc::clone(&platform), event_bus));
 
     let drive_internal = Arc::clone(&query_service);
 

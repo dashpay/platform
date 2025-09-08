@@ -59,9 +59,58 @@ Defining the specific PlatformEvent set and gRPC messages is out of scope for th
 
 The bus only depends on the `Filter<E>` trait with `matches(&self, &E) -> bool`. Any persistence or stateful matching (e.g., bloom filter updates) lives in the filter implementation, not in the bus. For this task we only provide the trait and generic bus.
 
-### gRPC API (deferred)
+### gRPC API
 
-No protobuf or gRPC changes in this task. We will add a streaming RPC in a later integration phase.
+No protobuf or gRPC changes were needed for the initial bus. Next we will add a bi-directional streaming RPC to support multiplexed subscriptions over a single connection between rs-dapi and rs-drive-abci (see “Subscription Server (gRPC)” below).
+
+### Subscription Server (gRPC)
+
+We will expose a single bi-directional streaming RPC that allows a client (rs-dapi) to open one connection to rs-drive-abci, then add and remove multiple logical subscriptions over that connection. Server pushes events tagged with the logical subscription ID.
+
+- New RPC in `platform.proto`:
+  - `rpc subscribePlatformEvents(stream PlatformEventsCommand) returns (stream PlatformEventsResponse);`
+
+- Commands from client (rs-dapi) to server (rs-drive-abci):
+  - `AddSubscription`: `{ client_subscription_id: string, filter: PlatformFilter }`
+  - `RemoveSubscription`: `{ client_subscription_id: string }`
+  - Optional `Ping`: keepalive/latency measurement.
+
+- Responses from server to client:
+  - `Event`: `{ client_subscription_id: string, event: PlatformEvent }`
+  - `Ack`: `{ client_subscription_id: string, op: Add|Remove }` (optional, for command confirmation)
+  - `Error`: `{ client_subscription_id: string, code: uint32, message: string }`
+
+- Versioning: wrap `PlatformEventsCommand` and `PlatformEventsResponse` in standard versioned envelopes, e.g. `oneof version { v0: ... }`, consistent with other Platform RPCs.
+
+- Types to add to `platform.proto` (v0):
+  - `message PlatformEventsCommandV0 { oneof command { AddSubscription add = 1; RemoveSubscription remove = 2; Ping ping = 3; } }`
+  - `message AddSubscription { string client_subscription_id = 1; PlatformFilter filter = 2; }`
+  - `message RemoveSubscription { string client_subscription_id = 1; }`
+  - `message Ping { uint64 nonce = 1; }`
+  - `message PlatformEventsResponseV0 { oneof response { Event event = 1; Ack ack = 2; Error error = 3; } }`
+  - `message Event { string client_subscription_id = 1; PlatformEvent event = 2; }`
+  - `message Ack { string client_subscription_id = 1; string op = 2; }`
+  - `message Error { string client_subscription_id = 1; uint32 code = 2; string message = 3; }`
+  - `message PlatformFilter { /* initial variants for platform-side filtering; see Filtering model */ }`
+  - `message PlatformEvent { /* initial variants for platform events; see above */ }`
+
+Server behavior (rs-drive-abci):
+- No separate manager type is required. Within the RPC handler task for a connection:
+  - Maintain a simple connection-local map: `client_subscription_id -> SubscriptionHandle`.
+  - Process incoming `PlatformEventsCommand` frames: on `AddSubscription`, subscribe to the global in-process `EventBus<PlatformEvent, PlatformFilter>` and store the handle in the map; on `RemoveSubscription`, drop the handle and remove the map entry.
+  - For each added subscription, spawn a lightweight forwarder that awaits `handle.recv()` and pushes `Event { client_subscription_id, event }` into the single per-connection response sender.
+  - On disconnect, drop all handles (RAII removes bus subscriptions) and end the response stream.
+  - Optionally respond with `Ack`/`Error` for command results.
+
+Optional metadata in EventBus:
+- If we later need bulk cancellation by connection without keeping a map, we can extend the bus with opaque metadata stored alongside each subscription (e.g., `connection_id`). That would allow calling a `remove_by_tag(connection_id)` helper. For now, a connection-local map is sufficient and minimizes changes to the bus.
+
+rs-dapi proxy:
+- Maintain one persistent bi-directional stream to rs-drive-abci and multiplex all client (public) subscriptions over it:
+  - Public gRPC: expose `subscribePlatformEvents` (server-streaming) with a simple request carrying `PlatformFilter` and a generated `client_subscription_id` per public subscriber.
+  - On new public subscriber: send `AddSubscription` upstream with a unique `client_subscription_id`, route all `Event` frames matching that ID back to the public subscriber’s stream.
+  - On public stream drop: send `RemoveSubscription` upstream and clean up the routing entry.
+  - Reconnection: on upstream disconnect, re-establish the connection and re-add active subscriptions. Document at‑least‑once delivery and potential gaps during reconnection.
 
 ### Backpressure, ordering, and observability
 
@@ -183,5 +232,18 @@ Implementation Note
 - Deferred integration (future tasks)
   - Define concrete event/filter types in rs-drive-abci and rs-dapi; implement `Filter<E>` for each.
   - Replace rs-dapi `SubscriberManager` with the generic bus.
-  - Add gRPC streaming endpoint(s) in dapi-grpc and wire to the bus.
   - Add metrics and configurable backpressure.
+
+- New: Subscription server and proxying
+  - [ ] Update `packages/dapi-grpc/protos/platform/v0/platform.proto` with `subscribePlatformEvents` bi-di stream and new messages (Commands/Responses, PlatformFilter, PlatformEvent) under `v0`.
+  - [ ] Regenerate dapi-grpc code and update dependent crates.
+  - [ ] Implement `subscribePlatformEvents` in rs-drive-abci:
+    - [ ] Connection-local routing map (`client_subscription_id -> SubscriptionHandle`).
+    - [ ] Forwarder tasks per subscription to push events into a per-connection sender feeding the response stream.
+    - [ ] Handle `AddSubscription`, `RemoveSubscription`, `Ping`, and clean disconnect.
+    - [ ] Instrument metrics (connections, logical subs, commands, acks/errors, events forwarded).
+  - [ ] Implement rs-dapi proxy:
+    - [ ] Single persistent upstream connection to rs-drive-abci, with reconnect + resubscribe.
+    - [ ] Public DAPI `subscribePlatformEvents` (server-streaming) that allocates `client_subscription_id`s and routes events.
+    - [ ] Removal on client drop and upstream `RemoveSubscription`.
+    - [ ] Metrics for public subs and routing.

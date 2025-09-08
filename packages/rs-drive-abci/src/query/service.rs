@@ -1,5 +1,6 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
+use crate::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
 use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -10,6 +11,7 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
 use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
@@ -47,8 +49,10 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    PlatformEventV0 as PlatformEvent, PlatformEventsCommand, PlatformEventsResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
+use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
@@ -56,11 +60,14 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::Instrument;
 
 /// Service to handle platform queries
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
+    event_bus: Arc<EventBus<PlatformEvent, PlatformFilterAdapter>>,
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -72,8 +79,14 @@ type QueryMethod<RQ, RS> = fn(
 
 impl QueryService {
     /// Creates new QueryService
-    pub fn new(platform: Arc<Platform<DefaultCoreRPC>>) -> Self {
-        Self { platform }
+    pub fn new(
+        platform: Arc<Platform<DefaultCoreRPC>>,
+        event_bus: Arc<EventBus<PlatformEvent, PlatformFilterAdapter>>,
+    ) -> Self {
+        Self {
+            platform,
+            event_bus,
+        }
     }
 
     async fn handle_blocking_query<RQ, RS>(
@@ -250,6 +263,41 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
     tracing::error!("{} endpoint is called but it's not supported", name);
 
     Err(Status::unimplemented("the endpoint is not supported"))
+}
+
+/// Adapter implementing EventBus filter semantics based on incoming gRPC `PlatformFilterV0`.
+#[derive(Clone, Debug)]
+pub struct PlatformFilterAdapter {
+    inner: dapi_grpc::platform::v0::PlatformFilterV0,
+}
+
+impl PlatformFilterAdapter {
+    /// Create a new adapter wrapping the provided gRPC `PlatformFilterV0`.
+    pub fn new(inner: dapi_grpc::platform::v0::PlatformFilterV0) -> Self {
+        Self { inner }
+    }
+}
+
+impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
+    fn matches(&self, event: &PlatformEvent) -> bool {
+        use dapi_grpc::platform::v0::platform_filter_v0::Kind;
+        match self.inner.kind.as_ref() {
+            None => false,
+            Some(Kind::All(all)) => *all,
+            Some(Kind::TxHash(filter_hash)) => {
+                if let Some(evt) = &event.event {
+                    match evt {
+                        dapi_grpc::platform::v0::platform_event_v0::Event::StateTransitionResult(
+                            r,
+                        ) => r.tx_hash == *filter_hash,
+                        _ => false,
+                    }
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -801,6 +849,140 @@ impl PlatformService for QueryService {
             "get_finalized_epoch_infos",
         )
         .await
+    }
+
+    type subscribePlatformEventsStream =
+        UnboundedReceiverStream<Result<PlatformEventsResponse, Status>>;
+
+    async fn subscribe_platform_events(
+        &self,
+        request: Request<Streaming<PlatformEventsCommand>>,
+    ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
+        use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
+        use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
+        use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
+        use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
+
+        let mut inbound = request.into_inner();
+
+        // Outgoing channel (shared across forwarders)
+        let (tx, rx) = mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
+
+        // Connection-local subscriptions routing map
+        let event_bus = self.event_bus.clone();
+        let (sub_tx, mut sub_rx) = mpsc::unbounded_channel::<(
+            String,
+            SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
+        )>();
+        let (drop_tx, mut drop_rx) = mpsc::unbounded_channel::<String>();
+
+        // Command processor task
+        let cmd_tx = tx.clone();
+        tokio::spawn(async move {
+            // Local map lives in this task
+            use std::collections::HashMap;
+            let mut subs: HashMap<
+                String,
+                SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
+            > = HashMap::new();
+
+            loop {
+                tokio::select! {
+                    Some((id, handle)) = sub_rx.recv() => {
+                        subs.insert(id.clone(), handle);
+                        // optional ack
+                        let ack = PlatformEventsResponse{
+                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "add".to_string() }))
+                            }))
+                        };
+                        let _ = cmd_tx.send(Ok(ack));
+                    }
+                    Some(id) = drop_rx.recv() => {
+                        if subs.remove(&id).is_some() {
+                            let ack = PlatformEventsResponse{
+                                version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                    response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "remove".to_string() }))
+                                }))
+                            };
+                            let _ = cmd_tx.send(Ok(ack));
+                        }
+                    }
+                    cmd = inbound.message() => {
+                        match cmd {
+                            Ok(Some(PlatformEventsCommand { version: Some(CmdVersion::V0(v0)) })) => {
+                                match v0.command {
+                                    Some(Cmd::Add(add)) => {
+                                        let id = add.client_subscription_id;
+                                        let adapter = PlatformFilterAdapter::new(add.filter.unwrap_or_default());
+                                        let handle = event_bus.add_subscription(adapter).await;
+
+                                        let forward_tx = cmd_tx.clone();
+                                        let id_clone = id.clone();
+                                        let h_clone = handle.clone();
+                                        tokio::spawn(async move {
+                                            while let Some(evt) = h_clone.recv().await {
+                                                let resp = PlatformEventsResponse{
+                                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                                        response: Some(Resp::Event(dapi_grpc::platform::v0::PlatformEventMessageV0{
+                                                            client_subscription_id: id_clone.clone(),
+                                                            event: Some(evt),
+                                                        }))
+                                                    }))
+                                                };
+                                                if forward_tx.send(Ok(resp)).is_err() { break; }
+                                            }
+                                        });
+
+                                        let _ = sub_tx.send((id, handle));
+                                    }
+                                    Some(Cmd::Remove(rem)) => {
+                                        let _ = drop_tx.send(rem.client_subscription_id);
+                                    }
+                                    Some(Cmd::Ping(p)) => {
+                                        // echo back as ack
+                                        let ack = PlatformEventsResponse{
+                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: p.nonce.to_string(), op: "ping".to_string() }))
+                                            }))
+                                        };
+                                        let _ = cmd_tx.send(Ok(ack));
+                                    }
+                                    None => {
+                                        let err = PlatformEventsResponse{
+                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                                response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing command".to_string() }))
+                                            }))
+                                        };
+                                        let _ = cmd_tx.send(Ok(err));
+                                    }
+                                }
+                            }
+                            Ok(Some(PlatformEventsCommand { version: None })) => {
+                                let err = PlatformEventsResponse{
+                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                        response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing version".to_string() }))
+                                    }))
+                                };
+                                let _ = cmd_tx.send(Ok(err));
+                            }
+                            Ok(None) => { break; }
+                            Err(e) => {
+                                let err = PlatformEventsResponse{
+                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                        response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 500, message: format!("{}", e) }))
+                                    }))
+                                };
+                                let _ = cmd_tx.send(Ok(err));
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        Ok(Response::new(UnboundedReceiverStream::new(rx)))
     }
 }
 
