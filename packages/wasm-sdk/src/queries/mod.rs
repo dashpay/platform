@@ -1,13 +1,13 @@
-pub mod identity;
 pub mod data_contract;
 pub mod document;
 pub mod dpns;
-pub mod protocol;
 pub mod epoch;
+pub mod group;
+pub mod identity;
+pub mod protocol;
+pub mod system;
 pub mod token;
 pub mod voting;
-pub mod group;
-pub mod system;
 
 // Re-export all query functions for easy access
 pub use data_contract::*;

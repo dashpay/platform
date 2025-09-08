@@ -1,13 +1,13 @@
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
 
 pub mod context_provider;
-pub mod dpp;
 pub mod dpns;
+pub mod dpp;
 pub mod error;
+pub mod queries;
 pub mod sdk;
 pub mod state_transitions;
 pub mod verify;
-pub mod queries;
 pub mod wallet;
 
 // Re-export commonly used items
