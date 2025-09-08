@@ -81,8 +81,6 @@ await test('get_contested_resources - fetch contested domain names', async () =>
             'domain',                           // document_type_name
             DPNS_CONTRACT,                      // data_contract_id
             'parentNameAndLabel',               // index_name
-            'documents',                        // result_type
-            null,                               // allow_include_locked_and_abstaining_vote_tally
             null,                               // start_at_value
             100,                                // limit
             null,                               // offset
