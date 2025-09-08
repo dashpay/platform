@@ -24,6 +24,6 @@ impl Drive {
                 transaction,
             )
             .unwrap()
-            .map_err(Error::GroveDB)
+            .map_err(Error::from)
     }
 }

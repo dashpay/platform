@@ -105,7 +105,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         Ok(result_items.len() == ids.len())
     }
@@ -142,7 +142,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         result_items
             .to_key_elements()
@@ -195,7 +195,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         results
             .into_iter()
@@ -249,7 +249,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         result_items
             .to_key_elements()

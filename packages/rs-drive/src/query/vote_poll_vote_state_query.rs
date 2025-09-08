@@ -533,9 +533,14 @@ impl ResolvedContestedDocumentVotePollDriveQuery<'_> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
                 Ok(ContestedDocumentVotePollDriveQueryExecutionResult::default())
             }
             Err(e) => Err(e),

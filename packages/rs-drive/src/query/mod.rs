@@ -465,7 +465,7 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Self, Error> {
         if let Some(contract_id) = query_document
             .remove_optional_identifier("contract_id")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if contract.id() != contract_id {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -479,7 +479,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         if let Some(document_type_name) = query_document
             .remove_optional_string("document_type_name")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if document_type.name() != &document_type_name {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -493,7 +493,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
@@ -510,11 +510,11 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let offset: Option<u16> = query_document
             .remove_optional_integer("offset")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document
@@ -565,7 +565,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -581,7 +581,7 @@ impl<'a> DriveDocumentQuery<'a> {
                                 if let Value::Array(clauses_components) = order_clause {
                                     let order_clause =
                                         OrderClause::from_components(&clauses_components)
-                                            .map_err(Error::GroveDB);
+                                            .map_err(Error::from);
                                     match order_clause {
                                         Ok(order_clause) => {
                                             Some(Ok((order_clause.field.clone(), order_clause)))
@@ -846,7 +846,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -945,9 +945,14 @@ impl<'a> DriveDocumentQuery<'a> {
                         drive_version,
                     )
                     .map_err(|e| match e {
-                        Error::GroveDB(GroveError::PathKeyNotFound(_))
-                        | Error::GroveDB(GroveError::PathNotFound(_))
-                        | Error::GroveDB(GroveError::PathParentLayerNotFound(_)) => {
+                        Error::GroveDB(e)
+                            if matches!(
+                                e.as_ref(),
+                                GroveError::PathKeyNotFound(_)
+                                    | GroveError::PathNotFound(_)
+                                    | GroveError::PathParentLayerNotFound(_)
+                            ) =>
+                        {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
@@ -1002,7 +1007,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 vec![&start_at_path_query, &main_path_query],
                 &platform_version.drive.grove_version,
             )
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {
@@ -1854,7 +1859,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
             })
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
-            .map_err(Error::Protocol)?;
+            .map_err(Error::from)?;
 
         let final_query = match last_clause {
             None => {
@@ -2162,9 +2167,16 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok((Vec::new(), 0))
+            }
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -2199,9 +2211,14 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
                 Ok((QueryResultElements::new(), 0))
             }
             _ => {

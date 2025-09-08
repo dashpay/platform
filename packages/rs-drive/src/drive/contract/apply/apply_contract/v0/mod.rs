@@ -78,7 +78,7 @@ impl Drive {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         let serialized_contract = contract
             .serialize_to_bytes_with_platform_version(platform_version)
-            .map_err(Error::Protocol)?;
+            .map_err(Error::from)?;
 
         if serialized_contract.len() as u64 > u32::MAX as u64
             || serialized_contract.len() as u32

@@ -480,9 +480,16 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok(vec![]),
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok(vec![])
+            }
             Err(e) => Err(e),
             Ok((query_result_elements, _)) => {
                 let result_is_in_key = self.result_is_in_key();
@@ -500,7 +507,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // the result is in the key because we did not provide any end index values
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
-                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::Protocol)
+                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), key.as_slice(), platform_version).map_err(Error::from)
                         } else if path.len() < result_path_index.unwrap() {
 
                             Err(Error::Drive(DriveError::CorruptedCodeExecution("the path length should always be bigger or equal to the result path index")))
@@ -509,7 +516,7 @@ impl<'a> ResolvedVotePollsByDocumentTypeQuery<'a> {
                             // like this  <------ start index values (path) --->    Key
                             // properties ------- --------- --------- ----------  -------
                             let inner_path_value_bytes = path.remove(result_path_index.unwrap());
-                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::Protocol)
+                            document_type.deserialize_value_for_key(property_name_being_searched.name.as_str(), inner_path_value_bytes.as_slice(), platform_version).map_err(Error::from)
                         }
                     }).collect::<Result<Vec<Value>, Error>>()
             }

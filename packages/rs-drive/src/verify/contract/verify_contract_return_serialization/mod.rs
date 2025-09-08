@@ -7,6 +7,11 @@ use dpp::version::PlatformVersion;
 
 mod v0;
 
+// Type aliases to simplify complex return types
+type ContractBytes = Vec<u8>;
+type VerifiedContractWithBytes = Option<(DataContract, ContractBytes)>;
+type VerifyContractReturn = (RootHash, VerifiedContractWithBytes);
+
 impl Drive {
     /// Verifies that the contract is included in the proof and returns the serialized form as well for easy storage.
     ///
@@ -40,7 +45,7 @@ impl Drive {
         in_multiple_contract_proof_form: bool,
         contract_id: [u8; 32],
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<(DataContract, Vec<u8>)>), Error> {
+    ) -> Result<VerifyContractReturn, Error> {
         match platform_version
             .drive
             .methods

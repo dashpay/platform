@@ -76,7 +76,7 @@ impl Drive {
                         Some(element) => {
                             let balance: Credits = element
                                 .as_sum_item_value()
-                                .map_err(Error::GroveDB)?
+                                .map_err(Error::from)?
                                 .try_into()
                                 .map_err(|_| {
                                     Error::Proof(ProofError::IncorrectValueSize(

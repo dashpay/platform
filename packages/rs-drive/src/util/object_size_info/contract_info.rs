@@ -24,6 +24,7 @@ use std::sync::Arc;
 /// Represents various forms of accessing or representing a data contract.
 /// This enum is used to handle different scenarios in which data contracts
 /// might be needed, providing a unified interface to access their data.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum DataContractInfo<'a> {
     /// A unique identifier for a data contract. This variant is typically used
@@ -89,6 +90,7 @@ impl<'a> DataContractInfo<'a> {
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractOwnedResolvedInfo {
     #[cfg(feature = "server")]
@@ -143,6 +145,7 @@ impl DataContractOwnedResolvedInfo {
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractResolvedInfo<'a> {
     #[cfg(feature = "server")]

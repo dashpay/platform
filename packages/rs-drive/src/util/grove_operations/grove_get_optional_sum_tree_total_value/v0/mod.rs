@@ -57,7 +57,7 @@ impl Drive {
                     &drive_version.grove_version,
                 );
                 drive_operations.push(CalculatedCostOperation(cost));
-                let Some(element) = value.map_err(Error::GroveDB)? else {
+                let Some(element) = value.map_err(Error::from)? else {
                     return Ok(None);
                 };
                 match element {

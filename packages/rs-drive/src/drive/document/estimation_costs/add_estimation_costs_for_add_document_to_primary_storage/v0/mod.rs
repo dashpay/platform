@@ -39,7 +39,7 @@ impl Drive {
     /// * `document_and_contract_info`: Information about the document and its associated contract.
     /// * `primary_key_path`: Key path where the document should be stored in primary storage.
     /// * `estimated_costs_only_with_layer_info`: A mutable reference to a hashmap where the estimated layer
-    ///    information will be stored for the given key path.
+    ///   information will be stored for the given key path.
     /// * `platform_version`: Version of the platform being used, potentially affecting some estimates.
     ///
     /// # Returns

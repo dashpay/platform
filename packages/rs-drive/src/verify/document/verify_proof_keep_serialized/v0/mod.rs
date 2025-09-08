@@ -49,7 +49,7 @@ impl DriveDocumentQuery<'_> {
         let documents = proved_key_values
             .into_iter()
             .filter_map(|(_path, _key, element)| element)
-            .map(|element| element.into_item_bytes().map_err(Error::GroveDB))
+            .map(|element| element.into_item_bytes().map_err(Error::from))
             .collect::<Result<Vec<Vec<u8>>, Error>>()?;
         Ok((root_hash, documents))
     }

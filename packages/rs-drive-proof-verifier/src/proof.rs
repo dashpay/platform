@@ -421,7 +421,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
             .map_err(|e| match e {
                 drive::error::Error::GroveDB(e) => {
                     // If InvalidProof error is returned, extract the path query from it
-                    let maybe_query = match &e {
+                    let maybe_query = match e.as_ref() {
                         GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
                         _ => None,
                     };

@@ -25,7 +25,12 @@ impl SingleKeySigner {
     }
 
     pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
-        let private_key = PrivateKey::from_slice(private_key_data, network)
+        if private_key_data.len() != 32 {
+            return Err("Private key must be 32 bytes".to_string());
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(private_key_data);
+        let private_key = PrivateKey::from_byte_array(&arr, network)
             .map_err(|e| format!("Invalid private key: {}", e))?;
         Ok(Self { private_key })
     }
@@ -43,7 +48,9 @@ impl SingleKeySigner {
             return Err("Private key must be 32 bytes".to_string());
         }
 
-        let private_key = PrivateKey::from_slice(&key_bytes, network)
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&key_bytes);
+        let private_key = PrivateKey::from_byte_array(&arr, network)
             .map_err(|e| format!("Invalid private key bytes: {}", e))?;
 
         Ok(Self { private_key })
@@ -143,44 +150,45 @@ mod tests {
     use dashcore::Network;
 
     #[test]
-    fn test_single_key_signer_from_wif() {
+    fn test_single_key_signer_from_wif() -> Result<(), String> {
         // Create a valid testnet WIF
-        let private_key = PrivateKey::from_slice(
-            &[0x01; 32], // Valid 32-byte private key
-            Network::Testnet,
-        )
-        .unwrap();
+        let private_key = PrivateKey::from_byte_array(&[0x01; 32], Network::Testnet)
+            .map_err(|e| format!("failed to create test key: {}", e))?;
         let wif = private_key.to_wif();
 
-        let signer = SingleKeySigner::new(&wif).unwrap();
+        let signer =
+            SingleKeySigner::new(&wif).map_err(|e| format!("signer init failed: {}", e))?;
         assert!(signer.private_key().to_wif().starts_with('c')); // Testnet WIF
         assert_eq!(signer.private_key().to_wif(), wif);
+        Ok(())
     }
 
     #[test]
-    fn test_single_key_signer_from_hex() {
+    fn test_single_key_signer_from_hex() -> Result<(), String> {
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let signer = SingleKeySigner::from_hex(hex, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_hex(hex, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
+        Ok(())
     }
 
     #[test]
-    fn test_single_key_signer_auto_detect() {
+    fn test_single_key_signer_auto_detect() -> Result<(), String> {
         // Test hex detection
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let signer = SingleKeySigner::from_string(hex, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_string(hex, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
 
         // Test WIF detection
-        let private_key = PrivateKey::from_slice(
-            &[0x02; 32], // Valid 32-byte private key
-            Network::Testnet,
-        )
-        .unwrap();
+        let private_key = PrivateKey::from_byte_array(&[0x02; 32], Network::Testnet)
+            .map_err(|e| format!("failed to create test key: {}", e))?;
         let wif = private_key.to_wif();
 
-        let signer = SingleKeySigner::from_string(&wif, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_string(&wif, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert!(signer.private_key().to_wif().starts_with('c'));
         assert_eq!(signer.private_key().to_wif(), wif);
+        Ok(())
     }
 }

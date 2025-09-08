@@ -17,7 +17,7 @@ impl Drive {
         change_in_bytes: i32,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
     ) -> Result<(), Error> {
-        let serialized_identity_key = identity_key.serialize_to_bytes().map_err(Error::Protocol)?;
+        let serialized_identity_key = identity_key.serialize_to_bytes().map_err(Error::from)?;
         // Now lets insert the public key
         let identity_key_tree = identity_key_tree_path_vec(identity_id);
 
