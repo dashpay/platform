@@ -215,11 +215,11 @@ impl DocumentTypeV1 {
 
         #[cfg(feature = "validation")]
         if full_validation {
-            validation_operations.push(
+            validation_operations.extend(std::iter::once(
                 ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
                 ),
-            );
+            ));
 
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
