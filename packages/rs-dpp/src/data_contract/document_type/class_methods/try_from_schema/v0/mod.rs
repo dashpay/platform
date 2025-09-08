@@ -61,8 +61,6 @@ impl DocumentTypeV0 {
     // TODO: Split into multiple functions
     #[allow(unused_variables)]
     #[allow(clippy::too_many_arguments)]
-    #[allow(clippy::ptr_arg)]
-    #[allow(clippy::unnecessary_operation)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
         name: &str,
@@ -70,7 +68,7 @@ impl DocumentTypeV0 {
         schema_defs: Option<&BTreeMap<String, Value>>,
         data_contact_config: &DataContractConfig,
         full_validation: bool, // we don't need to validate if loaded from state
-        validation_operations: &mut Vec<ProtocolValidationOperation>,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -84,9 +82,7 @@ impl DocumentTypeV0 {
         if full_validation {
             // TODO we are silently dropping this error when we shouldn't be
             // but returning this error causes tests to fail; investigate more.
-            ProtocolError::CorruptedCodeExecution(
-                "validation is not enabled but is being called on try_from_schema".to_string(),
-            );
+            "validation is not enabled but is being called on try_from_schema".to_string();
         }
 
         #[cfg(feature = "validation")]
@@ -114,18 +110,18 @@ impl DocumentTypeV0 {
 
                 let schema_size = result.into_data()?.size;
 
-                validation_operations.push(
+                validation_operations.extend(std::iter::once(
                     ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-                );
+                ));
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
 
             let schema_size = result.into_data()?.size;
 
-            validation_operations.push(
+            validation_operations.extend(std::iter::once(
                 ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-            );
+            ));
 
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
@@ -202,11 +198,11 @@ impl DocumentTypeV0 {
 
         #[cfg(feature = "validation")]
         if full_validation {
-            validation_operations.push(
+            validation_operations.extend(std::iter::once(
                 ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
                 ),
-            );
+            ));
 
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
@@ -304,12 +300,12 @@ impl DocumentTypeV0 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            validation_operations.push(
+                            validation_operations.extend(std::iter::once(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
                                     index.unique,
                                 ),
-                            );
+                            ));
 
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
