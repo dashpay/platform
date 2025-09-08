@@ -26,7 +26,8 @@ use {
         },
         document::{
             document_methods::DocumentMethodsV0,
-            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
+            Document, DocumentV0Getters,
+            serialization_traits::DocumentPlatformConversionMethodsV0,
         },
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
         version::PlatformVersion,

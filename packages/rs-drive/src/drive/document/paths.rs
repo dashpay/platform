@@ -1,7 +1,11 @@
 use crate::drive::{constants, RootTree};
+#[cfg(feature = "server")]
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;

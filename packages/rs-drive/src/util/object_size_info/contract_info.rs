@@ -26,6 +26,7 @@ use std::sync::Arc;
 /// might be needed, providing a unified interface to access their data.
 #[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
+#[cfg(feature = "server")]
 pub enum DataContractInfo<'a> {
     /// A unique identifier for a data contract. This variant is typically used
     /// when only the identity of the data contract is required without needing
@@ -47,6 +48,7 @@ pub enum DataContractInfo<'a> {
     OwnedDataContract(DataContract),
 }
 
+#[cfg(feature = "server")]
 impl<'a> DataContractInfo<'a> {
     #[cfg(feature = "server")]
     /// Resolve the data contract info into an object that contains the data contract
@@ -210,6 +212,7 @@ impl AsRef<DataContract> for DataContractResolvedInfo<'_> {
 /// Enumerates methods for identifying or referencing document types, accommodating various application needs.
 #[allow(clippy::enum_variant_names)]
 #[derive(Clone, Debug)]
+#[cfg(feature = "server")]
 pub enum DocumentTypeInfo<'a> {
     /// Contains the document type name as an owned `String`, suitable for dynamic or mutable scenarios.
     DocumentTypeName(String),
@@ -221,6 +224,7 @@ pub enum DocumentTypeInfo<'a> {
     DocumentTypeRef(DocumentTypeRef<'a>),
 }
 
+#[cfg(feature = "server")]
 impl<'a> DocumentTypeInfo<'a> {
     /// Resolve the data contract info into an object that contains the data contract
     pub fn resolve(self, contract: &'a DataContract) -> Result<DocumentTypeRef<'a>, ProtocolError> {

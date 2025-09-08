@@ -20,6 +20,7 @@ use dpp::prelude::DataContract;
 use dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 #[cfg(feature = "server")]
 use grovedb::TransactionArg;
+#[cfg(feature = "server")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "server")]
 use std::sync::Arc;
