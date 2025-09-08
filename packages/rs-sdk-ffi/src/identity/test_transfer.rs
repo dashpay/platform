@@ -15,6 +15,11 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Test function to diagnose the transfer crash
+///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, any heap memory in the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_test_identity_transfer_crash(
     sdk_handle: *const SDKHandle,

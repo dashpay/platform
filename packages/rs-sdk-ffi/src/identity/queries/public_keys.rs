@@ -12,6 +12,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Fetch identity public keys
 ///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `identity_id`: Base58-encoded identity ID

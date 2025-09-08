@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception, dead_code)]
 pub mod test_utils {
     use crate::sdk::SDKWrapper;
     use crate::signer::VTableSigner;

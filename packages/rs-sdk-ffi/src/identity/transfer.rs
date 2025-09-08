@@ -33,6 +33,12 @@ pub struct DashSDKTransferCreditsResult {
 ///
 /// # Returns
 /// DashSDKTransferCreditsResult with sender and receiver final balances on success
+///
+/// # Safety
+/// - `sdk_handle`, `from_identity_handle`, `to_identity_id`, and `signer_handle` must be valid, non-null pointers.
+/// - `to_identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+/// - On success, any heap memory included in the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
     sdk_handle: *mut SDKHandle,
@@ -293,6 +299,10 @@ pub unsafe extern "C" fn dash_sdk_identity_transfer_credits(
 }
 
 /// Free a transfer credits result structure
+///
+/// # Safety
+/// - `result` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `result` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_transfer_credits_result_free(
     result: *mut DashSDKTransferCreditsResult,

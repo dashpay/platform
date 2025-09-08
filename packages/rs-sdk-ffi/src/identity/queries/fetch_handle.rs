@@ -26,6 +26,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// # Returns
 /// - Handle to the fetched identity on success
 /// - Error if fetch fails or identity not found
+///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_fetch_handle(
     sdk_handle: *const SDKHandle,

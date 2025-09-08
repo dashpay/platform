@@ -1,7 +1,7 @@
 //! System queries module
 
-pub mod queries;
-pub mod status;
+mod queries;
+mod status;
 
 // Re-export all query functions
 pub use queries::*;

@@ -129,6 +129,7 @@ pub unsafe extern "C" fn dash_unified_sdk_start(handle: *mut UnifiedSDKHandle) -
         return -1;
     }
 
+    #[cfg(feature = "core")]
     let handle = &*handle;
 
     // Start Core SDK if available
@@ -156,6 +157,7 @@ pub unsafe extern "C" fn dash_unified_sdk_stop(handle: *mut UnifiedSDKHandle) ->
         return -1;
     }
 
+    #[cfg(feature = "core")]
     let handle = &*handle;
 
     // Stop Core SDK if available

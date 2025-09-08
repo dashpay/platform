@@ -59,6 +59,12 @@ impl DashSDKDataContractFetchResult {
 }
 
 /// Fetch a data contract by ID with serialization
+///
+/// # Safety
+/// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+/// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - The returned result contains heap-allocated buffers/handles depending on flags; caller must free them using
+///   `dash_sdk_data_contract_fetch_result_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
     sdk_handle: *const SDKHandle,
@@ -148,6 +154,10 @@ pub unsafe extern "C" fn dash_sdk_data_contract_fetch_with_serialization(
 }
 
 /// Free the memory allocated for a data contract fetch result
+///
+/// # Safety
+/// - `result` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `result` and all contained pointers become invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch_result_free(
     result: *mut DashSDKDataContractFetchResult,

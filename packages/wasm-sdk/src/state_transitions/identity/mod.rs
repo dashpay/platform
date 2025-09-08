@@ -1015,7 +1015,11 @@ impl WasmSdk {
             if key_bytes.len() != 32 {
                 return Err(JsValue::from_str("Private key must be 32 bytes"));
             }
-            PrivateKey::from_slice(&key_bytes, self.network())
+            let key_array: [u8; 32] = key_bytes
+                .as_slice()
+                .try_into()
+                .map_err(|_| JsValue::from_str("Private key must be 32 bytes"))?;
+            PrivateKey::from_byte_array(&key_array, self.network())
                 .map_err(|e| JsValue::from_str(&format!("Invalid private key bytes: {}", e)))?
         } else {
             // Try WIF

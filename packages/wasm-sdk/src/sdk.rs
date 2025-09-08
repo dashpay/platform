@@ -786,7 +786,7 @@ pub async fn identity_put(sdk: &WasmSdk) {
 
     let asset_lock_proof = AssetLockProof::default();
     let asset_lock_proof_private_key =
-        PrivateKey::from_slice(&[0; 32], Network::Testnet).expect("create private key");
+        PrivateKey::from_byte_array(&[0; 32], Network::Testnet).expect("create private key");
 
     let signer = MockSigner;
     let _pushed: Identity = identity

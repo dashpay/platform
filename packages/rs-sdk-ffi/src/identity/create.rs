@@ -7,6 +7,12 @@ use crate::types::{DashSDKResultDataType, IdentityHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Create a new identity
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated handle that must be freed using the
+///   appropriate SDK destroy function.
+/// - Passing a dangling or invalid pointer results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_create(sdk_handle: *mut SDKHandle) -> DashSDKResult {
     if sdk_handle.is_null() {

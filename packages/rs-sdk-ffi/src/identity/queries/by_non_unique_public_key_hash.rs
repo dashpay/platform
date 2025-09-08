@@ -20,6 +20,12 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing the identity information, or null if not found
+///
+/// # Safety
+/// - `sdk_handle` and `public_key_hash` must be valid, non-null pointers.
+/// - `public_key_hash` must point to a NUL-terminated C string. `start_after` may be null; if non-null it must be a valid
+///   pointer to a NUL-terminated C string.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_fetch_by_non_unique_public_key_hash(
     sdk_handle: *const SDKHandle,

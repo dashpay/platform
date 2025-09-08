@@ -8,6 +8,11 @@ use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel
 use simple_signer::SingleKeySigner;
 
 /// Create a signer from a private key
+///
+/// # Safety
+/// - `private_key` must be a valid pointer to at least 32 readable bytes.
+/// - The function reads exactly `private_key_len` bytes; it must be 32.
+/// - The returned handle inside DashSDKResult must be freed using the appropriate SDK destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_create_from_private_key(
     private_key: *const u8,
@@ -58,6 +63,11 @@ pub struct DashSDKSignature {
 }
 
 /// Sign data with a signer
+///
+/// # Safety
+/// - `signer_handle` must be a valid pointer obtained from this SDK and not previously destroyed.
+/// - `data` must be a valid pointer to `data_len` readable bytes.
+/// - The returned signature pointer inside DashSDKResult must be freed with `dash_sdk_signature_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_sign(
     signer_handle: *mut SignerHandle,
@@ -118,6 +128,10 @@ pub unsafe extern "C" fn dash_sdk_signer_sign(
 }
 
 /// Free a signature
+///
+/// # Safety
+/// - `signature` must be a valid pointer returned by this SDK, or null for no-op.
+/// - After this call the pointer must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signature_free(signature: *mut DashSDKSignature) {
     if !signature.is_null() {

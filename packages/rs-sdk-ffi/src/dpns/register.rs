@@ -26,11 +26,9 @@ pub struct DpnsRegistrationResult {
 /// It generates the necessary entropy, creates both documents, and submits them in order.
 ///
 /// # Safety
-/// - `handle` must be a valid SDK handle
-/// - `label` must be a valid null-terminated C string
-/// - `identity` must be a valid identity handle
-/// - `identity_public_key` must be a valid identity public key handle  
-/// - `signer` must be a valid signer handle
+/// - `handle` must be a valid, non-null SDK handle pointer.
+/// - `label` must be a valid pointer to a NUL-terminated C string that remains valid for the duration of the call.
+/// - `identity`, `identity_public_key`, and `signer` must be valid handles (as raw pointers) obtained from this SDK and not previously freed; they are not consumed by this call.
 ///
 /// # Returns
 /// Returns a DpnsRegistrationResult containing both created documents and the full domain name

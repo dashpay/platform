@@ -3,15 +3,18 @@
 //! These are temporary stubs for testing compilation.
 //! In production, these symbols would be provided by linking against the Core SDK library.
 
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 use std::ffi::c_char;
 
 // Local test-only definitions for stubs
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 #[repr(C)]
 pub struct FFIResult {
     pub error_code: i32,
     pub error_message: *const c_char,
 }
 
+#[cfg(all(test, feature = "ffi_core_stubs", not(feature = "dash_spv")))]
 type FFIDashSpvClient = std::ffi::c_void;
 
 // Only compile stubs for tests when explicitly enabled AND dash-spv FFI is not linked.

@@ -12,6 +12,11 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Fetch an identity by ID
+///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string.
+/// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_fetch(
     sdk_handle: *const SDKHandle,

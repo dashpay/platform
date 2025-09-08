@@ -19,7 +19,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer.
+/// - `start_after` and `start_at` may be null; when non-null they must point to NUL-terminated C strings with hex-encoded 32-byte hashes.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
     sdk_handle: *const SDKHandle,

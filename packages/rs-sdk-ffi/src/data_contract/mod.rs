@@ -1,7 +1,7 @@
 //! Data contract operations
 
 mod put;
-pub mod queries;
+mod queries;
 mod util;
 
 use std::ffi::CStr;
@@ -32,6 +32,11 @@ pub struct DashSDKDataContractInfo {
 }
 
 /// Create a new data contract
+///
+/// # Safety
+/// - `sdk_handle`, `owner_identity_handle`, and `documents_schema_json` must be valid, non-null pointers.
+/// - `documents_schema_json` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_create(
     sdk_handle: *mut SDKHandle,
@@ -112,6 +117,10 @@ pub unsafe extern "C" fn dash_sdk_data_contract_create(
 }
 
 /// Destroy a data contract handle
+///
+/// # Safety
+/// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `handle` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_destroy(handle: *mut DataContractHandle) {
     if !handle.is_null() {

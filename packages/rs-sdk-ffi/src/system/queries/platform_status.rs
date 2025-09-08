@@ -10,6 +10,9 @@ use std::ffi::CString;
 use std::os::raw::c_void;
 
 /// Get platform status including block heights
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - The returned C string pointer (on success) must be freed by the caller using the SDK's free routine.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_platform_status(
     sdk_handle: *const SDKHandle,

@@ -4,9 +4,8 @@ use crate::sdk::SDKWrapper;
 use crate::types::{DashSDKResultDataType, DocumentHandle, SDKHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dash_sdk::dpp::document::{Document, DocumentV0};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+// identity getters not used here
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::platform_value::Value;
 use dash_sdk::dpp::prelude::Identifier;
@@ -55,6 +54,15 @@ pub struct DashSDKDocumentHandleParams {
 }
 
 /// Create a new document
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `params` must be a valid, non-null pointer to a `DashSDKDocumentCreateParams` structure.
+/// - All C string fields inside `params` (`data_contract_id`, `document_type`, `owner_identity_id`, `properties_json`)
+///   must be valid pointers to NUL-terminated strings and remain valid for the duration of the call.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be freed by the caller
+///   using the appropriate SDK destroy function.
+/// - Passing dangling or invalid pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_create(
     sdk_handle: *mut SDKHandle,
@@ -198,6 +206,10 @@ pub unsafe extern "C" fn dash_sdk_document_create(
 }
 
 /// Free a document creation result
+///
+/// # Safety
+/// - `result` must be either null (no-op) or a pointer previously returned by this SDK.
+/// - After this call, `result` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_create_result_free(
     result: *mut DashSDKDocumentCreateResult,
@@ -209,6 +221,14 @@ pub unsafe extern "C" fn dash_sdk_document_create_result_free(
 
 /// Create a document handle from parameters
 /// This creates a Document object directly without broadcasting to the network
+///
+/// # Safety
+/// - `params` must be a valid, non-null pointer to a `DashSDKDocumentHandleParams` structure.
+/// - All C string fields inside `params` must be valid pointers to NUL-terminated strings and remain valid
+///   for the duration of the call.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated `DocumentHandle` which must be freed by the caller
+///   using the appropriate SDK destroy function.
+/// - Passing dangling or invalid pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_make_handle(
     params: *const DashSDKDocumentHandleParams,

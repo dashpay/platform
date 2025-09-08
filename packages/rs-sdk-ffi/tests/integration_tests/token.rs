@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 //! Token tests for rs-sdk-ffi
 
 use crate::config::Config;

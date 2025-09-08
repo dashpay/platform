@@ -42,6 +42,7 @@ impl SDKWrapper {
         }
     }
 
+    #[allow(dead_code)]
     fn new_with_trusted_provider(
         sdk: Sdk,
         runtime: Runtime,
@@ -89,6 +90,10 @@ fn init_or_get_runtime() -> Result<Arc<Runtime>, String> {
 }
 
 /// Create a new SDK instance
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSDKResult {
     if config.is_null() {
@@ -170,6 +175,11 @@ pub unsafe extern "C" fn dash_sdk_create(config: *const DashSDKConfig) -> DashSD
 }
 
 /// Create a new SDK instance with extended configuration including context provider
+///
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfigExtended structure for the duration of the call.
+/// - Any embedded pointers (context_provider/core_sdk_handle) must be valid when non-null.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_create_extended(
     config: *const DashSDKConfigExtended,
@@ -284,6 +294,9 @@ pub unsafe extern "C" fn dash_sdk_create_extended(
 ///
 /// # Safety
 /// - `config` must be a valid pointer to a DashSDKConfig structure
+/// # Safety
+/// - `config` must be a valid pointer to a DashSDKConfig structure for the duration of the call.
+/// - The returned handle inside `DashSDKResult` must be destroyed using the SDK destroy function to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -> DashSDKResult {
     if config.is_null() {
@@ -501,6 +514,9 @@ pub unsafe extern "C" fn dash_sdk_create_trusted(config: *const DashSDKConfig) -
 }
 
 /// Destroy an SDK instance
+/// # Safety
+/// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
+/// - It may be null (no-op). After this call the handle must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_destroy(handle: *mut SDKHandle) {
     if !handle.is_null() {
@@ -586,6 +602,9 @@ pub unsafe extern "C" fn dash_sdk_create_with_callbacks(
 }
 
 /// Get the current network the SDK is connected to
+///
+/// # Safety
+/// - `handle` must be a valid pointer to an SDKHandle (or null, in which case a default is returned).
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_network(handle: *const SDKHandle) -> DashSDKNetwork {
     if handle.is_null() {
@@ -674,7 +693,7 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
 
     // Deserialize and add contracts
     let mut contracts = Vec::new();
-    for i in 0..contract_count {
+    for (i, id) in ids.iter().take(contract_count).enumerate() {
         let contract_data =
             std::slice::from_raw_parts(*serialized_contracts.add(i), *contract_lengths.add(i));
 
@@ -686,14 +705,14 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
             platform_version,
         ) {
             Ok(contract) => {
-                eprintln!("✅ Successfully deserialized contract: {}", ids[i]);
+                eprintln!("✅ Successfully deserialized contract: {}", id);
                 contracts.push(contract);
             }
             Err(e) => {
-                eprintln!("❌ Failed to deserialize contract {}: {}", ids[i], e);
+                eprintln!("❌ Failed to deserialize contract {}: {}", id, e);
                 return DashSDKResult::error(DashSDKError::new(
                     DashSDKErrorCode::SerializationError,
-                    format!("Failed to deserialize contract {}: {}", ids[i], e),
+                    format!("Failed to deserialize contract {}: {}", id, e),
                 ));
             }
         }
@@ -711,6 +730,10 @@ pub unsafe extern "C" fn dash_sdk_add_known_contracts(
 }
 
 /// Create a mock SDK instance with a dump directory (for offline testing)
+///
+/// # Safety
+/// - `dump_dir` must be either null (no dumps) or a valid pointer to a NUL-terminated C string readable for the duration of the call.
+/// - The returned handle must be destroyed using the SDK destroy function to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_create_handle_with_mock(
     dump_dir: *const std::os::raw::c_char,

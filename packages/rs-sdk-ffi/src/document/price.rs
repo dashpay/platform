@@ -21,6 +21,13 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// Update document price (broadcast state transition)
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `document_handle`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle`
+///   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
     sdk_handle: *mut SDKHandle,
@@ -158,6 +165,11 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
 }
 
 /// Update document price and wait for confirmation (broadcast state transition and wait for response)
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_update_price_of_document` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
     sdk_handle: *mut SDKHandle,

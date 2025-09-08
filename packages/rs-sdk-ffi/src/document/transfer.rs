@@ -1,6 +1,5 @@
 //! Document transfer operations
 
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
@@ -35,6 +34,12 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// Serialized state transition on success
+///
+/// # Safety
+/// - `sdk_handle`, `document_handle`, `recipient_id`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle` must be valid, non-null pointers.
+/// - All C string pointers must point to NUL-terminated strings valid for the duration of the call.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, any heap memory in the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
     sdk_handle: *mut SDKHandle,
@@ -201,6 +206,11 @@ pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity(
 ///
 /// # Returns
 /// Handle to the transferred document on success
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_transfer_to_identity` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_transfer_to_identity_and_wait(
     sdk_handle: *mut SDKHandle,
@@ -402,7 +412,7 @@ mod tests {
     #[test]
     fn test_transfer_with_null_sdk_handle() {
         let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -451,7 +461,7 @@ mod tests {
     #[test]
     fn test_transfer_with_null_document() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -498,7 +508,7 @@ mod tests {
     fn test_transfer_with_null_recipient_id() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -546,7 +556,7 @@ mod tests {
     fn test_transfer_with_invalid_recipient_id() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -643,7 +653,7 @@ mod tests {
     fn test_transfer_with_null_document_type_name() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -691,7 +701,7 @@ mod tests {
     fn test_transfer_and_wait_with_null_parameters() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 

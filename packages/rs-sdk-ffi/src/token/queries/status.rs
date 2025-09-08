@@ -20,6 +20,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing token IDs mapped to their status information
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `token_ids` must be a valid pointer to a NUL-terminated C string containing comma-separated IDs.
+/// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_get_statuses(
     sdk_handle: *const SDKHandle,

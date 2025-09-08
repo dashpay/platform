@@ -189,6 +189,7 @@ pub unsafe fn assert_success_none(result: DashSDKResult) {
 }
 
 /// Test helper to assert that a result is an error
+#[allow(dead_code)]
 pub unsafe fn assert_error(result: DashSDKResult) {
     assert!(
         parse_string_result(result).is_err(),

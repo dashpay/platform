@@ -1,7 +1,6 @@
 //! Dash Unified SDK FFI bindings
-#![allow(ambiguous_glob_reexports)]
-#![allow(hidden_glob_reexports)]
-#![allow(unexpected_cfgs)]
+#![allow(clippy::result_large_err)]
+#![allow(clippy::large_enum_variant)]
 //!
 //! This crate provides C-compatible FFI bindings for both Dash Core (SPV) and Platform SDKs,
 //! enabling cross-platform applications to interact with the complete Dash ecosystem through C interfaces.
@@ -59,7 +58,7 @@ pub use voting::*;
 
 // Re-export all Core SDK functions and types for unified access when linked
 #[cfg(feature = "dash_spv")]
-pub use dash_spv_ffi::*;
+pub use dash_spv_ffi as core_ffi;
 
 /// Initialize the FFI library.
 /// This should be called once at app startup before using any other functions.

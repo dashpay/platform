@@ -19,6 +19,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing the last claim information
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `token_id` and `identity_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+/// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function to avoid memory leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     sdk_handle: *const SDKHandle,

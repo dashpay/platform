@@ -27,6 +27,12 @@ use tracing::{debug, error, info, warn};
 ///
 /// # Returns
 /// The new balance of the identity after withdrawal
+///
+/// # Safety
+/// - `sdk_handle`, `identity_handle`, `address`, and `signer_handle` must be valid, non-null pointers.
+/// - `address` must point to a NUL-terminated C string valid for the duration of the call.
+/// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_withdraw(
     sdk_handle: *mut SDKHandle,

@@ -31,6 +31,12 @@ pub enum StateTransitionType {
 /// # Returns
 /// - Handle to the identity public key on success
 /// - Error if no suitable key is found
+///
+/// # Safety
+/// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be destroyed with the SDK's
+///   corresponding destroy function.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
     identity_handle: *const IdentityHandle,
@@ -109,11 +115,17 @@ pub unsafe extern "C" fn dash_sdk_identity_get_signing_key_for_transition(
 /// # Returns
 /// - 32-byte private key data on success
 /// - Error if key not found or not accessible
+///
+/// # Safety
+/// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle`.
+/// - This function returns its result inside `DashSDKResult`; any heap pointers within must be freed using SDK routines.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_get_transfer_private_key(
     identity_handle: *const IdentityHandle,
     key_index: u32,
 ) -> DashSDKResult {
+    let _ = (identity_handle, key_index);
     // TODO: This is a placeholder implementation
     // In a real implementation, this would:
     // 1. Verify the caller has access to the private keys
@@ -128,6 +140,10 @@ pub unsafe extern "C" fn dash_sdk_identity_get_transfer_private_key(
 }
 
 /// Get the key ID from an identity public key
+///
+/// # Safety
+/// - `key_handle` must be a valid, non-null pointer to an `IdentityPublicKeyHandle`.
+/// - Returns 0 if the pointer is null.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_public_key_get_id(
     key_handle: *const IdentityPublicKeyHandle,
@@ -158,6 +174,12 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_get_id(
 /// # Returns
 /// - Handle to the identity public key on success
 /// - Error if parameters are invalid
+///
+/// # Safety
+/// - `public_key_data` must be a valid, non-null pointer to a buffer of `public_key_data_len` readable bytes.
+/// - All scalar parameters are passed by value.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
     key_id: u32,
@@ -251,6 +273,11 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_create_from_data(
 
 /// Serialize an identity public key to bytes
 /// Returns the serialized bytes and their length
+///
+/// # Safety
+/// - `key_handle` must be a valid, non-null pointer to an `IdentityPublicKeyHandle`.
+/// - `out_bytes` and `out_len` must be valid, non-null pointers to writable memory.
+/// - Caller must free the returned buffer with the appropriate SDK-provided free function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_public_key_to_bytes(
     key_handle: *const IdentityPublicKeyHandle,
@@ -285,6 +312,10 @@ pub unsafe extern "C" fn dash_sdk_identity_public_key_to_bytes(
 }
 
 /// Free an identity public key handle
+///
+/// # Safety
+/// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `handle` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_public_key_destroy(
     handle: *mut IdentityPublicKeyHandle,

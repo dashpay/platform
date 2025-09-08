@@ -6,6 +6,14 @@ use dash_sdk::dpp::identity::KeyType;
 use std::ffi::{c_char, CStr};
 
 /// Validate that a private key corresponds to a public key using DPP's public_key_data_from_private_key_data
+///
+/// # Safety
+/// - `private_key_hex` and `public_key_hex` must be valid, non-null pointers to NUL-terminated C strings that
+///   remain valid for the duration of the call.
+/// - `key_type` and `is_testnet` are passed by value; no references are retained.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+///   the SDK's free routine. It may also return no data (null pointer) to indicate success without payload.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
     private_key_hex: *const c_char,
@@ -115,6 +123,13 @@ pub unsafe extern "C" fn dash_sdk_validate_private_key_for_public_key(
 }
 
 /// Convert private key to WIF format
+///
+/// # Safety
+/// - `private_key_hex` must be a valid, non-null pointer to a NUL-terminated C string representing a 32-byte hex key
+///   and remain valid for the duration of the call.
+/// - `is_testnet` is passed by value.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+///   the SDK's free routine.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
     private_key_hex: *const c_char,
@@ -161,7 +176,9 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
         Network::Dash
     };
 
-    match dash_sdk::dpp::dashcore::PrivateKey::from_slice(&private_key_bytes, network) {
+    let mut key_array = [0u8; 32];
+    key_array.copy_from_slice(&private_key_bytes);
+    match dash_sdk::dpp::dashcore::PrivateKey::from_byte_array(&key_array, network) {
         Ok(private_key) => {
             let wif = private_key.to_wif();
             match std::ffi::CString::new(wif) {
@@ -180,6 +197,13 @@ pub unsafe extern "C" fn dash_sdk_private_key_to_wif(
 }
 
 /// Get public key data from private key data
+///
+/// # Safety
+/// - `private_key_hex` must be a valid, non-null pointer to a NUL-terminated C string representing a 32-byte hex key
+///   and remain valid for the duration of the call.
+/// - `key_type` and `is_testnet` are passed by value; no references are retained.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated C string pointer which must be freed using
+///   the SDK's free routine.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_public_key_data_from_private_key_data(
     private_key_hex: *const c_char,

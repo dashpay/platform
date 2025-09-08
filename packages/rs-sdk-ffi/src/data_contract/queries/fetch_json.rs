@@ -8,6 +8,11 @@ use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
 
 /// Fetch a data contract by ID and return as JSON
+///
+/// # Safety
+/// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+/// - `contract_id` must point to a NUL-terminated C string that remains valid for the duration of the call.
+/// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch_json(
     sdk_handle: *const SDKHandle,

@@ -17,6 +17,13 @@ use std::ffi::CStr;
 use std::sync::Arc;
 
 /// Unfreeze a token for an identity and wait for confirmation
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `transition_owner_id` must point to at least 32 readable bytes.
+/// - `params`, `identity_public_key_handle`, and `signer_handle` must be valid pointers to initialized structures.
+/// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - Caller must free any returned heap memory from the result using SDK free routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_unfreeze(
     sdk_handle: *mut SDKHandle,

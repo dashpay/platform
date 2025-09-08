@@ -22,6 +22,14 @@ use crate::types::{
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Put document to platform (broadcast state transition)
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `document_handle`, `data_contract_id`, `document_type_name`, `entropy`, `identity_public_key_handle`, and `signer_handle`
+///   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
+/// - All pointers must reference readable memory for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
     sdk_handle: *mut SDKHandle,
@@ -189,6 +197,11 @@ pub unsafe extern "C" fn dash_sdk_document_put_to_platform(
 }
 
 /// Put document to platform and wait for confirmation (broadcast state transition and wait for response)
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_put_to_platform` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_put_to_platform_and_wait(
     sdk_handle: *mut SDKHandle,
@@ -461,7 +474,7 @@ mod tests {
     #[test]
     fn test_put_with_null_document() {
         let sdk_handle = create_mock_sdk_handle();
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -509,7 +522,7 @@ mod tests {
     fn test_put_with_null_entropy() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document_with_revision(1);
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -559,7 +572,7 @@ mod tests {
         // Test that revision 1 documents use DocumentCreateTransitionBuilder
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document_with_revision(1);
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -617,7 +630,7 @@ mod tests {
         // Test that revision > 1 documents use DocumentReplaceTransitionBuilder
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document_with_revision(2);
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 
@@ -674,7 +687,7 @@ mod tests {
     fn test_put_and_wait_with_null_parameters() {
         let sdk_handle = create_mock_sdk_handle();
         let document = create_mock_document_with_revision(1);
-        let data_contract = create_mock_data_contract();
+        // create_mock_data_contract() not needed here
         let identity_public_key = create_mock_identity_public_key();
         let signer = create_mock_signer();
 

@@ -8,6 +8,11 @@ use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 
 /// Get SDK status including mode and quorum count
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - The returned C string pointer inside DashSDKResult (on success) must be freed by the caller
+///   using the SDK's free routine to avoid memory leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_get_status(sdk_handle: *const SDKHandle) -> DashSDKResult {
     tracing::info!("dash_sdk_get_status: called");

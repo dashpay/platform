@@ -11,6 +11,12 @@ use crate::types::{DashSDKPutSettings, DashSDKResultDataType, IdentityHandle, SD
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Top up an identity with credits using instant lock proof
+///
+/// # Safety
+/// - `sdk_handle`, `identity_handle`, `instant_lock_bytes`, `transaction_bytes`, and `private_key` must be valid, non-null pointers.
+/// - Buffer pointers must reference at least the specified lengths.
+/// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+/// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock(
     sdk_handle: *mut SDKHandle,
@@ -80,6 +86,11 @@ pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock(
 }
 
 /// Top up an identity with credits using instant lock proof and wait for confirmation
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_identity_topup_with_instant_lock`.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_topup_with_instant_lock_and_wait(
     sdk_handle: *mut SDKHandle,

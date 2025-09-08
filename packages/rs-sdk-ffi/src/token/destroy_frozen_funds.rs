@@ -20,6 +20,13 @@ use std::ffi::CStr;
 use std::sync::Arc;
 
 /// Destroy frozen token funds and wait for confirmation
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `transition_owner_id` must point to at least 32 readable bytes.
+/// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+/// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - The function may allocate and return heap memory via the DashSDKResult; caller must free it using SDK free routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_destroy_frozen_funds(
     sdk_handle: *mut SDKHandle,

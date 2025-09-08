@@ -55,7 +55,7 @@ unsafe extern "C" fn bridge_get_platform_activation_height(
         return CallbackResult {
             success: false,
             error_code: -1,
-            error_message: "Invalid handle or output pointer\0".as_ptr() as *const i8,
+            error_message: c"Invalid handle or output pointer".as_ptr(),
         };
     }
 
@@ -80,7 +80,7 @@ unsafe extern "C" fn bridge_get_platform_activation_height(
         CallbackResult {
             success: false,
             error_code: result,
-            error_message: "Failed to get platform activation height\0".as_ptr() as *const i8,
+            error_message: c"Failed to get platform activation height".as_ptr(),
         }
     }
 }
@@ -104,7 +104,7 @@ unsafe extern "C" fn bridge_get_quorum_public_key(
         return CallbackResult {
             success: false,
             error_code: -1,
-            error_message: "Invalid handle or pointer parameters\0".as_ptr() as *const i8,
+            error_message: c"Invalid handle or pointer parameters".as_ptr(),
         };
     }
 
@@ -139,7 +139,7 @@ unsafe extern "C" fn bridge_get_quorum_public_key(
         CallbackResult {
             success: false,
             error_code: result,
-            error_message: "Failed to get quorum public key\0".as_ptr() as *const i8,
+            error_message: c"Failed to get quorum public key".as_ptr(),
         }
     }
 }
