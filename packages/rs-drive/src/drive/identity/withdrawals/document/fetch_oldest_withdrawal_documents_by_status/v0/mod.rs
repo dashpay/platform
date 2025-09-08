@@ -443,10 +443,6 @@ mod tests {
                 .as_u64()
                 .expect("status should be a number") as u8;
 
-            if status == withdrawals_contract::WithdrawalStatus::QUEUED as u8 {
-                // intentionally no-op: counts only used for debugging
-            }
-
             let mut properties: Value = doc_value.clone().into();
 
             // Handle outputScript separately (it's base64 encoded)
@@ -493,10 +489,6 @@ mod tests {
                 Some(&transaction),
             );
         }
-
-        // println!(
-        //     "Total documents: printed only when debugging",
-        // );
 
         // Test the new function that fetches all documents grouped by status
         let documents_by_status = drive
