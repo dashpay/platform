@@ -17,7 +17,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` and `ids_json` must be valid pointers; `ids_json` must point to a NUL-terminated C string with a JSON array of hex IDs.
+/// - Pointers must remain valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_ids(
     sdk_handle: *const SDKHandle,
@@ -122,7 +124,7 @@ fn get_evonodes_proposed_epoch_blocks_by_ids(
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(&pro_tx_hash),
+                            hex::encode(pro_tx_hash),
                             count
                         )
                     })

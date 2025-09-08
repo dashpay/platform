@@ -7,7 +7,6 @@ use std::ffi::{CStr, CString};
 use std::fs;
 use std::os::raw::c_char;
 use std::path::PathBuf;
-use std::ptr;
 
 /// Create an SDK handle for testing using the mock mode with offline test vectors
 pub fn create_test_sdk_handle(namespace: &str) -> *const SDKHandle {
@@ -178,10 +177,9 @@ pub fn parse_json_result(json: &str) -> Result<serde_json::Value, String> {
 
 /// Test helper to assert that a result is successful and contains data
 pub unsafe fn assert_success_with_data(result: DashSDKResult) -> String {
-    let data = parse_string_result(result)
+    parse_string_result(result)
         .expect("Result should be successful")
-        .expect("Result should contain data");
-    data
+        .expect("Result should contain data")
 }
 
 /// Test helper to assert that a result is successful but contains no data (None)
@@ -191,6 +189,7 @@ pub unsafe fn assert_success_none(result: DashSDKResult) {
 }
 
 /// Test helper to assert that a result is an error
+#[allow(dead_code)]
 pub unsafe fn assert_error(result: DashSDKResult) {
     assert!(
         parse_string_result(result).is_err(),

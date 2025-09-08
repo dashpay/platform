@@ -45,6 +45,13 @@ pub struct DashSDKPublicKeyData {
 /// # Returns
 /// - Handle to the created identity on success
 /// - Error if creation fails
+///
+/// # Safety
+/// - `identity_id` must be a valid pointer to 32 readable bytes.
+/// - If `public_keys_count > 0`, `public_keys` must be a valid pointer to an array of `DashSDKPublicKeyData`
+///   structures of length `public_keys_count`; each `data` field in the array must point to at least `data_len` readable bytes.
+/// - All pointers must remain valid for the duration of the call.
+/// - On success, returns a heap-allocated handle; caller must destroy it using the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_create_from_components(
     identity_id: *const u8,

@@ -226,7 +226,8 @@ pub fn derive_key_from_seed_phrase(mnemonic: &str, passphrase: Option<String>, n
     };
     
     // Create private key from seed bytes
-    let private_key = dashcore::PrivateKey::from_slice(key_bytes, net)
+    let key_array: [u8; 32] = key_bytes.try_into().map_err(|_| JsError::new("Seed must be 32 bytes"))?;
+    let private_key = dashcore::PrivateKey::from_byte_array(&key_array, net)
         .map_err(|e| JsError::new(&format!("Failed to create private key: {}", e)))?;
     
     // Get public key

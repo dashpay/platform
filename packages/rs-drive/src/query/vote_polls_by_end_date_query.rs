@@ -1,14 +1,18 @@
 use crate::drive::votes::paths::vote_end_date_queries_tree_path_vec;
+#[cfg(feature = "server")]
 use crate::drive::Drive;
 #[cfg(feature = "server")]
 use crate::error::drive::DriveError;
+#[cfg(feature = "server")]
 use crate::error::Error;
 #[cfg(feature = "server")]
 use crate::fees::op::LowLevelDriveOperation;
 #[cfg(feature = "server")]
 use crate::query::GroveError;
 use crate::query::Query;
-use crate::util::common::encode::{decode_u64, encode_u64};
+#[cfg(feature = "server")]
+use crate::util::common::encode::decode_u64;
+use crate::util::common::encode::encode_u64;
 use bincode::{Decode, Encode};
 #[cfg(feature = "server")]
 use dpp::block::block_info::BlockInfo;

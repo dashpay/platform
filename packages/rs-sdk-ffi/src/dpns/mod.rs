@@ -1,7 +1,7 @@
 //! DPNS (Dash Platform Name Service) operations
 
 pub mod helpers;
-pub mod queries;
+mod queries;
 pub mod register;
 
 pub use helpers::*;

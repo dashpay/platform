@@ -22,6 +22,11 @@ use std::ffi::CString;
 /// # Returns
 /// * On success: A JSON array of username objects
 /// * On error: An error result
+///
+/// # Safety
+/// - `sdk_handle` and `prefix` must be valid, non-null pointers.
+/// - `prefix` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_dpns_search(
     sdk_handle: *const SDKHandle,

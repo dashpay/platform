@@ -15,7 +15,11 @@ use std::os::raw::c_void;
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - The function does not retain references to the input pointer beyond the duration of the call.
+/// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must
+///   free it using the SDK's free routine to avoid leaks. It may also return no data (null pointer).
+/// - Passing a dangling or invalid pointer for `sdk_handle` results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_state(
     sdk_handle: *const SDKHandle,

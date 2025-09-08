@@ -19,6 +19,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// The balance of the identity as a string
+///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_fetch_balance(
     sdk_handle: *const SDKHandle,

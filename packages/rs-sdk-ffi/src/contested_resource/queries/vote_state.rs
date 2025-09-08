@@ -26,7 +26,13 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - All C string pointers (`contract_id`, `document_type_name`, `index_name`, `index_values_json`)
+///   must be valid, non-null pointers to NUL-terminated strings that remain valid for the duration of the call.
+/// - `result_type` and `allow_include_locked_and_abstaining_vote_tally` are passed by value.
+/// - The returned result may contain a heap-allocated C string which must be freed by the caller using
+///   the SDK's free routine. It may also contain no data (null pointer) on success.
+/// - All pointers must point to readable memory; passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contested_resource_get_vote_state(
     sdk_handle: *const SDKHandle,
@@ -84,6 +90,7 @@ pub unsafe extern "C" fn dash_sdk_contested_resource_get_vote_state(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn get_contested_resource_vote_state(
     sdk_handle: *const SDKHandle,
     contract_id: *const c_char,

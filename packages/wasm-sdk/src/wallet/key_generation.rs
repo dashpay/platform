@@ -40,7 +40,7 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsError> {
         .map_err(|e| JsError::new(&format!("Failed to generate random bytes: {}", e)))?;
 
     // Create private key
-    let private_key = PrivateKey::from_slice(&key_bytes, net)
+    let private_key = PrivateKey::from_byte_array(&key_bytes, net)
         .map_err(|e| JsError::new(&format!("Failed to create private key: {}", e)))?;
 
     // Get public key
@@ -132,7 +132,10 @@ pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue
     let key_bytes = hex::decode(private_key_hex)
         .map_err(|e| JsError::new(&format!("Invalid hex: {}", e)))?;
 
-    let private_key = PrivateKey::from_slice(&key_bytes, net)
+    let key_array: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| JsError::new("Private key bytes must be 32 bytes"))?;
+    let private_key = PrivateKey::from_byte_array(&key_array, net)
         .map_err(|e| JsError::new(&format!("Failed to create private key: {}", e)))?;
 
     key_pair_from_wif(&private_key.to_wif())

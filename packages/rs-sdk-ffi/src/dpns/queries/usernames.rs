@@ -2,14 +2,12 @@
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 use dash_sdk::dpp::identifier::Identifier;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::platform_value::Value;
 use serde_json::json;
 
 /// Get DPNS usernames owned by an identity
@@ -28,6 +26,11 @@ use serde_json::json;
 /// # Returns
 /// * On success: A JSON array of username objects
 /// * On error: An error result
+///
+/// # Safety
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_dpns_get_usernames(
     sdk_handle: *const SDKHandle,

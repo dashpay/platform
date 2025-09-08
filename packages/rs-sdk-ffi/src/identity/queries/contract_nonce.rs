@@ -20,6 +20,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// The contract nonce of the identity as a string
+///
+/// # Safety
+/// - `sdk_handle`, `identity_id`, and `contract_id` must be valid, non-null pointers.
+/// - `identity_id` and `contract_id` must point to NUL-terminated C strings valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_fetch_contract_nonce(
     sdk_handle: *const SDKHandle,

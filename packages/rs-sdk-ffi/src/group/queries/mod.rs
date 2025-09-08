@@ -1,8 +1,8 @@
 // Group-related queries
-pub mod action_signers;
-pub mod actions;
-pub mod info;
-pub mod infos;
+mod action_signers;
+mod actions;
+mod info;
+mod infos;
 
 // Re-export all public functions for convenient access
 pub use action_signers::dash_sdk_group_get_action_signers;

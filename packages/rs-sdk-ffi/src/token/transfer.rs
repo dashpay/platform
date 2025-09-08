@@ -21,6 +21,13 @@ use std::ffi::CStr;
 use std::sync::Arc;
 
 /// Token transfer to another identity and wait for confirmation
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `transition_owner_id` must point to at least 32 readable bytes.
+/// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+/// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - Caller must free any returned heap memory in the result using SDK free routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_transfer(
     sdk_handle: *mut SDKHandle,
@@ -234,7 +241,7 @@ mod tests {
         result_len: *mut usize,
     ) -> *mut u8 {
         // Return a mock signature (64 bytes for ECDSA) allocated with libc::malloc
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {
@@ -599,7 +606,7 @@ mod tests {
     fn test_transfer_with_serialized_contract() {
         let transition_owner_id = create_valid_transition_owner_id();
         let mut params = create_valid_transfer_params();
-        let contract_data = vec![0u8; 100]; // Mock serialized contract
+        let contract_data = [0u8; 100]; // Mock serialized contract
         params.serialized_contract = contract_data.as_ptr();
         params.serialized_contract_len = contract_data.len();
 

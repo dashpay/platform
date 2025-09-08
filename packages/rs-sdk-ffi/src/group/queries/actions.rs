@@ -20,7 +20,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+/// - `contract_id` must point to a NUL-terminated C string; `start_at_action_id` may be null, otherwise must be a valid NUL-terminated C string.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_group_get_actions(
     sdk_handle: *const SDKHandle,

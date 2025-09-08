@@ -12,6 +12,10 @@ use crate::types::DashSDKPutSettings;
 use crate::FFIError;
 
 /// Helper function to convert DashSDKPutSettings to PutSettings
+///
+/// # Safety
+/// - `put_settings` may be null; when non-null it must be a valid pointer to a `DashSDKPutSettings` structure
+///   that remains valid for the duration of the call.
 pub unsafe fn convert_put_settings(put_settings: *const DashSDKPutSettings) -> Option<PutSettings> {
     if put_settings.is_null() {
         None
@@ -75,6 +79,10 @@ pub unsafe fn convert_put_settings(put_settings: *const DashSDKPutSettings) -> O
 }
 
 /// Helper function to parse private key
+///
+/// # Safety
+/// - `private_key_bytes` must be a valid, non-null pointer to 32 readable bytes for the duration of the call.
+#[allow(clippy::result_large_err)]
 pub unsafe fn parse_private_key(
     private_key_bytes: *const [u8; 32],
 ) -> Result<PrivateKey, FFIError> {
@@ -85,6 +93,12 @@ pub unsafe fn parse_private_key(
 }
 
 /// Helper function to create instant asset lock proof from components
+///
+/// # Safety
+/// - `instant_lock_bytes` must be a valid, non-null pointer to `instant_lock_len` readable bytes.
+/// - `transaction_bytes` must be a valid, non-null pointer to `transaction_len` readable bytes.
+/// - The pointers must remain valid for the duration of the call.
+#[allow(clippy::result_large_err)]
 pub unsafe fn create_instant_asset_lock_proof(
     instant_lock_bytes: *const u8,
     instant_lock_len: usize,
@@ -114,6 +128,11 @@ pub unsafe fn create_instant_asset_lock_proof(
 }
 
 /// Helper function to create chain asset lock proof from components
+///
+/// # Safety
+/// - `out_point_bytes` must be a valid, non-null pointer to 36 readable bytes.
+/// - The pointer must remain valid for the duration of the call.
+#[allow(clippy::result_large_err)]
 pub unsafe fn create_chain_asset_lock_proof(
     core_chain_locked_height: u32,
     out_point_bytes: *const [u8; 36],

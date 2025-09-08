@@ -22,6 +22,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing identity IDs mapped to their token information
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `identity_ids` and `token_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+/// - The returned C string pointer (on success) must be freed with the SDK's free function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identities_fetch_token_infos(
     sdk_handle: *const SDKHandle,

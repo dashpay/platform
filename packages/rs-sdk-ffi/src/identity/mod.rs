@@ -1,19 +1,19 @@
 //! Identity operations
 
-pub mod create;
-pub mod create_from_components;
-pub mod get_public_key;
-pub mod helpers;
-pub mod info;
-pub mod keys;
-pub mod names;
-pub mod parse;
-pub mod put;
-pub mod queries;
-pub mod test_transfer;
-pub mod topup;
-pub mod transfer;
-pub mod withdraw;
+mod create;
+mod create_from_components;
+mod get_public_key;
+mod helpers;
+mod info;
+mod keys;
+mod names;
+mod parse;
+mod put;
+mod queries;
+mod test_transfer;
+mod topup;
+mod transfer;
+mod withdraw;
 
 // Re-export all public functions for convenient access
 pub use create::dash_sdk_identity_create;

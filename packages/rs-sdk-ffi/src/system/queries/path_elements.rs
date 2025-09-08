@@ -17,7 +17,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `path_json` and `keys_json` must be valid, non-null pointers to NUL-terminated C strings that remain valid for the duration of the call.
+/// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_system_get_path_elements(
     sdk_handle: *const SDKHandle,

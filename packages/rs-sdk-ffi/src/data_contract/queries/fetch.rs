@@ -8,6 +8,11 @@ use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// Fetch a data contract by ID
+///
+/// # Safety
+/// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+/// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch(
     sdk_handle: *const SDKHandle,

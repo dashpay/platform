@@ -1,14 +1,14 @@
 //! Document operations
 
-pub mod create;
-pub mod delete;
-pub mod helpers;
-pub mod price;
-pub mod purchase;
-pub mod put;
-pub mod queries;
-pub mod replace;
-pub mod transfer;
+mod create;
+mod delete;
+mod helpers;
+mod price;
+mod purchase;
+mod put;
+mod queries;
+mod replace;
+mod transfer;
 mod util;
 
 // Re-export functions from submodules
