@@ -105,7 +105,7 @@ impl<T: TransportRequest> DumpData<T> {
     // Return request type (T) name without module prefix
     fn request_type() -> String {
         let req_type = std::any::type_name::<T>();
-        req_type.split(':').last().unwrap_or(req_type).to_string()
+        req_type.rsplit(':').next().unwrap_or(req_type).to_string()
     }
     /// Generate unique filename for this dump.
     ///

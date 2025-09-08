@@ -158,10 +158,7 @@ impl FeeRefunds {
     ) -> Option<Credits> {
         let credits_per_epoch = self.get(identity_id.as_bytes())?;
 
-        let credits = credits_per_epoch
-            .iter()
-            .map(|(_epoch_index, credits)| credits)
-            .sum();
+        let credits = credits_per_epoch.values().sum();
 
         Some(credits)
     }

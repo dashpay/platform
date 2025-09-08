@@ -42,6 +42,7 @@ use crate::version::FeatureVersion;
 use platform_value::{Error as ValueError, Value};
 use platform_version::error::PlatformVersionError;
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Error, Debug)]
 pub enum ProtocolError {
     #[error("Identifier Error: {0}")]

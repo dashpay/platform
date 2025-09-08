@@ -15,11 +15,13 @@ use tenderdash_abci::proto::abci::ValidatorSetUpdate;
 use tenderdash_abci::proto::crypto::public_key::Sum::Bls12381;
 use tenderdash_abci::proto::{abci, crypto};
 
+#[allow(dead_code)]
 pub(crate) trait ValidatorSetMethodsV0 {
     #[allow(unused)]
     fn update_difference(&self, rhs: &ValidatorSetV0) -> Result<ValidatorSetUpdate, Error>;
 
     fn to_update(&self) -> ValidatorSetUpdate;
+    #[allow(dead_code)]
     fn to_update_owned(self) -> ValidatorSetUpdate;
     /// Try to create a quorum from info from the Masternode list (given with state),
     /// and for information return for quorum members

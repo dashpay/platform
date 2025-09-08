@@ -617,6 +617,7 @@ pub enum OperationType {
     Token(TokenOp),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Encode, Decode)]
 enum OperationTypeInSerializationFormat {
     Document(Vec<u8>),

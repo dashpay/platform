@@ -6,7 +6,7 @@ use platform_wallet::{PlatformWalletError, PlatformWalletInfo};
 fn main() -> Result<(), PlatformWalletError> {
     // Create a platform wallet
     let wallet_id = [1u8; 32];
-    let mut platform_wallet = PlatformWalletInfo::new(wallet_id, "My Platform Wallet".to_string());
+    let platform_wallet = PlatformWalletInfo::new(wallet_id, "My Platform Wallet".to_string());
 
     println!("Created wallet: {:?}", platform_wallet.name());
 

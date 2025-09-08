@@ -88,6 +88,7 @@ pub enum DocumentTypeMutRef<'a> {
     V1(&'a mut DocumentTypeV1),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
