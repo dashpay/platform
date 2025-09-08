@@ -89,7 +89,8 @@ packages/rs-dapi/
 │   │   ├── core_service.rs        # Core blockchain endpoints
 │   │   ├── platform_service.rs    # Platform endpoints (main service implementation)
 │   │   ├── platform_service/      # Modular complex method implementations
-│   │   │   └── get_status.rs      # Complex get_status implementation with status building
+│   │   │   ├── get_status.rs      # Complex get_status implementation with status building
+│   │   │   └── subscribe_platform_events.rs  # Proxy for multiplexed Platform events
 │   │   └── streams_service.rs     # Streaming endpoints
 │   ├── health/                    # Health and monitoring endpoints
 │   │   ├── mod.rs
@@ -238,6 +239,7 @@ The Platform Service uses a modular structure where complex methods are separate
 - `getConsensusParams` - Platform consensus parameters
 - `getStatus` - Platform status information
 - Unimplemented endpoints (proxy to Drive ABCI)
+ - `subscribePlatformEvents` - Server-streaming proxy for Platform events
 
 #### Key Features
 - **Modular Organization**: Complex methods separated into dedicated modules for maintainability
@@ -251,6 +253,36 @@ The Platform Service uses a modular structure where complex methods are separate
 - Error conversion from Drive responses
 - **Protocol-Agnostic**: Identical behavior across all client protocols
 
+##### Platform Events Subscription Proxy
+
+rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint to external clients and proxies it upstream to rs-drive-abci using a pool of bi-directional gRPC streams. The proxy performs logical multiplexing so multiple public subscriptions share a small number of upstream connections.
+
+- Public interface:
+  - Server-streaming RPC: `subscribePlatformEvents(request stream PlatformEventsCommand) -> (response stream PlatformEventsResponse)`.
+  - Commands: `Add`, `Remove`, `Ping` wrapped in versioned envelopes (`V0`).
+  - Responses: `Event`, `Ack`, `Error` wrapped in versioned envelopes (`V0`).
+
+- Upstream mux (implementation details):
+  - File: `src/services/platform_service/subscribe_platform_events.rs:1`.
+  - Struct `PlatformEventsMux` maintains a small pool of upstream connections (`UPSTREAM_CONN_COUNT = 2`) to Drive ABCI’s `subscribePlatformEvents` (bi-di streaming).
+  - Each client stream creates a `PlatformEventsSession` bound to one upstream connection (round-robin selection) and a unique session prefix.
+  - ID rewriting: public `client_subscription_id` is mapped to an upstream id of form `u{upstream_idx}:{session_prefix}:{public_id}`.
+  - Routing map: `upstream_id -> (downstream_sender, public_id)`; events/acks/errors from upstream are rewritten back to the original `public_id` before sending to the client.
+  - Local Ping handling: `Ping` commands from the client are acknowledged locally without forwarding upstream.
+  - Cleanup: on `Remove` or stream drop, session removes routes and sends upstream `Remove` commands for active subscriptions.
+
+- Drive ABCI server:
+  - File: `packages/rs-drive-abci/src/query/service.rs:854` (server method) and `:260` (filter adapter).
+  - Uses a generic in-process event bus (`EventBus<PlatformEvent, PlatformFilterAdapter>`) to attach per-connection subscriptions based on incoming `PlatformFilterV0`.
+  - Connection-local map stores `client_subscription_id -> SubscriptionHandle` and spawns forwarder tasks to push matched events to the response stream.
+  - Responds with `Ack` on `Add`/`Remove`, echoes `Ping` as `Ack`, and returns structured `Error` for invalid frames.
+
+- Filter semantics (current):
+  - `All(true)` matches all events; `All(false)` matches none.
+  - `TxHash(h)` matches `StateTransitionResult` events with `tx_hash == h`.
+
+- Metrics: proxy currently does not emit detailed metrics for connections/subscriptions; TODO to instrument counts and traffic at both rs-dapi and rs-drive-abci layers.
+
 ### 6. Streams Service
 
 Implements real-time streaming gRPC endpoints (protocol-agnostic via translation layer):
@@ -259,6 +291,7 @@ Implements real-time streaming gRPC endpoints (protocol-agnostic via translation
 - `subscribeToBlockHeadersWithChainLocks` - Block header streaming
 - `subscribeToTransactionsWithProofs` - Transaction filtering with bloom filters
 - `subscribeToMasternodeList` - Masternode list updates
+ - Note: Platform event streaming is handled by `PlatformService::subscribePlatformEvents` and proxied to Drive ABCI using an upstream multiplexer (see Platform Service section).
 
 #### Key Features
 - ZMQ event processing for real-time data

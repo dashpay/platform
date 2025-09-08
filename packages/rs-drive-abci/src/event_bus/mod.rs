@@ -11,7 +11,7 @@ use std::sync::Once;
 use metrics::{counter, describe_counter, describe_gauge, gauge};
 use tokio::sync::{mpsc, Mutex, RwLock};
 
-/// Filter trait for event matching. Implemented by bus users for their event type.
+/// Filter trait for event matching on a specific event type.
 pub trait Filter<E>: Send + Sync {
     /// Return true if the event matches the filter.
     fn matches(&self, event: &E) -> bool;
@@ -22,7 +22,7 @@ struct Subscription<E, F> {
     sender: mpsc::UnboundedSender<E>,
 }
 
-/// Generic event bus. Cheap to clone.
+/// Generic, clonable in‑process event bus with pluggable filtering.
 pub struct EventBus<E, F> {
     subs: Arc<RwLock<BTreeMap<u64, Subscription<E, F>>>>,
     counter: Arc<AtomicU64>,
@@ -72,7 +72,7 @@ where
         }
     }
 
-    /// Add a new subscription with provided filter.
+    /// Add a new subscription using the provided filter.
     pub async fn add_subscription(&self, filter: F) -> SubscriptionHandle<E, F> {
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::unbounded_channel::<E>();
@@ -94,7 +94,7 @@ where
         }
     }
 
-    /// Publish an event to all matching subscribers.
+    /// Publish an event to all subscribers whose filters match.
     pub async fn notify(&self, event: E) {
         counter!(EVENTS_PUBLISHED_TOTAL).increment(1);
 
@@ -118,13 +118,13 @@ where
         }
     }
 
-    /// Current number of active subscriptions.
+    /// Get the current number of active subscriptions.
     pub async fn subscription_count(&self) -> usize {
         self.subs.read().await.len()
     }
 }
 
-/// RAII subscription handle. Dropping the last clone removes the subscription.
+/// RAII subscription handle; dropping the last clone removes the subscription.
 pub struct SubscriptionHandle<E, F>
 where
     E: Send + 'static,
@@ -161,7 +161,7 @@ where
         self.id
     }
 
-    /// Receive next message for this subscription.
+    /// Receive the next event for this subscription.
     pub async fn recv(&self) -> Option<E> {
         let mut rx = self.rx.lock().await;
         rx.recv().await
@@ -200,11 +200,17 @@ where
 }
 
 // ---- Metrics ----
+/// Gauge: current number of active event bus subscriptions.
 const ACTIVE_SUBSCRIPTIONS: &str = "event_bus_active_subscriptions";
+/// Counter: total subscriptions created on the event bus.
 const SUBSCRIBE_TOTAL: &str = "event_bus_subscribe_total";
+/// Counter: total subscriptions removed from the event bus.
 const UNSUBSCRIBE_TOTAL: &str = "event_bus_unsubscribe_total";
+/// Counter: total events published to the event bus.
 const EVENTS_PUBLISHED_TOTAL: &str = "event_bus_events_published_total";
+/// Counter: total events delivered to subscribers.
 const EVENTS_DELIVERED_TOTAL: &str = "event_bus_events_delivered_total";
+/// Counter: total events dropped due to dead subscribers.
 const EVENTS_DROPPED_TOTAL: &str = "event_bus_events_dropped_total";
 
 fn register_metrics_once() {

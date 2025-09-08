@@ -5,6 +5,7 @@ mod broadcast_state_transition;
 mod error_mapping;
 mod get_status;
 mod wait_for_state_transition_result;
+mod subscribe_platform_events;
 
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
@@ -438,4 +439,21 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::platform::v0::GetGroupActionSignersRequest,
         dapi_grpc::platform::v0::GetGroupActionSignersResponse
     );
+
+    // Streaming: multiplexed platform events
+    type subscribePlatformEventsStream = tokio_stream::wrappers::UnboundedReceiverStream<
+        Result<dapi_grpc::platform::v0::PlatformEventsResponse, dapi_grpc::tonic::Status>,
+    >;
+
+    async fn subscribe_platform_events(
+        &self,
+        request: dapi_grpc::tonic::Request<
+            dapi_grpc::tonic::Streaming<dapi_grpc::platform::v0::PlatformEventsCommand>,
+        >,
+    ) -> Result<
+        dapi_grpc::tonic::Response<Self::subscribePlatformEventsStream>,
+        dapi_grpc::tonic::Status,
+    > {
+        self.subscribe_platform_events_impl(request).await
+    }
 }
