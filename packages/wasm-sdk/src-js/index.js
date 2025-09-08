@@ -328,10 +328,13 @@ export class WasmSDK {
     async getDataContract(contractId) {
         ErrorUtils.validateRequired({ contractId }, ['contractId']);
         
+        const useProofs = this.configManager.getProofs();
+        const methodName = useProofs ? 'data_contract_fetch_with_proof_info' : 'data_contract_fetch';
+        
         return this._executeOperation(
-            () => this.wasmSdk.get_data_contract(contractId),
-            'get_data_contract',
-            { contractId }
+            () => this.wasmModule[methodName](this.wasmSdk, contractId),
+            methodName,
+            { contractId, proofs: useProofs }
         );
     }
 
@@ -349,20 +352,141 @@ export class WasmSDK {
     async getDocuments(contractId, documentType, options = {}) {
         ErrorUtils.validateRequired({ contractId, documentType }, ['contractId', 'documentType']);
         
-        const { where = [], orderBy = [], limit = 100, offset = 0 } = options;
+        const { where = [], orderBy = [], limit, offset = 0, startAfter, startAt, getAllDocuments = false } = options;
+        const useProofs = this.configManager.getProofs();
+        // Note: Document proof verification has issues, use non-proof version for now
+        const methodName = 'get_documents'; // Always use non-proof version until proof issues fixed
         
-        return this._executeOperation(
-            () => this.wasmSdk.get_documents(
+        if (useProofs && this.configManager.getDebug()) {
+            console.debug('Note: Using non-proof document query due to proof verification issues');
+        }
+        
+        // Convert where and orderBy to JSON strings if they're arrays
+        const whereClause = Array.isArray(where) ? JSON.stringify(where) : where;
+        const orderByClause = Array.isArray(orderBy) ? JSON.stringify(orderBy) : orderBy;
+        
+        if (getAllDocuments) {
+            // Get ALL documents using internal pagination (ignore user limit)
+            // Implement pagination to get all documents
+            const allDocuments = [];
+            const batchSize = 50; // Use smaller batch size for testing
+            let startAfter = null;
+            let hasMore = true;
+            let batchCount = 0;
+            
+            // Pagination loop (debug output suppressed for clean results)
+            while (hasMore) {
+                batchCount++;
+                
+                const batch = await this._executeOperation(
+                    () => this.wasmModule[methodName](
+                        this.wasmSdk,
+                        contractId,
+                        documentType,
+                        whereClause || null,
+                        orderByClause || null,
+                        batchSize,
+                        startAfter,
+                        null  // startAt
+                    ),
+                    methodName,
+                    { contractId, documentType, batch: true, proofs: false }
+                );
+                
+                if (batch && batch.length > 0) {
+                    allDocuments.push(...batch);
+                    
+                    if (batch.length < batchSize) {
+                        hasMore = false; // Last batch was partial, no more documents
+                    } else {
+                        // Set startAfter to the ID of the last document for next batch
+                        const lastDoc = batch[batch.length - 1];
+                        const lastDocData = typeof lastDoc.toJSON === 'function' ? lastDoc.toJSON() : lastDoc;
+                        const nextStartAfter = lastDocData.id || lastDocData.$id || lastDocData.identifier;
+                        
+                        if (nextStartAfter === startAfter) {
+                            // Prevent infinite loop if same ID returned
+                            hasMore = false;
+                        } else {
+                            startAfter = nextStartAfter;
+                        }
+                    }
+                } else {
+                    hasMore = false;
+                }
+                
+                // Safety limit to prevent infinite loops
+                if (batchCount > 50) {
+                    hasMore = false;
+                }
+            }
+            
+            // Return structured JSON response with all documents
+            return {
                 contractId,
                 documentType,
-                where,
-                orderBy,
-                limit,
-                offset
-            ),
-            'get_documents',
-            { contractId, documentType, options }
-        );
+                totalCount: allDocuments.length,
+                documents: allDocuments.map(doc => {
+                    const docData = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+                    return {
+                        id: docData.$id || docData.id || docData.identifier,
+                        ownerId: docData.$ownerId || docData.ownerId,
+                        revision: docData.revision,
+                        createdAt: docData.$createdAt || docData.createdAt,
+                        updatedAt: docData.$updatedAt || docData.updatedAt,
+                        data: docData.data || docData
+                    };
+                }),
+                query: {
+                    where: where,
+                    orderBy: orderBy,
+                    getAllDocuments: true
+                }
+            };
+        } else {
+            // Single query with user-specified parameters
+            const documents = await this._executeOperation(
+                () => this.wasmModule[methodName](
+                    this.wasmSdk,
+                    contractId,
+                    documentType,
+                    whereClause || null,
+                    orderByClause || null,
+                    limit || null, // Use user limit or WASM default
+                    startAfter || null,
+                    startAt || null
+                ),
+                methodName,
+                { contractId, documentType, options, proofs: false }
+            );
+            
+            // Return structured JSON response
+            const documentArray = documents || [];
+            return {
+                contractId,
+                documentType,
+                totalCount: documentArray.length,
+                documents: documentArray.map(doc => {
+                    const docData = typeof doc.toJSON === 'function' ? doc.toJSON() : doc;
+                    return {
+                        id: docData.$id || docData.id || docData.identifier,
+                        ownerId: docData.$ownerId || docData.ownerId,
+                        revision: docData.revision,
+                        createdAt: docData.$createdAt || docData.createdAt,
+                        updatedAt: docData.$updatedAt || docData.updatedAt,
+                        data: docData.data || docData
+                    };
+                }),
+                query: {
+                    where: where,
+                    orderBy: orderBy,
+                    limit: limit,
+                    offset: offset,
+                    startAfter: startAfter,
+                    startAt: startAt
+                }
+            };
+        }
     }
 
     /**
@@ -483,6 +607,163 @@ export class WasmSDK {
         return this._executeOperation(
             () => this.wasmSdk.validate_document(document, dataContract),
             'validate_document'
+        );
+    }
+
+    // ========== Key Generation & Crypto Operations ==========
+
+    /**
+     * Generate a mnemonic phrase
+     * @param {number} wordCount - Number of words (12, 15, 18, 21, or 24)
+     * @returns {Promise<string>} Generated mnemonic phrase
+     */
+    async generateMnemonic(wordCount = 12) {
+        ErrorUtils.validateRequired({ wordCount }, ['wordCount']);
+        
+        if (![12, 15, 18, 21, 24].includes(wordCount)) {
+            throw new WasmOperationError(
+                'Invalid word count. Must be 12, 15, 18, 21, or 24',
+                'generate_mnemonic',
+                { wordCount }
+            );
+        }
+        
+        return this._executeOperation(
+            () => this.wasmModule.generate_mnemonic(wordCount),
+            'generate_mnemonic',
+            { wordCount }
+        );
+    }
+
+    /**
+     * Validate a mnemonic phrase
+     * @param {string} mnemonic - Mnemonic phrase to validate
+     * @returns {Promise<boolean>} True if mnemonic is valid
+     */
+    async validateMnemonic(mnemonic) {
+        ErrorUtils.validateRequired({ mnemonic }, ['mnemonic']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.validate_mnemonic(mnemonic),
+            'validate_mnemonic',
+            { mnemonic: '[REDACTED]' }
+        );
+    }
+
+    /**
+     * Convert mnemonic to seed
+     * @param {string} mnemonic - Mnemonic phrase
+     * @param {string} passphrase - Optional passphrase
+     * @returns {Promise<Uint8Array>} Generated seed
+     */
+    async mnemonicToSeed(mnemonic, passphrase = '') {
+        ErrorUtils.validateRequired({ mnemonic }, ['mnemonic']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.mnemonic_to_seed(mnemonic, passphrase),
+            'mnemonic_to_seed',
+            { mnemonic: '[REDACTED]', passphrase: passphrase ? '[REDACTED]' : 'none' }
+        );
+    }
+
+    /**
+     * Derive key from seed with derivation path
+     * @param {string} mnemonic - Mnemonic phrase
+     * @param {string} passphrase - Optional passphrase
+     * @param {string} path - Derivation path (e.g., "m/44'/5'/0'/0/0")
+     * @param {string} network - Network ('mainnet' or 'testnet')
+     * @returns {Promise<Object>} Object containing address, private_key_wif, and public_key
+     */
+    async deriveKeyFromSeedWithPath(mnemonic, passphrase = '', path, network = 'testnet') {
+        ErrorUtils.validateRequired({ mnemonic, path, network }, ['mnemonic', 'path', 'network']);
+        
+        if (!['mainnet', 'testnet'].includes(network)) {
+            throw new WasmOperationError(
+                'Invalid network. Must be "mainnet" or "testnet"',
+                'derive_key_from_seed_with_path',
+                { network }
+            );
+        }
+        
+        return this._executeOperation(
+            () => this.wasmModule.derive_key_from_seed_with_path(mnemonic, passphrase, path, network),
+            'derive_key_from_seed_with_path',
+            { mnemonic: '[REDACTED]', passphrase: passphrase ? '[REDACTED]' : 'none', path, network }
+        );
+    }
+
+    /**
+     * Generate a key pair
+     * @returns {Promise<Object>} Object containing private and public keys
+     */
+    async generateKeyPair() {
+        return this._executeOperation(
+            () => this.wasmModule.generate_key_pair(),
+            'generate_key_pair'
+        );
+    }
+
+    /**
+     * Convert public key to address
+     * @param {string} publicKey - Public key in hex format
+     * @param {string} network - Network ('mainnet' or 'testnet')
+     * @returns {Promise<string>} Generated address
+     */
+    async pubkeyToAddress(publicKey, network = 'testnet') {
+        ErrorUtils.validateRequired({ publicKey, network }, ['publicKey', 'network']);
+        
+        if (!['mainnet', 'testnet'].includes(network)) {
+            throw new WasmOperationError(
+                'Invalid network. Must be "mainnet" or "testnet"',
+                'pubkey_to_address',
+                { network }
+            );
+        }
+        
+        return this._executeOperation(
+            () => this.wasmModule.pubkey_to_address(publicKey, network),
+            'pubkey_to_address',
+            { publicKey, network }
+        );
+    }
+
+    /**
+     * Validate an address
+     * @param {string} address - Address to validate
+     * @param {string} network - Network ('mainnet' or 'testnet')
+     * @returns {Promise<boolean>} True if address is valid for the network
+     */
+    async validateAddress(address, network = 'testnet') {
+        ErrorUtils.validateRequired({ address, network }, ['address', 'network']);
+        
+        if (!['mainnet', 'testnet'].includes(network)) {
+            throw new WasmOperationError(
+                'Invalid network. Must be "mainnet" or "testnet"',
+                'validate_address',
+                { network }
+            );
+        }
+        
+        return this._executeOperation(
+            () => this.wasmModule.validate_address(address, network),
+            'validate_address',
+            { address, network }
+        );
+    }
+
+    /**
+     * Sign a message
+     * @param {string} message - Message to sign
+     * @param {string} privateKey - Private key for signing
+     * @returns {Promise<string>} Signature
+     */
+    async signMessage(message, privateKey) {
+        ErrorUtils.validateRequired({ message, privateKey }, ['message', 'privateKey']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.sign_message(message, privateKey),
+            'sign_message',
+            { message, privateKey: '[REDACTED]' }
         );
     }
 

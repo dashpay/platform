@@ -3,13 +3,14 @@
  * Demonstrates advanced document querying with filtering and sorting
  */
 
-import init, { WasmSdk, WasmSdkBuilder } from '../../pkg/wasm_sdk.js';
+import { WasmSDK } from '../../src-js/index.js';
 import { KNOWN_CONTRACTS, getContractSchema, getDocumentFields, getQueryableFields, getSampleQueries, formatFieldValue } from './contract-schemas.js';
 
 class DocumentExplorer {
     constructor() {
         this.sdk = null;
         this.currentNetwork = 'testnet';
+        this.useProofs = true; // Default to using proofs
         this.isInitialized = false;
         this.currentContract = null;
         this.currentDocumentType = null;
@@ -41,6 +42,13 @@ class DocumentExplorer {
             this.currentNetwork = e.target.value;
             await this.initializeSDK();
             this.setupContractButtons(); // Refresh contract IDs for new network
+        });
+
+        // Proof verification toggle
+        const proofsToggle = document.getElementById('proofsToggle');
+        proofsToggle.addEventListener('change', async (e) => {
+            this.useProofs = e.target.checked;
+            await this.initializeSDK(); // Reinitialize with new proof setting
         });
 
         // Custom contract loading
@@ -89,27 +97,31 @@ class DocumentExplorer {
             this.updateStatus('connecting', 'Initializing SDK...');
             this.logQuery('SDK', `Initializing for ${this.currentNetwork} network`);
 
-            // Initialize WASM module
-            await init();
+            // Use JavaScript wrapper instead of raw WASM
+            this.logQuery('SDK', 'Creating WasmSDK instance...');
+            this.sdk = new WasmSDK({
+                network: this.currentNetwork,
+                proofs: this.useProofs,
+                debug: true,
+                transport: {
+                    timeout: 60000,
+                    retries: 5
+                }
+            });
+            this.logQuery('SDK', 'WasmSDK instance created, initializing...');
 
-            // Create SDK builder based on network
-            let builder;
-            if (this.currentNetwork === 'mainnet') {
-                builder = WasmSdkBuilder.new_mainnet_trusted();
-            } else {
-                builder = WasmSdkBuilder.new_testnet_trusted();
-            }
-
-            // Build SDK instance
-            this.sdk = builder.build();
+            await this.sdk.initialize();
+            this.logQuery('SDK', 'JavaScript wrapper initialized successfully');
             this.isInitialized = true;
 
-            this.updateStatus('connected', `Connected to ${this.currentNetwork}`);
+            this.updateStatus('connected', `Connected to ${this.currentNetwork} (proofs: ${this.useProofs ? 'on' : 'off'})`);
             this.logQuery('SDK', `Successfully connected to ${this.currentNetwork}`, 'success');
 
         } catch (error) {
             this.updateStatus('error', 'Connection failed');
             this.logQuery('SDK', `Connection failed: ${error.message}`, 'error');
+            console.error('Document Explorer initialization error:', error);
+            alert(`Initialization failed: ${error.message}`); // Show visible error
             throw error;
         }
     }
@@ -471,14 +483,16 @@ class DocumentExplorer {
             const startTime = Date.now();
             this.logQuery('Query', `Executing: ${this.currentDocumentType} on ${this.currentContract.name}`);
 
-            // Execute the query
-            const results = await this.sdk.get_documents(
+            // Execute the query using JavaScript wrapper
+            const results = await this.sdk.getDocuments(
                 this.currentContract.id,
                 this.currentDocumentType,
-                queryParams.where,
-                queryParams.orderBy,
-                queryParams.limit,
-                queryParams.offset
+                {
+                    where: queryParams.where,
+                    orderBy: queryParams.orderBy,
+                    limit: queryParams.limit,
+                    offset: queryParams.offset
+                }
             );
 
             const queryTime = Date.now() - startTime;
@@ -567,14 +581,16 @@ class DocumentExplorer {
         const queryCode = document.getElementById('queryCode');
 
         const queryExample = `
-// Generated Query Code
-const results = await sdk.get_documents(
+// Generated Query Code (JavaScript Wrapper)
+const results = await sdk.getDocuments(
     '${this.currentContract.id}',  // Contract ID
     '${this.currentDocumentType}',              // Document Type
-    ${params.where || 'null'},                 // WHERE clause
-    ${params.orderBy || 'null'},               // ORDER BY clause
-    ${params.limit},                           // Limit
-    ${params.offset}                           // Offset
+    {
+        where: ${params.where || '[]'},        // WHERE clause
+        orderBy: ${params.orderBy || '[]'},    // ORDER BY clause
+        limit: ${params.limit},               // Limit
+        offset: ${params.offset}              // Offset
+    }
 );
 
 console.log(\`Found \${results.length} documents\`);`;
@@ -967,22 +983,27 @@ console.log(\`Found \${results.length} documents\`);`;
     exportQuery() {
         const params = this.buildQueryParameters();
         const queryCode = `
-// Copy this code to use in your application
-import init, { WasmSdk, WasmSdkBuilder } from '@dashevo/dash-wasm-sdk';
+// Copy this code to use in your application (JavaScript Wrapper)
+import { WasmSDK } from '@dashevo/dash-wasm-sdk';
 
 async function queryDocuments() {
-    // Initialize SDK
-    await init();
-    const builder = WasmSdkBuilder.new_${this.currentNetwork}();
-    const sdk = builder.build();
+    // Initialize SDK using JavaScript wrapper
+    const sdk = new WasmSDK({
+        network: '${this.currentNetwork}',
+        proofs: ${this.useProofs},
+        transport: { timeout: 60000 }
+    });
+    
+    await sdk.initialize();
 
     // Execute query
-    const results = await sdk.get_documents(
+    const results = await sdk.getDocuments(
         '${this.currentContract.id}',  // Contract: ${this.currentContract.name}
-        '${this.currentDocumentType}',              // Document Type
-        ${params.where || 'null'},                 // WHERE clause
-        ${params.orderBy || 'null'},               // ORDER BY clause
-        ${params.limit},                           // Limit
+        '${this.currentDocumentType}', // Document Type
+        {
+            where: ${params.where || '[]'},      // WHERE clause
+            orderBy: ${params.orderBy || '[]'},  // ORDER BY clause
+            limit: ${params.limit},             // Limit
         ${params.offset}                           // Offset
     );
 
