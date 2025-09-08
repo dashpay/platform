@@ -101,7 +101,7 @@ impl CallbackContextProvider {
 
     /// Create from global callbacks if available
     pub fn from_global() -> Option<Self> {
-        get_global_callbacks().map(|callbacks| Self::new(callbacks))
+        get_global_callbacks().map(Self::new)
     }
 }
 

@@ -13,16 +13,22 @@ use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentReplaceTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 use tracing::{debug, error, info};
 
 /// Replace document on platform (broadcast state transition)
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `document_handle`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle`
+///   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
     sdk_handle: *mut SDKHandle,
@@ -130,7 +136,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -161,6 +167,11 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform(
 }
 
 /// Replace document on platform and wait for confirmation (broadcast state transition and wait for response)
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_replace_on_platform` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
     sdk_handle: *mut SDKHandle,
@@ -332,7 +343,7 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
 
         let result = wrapper
             .sdk
-            .document_replace(builder, &identity_public_key, signer)
+            .document_replace(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 eprintln!("❌ [DOCUMENT REPLACE] SDK call failed: {}", e);
@@ -345,9 +356,9 @@ pub unsafe extern "C" fn dash_sdk_document_replace_on_platform_and_wait(
 
         eprintln!("✅ [DOCUMENT REPLACE] SDK call completed successfully");
 
-        let replaced_document = match result {
-            dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(doc) => doc,
-        };
+        let dash_sdk::platform::documents::transitions::DocumentReplaceResult::Document(
+            replaced_document,
+        ) = result;
 
         Ok(replaced_document)
     });
@@ -398,7 +409,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(2), // Revision > 1 for replace
             created_at: None,
             updated_at: None,

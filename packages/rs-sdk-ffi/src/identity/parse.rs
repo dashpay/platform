@@ -20,6 +20,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 /// # Returns
 /// - Handle to the parsed identity on success
 /// - Error if JSON parsing fails
+///
+/// # Safety
+/// - `json_str` must be a valid, non-null pointer to a NUL-terminated C string and remain valid for the duration of the call.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be freed using the
+///   appropriate SDK destroy function to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_parse_json(json_str: *const c_char) -> DashSDKResult {
     if json_str.is_null() {

@@ -33,7 +33,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_normalize_username(
 
     match utils::c_string_from(normalized) {
         Ok(c_string) => DashSDKResult::success(c_string as *mut std::os::raw::c_void),
-        Err(e) => DashSDKResult::error(e.into()),
+        Err(e) => DashSDKResult::error(e),
     }
 }
 
@@ -137,13 +137,13 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_validation_message(
     } else if !name_str
         .chars()
         .next()
-        .map_or(false, |c| c.is_ascii_alphanumeric())
+        .is_some_and(|c| c.is_ascii_alphanumeric())
     {
         "Name must start with an alphanumeric character"
     } else if !name_str
         .chars()
         .last()
-        .map_or(false, |c| c.is_ascii_alphanumeric())
+        .is_some_and(|c| c.is_ascii_alphanumeric())
     {
         "Name must end with an alphanumeric character"
     } else if name_str.contains("--") {
@@ -161,6 +161,6 @@ pub unsafe extern "C" fn dash_sdk_dpns_get_validation_message(
 
     match utils::c_string_from(message.to_string()) {
         Ok(c_string) => DashSDKResult::success(c_string as *mut std::os::raw::c_void),
-        Err(e) => DashSDKResult::error(e.into()),
+        Err(e) => DashSDKResult::error(e),
     }
 }

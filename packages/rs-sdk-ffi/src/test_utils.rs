@@ -1,4 +1,5 @@
 #[cfg(test)]
+#[allow(clippy::module_inception, dead_code)]
 pub mod test_utils {
     use crate::sdk::SDKWrapper;
     use crate::signer::VTableSigner;
@@ -52,7 +53,7 @@ pub mod test_utils {
         _data_len: usize,
         result_len: *mut usize,
     ) -> *mut u8 {
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {
@@ -93,7 +94,7 @@ pub mod test_utils {
         _data_len: usize,
         result_len: *mut usize,
     ) -> *mut u8 {
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {

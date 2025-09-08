@@ -17,7 +17,13 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `start_pro_tx_hash` may be null (meaning no start); when non-null it must be a valid pointer to a
+///   NUL-terminated C string containing a hex-encoded 32-byte hash and remain valid for the duration of the call.
+/// - `count` is passed by value; no references are retained.
+/// - On success, the returned `DashSDKResult` may contain a heap-allocated C string which the caller must free
+///   using the SDK's free routine. It may also contain no data (null pointer).
+/// - All pointers must reference readable memory; invalid pointers result in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_protocol_version_get_upgrade_vote_status(
     sdk_handle: *const SDKHandle,

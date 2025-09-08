@@ -60,6 +60,7 @@
 // TODO re-enable when docs are complete
 // #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
+#![allow(clippy::result_large_err)]
 
 pub mod core;
 pub mod error;

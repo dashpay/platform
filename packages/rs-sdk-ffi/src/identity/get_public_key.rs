@@ -3,7 +3,6 @@
 use crate::types::{DashSDKPublicKeyHandle, DashSDKResultDataType, IdentityHandle};
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use std::ptr;
 
 /// Get a public key from an identity by its ID
 ///
@@ -14,6 +13,12 @@ use std::ptr;
 /// # Returns
 /// - Handle to the public key on success
 /// - Error if key not found or invalid parameters
+///
+/// # Safety
+/// - `identity` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+/// - On success, the returned `DashSDKResult` contains a heap-allocated handle which must be destroyed with the SDK's
+///   corresponding destroy function.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_get_public_key_by_id(
     identity: *const IdentityHandle,

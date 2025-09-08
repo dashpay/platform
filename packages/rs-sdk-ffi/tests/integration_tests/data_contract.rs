@@ -1,3 +1,4 @@
+#![allow(unused_variables)]
 //! Data contract tests for rs-sdk-ffi
 
 use crate::config::Config;

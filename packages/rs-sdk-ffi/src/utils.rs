@@ -14,6 +14,11 @@ use std::os::raw::c_char;
 /// # Returns
 /// - Base58 encoded string on success
 /// - Error if the hex string is invalid
+/// # Safety
+/// - `hex_string` must be a valid, non-null pointer to a NUL-terminated C string.
+/// - The memory pointed to by `hex_string` must be readable for the duration of the call.
+/// - The returned pointer (on success) must be freed by calling the appropriate free function
+///   (e.g., `dash_sdk_string_free`) from this SDK to avoid memory leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_utils_hex_to_base58(hex_string: *const c_char) -> DashSDKResult {
     if hex_string.is_null() {
@@ -79,6 +84,10 @@ pub unsafe extern "C" fn dash_sdk_utils_hex_to_base58(hex_string: *const c_char)
 /// # Returns
 /// - Hex encoded string on success
 /// - Error if the base58 string is invalid
+/// # Safety
+/// - `base58_string` must be a valid, non-null pointer to a NUL-terminated C string.
+/// - The memory pointed to by `base58_string` must be readable for the duration of the call.
+/// - The returned C string pointer (on success) must be freed with the SDK's string free routine to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_utils_base58_to_hex(
     base58_string: *const c_char,
@@ -128,6 +137,9 @@ pub unsafe extern "C" fn dash_sdk_utils_base58_to_hex(
 ///
 /// # Returns
 /// - 1 if valid base58, 0 if invalid
+/// # Safety
+/// - `string` must be a valid, non-null pointer to a NUL-terminated C string.
+/// - The memory pointed to by `string` must be readable for the duration of the call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_utils_is_valid_base58(string: *const c_char) -> u8 {
     if string.is_null() {

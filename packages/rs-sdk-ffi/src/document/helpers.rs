@@ -13,6 +13,9 @@ use crate::types::{
 use crate::FFIError;
 
 /// Convert FFI GasFeesPaidBy to Rust enum
+///
+/// # Safety
+/// - `ffi_value` is passed by value; no pointer preconditions.
 pub unsafe fn convert_gas_fees_paid_by(ffi_value: DashSDKGasFeesPaidBy) -> GasFeesPaidBy {
     match ffi_value {
         DashSDKGasFeesPaidBy::DocumentOwner => GasFeesPaidBy::DocumentOwner,
@@ -22,6 +25,11 @@ pub unsafe fn convert_gas_fees_paid_by(ffi_value: DashSDKGasFeesPaidBy) -> GasFe
 }
 
 /// Convert FFI TokenPaymentInfo to Rust TokenPaymentInfo
+///
+/// # Safety
+/// - `ffi_token_payment_info` may be null; when non-null it must be a valid pointer to a `DashSDKTokenPaymentInfo`
+///   that remains valid for the duration of the call.
+#[allow(clippy::result_large_err)]
 pub unsafe fn convert_token_payment_info(
     ffi_token_payment_info: *const DashSDKTokenPaymentInfo,
 ) -> Result<Option<TokenPaymentInfo>, FFIError> {
@@ -60,6 +68,10 @@ pub unsafe fn convert_token_payment_info(
 }
 
 /// Convert FFI StateTransitionCreationOptions to Rust StateTransitionCreationOptions
+///
+/// # Safety
+/// - `ffi_options` may be null; when non-null it must be a valid pointer to a `DashSDKStateTransitionCreationOptions`
+///   that remains valid for the duration of the call.
 pub unsafe fn convert_state_transition_creation_options(
     ffi_options: *const DashSDKStateTransitionCreationOptions,
 ) -> Option<StateTransitionCreationOptions> {

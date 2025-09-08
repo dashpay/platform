@@ -438,10 +438,10 @@ mod tests {
             let doc_value: serde_json::Value =
                 serde_json::from_str(doc_json).expect("Failed to parse withdrawal document JSON");
 
-            // Extract required fields
-            let status = doc_value["status"]
-                .as_u64()
-                .expect("status should be a number") as u8;
+            // // Extract required fields
+            // let status = doc_value["status"]
+            //     .as_u64()
+            //     .expect("status should be a number") as u8;
 
             let mut properties: Value = doc_value.clone().into();
 

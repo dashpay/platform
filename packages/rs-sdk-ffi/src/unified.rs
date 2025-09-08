@@ -5,10 +5,8 @@
 //! when both are available. It manages initialization, state synchronization, and
 //! cross-layer operations.
 
-use std::ffi::{c_char, CStr};
+use std::ffi::c_char;
 use std::sync::atomic::{AtomicBool, Ordering};
-
-use crate::{DashSDKError, DashSDKErrorCode, FFIError};
 
 use crate::types::{DashSDKConfig, SDKHandle};
 use dash_spv_ffi::{FFIClientConfig, FFIDashSpvClient};
@@ -131,6 +129,7 @@ pub unsafe extern "C" fn dash_unified_sdk_start(handle: *mut UnifiedSDKHandle) -
         return -1;
     }
 
+    #[cfg(feature = "core")]
     let handle = &*handle;
 
     // Start Core SDK if available
@@ -158,6 +157,7 @@ pub unsafe extern "C" fn dash_unified_sdk_stop(handle: *mut UnifiedSDKHandle) ->
         return -1;
     }
 
+    #[cfg(feature = "core")]
     let handle = &*handle;
 
     // Stop Core SDK if available
@@ -338,7 +338,7 @@ pub extern "C" fn dash_unified_sdk_has_core_support() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::DashSDKNetwork;
+
     use std::ptr;
 
     /// Test the basic lifecycle of the unified SDK with core feature enabled

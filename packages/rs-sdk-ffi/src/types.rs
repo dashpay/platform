@@ -326,6 +326,11 @@ pub struct DashSDKStateTransitionCreationOptions {
 }
 
 /// Free a string allocated by the FFI
+///
+/// # Safety
+/// - `s` must be a pointer returned by this SDK to a heap-allocated NUL-terminated C string.
+/// - Passing a pointer not allocated by this SDK, or a pointer already freed, results in undefined behavior.
+/// - `s` may be null, in which case this is a no-op.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_string_free(s: *mut c_char) {
     if !s.is_null() {
@@ -334,6 +339,11 @@ pub unsafe extern "C" fn dash_sdk_string_free(s: *mut c_char) {
 }
 
 /// Free binary data allocated by the FFI
+///
+/// # Safety
+/// - `binary_data` must be a valid pointer returned by this SDK and not previously freed.
+/// - When non-null, the function takes ownership and frees both the struct and its internal buffer.
+/// - Do not use `binary_data` after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_binary_data_free(binary_data: *mut DashSDKBinaryData) {
     if binary_data.is_null() {
@@ -348,6 +358,11 @@ pub unsafe extern "C" fn dash_sdk_binary_data_free(binary_data: *mut DashSDKBina
 }
 
 /// Free an identity info structure
+///
+/// # Safety
+/// - `info` must be a valid pointer to `DashSDKIdentityInfo` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees any owned strings and the struct.
+/// - Do not access `info` after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_info_free(info: *mut DashSDKIdentityInfo) {
     if info.is_null() {
@@ -359,6 +374,11 @@ pub unsafe extern "C" fn dash_sdk_identity_info_free(info: *mut DashSDKIdentityI
 }
 
 /// Free a document info structure
+///
+/// # Safety
+/// - `info` must be a valid pointer to `DashSDKDocumentInfo` allocated by this SDK and not already freed.
+/// - It may be null (no-op). When non-null, this frees all owned strings and arrays.
+/// - Pointer must not be dereferenced after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentInfo) {
     if info.is_null() {
@@ -389,6 +409,11 @@ pub unsafe extern "C" fn dash_sdk_document_info_free(info: *mut DashSDKDocumentI
 }
 
 /// Free an identity balance map
+///
+/// # Safety
+/// - `map` must be a valid, non-dangling pointer returned by this SDK.
+/// - It may be null (no-op). When non-null, this frees the entries array and the struct.
+/// - Using `map` after this function returns is undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_balance_map_free(map: *mut DashSDKIdentityBalanceMap) {
     if map.is_null() {
@@ -467,6 +492,15 @@ pub struct DashSDKNameTimestampList {
 }
 
 /// Free a contender structure
+///
+/// # Safety
+/// - `contender` must be a valid, non-dangling pointer obtained from this FFI (e.g., via an SDK function).
+/// - It must either be null (a no-op) or point to a heap-allocated `DashSDKContender` that has not been freed yet.
+/// - After this call, the pointer must not be used again (use-after-free is undefined behavior).
+/// - This function will also free any heap-allocated strings owned by the structure.
+/// # Safety
+/// - `contender` must be a valid, non-null pointer to a `DashSDKContender` allocated by this SDK, or null for no-op.
+/// - The pointer must not be used after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contender_free(contender: *mut DashSDKContender) {
     if contender.is_null() {
@@ -478,6 +512,11 @@ pub unsafe extern "C" fn dash_sdk_contender_free(contender: *mut DashSDKContende
 }
 
 /// Free contest info structure
+///
+/// # Safety
+/// - `info` must be a valid, non-dangling pointer obtained from this FFI and not previously freed.
+/// - It may be null (no-op). When non-null, this frees the owned contender array and contained strings.
+/// - Do not use `info` after this call; doing so is undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contest_info_free(info: *mut DashSDKContestInfo) {
     if info.is_null() {
@@ -495,6 +534,11 @@ pub unsafe extern "C" fn dash_sdk_contest_info_free(info: *mut DashSDKContestInf
 }
 
 /// Free a contested name structure
+///
+/// # Safety
+/// - `name` must be a valid, non-dangling pointer to a `DashSDKContestedName` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees the embedded strings and contender buffers.
+/// - Do not access `name` after freeing.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contested_name_free(name: *mut DashSDKContestedName) {
     if name.is_null() {
@@ -519,6 +563,11 @@ pub unsafe extern "C" fn dash_sdk_contested_name_free(name: *mut DashSDKConteste
 }
 
 /// Free a contested names list
+///
+/// # Safety
+/// - `list` must be a valid pointer returned by this SDK and not previously freed.
+/// - It may be null (no-op). When non-null, this frees the array of names and any nested strings/buffers.
+/// - Do not use `list` after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKContestedNamesList) {
     if list.is_null() {
@@ -551,6 +600,11 @@ pub unsafe extern "C" fn dash_sdk_contested_names_list_free(list: *mut DashSDKCo
 }
 
 /// Free a name-timestamp structure
+///
+/// # Safety
+/// - `entry` must be a valid, non-dangling pointer to a `DashSDKNameTimestamp` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees the owned string and the struct.
+/// - Do not use `entry` after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_name_timestamp_free(entry: *mut DashSDKNameTimestamp) {
     if entry.is_null() {
@@ -562,6 +616,11 @@ pub unsafe extern "C" fn dash_sdk_name_timestamp_free(entry: *mut DashSDKNameTim
 }
 
 /// Free a name-timestamp list
+///
+/// # Safety
+/// - `list` must be a valid pointer to a `DashSDKNameTimestampList` allocated by this SDK.
+/// - It may be null (no-op). When non-null, this frees the entries array and contained strings.
+/// - Pointer must not be used after this call.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_name_timestamp_list_free(list: *mut DashSDKNameTimestampList) {
     if list.is_null() {

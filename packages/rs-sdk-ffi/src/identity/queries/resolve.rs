@@ -19,6 +19,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult};
 /// # Returns
 /// * On success: A result containing the resolved identity ID
 /// * On error: An error result
+///
+/// # Safety
+/// - `sdk_handle` and `name` must be valid, non-null pointers.
+/// - `name` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, any heap memory in the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_resolve_name(
     sdk_handle: *const SDKHandle,

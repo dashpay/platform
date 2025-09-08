@@ -4,25 +4,25 @@
 //! Operations are organized by functionality into separate submodules.
 
 // Common types and utilities
-pub mod types;
-pub mod utils;
+mod types;
+mod utils;
 
 // Core token operations
-pub mod burn;
-pub mod claim;
-pub mod mint;
-pub mod transfer;
+mod burn;
+mod claim;
+mod mint;
+mod transfer;
 
 // Token management operations
-pub mod config_update;
-pub mod destroy_frozen_funds;
-pub mod emergency_action;
-pub mod freeze;
-pub mod unfreeze;
+mod config_update;
+mod destroy_frozen_funds;
+mod emergency_action;
+mod freeze;
+mod unfreeze;
 
 // Token trading operations
-pub mod purchase;
-pub mod set_price;
+mod purchase;
+mod set_price;
 
 mod queries;
 

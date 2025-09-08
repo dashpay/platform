@@ -16,7 +16,9 @@ use serde_json::json; // Still used by other functions
 /// Get all contested DPNS usernames where an identity is a contender
 ///
 /// # Safety
-/// This function is unsafe because it operates on raw pointers
+/// - `sdk_handle` and `identity_id` must be valid, non-null pointers.
+/// - `identity_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_dpns_get_contested_usernames_by_identity(
     sdk_handle: *const SDKHandle,

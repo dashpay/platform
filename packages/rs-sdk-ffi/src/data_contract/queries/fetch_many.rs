@@ -13,6 +13,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Fetch multiple data contracts by their IDs
 ///
+/// # Safety
+/// - `sdk_handle` and `contract_ids` must be valid, non-null pointers.
+/// - `contract_ids` must point to a NUL-terminated C string containing either a JSON array of Base58 IDs or a comma-separated list; it must remain valid for the duration of the call.
+/// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `contract_ids`: Comma-separated list of Base58-encoded contract IDs

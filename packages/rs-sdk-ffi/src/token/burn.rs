@@ -21,6 +21,13 @@ use std::ffi::CStr;
 use std::sync::Arc;
 
 /// Burn tokens from an identity and wait for confirmation
+///
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `transition_owner_id` must point to at least 32 readable bytes.
+/// - `params`, `identity_public_key_handle`, `signer_handle` must be valid pointers to initialized structures.
+/// - Optional pointers (`put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - Caller must free any returned heap memory from the result using SDK free routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_burn(
     sdk_handle: *mut SDKHandle,
@@ -210,8 +217,9 @@ mod tests {
     fn test_burn_with_null_sdk_handle() {
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_burn_params();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-        let signer_handle = 1 as *const SignerHandle;
+        let identity_public_key_handle =
+            std::ptr::dangling::<crate::types::IdentityPublicKeyHandle>();
+        let signer_handle = std::ptr::dangling::<SignerHandle>();
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -499,7 +507,7 @@ mod tests {
 
     #[test]
     fn test_burn_params_with_serialized_contract() {
-        let contract_data = vec![1u8, 2, 3, 4, 5];
+        let contract_data = [1u8, 2, 3, 4, 5];
         let params = DashSDKTokenBurnParams {
             token_contract_id: ptr::null(),
             serialized_contract: contract_data.as_ptr(),
@@ -518,7 +526,7 @@ mod tests {
     fn test_burn_params_validation() {
         // Test with both contract ID and serialized contract (should be mutually exclusive)
         let contract_id = CString::new("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec").unwrap();
-        let contract_data = vec![1u8, 2, 3];
+        let contract_data = [1u8, 2, 3];
 
         let params = DashSDKTokenBurnParams {
             token_contract_id: contract_id.as_ptr(),

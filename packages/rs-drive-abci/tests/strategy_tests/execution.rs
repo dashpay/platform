@@ -792,7 +792,7 @@ pub(crate) fn create_chain_for_strategy(
     strategy: NetworkStrategy,
     config: PlatformConfig,
     rng: StdRng,
-) -> ChainExecutionOutcome {
+) -> ChainExecutionOutcome<'_> {
     let abci_application = FullAbciApplication::new(platform);
 
     let seed = strategy

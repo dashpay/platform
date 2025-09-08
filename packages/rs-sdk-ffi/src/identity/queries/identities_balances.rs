@@ -11,6 +11,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Fetch balances for multiple identities
 ///
+/// # Safety
+/// - `sdk_handle` and `identity_ids` must be valid, non-null pointers.
+/// - `identity_ids` must point to an array of `[u8; 32]` of length `identity_ids_len` and remain valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+///
 /// # Parameters
 /// - `sdk_handle`: SDK handle
 /// - `identity_ids`: Array of identity IDs (32-byte arrays)

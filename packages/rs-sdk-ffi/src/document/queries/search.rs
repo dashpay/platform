@@ -78,6 +78,7 @@ fn parse_where_operator(op: &str) -> Result<WhereOperator, FFIError> {
 }
 
 /// Convert JSON value to platform value
+#[allow(clippy::result_large_err)]
 fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
     match json {
         serde_json::Value::Null => Ok(Value::Null),
@@ -111,6 +112,11 @@ fn json_to_platform_value(json: serde_json::Value) -> Result<Value, FFIError> {
 }
 
 /// Search for documents
+///
+/// # Safety
+/// - `sdk_handle` and `params` must be valid, non-null pointers.
+/// - All C string pointers inside `params` must point to NUL-terminated strings and remain valid for the duration of the call; optional strings may be null.
+/// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_search(
     sdk_handle: *const SDKHandle,

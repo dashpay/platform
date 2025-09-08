@@ -6,6 +6,10 @@ use crate::{
 use dash_sdk::platform::{DataContract, IdentityPublicKey};
 
 /// Put data contract to platform (broadcast state transition)
+///
+/// # Safety
+/// - `sdk_handle`, `data_contract_handle`, `identity_public_key_handle`, and `signer_handle` must be valid, non-null pointers.
+/// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform(
     sdk_handle: *mut SDKHandle,
@@ -60,6 +64,11 @@ pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform(
 }
 
 /// Put data contract to platform and wait for confirmation (broadcast state transition and wait for response)
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_data_contract_put_to_platform`.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_put_to_platform_and_wait(
     sdk_handle: *mut SDKHandle,

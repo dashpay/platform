@@ -25,6 +25,11 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing identity IDs mapped to their contract keys by purpose
+///
+/// # Safety
+/// - `sdk_handle`, `identity_ids`, `contract_id`, and `purposes` must be valid, non-null pointers.
+/// - `identity_ids`, `contract_id`, `document_type_name` (when non-null), and `purposes` must point to NUL-terminated C strings valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
     sdk_handle: *const SDKHandle,
@@ -166,7 +171,7 @@ pub unsafe extern "C" fn dash_sdk_identities_fetch_contract_keys(
             );
         }
 
-        Ok(serde_json::to_string(&json_obj).map_err(|e| FFIError::InternalError(e.to_string()))?)
+        serde_json::to_string(&json_obj).map_err(|e| FFIError::InternalError(e.to_string()))
     });
 
     match result {

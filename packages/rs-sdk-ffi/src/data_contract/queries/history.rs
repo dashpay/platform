@@ -59,6 +59,11 @@ impl dash_sdk::platform::Query<dash_sdk::dapi_grpc::platform::v0::GetDataContrac
 ///
 /// # Returns
 /// JSON string containing the data contract history
+///
+/// # Safety
+/// - `sdk_handle` and `contract_id` must be valid, non-null pointers.
+/// - `contract_id` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a heap-allocated C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_data_contract_fetch_history(
     sdk_handle: *const SDKHandle,

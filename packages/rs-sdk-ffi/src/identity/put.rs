@@ -13,6 +13,12 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Put identity to platform with instant lock proof
 ///
+/// # Safety
+/// - `sdk_handle`, `identity_handle`, `instant_lock_bytes`, `transaction_bytes`, `private_key`, and `signer_handle`
+///   must be valid, non-null pointers. Buffer pointers must reference at least the specified lengths.
+/// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+/// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
+///
 /// # Parameters
 /// - `instant_lock_bytes`: Serialized InstantLock data
 /// - `transaction_bytes`: Serialized Transaction data
@@ -94,6 +100,11 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock(
 }
 
 /// Put identity to platform with instant lock proof and wait for confirmation
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_identity_put_to_platform_with_instant_lock`.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 ///
 /// # Parameters
 /// - `instant_lock_bytes`: Serialized InstantLock data
@@ -185,6 +196,12 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_instant_lock_and
 
 /// Put identity to platform with chain lock proof
 ///
+/// # Safety
+/// - `sdk_handle`, `identity_handle`, `out_point`, `private_key`, and `signer_handle` must be valid, non-null pointers.
+/// - `out_point` must reference 36 readable bytes; `private_key` must reference 32 readable bytes.
+/// - `put_settings` may be null; if non-null it must be valid for the duration of the call.
+/// - On success, returns serialized data; any heap memory inside the result must be freed using SDK routines.
+///
 /// # Parameters
 /// - `core_chain_locked_height`: Core height at which the transaction was chain locked
 /// - `out_point`: 36-byte OutPoint (32-byte txid + 4-byte vout)
@@ -255,6 +272,11 @@ pub unsafe extern "C" fn dash_sdk_identity_put_to_platform_with_chain_lock(
 }
 
 /// Put identity to platform with chain lock proof and wait for confirmation
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_identity_put_to_platform_with_chain_lock`.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, returns a heap-allocated handle which must be destroyed with the SDK's destroy function.
 ///
 /// # Parameters
 /// - `core_chain_locked_height`: Core height at which the transaction was chain locked

@@ -3,7 +3,6 @@
 //! This module provides FFI bindings for configuring context providers,
 //! allowing the Platform SDK to connect to Core SDK for proof verification.
 
-use std::ffi::c_char;
 use std::sync::Arc;
 
 use drive_proof_verifier::ContextProvider;

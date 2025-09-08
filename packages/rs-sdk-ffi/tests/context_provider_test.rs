@@ -49,7 +49,7 @@ mod tests {
             }
 
             let callbacks = ContextProviderCallbacks {
-                core_handle: 1 as *mut core::ffi::c_void,
+                core_handle: std::ptr::dangling_mut::<core::ffi::c_void>(),
                 get_platform_activation_height: get_height_cb,
                 get_quorum_public_key: get_quorum_pk_cb,
             };
@@ -75,7 +75,7 @@ mod tests {
         unsafe {
             // Create a mock Core SDK handle using an opaque pointer
             // In real usage, this would come from the Core SDK
-            let core_handle_ptr = 1 as *mut CoreSDKHandle;
+            let core_handle_ptr = std::ptr::dangling_mut::<CoreSDKHandle>();
 
             // Create base config
             let dapi_addresses = CString::new("https://testnet.dash.org:3000").unwrap();

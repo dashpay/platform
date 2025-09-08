@@ -1,3 +1,7 @@
+#![allow(dead_code)]
+// Common numeric type-size constants used across Drive.
+// Many are referenced conditionally; allow dead_code at file scope.
+
 /// Default hash size
 pub const DEFAULT_HASH_SIZE_USIZE: usize = 32;
 /// Default hash 160 size as u8

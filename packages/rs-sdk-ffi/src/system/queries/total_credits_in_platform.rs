@@ -15,7 +15,9 @@ use std::os::raw::c_void;
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - The function does not retain references to inputs beyond the call.
+/// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_system_get_total_credits_in_platform(
     sdk_handle: *const SDKHandle,
