@@ -222,7 +222,7 @@ jobs:
         working-directory: packages/wasm-sdk
         run: |
           echo "Running WASM SDK comprehensive test suite..."
-          node test/run-all-tests.mjs | tee test-output.log
+          set -o pipefail && node test/run-all-tests.mjs | tee test-output.log
 
       - name: Generate job summary
         if: always()
