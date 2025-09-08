@@ -62,39 +62,55 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Invalid secret key: {}", e)))?;
-        let public_key = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key =
+            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid secret key: {}", e)))?;
+        let public_key =
+            dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
 
         // Create public key hash using hash160
         let public_key_hash160 = {
             use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
-            hash160::Hash::hash(&public_key_bytes[..]).to_byte_array().to_vec()
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any authentication key
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
-            owner_identity.public_keys()
+            owner_identity
+                .public_keys()
                 .get(&requested_key_id)
                 .filter(|key| {
-                    key.purpose() == Purpose::AUTHENTICATION &&
-                    key.key_type() == KeyType::ECDSA_HASH160 &&
-                    key.data().as_slice() == public_key_hash160.as_slice()
+                    key.purpose() == Purpose::AUTHENTICATION
+                        && key.key_type() == KeyType::ECDSA_HASH160
+                        && key.data().as_slice() == public_key_hash160.as_slice()
                 })
-                .ok_or_else(|| JsValue::from_str(&format!("Key with ID {} not found or doesn't match private key", requested_key_id)))?
+                .ok_or_else(|| {
+                    JsValue::from_str(&format!(
+                        "Key with ID {} not found or doesn't match private key",
+                        requested_key_id
+                    ))
+                })?
                 .clone()
         } else {
             // Find any matching authentication key
-            owner_identity.public_keys().iter()
+            owner_identity
+                .public_keys()
+                .iter()
                 .find(|(_, key)| {
-                    key.purpose() == Purpose::AUTHENTICATION &&
-                    key.key_type() == KeyType::ECDSA_HASH160 &&
-                    key.data().as_slice() == public_key_hash160.as_slice()
+                    key.purpose() == Purpose::AUTHENTICATION
+                        && key.key_type() == KeyType::ECDSA_HASH160
+                        && key.data().as_slice() == public_key_hash160.as_slice()
                 })
                 .map(|(_, key)| key.clone())
-                .ok_or_else(|| JsValue::from_str("No matching authentication key found for the provided private key"))?
+                .ok_or_else(|| {
+                    JsValue::from_str(
+                        "No matching authentication key found for the provided private key",
+                    )
+                })?
         };
 
         // Create the data contract from JSON definition
@@ -103,7 +119,9 @@ impl WasmSdk {
             true, // validate
             sdk.version(),
         )
-        .map_err(|e| JsValue::from_str(&format!("Failed to create data contract from JSON: {}", e)))?;
+        .map_err(|e| {
+            JsValue::from_str(&format!("Failed to create data contract from JSON: {}", e))
+        })?;
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
@@ -118,19 +136,35 @@ impl WasmSdk {
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
 
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("status"), &JsValue::from_str("success"))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("status"),
+            &JsValue::from_str("success"),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
 
         // Convert contract ID to base58
         let contract_id_base58 = created_contract.id().to_string(Encoding::Base58);
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("contractId"), &JsValue::from_str(&contract_id_base58))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set contractId: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("contractId"),
+            &JsValue::from_str(&contract_id_base58),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set contractId: {:?}", e)))?;
 
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("ownerId"), &JsValue::from_str(&owner_id))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set ownerId: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("ownerId"),
+            &JsValue::from_str(&owner_id),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set ownerId: {:?}", e)))?;
 
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("version"), &JsValue::from_f64(created_contract.version() as f64))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set version: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("version"),
+            &JsValue::from_f64(created_contract.version() as f64),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set version: {:?}", e)))?;
 
         // Add document type names
         let schema = created_contract.document_types();
@@ -138,11 +172,19 @@ impl WasmSdk {
         for (doc_type_name, _) in schema.iter() {
             doc_types_array.push(&JsValue::from_str(doc_type_name));
         }
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("documentTypes"), &doc_types_array)
-            .map_err(|e| JsValue::from_str(&format!("Failed to set documentTypes: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("documentTypes"),
+            &doc_types_array,
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set documentTypes: {:?}", e)))?;
 
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("message"), &JsValue::from_str("Data contract created successfully"))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("message"),
+            &JsValue::from_str("Data contract created successfully"),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
 
         Ok(result_obj.into())
     }
@@ -206,39 +248,55 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Invalid secret key: {}", e)))?;
-        let public_key = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key =
+            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid secret key: {}", e)))?;
+        let public_key =
+            dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
 
         // Create public key hash using hash160
         let public_key_hash160 = {
             use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
-            hash160::Hash::hash(&public_key_bytes[..]).to_byte_array().to_vec()
+            hash160::Hash::hash(&public_key_bytes[..])
+                .to_byte_array()
+                .to_vec()
         };
 
         // Find matching key - prioritize key_id if provided, otherwise find any authentication key
         let matching_key = if let Some(requested_key_id) = key_id {
             // Find specific key by ID
-            owner_identity.public_keys()
+            owner_identity
+                .public_keys()
                 .get(&requested_key_id)
                 .filter(|key| {
-                    key.purpose() == Purpose::AUTHENTICATION &&
-                    key.key_type() == KeyType::ECDSA_HASH160 &&
-                    key.data().as_slice() == public_key_hash160.as_slice()
+                    key.purpose() == Purpose::AUTHENTICATION
+                        && key.key_type() == KeyType::ECDSA_HASH160
+                        && key.data().as_slice() == public_key_hash160.as_slice()
                 })
-                .ok_or_else(|| JsValue::from_str(&format!("Key with ID {} not found or doesn't match private key", requested_key_id)))?
+                .ok_or_else(|| {
+                    JsValue::from_str(&format!(
+                        "Key with ID {} not found or doesn't match private key",
+                        requested_key_id
+                    ))
+                })?
                 .clone()
         } else {
             // Find any matching authentication key
-            owner_identity.public_keys().iter()
+            owner_identity
+                .public_keys()
+                .iter()
                 .find(|(_, key)| {
-                    key.purpose() == Purpose::AUTHENTICATION &&
-                    key.key_type() == KeyType::ECDSA_HASH160 &&
-                    key.data().as_slice() == public_key_hash160.as_slice()
+                    key.purpose() == Purpose::AUTHENTICATION
+                        && key.key_type() == KeyType::ECDSA_HASH160
+                        && key.data().as_slice() == public_key_hash160.as_slice()
                 })
                 .map(|(_, key)| key.clone())
-                .ok_or_else(|| JsValue::from_str("No matching authentication key found for the provided private key"))?
+                .ok_or_else(|| {
+                    JsValue::from_str(
+                        "No matching authentication key found for the provided private key",
+                    )
+                })?
         };
 
         // Create updated contract from JSON definition
@@ -248,7 +306,12 @@ impl WasmSdk {
             true, // validate
             sdk.version(),
         )
-        .map_err(|e| JsValue::from_str(&format!("Failed to create updated contract from JSON: {}", e)))?;
+        .map_err(|e| {
+            JsValue::from_str(&format!(
+                "Failed to create updated contract from JSON: {}",
+                e
+            ))
+        })?;
 
         // Verify the version was incremented
         if updated_contract.version() <= existing_contract.version() {
@@ -263,7 +326,9 @@ impl WasmSdk {
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(owner_identifier, contract_identifier, true, None)
             .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e)))?;
+            .map_err(|e| {
+                JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e))
+            })?;
 
         // Create partial identity for signing
         let partial_identity = dash_sdk::dpp::identity::PartialIdentity {
@@ -307,14 +372,30 @@ impl WasmSdk {
         // Create JavaScript result object
         let result_obj = js_sys::Object::new();
 
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("status"), &JsValue::from_str("success"))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("contractId"), &JsValue::from_str(&contract_id))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set contractId: {:?}", e)))?;
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("version"), &JsValue::from_f64(updated_version as f64))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set version: {:?}", e)))?;
-        js_sys::Reflect::set(&result_obj, &JsValue::from_str("message"), &JsValue::from_str("Data contract updated successfully"))
-            .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("status"),
+            &JsValue::from_str("success"),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set status: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("contractId"),
+            &JsValue::from_str(&contract_id),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set contractId: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("version"),
+            &JsValue::from_f64(updated_version as f64),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set version: {:?}", e)))?;
+        js_sys::Reflect::set(
+            &result_obj,
+            &JsValue::from_str("message"),
+            &JsValue::from_str("Data contract updated successfully"),
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to set message: {:?}", e)))?;
 
         Ok(result_obj.into())
     }

@@ -53,9 +53,9 @@ pub struct Dip14ExtendedPrivKey {
 
 // DIP14 Version bytes
 const _DIP14_VERSION_MAINNET_PRIVATE: [u8; 4] = [0x04, 0x9e, 0xdd, 0x93]; // dpms
-const _DIP14_VERSION_MAINNET_PUBLIC: [u8; 4] = [0x04, 0x9e, 0xdc, 0x93];  // dpmp
+const _DIP14_VERSION_MAINNET_PUBLIC: [u8; 4] = [0x04, 0x9e, 0xdc, 0x93]; // dpmp
 const _DIP14_VERSION_TESTNET_PRIVATE: [u8; 4] = [0x04, 0xa5, 0x90, 0x8e]; // dpts
-const _DIP14_VERSION_TESTNET_PUBLIC: [u8; 4] = [0x04, 0xa5, 0x8f, 0x51];  // dptp
+const _DIP14_VERSION_TESTNET_PUBLIC: [u8; 4] = [0x04, 0xa5, 0x8f, 0x51]; // dptp
 
 impl Dip14ExtendedPrivKey {
     /// Create from a standard BIP32 ExtendedPrivKey (for master key)
@@ -82,7 +82,8 @@ impl Dip14ExtendedPrivKey {
             return Err(Dip14Error::InvalidIndex);
         }
 
-        let child_bytes: [u8; 4] = self.child_number[28..32].try_into()
+        let child_bytes: [u8; 4] = self.child_number[28..32]
+            .try_into()
             .map_err(|_| Dip14Error::InvalidIndex)?;
         let child_number = key_wallet::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
 
@@ -125,32 +126,52 @@ impl Dip14ExtendedPrivKey {
         // First, try to create a secret key from IL
         let il_scalar = match SecretKey::from_slice(il_bytes) {
             Ok(key) => key,
-            Err(_) => return Err(Dip14Error::DerivationFailed("Invalid IL bytes (IL >= n)".to_string())),
+            Err(_) => {
+                return Err(Dip14Error::DerivationFailed(
+                    "Invalid IL bytes (IL >= n)".to_string(),
+                ))
+            }
         };
 
         // Add parent key to IL
         // In secp256k1, we perform scalar addition: child_key = parent_key + IL (mod n)
         // Convert IL to a Scalar for the tweak operation
         let il_scalar_bytes = il_scalar.secret_bytes();
-        let tweak = Scalar::from_be_bytes(il_scalar_bytes)
-            .map_err(|_| Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string()))?;
+        let tweak = Scalar::from_be_bytes(il_scalar_bytes).map_err(|_| {
+            Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string())
+        })?;
 
         // Debug: log parent and IL values before addition
-        web_sys::console::log_1(&format!("Parent key: {}", hex::encode(&self.private_key.secret_bytes())).into());
+        web_sys::console::log_1(
+            &format!(
+                "Parent key: {}",
+                hex::encode(&self.private_key.secret_bytes())
+            )
+            .into(),
+        );
         web_sys::console::log_1(&format!("IL (tweak): {}", hex::encode(&il_scalar_bytes)).into());
 
         // Perform scalar addition: child_key = parent_key + IL (mod n)
-        let child_key = self.private_key.add_tweak(&tweak)
+        let child_key = self
+            .private_key
+            .add_tweak(&tweak)
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
 
         // Debug: log result after addition
-        web_sys::console::log_1(&format!("Child key after addition: {}", hex::encode(&child_key.secret_bytes())).into());
+        web_sys::console::log_1(
+            &format!(
+                "Child key after addition: {}",
+                hex::encode(&child_key.secret_bytes())
+            )
+            .into(),
+        );
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)
         let parent_pubkey = PublicKey::from_secret_key(&secp, &self.private_key);
         // Use sha256 then ripemd160 to create hash160
         let sha256_hash = sha256::Hash::hash(&parent_pubkey.serialize());
-        let parent_pubkey_hash = dash_sdk::dpp::dashcore::hashes::ripemd160::Hash::hash(&sha256_hash[..]);
+        let parent_pubkey_hash =
+            dash_sdk::dpp::dashcore::hashes::ripemd160::Hash::hash(&sha256_hash[..]);
         let mut parent_fingerprint = [0u8; 4];
         parent_fingerprint.copy_from_slice(&parent_pubkey_hash[0..4]);
 
@@ -159,8 +180,9 @@ impl Dip14ExtendedPrivKey {
             depth: self.depth + 1,
             parent_fingerprint,
             child_number: *index,
-            chain_code: child_chain_code.try_into()
-                .map_err(|_| Dip14Error::DerivationFailed("Invalid chain code length".to_string()))?,
+            chain_code: child_chain_code.try_into().map_err(|_| {
+                Dip14Error::DerivationFailed("Invalid chain code length".to_string())
+            })?,
             private_key: child_key,
         })
     }
@@ -198,7 +220,8 @@ impl Dip14ExtendedPubKey {
             return Err(Dip14Error::InvalidIndex);
         }
 
-        let child_bytes: [u8; 4] = self.child_number[28..32].try_into()
+        let child_bytes: [u8; 4] = self.child_number[28..32]
+            .try_into()
             .map_err(|_| Dip14Error::InvalidIndex)?;
         let child_number = key_wallet::bip32::ChildNumber::from(u32::from_be_bytes(child_bytes));
 

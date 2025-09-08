@@ -16,10 +16,7 @@ struct DpnsUsernameInfo {
 }
 
 #[wasm_bindgen]
-pub async fn get_dpns_username_by_name(
-    sdk: &WasmSdk,
-    username: &str,
-) -> Result<JsValue, JsError> {
+pub async fn get_dpns_username_by_name(sdk: &WasmSdk, username: &str) -> Result<JsValue, JsError> {
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use drive::query::{WhereClause, WhereOperator};
     use dash_sdk::dpp::platform_value::Value;
@@ -31,25 +28,22 @@ pub async fn get_dpns_username_by_name(
     // Parse username into label and domain
     let parts: Vec<&str> = username.split('.').collect();
     if parts.len() != 2 {
-        return Err(JsError::new("Invalid username format. Expected format: label.dash"));
+        return Err(JsError::new(
+            "Invalid username format. Expected format: label.dash",
+        ));
     }
     let label = parts[0];
     let domain = parts[1];
 
     // Parse DPNS contract ID
-    let contract_id = dash_sdk::dpp::prelude::Identifier::from_string(
-        DPNS_CONTRACT_ID,
-        Encoding::Base58,
-    )?;
+    let contract_id =
+        dash_sdk::dpp::prelude::Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)?;
 
     // Create document query
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        DPNS_DOCUMENT_TYPE,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Query by label and normalizedParentDomainName
     query = query.with_where(WhereClause {
@@ -96,25 +90,22 @@ pub async fn get_dpns_username_by_name_with_proof_info(
     // Parse username into label and domain
     let parts: Vec<&str> = username.split('.').collect();
     if parts.len() != 2 {
-        return Err(JsError::new("Invalid username format. Expected format: label.dash"));
+        return Err(JsError::new(
+            "Invalid username format. Expected format: label.dash",
+        ));
     }
     let label = parts[0];
     let domain = parts[1];
 
     // Parse DPNS contract ID
-    let contract_id = dash_sdk::dpp::prelude::Identifier::from_string(
-        DPNS_CONTRACT_ID,
-        Encoding::Base58,
-    )?;
+    let contract_id =
+        dash_sdk::dpp::prelude::Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)?;
 
     // Create document query
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        DPNS_DOCUMENT_TYPE,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Query by label and normalizedParentDomainName
     query = query.with_where(WhereClause {
@@ -129,7 +120,8 @@ pub async fn get_dpns_username_by_name_with_proof_info(
         value: Value::Text(domain.to_lowercase()),
     });
 
-    let (documents, metadata, proof) = Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None).await?;
+    let (documents, metadata, proof) =
+        Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None).await?;
 
     if let Some((_, Some(document))) = documents.into_iter().next() {
         let result = DpnsUsernameInfo {
@@ -145,11 +137,11 @@ pub async fn get_dpns_username_by_name_with_proof_info(
         };
 
         // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response
+            .serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     } else {
         Err(JsError::new(&format!("Username '{}' not found", username)))
     }
 }
-

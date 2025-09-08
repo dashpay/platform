@@ -13,8 +13,8 @@ pub mod wallet;
 // Re-export commonly used items
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use queries::{
-    data_contract::*, document::*, dpns::*, epoch::*, group::*, protocol::*, system::*, token::*, voting::*,
-    identity as query_identity
+    data_contract::*, document::*, dpns::*, epoch::*, group::*, protocol::*, system::*, token::*,
+    voting::*, identity as query_identity,
 };
 pub use state_transitions::identity as state_transition_identity;
 pub use dpns::*;

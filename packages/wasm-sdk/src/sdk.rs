@@ -75,7 +75,8 @@ impl WasmSdk {
                     "type": "simple",
                     "value": "test"
                 });
-                to_value(&simple).map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
+                to_value(&simple)
+                    .map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
             }
             "complex" => {
                 let complex = serde_json::json!({
@@ -88,7 +89,8 @@ impl WasmSdk {
                         "bool_value": true
                     }
                 });
-                to_value(&complex).map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
+                to_value(&complex)
+                    .map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
             }
             "document" => {
                 // Simulate the exact structure we're trying to return
@@ -105,9 +107,11 @@ impl WasmSdk {
                         "updatedAt": 1736300191752i64,
                     }
                 });
-                to_value(&doc).map_err(|e| JsValue::from_str(&format!("Document serialization failed: {}", e)))
+                to_value(&doc).map_err(|e| {
+                    JsValue::from_str(&format!("Document serialization failed: {}", e))
+                })
             }
-            _ => Err(JsValue::from_str("Unknown test type"))
+            _ => Err(JsValue::from_str("Unknown test type")),
         }
     }
 }
@@ -677,8 +681,12 @@ impl WasmSdkBuilder {
     ///
     /// Defaults to latest version if not specified.
     pub fn with_version(self, version_number: u32) -> Result<Self, JsError> {
-        let version = PlatformVersion::get(version_number)
-            .map_err(|e| JsError::new(&format!("Invalid platform version {}: {}", version_number, e)))?;
+        let version = PlatformVersion::get(version_number).map_err(|e| {
+            JsError::new(&format!(
+                "Invalid platform version {}: {}",
+                version_number, e
+            ))
+        })?;
 
         Ok(WasmSdkBuilder(self.0.with_version(version)))
     }
@@ -728,10 +736,12 @@ impl WasmSdkBuilder {
 use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
-pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
-    Lazy::new(|| Mutex::new(None));
-pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<Mutex<Option<crate::context_provider::WasmTrustedContext>>> =
-    Lazy::new(|| Mutex::new(None));
+pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
+    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
+> = Lazy::new(|| Mutex::new(None));
+pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
+    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
+> = Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]
 pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsError> {

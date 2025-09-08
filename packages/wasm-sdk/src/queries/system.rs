@@ -123,7 +123,7 @@ struct CurrentQuorumsInfo {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct TotalCreditsResponse {
-    total_credits_in_platform: String,  // Use String to handle large numbers
+    total_credits_in_platform: String, // Use String to handle large numbers
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -179,38 +179,52 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     let status = StatusResponse {
         version: StatusVersion {
             software: StatusSoftware {
-                dapi: v0_response.version.as_ref()
+                dapi: v0_response
+                    .version
+                    .as_ref()
                     .map(|v| v.software.as_ref())
                     .flatten()
                     .map(|s| s.dapi.clone())
                     .unwrap_or_else(|| "unknown".to_string()),
-                drive: v0_response.version.as_ref()
+                drive: v0_response
+                    .version
+                    .as_ref()
                     .and_then(|v| v.software.as_ref())
                     .and_then(|s| s.drive.clone()),
-                tenderdash: v0_response.version.as_ref()
+                tenderdash: v0_response
+                    .version
+                    .as_ref()
                     .and_then(|v| v.software.as_ref())
                     .and_then(|s| s.tenderdash.clone()),
             },
             protocol: StatusProtocol {
                 tenderdash: StatusTenderdashProtocol {
-                    p2p: v0_response.version.as_ref()
+                    p2p: v0_response
+                        .version
+                        .as_ref()
                         .and_then(|v| v.protocol.as_ref())
                         .and_then(|p| p.tenderdash.as_ref())
                         .map(|t| t.p2p)
                         .unwrap_or(0),
-                    block: v0_response.version.as_ref()
+                    block: v0_response
+                        .version
+                        .as_ref()
                         .and_then(|v| v.protocol.as_ref())
                         .and_then(|p| p.tenderdash.as_ref())
                         .map(|t| t.block)
                         .unwrap_or(0),
                 },
                 drive: StatusDriveProtocol {
-                    latest: v0_response.version.as_ref()
+                    latest: v0_response
+                        .version
+                        .as_ref()
                         .and_then(|v| v.protocol.as_ref())
                         .and_then(|p| p.drive.as_ref())
                         .map(|d| d.latest)
                         .unwrap_or(0),
-                    current: v0_response.version.as_ref()
+                    current: v0_response
+                        .version
+                        .as_ref()
                         .and_then(|v| v.protocol.as_ref())
                         .and_then(|p| p.drive.as_ref())
                         .map(|d| d.current)
@@ -219,90 +233,139 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
             },
         },
         node: StatusNode {
-            id: v0_response.node.as_ref()
+            id: v0_response
+                .node
+                .as_ref()
                 .map(|n| hex::encode(&n.id))
                 .unwrap_or_else(|| "unknown".to_string()),
-            pro_tx_hash: v0_response.node.as_ref()
+            pro_tx_hash: v0_response
+                .node
+                .as_ref()
                 .and_then(|n| n.pro_tx_hash.as_ref())
                 .map(|hash| hex::encode(hash)),
         },
         chain: StatusChain {
-            catching_up: v0_response.chain.as_ref()
+            catching_up: v0_response
+                .chain
+                .as_ref()
                 .map(|c| c.catching_up)
                 .unwrap_or(false),
-            latest_block_hash: v0_response.chain.as_ref()
+            latest_block_hash: v0_response
+                .chain
+                .as_ref()
                 .map(|c| hex::encode(&c.latest_block_hash))
                 .unwrap_or_else(|| "unknown".to_string()),
-            latest_app_hash: v0_response.chain.as_ref()
+            latest_app_hash: v0_response
+                .chain
+                .as_ref()
                 .map(|c| hex::encode(&c.latest_app_hash))
                 .unwrap_or_else(|| "unknown".to_string()),
-            latest_block_height: v0_response.chain.as_ref()
+            latest_block_height: v0_response
+                .chain
+                .as_ref()
                 .map(|c| c.latest_block_height.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            earliest_block_hash: v0_response.chain.as_ref()
+            earliest_block_hash: v0_response
+                .chain
+                .as_ref()
                 .map(|c| hex::encode(&c.earliest_block_hash))
                 .unwrap_or_else(|| "unknown".to_string()),
-            earliest_app_hash: v0_response.chain.as_ref()
+            earliest_app_hash: v0_response
+                .chain
+                .as_ref()
                 .map(|c| hex::encode(&c.earliest_app_hash))
                 .unwrap_or_else(|| "unknown".to_string()),
-            earliest_block_height: v0_response.chain.as_ref()
+            earliest_block_height: v0_response
+                .chain
+                .as_ref()
                 .map(|c| c.earliest_block_height.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            max_peer_block_height: v0_response.chain.as_ref()
+            max_peer_block_height: v0_response
+                .chain
+                .as_ref()
                 .map(|c| c.max_peer_block_height.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            core_chain_locked_height: v0_response.chain.as_ref()
+            core_chain_locked_height: v0_response
+                .chain
+                .as_ref()
                 .and_then(|c| c.core_chain_locked_height),
         },
         network: StatusNetwork {
-            chain_id: v0_response.network.as_ref()
+            chain_id: v0_response
+                .network
+                .as_ref()
                 .map(|n| n.chain_id.clone())
                 .unwrap_or_else(|| "unknown".to_string()),
-            peers_count: v0_response.network.as_ref()
+            peers_count: v0_response
+                .network
+                .as_ref()
                 .map(|n| n.peers_count)
                 .unwrap_or(0),
-            listening: v0_response.network.as_ref()
+            listening: v0_response
+                .network
+                .as_ref()
                 .map(|n| n.listening)
                 .unwrap_or(false),
         },
         state_sync: StatusStateSync {
-            total_synced_time: v0_response.state_sync.as_ref()
+            total_synced_time: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.total_synced_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            remaining_time: v0_response.state_sync.as_ref()
+            remaining_time: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.remaining_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            total_snapshots: v0_response.state_sync.as_ref()
+            total_snapshots: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.total_snapshots)
                 .unwrap_or(0),
-            chunk_process_avg_time: v0_response.state_sync.as_ref()
+            chunk_process_avg_time: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.chunk_process_avg_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            snapshot_height: v0_response.state_sync.as_ref()
+            snapshot_height: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.snapshot_height.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            snapshot_chunks_count: v0_response.state_sync.as_ref()
+            snapshot_chunks_count: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.snapshot_chunks_count.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            backfilled_blocks: v0_response.state_sync.as_ref()
+            backfilled_blocks: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.backfilled_blocks.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            backfill_blocks_total: v0_response.state_sync.as_ref()
+            backfill_blocks_total: v0_response
+                .state_sync
+                .as_ref()
                 .map(|s| s.backfill_blocks_total.to_string())
                 .unwrap_or_else(|| "0".to_string()),
         },
         time: StatusTime {
-            local: v0_response.time.as_ref()
+            local: v0_response
+                .time
+                .as_ref()
                 .map(|t| t.local.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            block: v0_response.time.as_ref()
+            block: v0_response
+                .time
+                .as_ref()
                 .and_then(|t| t.block)
                 .map(|b| b.to_string()),
-            genesis: v0_response.time.as_ref()
+            genesis: v0_response
+                .time
+                .as_ref()
                 .and_then(|t| t.genesis)
                 .map(|g| g.to_string()),
-            epoch: v0_response.time.as_ref()
-                .and_then(|t| t.epoch),
+            epoch: v0_response.time.as_ref().and_then(|t| t.epoch),
         },
     };
 
@@ -323,18 +386,17 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
     if let Some(quorum_info) = quorums_result {
         // Convert the SDK response to our structure
         // Match quorum hashes with validator sets to get detailed information
-        let quorums: Vec<QuorumInfo> = quorum_info.quorum_hashes
+        let quorums: Vec<QuorumInfo> = quorum_info
+            .quorum_hashes
             .into_iter()
             .map(|quorum_hash| {
                 // Try to find the corresponding validator set
-                let validator_set = quorum_info.validator_sets
-                    .iter()
-                    .find(|vs| {
-                        // Compare the quorum hash bytes directly
+                let validator_set = quorum_info.validator_sets.iter().find(|vs| {
+                    // Compare the quorum hash bytes directly
 
-                        let vs_hash_bytes: &[u8] = vs.quorum_hash().as_ref();
-                        vs_hash_bytes == &quorum_hash[..]
-                    });
+                    let vs_hash_bytes: &[u8] = vs.quorum_hash().as_ref();
+                    vs_hash_bytes == &quorum_hash[..]
+                });
 
                 if let Some(vs) = validator_set {
                     let member_count = vs.members().len() as u32;
@@ -346,7 +408,10 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
                         50..=70 => ("LLMQ_60_75".to_string(), (member_count * 75 / 100).max(1)),
                         90..=110 => ("LLMQ_100_67".to_string(), (member_count * 67 / 100).max(1)),
                         350..=450 => ("LLMQ_400_60".to_string(), (member_count * 60 / 100).max(1)),
-                        _ => ("LLMQ_TYPE_UNKNOWN".to_string(), (member_count * 2 / 3).max(1)),
+                        _ => (
+                            "LLMQ_TYPE_UNKNOWN".to_string(),
+                            (member_count * 2 / 3).max(1),
+                        ),
                     };
 
                     QuorumInfo {
@@ -414,7 +479,8 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -435,7 +501,12 @@ pub async fn get_prefunded_specialized_balance(
     // Fetch prefunded specialized balance
     let balance_result = PrefundedBalance::fetch(sdk.as_ref(), identity_identifier)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch prefunded specialized balance: {}", e)))?;
+        .map_err(|e| {
+            JsError::new(&format!(
+                "Failed to fetch prefunded specialized balance: {}",
+                e
+            ))
+        })?;
 
     if let Some(balance) = balance_result {
         let response = PrefundedSpecializedBalance {
@@ -444,8 +515,9 @@ pub async fn get_prefunded_specialized_balance(
         };
 
         // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response
+            .serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     } else {
         // Return zero balance if not found
@@ -455,8 +527,9 @@ pub async fn get_prefunded_specialized_balance(
         };
 
         // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response
+            .serialize(&serializer)
             .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
     }
 }
@@ -491,7 +564,12 @@ pub async fn wait_for_state_transition_result(
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
-        .map_err(|e| JsError::new(&format!("Failed to wait for state transition result: {}", e)))?;
+        .map_err(|e| {
+            JsError::new(&format!(
+                "Failed to wait for state transition result: {}",
+                e
+            ))
+        })?;
 
     // Parse the response
     use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
@@ -504,14 +582,20 @@ pub async fn wait_for_state_transition_result(
             Some(V0Result::Error(e)) => {
                 let error_message = format!("Code: {}, Message: {}", e.code, e.message);
                 ("ERROR".to_string(), Some(error_message))
-            },
+            }
             Some(V0Result::Proof(_)) => {
                 // State transition was successful
                 ("SUCCESS".to_string(), None)
-            },
-            None => ("UNKNOWN".to_string(), Some("No result returned".to_string())),
+            }
+            None => (
+                "UNKNOWN".to_string(),
+                Some("No result returned".to_string()),
+            ),
         },
-        None => ("UNKNOWN".to_string(), Some("No version in response".to_string())),
+        None => (
+            "UNKNOWN".to_string(),
+            Some("No version in response".to_string()),
+        ),
     };
 
     let result = StateTransitionResult {
@@ -536,7 +620,8 @@ pub async fn get_path_elements(
 
     // Convert string path to byte vectors
     // Path elements can be either numeric values (like "96" for Balances) or string keys
-    let path_bytes: Vec<Vec<u8>> = path.iter()
+    let path_bytes: Vec<Vec<u8>> = path
+        .iter()
         .map(|p| {
             // Try to parse as a u8 number first (for root tree paths)
             if let Ok(num) = p.parse::<u8>() {
@@ -549,9 +634,7 @@ pub async fn get_path_elements(
         .collect();
 
     // Convert string keys to byte vectors
-    let key_bytes: Vec<Vec<u8>> = keys.iter()
-        .map(|k| k.as_bytes().to_vec())
-        .collect();
+    let key_bytes: Vec<Vec<u8>> = keys.iter().map(|k| k.as_bytes().to_vec()).collect();
 
     // Create the query
     let query = KeysInPath {
@@ -565,10 +648,12 @@ pub async fn get_path_elements(
         .map_err(|e| JsError::new(&format!("Failed to fetch path elements: {}", e)))?;
 
     // Convert the result to our response format
-    let elements: Vec<PathElement> = keys.into_iter()
+    let elements: Vec<PathElement> = keys
+        .into_iter()
         .map(|key| {
             // Check if this key exists in the result
-            let value = path_elements_result.get(key.as_bytes())
+            let value = path_elements_result
+                .get(key.as_bytes())
                 .and_then(|element_opt| element_opt.as_ref())
                 .and_then(|element| {
                     // Element can contain different types, we'll serialize it as base64
@@ -592,14 +677,19 @@ pub async fn get_path_elements(
 // Proof versions for system queries
 
 #[wasm_bindgen]
-pub async fn get_total_credits_in_platform_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+pub async fn get_total_credits_in_platform_with_proof_info(
+    sdk: &WasmSdk,
+) -> Result<JsValue, JsError> {
     use dash_sdk::platform::Fetch;
     use drive_proof_verifier::types::{TotalCreditsInPlatform as TotalCreditsQuery, NoParamQuery};
     use crate::queries::ProofMetadataResponse;
 
-    let (total_credits_result, metadata, proof) = TotalCreditsQuery::fetch_with_metadata_and_proof(sdk.as_ref(), NoParamQuery {}, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch total credits with proof: {}", e)))?;
+    let (total_credits_result, metadata, proof) =
+        TotalCreditsQuery::fetch_with_metadata_and_proof(sdk.as_ref(), NoParamQuery {}, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch total credits with proof: {}", e))
+            })?;
 
     let data = if let Some(credits) = total_credits_result {
         Some(TotalCreditsResponse {
@@ -617,7 +707,8 @@ pub async fn get_total_credits_in_platform_with_proof_info(sdk: &WasmSdk) -> Res
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -637,9 +728,15 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
     )?;
 
     // Fetch prefunded specialized balance with proof
-    let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(sdk.as_ref(), identity_identifier, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch prefunded specialized balance with proof: {}", e)))?;
+    let (balance_result, metadata, proof) =
+        PrefundedBalance::fetch_with_metadata_and_proof(sdk.as_ref(), identity_identifier, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to fetch prefunded specialized balance with proof: {}",
+                    e
+                ))
+            })?;
 
     let data = PrefundedSpecializedBalance {
         identity_id: identity_id.to_string(),
@@ -654,7 +751,8 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -671,7 +769,8 @@ pub async fn get_path_elements_with_proof_info(
 
     // Convert string path to byte vectors
     // Path elements can be either numeric values (like "96" for Balances) or string keys
-    let path_bytes: Vec<Vec<u8>> = path.iter()
+    let path_bytes: Vec<Vec<u8>> = path
+        .iter()
         .map(|p| {
             // Try to parse as a u8 number first (for root tree paths)
             if let Ok(num) = p.parse::<u8>() {
@@ -684,9 +783,7 @@ pub async fn get_path_elements_with_proof_info(
         .collect();
 
     // Convert string keys to byte vectors
-    let key_bytes: Vec<Vec<u8>> = keys.iter()
-        .map(|k| k.as_bytes().to_vec())
-        .collect();
+    let key_bytes: Vec<Vec<u8>> = keys.iter().map(|k| k.as_bytes().to_vec()).collect();
 
     // Create the query
     let query = KeysInPath {
@@ -695,14 +792,19 @@ pub async fn get_path_elements_with_proof_info(
     };
 
     // Fetch path elements with proof
-    let (path_elements_result, metadata, proof) = Element::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch path elements with proof: {}", e)))?;
+    let (path_elements_result, metadata, proof) =
+        Element::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch path elements with proof: {}", e))
+            })?;
 
     // Convert the result to our response format
-    let elements: Vec<PathElement> = keys.into_iter()
+    let elements: Vec<PathElement> = keys
+        .into_iter()
         .map(|key| {
-            let value = path_elements_result.get(key.as_bytes())
+            let value = path_elements_result
+                .get(key.as_bytes())
                 .and_then(|element_opt| element_opt.as_ref())
                 .and_then(|element| {
                     element.as_item_bytes().ok().map(|bytes| {
@@ -726,6 +828,7 @@ pub async fn get_path_elements_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }

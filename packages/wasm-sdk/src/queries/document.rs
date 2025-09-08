@@ -43,7 +43,7 @@ impl DocumentResponse {
     fn from_document(
         doc: &Document,
         _data_contract: &dash_sdk::platform::DataContract,
-        _document_type: dash_sdk::dpp::data_contract::document_type::DocumentTypeRef
+        _document_type: dash_sdk::dpp::data_contract::document_type::DocumentTypeRef,
     ) -> Result<Self, JsError> {
         use dash_sdk::dpp::document::DocumentV0Getters;
 
@@ -56,15 +56,21 @@ impl DocumentResponse {
 
         for (key, value) in properties {
             // Convert platform Value to JSON
-            let json_value: JsonValue = value.clone().try_into()
+            let json_value: JsonValue = value
+                .clone()
+                .try_into()
                 .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
 
             data.insert(key.clone(), json_value);
         }
 
         let response = Self {
-            id: doc.id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-            owner_id: doc.owner_id().to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+            id: doc
+                .id()
+                .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+            owner_id: doc
+                .owner_id()
+                .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
             revision: doc.revision().unwrap_or(0),
             created_at: doc.created_at(),
             updated_at: doc.updated_at(),
@@ -84,18 +90,23 @@ impl DocumentResponse {
 
 /// Parse JSON where clause into WhereClause
 fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
-    let clause_array = json_clause.as_array()
+    let clause_array = json_clause
+        .as_array()
         .ok_or_else(|| JsError::new("where clause must be an array"))?;
 
     if clause_array.len() != 3 {
-        return Err(JsError::new("where clause must have exactly 3 elements: [field, operator, value]"));
+        return Err(JsError::new(
+            "where clause must have exactly 3 elements: [field, operator, value]",
+        ));
     }
 
-    let field = clause_array[0].as_str()
+    let field = clause_array[0]
+        .as_str()
         .ok_or_else(|| JsError::new("where clause field must be a string"))?
         .to_string();
 
-    let operator_str = clause_array[1].as_str()
+    let operator_str = clause_array[1]
+        .as_str()
         .ok_or_else(|| JsError::new("where clause operator must be a string"))?;
 
     let operator = match operator_str {
@@ -125,18 +136,23 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
 
 /// Parse JSON order by clause into OrderClause
 fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, JsError> {
-    let clause_array = json_clause.as_array()
+    let clause_array = json_clause
+        .as_array()
         .ok_or_else(|| JsError::new("order by clause must be an array"))?;
 
     if clause_array.len() != 2 {
-        return Err(JsError::new("order by clause must have exactly 2 elements: [field, direction]"));
+        return Err(JsError::new(
+            "order by clause must have exactly 2 elements: [field, direction]",
+        ));
     }
 
-    let field = clause_array[0].as_str()
+    let field = clause_array[0]
+        .as_str()
         .ok_or_else(|| JsError::new("order by field must be a string"))?
         .to_string();
 
-    let direction = clause_array[1].as_str()
+    let direction = clause_array[1]
+        .as_str()
         .ok_or_else(|| JsError::new("order by direction must be a string"))?;
 
     let ascending = match direction {
@@ -145,10 +161,7 @@ fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, JsError> {
         _ => return Err(JsError::new("order by direction must be 'asc' or 'desc'")),
     };
 
-    Ok(OrderClause {
-        field,
-        ascending,
-    })
+    Ok(OrderClause { field, ascending })
 }
 
 /// Convert JSON value to platform Value
@@ -166,35 +179,36 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, JsError> {
             } else {
                 Err(JsError::new("Unsupported number type"))
             }
-        },
+        }
         JsonValue::String(s) => {
             // Check if it's an identifier (base58 encoded)
             if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
                 // Try to parse as identifier
-                match Identifier::from_string(s, dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58) {
+                match Identifier::from_string(
+                    s,
+                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                ) {
                     Ok(id) => Ok(platform_value!(id)),
                     Err(_) => Ok(Value::Text(s.clone())),
                 }
             } else {
                 Ok(Value::Text(s.clone()))
             }
-        },
+        }
         JsonValue::Array(arr) => {
-            let values: Result<Vec<Value>, JsError> = arr.iter()
-                .map(json_to_platform_value)
-                .collect();
+            let values: Result<Vec<Value>, JsError> =
+                arr.iter().map(json_to_platform_value).collect();
             Ok(Value::Array(values?))
-        },
+        }
         JsonValue::Object(obj) => {
             let mut map = Vec::new();
             for (key, val) in obj {
                 map.push((Value::Text(key.clone()), json_to_platform_value(val)?));
             }
             Ok(Value::Map(map))
-        },
+        }
     }
 }
-
 
 #[wasm_bindgen]
 pub async fn get_documents(
@@ -218,13 +232,10 @@ pub async fn get_documents(
     )?;
 
     // Create base document query
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        document_type,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Set limit if provided
     if let Some(limit_val) = limit {
@@ -258,7 +269,8 @@ pub async fn get_documents(
             .map_err(|e| JsError::new(&format!("Failed to parse where clause JSON: {}", e)))?;
 
         // Expect an array of where clauses
-        let where_array = json_value.as_array()
+        let where_array = json_value
+            .as_array()
             .ok_or_else(|| JsError::new("where clause must be an array of clauses"))?;
 
         for clause_json in where_array {
@@ -273,7 +285,8 @@ pub async fn get_documents(
             .map_err(|e| JsError::new(&format!("Failed to parse order by JSON: {}", e)))?;
 
         // Expect an array of order clauses
-        let order_array = json_value.as_array()
+        let order_array = json_value
+            .as_array()
             .ok_or_else(|| JsError::new("order by must be an array of clauses"))?;
 
         for clause_json in order_array {
@@ -302,13 +315,18 @@ pub async fn get_documents(
     let mut responses: Vec<DocumentResponse> = Vec::new();
     for (_, doc_opt) in documents_result {
         if let Some(doc) = doc_opt {
-            responses.push(DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?);
+            responses.push(DocumentResponse::from_document(
+                &doc,
+                &data_contract,
+                document_type_ref,
+            )?);
         }
     }
 
     // Use json_compatible serializer to convert maps to objects
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    responses.serialize(&serializer)
+    responses
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -326,7 +344,6 @@ pub async fn get_documents_with_proof_info(
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use dash_sdk::platform::FetchMany;
 
-
     // Parse data contract ID
     let contract_id = Identifier::from_string(
         data_contract_id,
@@ -334,13 +351,10 @@ pub async fn get_documents_with_proof_info(
     )?;
 
     // Create base document query
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        document_type,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Set limit if provided
     if let Some(limit_val) = limit {
@@ -391,9 +405,10 @@ pub async fn get_documents_with_proof_info(
     }
 
     // Execute query with proof
-    let (documents_result, metadata, proof) = Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch documents: {}", e)))?;
+    let (documents_result, metadata, proof) =
+        Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch documents: {}", e)))?;
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
@@ -410,7 +425,11 @@ pub async fn get_documents_with_proof_info(
     let mut responses: Vec<DocumentResponse> = Vec::new();
     for (_, doc_opt) in documents_result {
         if let Some(doc) = doc_opt {
-            responses.push(DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?);
+            responses.push(DocumentResponse::from_document(
+                &doc,
+                &data_contract,
+                document_type_ref,
+            )?);
         }
     }
 
@@ -422,7 +441,8 @@ pub async fn get_documents_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -447,14 +467,10 @@ pub async fn get_document(
     )?;
 
     // Create document query
-    let query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        document_type,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
-    .with_document_id(&doc_id);
+    let query = DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
+        .with_document_id(&doc_id);
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
@@ -478,9 +494,10 @@ pub async fn get_document(
 
             // Use json_compatible serializer to convert maps to objects
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer)
+            response
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
-        },
+        }
         None => Ok(JsValue::NULL),
     }
 }
@@ -506,14 +523,10 @@ pub async fn get_document_with_proof_info(
     )?;
 
     // Create document query
-    let query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        document_type,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
-    .with_document_id(&doc_id);
+    let query = DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
+        .await
+        .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
+        .with_document_id(&doc_id);
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
@@ -527,13 +540,15 @@ pub async fn get_document_with_proof_info(
         .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
 
     // Execute query with proof
-    let (document_result, metadata, proof) = Document::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch document: {}", e)))?;
+    let (document_result, metadata, proof) =
+        Document::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch document: {}", e)))?;
 
     match document_result {
         Some(doc) => {
-            let doc_response = DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?;
+            let doc_response =
+                DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?;
 
             let response = ProofMetadataResponse {
                 data: doc_response,
@@ -542,10 +557,11 @@ pub async fn get_document_with_proof_info(
             };
 
             // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            response
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
-        },
+        }
         None => {
             // Return null data with proof
             let response = ProofMetadataResponse {
@@ -555,8 +571,9 @@ pub async fn get_document_with_proof_info(
             };
 
             // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            response
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
         }
     }
@@ -589,13 +606,10 @@ pub async fn get_dpns_usernames(
     )?;
 
     // Create document query for DPNS domains owned by this identity
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        DPNS_DOCUMENT_TYPE,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Query by records.identity using the identityId index
     let where_clause = WhereClause {
@@ -625,7 +639,7 @@ pub async fn get_dpns_usernames(
 
             if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
                 properties.get("label"),
-                properties.get("normalizedParentDomainName")
+                properties.get("normalizedParentDomainName"),
             ) {
                 // Construct the full username
                 let username = format!("{}.{}", label, parent_domain);
@@ -636,16 +650,14 @@ pub async fn get_dpns_usernames(
 
     // Return usernames as a JSON array
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    usernames.serialize(&serializer)
+    usernames
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize usernames: {}", e)))
 }
 
 // Keep the old function for backward compatibility but have it call the new one
 #[wasm_bindgen]
-pub async fn get_dpns_username(
-    sdk: &WasmSdk,
-    identity_id: &str,
-) -> Result<JsValue, JsError> {
+pub async fn get_dpns_username(sdk: &WasmSdk, identity_id: &str) -> Result<JsValue, JsError> {
     // Call the new function with limit 1
     let result = get_dpns_usernames(sdk, identity_id, Some(1)).await?;
 
@@ -670,7 +682,6 @@ pub async fn get_dpns_usernames_with_proof_info(
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use dash_sdk::platform::FetchMany;
 
-
     // DPNS contract ID on testnet
     const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
     const DPNS_DOCUMENT_TYPE: &str = "domain";
@@ -688,13 +699,10 @@ pub async fn get_dpns_usernames_with_proof_info(
     )?;
 
     // Create document query for DPNS domains owned by this identity
-    let mut query = DocumentQuery::new_with_data_contract_id(
-        sdk.as_ref(),
-        contract_id,
-        DPNS_DOCUMENT_TYPE,
-    )
-    .await
-    .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+    let mut query =
+        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
 
     // Query by records.identity using the identityId index
     let where_clause = WhereClause {
@@ -709,9 +717,12 @@ pub async fn get_dpns_usernames_with_proof_info(
     query.limit = limit.unwrap_or(10);
 
     // Execute query with proof
-    let (documents_result, metadata, proof) = Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch DPNS documents with proof: {}", e)))?;
+    let (documents_result, metadata, proof) =
+        Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch DPNS documents with proof: {}", e))
+            })?;
 
     // Collect all usernames
     let mut usernames: Vec<String> = Vec::new();
@@ -724,7 +735,7 @@ pub async fn get_dpns_usernames_with_proof_info(
 
             if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
                 properties.get("label"),
-                properties.get("normalizedParentDomainName")
+                properties.get("normalizedParentDomainName"),
             ) {
                 // Construct the full username
                 let username = format!("{}.{}", label, parent_domain);
@@ -741,7 +752,8 @@ pub async fn get_dpns_usernames_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 

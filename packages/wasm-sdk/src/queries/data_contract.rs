@@ -36,20 +36,23 @@ pub async fn data_contract_fetch_with_proof_info(
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )?;
 
-    let (contract, metadata, proof) = DataContract::fetch_with_metadata_and_proof(sdk, id, None)
-        .await?;
+    let (contract, metadata, proof) =
+        DataContract::fetch_with_metadata_and_proof(sdk, id, None).await?;
 
     match contract {
         Some(contract) => {
             let response = ProofMetadataResponse {
-                data: contract.to_json(&dash_sdk::dpp::version::PlatformVersion::get(sdk.version()).unwrap())?,
+                data: contract.to_json(
+                    &dash_sdk::dpp::version::PlatformVersion::get(sdk.version()).unwrap(),
+                )?,
                 metadata: metadata.into(),
                 proof: proof.into(),
             };
 
             // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+            response
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
         }
         None => Err(JsError::new("Data contract not found")),
@@ -102,7 +105,8 @@ pub async fn get_data_contract_history(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -117,10 +121,12 @@ pub async fn get_data_contracts(sdk: &WasmSdk, ids: Vec<String>) -> Result<JsVal
     // Parse all contract IDs
     let identifiers: Result<Vec<Identifier>, _> = ids
         .iter()
-        .map(|id| Identifier::from_string(
-            id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        ))
+        .map(|id| {
+            Identifier::from_string(
+                id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+        })
         .collect();
     let identifiers = identifiers?;
 
@@ -145,7 +151,8 @@ pub async fn get_data_contracts(sdk: &WasmSdk, ids: Vec<String>) -> Result<JsVal
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -173,9 +180,15 @@ pub async fn get_data_contract_history_with_proof_info(
     };
 
     // Fetch contract history with proof
-    let (history_result, metadata, proof) = DataContractHistory::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contract history with proof: {}", e)))?;
+    let (history_result, metadata, proof) =
+        DataContractHistory::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to fetch data contract history with proof: {}",
+                    e
+                ))
+            })?;
 
     // Convert to response format
     let mut versions = BTreeMap::new();
@@ -197,26 +210,35 @@ pub async fn get_data_contract_history_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
-pub async fn get_data_contracts_with_proof_info(sdk: &WasmSdk, ids: Vec<String>) -> Result<JsValue, JsError> {
+pub async fn get_data_contracts_with_proof_info(
+    sdk: &WasmSdk,
+    ids: Vec<String>,
+) -> Result<JsValue, JsError> {
     // Parse all contract IDs
     let identifiers: Result<Vec<Identifier>, _> = ids
         .iter()
-        .map(|id| Identifier::from_string(
-            id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        ))
+        .map(|id| {
+            Identifier::from_string(
+                id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+        })
         .collect();
     let identifiers = identifiers?;
 
     // Fetch all contracts with proof
-    let (contracts_result, metadata, proof) = DataContract::fetch_many_with_metadata_and_proof(sdk.as_ref(), identifiers, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contracts with proof: {}", e)))?;
+    let (contracts_result, metadata, proof) =
+        DataContract::fetch_many_with_metadata_and_proof(sdk.as_ref(), identifiers, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch data contracts with proof: {}", e))
+            })?;
 
     // Convert to response format
     let mut data_contracts = BTreeMap::new();
@@ -240,6 +262,7 @@ pub async fn get_data_contracts_with_proof_info(sdk: &WasmSdk, ids: Vec<String>)
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }

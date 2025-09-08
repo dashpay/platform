@@ -7,7 +7,9 @@ use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use dash_sdk::dpp::data_contract::group::Group;
 use dash_sdk::dpp::data_contract::GroupContractPosition;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
-use dash_sdk::platform::group_actions::{GroupQuery, GroupInfosQuery, GroupActionsQuery, GroupActionSignersQuery};
+use dash_sdk::platform::group_actions::{
+    GroupQuery, GroupInfosQuery, GroupActionsQuery, GroupActionSignersQuery,
+};
 use dash_sdk::dpp::group::group_action::GroupAction;
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
 use dash_sdk::dpp::data_contract::group::GroupMemberPower;
@@ -24,10 +26,14 @@ pub struct GroupInfoResponse {
 
 impl GroupInfoResponse {
     fn from_group(group: &Group) -> Self {
-        let members = group.members()
+        let members = group
+            .members()
             .iter()
             .map(|(id, power)| {
-                (id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58), *power)
+                (
+                    id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                    *power,
+                )
             })
             .collect();
 
@@ -67,9 +73,10 @@ pub async fn get_group_info(
 
             // Use json_compatible serializer to convert maps to objects
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer)
+            response
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
-        },
+        }
         None => Ok(JsValue::NULL),
     }
 }
@@ -115,17 +122,21 @@ pub async fn get_group_members(
             if let Some(requested_ids) = member_ids {
                 let requested_identifiers: Result<Vec<Identifier>, _> = requested_ids
                     .iter()
-                    .map(|id| Identifier::from_string(
-                        id,
-                        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                    ))
+                    .map(|id| {
+                        Identifier::from_string(
+                            id,
+                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                        )
+                    })
                     .collect();
                 let requested_identifiers = requested_identifiers?;
 
                 for id in requested_identifiers {
                     if let Ok(power) = group.member_power(id) {
                         members.push(GroupMember {
-                            member_id: id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                            member_id: id.to_string(
+                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                            ),
                             power,
                         });
                     }
@@ -142,7 +153,10 @@ pub async fn get_group_members(
                         &start_id,
                         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                     )?;
-                    sorted_members.iter().position(|(id, _)| **id > start_identifier).unwrap_or(sorted_members.len())
+                    sorted_members
+                        .iter()
+                        .position(|(id, _)| **id > start_identifier)
+                        .unwrap_or(sorted_members.len())
                 } else {
                     0
                 };
@@ -156,7 +170,9 @@ pub async fn get_group_members(
 
                 for (id, power) in &sorted_members[start_index..end_index] {
                     members.push(GroupMember {
-                        member_id: (*id).to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                        member_id: (*id).to_string(
+                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                        ),
                         power: **power,
                     });
                 }
@@ -164,9 +180,10 @@ pub async fn get_group_members(
 
             // Use json_compatible serializer to convert response
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            members.serialize(&serializer)
+            members
+                .serialize(&serializer)
                 .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
-        },
+        }
         None => Ok(JsValue::NULL),
     }
 }
@@ -176,7 +193,7 @@ pub async fn get_group_members(
 struct IdentityGroupInfo {
     data_contract_id: String,
     group_contract_position: u32,
-    role: String, // "member", "owner", or "moderator"
+    role: String,       // "member", "owner", or "moderator"
     power: Option<u32>, // Only for members
 }
 
@@ -235,13 +252,14 @@ pub async fn get_identity_groups(
     // which are not yet implemented in the SDK. For now, return a warning.
     if owner_data_contracts.is_some() || moderator_data_contracts.is_some() {
         web_sys::console::warn_1(&JsValue::from_str(
-            "Warning: Owner and moderator role queries are not yet implemented"
+            "Warning: Owner and moderator role queries are not yet implemented",
         ));
     }
 
     // Use json_compatible serializer to convert response
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    groups.serialize(&serializer)
+    groups
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -273,15 +291,19 @@ pub async fn get_group_infos(
     )?;
 
     // Parse start at info if provided
-    let start_group_contract_position = if !start_at_info.is_null() && !start_at_info.is_undefined() {
+    let start_group_contract_position = if !start_at_info.is_null() && !start_at_info.is_undefined()
+    {
         let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
         match info {
             Ok(json) => {
-                let position = json["position"].as_u64().ok_or_else(|| JsError::new("Invalid start position"))? as u32;
+                let position = json["position"]
+                    .as_u64()
+                    .ok_or_else(|| JsError::new("Invalid start position"))?
+                    as u32;
                 let included = json["included"].as_bool().unwrap_or(false);
                 Some((position as GroupContractPosition, included))
             }
-            Err(_) => None
+            Err(_) => None,
         }
     } else {
         None
@@ -327,7 +349,8 @@ pub async fn get_group_infos(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -350,7 +373,12 @@ pub async fn get_group_actions(
     let status = match status {
         "ACTIVE" => GroupActionStatus::ActionActive,
         "CLOSED" => GroupActionStatus::ActionClosed,
-        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+        _ => {
+            return Err(JsError::new(&format!(
+                "Invalid status: {}. Must be ACTIVE or CLOSED",
+                status
+            )))
+        }
     };
 
     // Parse start action ID if provided
@@ -358,17 +386,19 @@ pub async fn get_group_actions(
         let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
         match info {
             Ok(json) => {
-                let action_id = json["actionId"].as_str().ok_or_else(|| JsError::new("Invalid action ID"))?;
+                let action_id = json["actionId"]
+                    .as_str()
+                    .ok_or_else(|| JsError::new("Invalid action ID"))?;
                 let included = json["included"].as_bool().unwrap_or(false);
                 Some((
                     Identifier::from_string(
                         action_id,
                         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                     )?,
-                    included
+                    included,
                 ))
             }
-            Err(_) => None
+            Err(_) => None,
         }
     } else {
         None
@@ -407,7 +437,8 @@ pub async fn get_group_actions(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -435,7 +466,12 @@ pub async fn get_group_action_signers(
     let status = match status {
         "ACTIVE" => GroupActionStatus::ActionActive,
         "CLOSED" => GroupActionStatus::ActionClosed,
-        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+        _ => {
+            return Err(JsError::new(&format!(
+                "Invalid status: {}. Must be ACTIVE or CLOSED",
+                status
+            )))
+        }
     };
 
     // Create query
@@ -468,7 +504,8 @@ pub async fn get_group_action_signers(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -492,9 +529,12 @@ pub async fn get_groups_data_contracts(
             limit: None,
         };
 
-        let groups_result = Group::fetch_many(sdk.as_ref(), query)
-            .await
-            .map_err(|e| JsError::new(&format!("Failed to fetch groups for contract {}: {}", contract_id_str, e)))?;
+        let groups_result = Group::fetch_many(sdk.as_ref(), query).await.map_err(|e| {
+            JsError::new(&format!(
+                "Failed to fetch groups for contract {}: {}",
+                contract_id_str, e
+            ))
+        })?;
 
         let mut groups: Vec<GroupContractPositionInfo> = Vec::new();
 
@@ -515,7 +555,8 @@ pub async fn get_groups_data_contracts(
 
     // Use json_compatible serializer to convert response
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    results.serialize(&serializer)
+    results
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -542,9 +583,10 @@ pub async fn get_group_info_with_proof_info(
     };
 
     // Fetch group with proof
-    let (group_result, metadata, proof) = Group::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch group with proof: {}", e)))?;
+    let (group_result, metadata, proof) =
+        Group::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch group with proof: {}", e)))?;
 
     let data = group_result.map(|group| GroupInfoResponse::from_group(&group));
 
@@ -556,7 +598,8 @@ pub async fn get_group_info_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -576,15 +619,19 @@ pub async fn get_group_infos_with_proof_info(
     )?;
 
     // Parse start at info if provided
-    let start_group_contract_position = if !start_at_info.is_null() && !start_at_info.is_undefined() {
+    let start_group_contract_position = if !start_at_info.is_null() && !start_at_info.is_undefined()
+    {
         let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
         match info {
             Ok(json) => {
-                let position = json["position"].as_u64().ok_or_else(|| JsError::new("Invalid start position"))? as u32;
+                let position = json["position"]
+                    .as_u64()
+                    .ok_or_else(|| JsError::new("Invalid start position"))?
+                    as u32;
                 let included = json["included"].as_bool().unwrap_or(false);
                 Some((position as GroupContractPosition, included))
             }
-            Err(_) => None
+            Err(_) => None,
         }
     } else {
         None
@@ -598,9 +645,10 @@ pub async fn get_group_infos_with_proof_info(
     };
 
     // Fetch groups with proof
-    let (groups_result, metadata, proof) = Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch groups with proof: {}", e)))?;
+    let (groups_result, metadata, proof) =
+        Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch groups with proof: {}", e)))?;
 
     // Convert result to response format
     let mut group_infos = Vec::new();
@@ -625,7 +673,8 @@ pub async fn get_group_infos_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -653,9 +702,10 @@ pub async fn get_group_members_with_proof_info(
     };
 
     // Fetch the group with proof
-    let (group_result, metadata, proof) = Group::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch group with proof: {}", e)))?;
+    let (group_result, metadata, proof) =
+        Group::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch group with proof: {}", e)))?;
 
     let data = match group_result {
         Some(group) => {
@@ -665,17 +715,21 @@ pub async fn get_group_members_with_proof_info(
             if let Some(requested_ids) = member_ids {
                 let requested_identifiers: Result<Vec<Identifier>, _> = requested_ids
                     .iter()
-                    .map(|id| Identifier::from_string(
-                        id,
-                        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                    ))
+                    .map(|id| {
+                        Identifier::from_string(
+                            id,
+                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                        )
+                    })
                     .collect();
                 let requested_identifiers = requested_identifiers?;
 
                 for id in requested_identifiers {
                     if let Ok(power) = group.member_power(id) {
                         members.push(GroupMember {
-                            member_id: id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                            member_id: id.to_string(
+                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                            ),
                             power,
                         });
                     }
@@ -692,7 +746,10 @@ pub async fn get_group_members_with_proof_info(
                         &start_id,
                         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                     )?;
-                    sorted_members.iter().position(|(id, _)| **id > start_identifier).unwrap_or(sorted_members.len())
+                    sorted_members
+                        .iter()
+                        .position(|(id, _)| **id > start_identifier)
+                        .unwrap_or(sorted_members.len())
                 } else {
                     0
                 };
@@ -706,14 +763,16 @@ pub async fn get_group_members_with_proof_info(
 
                 for (id, power) in &sorted_members[start_index..end_index] {
                     members.push(GroupMember {
-                        member_id: (*id).to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                        member_id: (*id).to_string(
+                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+                        ),
                         power: **power,
                     });
                 }
             }
 
             Some(members)
-        },
+        }
         None => None,
     };
 
@@ -725,7 +784,8 @@ pub async fn get_group_members_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -742,7 +802,7 @@ pub async fn get_identity_groups_with_proof_info(
     struct IdentityGroupInfo {
         data_contract_id: String,
         group_contract_position: u32,
-        role: String, // "member", "owner", or "moderator"
+        role: String,       // "member", "owner", or "moderator"
         power: Option<u32>, // Only for members
     }
 
@@ -771,9 +831,12 @@ pub async fn get_identity_groups_with_proof_info(
                 limit: None,
             };
 
-            let (groups_result, metadata, proof) = Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-                .await
-                .map_err(|e| JsError::new(&format!("Failed to fetch groups with proof: {}", e)))?;
+            let (groups_result, metadata, proof) =
+                Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+                    .await
+                    .map_err(|e| {
+                        JsError::new(&format!("Failed to fetch groups with proof: {}", e))
+                    })?;
 
             // Store first metadata and proof
             if combined_metadata.is_none() {
@@ -801,7 +864,7 @@ pub async fn get_identity_groups_with_proof_info(
     // which are not yet implemented in the SDK. For now, return a warning.
     if owner_data_contracts.is_some() || moderator_data_contracts.is_some() {
         web_sys::console::warn_1(&JsValue::from_str(
-            "Warning: Owner and moderator role queries are not yet implemented"
+            "Warning: Owner and moderator role queries are not yet implemented",
         ));
     }
 
@@ -827,7 +890,8 @@ pub async fn get_identity_groups_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -850,7 +914,12 @@ pub async fn get_group_actions_with_proof_info(
     let status = match status {
         "ACTIVE" => GroupActionStatus::ActionActive,
         "CLOSED" => GroupActionStatus::ActionClosed,
-        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+        _ => {
+            return Err(JsError::new(&format!(
+                "Invalid status: {}. Must be ACTIVE or CLOSED",
+                status
+            )))
+        }
     };
 
     // Parse start action ID if provided
@@ -858,17 +927,19 @@ pub async fn get_group_actions_with_proof_info(
         let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
         match info {
             Ok(json) => {
-                let action_id = json["actionId"].as_str().ok_or_else(|| JsError::new("Invalid action ID"))?;
+                let action_id = json["actionId"]
+                    .as_str()
+                    .ok_or_else(|| JsError::new("Invalid action ID"))?;
                 let included = json["included"].as_bool().unwrap_or(false);
                 Some((
                     Identifier::from_string(
                         action_id,
                         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                     )?,
-                    included
+                    included,
                 ))
             }
-            Err(_) => None
+            Err(_) => None,
         }
     } else {
         None
@@ -884,9 +955,12 @@ pub async fn get_group_actions_with_proof_info(
     };
 
     // Fetch actions with proof
-    let (actions_result, metadata, proof) = GroupAction::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch group actions with proof: {}", e)))?;
+    let (actions_result, metadata, proof) =
+        GroupAction::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch group actions with proof: {}", e))
+            })?;
 
     // Convert result to response format
     let mut group_actions = Vec::new();
@@ -913,7 +987,8 @@ pub async fn get_group_actions_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -941,7 +1016,12 @@ pub async fn get_group_action_signers_with_proof_info(
     let status = match status {
         "ACTIVE" => GroupActionStatus::ActionActive,
         "CLOSED" => GroupActionStatus::ActionClosed,
-        _ => return Err(JsError::new(&format!("Invalid status: {}. Must be ACTIVE or CLOSED", status))),
+        _ => {
+            return Err(JsError::new(&format!(
+                "Invalid status: {}. Must be ACTIVE or CLOSED",
+                status
+            )))
+        }
     };
 
     // Create query
@@ -953,9 +1033,15 @@ pub async fn get_group_action_signers_with_proof_info(
     };
 
     // Fetch signers with proof
-    let (signers_result, metadata, proof) = GroupMemberPower::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch group action signers with proof: {}", e)))?;
+    let (signers_result, metadata, proof) =
+        GroupMemberPower::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to fetch group action signers with proof: {}",
+                    e
+                ))
+            })?;
 
     // Convert result to response format
     let mut signers = Vec::new();
@@ -980,7 +1066,8 @@ pub async fn get_group_action_signers_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -1006,9 +1093,15 @@ pub async fn get_groups_data_contracts_with_proof_info(
             limit: None,
         };
 
-        let (groups_result, metadata, proof) = Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await
-            .map_err(|e| JsError::new(&format!("Failed to fetch groups for contract {} with proof: {}", contract_id_str, e)))?;
+        let (groups_result, metadata, proof) =
+            Group::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+                .await
+                .map_err(|e| {
+                    JsError::new(&format!(
+                        "Failed to fetch groups for contract {} with proof: {}",
+                        contract_id_str, e
+                    ))
+                })?;
 
         // Store first metadata and proof
         if combined_metadata.is_none() {
@@ -1055,6 +1148,7 @@ pub async fn get_groups_data_contracts_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }

@@ -38,14 +38,17 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Invalid identity ID: {}", e)))?;
 
         let recipient = if let Some(recipient_str) = recipient_id {
-            Some(Identifier::from_string(&recipient_str, Encoding::Base58)
-                .map_err(|e| JsValue::from_str(&format!("Invalid recipient ID: {}", e)))?)
+            Some(
+                Identifier::from_string(&recipient_str, Encoding::Base58)
+                    .map_err(|e| JsValue::from_str(&format!("Invalid recipient ID: {}", e)))?,
+            )
         } else {
             None
         };
 
         // Parse amount
-        let token_amount = amount.parse::<TokenAmount>()
+        let token_amount = amount
+            .parse::<TokenAmount>()
             .map_err(|e| JsValue::from_str(&format!("Invalid amount: {}", e)))?;
 
         Ok((contract_id, identity_identifier, token_amount, recipient))
@@ -82,7 +85,6 @@ impl WasmSdk {
         Ok(data_contract)
     }
 
-
     /// Convert state transition proof result to JsValue
     fn format_token_result(
         &self,
@@ -94,31 +96,39 @@ impl WasmSdk {
                     "type": "VerifiedTokenBalance",
                     "recipientId": recipient_id.to_string(Encoding::Base58),
                     "newBalance": new_balance.to_string()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                }))
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
             }
             StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
                 to_value(&serde_json::json!({
                     "type": "VerifiedTokenActionWithDocument",
                     "documentId": doc.id().to_string(Encoding::Base58),
                     "message": "Token operation recorded successfully"
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                }))
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
                 to_value(&serde_json::json!({
                     "type": "VerifiedTokenGroupActionWithDocument",
                     "groupPower": power,
                     "document": doc.is_some()
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+                }))
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
             }
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(power, status, balance) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithTokenBalance",
-                    "groupPower": power,
-                    "status": format!("{:?}", status),
-                    "balance": balance.map(|b| b.to_string())
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            }
-            _ => Err(JsValue::from_str("Unexpected result type for token transition"))
+            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
+                power,
+                status,
+                balance,
+            ) => to_value(&serde_json::json!({
+                "type": "VerifiedTokenGroupActionWithTokenBalance",
+                "groupPower": power,
+                "status": format!("{:?}", status),
+                "balance": balance.map(|b| b.to_string())
+            }))
+            .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e))),
+            _ => Err(JsValue::from_str(
+                "Unexpected result type for token transition",
+            )),
         }
     }
 }
@@ -154,12 +164,9 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, issuer_id, token_amount, recipient) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            &amount,
-            recipient_id,
-        ).await?;
+        let (contract_id, issuer_id, token_amount, recipient) = self
+            .parse_token_params(&data_contract_id, &identity_id, &amount, recipient_id)
+            .await?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -177,15 +184,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -204,7 +209,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create mint transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create mint transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -243,12 +249,9 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters (no recipient for burn)
-        let (contract_id, burner_id, token_amount, _) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            &amount,
-            None,
-        ).await?;
+        let (contract_id, burner_id, token_amount, _) = self
+            .parse_token_params(&data_contract_id, &identity_id, &amount, None)
+            .await?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -266,15 +269,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -292,7 +293,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create burn transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create burn transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -333,12 +335,9 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, sender_identifier, token_amount, _) = self.parse_token_params(
-            &data_contract_id,
-            &sender_id,
-            &amount,
-            None,
-        ).await?;
+        let (contract_id, sender_identifier, token_amount, _) = self
+            .parse_token_params(&data_contract_id, &sender_id, &amount, None)
+            .await?;
 
         // Parse recipient ID
         let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
@@ -360,15 +359,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -388,7 +385,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create transfer transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create transfer transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -427,12 +425,14 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, freezer_identifier, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &freezer_id,
-            "0", // Amount not needed for freeze
-            None,
-        ).await?;
+        let (contract_id, freezer_identifier, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &freezer_id,
+                "0", // Amount not needed for freeze
+                None,
+            )
+            .await?;
 
         // Parse identity to freeze
         let frozen_identity_id = Identifier::from_string(&identity_to_freeze, Encoding::Base58)
@@ -454,15 +454,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -480,7 +478,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create freeze transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create freeze transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -519,16 +518,19 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, unfreezer_identifier, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &unfreezer_id,
-            "0", // Amount not needed for unfreeze
-            None,
-        ).await?;
+        let (contract_id, unfreezer_identifier, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &unfreezer_id,
+                "0", // Amount not needed for unfreeze
+                None,
+            )
+            .await?;
 
         // Parse identity to unfreeze
-        let frozen_identity_id = Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid identity to unfreeze: {}", e)))?;
+        let frozen_identity_id =
+            Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
+                .map_err(|e| JsValue::from_str(&format!("Invalid identity to unfreeze: {}", e)))?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -546,15 +548,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -572,7 +572,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create unfreeze transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create unfreeze transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -611,16 +612,20 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, destroyer_identifier, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &destroyer_id,
-            "0", // Amount not needed for destroy frozen
-            None,
-        ).await?;
+        let (contract_id, destroyer_identifier, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &destroyer_id,
+                "0", // Amount not needed for destroy frozen
+                None,
+            )
+            .await?;
 
         // Parse identity whose frozen tokens to destroy
-        let frozen_identity_id = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| JsValue::from_str(&format!("Invalid identity to destroy frozen funds: {}", e)))?;
+        let frozen_identity_id =
+            Identifier::from_string(&identity_id, Encoding::Base58).map_err(|e| {
+                JsValue::from_str(&format!("Invalid identity to destroy frozen funds: {}", e))
+            })?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -638,15 +643,13 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch nonce: {}", e)))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Create the state transition
         let platform_version = sdk.version();
@@ -664,7 +667,13 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create destroy frozen transition: {}", e)))?;
+        )
+        .map_err(|e| {
+            JsValue::from_str(&format!(
+                "Failed to create destroy frozen transition: {}",
+                e
+            ))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -710,12 +719,14 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, actor_id, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            "0", // Amount not needed for setting price
-            None,
-        ).await?;
+        let (contract_id, actor_id, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &identity_id,
+                "0", // Amount not needed for setting price
+                None,
+            )
+            .await?;
 
         // Fetch and cache the contract
         self.fetch_and_cache_token_contract(contract_id).await?;
@@ -728,20 +739,27 @@ impl WasmSdk {
             match price_type.to_lowercase().as_str() {
                 "single" => {
                     // Parse single price
-                    let price_credits: Credits = price_data.parse::<u64>()
+                    let price_credits: Credits = price_data
+                        .parse::<u64>()
                         .map_err(|e| JsValue::from_str(&format!("Invalid price credits: {}", e)))?;
                     Some(TokenPricingSchedule::SinglePrice(price_credits))
-                },
+                }
                 "tiered" | "set" => {
                     // Parse tiered pricing map from JSON
-                    let price_map: std::collections::HashMap<String, u64> = serde_json::from_str(&price_data)
-                        .map_err(|e| JsValue::from_str(&format!("Invalid tiered pricing JSON: {}", e)))?;
+                    let price_map: std::collections::HashMap<String, u64> =
+                        serde_json::from_str(&price_data).map_err(|e| {
+                            JsValue::from_str(&format!("Invalid tiered pricing JSON: {}", e))
+                        })?;
 
                     // Convert to BTreeMap<TokenAmount, Credits>
                     let mut btree_map = BTreeMap::new();
                     for (amount_str, credits) in price_map {
-                        let amount: TokenAmount = amount_str.parse()
-                            .map_err(|e| JsValue::from_str(&format!("Invalid token amount '{}': {}", amount_str, e)))?;
+                        let amount: TokenAmount = amount_str.parse().map_err(|e| {
+                            JsValue::from_str(&format!(
+                                "Invalid token amount '{}': {}",
+                                amount_str, e
+                            ))
+                        })?;
                         btree_map.insert(amount, credits);
                     }
 
@@ -750,8 +768,12 @@ impl WasmSdk {
                     }
 
                     Some(TokenPricingSchedule::SetPrices(btree_map))
-                },
-                _ => return Err(JsValue::from_str("Invalid price type. Use 'single' or 'tiered'"))
+                }
+                _ => {
+                    return Err(JsValue::from_str(
+                        "Invalid price type. Use 'single' or 'tiered'",
+                    ))
+                }
             }
         };
 
@@ -762,15 +784,13 @@ impl WasmSdk {
             .ok_or_else(|| JsValue::from_str("Identity not found"))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Get identity contract nonce
         let identity_contract_nonce = sdk
@@ -794,7 +814,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create set price transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create set price transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -824,32 +845,36 @@ impl WasmSdk {
                             })
                         }
                     })
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            },
-            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenPricingSchedule(power, status, schedule) => {
-                to_value(&serde_json::json!({
-                    "type": "VerifiedTokenGroupActionWithTokenPricingSchedule",
-                    "groupPower": power,
-                    "status": format!("{:?}", status),
-                    "pricingSchedule": schedule.map(|s| match s {
-                        TokenPricingSchedule::SinglePrice(credits) => serde_json::json!({
-                            "type": "single",
-                            "price": credits
-                        }),
-                        TokenPricingSchedule::SetPrices(prices) => {
-                            let price_map: std::collections::HashMap<String, u64> = prices
-                                .into_iter()
-                                .map(|(amount, credits)| (amount.to_string(), credits))
-                                .collect();
-                            serde_json::json!({
-                                "type": "tiered",
-                                "prices": price_map
-                            })
-                        }
-                    })
-                })).map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
-            },
-            _ => self.format_token_result(proof_result)
+                }))
+                .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e)))
+            }
+            StateTransitionProofResult::VerifiedTokenGroupActionWithTokenPricingSchedule(
+                power,
+                status,
+                schedule,
+            ) => to_value(&serde_json::json!({
+                "type": "VerifiedTokenGroupActionWithTokenPricingSchedule",
+                "groupPower": power,
+                "status": format!("{:?}", status),
+                "pricingSchedule": schedule.map(|s| match s {
+                    TokenPricingSchedule::SinglePrice(credits) => serde_json::json!({
+                        "type": "single",
+                        "price": credits
+                    }),
+                    TokenPricingSchedule::SetPrices(prices) => {
+                        let price_map: std::collections::HashMap<String, u64> = prices
+                            .into_iter()
+                            .map(|(amount, credits)| (amount.to_string(), credits))
+                            .collect();
+                        serde_json::json!({
+                            "type": "tiered",
+                            "prices": price_map
+                        })
+                    }
+                })
+            }))
+            .map_err(|e| JsValue::from_str(&format!("Failed to serialize result: {}", e))),
+            _ => self.format_token_result(proof_result),
         }
     }
 
@@ -882,28 +907,35 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse and validate parameters
-        let (contract_id, purchaser_id, token_amount, _) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            &amount,
-            None,
-        ).await?;
+        let (contract_id, purchaser_id, token_amount, _) = self
+            .parse_token_params(&data_contract_id, &identity_id, &amount, None)
+            .await?;
 
         // Get total price - either from parameter or fetch from pricing schedule
         let price_credits: Credits = match total_agreed_price {
             Some(price_str) => {
                 // Use provided price
-                price_str.parse::<u64>()
+                price_str
+                    .parse::<u64>()
                     .map_err(|e| JsValue::from_str(&format!("Invalid total agreed price: {}", e)))?
             }
             None => {
                 // Fetch price from pricing schedule
-                let token_id = crate::queries::token::calculate_token_id_from_contract(&data_contract_id, token_position)
-                    .map_err(|e| JsValue::from_str(&format!("Failed to calculate token ID: {:?}", e)))?;
+                let token_id = crate::queries::token::calculate_token_id_from_contract(
+                    &data_contract_id,
+                    token_position,
+                )
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to calculate token ID: {:?}", e))
+                })?;
 
                 let token_ids = vec![token_id];
-                let prices = crate::queries::token::get_token_direct_purchase_prices(self, token_ids).await
-                    .map_err(|e| JsValue::from_str(&format!("Failed to fetch token price: {:?}", e)))?;
+                let prices =
+                    crate::queries::token::get_token_direct_purchase_prices(self, token_ids)
+                        .await
+                        .map_err(|e| {
+                            JsValue::from_str(&format!("Failed to fetch token price: {:?}", e))
+                        })?;
 
                 // Use js_sys to work with JavaScript objects
                 use js_sys::{Reflect, Array};
@@ -921,15 +953,18 @@ impl WasmSdk {
                 let first_price = prices_array.get(0);
 
                 // Get current price from the price object
-                let current_price_prop = Reflect::get(&first_price, &JsValue::from_str("currentPrice"))
-                    .map_err(|_| JsValue::from_str("Failed to get currentPrice property"))?;
+                let current_price_prop =
+                    Reflect::get(&first_price, &JsValue::from_str("currentPrice"))
+                        .map_err(|_| JsValue::from_str("Failed to get currentPrice property"))?;
 
                 // Convert to string and parse
-                let price_str = current_price_prop.as_string()
+                let price_str = current_price_prop
+                    .as_string()
                     .ok_or_else(|| JsValue::from_str("Current price is not a string"))?;
 
-                let price_per_token = price_str.parse::<u64>()
-                    .map_err(|e| JsValue::from_str(&format!("Invalid current price format: {}", e)))?;
+                let price_per_token = price_str.parse::<u64>().map_err(|e| {
+                    JsValue::from_str(&format!("Invalid current price format: {}", e))
+                })?;
 
                 price_per_token * token_amount
             }
@@ -945,15 +980,13 @@ impl WasmSdk {
             .ok_or_else(|| JsValue::from_str("Identity not found"))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Get identity contract nonce
         let identity_contract_nonce = sdk
@@ -976,7 +1009,13 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create direct purchase transition: {}", e)))?;
+        )
+        .map_err(|e| {
+            JsValue::from_str(&format!(
+                "Failed to create direct purchase transition: {}",
+                e
+            ))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -1010,17 +1049,19 @@ impl WasmSdk {
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-                use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
+        use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, identity_identifier, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            "0", // Amount not needed for claim
-            None,
-        ).await?;
+        let (contract_id, identity_identifier, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &identity_id,
+                "0", // Amount not needed for claim
+                None,
+            )
+            .await?;
 
         // Fetch and cache the contract
         self.fetch_and_cache_token_contract(contract_id).await?;
@@ -1028,8 +1069,14 @@ impl WasmSdk {
         // Parse distribution type
         let dist_type = match distribution_type.to_lowercase().as_str() {
             "perpetual" => TokenDistributionType::Perpetual,
-            "preprogrammed" | "pre-programmed" | "scheduled" => TokenDistributionType::PreProgrammed,
-            _ => return Err(JsValue::from_str("Invalid distribution type. Use 'perpetual' or 'preprogrammed'"))
+            "preprogrammed" | "pre-programmed" | "scheduled" => {
+                TokenDistributionType::PreProgrammed
+            }
+            _ => {
+                return Err(JsValue::from_str(
+                    "Invalid distribution type. Use 'perpetual' or 'preprogrammed'",
+                ))
+            }
         };
 
         // Get identity to find matching authentication key
@@ -1039,15 +1086,13 @@ impl WasmSdk {
             .ok_or_else(|| JsValue::from_str("Identity not found"))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Get identity contract nonce
         let identity_contract_nonce = sdk
@@ -1071,7 +1116,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create claim transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create claim transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -1117,12 +1163,14 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_id, _, _) = self.parse_token_params(
-            &data_contract_id,
-            &identity_id,
-            "0", // Amount not needed for config update
-            None,
-        ).await?;
+        let (contract_id, owner_id, _, _) = self
+            .parse_token_params(
+                &data_contract_id,
+                &identity_id,
+                "0", // Amount not needed for config update
+                None,
+            )
+            .await?;
 
         // Fetch and cache the contract
         self.fetch_and_cache_token_contract(contract_id).await?;
@@ -1134,69 +1182,127 @@ impl WasmSdk {
                 let convention: TokenConfigurationConvention = serde_json::from_str(&config_value)
                     .map_err(|e| JsValue::from_str(&format!("Invalid conventions JSON: {}", e)))?;
                 TokenConfigurationChangeItem::Conventions(convention)
-            },
+            }
             "max_supply" => {
                 if config_value.is_empty() || config_value == "null" {
                     TokenConfigurationChangeItem::MaxSupply(None)
                 } else {
-                    let max_supply: TokenAmount = config_value.parse()
+                    let max_supply: TokenAmount = config_value
+                        .parse()
                         .map_err(|e| JsValue::from_str(&format!("Invalid max supply: {}", e)))?;
                     TokenConfigurationChangeItem::MaxSupply(Some(max_supply))
                 }
-            },
+            }
             "perpetual_distribution" => {
                 if config_value.is_empty() || config_value == "null" {
                     TokenConfigurationChangeItem::PerpetualDistribution(None)
                 } else {
                     // Parse JSON for perpetual distribution config
-                    let distribution: TokenPerpetualDistribution = serde_json::from_str(&config_value)
-                        .map_err(|e| JsValue::from_str(&format!("Invalid perpetual distribution JSON: {}", e)))?;
+                    let distribution: TokenPerpetualDistribution =
+                        serde_json::from_str(&config_value).map_err(|e| {
+                            JsValue::from_str(&format!(
+                                "Invalid perpetual distribution JSON: {}",
+                                e
+                            ))
+                        })?;
                     TokenConfigurationChangeItem::PerpetualDistribution(Some(distribution))
                 }
-            },
+            }
             "new_tokens_destination_identity" => {
                 if config_value.is_empty() || config_value == "null" {
                     TokenConfigurationChangeItem::NewTokensDestinationIdentity(None)
                 } else {
                     let dest_id = Identifier::from_string(&config_value, Encoding::Base58)
-                        .map_err(|e| JsValue::from_str(&format!("Invalid destination identity ID: {}", e)))?;
+                        .map_err(|e| {
+                            JsValue::from_str(&format!("Invalid destination identity ID: {}", e))
+                        })?;
                     TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(dest_id))
                 }
-            },
+            }
             "minting_allow_choosing_destination" => {
-                let allow: bool = config_value.parse()
+                let allow: bool = config_value
+                    .parse()
                     .map_err(|_| JsValue::from_str("Invalid boolean value"))?;
                 TokenConfigurationChangeItem::MintingAllowChoosingDestination(allow)
-            },
-            "manual_minting" | "manual_burning" | "conventions_control_group" |
-            "conventions_admin_group" | "max_supply_control_group" | "max_supply_admin_group" |
-            "perpetual_distribution_control_group" | "perpetual_distribution_admin_group" |
-            "new_tokens_destination_identity_control_group" | "new_tokens_destination_identity_admin_group" |
-            "minting_allow_choosing_destination_control_group" | "minting_allow_choosing_destination_admin_group" |
-            "manual_minting_admin_group" | "manual_burning_admin_group" => {
+            }
+            "manual_minting"
+            | "manual_burning"
+            | "conventions_control_group"
+            | "conventions_admin_group"
+            | "max_supply_control_group"
+            | "max_supply_admin_group"
+            | "perpetual_distribution_control_group"
+            | "perpetual_distribution_admin_group"
+            | "new_tokens_destination_identity_control_group"
+            | "new_tokens_destination_identity_admin_group"
+            | "minting_allow_choosing_destination_control_group"
+            | "minting_allow_choosing_destination_admin_group"
+            | "manual_minting_admin_group"
+            | "manual_burning_admin_group" => {
                 // Parse AuthorizedActionTakers from JSON
                 let action_takers: AuthorizedActionTakers = serde_json::from_str(&config_value)
-                    .map_err(|e| JsValue::from_str(&format!("Invalid authorized action takers JSON: {}", e)))?;
+                    .map_err(|e| {
+                        JsValue::from_str(&format!("Invalid authorized action takers JSON: {}", e))
+                    })?;
 
                 match config_item_type.as_str() {
                     "manual_minting" => TokenConfigurationChangeItem::ManualMinting(action_takers),
                     "manual_burning" => TokenConfigurationChangeItem::ManualBurning(action_takers),
-                    "conventions_control_group" => TokenConfigurationChangeItem::ConventionsControlGroup(action_takers),
-                    "conventions_admin_group" => TokenConfigurationChangeItem::ConventionsAdminGroup(action_takers),
-                    "max_supply_control_group" => TokenConfigurationChangeItem::MaxSupplyControlGroup(action_takers),
-                    "max_supply_admin_group" => TokenConfigurationChangeItem::MaxSupplyAdminGroup(action_takers),
-                    "perpetual_distribution_control_group" => TokenConfigurationChangeItem::PerpetualDistributionControlGroup(action_takers),
-                    "perpetual_distribution_admin_group" => TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(action_takers),
-                    "new_tokens_destination_identity_control_group" => TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(action_takers),
-                    "new_tokens_destination_identity_admin_group" => TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(action_takers),
-                    "minting_allow_choosing_destination_control_group" => TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(action_takers),
-                    "minting_allow_choosing_destination_admin_group" => TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(action_takers),
-                    "manual_minting_admin_group" => TokenConfigurationChangeItem::ManualMintingAdminGroup(action_takers),
-                    "manual_burning_admin_group" => TokenConfigurationChangeItem::ManualBurningAdminGroup(action_takers),
-                    _ => unreachable!()
+                    "conventions_control_group" => {
+                        TokenConfigurationChangeItem::ConventionsControlGroup(action_takers)
+                    }
+                    "conventions_admin_group" => {
+                        TokenConfigurationChangeItem::ConventionsAdminGroup(action_takers)
+                    }
+                    "max_supply_control_group" => {
+                        TokenConfigurationChangeItem::MaxSupplyControlGroup(action_takers)
+                    }
+                    "max_supply_admin_group" => {
+                        TokenConfigurationChangeItem::MaxSupplyAdminGroup(action_takers)
+                    }
+                    "perpetual_distribution_control_group" => {
+                        TokenConfigurationChangeItem::PerpetualDistributionControlGroup(
+                            action_takers,
+                        )
+                    }
+                    "perpetual_distribution_admin_group" => {
+                        TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(action_takers)
+                    }
+                    "new_tokens_destination_identity_control_group" => {
+                        TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
+                            action_takers,
+                        )
+                    }
+                    "new_tokens_destination_identity_admin_group" => {
+                        TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(
+                            action_takers,
+                        )
+                    }
+                    "minting_allow_choosing_destination_control_group" => {
+                        TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
+                            action_takers,
+                        )
+                    }
+                    "minting_allow_choosing_destination_admin_group" => {
+                        TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
+                            action_takers,
+                        )
+                    }
+                    "manual_minting_admin_group" => {
+                        TokenConfigurationChangeItem::ManualMintingAdminGroup(action_takers)
+                    }
+                    "manual_burning_admin_group" => {
+                        TokenConfigurationChangeItem::ManualBurningAdminGroup(action_takers)
+                    }
+                    _ => unreachable!(),
                 }
-            },
-            _ => return Err(JsValue::from_str(&format!("Invalid config item type: {}", config_item_type)))
+            }
+            _ => {
+                return Err(JsValue::from_str(&format!(
+                    "Invalid config item type: {}",
+                    config_item_type
+                )))
+            }
         };
 
         // Get identity to find matching authentication key
@@ -1206,15 +1312,13 @@ impl WasmSdk {
             .ok_or_else(|| JsValue::from_str("Identity not found"))?;
 
         // Find matching authentication key and create signer
-        let (_, matching_key) = crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
+        let (_, matching_key) =
+            crate::sdk::WasmSdk::find_authentication_key(&identity, &private_key_wif)?;
         let signer = crate::sdk::WasmSdk::create_signer_from_wif(&private_key_wif, sdk.network)?;
         let public_key = matching_key.clone();
 
         // Calculate token ID
-        let token_id = Identifier::from(calculate_token_id(
-            contract_id.as_bytes(),
-            token_position,
-        ));
+        let token_id = Identifier::from(calculate_token_id(contract_id.as_bytes(), token_position));
 
         // Get identity contract nonce
         let identity_contract_nonce = sdk
@@ -1238,7 +1342,10 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create config update transition: {}", e)))?;
+        )
+        .map_err(|e| {
+            JsValue::from_str(&format!("Failed to create config update transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition

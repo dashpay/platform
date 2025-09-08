@@ -25,9 +25,15 @@ pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
-    let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades = ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ())
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch protocol version upgrade state: {}", e)))?;
+    let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades =
+        ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ())
+            .await
+            .map_err(|e| {
+                JsError::new(&format!(
+                    "Failed to fetch protocol version upgrade state: {}",
+                    e
+                ))
+            })?;
 
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
@@ -77,8 +83,10 @@ pub async fn get_protocol_version_upgrade_vote_status(
     let start_hash = if start_pro_tx_hash.is_empty() {
         None
     } else {
-        Some(ProTxHash::from_str(start_pro_tx_hash)
-            .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?)
+        Some(
+            ProTxHash::from_str(start_pro_tx_hash)
+                .map_err(|e| JsError::new(&format!("Invalid ProTxHash: {}", e)))?,
+        )
     };
 
     let votes_result = MasternodeProtocolVote::fetch_votes(sdk.as_ref(), start_hash, Some(count))
@@ -104,14 +112,25 @@ pub async fn get_protocol_version_upgrade_vote_status(
 // Proof versions for protocol queries
 
 #[wasm_bindgen]
-pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+pub async fn get_protocol_version_upgrade_state_with_proof_info(
+    sdk: &WasmSdk,
+) -> Result<JsValue, JsError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
     use crate::queries::ProofMetadataResponse;
 
-    let (upgrade_result, metadata, proof): (drive_proof_verifier::types::ProtocolVersionUpgrades, _, _) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(sdk.as_ref(), (), None)
+    let (upgrade_result, metadata, proof): (
+        drive_proof_verifier::types::ProtocolVersionUpgrades,
+        _,
+        _,
+    ) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(sdk.as_ref(), (), None)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch protocol version upgrade state with proof: {}", e)))?;
+        .map_err(|e| {
+            JsError::new(&format!(
+                "Failed to fetch protocol version upgrade state with proof: {}",
+                e
+            ))
+        })?;
 
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
@@ -148,7 +167,8 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(sdk: &WasmSdk) -
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -161,5 +181,7 @@ pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
     // TODO: Implement once a proper fetch_many_with_metadata_and_proof method is available for MasternodeProtocolVote
     // The fetch_votes method has different parameters than fetch_many
     let _ = (sdk, start_pro_tx_hash, count); // Parameters will be used when implemented
-    Err(JsError::new("get_protocol_version_upgrade_vote_status_with_proof_info is not yet implemented"))
+    Err(JsError::new(
+        "get_protocol_version_upgrade_vote_status_with_proof_info is not yet implemented",
+    ))
 }

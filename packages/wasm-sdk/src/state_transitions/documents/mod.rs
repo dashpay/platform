@@ -88,15 +88,19 @@ impl WasmSdk {
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let private_key_bytes = private_key.inner.secret_bytes();
-        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
-        let public_key = dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+        let secret_key =
+            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
+                .map_err(|e| JsValue::from_str(&format!("Invalid private key: {}", e)))?;
+        let public_key =
+            dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize().to_vec();
 
         // Calculate hash160 for ECDSA_HASH160 keys
         let public_key_hash160 = {
             use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
-            hash160::Hash::hash(&public_key_bytes).to_byte_array().to_vec()
+            hash160::Hash::hash(&public_key_bytes)
+                .to_byte_array()
+                .to_vec()
         };
 
         // Log debug information
@@ -121,11 +125,11 @@ impl WasmSdk {
                 let matches = match key.key_type() {
                     KeyType::ECDSA_SECP256K1 => {
                         key.data().as_slice() == public_key_bytes.as_slice()
-                    },
+                    }
                     KeyType::ECDSA_HASH160 => {
                         key.data().as_slice() == public_key_hash160.as_slice()
-                    },
-                    _ => false
+                    }
+                    _ => false,
                 };
 
                 if matches {
@@ -138,7 +142,11 @@ impl WasmSdk {
 
                 matches
             })
-            .ok_or_else(|| JsValue::from_str("No matching authentication key found for the provided private key"))?;
+            .ok_or_else(|| {
+                JsValue::from_str(
+                    "No matching authentication key found for the provided private key",
+                )
+            })?;
 
         Ok((*key_id, matching_key))
     }
@@ -148,8 +156,7 @@ impl WasmSdk {
         private_key_wif: &str,
         network: dash_sdk::dpp::dashcore::Network,
     ) -> Result<SingleKeySigner, JsValue> {
-        SingleKeySigner::from_string(private_key_wif, network)
-            .map_err(|e| JsValue::from_str(&e))
+        SingleKeySigner::from_string(private_key_wif, network).map_err(|e| JsValue::from_str(&e))
     }
 
     /// Build JavaScript result object for state transition results
@@ -165,22 +172,21 @@ impl WasmSdk {
             &result_obj,
             &JsValue::from_str("type"),
             &JsValue::from_str(transition_type),
-        ).map_err(|_| JsValue::from_str("Failed to set type"))?;
+        )
+        .map_err(|_| JsValue::from_str("Failed to set type"))?;
 
         // Set document ID
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("documentId"),
             &JsValue::from_str(document_id),
-        ).map_err(|_| JsValue::from_str("Failed to set documentId"))?;
+        )
+        .map_err(|_| JsValue::from_str("Failed to set documentId"))?;
 
         // Set additional fields
         for (key, value) in additional_fields {
-            js_sys::Reflect::set(
-                &result_obj,
-                &JsValue::from_str(key),
-                &value,
-            ).map_err(|_| JsValue::from_str(&format!("Failed to set {}", key)))?;
+            js_sys::Reflect::set(&result_obj, &JsValue::from_str(key), &value)
+                .map_err(|_| JsValue::from_str(&format!("Failed to set {}", key)))?;
         }
 
         Ok(result_obj.into())
@@ -188,10 +194,12 @@ impl WasmSdk {
 
     /// Get the next revision for a document, handling errors for missing revisions and overflow
     fn get_next_revision(document: &dash_sdk::platform::Document) -> Result<u64, JsValue> {
-        let current_revision = document.revision()
+        let current_revision = document
+            .revision()
             .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
 
-        current_revision.checked_add(1)
+        current_revision
+            .checked_add(1)
             .ok_or_else(|| JsValue::from_str("Document revision overflow"))
     }
 }
@@ -225,7 +233,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_identifier, _) = Self::parse_identifiers(&data_contract_id, &owner_id, None)?;
+        let (contract_id, owner_identifier, _) =
+            Self::parse_identifiers(&data_contract_id, &owner_id, None)?;
 
         // Parse entropy
         let entropy_bytes = hex::decode(&entropy)
@@ -247,22 +256,28 @@ impl WasmSdk {
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
-        let document_type_ref = document_type_result
-            .map_err(|e| JsValue::from_str(&format!("Document type '{}' not found: {}", document_type, e)))?;
+        let document_type_ref = document_type_result.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Document type '{}' not found: {}",
+                document_type, e
+            ))
+        })?;
 
         // Convert JSON data to platform value
         let document_data_platform_value: PlatformValue = document_data_value.into();
 
         // Create the document directly using the document type's method
         let platform_version = sdk.version();
-        let document = document_type_ref.create_document_from_data(
-            document_data_platform_value,
-            owner_identifier,
-            0, // block_time (will be set by platform)
-            0, // core_block_height (will be set by platform)
-            entropy_array,
-            platform_version,
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create document: {}", e)))?;
+        let document = document_type_ref
+            .create_document_from_data(
+                document_data_platform_value,
+                owner_identifier,
+                0, // block_time (will be set by platform)
+                0, // core_block_height (will be set by platform)
+                entropy_array,
+                platform_version,
+            )
+            .map_err(|e| JsValue::from_str(&format!("Failed to create document: {}", e)))?;
 
         // Fetch the identity to get the correct key
         let identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
@@ -293,7 +308,8 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create document transition: {}", e)))?;
+        )
+        .map_err(|e| JsValue::from_str(&format!("Failed to create document transition: {}", e)))?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -302,7 +318,9 @@ impl WasmSdk {
             .map_err(|e| JsValue::from_str(&format!("Failed to broadcast transition: {}", e)))?;
 
         // Log the result for debugging
-        web_sys::console::log_1(&JsValue::from_str("Processing state transition proof result"));
+        web_sys::console::log_1(&JsValue::from_str(
+            "Processing state transition proof result",
+        ));
 
         // Convert result to JsValue based on the type
         match proof_result {
@@ -330,13 +348,15 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentCreated"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         // Create document object
                         let js_document = js_sys::Object::new();
@@ -345,32 +365,37 @@ impl WasmSdk {
                             &js_document,
                             &JsValue::from_str("id"),
                             &JsValue::from_str(&doc.id().to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("ownerId"),
                             &JsValue::from_str(&doc.owner_id().to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("dataContractId"),
                             &JsValue::from_str(&data_contract_id),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("documentType"),
                             &JsValue::from_str(&document_type),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         if let Some(revision) = doc.revision() {
                             js_sys::Reflect::set(
                                 &js_document,
                                 &JsValue::from_str("revision"),
                                 &JsValue::from_f64(revision as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         if let Some(created_at) = doc.created_at() {
@@ -378,7 +403,8 @@ impl WasmSdk {
                                 &js_document,
                                 &JsValue::from_str("createdAt"),
                                 &JsValue::from_f64(created_at as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         if let Some(updated_at) = doc.updated_at() {
@@ -386,7 +412,8 @@ impl WasmSdk {
                                 &js_document,
                                 &JsValue::from_str("updatedAt"),
                                 &JsValue::from_f64(updated_at as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         // Add document properties in a "data" field (like DocumentResponse does)
@@ -401,24 +428,25 @@ impl WasmSdk {
                                         &data_obj,
                                         &JsValue::from_str(key),
                                         &js_value,
-                                    ).unwrap();
+                                    )
+                                    .unwrap();
                                 }
                             }
                         }
 
-                        js_sys::Reflect::set(
-                            &js_document,
-                            &JsValue::from_str("data"),
-                            &data_obj,
-                        ).unwrap();
+                        js_sys::Reflect::set(&js_document, &JsValue::from_str("data"), &data_obj)
+                            .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("document"),
                             &js_document,
-                        ).unwrap();
+                        )
+                        .unwrap();
 
-                        web_sys::console::log_1(&JsValue::from_str("Document created successfully, returning JS object"));
+                        web_sys::console::log_1(&JsValue::from_str(
+                            "Document created successfully, returning JS object",
+                        ));
 
                         Ok(js_result.into())
                     } else {
@@ -429,19 +457,22 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentCreated"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("message"),
                             &JsValue::from_str("Document created successfully"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         Ok(js_result.into())
                     }
@@ -453,19 +484,22 @@ impl WasmSdk {
                         &js_result,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("DocumentCreated"),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     js_sys::Reflect::set(
                         &js_result,
                         &JsValue::from_str("documentId"),
                         &JsValue::from_str(&document.id().to_string(Encoding::Base58)),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     js_sys::Reflect::set(
                         &js_result,
                         &JsValue::from_str("message"),
                         &JsValue::from_str("Document created successfully"),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     Ok(js_result.into())
                 }
@@ -478,19 +512,22 @@ impl WasmSdk {
                     &js_result,
                     &JsValue::from_str("type"),
                     &JsValue::from_str("DocumentCreated"),
-                ).unwrap();
+                )
+                .unwrap();
 
                 js_sys::Reflect::set(
                     &js_result,
                     &JsValue::from_str("documentId"),
                     &JsValue::from_str(&document.id().to_string(Encoding::Base58)),
-                ).unwrap();
+                )
+                .unwrap();
 
                 js_sys::Reflect::set(
                     &js_result,
                     &JsValue::from_str("message"),
                     &JsValue::from_str("Document created successfully"),
-                ).unwrap();
+                )
+                .unwrap();
 
                 Ok(js_result.into())
             }
@@ -526,11 +563,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_identifier, doc_id) = Self::parse_identifiers(
-            &data_contract_id,
-            &owner_id,
-            Some(&document_id)
-        )?;
+        let (contract_id, owner_identifier, doc_id) =
+            Self::parse_identifiers(&data_contract_id, &owner_id, Some(&document_id))?;
         let doc_id = doc_id.unwrap();
 
         // Parse document data
@@ -542,8 +576,12 @@ impl WasmSdk {
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
-        let document_type_ref = document_type_result
-            .map_err(|e| JsValue::from_str(&format!("Document type '{}' not found: {}", document_type, e)))?;
+        let document_type_ref = document_type_result.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Document type '{}' not found: {}",
+                document_type, e
+            ))
+        })?;
 
         // Convert JSON data to platform value
         let document_data_platform_value: PlatformValue = document_data_value.into();
@@ -555,7 +593,9 @@ impl WasmSdk {
             owner_id: owner_identifier,
             properties: document_data_platform_value
                 .into_btree_string_map()
-                .map_err(|e| JsValue::from_str(&format!("Failed to convert document data: {}", e)))?,
+                .map_err(|e| {
+                    JsValue::from_str(&format!("Failed to convert document data: {}", e))
+                })?,
             revision: Some(revision + 1),
             created_at: None,
             updated_at: None,
@@ -596,7 +636,13 @@ impl WasmSdk {
             &signer,
             platform_version,
             None, // state_transition_creation_options
-        ).map_err(|e| JsValue::from_str(&format!("Failed to create document replace transition: {}", e)))?;
+        )
+        .map_err(|e| {
+            JsValue::from_str(&format!(
+                "Failed to create document replace transition: {}",
+                e
+            ))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -616,13 +662,15 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentReplaced"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         // Create document object
                         let js_document = js_sys::Object::new();
@@ -631,32 +679,37 @@ impl WasmSdk {
                             &js_document,
                             &JsValue::from_str("id"),
                             &JsValue::from_str(&doc.id().to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("ownerId"),
                             &JsValue::from_str(&doc.owner_id().to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("dataContractId"),
                             &JsValue::from_str(&data_contract_id),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_document,
                             &JsValue::from_str("documentType"),
                             &JsValue::from_str(&document_type),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         if let Some(revision) = doc.revision() {
                             js_sys::Reflect::set(
                                 &js_document,
                                 &JsValue::from_str("revision"),
                                 &JsValue::from_f64(revision as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         if let Some(created_at) = doc.created_at() {
@@ -664,7 +717,8 @@ impl WasmSdk {
                                 &js_document,
                                 &JsValue::from_str("createdAt"),
                                 &JsValue::from_f64(created_at as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         if let Some(updated_at) = doc.updated_at() {
@@ -672,7 +726,8 @@ impl WasmSdk {
                                 &js_document,
                                 &JsValue::from_str("updatedAt"),
                                 &JsValue::from_f64(updated_at as f64),
-                            ).unwrap();
+                            )
+                            .unwrap();
                         }
 
                         // Add document properties in a "data" field (like DocumentResponse does)
@@ -687,24 +742,25 @@ impl WasmSdk {
                                         &data_obj,
                                         &JsValue::from_str(key),
                                         &js_value,
-                                    ).unwrap();
+                                    )
+                                    .unwrap();
                                 }
                             }
                         }
 
-                        js_sys::Reflect::set(
-                            &js_document,
-                            &JsValue::from_str("data"),
-                            &data_obj,
-                        ).unwrap();
+                        js_sys::Reflect::set(&js_document, &JsValue::from_str("data"), &data_obj)
+                            .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("document"),
                             &js_document,
-                        ).unwrap();
+                        )
+                        .unwrap();
 
-                        web_sys::console::log_1(&JsValue::from_str("Document replaced successfully"));
+                        web_sys::console::log_1(&JsValue::from_str(
+                            "Document replaced successfully",
+                        ));
 
                         Ok(js_result.into())
                     } else {
@@ -715,19 +771,22 @@ impl WasmSdk {
                             &js_result,
                             &JsValue::from_str("type"),
                             &JsValue::from_str("DocumentReplaced"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("documentId"),
                             &JsValue::from_str(&doc_id.to_string(Encoding::Base58)),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         js_sys::Reflect::set(
                             &js_result,
                             &JsValue::from_str("message"),
                             &JsValue::from_str("Document replaced successfully"),
-                        ).unwrap();
+                        )
+                        .unwrap();
 
                         Ok(js_result.into())
                     }
@@ -739,19 +798,22 @@ impl WasmSdk {
                         &js_result,
                         &JsValue::from_str("type"),
                         &JsValue::from_str("DocumentReplaced"),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     js_sys::Reflect::set(
                         &js_result,
                         &JsValue::from_str("documentId"),
                         &JsValue::from_str(&document_id),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     js_sys::Reflect::set(
                         &js_result,
                         &JsValue::from_str("message"),
                         &JsValue::from_str("Document replaced successfully"),
-                    ).unwrap();
+                    )
+                    .unwrap();
 
                     Ok(js_result.into())
                 }
@@ -764,19 +826,22 @@ impl WasmSdk {
                     &js_result,
                     &JsValue::from_str("type"),
                     &JsValue::from_str("DocumentReplaced"),
-                ).unwrap();
+                )
+                .unwrap();
 
                 js_sys::Reflect::set(
                     &js_result,
                     &JsValue::from_str("documentId"),
                     &JsValue::from_str(&document_id),
-                ).unwrap();
+                )
+                .unwrap();
 
                 js_sys::Reflect::set(
                     &js_result,
                     &JsValue::from_str("message"),
                     &JsValue::from_str("Document replaced successfully"),
-                ).unwrap();
+                )
+                .unwrap();
 
                 Ok(js_result.into())
             }
@@ -808,11 +873,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_identifier, doc_id) = Self::parse_identifiers(
-            &data_contract_id,
-            &owner_id,
-            Some(&document_id)
-        )?;
+        let (contract_id, owner_identifier, doc_id) =
+            Self::parse_identifiers(&data_contract_id, &owner_id, Some(&document_id))?;
         let doc_id = doc_id.unwrap();
 
         // Fetch and cache the data contract
@@ -820,27 +882,28 @@ impl WasmSdk {
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
-        let document_type_ref = document_type_result
-            .map_err(|e| JsValue::from_str(&format!("Document type '{}' not found: {}", document_type, e)))?;
+        let document_type_ref = document_type_result.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Document type '{}' not found: {}",
+                document_type, e
+            ))
+        })?;
 
         // Fetch the document to get its current revision
         use dash_sdk::platform::DocumentQuery;
 
-        let query = DocumentQuery::new_with_data_contract_id(
-            &sdk,
-            contract_id,
-            &document_type,
-        )
-        .await
-        .map_err(|e| JsValue::from_str(&format!("Failed to create document query: {}", e)))?
-        .with_document_id(&doc_id);
+        let query = DocumentQuery::new_with_data_contract_id(&sdk, contract_id, &document_type)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to create document query: {}", e)))?
+            .with_document_id(&doc_id);
 
         let existing_doc = dash_sdk::platform::Document::fetch(&sdk, query)
             .await
             .map_err(|e| JsValue::from_str(&format!("Failed to fetch document: {}", e)))?
             .ok_or_else(|| JsValue::from_str("Document not found"))?;
 
-        let current_revision = existing_doc.revision()
+        let current_revision = existing_doc
+            .revision()
             .ok_or_else(|| JsValue::from_str("Document revision is missing"))?;
 
         // Fetch the identity to get the correct key
@@ -934,11 +997,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_identifier, doc_id) = Self::parse_identifiers(
-            &data_contract_id,
-            &owner_id,
-            Some(&document_id),
-        )?;
+        let (contract_id, owner_identifier, doc_id) =
+            Self::parse_identifiers(&data_contract_id, &owner_id, Some(&document_id))?;
         let doc_id = doc_id.expect("Document ID was provided");
 
         let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
@@ -949,20 +1009,20 @@ impl WasmSdk {
 
         // Get document type
         let document_type_result = data_contract.document_type_for_name(&document_type);
-        let document_type_ref = document_type_result
-            .map_err(|e| JsValue::from_str(&format!("Document type '{}' not found: {}", document_type, e)))?;
+        let document_type_ref = document_type_result.map_err(|e| {
+            JsValue::from_str(&format!(
+                "Document type '{}' not found: {}",
+                document_type, e
+            ))
+        })?;
 
         // Fetch the document to get its current state
         use dash_sdk::platform::DocumentQuery;
 
-        let query = DocumentQuery::new_with_data_contract_id(
-            &sdk,
-            contract_id,
-            &document_type,
-        )
-        .await
-        .map_err(|e| JsValue::from_str(&format!("Failed to create document query: {}", e)))?
-        .with_document_id(&doc_id);
+        let query = DocumentQuery::new_with_data_contract_id(&sdk, contract_id, &document_type)
+            .await
+            .map_err(|e| JsValue::from_str(&format!("Failed to create document query: {}", e)))?
+            .with_document_id(&doc_id);
 
         let document = dash_sdk::platform::Document::fetch(&sdk, query)
             .await
@@ -1067,11 +1127,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, buyer_identifier, doc_id) = Self::parse_identifiers(
-            &data_contract_id,
-            &buyer_id,
-            Some(&document_id),
-        )?;
+        let (contract_id, buyer_identifier, doc_id) =
+            Self::parse_identifiers(&data_contract_id, &buyer_id, Some(&document_id))?;
         let doc_id = doc_id.expect("Document ID was provided");
 
         // Fetch and cache the data contract
@@ -1145,7 +1202,9 @@ impl WasmSdk {
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(buyer_identifier, contract_id, true, None)
             .await
-            .map_err(|e| JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e)))?;
+            .map_err(|e| {
+                JsValue::from_str(&format!("Failed to get identity contract nonce: {}", e))
+            })?;
 
         // Create document purchase transition
         let transition = BatchTransition::new_document_purchase_transition_from_document(
@@ -1177,19 +1236,29 @@ impl WasmSdk {
                     ("status", JsValue::from_str("success")),
                     ("newOwnerId", JsValue::from_str(&buyer_id)),
                     ("pricePaid", JsValue::from_f64(price as f64)),
-                    ("message", JsValue::from_str("Document purchased successfully")),
+                    (
+                        "message",
+                        JsValue::from_str("Document purchased successfully"),
+                    ),
                 ];
 
                 // If we have the updated document in the response, include basic info
                 if let Some((_, maybe_doc)) = documents.into_iter().next() {
                     if let Some(doc) = maybe_doc {
                         additional_fields.push(("documentUpdated", JsValue::from_bool(true)));
-                        additional_fields.push(("revision", JsValue::from_f64(doc.revision().unwrap_or(0) as f64)));
+                        additional_fields.push((
+                            "revision",
+                            JsValue::from_f64(doc.revision().unwrap_or(0) as f64),
+                        ));
                     }
                 }
 
-                Self::build_js_result_object("DocumentPurchased", &doc_id.to_string(Encoding::Base58), additional_fields)
-            },
+                Self::build_js_result_object(
+                    "DocumentPurchased",
+                    &doc_id.to_string(Encoding::Base58),
+                    additional_fields,
+                )
+            }
             _ => {
                 // Purchase was processed but document not returned
                 Self::build_js_result_object(
@@ -1231,11 +1300,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let (contract_id, owner_identifier, doc_id) = Self::parse_identifiers(
-            &data_contract_id,
-            &owner_id,
-            Some(&document_id),
-        )?;
+        let (contract_id, owner_identifier, doc_id) =
+            Self::parse_identifiers(&data_contract_id, &owner_id, Some(&document_id))?;
         let doc_id = doc_id.expect("Document ID was provided");
 
         // Fetch and cache the data contract
@@ -1263,7 +1329,9 @@ impl WasmSdk {
 
         // Verify ownership
         if existing_doc.owner_id() != owner_identifier {
-            return Err(JsValue::from_str("Only the document owner can set its price"));
+            return Err(JsValue::from_str(
+                "Only the document owner can set its price",
+            ));
         }
 
         // Get the current revision and increment it
@@ -1315,7 +1383,9 @@ impl WasmSdk {
             sdk.version(),
             None, // options
         )
-        .map_err(|e| JsValue::from_str(&format!("Failed to create price update transition: {}", e)))?;
+        .map_err(|e| {
+            JsValue::from_str(&format!("Failed to create price update transition: {}", e))
+        })?;
 
         // The transition is already signed, convert to StateTransition
         let state_transition: StateTransition = transition.into();
@@ -1337,4 +1407,3 @@ impl WasmSdk {
         )
     }
 }
-

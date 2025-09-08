@@ -60,9 +60,10 @@ pub async fn get_epochs_info(
         start_info: None,
     };
 
-    let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos = ExtendedEpochInfo::fetch_many(sdk.as_ref(), query)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch epochs info: {}", e)))?;
+    let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos =
+        ExtendedEpochInfo::fetch_many(sdk.as_ref(), query)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch epochs info: {}", e)))?;
 
     // Convert to our response format
     let epochs: Vec<EpochInfo> = epochs_result
@@ -84,7 +85,9 @@ pub async fn get_finalized_epoch_infos(
     use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
 
     if start_epoch.is_none() {
-        return Err(JsError::new("start_epoch is required for finalized epoch queries"));
+        return Err(JsError::new(
+            "start_epoch is required for finalized epoch queries",
+        ));
     }
 
     let start = start_epoch.unwrap();
@@ -117,7 +120,11 @@ pub async fn get_finalized_epoch_infos(
         }
     };
 
-    let epochs_result: drive_proof_verifier::types::FinalizedEpochInfos = dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many(sdk.as_ref(), query)
+    let epochs_result: drive_proof_verifier::types::FinalizedEpochInfos =
+        dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many(
+            sdk.as_ref(),
+            query,
+        )
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch finalized epochs info: {}", e)))?;
 
@@ -211,7 +218,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::proposed_blocks::ProposedBlockCountEx;
     use drive_proof_verifier::types::ProposerBlockCounts;
-        use dash_sdk::platform::QueryStartInfo;
+    use dash_sdk::platform::QueryStartInfo;
 
     // Parse start_after if provided
     let start_info = if let Some(start) = start_after {
@@ -232,10 +239,16 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         start_info,
     )
     .await
-    .map_err(|e| JsError::new(&format!("Failed to fetch evonode proposed blocks by range: {}", e)))?;
+    .map_err(|e| {
+        JsError::new(&format!(
+            "Failed to fetch evonode proposed blocks by range: {}",
+            e
+        ))
+    })?;
 
     // Convert to response format
-    let mut responses: Vec<ProposerBlockCount> = counts_result.0
+    let mut responses: Vec<ProposerBlockCount> = counts_result
+        .0
         .into_iter()
         .map(|(identifier, count)| {
             // Convert Identifier back to ProTxHash
@@ -293,9 +306,10 @@ pub async fn get_epochs_info_with_proof_info(
         start_info: None,
     };
 
-    let (epochs_result, metadata, proof) = ExtendedEpochInfo::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch epochs info with proof: {}", e)))?;
+    let (epochs_result, metadata, proof) =
+        ExtendedEpochInfo::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
+            .await
+            .map_err(|e| JsError::new(&format!("Failed to fetch epochs info with proof: {}", e)))?;
 
     // Convert to our response format
     let epochs: Vec<EpochInfo> = epochs_result
@@ -311,15 +325,19 @@ pub async fn get_epochs_info_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
 pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
-    let (epoch, metadata, proof) = ExtendedEpochInfo::fetch_current_with_metadata_and_proof(sdk.as_ref())
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch current epoch with proof: {}", e)))?;
+    let (epoch, metadata, proof) =
+        ExtendedEpochInfo::fetch_current_with_metadata_and_proof(sdk.as_ref())
+            .await
+            .map_err(|e| {
+                JsError::new(&format!("Failed to fetch current epoch with proof: {}", e))
+            })?;
 
     let epoch_info = EpochInfo::from(epoch);
 
@@ -331,7 +349,8 @@ pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue,
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -346,9 +365,10 @@ pub async fn get_finalized_epoch_infos_with_proof_info(
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
 
-
     if start_epoch.is_none() {
-        return Err(JsError::new("start_epoch is required for finalized epoch queries"));
+        return Err(JsError::new(
+            "start_epoch is required for finalized epoch queries",
+        ));
     }
 
     let start = start_epoch.unwrap();
@@ -420,7 +440,8 @@ pub async fn get_finalized_epoch_infos_with_proof_info(
 
     // Use json_compatible serializer
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response.serialize(&serializer)
+    response
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
 }
 
@@ -433,7 +454,9 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
     // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountById
     // Currently not supported due to query format issues
     let _ = (sdk, epoch, pro_tx_hashes); // Parameters will be used when implemented
-    Err(JsError::new("get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info is not yet implemented"))
+    Err(JsError::new(
+        "get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info is not yet implemented",
+    ))
 }
 
 #[wasm_bindgen]
@@ -447,5 +470,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range_with_proof_info(
     // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountByRange
     // Currently not supported due to query format issues
     let _ = (sdk, epoch, limit, start_after, order_ascending); // Parameters will be used when implemented
-    Err(JsError::new("get_evonodes_proposed_epoch_blocks_by_range_with_proof_info is not yet implemented"))
+    Err(JsError::new(
+        "get_evonodes_proposed_epoch_blocks_by_range_with_proof_info is not yet implemented",
+    ))
 }

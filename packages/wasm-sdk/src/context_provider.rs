@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use dash_sdk::platform::ContextProvider;
 use dash_sdk::{
-    dpp::{
-        data_contract::TokenConfiguration,
-        prelude::CoreBlockHeight,
-        version::PlatformVersion,
-    },
+    dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };

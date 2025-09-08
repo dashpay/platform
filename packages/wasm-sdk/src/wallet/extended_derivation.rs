@@ -17,7 +17,7 @@ pub fn derive_key_from_seed_with_extended_path(
     mnemonic: &str,
     passphrase: Option<String>,
     path: &str,
-    network: &str
+    network: &str,
 ) -> Result<JsValue, JsError> {
     // Debug: Log the path being processed
     web_sys::console::log_1(&format!("Processing extended path: {}", path).into());
@@ -42,7 +42,8 @@ pub fn derive_key_from_seed_with_extended_path(
 
     // Use dashcore's built-in derive_priv method which handles DIP14
     let secp = Secp256k1::new();
-    let derived_key = master_key.derive_priv(&secp, &derivation_path)
+    let derived_key = master_key
+        .derive_priv(&secp, &derivation_path)
         .map_err(|e| JsError::new(&format!("Failed to derive key: {}", e)))?;
 
     // Get the extended public key
@@ -60,53 +61,57 @@ pub fn derive_key_from_seed_with_extended_path(
     // Create result object
     let obj = js_sys::Object::new();
 
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("path"),
-        &JsValue::from_str(path),
-    ).map_err(|_| JsError::new("Failed to set path property"))?;
+    js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
+        .map_err(|_| JsError::new("Failed to set path property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_wif"),
         &JsValue::from_str(&private_key.to_wif()),
-    ).map_err(|_| JsError::new("Failed to set private_key_wif property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set private_key_wif property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_hex"),
         &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
-    ).map_err(|_| JsError::new("Failed to set private_key_hex property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set private_key_hex property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("public_key"),
         &JsValue::from_str(&hex::encode(public_key.to_bytes())),
-    ).map_err(|_| JsError::new("Failed to set public_key property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set public_key property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("address"),
         &JsValue::from_str(&address.to_string()),
-    ).map_err(|_| JsError::new("Failed to set address property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set address property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("network"),
         &JsValue::from_str(network),
-    ).map_err(|_| JsError::new("Failed to set network property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set network property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xprv"),
         &JsValue::from_str(&derived_key.to_string()),
-    ).map_err(|_| JsError::new("Failed to set xprv property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set xprv property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xpub"),
         &JsValue::from_str(&xpub.to_string()),
-    ).map_err(|_| JsError::new("Failed to set xpub property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set xpub property"))?;
 
     Ok(obj.into())
 }
@@ -120,7 +125,7 @@ pub fn derive_dashpay_contact_key(
     receiver_identity_id: &str,
     account: u32,
     address_index: u32,
-    network: &str
+    network: &str,
 ) -> Result<JsValue, JsError> {
     use bs58;
 
@@ -156,7 +161,7 @@ pub fn derive_dashpay_contact_key(
     let path = format!(
         "m/9'/{}'/{}'/{}'/{}/{}/{}",
         coin_type,
-        15,  // DIP15 feature
+        15, // DIP15 feature
         account,
         sender_id_formatted,
         receiver_id_formatted,
@@ -166,52 +171,54 @@ pub fn derive_dashpay_contact_key(
     web_sys::console::log_1(&format!("DashPay contact path: {}", path).into());
 
     // Use the extended derivation function
-    let result = derive_key_from_seed_with_extended_path(
-        mnemonic,
-        passphrase,
-        &path,
-        network
-    )?;
+    let result = derive_key_from_seed_with_extended_path(mnemonic, passphrase, &path, network)?;
 
     // Add DIP15-specific metadata
-    let obj = result.dyn_into::<js_sys::Object>()
+    let obj = result
+        .dyn_into::<js_sys::Object>()
         .map_err(|_| JsError::new("Failed to cast result to object"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("dipStandard"),
         &JsValue::from_str("DIP15"),
-    ).map_err(|_| JsError::new("Failed to set dipStandard property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set dipStandard property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("purpose"),
         &JsValue::from_str("DashPay Contact Payment"),
-    ).map_err(|_| JsError::new("Failed to set purpose property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set purpose property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("senderIdentity"),
         &JsValue::from_str(sender_identity_id),
-    ).map_err(|_| JsError::new("Failed to set senderIdentity property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set senderIdentity property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("receiverIdentity"),
         &JsValue::from_str(receiver_identity_id),
-    ).map_err(|_| JsError::new("Failed to set receiverIdentity property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set receiverIdentity property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("account"),
         &JsValue::from_f64(account as f64),
-    ).map_err(|_| JsError::new("Failed to set account property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set account property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("addressIndex"),
         &JsValue::from_f64(address_index as f64),
-    ).map_err(|_| JsError::new("Failed to set addressIndex property"))?;
+    )
+    .map_err(|_| JsError::new("Failed to set addressIndex property"))?;
 
     Ok(obj.into())
 }
