@@ -505,14 +505,14 @@ impl TryFromPlatformVersioned<ContestedDocumentResourceVotePollWithSerializableC
             index_values,
         } = value;
         Ok(ContestedDocumentResourceVotePollWithContractInfo {
-            contract: DataContractOwnedResolvedInfo::OwnedDataContract(Box::new(
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(
                 DataContract::try_from_platform_versioned(
                     contract,
                     false,
                     &mut vec![],
                     platform_version,
                 )?,
-            )),
+            ),
             document_type_name,
             index_name,
             index_values,

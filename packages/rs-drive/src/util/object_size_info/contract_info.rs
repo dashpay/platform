@@ -24,6 +24,7 @@ use std::sync::Arc;
 /// Represents various forms of accessing or representing a data contract.
 /// This enum is used to handle different scenarios in which data contracts
 /// might be needed, providing a unified interface to access their data.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum DataContractInfo<'a> {
     /// A unique identifier for a data contract. This variant is typically used
@@ -43,7 +44,7 @@ pub enum DataContractInfo<'a> {
 
     /// An owned version of a data contract. This variant is used when full ownership
     /// and possibly mutability of the data contract is necessary.
-    OwnedDataContract(Box<DataContract>),
+    OwnedDataContract(DataContract),
 }
 
 impl<'a> DataContractInfo<'a> {
@@ -89,6 +90,7 @@ impl<'a> DataContractInfo<'a> {
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractOwnedResolvedInfo {
     #[cfg(feature = "server")]
@@ -99,7 +101,7 @@ pub enum DataContractOwnedResolvedInfo {
     /// An owned instance of a data contract. This variant provides full control
     /// and mutability over the data contract, suitable for scenarios requiring
     /// modifications or extended operations on the data contract.
-    OwnedDataContract(Box<DataContract>),
+    OwnedDataContract(DataContract),
 }
 
 impl DataContractOwnedResolvedInfo {
@@ -135,7 +137,7 @@ impl DataContractOwnedResolvedInfo {
             DataContractOwnedResolvedInfo::DataContractFetchInfo(fetch_info) => {
                 fetch_info.contract.clone()
             }
-            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => *owned,
+            DataContractOwnedResolvedInfo::OwnedDataContract(owned) => owned,
         }
     }
 }
@@ -143,6 +145,7 @@ impl DataContractOwnedResolvedInfo {
 /// Contains resolved data contract information, typically used after initial
 /// fetching or retrieval steps have been completed. This enum simplifies handling
 /// of data contract states post-retrieval.
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DataContractResolvedInfo<'a> {
     #[cfg(feature = "server")]
@@ -160,7 +163,7 @@ pub enum DataContractResolvedInfo<'a> {
     /// An owned instance of a data contract. This variant provides full control
     /// and mutability over the data contract, suitable for scenarios requiring
     /// modifications or extended operations on the data contract.
-    OwnedDataContract(Box<DataContract>),
+    OwnedDataContract(DataContract),
 }
 
 impl<'a> From<&'a DataContractOwnedResolvedInfo> for DataContractResolvedInfo<'a> {
