@@ -1,22 +1,161 @@
-# Command Line Examples
+# 🚀 WASM SDK Examples - Comprehensive Showcase
 
-This directory contains command line scripts demonstrating how to use the Dash Platform WASM SDK from Node.js.
+## 📚 Complete Example Script Library
 
-## Available Scripts
+This directory contains a comprehensive collection of example scripts demonstrating all aspects of the Dash Platform WASM SDK JavaScript wrapper. Each script is production-ready and showcases best practices.
 
-### Identity Lookup CLI
+---
 
-**File:** `identity-lookup.mjs`
+## 🎯 Core Operation Examples
 
-A complete command line tool for looking up identity information from Dash Platform.
+### 🔑 **Key Management** (`key-management.mjs`)
+**Complete cryptographic operations demonstration**
+- Mnemonic generation (12, 15, 18, 21, 24 words)
+- Seed generation with/without passphrases  
+- Key derivation with multiple path types (BIP44, DIP9, DIP13)
+- Random key pair generation
+- Address operations and validation
+- Message signing workflows
 
-**Features:**
-- ✅ Uses modern JavaScript wrapper (`WasmSDK`)
-- ✅ Configurable proof verification (enabled by default)
-- ✅ Complete identity data with proper key mapping
-- ✅ `.env` file configuration support
-- ✅ Rich JSON output with formatted display
-- ✅ Command line proof control (`--no-proofs` flag)
+```bash
+node examples/key-management.mjs --network=testnet --debug
+```
+
+### 👤 **Identity Operations** (`identity-operations.mjs`)
+**Comprehensive identity management and queries**
+- Identity lookup and information retrieval
+- Balance and revision queries
+- Key management and nonce operations
+- Multi-identity batch operations
+- Token-related identity operations
+- Public key hash operations
+
+```bash
+node examples/identity-operations.mjs [identity-id] --network=testnet --no-proofs
+```
+
+### 📄 **Contract & Document Lookup** (`contract-lookup.mjs`)
+**Advanced contract and document exploration**
+- Contract information retrieval
+- Document type discovery
+- Advanced document queries with where/orderBy clauses
+- Pagination and bulk document retrieval
+- Structured JSON response handling
+
+```bash
+node examples/contract-lookup.mjs [contract-id] [document-type] --no-proofs --debug
+```
+
+### 🌐 **DPNS Management** (`dpns-management.mjs`)
+**Complete Dash Platform Name Service operations**
+- Username validation and format checking
+- Homograph safety conversion
+- Contest detection and analysis
+- Name resolution and availability checking
+- Bulk validation workflows
+
+```bash
+node examples/dpns-management.mjs [username] --network=testnet --debug
+```
+
+### ⚙️ **System Monitoring** (`system-monitoring.mjs`)
+**Platform status and monitoring operations**
+- Real-time platform status
+- Epoch and blockchain information
+- Quorum and consensus monitoring
+- Platform economics tracking
+- Low-level state tree access
+
+```bash
+node examples/system-monitoring.mjs --network=testnet --no-proofs
+```
+
+### 🪙 **Token Operations** (`token-operations.mjs`)
+**Complete token ecosystem exploration**
+- Token status and metadata queries
+- Direct purchase price information
+- Token-contract relationship mapping
+- Identity token balance operations
+- Token distribution monitoring
+
+```bash
+node examples/token-operations.mjs [token-id] --network=testnet
+```
+
+---
+
+## 🛠️ Use Case Examples
+
+### 📱 **Social Media App** (`social-media-app.mjs`)
+**Complete DashPay social application**
+- User profile management
+- Contact and friend systems
+- Social discovery and networking
+- Secure messaging workflows
+- Social analytics and insights
+
+```bash
+node examples/social-media-app.mjs [identity-id] --network=testnet
+```
+
+### 🌐 **Domain Registry** (`domain-registry.mjs`)
+**Production DPNS domain management system**
+- Domain validation pipelines
+- Registry exploration and analytics
+- Subdomain hierarchy analysis
+- Ownership pattern analysis
+- Complete domain registry dashboard
+
+```bash
+node examples/domain-registry.mjs [domain-name] --network=testnet
+```
+
+### 💼 **Wallet Integration** (`wallet-integration.mjs`)
+**Full-featured wallet application**
+- Multi-address wallet creation
+- Platform identity integration
+- Security features and authentication
+- Dashboard data collection
+- Production-ready patterns
+
+```bash
+node examples/wallet-integration.mjs --network=testnet --debug
+```
+
+---
+
+## 📖 Tutorial Examples
+
+### 🚀 **Getting Started** (`getting-started.mjs`)
+**Beginner-friendly comprehensive tutorial**
+- Step-by-step SDK initialization
+- Basic cryptographic operations
+- Platform queries and exploration
+- Error handling patterns
+- Resource management
+
+```bash
+node examples/getting-started.mjs --network=testnet --debug
+```
+
+### 🎓 **Advanced Patterns** (`advanced-patterns.mjs`)
+**Production-ready advanced techniques**
+- Parallel operations and performance
+- Batch processing strategies
+- Robust error handling
+- Pagination patterns
+- Production deployment patterns
+
+```bash
+node examples/advanced-patterns.mjs --network=testnet --no-proofs
+```
+
+### 👤 **Identity Lookup** (`identity-lookup.mjs`)
+**Focused identity exploration tool**
+- Identity information retrieval
+- Balance and key analysis
+- DPNS username resolution
+- Identity verification workflows
 
 **Usage:**
 
