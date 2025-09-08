@@ -25,7 +25,7 @@ where
     ///
     /// * `pro_tx_hash` - A reference to the ProTxHash of the masternode to be removed.
     /// * `validator_sets` - A mutable reference to an IndexMap containing QuorumHash as key
-    ///                      and ValidatorSet as value.
+    ///   and ValidatorSet as value.
     ///
     fn remove_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
@@ -50,7 +50,7 @@ where
     /// * `pro_tx_hash` - The `ProTxHash` of the masternode to be updated
     /// * `dmn_state_diff` - The `DMNStateDiff` containing the updated masternode information
     /// * `validator_sets` - A mutable reference to the `IndexMap<QuorumHash, ValidatorSet>`
-    ///                      representing the validator sets with the quorum hash as the key
+    ///   representing the validator sets with the quorum hash as the key
     fn update_masternode_in_validator_sets(
         pro_tx_hash: &ProTxHash,
         dmn_state_diff: &DMNStateDiff,

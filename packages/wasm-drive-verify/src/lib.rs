@@ -105,7 +105,9 @@ pub mod transition_verification {
     pub use crate::state_transition::*;
 }
 
-// no prelude imports needed here; attribute uses full path
+// Bring the wasm_bindgen attribute macro into scope for the start function
+#[cfg(all(target_arch = "wasm32", not(test)))]
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[cfg(all(target_arch = "wasm32", not(test)))]
 #[wasm_bindgen(start)]
