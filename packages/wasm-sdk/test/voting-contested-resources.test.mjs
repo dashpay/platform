@@ -100,14 +100,12 @@ await test('get_contested_resources - fetch contested domain names', async () =>
 
 await test('get_contested_resource_vote_state - get vote state for contested resource', async () => {
     try {
-        // NOTE: This function currently doesn't accept index_values parameter
-        // For contested resources with parentNameAndLabel, we'd need [parent domain, label]
-        // This is a known limitation that needs to be fixed in the Rust implementation
         const result = await wasmSdk.get_contested_resource_vote_state(
             sdk,
             DPNS_CONTRACT,                      // data_contract_id
             'domain',                           // document_type_name
             'parentNameAndLabel',               // index_name
+            [TEST_PARENT_DOMAIN, TEST_LABEL],   // index_values: [parent domain, label]
             'documentTypeName',                 // result_type
             null,                               // allow_include_locked_and_abstaining_vote_tally
             null,                               // start_at_identifier_info
@@ -118,8 +116,6 @@ await test('get_contested_resource_vote_state - get vote state for contested res
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
             console.log('   Expected network error (offline)');
-        } else if (error.message.includes('index values')) {
-            console.log('   Expected error: Function needs index_values parameter (not yet implemented)');
         } else {
             throw error;
         }

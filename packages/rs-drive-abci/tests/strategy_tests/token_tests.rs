@@ -470,18 +470,7 @@ mod tests {
 
         let block_count = 60;
 
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            validator_quorums: quorums,
-            current_validator_quorum_hash: current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
-            instant_lock_quorums,
-            ..
-        } = run_chain_for_strategy(
+        let ChainExecutionOutcome { abci_app, .. } = run_chain_for_strategy(
             &mut platform,
             block_count, // block count is 30
             strategy.clone(),
@@ -791,7 +780,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)

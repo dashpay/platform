@@ -110,7 +110,7 @@ impl FeeRefunds {
     }
 
     /// Passthrough method for iteration
-    pub fn iter(&self) -> Iter<[u8; 32], CreditsPerEpoch> {
+    pub fn iter(&self) -> Iter<'_, [u8; 32], CreditsPerEpoch> {
         self.0.iter()
     }
 
@@ -158,10 +158,7 @@ impl FeeRefunds {
     ) -> Option<Credits> {
         let credits_per_epoch = self.get(identity_id.as_bytes())?;
 
-        let credits = credits_per_epoch
-            .iter()
-            .map(|(_epoch_index, credits)| credits)
-            .sum();
+        let credits = credits_per_epoch.values().sum();
 
         Some(credits)
     }

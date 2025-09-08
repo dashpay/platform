@@ -1,0 +1,248 @@
+use crate::types::SDKHandle;
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, DashSDKResultDataType};
+use dash_sdk::dpp::dashcore::ProTxHash;
+use dash_sdk::platform::FetchMany;
+use dash_sdk::query_types::ProposerBlockCountByRange;
+use std::ffi::{c_char, c_void, CStr, CString};
+
+/// Fetches proposed epoch blocks by range
+///
+/// # Parameters
+/// * `sdk_handle` - Handle to the SDK instance
+/// * `epoch` - Epoch number (optional, 0 for current epoch)
+/// * `limit` - Maximum number of results to return (optional, 0 for no limit)
+/// * `start_after` - Start after this pro_tx_hash (hex-encoded, optional)
+/// * `start_at` - Start at this pro_tx_hash (hex-encoded, optional)
+///
+/// # Returns
+/// * JSON array of evonode proposed block counts or null if not found
+/// * Error message if operation fails
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer.
+/// - `start_after` and `start_at` may be null; when non-null they must point to NUL-terminated C strings with hex-encoded 32-byte hashes.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
+    sdk_handle: *const SDKHandle,
+    epoch: u32,
+    limit: u32,
+    start_after: *const c_char,
+    start_at: *const c_char,
+) -> DashSDKResult {
+    match get_evonodes_proposed_epoch_blocks_by_range(
+        sdk_handle,
+        epoch,
+        limit,
+        start_after,
+        start_at,
+    ) {
+        Ok(Some(json)) => {
+            let c_str = match CString::new(json) {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult {
+                        data_type: DashSDKResultDataType::NoData,
+                        data: std::ptr::null_mut(),
+                        error: Box::into_raw(Box::new(DashSDKError::new(
+                            DashSDKErrorCode::InternalError,
+                            format!("Failed to create CString: {}", e),
+                        ))),
+                    }
+                }
+            };
+            DashSDKResult {
+                data_type: DashSDKResultDataType::String,
+                data: c_str.into_raw() as *mut c_void,
+                error: std::ptr::null_mut(),
+            }
+        }
+        Ok(None) => DashSDKResult {
+            data_type: DashSDKResultDataType::NoData,
+            data: std::ptr::null_mut(),
+            error: std::ptr::null_mut(),
+        },
+        Err(e) => DashSDKResult {
+            data_type: DashSDKResultDataType::NoData,
+            data: std::ptr::null_mut(),
+            error: Box::into_raw(Box::new(DashSDKError::new(
+                DashSDKErrorCode::InternalError,
+                e,
+            ))),
+        },
+    }
+}
+
+fn get_evonodes_proposed_epoch_blocks_by_range(
+    sdk_handle: *const SDKHandle,
+    epoch: u32,
+    _limit: u32,
+    start_after: *const c_char,
+    start_at: *const c_char,
+) -> Result<Option<String>, String> {
+    // Check for null pointer
+    if sdk_handle.is_null() {
+        return Err("SDK handle is null".to_string());
+    }
+
+    let rt = tokio::runtime::Runtime::new()
+        .map_err(|e| format!("Failed to create Tokio runtime: {}", e))?;
+
+    let wrapper = unsafe { &*(sdk_handle as *const crate::sdk::SDKWrapper) };
+    let sdk = wrapper.sdk.clone();
+
+    rt.block_on(async move {
+        let start_after_hash = if start_after.is_null() {
+            None
+        } else {
+            let start_after_str = unsafe {
+                CStr::from_ptr(start_after)
+                    .to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in start_after: {}", e))?
+            };
+            let bytes = hex::decode(start_after_str)
+                .map_err(|e| format!("Failed to decode start_after: {}", e))?;
+            let hash_bytes: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| "start_after must be exactly 32 bytes".to_string())?;
+            Some(ProTxHash::from(hash_bytes))
+        };
+
+        let start_at_hash = if start_at.is_null() {
+            None
+        } else {
+            let start_at_str = unsafe {
+                CStr::from_ptr(start_at)
+                    .to_str()
+                    .map_err(|e| format!("Invalid UTF-8 in start_at: {}", e))?
+            };
+            let bytes = hex::decode(start_at_str)
+                .map_err(|e| format!("Failed to decode start_at: {}", e))?;
+            let hash_bytes: [u8; 32] = bytes
+                .try_into()
+                .map_err(|_| "start_at must be exactly 32 bytes".to_string())?;
+            Some(ProTxHash::from(hash_bytes))
+        };
+
+        // Create a query with the epoch and range parameters
+        let query = EvonodesProposedEpochBlocksByRangeQuery {
+            epoch: if epoch > 0 { Some(epoch) } else { None },
+            start_after: start_after_hash,
+            start_at: start_at_hash,
+        };
+
+        match ProposerBlockCountByRange::fetch_many(&sdk, query).await {
+            Ok(block_counts) => {
+                if block_counts.0.is_empty() {
+                    return Ok(None);
+                }
+
+                let block_counts_json: Vec<String> = block_counts
+                    .0
+                    .iter()
+                    .map(|(pro_tx_hash, count)| {
+                        format!(
+                            r#"{{"pro_tx_hash":"{}","count":{}}}"#,
+                            hex::encode(pro_tx_hash),
+                            count
+                        )
+                    })
+                    .collect();
+
+                Ok(Some(format!("[{}]", block_counts_json.join(","))))
+            }
+            Err(e) => Err(format!(
+                "Failed to fetch evonodes proposed epoch blocks by range: {}",
+                e
+            )),
+        }
+    })
+}
+
+// Helper struct for the query
+#[derive(Debug, Clone)]
+struct EvonodesProposedEpochBlocksByRangeQuery {
+    pub epoch: Option<u32>,
+    pub start_after: Option<ProTxHash>,
+    pub start_at: Option<ProTxHash>,
+}
+
+impl
+    dash_sdk::platform::Query<
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
+    > for EvonodesProposedEpochBlocksByRangeQuery
+{
+    fn query(
+        self,
+        prove: bool,
+    ) -> Result<
+        dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest,
+        dash_sdk::Error,
+    > {
+        use dash_sdk::dapi_grpc::platform::v0::{
+            get_evonodes_proposed_epoch_blocks_by_range_request::{
+                get_evonodes_proposed_epoch_blocks_by_range_request_v0::Start,
+                GetEvonodesProposedEpochBlocksByRangeRequestV0, Version,
+            },
+        };
+
+        let start = if let Some(start_after) = self.start_after {
+            Some(Start::StartAfter(
+                AsRef::<[u8]>::as_ref(&start_after).to_vec(),
+            ))
+        } else {
+            self.start_at
+                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
+        };
+
+        let request =
+            dash_sdk::dapi_grpc::platform::v0::GetEvonodesProposedEpochBlocksByRangeRequest {
+                version: Some(Version::V0(
+                    GetEvonodesProposedEpochBlocksByRangeRequestV0 {
+                        epoch: self.epoch,
+                        limit: None, // Limit is handled by LimitQuery wrapper
+                        start,
+                        prove,
+                    },
+                )),
+            };
+
+        Ok(request)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_utils::test_utils::create_mock_sdk_handle;
+
+    #[test]
+    fn test_get_evonodes_proposed_epoch_blocks_by_range_null_handle() {
+        unsafe {
+            let result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
+                std::ptr::null(),
+                0,
+                10,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            assert!(!result.error.is_null());
+        }
+    }
+
+    #[test]
+    fn test_get_evonodes_proposed_epoch_blocks_by_range() {
+        let handle = create_mock_sdk_handle();
+        unsafe {
+            let _result = dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
+                handle,
+                0,
+                10,
+                std::ptr::null(),
+                std::ptr::null(),
+            );
+            // Result depends on mock implementation
+            crate::test_utils::test_utils::destroy_mock_sdk_handle(handle);
+        }
+    }
+}

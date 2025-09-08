@@ -71,7 +71,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
         }
     }
 
-    fn first_transition(&self) -> Option<BatchedTransitionRef> {
+    fn first_transition(&self) -> Option<BatchedTransitionRef<'_>> {
         match self {
             BatchTransition::V0(v0) => v0.transitions.first().map(BatchedTransitionRef::Document),
             BatchTransition::V1(v1) => v1
@@ -81,7 +81,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransition {
         }
     }
 
-    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef> {
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef<'_>> {
         match self {
             BatchTransition::V0(v0) => v0
                 .transitions

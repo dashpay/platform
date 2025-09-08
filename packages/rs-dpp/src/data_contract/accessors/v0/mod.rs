@@ -24,9 +24,9 @@ pub trait DataContractV0Getters {
     ) -> Result<&DocumentType, DataContractError>;
 
     /// Returns the document type for the given document name.
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError>;
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef<'_>, DataContractError>;
 
-    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef>;
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef<'_>>;
     fn document_type_cloned_optional_for_name(&self, name: &str) -> Option<DocumentType>;
 
     fn has_document_type_for_name(&self, name: &str) -> bool;

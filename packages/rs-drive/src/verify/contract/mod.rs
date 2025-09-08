@@ -1,2 +1,3 @@
 mod verify_contract;
 mod verify_contract_history;
+mod verify_contract_return_serialization;

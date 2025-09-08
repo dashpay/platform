@@ -140,9 +140,9 @@ else
 fi
 EOS
 
-# Install protoc - protobuf compiler
+# Install protoc - protobuf compiler (pin to 32.0)
 # The one shipped with Alpine does not work
-ARG PROTOC_VERSION=27.3
+ARG PROTOC_VERSION=32.0
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
     -o /tmp/protoc.zip && \
@@ -389,10 +389,12 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     /platform/
@@ -475,10 +477,12 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
     /platform/

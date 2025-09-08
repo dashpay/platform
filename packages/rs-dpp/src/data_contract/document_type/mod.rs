@@ -88,6 +88,7 @@ pub enum DocumentTypeMutRef<'a> {
     V1(&'a mut DocumentTypeV1),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, From)]
 pub enum DocumentType {
     V0(DocumentTypeV0),
@@ -95,14 +96,14 @@ pub enum DocumentType {
 }
 
 impl DocumentType {
-    pub const fn as_ref(&self) -> DocumentTypeRef {
+    pub const fn as_ref(&self) -> DocumentTypeRef<'_> {
         match self {
             DocumentType::V0(v0) => DocumentTypeRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeRef::V1(v1),
         }
     }
 
-    pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef {
+    pub fn as_mut_ref(&mut self) -> DocumentTypeMutRef<'_> {
         match self {
             DocumentType::V0(v0) => DocumentTypeMutRef::V0(v0),
             DocumentType::V1(v1) => DocumentTypeMutRef::V1(v1),

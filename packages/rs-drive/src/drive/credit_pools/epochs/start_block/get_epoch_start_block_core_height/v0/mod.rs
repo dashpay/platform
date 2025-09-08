@@ -26,7 +26,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         let Element::Item(encoded_start_block_core_height, _) = element else {
             return Err(Error::Drive(DriveError::UnexpectedElementType(

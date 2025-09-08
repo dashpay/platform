@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Test helpers return drive::Error for convenience
 //! Drive Identity Helpers.
 //!
 //! This module defines helper functions pertinent to identities in Drive.

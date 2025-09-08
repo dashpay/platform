@@ -5,7 +5,6 @@ use crate::drive::contract::{paths, MAX_CONTRACT_HISTORY_FETCH_LIMIT};
 use crate::drive::{Drive, RootTree};
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::query::{Query, QueryItem};
 use crate::util::common::encode::encode_u64;
 use grovedb::{PathQuery, SizedQuery};
@@ -143,7 +142,7 @@ impl Drive {
             vec![&contracts_query, &historical_contracts_query],
             &platform_version.drive.grove_version,
         )
-        .map_err(GroveDB)
+        .map_err(Error::from)
     }
 
     /// Creates a merged path query for multiple historical contracts.

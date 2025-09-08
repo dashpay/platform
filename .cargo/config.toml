@@ -15,6 +15,8 @@ rustflags = [
     "target-feature=-crt-static",
     "-C",
     "target-cpu=x86-64",
+    "-C",
+    "link-arg=-lstdc++",
 ]
 
 [target.aarch64-unknown-linux-gnu]

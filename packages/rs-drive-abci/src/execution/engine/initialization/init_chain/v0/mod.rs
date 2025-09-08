@@ -5,7 +5,7 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::block::block_info::BlockInfo;
-use drive::error::Error::GroveDB;
+use drive::error;
 use drive::grovedb::Transaction;
 
 use crate::execution::engine::consensus_params_update::consensus_params_update;
@@ -131,7 +131,7 @@ where
             .grove
             .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
-            .map_err(GroveDB)?;
+            .map_err(error::Error::from)?;
 
         // We use first platform version because Tenderdash starts genesis with first versions
         // by default

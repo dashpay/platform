@@ -45,7 +45,7 @@ impl DriveDocumentQuery<'_> {
                             self.document_type,
                             platform_version,
                         )
-                        .map_err(Error::Protocol)
+                        .map_err(Error::from)
                     })
                     .collect::<Result<Vec<Document>, Error>>()?;
                 Ok((root_hash, documents))
