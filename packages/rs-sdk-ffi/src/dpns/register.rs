@@ -99,7 +99,7 @@ pub unsafe extern "C" fn dash_sdk_dpns_register_name(
 
     // Get signer from handle
     let signer_arc = Arc::from_raw(signer as *const VTableSigner);
-    let signer_clone = (*signer_arc);
+    let signer_clone = *signer_arc;
     // Don't drop the Arc, just forget it
     std::mem::forget(signer_arc);
 

@@ -235,7 +235,7 @@ mod tests {
         result_len: *mut usize,
     ) -> *mut u8 {
         // Return a mock signature (64 bytes for ECDSA) allocated with libc::malloc
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {
@@ -316,8 +316,9 @@ mod tests {
     fn test_claim_with_null_sdk_handle() {
         let transition_owner_id = create_valid_transition_owner_id();
         let params = create_valid_claim_params();
-        let identity_public_key_handle = 1 as *const crate::types::IdentityPublicKeyHandle;
-        let signer_handle = 1 as *const SignerHandle;
+        let identity_public_key_handle =
+            std::ptr::dangling::<crate::types::IdentityPublicKeyHandle>();
+        let signer_handle = std::ptr::dangling::<SignerHandle>();
         let put_settings = create_put_settings();
         let state_transition_options: *const DashSDKStateTransitionCreationOptions = ptr::null();
 
@@ -553,7 +554,7 @@ mod tests {
 
     #[test]
     fn test_claim_params_with_serialized_contract() {
-        let contract_data = vec![1u8, 2, 3, 4, 5];
+        let contract_data = [1u8, 2, 3, 4, 5];
         let params = DashSDKTokenClaimParams {
             token_contract_id: ptr::null(),
             serialized_contract: contract_data.as_ptr(),

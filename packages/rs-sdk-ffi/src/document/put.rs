@@ -389,7 +389,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(revision),
             created_at: None,
             updated_at: None,

@@ -333,7 +333,7 @@ mod tests {
         result_len: *mut usize,
     ) -> *mut u8 {
         // Return a mock signature (64 bytes for ECDSA), allocated with libc::malloc
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {
@@ -374,7 +374,7 @@ mod tests {
         _data_len: usize,
         result_len: *mut usize,
     ) -> *mut u8 {
-        let signature = vec![0u8; 64];
+        let signature = [0u8; 64];
         *result_len = signature.len();
         let ptr = libc::malloc(signature.len()) as *mut u8;
         if !ptr.is_null() {
@@ -704,7 +704,7 @@ mod tests {
     fn test_mint_with_serialized_contract() {
         let transition_owner_id = create_valid_transition_owner_id();
         let mut params = create_valid_mint_params();
-        let contract_data = vec![0u8; 100]; // Mock serialized contract
+        let contract_data = [0u8; 100]; // Mock serialized contract
         params.serialized_contract = contract_data.as_ptr();
         params.serialized_contract_len = contract_data.len();
 

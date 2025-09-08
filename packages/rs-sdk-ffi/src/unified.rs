@@ -336,7 +336,7 @@ pub extern "C" fn dash_unified_sdk_has_core_support() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::DashSDKNetwork;
+
     use std::ptr;
 
     /// Test the basic lifecycle of the unified SDK with core feature enabled

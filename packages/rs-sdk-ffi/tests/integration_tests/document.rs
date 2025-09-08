@@ -3,7 +3,6 @@
 use crate::config::Config;
 use crate::ffi_utils::*;
 use rs_sdk_ffi::*;
-use std::ptr;
 
 /// Test fetching a non-existent document
 #[test]

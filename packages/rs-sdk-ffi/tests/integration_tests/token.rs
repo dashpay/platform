@@ -51,9 +51,9 @@ fn test_token_identities_balances() {
             Ok(Some(json_str)) => {
                 let json = parse_json_result(&json_str).expect("valid JSON");
                 assert!(json.is_object(), "Expected object, got: {:?}", json);
-                assert!(json.get(&base58_from_bytes(1)).is_some());
-                assert!(json.get(&base58_from_bytes(2)).is_some());
-                assert!(json.get(&base58_from_bytes(3)).is_some());
+                assert!(json.get(base58_from_bytes(1)).is_some());
+                assert!(json.get(base58_from_bytes(2)).is_some());
+                assert!(json.get(base58_from_bytes(3)).is_some());
             }
             Ok(None) => {}
             Err(_e) => {
@@ -123,7 +123,7 @@ fn test_token_status() {
                 let json = parse_json_result(&json_str).expect("valid JSON");
                 assert!(json.is_object(), "Expected object, got: {:?}", json);
                 // Expect mapping by token ID
-                assert!(json.get(&token0_id_b58()).is_some());
+                assert!(json.get(token0_id_b58()).is_some());
             }
             Ok(None) => {
                 // Token might not exist

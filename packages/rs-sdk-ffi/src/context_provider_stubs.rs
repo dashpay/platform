@@ -3,7 +3,6 @@
 //! These are temporary stubs for testing compilation.
 //! In production, these symbols would be provided by linking against the Core SDK library.
 
-use super::context_provider::CoreSDKHandle;
 use std::ffi::c_char;
 
 // Local test-only definitions for stubs

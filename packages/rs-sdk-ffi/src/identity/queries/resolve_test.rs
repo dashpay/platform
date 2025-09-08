@@ -37,7 +37,7 @@ mod tests {
         let sdk_handle = create_mock_sdk_handle();
 
         // Create invalid UTF-8 sequence
-        let invalid_utf8 = vec![0xFF, 0xFE, 0x00];
+        let invalid_utf8 = [0xFF, 0xFE, 0x00];
 
         unsafe {
             let result =

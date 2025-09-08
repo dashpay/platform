@@ -397,7 +397,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(2), // Revision > 1 for replace
             created_at: None,
             updated_at: None,

@@ -300,7 +300,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::*;
-    use crate::types::DataContractHandle;
+
     use crate::DashSDKErrorCode;
 
     use dash_sdk::dpp::document::{Document, DocumentV0};
@@ -326,7 +326,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(1),
             created_at: None,
             updated_at: None,

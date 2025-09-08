@@ -69,8 +69,8 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
         use dash_sdk::platform::Fetch;
 
         let query = TokenLastClaimQuery {
-            token_id: token_id,
-            identity_id: identity_id,
+            token_id,
+            identity_id,
         };
 
         let last_claim = RewardDistributionMoment::fetch(&wrapper.sdk, query)
