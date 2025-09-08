@@ -1,21 +1,21 @@
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{KeyType, Purpose};
-use dash_sdk::dpp::platform_value::{Identifier, string_encoding::Encoding};
-use dash_sdk::dpp::data_contract::DataContract;
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
+use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Identifier};
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_contract::PutContract;
 use dash_sdk::platform::Fetch;
+use js_sys;
 use simple_signer::SingleKeySigner;
+use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use js_sys;
-use std::collections::BTreeMap;
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -71,7 +71,7 @@ impl WasmSdk {
 
         // Create public key hash using hash160
         let public_key_hash160 = {
-            use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
             hash160::Hash::hash(&public_key_bytes[..])
                 .to_byte_array()
                 .to_vec()
@@ -257,7 +257,7 @@ impl WasmSdk {
 
         // Create public key hash using hash160
         let public_key_hash160 = {
-            use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
             hash160::Hash::hash(&public_key_bytes[..])
                 .to_byte_array()
                 .to_vec()

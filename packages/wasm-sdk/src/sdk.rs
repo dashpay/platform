@@ -8,14 +8,15 @@ use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::identity::IdentityV0;
 use dash_sdk::dpp::prelude::AssetLockProof;
 use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
+use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::transition::put_identity::PutIdentity;
 use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
 use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
 use platform_value::platform_value;
-use dash_sdk::dpp::version::PlatformVersion;
 use rs_dapi_client::RequestSettings;
+use serde_json;
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
@@ -24,7 +25,6 @@ use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 use web_sys::{console, js_sys};
-use serde_json;
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);

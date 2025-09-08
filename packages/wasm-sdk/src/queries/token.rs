@@ -1,15 +1,15 @@
+use crate::queries::ProofMetadataResponse;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::balances::credits::TokenAmount;
+use dash_sdk::dpp::tokens::calculate_token_id;
+use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
+use dash_sdk::dpp::tokens::status::v0::TokenStatusV0Accessors;
+use dash_sdk::dpp::tokens::status::TokenStatus;
+use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
+use dash_sdk::platform::{FetchMany, Identifier};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
-use crate::queries::ProofMetadataResponse;
-use dash_sdk::platform::{Identifier, FetchMany};
-use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::tokens::status::TokenStatus;
-use dash_sdk::dpp::tokens::status::v0::TokenStatusV0Accessors;
-use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
-use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use dash_sdk::dpp::tokens::calculate_token_id;
 
 /// Calculate token ID from contract ID and token position
 ///
@@ -572,10 +572,10 @@ pub async fn get_token_perpetual_distribution_last_claim(
 
     // Use direct gRPC request instead of high-level SDK fetch to avoid proof verification issues
     use dapi_grpc::platform::v0::{
-        GetTokenPerpetualDistributionLastClaimRequest,
         get_token_perpetual_distribution_last_claim_request::{
-            Version, GetTokenPerpetualDistributionLastClaimRequestV0,
+            GetTokenPerpetualDistributionLastClaimRequestV0, Version,
         },
+        GetTokenPerpetualDistributionLastClaimRequest,
     };
     use rs_dapi_client::DapiRequestExecutor;
 

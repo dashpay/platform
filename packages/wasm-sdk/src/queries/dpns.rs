@@ -1,11 +1,11 @@
-use crate::sdk::WasmSdk;
 use crate::queries::ProofMetadataResponse;
+use crate::sdk::WasmSdk;
+use dash_sdk::dpp::document::DocumentV0Getters;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::platform::{Document, FetchMany};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
-use dash_sdk::platform::{FetchMany, Document};
-use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::document::DocumentV0Getters;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -17,9 +17,9 @@ struct DpnsUsernameInfo {
 
 #[wasm_bindgen]
 pub async fn get_dpns_username_by_name(sdk: &WasmSdk, username: &str) -> Result<JsValue, JsError> {
+    use dash_sdk::dpp::platform_value::Value;
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use drive::query::{WhereClause, WhereOperator};
-    use dash_sdk::dpp::platform_value::Value;
 
     // DPNS contract ID on testnet
     const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
@@ -79,9 +79,9 @@ pub async fn get_dpns_username_by_name_with_proof_info(
     sdk: &WasmSdk,
     username: &str,
 ) -> Result<JsValue, JsError> {
+    use dash_sdk::dpp::platform_value::Value;
     use dash_sdk::platform::documents::document_query::DocumentQuery;
     use drive::query::{WhereClause, WhereOperator};
-    use dash_sdk::dpp::platform_value::Value;
 
     // DPNS contract ID on testnet
     const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";

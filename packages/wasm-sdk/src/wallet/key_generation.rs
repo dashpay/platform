@@ -2,13 +2,13 @@
 //!
 //! Provides key generation and address derivation without full HD wallet support
 
-use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
-use dash_sdk::dpp::dashcore::{Network, PrivateKey, PublicKey, Address};
-use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
-use dash_sdk::dpp::dashcore::hashes::{Hash, sha256};
-use std::str::FromStr;
 use dash_sdk::dpp::dashcore;
+use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
+use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
+use serde::{Deserialize, Serialize};
+use std::str::FromStr;
+use wasm_bindgen::prelude::*;
 
 /// Key pair information
 #[derive(Debug, Clone, Serialize, Deserialize)]

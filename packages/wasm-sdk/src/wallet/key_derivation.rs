@@ -2,18 +2,18 @@
 //!
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
-use wasm_bindgen::prelude::*;
-use serde::{Serialize, Deserialize};
-use bip39::{Mnemonic, Language};
-use rand::{RngCore, thread_rng};
-use std::str::FromStr;
-use serde_json;
+use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::bip32::{
     ChildNumber, DerivationPath as BIP32DerivationPath, ExtendedPrivKey as BIP32ExtendedPrivKey,
     ExtendedPubKey as BIP32ExtendedPubKey,
 };
+use rand::{thread_rng, RngCore};
+use serde::{Deserialize, Serialize};
+use serde_json;
+use std::str::FromStr;
+use wasm_bindgen::prelude::*;
 
 /// Dash coin type for BIP44 (mainnet)
 pub const DASH_COIN_TYPE: u32 = 5;
@@ -264,7 +264,7 @@ pub fn derive_key_from_seed_with_path(
     path: &str,
     network: &str,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::dpp::key_wallet::{ExtendedPrivKey, DerivationPath};
+    use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
 
     // Get seed from mnemonic
     let seed = mnemonic_to_seed(mnemonic, passphrase)?;

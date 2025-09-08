@@ -1,7 +1,7 @@
 use crate::sdk::WasmSdk;
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -74,9 +74,9 @@ pub async fn get_protocol_version_upgrade_vote_status(
     start_pro_tx_hash: &str,
     count: u32,
 ) -> Result<JsValue, JsError> {
+    use dash_sdk::dpp::dashcore::ProTxHash;
     use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
     use drive_proof_verifier::types::MasternodeProtocolVote;
-    use dash_sdk::dpp::dashcore::ProTxHash;
     use std::str::FromStr;
 
     // Parse the ProTxHash
@@ -115,9 +115,9 @@ pub async fn get_protocol_version_upgrade_vote_status(
 pub async fn get_protocol_version_upgrade_state_with_proof_info(
     sdk: &WasmSdk,
 ) -> Result<JsValue, JsError> {
+    use crate::queries::ProofMetadataResponse;
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
-    use crate::queries::ProofMetadataResponse;
 
     let (upgrade_result, metadata, proof): (
         drive_proof_verifier::types::ProtocolVersionUpgrades,

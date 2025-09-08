@@ -11,7 +11,9 @@ use dash_sdk::platform::proto::get_identity_request::{
 use dash_sdk::platform::proto::get_identity_response::{
     get_identity_response_v0, GetIdentityResponseV0, Version,
 };
-use dash_sdk::platform::proto::{GetDocumentsResponse, GetIdentityRequest, Proof, ResponseMetadata};
+use dash_sdk::platform::proto::{
+    GetDocumentsResponse, GetIdentityRequest, Proof, ResponseMetadata,
+};
 use dash_sdk::platform::DocumentQuery;
 use drive_proof_verifier::types::Documents;
 use drive_proof_verifier::FromProof;

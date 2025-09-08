@@ -1,16 +1,16 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 use crate::sdk::WasmSdk;
-use serde::{Serialize, Deserialize};
+use dash_sdk::dpp::document::{Document, DocumentV0Getters};
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
     RegisterDpnsNameInput,
 };
 use dash_sdk::platform::{Fetch, Identity};
-use dash_sdk::dpp::document::{Document, DocumentV0Getters};
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::prelude::Identifier;
+use serde::{Deserialize, Serialize};
 use simple_signer::SingleKeySigner;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

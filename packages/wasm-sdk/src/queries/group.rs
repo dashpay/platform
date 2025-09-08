@@ -1,19 +1,19 @@
+use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
 use crate::sdk::WasmSdk;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
-use dash_sdk::platform::{Fetch, FetchMany, Identifier};
-use dash_sdk::dpp::data_contract::group::Group;
-use dash_sdk::dpp::data_contract::GroupContractPosition;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
-use dash_sdk::platform::group_actions::{
-    GroupQuery, GroupInfosQuery, GroupActionsQuery, GroupActionSignersQuery,
-};
+use dash_sdk::dpp::data_contract::group::Group;
+use dash_sdk::dpp::data_contract::group::GroupMemberPower;
+use dash_sdk::dpp::data_contract::GroupContractPosition;
 use dash_sdk::dpp::group::group_action::GroupAction;
 use dash_sdk::dpp::group::group_action_status::GroupActionStatus;
-use dash_sdk::dpp::data_contract::group::GroupMemberPower;
+use dash_sdk::platform::group_actions::{
+    GroupActionSignersQuery, GroupActionsQuery, GroupInfosQuery, GroupQuery,
+};
+use dash_sdk::platform::{Fetch, FetchMany, Identifier};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 // Proof info functions are now included below
 

@@ -1,16 +1,16 @@
-use crate::sdk::WasmSdk;
 use crate::queries::ProofMetadataResponse;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
-use dash_sdk::platform::{FetchMany, LimitQuery};
-use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
-use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
+use crate::sdk::WasmSdk;
 use dash_sdk::dpp::block::extended_epoch_info::v0::ExtendedEpochInfoV0Getters;
+use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
 use dash_sdk::dpp::dashcore::hashes::Hash;
 use dash_sdk::dpp::dashcore::ProTxHash;
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::{FetchMany, LimitQuery};
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::str::FromStr;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -217,8 +217,8 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
     order_ascending: Option<bool>,
 ) -> Result<JsValue, JsError> {
     use dash_sdk::platform::types::proposed_blocks::ProposedBlockCountEx;
-    use drive_proof_verifier::types::ProposerBlockCounts;
     use dash_sdk::platform::QueryStartInfo;
+    use drive_proof_verifier::types::ProposerBlockCounts;
 
     // Parse start_after if provided
     let start_info = if let Some(start) = start_after {

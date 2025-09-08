@@ -4,17 +4,17 @@
 
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
-use dash_sdk::dpp::platform_value::{Identifier, string_encoding::Encoding};
+use dash_sdk::dpp::document::DocumentV0Getters;
+use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Identifier};
 use dash_sdk::dpp::prelude::UserFeeIncrease;
-use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
+use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
 use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
 use dash_sdk::dpp::tokens::calculate_token_id;
-use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
-use serde_wasm_bindgen::to_value;
 use serde_json;
+use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
@@ -712,8 +712,8 @@ impl WasmSdk {
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
         use dash_sdk::dpp::fee::Credits;
+        use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
         use std::collections::BTreeMap;
 
         let sdk = self.inner_clone();
@@ -938,7 +938,7 @@ impl WasmSdk {
                         })?;
 
                 // Use js_sys to work with JavaScript objects
-                use js_sys::{Reflect, Array};
+                use js_sys::{Array, Reflect};
 
                 // Get the prices array from the result
                 let prices_prop = Reflect::get(&prices, &JsValue::from_str("prices"))
@@ -1155,10 +1155,10 @@ impl WasmSdk {
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, JsValue> {
-        use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
         use dash_sdk::dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
-        use dash_sdk::dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
+        use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
         use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
+        use dash_sdk::dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 
         let sdk = self.inner_clone();
 

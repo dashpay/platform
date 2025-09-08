@@ -1,16 +1,16 @@
-use crate::sdk::WasmSdk;
 use crate::queries::ProofMetadataResponse;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue, JsCast};
-use serde::{Serialize, Deserialize};
-use dash_sdk::platform::Fetch;
-use dash_sdk::dpp::prelude::Identifier;
+use crate::sdk::WasmSdk;
+use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::document::DocumentV0Getters;
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
+use dash_sdk::dpp::platform_value::{platform_value, Value};
+use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::Fetch;
+use drive::query::{OrderClause, WhereClause, WhereOperator};
+use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
-use drive::query::{WhereClause, WhereOperator, OrderClause};
-use dash_sdk::dpp::platform_value::{Value, platform_value};
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsCast, JsError, JsValue};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

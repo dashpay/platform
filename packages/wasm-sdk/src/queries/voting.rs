@@ -1,26 +1,26 @@
 use crate::sdk::WasmSdk;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
-use serde::Serialize;
-use dash_sdk::platform::Identifier;
-use dash_sdk::dpp::platform_value::Value;
 use dapi_grpc::platform::v0::{
-    GetContestedResourcesRequest, GetContestedResourceVoteStateRequest,
-    GetContestedResourceVotersForIdentityRequest, GetContestedResourceIdentityVotesRequest,
-    GetVotePollsByEndDateRequest,
-    get_contested_resources_request::{self, GetContestedResourcesRequestV0},
+    get_contested_resource_identity_votes_request::{
+        self, GetContestedResourceIdentityVotesRequestV0,
+    },
     get_contested_resource_vote_state_request::{self, GetContestedResourceVoteStateRequestV0},
     get_contested_resource_voters_for_identity_request::{
         self, GetContestedResourceVotersForIdentityRequestV0,
     },
-    get_contested_resource_identity_votes_request::{
-        self, GetContestedResourceIdentityVotesRequestV0,
-    },
+    get_contested_resources_request::{self, GetContestedResourcesRequestV0},
     get_vote_polls_by_end_date_request::{self, GetVotePollsByEndDateRequestV0},
+    GetContestedResourceIdentityVotesRequest, GetContestedResourceVoteStateRequest,
+    GetContestedResourceVotersForIdentityRequest, GetContestedResourcesRequest,
+    GetVotePollsByEndDateRequest,
 };
 use dapi_grpc::platform::VersionedGrpcResponse;
+use dash_sdk::dpp::platform_value::Value;
+use dash_sdk::platform::Identifier;
 use dash_sdk::RequestSettings;
 use rs_dapi_client::DapiRequestExecutor;
+use serde::Serialize;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 // Standard bincode configuration used by Platform
 use dash_sdk::dpp::bincode;

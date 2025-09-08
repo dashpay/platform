@@ -4,28 +4,30 @@
 
 use crate::sdk::{WasmSdk, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
 use dash_sdk::dpp::dashcore::PrivateKey;
-use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose};
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
-use dash_sdk::dpp::platform_value::{Identifier, string_encoding::Encoding, Value as PlatformValue};
-use dash_sdk::dpp::prelude::UserFeeIncrease;
-use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
-use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
-use dash_sdk::dpp::fee::Credits;
-use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
-use dash_sdk::dpp::state_transition::StateTransition;
-use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0};
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
+use dash_sdk::dpp::document::{Document, DocumentV0, DocumentV0Getters};
+use dash_sdk::dpp::fee::Credits;
+use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::{IdentityPublicKey, KeyType, Purpose};
+use dash_sdk::dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
+use dash_sdk::dpp::platform_value::{
+    string_encoding::Encoding, Identifier, Value as PlatformValue,
+};
+use dash_sdk::dpp::prelude::UserFeeIncrease;
+use dash_sdk::dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
+use dash_sdk::dpp::state_transition::batch_transition::BatchTransition;
+use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
+use dash_sdk::dpp::state_transition::StateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::platform::Fetch;
-use dash_sdk::dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use simple_signer::SingleKeySigner;
+use js_sys;
 use serde_json;
+use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use web_sys;
-use js_sys;
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
 
@@ -97,7 +99,7 @@ impl WasmSdk {
 
         // Calculate hash160 for ECDSA_HASH160 keys
         let public_key_hash160 = {
-            use dash_sdk::dpp::dashcore::hashes::{Hash, hash160};
+            use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
             hash160::Hash::hash(&public_key_bytes)
                 .to_byte_array()
                 .to_vec()

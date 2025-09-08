@@ -2,13 +2,13 @@
 //!
 //! Implements 256-bit derivation paths for DashPay contact keys
 
-use wasm_bindgen::prelude::*;
-use dash_sdk::dpp::key_wallet::{ExtendedPrivKey, DerivationPath, bip32};
-use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use crate::wallet::key_derivation::mnemonic_to_seed;
-use std::str::FromStr;
-use web_sys;
 use dash_sdk::dpp::dashcore;
+use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
+use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
+use std::str::FromStr;
+use wasm_bindgen::prelude::*;
+use web_sys;
 
 /// Derive a key from seed phrase with extended path supporting 256-bit indices
 /// This supports DIP14/DIP15 paths with identity IDs

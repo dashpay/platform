@@ -1,15 +1,15 @@
 use crate::dpp::IdentityWasm;
+use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
 use crate::sdk::WasmSdk;
-use crate::queries::{ProofMetadataResponse, ResponseMetadata, ProofInfo};
-use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
-use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
-use serde::{Serialize, Deserialize};
+use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
+use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
+use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
 use js_sys::Array;
 use rs_dapi_client::IntoInner;
-use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
+use serde::{Deserialize, Serialize};
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 // Proof info functions are now included below
 
@@ -152,11 +152,9 @@ pub async fn get_identity_keys(
         "specific" => {
             // Use direct gRPC request for specific keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysRequest,
                 get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
-                KeyRequestType,
                 key_request_type::Request,
-                SpecificKeys,
+                GetIdentityKeysRequest, KeyRequestType, SpecificKeys,
             };
             use rs_dapi_client::{DapiRequest, RequestSettings};
 
@@ -185,7 +183,7 @@ pub async fn get_identity_keys(
 
             // Process the response to extract keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion,
+                get_identity_keys_response::Version as ResponseVersion, GetIdentityKeysResponse,
             };
             use rs_dapi_client::IntoInner;
 
@@ -216,12 +214,10 @@ pub async fn get_identity_keys(
         "search" => {
             // Use direct gRPC request for search keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysRequest,
                 get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
-                KeyRequestType,
                 key_request_type::Request,
-                SearchKey, SecurityLevelMap,
                 security_level_map::KeyKindRequestType as GrpcKeyKindRequestType,
+                GetIdentityKeysRequest, KeyRequestType, SearchKey, SecurityLevelMap,
             };
             use rs_dapi_client::{DapiRequest, RequestSettings};
             use std::collections::HashMap;
@@ -295,7 +291,7 @@ pub async fn get_identity_keys(
 
             // Process the response to extract keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion,
+                get_identity_keys_response::Version as ResponseVersion, GetIdentityKeysResponse,
             };
             use rs_dapi_client::IntoInner;
 
@@ -368,8 +364,8 @@ pub async fn get_identity_keys(
 
 #[wasm_bindgen]
 pub async fn get_identity_nonce(sdk: &WasmSdk, identity_id: &str) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityNonceFetcher;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityNonceFetcher;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -410,8 +406,8 @@ pub async fn get_identity_nonce_with_proof_info(
     sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityNonceFetcher;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityNonceFetcher;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -456,8 +452,8 @@ pub async fn get_identity_contract_nonce(
     identity_id: &str,
     contract_id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityContractNonceFetcher;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -511,8 +507,8 @@ pub async fn get_identity_contract_nonce_with_proof_info(
     identity_id: &str,
     contract_id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityContractNonceFetcher;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -569,8 +565,8 @@ pub async fn get_identity_contract_nonce_with_proof_info(
 
 #[wasm_bindgen]
 pub async fn get_identity_balance(sdk: &WasmSdk, id: &str) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityBalance;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityBalance;
 
     if id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -667,8 +663,8 @@ pub async fn get_identity_balance_and_revision(
     sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityBalanceAndRevision;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -934,8 +930,8 @@ pub async fn get_identity_token_balances(
     identity_id: &str,
     token_ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
     use dash_sdk::dpp::balances::credits::TokenAmount;
+    use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 
     let identity_id = Identifier::from_string(
         identity_id,
@@ -1023,11 +1019,9 @@ pub async fn get_identity_keys_with_proof_info(
 
             // Use direct gRPC request for specific keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysRequest,
                 get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
-                KeyRequestType,
                 key_request_type::Request,
-                SpecificKeys,
+                GetIdentityKeysRequest, KeyRequestType, SpecificKeys,
             };
             use rs_dapi_client::{DapiRequest, RequestSettings};
 
@@ -1052,7 +1046,7 @@ pub async fn get_identity_keys_with_proof_info(
 
             // Process the response to extract keys
             use dash_sdk::platform::proto::{
-                GetIdentityKeysResponse, get_identity_keys_response::Version as ResponseVersion,
+                get_identity_keys_response::Version as ResponseVersion, GetIdentityKeysResponse,
             };
             use rs_dapi_client::IntoInner;
 
@@ -1154,8 +1148,8 @@ pub async fn get_identity_balance_with_proof_info(
     sdk: &WasmSdk,
     id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityBalance;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityBalance;
 
     if id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -1263,8 +1257,8 @@ pub async fn get_identity_balance_and_revision_with_proof_info(
     sdk: &WasmSdk,
     identity_id: &str,
 ) -> Result<JsValue, JsError> {
-    use drive_proof_verifier::types::IdentityBalanceAndRevision;
     use dash_sdk::platform::Fetch;
+    use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
     if identity_id.is_empty() {
         return Err(JsError::new("Identity ID is required"));
@@ -1575,8 +1569,8 @@ pub async fn get_identity_token_balances_with_proof_info(
     identity_id: &str,
     token_ids: Vec<String>,
 ) -> Result<JsValue, JsError> {
-    use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
     use dash_sdk::dpp::balances::credits::TokenAmount;
+    use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 
     let identity_id = Identifier::from_string(
         identity_id,

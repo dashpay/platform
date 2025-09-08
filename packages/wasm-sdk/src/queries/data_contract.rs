@@ -1,14 +1,14 @@
 use crate::dpp::DataContractWasm;
-use crate::sdk::WasmSdk;
 use crate::queries::ProofMetadataResponse;
-use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
-use dash_sdk::platform::query::LimitQuery;
-use drive_proof_verifier::types::{DataContractHistory, DataContracts};
+use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
-use serde::{Serialize, Deserialize};
+use dash_sdk::platform::query::LimitQuery;
+use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
+use drive_proof_verifier::types::{DataContractHistory, DataContracts};
+use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
-use std::collections::BTreeMap;
 
 #[wasm_bindgen]
 pub async fn data_contract_fetch(
