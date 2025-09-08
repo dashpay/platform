@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DocumentOperation<'a> {
     /// An add operation
     AddOperation {
