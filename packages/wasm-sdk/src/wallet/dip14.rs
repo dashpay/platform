@@ -3,8 +3,7 @@
 //! This module implements DIP14, which extends BIP32 to support 256-bit derivation indices
 //! instead of the standard 31-bit limitation.
 
-use dash_sdk::dpp::dashcore;
-use dash_sdk::dpp::dashcore::hashes::{ripemd160, sha256, Hash};
+use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{self, PublicKey, Scalar, Secp256k1, SecretKey};
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;

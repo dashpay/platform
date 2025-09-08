@@ -2,7 +2,6 @@
 //!
 //! Provides key generation and address derivation without full HD wallet support
 
-use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};

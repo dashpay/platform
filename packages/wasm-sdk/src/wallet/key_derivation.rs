@@ -11,7 +11,6 @@ use dash_sdk::dpp::key_wallet::bip32::{
 };
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
