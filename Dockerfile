@@ -374,6 +374,7 @@ COPY --parents \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-notify \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
@@ -817,6 +818,7 @@ COPY --parents \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
     packages/rs-dapi \
+    packages/rs-dash-notify \
     packages/dashpay-contract \
     packages/wallet-utils-contract \
     packages/token-history-contract \
