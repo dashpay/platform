@@ -63,57 +63,6 @@ impl WasmSdk {
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
     }
-
-    /// Test serialization of different object types
-    #[wasm_bindgen(js_name = testSerialization)]
-    pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
-        use serde_wasm_bindgen::to_value;
-
-        match test_type {
-            "simple" => {
-                let simple = serde_json::json!({
-                    "type": "simple",
-                    "value": "test"
-                });
-                to_value(&simple)
-                    .map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
-            }
-            "complex" => {
-                let complex = serde_json::json!({
-                    "type": "complex",
-                    "nested": {
-                        "id": "123",
-                        "number": 42,
-                        "array": [1, 2, 3],
-                        "null_value": null,
-                        "bool_value": true
-                    }
-                });
-                to_value(&complex)
-                    .map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
-            }
-            "document" => {
-                // Simulate the exact structure we're trying to return
-                let doc = serde_json::json!({
-                    "type": "DocumentCreated",
-                    "documentId": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
-                    "document": {
-                        "id": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
-                        "ownerId": "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
-                        "dataContractId": "9nzpvjVSStUrhkEs3eNHw2JYpcNoLh1MjmqW45QiyjSa",
-                        "documentType": "post",
-                        "revision": 1,
-                        "createdAt": 1736300191752i64,
-                        "updatedAt": 1736300191752i64,
-                    }
-                });
-                to_value(&doc).map_err(|e| {
-                    JsValue::from_str(&format!("Document serialization failed: {}", e))
-                })
-            }
-            _ => Err(JsValue::from_str("Unknown test type")),
-        }
-    }
 }
 
 impl WasmSdk {
@@ -726,10 +675,9 @@ impl WasmSdkBuilder {
         WasmSdkBuilder(self.0.with_settings(settings))
     }
 
-    // TODO: Add with_proofs method when it's available in the SDK builder
-    // pub fn with_proofs(self, enable_proofs: bool) -> Self {
-    //     WasmSdkBuilder(self.0.with_proofs(enable_proofs))
-    // }
+    pub fn with_proofs(self, enable_proofs: bool) -> Self {
+        WasmSdkBuilder(self.0.with_proofs(enable_proofs))
+    }
 }
 
 // Store shared trusted contexts
@@ -777,89 +725,6 @@ pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
     *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
 
     Ok(())
-}
-
-// Query functions have been moved to src/queries/ modules
-
-#[wasm_bindgen]
-pub async fn identity_put(sdk: &WasmSdk) {
-    // This is just a mock implementation to show how to use the SDK and ensure proper linking
-    // of all required dependencies. This function is not supposed to work.
-    let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
-
-    let identity = Identity::V0(IdentityV0 {
-        id,
-        public_keys: BTreeMap::new(),
-        balance: 0,
-        revision: 0,
-    });
-
-    let asset_lock_proof = AssetLockProof::default();
-    let asset_lock_proof_private_key =
-        PrivateKey::from_byte_array(&[0; 32], Network::Testnet).expect("create private key");
-
-    let signer = MockSigner;
-    let _pushed: Identity = identity
-        .put_to_platform(
-            sdk,
-            asset_lock_proof,
-            &asset_lock_proof_private_key,
-            &signer,
-            None,
-        )
-        .await
-        .expect("put identity")
-        .broadcast_and_wait(sdk, None)
-        .await
-        .unwrap();
-}
-
-#[wasm_bindgen]
-pub async fn epoch_testing() {
-    let sdk = SdkBuilder::new(AddressList::new())
-        .build()
-        .expect("build sdk");
-
-    let _ei = ExtendedEpochInfo::fetch(&sdk, 0)
-        .await
-        .expect("fetch extended epoch info")
-        .expect("extended epoch info not found");
-}
-
-#[wasm_bindgen]
-pub async fn docs_testing(sdk: &WasmSdk) {
-    let id = Identifier::random();
-
-    let factory = DataContractFactory::new(1).expect("create data contract factory");
-    factory
-        .create(id, 1, platform_value!({}), None, None)
-        .expect("create data contract");
-
-    let dc = DataContract::fetch(sdk, id)
-        .await
-        .expect("fetch data contract")
-        .expect("data contract not found");
-
-    let dcs = dc
-        .serialize_to_bytes_with_platform_version(sdk.0.version())
-        .expect("serialize data contract");
-
-    let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
-    let doc = Document::fetch(sdk, query)
-        .await
-        .expect("fetch document")
-        .expect("document not found");
-
-    let document_type = dc
-        .document_type_for_name("aaa")
-        .expect("document type for name");
-    let doc_serialized = doc
-        .serialize(document_type, &dc, sdk.0.version())
-        .expect("serialize document");
-
-    let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))
-        .expect("create js string");
-    console::log_1(&msg);
 }
 
 #[derive(Clone, Debug)]

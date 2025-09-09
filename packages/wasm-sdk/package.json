@@ -1,7 +1,6 @@
 {
-  "name": "wasm-sdk",
+  "name": "@dashevo/evo-sdk",
   "version": "0.0.0",
-  "private": true,
   "scripts": {
     "build": "./build.sh",
     "build:release": "./build-optimized.sh",
