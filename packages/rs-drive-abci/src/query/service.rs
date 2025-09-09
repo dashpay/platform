@@ -1,6 +1,5 @@
 use crate::error::query::QueryError;
 use crate::error::Error;
-use crate::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
 use crate::metrics::{abci_response_code_metric_label, query_duration_metric};
 use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -55,9 +54,10 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
+use rs_dash_notify::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::mpsc;
@@ -68,6 +68,8 @@ use tracing::Instrument;
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
     event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    /// background worker tasks
+    workers: Arc<Mutex<tokio::task::JoinSet<()>>>,
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -86,6 +88,7 @@ impl QueryService {
         Self {
             platform,
             event_bus,
+            workers: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
         }
     }
 
@@ -854,6 +857,8 @@ impl PlatformService for QueryService {
     type subscribePlatformEventsStream =
         UnboundedReceiverStream<Result<PlatformEventsResponse, Status>>;
 
+    /// Reads messages from the `request` stream, processes commands, and sends responses
+    /// and events to the client through the returned stream.
     async fn subscribe_platform_events(
         &self,
         request: Request<Streaming<PlatformEventsCommand>>,
@@ -866,19 +871,17 @@ impl PlatformService for QueryService {
         let mut inbound = request.into_inner();
 
         // Outgoing channel (shared across forwarders)
-        let (tx, rx) = mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
+        let (downstream_tx, rx) = mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
 
         // Connection-local subscriptions routing map
         let event_bus = self.event_bus.clone();
-        let (sub_tx, mut sub_rx) = mpsc::unbounded_channel::<(
-            String,
-            SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
-        )>();
-        let (drop_tx, mut drop_rx) = mpsc::unbounded_channel::<String>();
+        let workers = self.workers.clone();
 
-        // Command processor task
-        let cmd_tx = tx.clone();
-        tokio::spawn(async move {
+        // Process all incoming messages in a background task
+        {
+            let mut workers_guard = self.workers.lock().unwrap();
+            // as we run async task, workers_guard will be dropped once the task is spawned
+            workers_guard.spawn(async move {
             // Local map lives in this task
             use std::collections::HashMap;
             let mut subs: HashMap<
@@ -888,26 +891,6 @@ impl PlatformService for QueryService {
 
             loop {
                 tokio::select! {
-                    Some((id, handle)) = sub_rx.recv() => {
-                        subs.insert(id.clone(), handle);
-                        // optional ack
-                        let ack = PlatformEventsResponse{
-                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "add".to_string() }))
-                            }))
-                        };
-                        let _ = cmd_tx.send(Ok(ack));
-                    }
-                    Some(id) = drop_rx.recv() => {
-                        if subs.remove(&id).is_some() {
-                            let ack = PlatformEventsResponse{
-                                version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                    response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "remove".to_string() }))
-                                }))
-                            };
-                            let _ = cmd_tx.send(Ok(ack));
-                        }
-                    }
                     cmd = inbound.message() => {
                         match cmd {
                             Ok(Some(PlatformEventsCommand { version: Some(CmdVersion::V0(v0)) })) => {
@@ -917,36 +900,49 @@ impl PlatformService for QueryService {
                                         let adapter = PlatformFilterAdapter::new(add.filter.unwrap_or_default());
                                         let handle = event_bus.add_subscription(adapter).await;
 
-                                        let forward_tx = cmd_tx.clone();
-                                        let id_clone = id.clone();
-                                        let h_clone = handle.clone();
-                                        tokio::spawn(async move {
-                                            while let Some(evt) = h_clone.recv().await {
-                                                let resp = PlatformEventsResponse{
-                                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                                        response: Some(Resp::Event(dapi_grpc::platform::v0::PlatformEventMessageV0{
-                                                            client_subscription_id: id_clone.clone(),
-                                                            event: Some(evt),
-                                                        }))
-                                                    }))
-                                                };
-                                                if forward_tx.send(Ok(resp)).is_err() { break; }
-                                            }
-                                        });
+                                        {
+                                            let id = id.clone();
+                                            let handle = handle.clone();
+                                            let mut workers_guard = workers.lock().unwrap();
+                                            let events_tx = downstream_tx.clone();
+                                            workers_guard.spawn(async move {
+                                                events_forwarding_worker (
+                                                    handle,
+                                                    &id,
+                                                    events_tx
+                                                ).await;
+                                            });
+                                        }
 
-                                        let _ = sub_tx.send((id, handle));
+                                        subs.insert(id.clone(), handle);
+                                        // optional ack
+                                        let ack = PlatformEventsResponse{
+                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "add".to_string() }))
+                                            }))
+                                        };
+                                        let _ = downstream_tx.send(Ok(ack));
                                     }
                                     Some(Cmd::Remove(rem)) => {
-                                        let _ = drop_tx.send(rem.client_subscription_id);
-                                    }
+                                        let id = rem.client_subscription_id;
+
+                                        if subs.remove(&id).is_some() {
+                                            let ack = PlatformEventsResponse{
+                                                version: Some(RespVersion::V0(PlatformEventsResponseV0{
+                                                    response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "remove".to_string() }))
+                                                }))
+                                            };
+                                            let _ = downstream_tx.send(Ok(ack));
+                                        }
+                                    }                                    
                                     Some(Cmd::Ping(p)) => {
-                                        // echo back as ack
+                                        // echo ba            let mut workers_guard = workers.lock().unwrap();ck as ack
                                         let ack = PlatformEventsResponse{
                                             version: Some(RespVersion::V0(PlatformEventsResponseV0{
                                                 response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: p.nonce.to_string(), op: "ping".to_string() }))
                                             }))
                                         };
-                                        let _ = cmd_tx.send(Ok(ack));
+                                        let _ = downstream_tx.send(Ok(ack));
                                     }
                                     None => {
                                         let err = PlatformEventsResponse{
@@ -954,7 +950,7 @@ impl PlatformService for QueryService {
                                                 response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing command".to_string() }))
                                             }))
                                         };
-                                        let _ = cmd_tx.send(Ok(err));
+                                        let _ = downstream_tx.send(Ok(err));
                                     }
                                 }
                             }
@@ -964,7 +960,7 @@ impl PlatformService for QueryService {
                                         response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing version".to_string() }))
                                     }))
                                 };
-                                let _ = cmd_tx.send(Ok(err));
+                                let _ = downstream_tx.send(Ok(err));
                             }
                             Ok(None) => { break; }
                             Err(e) => {
@@ -973,7 +969,7 @@ impl PlatformService for QueryService {
                                         response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 500, message: format!("{}", e) }))
                                     }))
                                 };
-                                let _ = cmd_tx.send(Ok(err));
+                                let _ = downstream_tx.send(Ok(err));
                                 break;
                             }
                         }
@@ -981,8 +977,33 @@ impl PlatformService for QueryService {
                 }
             }
         });
-
+        };
         Ok(Response::new(UnboundedReceiverStream::new(rx)))
+    }
+}
+
+async fn events_forwarding_worker(
+    subscription: SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
+    client_subscription_id: &str,
+    forward_tx: mpsc::UnboundedSender<Result<PlatformEventsResponse, Status>>,
+) {
+    use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
+    use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
+
+    while let Some(evt) = subscription.recv().await {
+        let resp = PlatformEventsResponse {
+            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                response: Some(Resp::Event(
+                    dapi_grpc::platform::v0::PlatformEventMessageV0 {
+                        client_subscription_id: client_subscription_id.to_string(),
+                        event: Some(evt),
+                    },
+                )),
+            })),
+        };
+        if forward_tx.send(Ok(resp)).is_err() {
+            break;
+        }
     }
 }
 

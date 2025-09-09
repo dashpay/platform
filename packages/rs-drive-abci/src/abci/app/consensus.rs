@@ -5,7 +5,7 @@ use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::event_bus::EventBus;
+use rs_dash_notify::event_bus::EventBus;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
 use crate::query::PlatformFilterAdapter;

@@ -36,6 +36,7 @@ members = [
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
     "packages/rs-dapi",
+    "packages/rs-dash-notify",
 ]
 
 exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use

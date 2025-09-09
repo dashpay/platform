@@ -255,33 +255,32 @@ The Platform Service uses a modular structure where complex methods are separate
 
 ##### Platform Events Subscription Proxy
 
-rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint to external clients and proxies it upstream to rs-drive-abci using a pool of bi-directional gRPC streams. The proxy performs logical multiplexing so multiple public subscriptions share a small number of upstream connections.
+rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint to external clients and proxies it upstream to rs-drive-abci. The proxying and multiplexing are provided by the shared crate `rs-dash-notify`, enabling multiple public subscriptions to share a small number of upstream connections.
 
 - Public interface:
   - Server-streaming RPC: `subscribePlatformEvents(request stream PlatformEventsCommand) -> (response stream PlatformEventsResponse)`.
   - Commands: `Add`, `Remove`, `Ping` wrapped in versioned envelopes (`V0`).
   - Responses: `Event`, `Ack`, `Error` wrapped in versioned envelopes (`V0`).
 
-- Upstream mux (implementation details):
-  - File: `src/services/platform_service/subscribe_platform_events.rs:1`.
-  - Struct `PlatformEventsMux` maintains a small pool of upstream connections (`UPSTREAM_CONN_COUNT = 2`) to Drive ABCI’s `subscribePlatformEvents` (bi-di streaming).
-  - Each client stream creates a `PlatformEventsSession` bound to one upstream connection (round-robin selection) and a unique session prefix.
-  - ID rewriting: public `client_subscription_id` is mapped to an upstream id of form `u{upstream_idx}:{session_prefix}:{public_id}`.
-  - Routing map: `upstream_id -> (downstream_sender, public_id)`; events/acks/errors from upstream are rewritten back to the original `public_id` before sending to the client.
-  - Local Ping handling: `Ping` commands from the client are acknowledged locally without forwarding upstream.
-  - Cleanup: on `Remove` or stream drop, session removes routes and sends upstream `Remove` commands for active subscriptions.
+- Upstream mux (shared crate):
+  - `rs_dash_notify::platform_mux::PlatformEventsMux` manages a pool of upstream bi-di gRPC connections to Drive ABCI’s `subscribePlatformEvents`.
+  - Constructed with `rs_dapi_client::AddressList` (round-robin/health-aware selection) plus settings for pool size, backoff, and timeouts.
+  - For each client stream, a session binds to one upstream, applies an ID prefix, and rewrites `client_subscription_id`s to upstream-safe IDs.
+  - Routes upstream events/acks/errors back to the original public `client_subscription_id`.
+  - Handles local `Ping` and cleans up routes on remove/stream drop.
+  - Uses protobuf-generated types from `dapi-grpc` end-to-end; no custom wrappers.
 
-- Drive ABCI server:
-  - File: `packages/rs-drive-abci/src/query/service.rs:854` (server method) and `:260` (filter adapter).
-  - Uses a generic in-process event bus (`EventBus<PlatformEvent, PlatformFilterAdapter>`) to attach per-connection subscriptions based on incoming `PlatformFilterV0`.
-  - Connection-local map stores `client_subscription_id -> SubscriptionHandle` and spawns forwarder tasks to push matched events to the response stream.
-  - Responds with `Ack` on `Add`/`Remove`, echoes `Ping` as `Ack`, and returns structured `Error` for invalid frames.
+- Drive ABCI server (shared bus):
+  - Uses `rs_dash_notify::event_bus::EventBus<PlatformEvent, PlatformFilterAdapter>` to attach per-connection subscriptions based on incoming `PlatformFilterV0`.
+  - Maintains a connection-local map `client_subscription_id -> SubscriptionHandle`, forwards matched events, and responds with `Ack`/`Error` frames.
 
-- Filter semantics (current):
+- Filter semantics (example):
   - `All(true)` matches all events; `All(false)` matches none.
-  - `TxHash(h)` matches `StateTransitionResult` events with `tx_hash == h`.
+  - `TxHash(h)` matches state transition result events with `tx_hash == h`.
 
-- Metrics: proxy currently does not emit detailed metrics for connections/subscriptions; TODO to instrument counts and traffic at both rs-dapi and rs-drive-abci layers.
+- Observability:
+  - Logging via `tracing` throughout mux and bus.
+  - Optional metrics via the `metrics` feature in `rs-dash-notify` (Prometheus-compatible); rs-dapi continues to serve `/metrics`.
 
 ### 6. Streams Service
 

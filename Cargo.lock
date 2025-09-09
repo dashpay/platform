@@ -1389,7 +1389,9 @@ dependencies = [
  "http",
  "js-sys",
  "lru 0.12.5",
+ "once_cell",
  "rs-dapi-client",
+ "rs-dash-notify",
  "rustls-pemfile",
  "sanitize-filename",
  "serde",
@@ -1401,6 +1403,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "uuid",
  "zeroize",
 ]
 
@@ -1773,6 +1776,7 @@ dependencies = [
  "regex",
  "reopen",
  "rocksdb",
+ "rs-dash-notify",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -3410,9 +3414,9 @@ dependencies = [
 
 [[package]]
 name = "metrics"
-version = "0.24.1"
+version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7a7deb012b3b2767169ff203fadb4c6b0b82b947512e5eb9e0b78c2e186ad9e3"
+checksum = "25dea7ac8057892855ec285c440160265225438c3c45072613c25a4b26e98ef5"
 dependencies = [
  "ahash 0.8.11",
  "portable-atomic",
@@ -4705,6 +4709,8 @@ dependencies = [
  "prometheus",
  "reqwest",
  "reqwest-middleware",
+ "rs-dapi-client",
+ "rs-dash-notify",
  "serde",
  "serde_json",
  "serial_test",
@@ -4752,6 +4758,20 @@ dependencies = [
  "tower-service",
  "tracing",
  "wasm-bindgen-futures",
+]
+
+[[package]]
+name = "rs-dash-notify"
+version = "0.1.0"
+dependencies = [
+ "dapi-grpc",
+ "metrics",
+ "rs-dapi-client",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -5897,6 +5917,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]
@@ -5936,6 +5957,7 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
+ "futures-util",
  "pin-project-lite",
  "tokio",
 ]

@@ -1,21 +1,21 @@
 ## Overview
 
-Goal: introduce a reusable, generic event bus for rs-drive-abci and wire it into the new Platform events subscription flow used by rs-dapi. The bus must be non-blocking, memory-safe, support fine-grained filtering, perform automatic cleanup of dead subscribers, and be cheaply clonable.
+Goal: extract the eventing stack into a dedicated reusable crate `packages/rs-dash-notify` and make rs-dapi, rs-drive-abci, and rs-sdk consume it. The crate provides a generic, non-blocking, memory-safe in-process event bus and a Platform events multiplexer that speaks the existing bi-directional gRPC API. The bus supports fine-grained filtering, automatic cleanup of dead subscribers, and cheap cloning; the mux manages upstream Drive ABCI connections using `AddressList`.
 
-Why now: rs-dapi already implements a subscription/dispatch layer in `packages/rs-dapi/src/services/streaming_service/subscriber_manager.rs`. It works, but it couples event routing to rs-dapi types, mixes Core/Tenderdash concerns, and duplicates logic we also need in rs-drive-abci (to publish platform-domain events). Centralizing a generic, minimal bus avoids divergence and lets both processes share the same subscription semantics.
+Why now: rs-dapi contains a subscription/dispatch layer (`packages/rs-dapi/src/services/streaming_service/subscriber_manager.rs`) and a Platform events multiplexer (`packages/rs-dapi/src/services/platform_service/subscribe_platform_events.rs`). rs-drive-abci contains a separate in-process bus for publishing Platform-domain events. This duplicates logic and couples implementations to crate-local types. Centralizing into `rs-dash-notify` avoids divergence, lets all processes share subscription semantics, and reduces maintenance.
 
 Non-goals:
-- Cross-process pub/sub beyond one process (rs-dapi ↔ rs-drive-abci use gRPC, not a shared in-memory bus).
+- Cross-process pub/sub beyond one process (cross-process streaming remains gRPC via Drive ABCI).
 - Persistent storage or replay. Real-time streaming only.
 
-## Current State (rs-dapi)
+## Current State (before extraction)
 
 Key parts to carry forward while generalizing:
 - RAII subscription handles with auto-cleanup when the client drops the stream. See `packages/rs-dapi/src/services/streaming_service/subscriber_manager.rs:34` and the `Drop` impl for `SubscriptionHandleInner` that removes the sub from the map on drop.
 - Event dispatch loop that fans out to matching subscribers and prunes dead senders. See `notify()` in the same file.
 - Mapping/sub-stream helpers (`map`, `filter_map`) to transform subscription payloads without re-subscribing.
 
-Limitations we will address (at the bus level):
+Limitations we will address (at the crate level):
 - Coupled filter matching: `SubscriberManager` knows all `FilterType` variants and dispatch rules. This prevents reuse with other event types (platform domain events in drive-abci).
 - Mixed concerns: current `FilterType` includes Core bloom filters, masternode updates, Platform TX events, etc. The bus should be generic; crates define their own filters and implement matching.
 - Unbounded subscriber channels: today we use `tokio::mpsc::UnboundedSender`. We should keep this initially (to match existing behavior) but design for optionally bounded channels and drop policy.
@@ -41,8 +41,12 @@ This mirrors the existing API shape but removes knowledge of specific filters/ev
 
 ### Module placement and reuse
 
-- Implemented generic bus in `packages/rs-drive-abci/src/event_bus/` and re-exported as `drive_abci::event_bus`.
-- Wired into drive-abci `subscribePlatformEvents` and proxied in rs-dapi.
+- Extracted into `packages/rs-dash-notify` (library crate). Public surface:
+  - `event_bus`: generic in-process `EventBus<E, F>` and `Filter<E>` trait.
+  - `platform_mux`: `PlatformEventsMux` for upstream Drive ABCI subscription multiplexing.
+- rs-drive-abci publishes Platform events using `rs_dash_notify::event_bus` and protobuf-generated types.
+- rs-dapi uses `rs_dash_notify::platform_mux::PlatformEventsMux` to proxy public subscriptions to Drive ABCI.
+- rs-sdk exposes a simple wrapper, e.g. `Sdk::subscribe(...)`, built on top of the mux.
 
 ### Event namespaces (deferred)
 
@@ -52,7 +56,7 @@ The bus is event-agnostic. Concrete `E` and `F` types will be defined by integra
 
 ### Platform events
 
-`PlatformEvent` messages and `PlatformFilterV0` are part of the public gRPC API. Drive-abci adapts incoming gRPC filters to the internal `EventBus` via `PlatformFilterAdapter`.
+`PlatformEvent` and `PlatformFilterV0` come from protobuf-generated types in `dapi-grpc`. The crate avoids custom wrappers unless necessary; adapters only bridge protobuf filters to the `Filter<E>` trait for the in-process bus.
 
 ### Filtering model
 
@@ -60,11 +64,11 @@ The bus only depends on the `Filter<E>` trait with `matches(&self, &E) -> bool`.
 
 ### gRPC API
 
-Bi-directional streaming RPC supports multiplexed subscriptions over a single connection between rs-dapi and rs-drive-abci.
+Bi-directional streaming RPC continues to support multiplexed subscriptions over a single connection between rs-dapi and rs-drive-abci. The new mux in `rs-dash-notify` encapsulates this logic and connection pooling.
 
 ### Subscription Server (gRPC)
 
-A single bi-directional streaming RPC allows a client (rs-dapi) to open one connection to rs-drive-abci, then add and remove multiple logical subscriptions over that connection. Server pushes events tagged with the logical subscription ID.
+A single bi-directional streaming RPC allows a client to open one connection to Drive ABCI, then add and remove multiple logical subscriptions. Server pushes events tagged with the logical subscription ID. The server-side publisher in rs-drive-abci uses the shared in-process bus from `rs-dash-notify`.
 
 - New RPC in `platform.proto`:
   - `rpc subscribePlatformEvents(stream PlatformEventsCommand) returns (stream PlatformEventsResponse);`
@@ -162,9 +166,9 @@ Notes on internals:
 5) Add unit tests demonstrating basic usage.
 6) Instrument with Prometheus-compatible metrics via the `metrics` crate, without adding any exporter code or changing `metrics.rs`.
 
-### Metrics Integration (This Task)
+### Metrics Integration
 
-- Mechanism: use the existing `metrics` crate macros (`counter!`, `gauge!`, `describe_*`) so the already-installed Prometheus exporter in rs-drive-abci (`metrics::Prometheus::new(...)`) picks them up automatically.
+- Mechanism: use the existing `metrics` crate macros (`counter!`, `gauge!`, `describe_*`) gated behind the crate feature `metrics`. When enabled, the already-installed Prometheus exporters (as in rs-dapi and rs-drive-abci) pick them up automatically.
 - Registration: in `EventBus::new()`, call a `register_metrics_once()` function guarded by `Once` to `describe_*` the keys below. No changes to `packages/rs-drive-abci/src/metrics.rs` are required.
 - Metrics (no labels initially; labels can be added later if we add a label-provider hook):
   - `event_bus_active_subscriptions` (gauge): current number of active subscriptions.
@@ -175,8 +179,8 @@ Notes on internals:
   - `event_bus_events_dropped_total` (counter): increments when delivery to a subscriber fails and the subscriber is pruned.
 
 Notes:
-- Minimizes changes to rs-drive-abci by keeping metric registration local to the bus module. The existing exporter remains untouched.
-- rs-dapi can freely depend on the bus; if no exporter is installed in that process, metrics calls are no-ops. If an exporter is added later, the same keys will be reported.
+- Registration lives in the shared crate (bus and mux modules). Exporters in consuming processes remain untouched.
+- If no exporter is installed, metrics calls are no-ops.
 
 Optional future enhancement:
 - Add an optional, generic label-provider closure on `EventBus` creation, e.g. `with_metrics_labels(fn(&F)->Vec<metrics::Label>)`, to tag counts by filter type or namespace without coupling the bus to concrete filter/event types.
@@ -209,39 +213,23 @@ async fn basic_subscribe_and_notify() {
 Additional tests (optional):
 - Dropping the `SubscriptionHandle` removes the subscription (count decreases).
 
-## Implemented
+## New Architecture
 
-- Generic bus and tests
-  - `packages/rs-drive-abci/src/event_bus/mod.rs:1`
-  - Async subscribe/notify, RAII cleanup, metrics counters/gauges, unit tests.
+- Shared crate: `packages/rs-dash-notify`
+  - `event_bus`: generic bus and tests (async subscribe/notify, RAII cleanup, optional metrics, extensive `tracing` logging).
+- `platform_mux`: upstream connection pool for Drive ABCI bi-di stream built on top of the shared EventBus. It uses protobuf types end-to-end, requires UUID `client_subscription_id` (pass-through across layers), and provides `PlatformEventsMux::new(addresses: rs_dapi_client::AddressList, settings: PlatformMuxSettings)`.
+  - Feature flags: `metrics` enables Prometheus-compatible instrumentation via `metrics` crate.
 
-- Drive ABCI server endpoint
-  - `packages/rs-drive-abci/src/query/service.rs:854`
-  - Implements `subscribePlatformEvents` using `EventBus<PlatformEvent, PlatformFilterAdapter>`.
-  - Connection-local routing map stores `client_subscription_id -> SubscriptionHandle` and forwards events to a per-connection sender feeding the response stream.
-  - Handles `Add`, `Remove`, and `Ping` with ACK/error responses.
+- Drive ABCI server endpoint (consumer of the bus)
+  - Uses `rs_dash_notify::event_bus::EventBus<PlatformEvent, PlatformFilterAdapter>`.
+  - Connection-local routing map stores `client_subscription_id -> SubscriptionHandle` and forwards events to the response stream.
+  - Handles `Add`, `Remove`, `Ping` with ACK/error responses using protobuf-generated types.
 
-- Filter adapter in drive-abci
-  - `packages/rs-drive-abci/src/query/service.rs:260`
-  - `PlatformFilterAdapter` implements `event_bus::Filter<PlatformEvent>` by delegating to `PlatformFilterV0` kinds.
-  - Current semantics:
-    - `All(true)`: match all events; `All(false)` matches none.
-    - `TxHash(h)`: matches only `StateTransitionResult` events where `tx_hash == h`.
-
-- DAPI proxy
-  - `packages/rs-dapi/src/services/platform_service/mod.rs:1`
-  - `packages/rs-dapi/src/services/platform_service/subscribe_platform_events.rs:1`
-  - Maintains a small pool of upstream bi-di connections to drive-abci (currently `UPSTREAM_CONN_COUNT = 2`).
-  - Per-client session assigns a unique upstream subscription id prefix per chosen upstream and rewrites IDs so multiple public subscriptions share one upstream stream.
-  - Routes upstream events/acks/errors back to the original public `client_subscription_id`.
-  - Handles local `Ping` without forwarding upstream.
-  - Metrics (Prometheus via rs-dapi):
-    - `rsdapi_platform_events_active_sessions` (gauge)
-    - `rsdapi_platform_events_commands_total{op}` (counter; op=add|remove|ping|invalid|invalid_version|stream_error)
-    - `rsdapi_platform_events_forwarded_events_total` (counter)
-    - `rsdapi_platform_events_forwarded_acks_total` (counter)
-    - `rsdapi_platform_events_forwarded_errors_total` (counter)
-    - `rsdapi_platform_events_upstream_streams_total` (counter)
+- rs-dapi proxy (consumer of the mux)
+  - Replaces in-repo mux with `rs_dash_notify::platform_mux::PlatformEventsMux`.
+  - Per-client sessions bind to an upstream connection; `client_subscription_id` (UUID) is preserved across all layers; `Ping` handled locally.
+  - Command loop processing moved into the shared crate via `spawn_client_command_processor(session, inbound, out_tx)`.
+  - Optional metrics via `metrics` feature; logs via `tracing` with structured context.
 
 ## Risks and Mitigations
 
@@ -250,34 +238,35 @@ Additional tests (optional):
 
 ## TODOs
 
-- Core bus (this task)
-  - [x] Create `packages/rs-drive-abci/src/event_bus/mod.rs` with generic `EventBus<E,F>` and `Filter<E>`.
-  - [x] Implement internal registry with `BTreeMap<u64, Subscription>` and `tokio::RwLock`.
-  - [x] Add RAII `SubscriptionHandle` with `recv` and auto-removal on drop.
-  - [x] Implement `add_subscription`, `notify`, `subscription_count` and dead-subscriber pruning.
-  - [x] Ensure `EventBus` is `Clone` (cheap) and requires no external locking by callers.
-  - [x] Add unit tests: basic subscribe/notify, drop removes sub.
-  - [x] Add metrics: register metrics once; update counters/gauges in `add_subscription`, removal/drop, and `notify()` paths.
-  - [x] Fix Drop cleanup path: prefer `tokio::spawn` (when a runtime is present) or synchronous removal via `try_write()`.
+- New crate: `packages/rs-dash-notify`
+  - [x] Create library crate with `event_bus` and `platform_mux` modules.
+  - [x] Move `packages/rs-drive-abci/src/event_bus/mod.rs` into `event_bus` with minimal API changes; convert local paths to crate paths.
+  - [x] Add `tracing` logs throughout (subscribe, notify, drop, mux connect, route, error paths).
+  - [x] Gate metrics behind `features = ["metrics"]`; reuse existing metric keys; register once via `Once`.
+  - [x] Implement `PlatformEventsMux::new(addresses: rs_dapi_client::AddressList, settings: PlatformMuxSettings)`; reuse protobuf types from `dapi-grpc` end-to-end.
+  - [x] Provide graceful shutdown in mux (cancellable via CancellationToken).
+  - [x] Use EventBus internally in `platform_mux` for response fan-out and id-based filtering.
+
+- rs-dapi integration
+  - [x] Replace `services/platform_service/subscribe_platform_events.rs` with calls into `rs-dash-notify::platform_mux`.
+  - [ ] Remove `streaming_service/subscriber_manager.rs` where duplicated; use bus/mux from the crate.
+  - [ ] Wire `tracing` spans and enable `metrics` feature as needed.
+
+- rs-drive-abci integration
+  - [x] Replace duplicate event handling with `rs-dash-notify::event_bus`.
+  - [x] Use protobuf-generated types directly (no custom wrappers).
+  - [x] Ensure server method uses the shared bus; keep filter adapter minimal.
+
+- rs-sdk integration
+  - [ ] Expose convenience APIs, e.g. `Sdk::subscribe(filter) -> Stream<PlatformEventsResponse>` using `PlatformEventsMux`.
+  - [ ] Accept `AddressList` in SDK builder and plumb to mux.
+  - [ ] Generate UUID `client_subscription_id` in SDK and keep it unchanged across layers; align downstream channel type with shared mux.
+  - [ ] Update or remove `packages/rs-sdk/examples/platform_events.rs` to match the actual SDK API (currently refers to missing `platform::events` types).
+
+- Docs and tests
+  - [ ] Update rs-dapi DESIGN.md to reflect shared crate usage.
+  - [ ] Add unit/integration tests for mux routing and ID rewrite.
+  - [ ] Add examples in `rs-sdk/examples/platform_events.rs` using the new wrapper.
 
 Implementation Note
-- `SubscriptionHandle<E, F>` has bounds `E: Send + 'static`, `F: Send + Sync + 'static`. The drop logic must not depend on an async closure inside `std::thread::spawn` (which won’t be awaited). Use `tokio::spawn` if `Handle::try_current()` succeeds, or remove synchronously with a non-async write when possible. See the TODO above.
-
-- Deferred integration (future tasks)
-  - Define concrete event/filter types in rs-drive-abci and rs-dapi; implement `Filter<E>` for each.
-  - Replace rs-dapi `SubscriberManager` with the generic bus.
-  - Add metrics and configurable backpressure.
-
-- New: Subscription server and proxying
-  - [x] Update `packages/dapi-grpc/protos/platform/v0/platform.proto` with `subscribePlatformEvents` bi-di stream and new messages (Commands/Responses, PlatformFilter, PlatformEvent) under `v0`.
-  - [x] Regenerate dapi-grpc code and update dependent crates.
-  - [x] Implement `subscribePlatformEvents` in rs-drive-abci:
-    - [x] Connection-local routing map (`client_subscription_id -> SubscriptionHandle`).
-    - [x] Forwarder tasks per subscription push events into a per-connection sender feeding the response stream.
-    - [x] Handle `AddSubscription`, `RemoveSubscription`, `Ping`, and clean disconnect.
-    - [ ] Instrument metrics (connections, logical subs, commands, acks/errors, events forwarded).
-  - [x] Implement rs-dapi proxy:
-    - [x] Upstream connection pool (const size = 2; extensible; no reconnect yet).
-    - [x] Public DAPI `subscribePlatformEvents` (server-streaming) that allocates `client_subscription_id`s and routes events.
-    - [x] Removal on client drop and upstream `RemoveSubscription`.
-    - [x] Metrics for public subs and routing.
+- `SubscriptionHandle<E, F>` retains bounds `E: Send + 'static`, `F: Send + Sync + 'static`. Remove-on-drop prefers `tokio::spawn` (if a runtime is present) or best-effort synchronous removal via `try_write()`.

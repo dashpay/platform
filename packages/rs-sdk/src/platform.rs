@@ -20,6 +20,7 @@ pub mod documents;
 pub mod dpns_usernames;
 pub mod group_actions;
 pub mod tokens;
+pub mod events;
 
 pub use dapi_grpc::platform::v0 as proto;
 pub use dash_context_provider::ContextProvider;

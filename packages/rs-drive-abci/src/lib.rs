@@ -48,7 +48,5 @@ pub mod query;
 /// Various utils
 pub mod utils;
 
-/// Event bus module, for pub/sub within the same process
-pub mod event_bus;
 /// Drive server
 pub mod server;

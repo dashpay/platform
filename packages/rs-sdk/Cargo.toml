@@ -14,6 +14,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
+rs-dash-notify = { path = "../rs-dash-notify" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
@@ -34,6 +35,7 @@ serde = { version = "1.0.219", default-features = false, features = [
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.40" }
 hex = { version = "0.4.3" }
+once_cell = "1.19"
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
@@ -43,6 +45,7 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a86e1c
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
+uuid = { version = "1.10", features = ["v4"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
@@ -53,7 +56,7 @@ js-sys = "0.3"
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [

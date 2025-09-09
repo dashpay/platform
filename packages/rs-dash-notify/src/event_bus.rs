@@ -1,14 +1,9 @@
 //! Generic, clonable in-process event bus with pluggable filtering.
-//!
-//! Provides a generic `EventBus<E, F>` and `Filter<E>` trait, with
-//! async subscribe/notify, RAII cleanup, and metrics instrumentation.
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use std::sync::Once;
 
-use metrics::{counter, describe_counter, describe_gauge, gauge};
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 /// Filter trait for event matching on a specific event type.
@@ -20,12 +15,14 @@ pub trait Filter<E>: Send + Sync {
 struct Subscription<E, F> {
     filter: F,
     sender: mpsc::UnboundedSender<E>,
+    on_drop: Option<Arc<dyn Fn(u64) + Send + Sync>>, // invoked when removed
 }
 
 /// Generic, clonable in‑process event bus with pluggable filtering.
 pub struct EventBus<E, F> {
     subs: Arc<RwLock<BTreeMap<u64, Subscription<E, F>>>>,
     counter: Arc<AtomicU64>,
+    tasks: Arc<Mutex<tokio::task::JoinSet<()>>>, // tasks spawned for this subscription, cancelled on drop
 }
 
 impl<E, F> Clone for EventBus<E, F> {
@@ -33,6 +30,7 @@ impl<E, F> Clone for EventBus<E, F> {
         Self {
             subs: Arc::clone(&self.subs),
             counter: Arc::clone(&self.counter),
+            tasks: Arc::clone(&self.tasks),
         }
     }
 }
@@ -48,12 +46,15 @@ where
 }
 
 impl<E, F> EventBus<E, F> {
-    /// Remove a subscription by id and update metrics.
+    /// Remove a subscription by id, update metrics, and invoke drop callback if present.
     pub async fn remove_subscription(&self, id: u64) {
         let mut subs = self.subs.write().await;
-        if subs.remove(&id).is_some() {
-            counter!(UNSUBSCRIBE_TOTAL).increment(1);
-            gauge!(ACTIVE_SUBSCRIPTIONS).set(subs.len() as f64);
+        if let Some(sub) = subs.remove(&id) {
+            metrics_unsubscribe_inc();
+            metrics_active_gauge_set(subs.len());
+            if let Some(cb) = sub.on_drop {
+                (cb)(id);
+            }
         }
     }
 }
@@ -65,10 +66,11 @@ where
 {
     /// Create a new, empty event bus.
     pub fn new() -> Self {
-        register_metrics_once();
+        metrics_register_once();
         Self {
             subs: Arc::new(RwLock::new(BTreeMap::new())),
             counter: Arc::new(AtomicU64::new(0)),
+            tasks: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
         }
     }
 
@@ -77,13 +79,17 @@ where
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::unbounded_channel::<E>();
 
-        let sub = Subscription { filter, sender: tx };
+        let sub = Subscription {
+            filter,
+            sender: tx,
+            on_drop: None,
+        };
 
         {
             let mut subs = self.subs.write().await;
             subs.insert(id, sub);
-            gauge!(ACTIVE_SUBSCRIPTIONS).set(subs.len() as f64);
-            counter!(SUBSCRIBE_TOTAL).increment(1);
+            metrics_active_gauge_set(subs.len());
+            metrics_subscribe_inc();
         }
 
         SubscriptionHandle {
@@ -93,6 +99,8 @@ where
             event_bus: self.clone(),
         }
     }
+
+    // Note: use SubscriptionHandle::with_drop_cb to attach a drop callback after subscription.
 
     /// Publish an event to all subscribers whose filters match, using
     /// the current Tokio runtime if available, otherwise log a warning.
@@ -105,13 +113,13 @@ where
                 bus.notify(event).await;
             });
         } else {
-            tracing::warn!("unable to get tokio handle to publish event");
+            tracing::warn!("event_bus.notify_sync: no current tokio runtime");
         }
     }
 
     /// Publish an event to all subscribers whose filters match.
     pub async fn notify(&self, event: E) {
-        counter!(EVENTS_PUBLISHED_TOTAL).increment(1);
+        metrics_events_published_inc();
 
         let subs_guard = self.subs.read().await;
         let mut dead = Vec::new();
@@ -119,7 +127,7 @@ where
         for (id, sub) in subs_guard.iter() {
             if sub.filter.matches(&event) {
                 if sub.sender.send(event.clone()).is_ok() {
-                    counter!(EVENTS_DELIVERED_TOTAL).increment(1);
+                    metrics_events_delivered_inc();
                 } else {
                     dead.push(*id);
                 }
@@ -128,8 +136,11 @@ where
         drop(subs_guard);
 
         for id in dead {
-            counter!(EVENTS_DROPPED_TOTAL).increment(1);
-            tracing::debug!("removing dead subscription {}", id);
+            metrics_events_dropped_inc();
+            tracing::debug!(
+                subscription_id = id,
+                "event_bus: removing dead subscription"
+            );
             self.remove_subscription(id).await;
         }
     }
@@ -137,6 +148,17 @@ where
     /// Get the current number of active subscriptions.
     pub async fn subscription_count(&self) -> usize {
         self.subs.read().await.len()
+    }
+
+    /// Copy all event messages from an unbounded mpsc receiver into the event bus.
+    pub async fn copy_from_unbounded_mpsc(&self, mut rx: mpsc::UnboundedReceiver<E>) {
+        let bus = self.clone();
+        let mut tasks = self.tasks.lock().await;
+        tasks.spawn(async move {
+            while let Some(event) = rx.recv().await {
+                bus.notify(event).await;
+            }
+        });
     }
 }
 
@@ -182,6 +204,24 @@ where
         let mut rx = self.rx.lock().await;
         rx.recv().await
     }
+
+    /// Attach a drop callback to this subscription. The callback is invoked
+    /// when the subscription is removed (explicitly or via RAII drop of the
+    /// last handle). Consumes and returns the handle.
+    pub async fn with_drop_cb(self, on_drop: Arc<dyn Fn(u64) + Send + Sync>) -> Self {
+        if let Ok(mut subs) = self.event_bus.subs.try_write() {
+            if let Some(sub) = subs.get_mut(&self.id) {
+                sub.on_drop = Some(on_drop);
+            }
+        } else {
+            // Fallback to awaited write if try_write() is contended
+            let mut subs = self.event_bus.subs.write().await;
+            if let Some(sub) = subs.get_mut(&self.id) {
+                sub.on_drop = Some(on_drop);
+            }
+        }
+        self
+    }
 }
 
 impl<E, F> Drop for SubscriptionHandle<E, F>
@@ -204,9 +244,12 @@ where
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
                     if let Ok(mut subs) = bus.subs.try_write() {
-                        if subs.remove(&id).is_some() {
-                            counter!(UNSUBSCRIBE_TOTAL).increment(1);
-                            gauge!(ACTIVE_SUBSCRIPTIONS).set(subs.len() as f64);
+                        if let Some(sub) = subs.remove(&id) {
+                            metrics_unsubscribe_inc();
+                            metrics_active_gauge_set(subs.len());
+                            if let Some(cb) = sub.on_drop {
+                                (cb)(id);
+                            }
                         }
                     }
                 }
@@ -215,49 +258,132 @@ where
     }
 }
 
-// ---- Metrics ----
-/// Gauge: current number of active event bus subscriptions.
-const ACTIVE_SUBSCRIPTIONS: &str = "event_bus_active_subscriptions";
-/// Counter: total subscriptions created on the event bus.
-const SUBSCRIBE_TOTAL: &str = "event_bus_subscribe_total";
-/// Counter: total subscriptions removed from the event bus.
-const UNSUBSCRIBE_TOTAL: &str = "event_bus_unsubscribe_total";
-/// Counter: total events published to the event bus.
-const EVENTS_PUBLISHED_TOTAL: &str = "event_bus_events_published_total";
-/// Counter: total events delivered to subscribers.
-const EVENTS_DELIVERED_TOTAL: &str = "event_bus_events_delivered_total";
-/// Counter: total events dropped due to dead subscribers.
-const EVENTS_DROPPED_TOTAL: &str = "event_bus_events_dropped_total";
+// ---- Metrics helpers (gated) ----
 
-fn register_metrics_once() {
-    static ONCE: Once = Once::new();
-    ONCE.call_once(|| {
-        describe_gauge!(
-            ACTIVE_SUBSCRIPTIONS,
-            "Current number of active event bus subscriptions"
-        );
-        describe_counter!(
-            SUBSCRIBE_TOTAL,
-            "Total subscriptions created on the event bus"
-        );
-        describe_counter!(
-            UNSUBSCRIBE_TOTAL,
-            "Total subscriptions removed from the event bus"
-        );
-        describe_counter!(
-            EVENTS_PUBLISHED_TOTAL,
-            "Total events published to the event bus"
-        );
-        describe_counter!(
-            EVENTS_DELIVERED_TOTAL,
-            "Total events delivered to subscribers"
-        );
-        describe_counter!(
-            EVENTS_DROPPED_TOTAL,
-            "Total events dropped due to dead subscribers"
-        );
-    });
+#[cfg(feature = "metrics")]
+mod met {
+    use metrics::{counter, describe_counter, describe_gauge, gauge};
+    use std::sync::Once;
+
+    pub const ACTIVE_SUBSCRIPTIONS: &str = "event_bus_active_subscriptions";
+    pub const SUBSCRIBE_TOTAL: &str = "event_bus_subscribe_total";
+    pub const UNSUBSCRIBE_TOTAL: &str = "event_bus_unsubscribe_total";
+    pub const EVENTS_PUBLISHED_TOTAL: &str = "event_bus_events_published_total";
+    pub const EVENTS_DELIVERED_TOTAL: &str = "event_bus_events_delivered_total";
+    pub const EVENTS_DROPPED_TOTAL: &str = "event_bus_events_dropped_total";
+
+    pub fn register_metrics_once() {
+        static ONCE: Once = Once::new();
+        ONCE.call_once(|| {
+            describe_gauge!(
+                ACTIVE_SUBSCRIPTIONS,
+                "Current number of active event bus subscriptions"
+            );
+            describe_counter!(
+                SUBSCRIBE_TOTAL,
+                "Total subscriptions created on the event bus"
+            );
+            describe_counter!(
+                UNSUBSCRIBE_TOTAL,
+                "Total subscriptions removed from the event bus"
+            );
+            describe_counter!(
+                EVENTS_PUBLISHED_TOTAL,
+                "Total events published to the event bus"
+            );
+            describe_counter!(
+                EVENTS_DELIVERED_TOTAL,
+                "Total events delivered to subscribers"
+            );
+            describe_counter!(
+                EVENTS_DROPPED_TOTAL,
+                "Total events dropped due to dead subscribers"
+            );
+        });
+    }
+
+    pub fn active_gauge_set(n: usize) {
+        gauge!(ACTIVE_SUBSCRIPTIONS).set(n as f64);
+    }
+    pub fn subscribe_inc() {
+        counter!(SUBSCRIBE_TOTAL).increment(1);
+    }
+    pub fn unsubscribe_inc() {
+        counter!(UNSUBSCRIBE_TOTAL).increment(1);
+    }
+    pub fn events_published_inc() {
+        counter!(EVENTS_PUBLISHED_TOTAL).increment(1);
+    }
+    pub fn events_delivered_inc() {
+        counter!(EVENTS_DELIVERED_TOTAL).increment(1);
+    }
+    pub fn events_dropped_inc() {
+        counter!(EVENTS_DROPPED_TOTAL).increment(1);
+    }
 }
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_register_once() {
+    met::register_metrics_once()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_register_once() {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_active_gauge_set(n: usize) {
+    met::active_gauge_set(n)
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_active_gauge_set(_n: usize) {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_subscribe_inc() {
+    met::subscribe_inc()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_subscribe_inc() {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_unsubscribe_inc() {
+    met::unsubscribe_inc()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_unsubscribe_inc() {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_events_published_inc() {
+    met::events_published_inc()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_events_published_inc() {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_events_delivered_inc() {
+    met::events_delivered_inc()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_events_delivered_inc() {}
+
+#[cfg(feature = "metrics")]
+#[inline]
+fn metrics_events_dropped_inc() {
+    met::events_dropped_inc()
+}
+#[cfg(not(feature = "metrics"))]
+#[inline]
+fn metrics_events_dropped_inc() {}
 
 #[cfg(test)]
 mod tests {

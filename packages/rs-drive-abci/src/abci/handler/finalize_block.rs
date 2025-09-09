@@ -110,7 +110,7 @@ where
 }
 
 fn publish_block_committed_event(
-    event_bus: crate::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    event_bus: rs_dash_notify::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
     request_finalize_block: &FinalizeBlockCleanedRequest,
 ) -> Result<(), Error> {
     // Publish BlockCommitted platform event to the global event bus (best-effort)
