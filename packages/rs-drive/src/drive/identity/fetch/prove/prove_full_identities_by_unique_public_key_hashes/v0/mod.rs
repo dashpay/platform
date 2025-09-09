@@ -39,7 +39,7 @@ impl Drive {
             path_queries.iter().collect(),
             &platform_version.drive.grove_version,
         )
-        .map_err(Error::GroveDB)?;
+        .map_err(Error::from)?;
         self.grove_get_proved_path_query(
             &path_query,
             transaction,

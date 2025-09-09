@@ -23,12 +23,6 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::accessors::IdentityGettersV0;
-#[cfg(all(
-    feature = "identity-serialization",
-    feature = "client",
-    feature = "validation"
-))]
-use crate::identity::conversion::platform_value::IdentityPlatformValueConversionMethodsV0;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::identity::core_script::CoreScript;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
@@ -66,11 +60,6 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 use crate::version::PlatformVersion;
 #[cfg(all(feature = "state-transitions", feature = "client"))]
 use crate::withdrawal::Pooling;
-#[cfg(any(
-    all(feature = "identity-serialization", feature = "client"),
-    feature = "identity-value-conversion"
-))]
-use platform_value::Value;
 
 pub const IDENTITY_PROTOCOL_VERSION: u32 = 1;
 
@@ -96,20 +85,6 @@ impl IdentityFactory {
         )
     }
 
-    // TODO(versioning): not used anymore?
-    // #[cfg(feature = "identity-value-conversion")]
-    // pub fn create_from_object(
-    //     &self,
-    //     raw_identity: Value,
-    //     #[cfg(feature = "validation")] skip_validation: bool,
-    // ) -> Result<Identity, ProtocolError> {
-    //     #[cfg(feature = "validation")]
-    //     if !skip_validation {
-    //         self.validate_identity(&raw_identity)?;
-    //     }
-    //     raw_identity.try_into_platform_versioned(PlatformVersion::get(self.protocol_version)?)
-    // }
-
     #[cfg(all(feature = "identity-serialization", feature = "client"))]
     pub fn create_from_buffer(
         &self,
@@ -125,28 +100,10 @@ impl IdentityFactory {
 
         #[cfg(feature = "validation")]
         if !skip_validation {
-            self.validate_identity(&identity.to_cleaned_object()?)?;
+            // todo: validate identity
         }
 
         Ok(identity)
-    }
-
-    //todo: this should be changed into identity.validate()
-    #[cfg(all(feature = "validation", feature = "identity-value-conversion"))]
-    pub fn validate_identity(&self, _raw_identity: &Value) -> Result<(), ProtocolError> {
-        //todo: reenable
-        // let result = self
-        //     .identity_validator
-        //     .validate_identity_object(raw_identity)?;
-        //
-        // if !result.is_valid() {
-        //     return Err(ProtocolError::InvalidIdentityError {
-        //         errors: result.errors,
-        //         raw_identity: raw_identity.to_owned(),
-        //     });
-        // }
-
-        Ok(())
     }
 
     pub fn create_instant_lock_proof(

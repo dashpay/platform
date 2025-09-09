@@ -2535,8 +2535,6 @@ mod creation_tests {
             )
             .expect("expected to process state transition");
 
-        println!("Processing result: {:?}", processing_result);
-
         // Since the creationRestrictionMode is 2 (NoCreationAllowed), this should fail
         assert_eq!(
             processing_result.invalid_paid_count(),

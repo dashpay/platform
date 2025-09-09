@@ -37,7 +37,7 @@ impl Drive {
                 &drive_version.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         for (epoch_index_key, _) in query_result.to_key_elements() {
             let epoch_index =

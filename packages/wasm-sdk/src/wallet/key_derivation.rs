@@ -3,9 +3,14 @@
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
 use bip39::{Language, Mnemonic};
-use dash_sdk::dpp::dashcore::secp256k1::rand::{thread_rng, RngCore};
+use dash_sdk::dpp::dashcore;
+use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
+use dash_sdk::dpp::key_wallet::bip32::{
+    ChildNumber, DerivationPath as BIP32DerivationPath, ExtendedPrivKey as BIP32ExtendedPrivKey,
+    ExtendedPubKey as BIP32ExtendedPubKey,
+};
+use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
-use serde_json;
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
@@ -205,7 +210,6 @@ pub fn derive_key_from_seed_phrase(
     network: &str,
 ) -> Result<JsValue, JsError> {
     use crate::wallet::key_generation::KeyPair;
-    use dashcore::hashes::sha256;
 
     // Get seed from mnemonic
     let seed = mnemonic_to_seed(mnemonic, passphrase)?;
@@ -227,23 +231,20 @@ pub fn derive_key_from_seed_phrase(
     };
 
     // Create private key from seed bytes
-    let private_key = dashcore::PrivateKey::from_slice(key_bytes, net)
+    let key_array: [u8; 32] = key_bytes
+        .try_into()
+        .map_err(|_| JsError::new("Seed must be 32 bytes"))?;
+    let private_key = dashcore::PrivateKey::from_byte_array(&key_array, net)
         .map_err(|e| JsError::new(&format!("Failed to create private key: {}", e)))?;
 
     // Get public key
-    use dashcore::secp256k1::{Secp256k1, SecretKey};
+    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
     let secp = Secp256k1::new();
-    let secret_key = SecretKey::from_slice(key_bytes)
-        .map_err(|e| JsError::new(&format!("Invalid secret key: {}", e)))?;
-    let public_key = dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
-    let public_key_bytes = public_key.serialize();
 
+    let public_key = private_key.public_key(&secp);
+    let public_key_bytes = public_key.inner.serialize();
     // Get address
-    let address = dashcore::Address::p2pkh(
-        &dashcore::PublicKey::from_slice(&public_key_bytes)
-            .map_err(|e| JsError::new(&format!("Failed to create public key: {}", e)))?,
-        net,
-    );
+    let address = dashcore::Address::p2pkh(&public_key, net);
 
     let key_pair = KeyPair {
         private_key_wif: private_key.to_wif(),
@@ -265,7 +266,7 @@ pub fn derive_key_from_seed_with_path(
     path: &str,
     network: &str,
 ) -> Result<JsValue, JsError> {
-    use dashcore::bip32::{DerivationPath, ExtendedPrivKey};
+    use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
 
     // Get seed from mnemonic
     let seed = mnemonic_to_seed(mnemonic, passphrase)?;
@@ -294,7 +295,7 @@ pub fn derive_key_from_seed_with_path(
     let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
 
     // Get public key
-    let secp = dashcore::secp256k1::Secp256k1::new();
+    let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
     let public_key = private_key.public_key(&secp);
 
     // Get address
@@ -490,13 +491,35 @@ pub fn derive_child_public_key(xpub: &str, index: u32, hardened: bool) -> Result
         ));
     }
 
-    // TODO: Implement child key derivation
-    Err(JsError::new("Child key derivation not yet implemented"))
+    // Disallow indices in the hardened range for non-hardened derivation
+    if index >= 0x8000_0000 {
+        return Err(JsError::new(
+            "Index is in hardened range; use a value < 2^31",
+        ));
+    }
+
+    // Parse the extended public key
+    let parent_xpub = BIP32ExtendedPubKey::from_str(xpub)
+        .map_err(|e| JsError::new(&format!("Invalid extended public key: {}", e)))?;
+
+    // Build a one-step derivation path and derive
+    let child_number: ChildNumber = ChildNumber::from(index);
+    let path = BIP32DerivationPath::from(vec![child_number]);
+    let secp = Secp256k1::new();
+    let child_xpub = parent_xpub
+        .derive_pub(&secp, &path)
+        .map_err(|e| JsError::new(&format!("Failed to derive child key: {}", e)))?;
+
+    Ok(child_xpub.to_string())
 }
 
 /// Convert extended private key to extended public key
 #[wasm_bindgen]
 pub fn xprv_to_xpub(xprv: &str) -> Result<String, JsError> {
-    // TODO: Implement conversion
-    Err(JsError::new("Extended key conversion not yet implemented"))
+    // Parse the extended private key and convert to extended public key
+    let ext_prv = BIP32ExtendedPrivKey::from_str(xprv)
+        .map_err(|e| JsError::new(&format!("Invalid extended private key: {}", e)))?;
+    let secp = Secp256k1::new();
+    let ext_pub = BIP32ExtendedPubKey::from_priv(&secp, &ext_prv);
+    Ok(ext_pub.to_string())
 }

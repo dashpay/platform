@@ -30,7 +30,7 @@ use dapi_grpc::platform::v0::{
     GetPrefundedSpecializedBalanceRequest, GetStatusRequest, GetTokenDirectPurchasePricesRequest,
     GetTokenPerpetualDistributionLastClaimRequest, GetVotePollsByEndDateRequest,
 };
-use dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
+use dpp::dashcore_rpc::dashcore::{hashes::Hash, ProTxHash};
 use dpp::version::PlatformVersionError;
 use dpp::{block::epoch::EpochIndex, prelude::Identifier};
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;

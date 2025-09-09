@@ -57,11 +57,11 @@ impl BumpIdentityDataContractNonceAction {
                 user_fee_increase,
             )),
             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
-                Err(Error::Protocol(
+                Err(Error::Protocol(Box::new(
                     ProtocolError::CorruptedCodeExecution(
                         "we should never be trying to convert from a BumpIdentityDataContractNonce to a BumpIdentityDataContractNonceAction".to_string(),
                     ),
-                ))
+                )))
             }
         }
     }
@@ -86,11 +86,11 @@ impl BumpIdentityDataContractNonceAction {
                 user_fee_increase,
             )),
             BatchedTransitionAction::BumpIdentityDataContractNonce(_) => {
-                Err(Error::Protocol(
+                Err(Error::Protocol(Box::new(
                     ProtocolError::CorruptedCodeExecution(
                         "we should never be trying to convert from a BumpIdentityDataContractNonce to a BumpIdentityDataContractNonceAction".to_string(),
                     ),
-                ))
+                )))
             }
         }
     }

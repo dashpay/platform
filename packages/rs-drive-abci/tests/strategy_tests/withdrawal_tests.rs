@@ -4,10 +4,10 @@ mod tests {
     use crate::strategy::{
         ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness,
     };
-    use dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::dashcore::bls_sig_utils::BLSSignature;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::{BlockHash, ChainLock, Txid};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{AssetUnlockStatus, AssetUnlockStatusResult};
     use dpp::data_contracts::withdrawals_contract;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::withdrawal::WithdrawalTransactionIndex;

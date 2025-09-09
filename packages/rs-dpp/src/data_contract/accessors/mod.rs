@@ -69,14 +69,14 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
-    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef, DataContractError> {
+    fn document_type_for_name(&self, name: &str) -> Result<DocumentTypeRef<'_>, DataContractError> {
         match self {
             DataContract::V0(v0) => v0.document_type_for_name(name),
             DataContract::V1(v1) => v1.document_type_for_name(name),
         }
     }
 
-    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef> {
+    fn document_type_optional_for_name(&self, name: &str) -> Option<DocumentTypeRef<'_>> {
         match self {
             DataContract::V0(v0) => v0.document_type_optional_for_name(name),
             DataContract::V1(v1) => v1.document_type_optional_for_name(name),

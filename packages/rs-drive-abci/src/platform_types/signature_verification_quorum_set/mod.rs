@@ -108,7 +108,7 @@ impl SignatureVerificationQuorumSetV0Methods for SignatureVerificationQuorumSet 
         &self,
         signing_height: u32,
         verification_height: u32,
-    ) -> SelectedQuorumSetIterator {
+    ) -> SelectedQuorumSetIterator<'_> {
         match self {
             Self::V0(v0) => v0.select_quorums(signing_height, verification_height),
         }

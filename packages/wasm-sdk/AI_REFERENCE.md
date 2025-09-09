@@ -72,7 +72,6 @@ const result = await sdk.getIdentityKeys("identityId");
 Parameters:
 - `identitiesIds` (array, required) - Identity IDs
 - `contractId` (text, required) - Contract ID
-- `documentTypeName` (text, optional) - Document Type (optional)
 - `purposes` (multiselect, optional) - Key Purposes
   - Options: `0` (Authentication), `1` (Encryption), `2` (Decryption), `3` (Transfer), `5` (Voting)
 
@@ -266,9 +265,9 @@ Parameters:
   - Example: `GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec`
 - `documentType` (text, required) - Document Type
   - Example: `domain`
-- `whereClause` (text, optional) - Where Clause (JSON)
+- `where` (json, optional) - Where Clause (JSON)
   - Example: `[["normalizedParentDomainName", "==", "dash"], ["normalizedLabel", "==", "therea1s11mshaddy5"]]`
-- `orderBy` (text, optional) - Order By (JSON)
+- `orderBy` (json, optional) - Order By (JSON)
   - Example: `[["$createdAt", "desc"]]`
 - `limit` (number, optional) - Limit
 
@@ -357,8 +356,6 @@ Parameters:
 - `documentTypeName` (text, required) - Document Type
 - `dataContractId` (text, required) - Data Contract ID
 - `indexName` (text, required) - Index Name
-- `resultType` (text, required) - Result Type
-- `allowIncludeLockedAndAbstainingVoteTally` (checkbox, optional) - Allow Include Locked and Abstaining Vote Tally
 - `startAtValue` (text, optional) - Start At Value
 - `limit` (number, optional) - Limit
 - `offset` (number, optional) - Offset
@@ -366,7 +363,7 @@ Parameters:
 
 Example:
 ```javascript
-const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName", "resultType");
+const result = await sdk.getContestedResources("documentTypeName", "dataContractId", "indexName");
 ```
 
 **Get Contested Resource Vote State** - `getContestedResourceVoteState`
@@ -763,7 +760,7 @@ Parameters:
 - `assetLockProofPrivateKey` (string, required) - Asset Lock Proof Private Key
   - WIF format private key
 - `publicKeys` (string, required) - Public Keys
-  - JSON array of public keys
+  - JSON array of public keys. Key requirements: ECDSA_SECP256K1 requires privateKeyHex or privateKeyWif for signing, BLS12_381 requires privateKeyHex for signing, ECDSA_HASH160 requires either the data field (base64-encoded 20-byte public key hash) or privateKeyHex (produces empty signatures).
 
 Example:
 ```javascript
@@ -771,23 +768,25 @@ Example:
 const assetLockProof = "a9147d3b... (hex-encoded)";
 const assetLockProofPrivateKey = "XFfpaSbZq52HPy3WWwe1dXsZMiU1bQn8vQd34HNXkSZThevBWRn1"; // WIF format
 
-// Public keys array with proper key types
+// Public keys array with proper key types and private keys for signing/hashing
 const publicKeys = JSON.stringify([
   {
     id: 0,
-    type: 0, // ECDSA_SECP256K1 = 0, BLS12_381 = 1, ECDSA_HASH160 = 2
-    purpose: 0, // AUTHENTICATION = 0, ENCRYPTION = 1, DECRYPTION = 2, TRANSFER = 3, etc.
-    securityLevel: 0, // MASTER = 0, CRITICAL = 1, HIGH = 2, MEDIUM = 3
+    keyType: "ECDSA_SECP256K1",
+    purpose: "AUTHENTICATION",
+    securityLevel: "MASTER",
     data: "A5GzYHPIolbHkFrp5l+s9IvF2lWMuuuSu3oWZB8vWHNJ", // Base64-encoded public key
-    readOnly: false
+    readOnly: false,
+    privateKeyWif: "XBrZJKcW4ajWVNAU6yP87WQog6CjFnpbqyAKgNTZRqmhYvPgMNV2"
   },
   {
     id: 1,
-    type: 0,
-    purpose: 0,
-    securityLevel: 2,
-    data: "AnotherBase64EncodedPublicKeyHere", // Base64-encoded public key
-    readOnly: false
+    keyType: "ECDSA_HASH160",
+    purpose: "AUTHENTICATION",
+    securityLevel: "HIGH",
+    data: "ripemd160hash20bytes1234", // Base64-encoded 20-byte RIPEMD160 hash
+    readOnly: false,
+    // ECDSA_HASH160 keys produce empty signatures (not required/used for signing)
   }
 ]);
 
@@ -1097,7 +1096,6 @@ Parameters (in addition to identity/key):
 - `tokenPosition` (number, required) - Token Contract Position
 - `amount` (text, required) - Amount to Purchase
 - `totalAgreedPrice` (text, optional) - Total Agreed Price (in credits) - Optional, fetches from pricing schedule if not provided
-- `keyId` (number, required) - Key ID (for signing)
 
 Example:
 ```javascript
@@ -1175,7 +1173,7 @@ const result = await sdk.tokenUnfreeze(identityHex, /* params */, privateKeyHex)
 Parameters (in addition to identity/key):
 - `contractId` (text, required) - Data Contract ID
 - `tokenPosition` (number, required) - Token Contract Position
-- `identityId` (text, required) - Identity ID whose frozen tokens to destroy
+- `frozenIdentityId` (text, required) - Identity ID whose frozen tokens to destroy
 - `publicNote` (text, optional) - Public Note
 
 Example:

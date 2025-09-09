@@ -9,6 +9,7 @@ fn main() {
         ("rs-dpp", vec![]),
         ("rs-drive", vec![]),
         ("rs-drive-proof-verifier", vec![]),
+        ("rs-platform-wallet", vec![]),
     ];
 
     for (specific_crate, to_ignore) in crates {

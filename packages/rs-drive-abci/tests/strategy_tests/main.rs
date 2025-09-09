@@ -48,10 +48,10 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy};
     use crate::query::QueryStrategy;
     use crate::strategy::{FailureStrategy, MasternodeListChangesStrategy};
-    use dashcore_rpc::json::QuorumType;
     use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::BlockHash;
+    use dpp::dashcore_rpc::json::QuorumType;
     use strategy_tests::operations::DocumentAction::{
         DocumentActionReplaceRandom, DocumentActionTransferRandom,
     };

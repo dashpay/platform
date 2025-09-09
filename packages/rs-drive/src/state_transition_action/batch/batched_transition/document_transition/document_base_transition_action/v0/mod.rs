@@ -34,7 +34,7 @@ pub trait DocumentBaseTransitionActionAccessorsV0 {
     fn id(&self) -> Identifier;
 
     /// The document type
-    fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError>;
+    fn document_type(&self) -> Result<DocumentTypeRef<'_>, ProtocolError>;
 
     /// Is a field required on the document type?
     fn document_type_field_is_required(&self, field: &str) -> Result<bool, ProtocolError>;

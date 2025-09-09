@@ -18,8 +18,8 @@ impl<C> Platform<C> {
     /// # Returns
     ///
     /// * `Result<Option<ProtocolVersion>, Error>` - Returns the new protocol version if an upgrade was needed,
-    ///                                              or None if no upgrade is required.
-    ///                                              In case of an error, the corresponding Error is returned.
+    ///   or None if no upgrade is required.
+    ///   In case of an error, the corresponding Error is returned.
     ///
     /// # Errors
     ///

@@ -20,7 +20,8 @@ if (!global.crypto) {
 }
 
 // Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+import init, { generate_key_pair } from '../pkg/wasm_sdk.js';
+import * as wasmSdk from '../pkg/wasm_sdk.js';
 
 // Initialize WASM
 console.log('Initializing WASM SDK...');
@@ -78,6 +79,171 @@ await test('identity_create - requires funding', async () => {
             throw error;
         }
         console.log('   Expected error without funding');
+    }
+});
+
+await test('identity_create with all SECP256K1 keys (common scenario)', async () => {
+    try {
+        // Generate unique keys for testing (1 asset lock + 3 identity keys)
+        const assetLockKey = generate_key_pair("testnet");
+        const secp256k1Key1 = generate_key_pair("testnet");
+        const secp256k1Key2 = generate_key_pair("testnet");
+        const secp256k1Key3 = generate_key_pair("testnet");
+        
+        // Mock asset lock proof
+        const mockAssetLockProof = JSON.stringify({
+            coreChainLockedHeight: 1000000,
+            outPoint: "0000000000000000000000000000000000000000000000000000000000000000:0"
+        });
+        
+        // Create public keys array with all SECP256K1 keys
+        const publicKeys = JSON.stringify([
+            {
+                keyType: "ECDSA_SECP256K1",
+                purpose: "AUTHENTICATION",
+                securityLevel: "MASTER",
+                privateKeyHex: secp256k1Key1.private_key_hex
+            },
+            {
+                keyType: "ECDSA_SECP256K1", 
+                purpose: "AUTHENTICATION",
+                securityLevel: "CRITICAL",
+                privateKeyHex: secp256k1Key2.private_key_hex
+            },
+            {
+                keyType: "ECDSA_SECP256K1",
+                purpose: "ENCRYPTION",
+                securityLevel: "HIGH",
+                privateKeyHex: secp256k1Key3.private_key_hex
+            }
+        ]);
+        
+        const result = await sdk.identityCreate(
+            mockAssetLockProof,
+            assetLockKey.private_key_wif,
+            publicKeys
+        );
+        throw new Error('Should fail with mock data');
+    } catch (error) {
+        const errorMessage = error.message || error.toString() || 'Unknown error';
+        if (errorMessage.includes('Should fail')) {
+            throw error;
+        }
+        // Check that it's NOT a signature verification error
+        if (errorMessage.includes('signature failed verification')) {
+            throw new Error('SIGNATURE VERIFICATION ERROR - SimpleSigner may not be working correctly');
+        }
+        console.log('   Expected error with mock data (not signature error)');
+    }
+});
+
+await test('identity_create with mixed key types (SECP256K1 and HASH160)', async () => {
+    try {
+        // Generate unique keys for testing (1 asset lock + 2 SECP256K1 + 1 HASH160)
+        const assetLockKey = generate_key_pair("testnet");
+        const secp256k1Key1 = generate_key_pair("testnet");
+        const secp256k1Key2 = generate_key_pair("testnet");
+        const hash160Key = generate_key_pair("testnet");
+        
+        // Mock asset lock proof
+        const mockAssetLockProof = JSON.stringify({
+            coreChainLockedHeight: 1000000,
+            outPoint: "0000000000000000000000000000000000000000000000000000000000000001:0"
+        });
+        
+        // Create mixed public keys array
+        const publicKeys = JSON.stringify([
+            {
+                keyType: "ECDSA_SECP256K1",
+                purpose: "AUTHENTICATION", 
+                securityLevel: "MASTER",
+                privateKeyHex: secp256k1Key1.private_key_hex
+            },
+            {
+                keyType: "ECDSA_SECP256K1",
+                purpose: "AUTHENTICATION",
+                securityLevel: "CRITICAL", 
+                privateKeyHex: secp256k1Key2.private_key_hex
+            },
+            {
+                keyType: "ECDSA_HASH160",
+                purpose: "TRANSFER",
+                securityLevel: "HIGH",
+                privateKeyHex: hash160Key.private_key_hex
+            }
+        ]);
+        
+        const result = await sdk.identityCreate(
+            mockAssetLockProof,
+            assetLockKey.private_key_wif,
+            publicKeys
+        );
+        throw new Error('Should fail with mock data');
+    } catch (error) {
+        const errorMessage = error.message || error.toString() || 'Unknown error';
+        if (errorMessage.includes('Should fail')) {
+            throw error;
+        }
+        // Check that it's NOT a signature verification error
+        if (errorMessage.includes('signature failed verification')) {
+            throw new Error('SIGNATURE VERIFICATION ERROR - SimpleSigner may not be working correctly');
+        }
+        console.log('   Expected error with mock data (not signature error)');
+    }
+});
+
+await test('identity_create with only HASH160 keys', async () => {
+    try {
+        // Generate unique keys for testing (1 asset lock + 3 HASH160)
+        const assetLockKey = generate_key_pair("testnet");
+        const hash160Key1 = generate_key_pair("testnet");
+        const hash160Key2 = generate_key_pair("testnet");
+        const hash160Key3 = generate_key_pair("testnet");
+        
+        // Mock asset lock proof
+        const mockAssetLockProof = JSON.stringify({
+            coreChainLockedHeight: 1000000,
+            outPoint: "0000000000000000000000000000000000000000000000000000000000000002:0"
+        });
+        
+        // Create public keys array with all HASH160 keys
+        const publicKeys = JSON.stringify([
+            {
+                keyType: "ECDSA_HASH160",
+                purpose: "AUTHENTICATION",
+                securityLevel: "MASTER", 
+                privateKeyHex: hash160Key1.private_key_hex
+            },
+            {
+                keyType: "ECDSA_HASH160",
+                purpose: "AUTHENTICATION",
+                securityLevel: "CRITICAL",
+                privateKeyHex: hash160Key2.private_key_hex
+            },
+            {
+                keyType: "ECDSA_HASH160",
+                purpose: "TRANSFER",
+                securityLevel: "HIGH",
+                privateKeyHex: hash160Key3.private_key_hex
+            }
+        ]);
+        
+        const result = await sdk.identityCreate(
+            mockAssetLockProof,
+            assetLockKey.private_key_wif,
+            publicKeys
+        );
+        throw new Error('Should fail with mock data');
+    } catch (error) {
+        const errorMessage = error.message || error.toString() || 'Unknown error';
+        if (errorMessage.includes('Should fail')) {
+            throw error;
+        }
+        // Check that it's NOT a signature verification error
+        if (errorMessage.includes('signature failed verification')) {
+            throw new Error('SIGNATURE VERIFICATION ERROR - SimpleSigner may not be working correctly');
+        }
+        console.log('   Expected error with mock data (not signature error)');
     }
 });
 
@@ -141,18 +307,6 @@ await test('identity_withdraw - requires balance', async () => {
             throw error;
         }
         console.log('   Expected error without balance');
-    }
-});
-
-await test('identity_put - causes panic in WASM', async () => {
-    try {
-        const result = await wasmSdk.identity_put(sdk);
-        throw new Error('Should have panicked');
-    } catch (error) {
-        if (error.message.includes('Should have panicked')) {
-            throw error;
-        }
-        console.log('   Expected panic (known issue)');
     }
 });
 

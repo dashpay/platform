@@ -60,6 +60,7 @@
 // TODO re-enable when docs are complete
 // #![warn(missing_docs)]
 #![allow(rustdoc::private_intra_doc_links)]
+#![allow(clippy::result_large_err)]
 
 pub mod core;
 pub mod error;
@@ -72,11 +73,16 @@ pub use error::Error;
 pub use sdk::{RequestSettings, Sdk, SdkBuilder};
 
 pub use dapi_grpc;
-pub use dashcore_rpc;
 pub use dpp;
+#[cfg(feature = "core_spv")]
+pub use dpp::dash_spv;
+#[cfg(feature = "core_rpc_client")]
+pub use dpp::dashcore_rpc;
 pub use drive;
 pub use drive_proof_verifier::types as query_types;
 pub use drive_proof_verifier::Error as ProofVerifierError;
+#[cfg(feature = "platform-wallet")]
+pub use platform_wallet;
 pub use rs_dapi_client as dapi_client;
 pub mod sync;
 

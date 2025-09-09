@@ -105,7 +105,7 @@ impl BatchedTransitionRef<'_> {
 }
 
 impl BatchedTransition {
-    pub fn borrow_as_ref(&self) -> BatchedTransitionRef {
+    pub fn borrow_as_ref(&self) -> BatchedTransitionRef<'_> {
         match self {
             BatchedTransition::Document(doc) => {
                 // Create a reference to a DocumentTransition
@@ -118,7 +118,7 @@ impl BatchedTransition {
         }
     }
 
-    pub fn borrow_as_mut(&mut self) -> BatchedTransitionMutRef {
+    pub fn borrow_as_mut(&mut self) -> BatchedTransitionMutRef<'_> {
         match self {
             BatchedTransition::Document(doc) => {
                 // Create a reference to a DocumentTransition

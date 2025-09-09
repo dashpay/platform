@@ -54,7 +54,7 @@ impl Drive {
                     self.grove
                         .get_raw(path, key, transaction, &drive_version.grove_version);
                 drive_operations.push(CalculatedCostOperation(cost));
-                let element = value.map_err(Error::GroveDB)?;
+                let element = value.map_err(Error::from)?;
                 match element {
                     Element::SumTree(_, value, _) => Ok(value),
                     _ => Err(Error::Drive(DriveError::CorruptedBalancePath(

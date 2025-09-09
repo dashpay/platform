@@ -2,11 +2,7 @@ use std::sync::Arc;
 
 use dash_sdk::platform::ContextProvider;
 use dash_sdk::{
-    dpp::{
-        data_contract::TokenConfiguration,
-        prelude::CoreBlockHeight,
-        version::PlatformVersion,
-    },
+    dpp::{data_contract::TokenConfiguration, prelude::CoreBlockHeight, version::PlatformVersion},
     error::ContextProviderError,
     platform::{DataContract, Identifier},
 };
@@ -50,16 +46,16 @@ impl ContextProvider for WasmContext {
         // For WASM context without trusted provider, we need to fetch token configuration
         // from the network. This is a simplified implementation that would need to be
         // enhanced with actual network fetching logic in a production environment.
-        
+
         // TODO: Implement actual token configuration fetching from network
         // For now, we'll return None which will cause the proof verification to fail
         // with a clearer error message indicating missing token configuration
-        
+
         tracing::warn!(
             token_id = %token_id,
             "Token configuration not available in WASM context - this will cause proof verification to fail. Use trusted context builders for proof verification."
         );
-        
+
         Ok(None)
     }
 

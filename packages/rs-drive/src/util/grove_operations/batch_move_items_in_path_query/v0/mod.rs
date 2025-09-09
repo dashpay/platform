@@ -295,7 +295,7 @@ mod tests {
         );
         assert_matches!(
             get_result_1_old,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
 
         let get_result_2_old = drive.grove_get(
@@ -308,7 +308,7 @@ mod tests {
         );
         assert_matches!(
             get_result_2_old,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
     }
 
@@ -512,7 +512,7 @@ mod tests {
         );
         assert_matches!(
             get_result_1_old,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
 
         let get_result_2_old = drive.grove_get(
@@ -525,7 +525,7 @@ mod tests {
         );
         assert_matches!(
             get_result_2_old,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
 
         // Verify that key 3 is still in the original path

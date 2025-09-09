@@ -81,3 +81,11 @@ dash-sdk:
   - packages/rs-sdk/**
   - *dapi_client
   - *drive
+
+rs-sdk-ffi:
+  - .github/workflows/tests*
+  - packages/rs-sdk-ffi/**
+  - packages/rs-sdk/**
+  - packages/rs-drive-proof-verifier/**
+  - *dapi_client
+  - *drive

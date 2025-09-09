@@ -69,12 +69,12 @@ impl Drive {
                 .map(|element| {
                     element
                         .into_item_bytes()
-                        .map_err(Error::GroveDB)
+                        .map_err(Error::from)
                         .and_then(|bytes| {
                             // we don't need to validate the contract locally because it was proved to be in platform
                             // and hence it is valid
                             DataContract::versioned_deserialize(&bytes, false, platform_version)
-                                .map_err(Error::Protocol)
+                                .map_err(Error::from)
                         })
                 })
                 .transpose()?;

@@ -77,7 +77,7 @@ pub(in crate::execution) mod tests {
     use std::sync::Arc;
     use arc_swap::Guard;
     use assert_matches::assert_matches;
-    use dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
+    use dpp::dashcore_rpc::dashcore_rpc_json::{DMNState, MasternodeListItem, MasternodeType};
     use dapi_grpc::platform::v0::{get_contested_resource_vote_state_request, get_contested_resource_vote_state_response, GetContestedResourceVoteStateRequest, GetContestedResourceVoteStateResponse};
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::get_contested_resource_vote_state_request_v0::ResultType;
     use dapi_grpc::platform::v0::get_contested_resource_vote_state_request::{get_contested_resource_vote_state_request_v0, GetContestedResourceVoteStateRequestV0};

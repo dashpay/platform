@@ -57,7 +57,7 @@ impl Drive {
     /// * `identity_id` - The ID of the Identity whose balance is to be fetched.
     /// * `block_info` - The information about the current block.
     /// * `apply` - Whether to actually run the query or just get the estimated costs that the query
-    ///     would use.
+    ///   would use.
     /// * `transaction` - The current transaction.
     /// * `platform_version` - The platform version to use.
     ///

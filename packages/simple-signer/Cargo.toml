@@ -17,11 +17,9 @@ state-transitions = [
 
 [dependencies]
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "a86e1cd7b95910ef5ab43c75afa27c102a89cc54", features = [
-    "signer",
-] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "ed25519-dalek",
 ] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }
+tracing = "0.1.41"

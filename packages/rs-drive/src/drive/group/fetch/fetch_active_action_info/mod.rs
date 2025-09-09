@@ -77,7 +77,7 @@ impl Drive {
     ///
     /// # Returns
     /// - `Ok(Option<GroupAction>)`: The `GroupAction` for the specified action ID and contract position, along with any added operations.
-    ///    We will always get back a value unless we are approximating without state.
+    ///   We will always get back a value unless we are approximating without state.
     /// - `Err(Error)`: If an error occurs, a generic error is returned.
     ///
     /// # Errors

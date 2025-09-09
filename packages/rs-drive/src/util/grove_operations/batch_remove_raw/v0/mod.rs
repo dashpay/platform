@@ -45,7 +45,7 @@ impl Drive {
                         "we should not be seeing internal grovedb operations",
                     )));
                 }
-                Some(GroveOp::Delete { .. }) | Some(GroveOp::DeleteTree { .. }) => false,
+                Some(GroveOp::Delete) | Some(GroveOp::DeleteTree(_)) => false,
                 _ => true,
             };
 

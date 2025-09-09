@@ -1,0 +1,100 @@
+//! Identity contract nonce query operations
+
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
+use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::Fetch;
+use dash_sdk::query_types::IdentityContractNonceFetcher;
+use std::ffi::{CStr, CString};
+use std::os::raw::c_char;
+
+use crate::sdk::SDKWrapper;
+use crate::types::SDKHandle;
+use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
+
+/// Fetch identity contract nonce
+///
+/// # Parameters
+/// - `sdk_handle`: SDK handle
+/// - `identity_id`: Base58-encoded identity ID
+/// - `contract_id`: Base58-encoded contract ID
+///
+/// # Returns
+/// The contract nonce of the identity as a string
+///
+/// # Safety
+/// - `sdk_handle`, `identity_id`, and `contract_id` must be valid, non-null pointers.
+/// - `identity_id` and `contract_id` must point to NUL-terminated C strings valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
+#[no_mangle]
+pub unsafe extern "C" fn dash_sdk_identity_fetch_contract_nonce(
+    sdk_handle: *const SDKHandle,
+    identity_id: *const c_char,
+    contract_id: *const c_char,
+) -> DashSDKResult {
+    if sdk_handle.is_null() || identity_id.is_null() || contract_id.is_null() {
+        return DashSDKResult::error(DashSDKError::new(
+            DashSDKErrorCode::InvalidParameter,
+            "SDK handle, identity ID, or contract ID is null".to_string(),
+        ));
+    }
+
+    let wrapper = &*(sdk_handle as *const SDKWrapper);
+
+    let id_str = match CStr::from_ptr(identity_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let contract_str = match CStr::from_ptr(contract_id).to_str() {
+        Ok(s) => s,
+        Err(e) => return DashSDKResult::error(FFIError::from(e).into()),
+    };
+
+    let id = match Identifier::from_string(id_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid identity ID: {}", e),
+            ))
+        }
+    };
+
+    let contract_id = match Identifier::from_string(contract_str, Encoding::Base58) {
+        Ok(id) => id,
+        Err(e) => {
+            return DashSDKResult::error(DashSDKError::new(
+                DashSDKErrorCode::InvalidParameter,
+                format!("Invalid contract ID: {}", e),
+            ))
+        }
+    };
+
+    let result: Result<u64, FFIError> = wrapper.runtime.block_on(async {
+        // Fetch identity contract nonce
+        let query = (id, contract_id);
+        let nonce_fetcher = IdentityContractNonceFetcher::fetch(&wrapper.sdk, query)
+            .await
+            .map_err(FFIError::from)?
+            .ok_or_else(|| {
+                FFIError::InternalError("Identity contract nonce not found".to_string())
+            })?;
+
+        Ok(nonce_fetcher.0)
+    });
+
+    match result {
+        Ok(nonce) => {
+            let nonce_str = match CString::new(nonce.to_string()) {
+                Ok(s) => s,
+                Err(e) => {
+                    return DashSDKResult::error(
+                        FFIError::InternalError(format!("Failed to create CString: {}", e)).into(),
+                    )
+                }
+            };
+            DashSDKResult::success_string(nonce_str.into_raw())
+        }
+        Err(e) => DashSDKResult::error(e.into()),
+    }
+}

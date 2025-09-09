@@ -2,10 +2,10 @@ mod old_structures;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::epoch::{Epoch, EPOCH_0};
 use dpp::block::extended_block_info::ExtendedBlockInfo;
 use dpp::dashcore::{ProTxHash, QuorumHash};
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 
 use dpp::bincode::{Decode, Encode};
 use dpp::dashcore::hashes::Hash;
