@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;

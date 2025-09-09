@@ -508,66 +508,162 @@ export class WasmSDK {
     // ========== State Transition Operations ==========
 
     /**
-     * Create and submit an identity creation state transition
-     * @param {Object} identityData - Identity data
-     * @param {string} privateKey - Private key for signing
-     * @returns {Promise<Object>} State transition result
+     * Create identity with asset lock proof
+     * @param {string} assetLockProof - Asset lock proof (hex-encoded JSON)
+     * @param {string} assetLockPrivateKey - Asset lock private key (WIF)
+     * @param {string} publicKeys - JSON string of public keys array
+     * @returns {Promise<Object>} Identity creation result
      */
-    async createIdentity(identityData, privateKey) {
-        ErrorUtils.validateRequired({ identityData, privateKey }, ['identityData', 'privateKey']);
+    async identityCreate(assetLockProof, assetLockPrivateKey, publicKeys) {
+        ErrorUtils.validateRequired({ assetLockProof, assetLockPrivateKey, publicKeys }, 
+                                   ['assetLockProof', 'assetLockPrivateKey', 'publicKeys']);
         
         return this._executeOperation(
-            () => this.wasmSdk.create_identity(identityData, privateKey),
-            'create_identity',
-            { identityData: '[REDACTED]', privateKey: '[REDACTED]' }
+            () => this.wasmModule.identity_create(this.wasmSdk, assetLockProof, assetLockPrivateKey, publicKeys),
+            'identity_create',
+            { assetLockProof: '[REDACTED]', assetLockPrivateKey: '[REDACTED]', publicKeys: '[REDACTED]' }
         );
     }
 
     /**
-     * Create and submit a data contract state transition
-     * @param {Object} contractData - Data contract data
+     * Top up identity with additional credits
+     * @param {string} identityId - Identity ID
+     * @param {string} assetLockProof - Asset lock proof (hex-encoded JSON)
+     * @param {string} assetLockPrivateKey - Asset lock private key (WIF)
+     * @returns {Promise<Object>} Top up result
+     */
+    async identityTopUp(identityId, assetLockProof, assetLockPrivateKey) {
+        ErrorUtils.validateRequired({ identityId, assetLockProof, assetLockPrivateKey }, 
+                                   ['identityId', 'assetLockProof', 'assetLockPrivateKey']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.identity_topup(this.wasmSdk, identityId, assetLockProof, assetLockPrivateKey),
+            'identity_topup',
+            { identityId, assetLockProof: '[REDACTED]', assetLockPrivateKey: '[REDACTED]' }
+        );
+    }
+
+    /**
+     * Update identity keys
+     * @param {string} mnemonic - Mnemonic for signing
+     * @param {string} identityId - Identity ID to update
+     * @param {string} updateData - JSON string of update operations
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Update result
+     */
+    async identityUpdate(mnemonic, identityId, updateData, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, updateData, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'updateData', 'keyIndex']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.identity_update(this.wasmSdk, mnemonic, identityId, updateData, keyIndex),
+            'identity_update',
+            { mnemonic: '[REDACTED]', identityId, updateData: '[REDACTED]', keyIndex }
+        );
+    }
+
+    /**
+     * Withdraw credits from identity
+     * @param {string} mnemonic - Mnemonic for signing
+     * @param {string} identityId - Identity ID
+     * @param {string} toAddress - Destination address
+     * @param {number} amount - Amount to withdraw
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Withdrawal result
+     */
+    async identityWithdraw(mnemonic, identityId, toAddress, amount, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, toAddress, amount, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'toAddress', 'amount', 'keyIndex']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.identity_withdraw(this.wasmSdk, mnemonic, identityId, toAddress, amount, keyIndex),
+            'identity_withdraw',
+            { mnemonic: '[REDACTED]', identityId, toAddress, amount, keyIndex }
+        );
+    }
+
+    /**
+     * Create data contract
+     * @param {string} mnemonic - Mnemonic for signing
      * @param {string} identityId - Owner identity ID
-     * @param {string} privateKey - Private key for signing
-     * @returns {Promise<Object>} State transition result
+     * @param {string} contractDefinition - JSON contract definition
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Contract creation result
      */
-    async createDataContract(contractData, identityId, privateKey) {
-        ErrorUtils.validateRequired({ contractData, identityId, privateKey }, 
-                                   ['contractData', 'identityId', 'privateKey']);
+    async dataContractCreate(mnemonic, identityId, contractDefinition, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, contractDefinition, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'contractDefinition', 'keyIndex']);
         
         return this._executeOperation(
-            () => this.wasmSdk.create_data_contract(contractData, identityId, privateKey),
-            'create_data_contract',
-            { identityId, privateKey: '[REDACTED]' }
+            () => this.wasmModule.data_contract_create(this.wasmSdk, mnemonic, identityId, contractDefinition, keyIndex),
+            'data_contract_create',
+            { mnemonic: '[REDACTED]', identityId, contractDefinition: '[REDACTED]', keyIndex }
         );
     }
 
     /**
-     * Create and submit a document creation state transition
-     * @param {Object} documentData - Document data
-     * @param {string} contractId - Data contract ID
+     * Update data contract
+     * @param {string} mnemonic - Mnemonic for signing
+     * @param {string} identityId - Owner identity ID
+     * @param {string} contractId - Contract ID to update
+     * @param {string} updateDefinition - JSON update definition
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Contract update result
+     */
+    async dataContractUpdate(mnemonic, identityId, contractId, updateDefinition, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, contractId, updateDefinition, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'contractId', 'updateDefinition', 'keyIndex']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.data_contract_update(this.wasmSdk, mnemonic, identityId, contractId, updateDefinition, keyIndex),
+            'data_contract_update',
+            { mnemonic: '[REDACTED]', identityId, contractId, updateDefinition: '[REDACTED]', keyIndex }
+        );
+    }
+
+    /**
+     * Create document
+     * @param {string} mnemonic - Mnemonic for signing
+     * @param {string} identityId - Owner identity ID
+     * @param {string} contractId - Contract ID
      * @param {string} documentType - Document type
-     * @param {string} identityId - Owner identity ID
-     * @param {string} privateKey - Private key for signing
-     * @returns {Promise<Object>} State transition result
+     * @param {string} documentData - JSON document data
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Document creation result
      */
-    async createDocument(documentData, contractId, documentType, identityId, privateKey) {
-        ErrorUtils.validateRequired(
-            { documentData, contractId, documentType, identityId, privateKey },
-            ['documentData', 'contractId', 'documentType', 'identityId', 'privateKey']
-        );
+    async documentCreate(mnemonic, identityId, contractId, documentType, documentData, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, contractId, documentType, documentData, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'contractId', 'documentType', 'documentData', 'keyIndex']);
         
         return this._executeOperation(
-            () => this.wasmSdk.create_document(
-                documentData, 
-                contractId, 
-                documentType, 
-                identityId, 
-                privateKey
-            ),
-            'create_document',
-            { contractId, documentType, identityId, privateKey: '[REDACTED]' }
+            () => this.wasmModule.document_create(this.wasmSdk, mnemonic, identityId, contractId, documentType, documentData, keyIndex),
+            'document_create',
+            { mnemonic: '[REDACTED]', identityId, contractId, documentType, documentData: '[REDACTED]', keyIndex }
         );
     }
+
+    /**
+     * Update document
+     * @param {string} mnemonic - Mnemonic for signing
+     * @param {string} identityId - Owner identity ID
+     * @param {string} contractId - Contract ID
+     * @param {string} documentType - Document type
+     * @param {string} documentId - Document ID to update
+     * @param {string} updateData - JSON update data
+     * @param {number} keyIndex - Key index for signing
+     * @returns {Promise<Object>} Document update result
+     */
+    async documentUpdate(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex) {
+        ErrorUtils.validateRequired({ mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex }, 
+                                   ['mnemonic', 'identityId', 'contractId', 'documentType', 'documentId', 'updateData', 'keyIndex']);
+        
+        return this._executeOperation(
+            () => this.wasmModule.document_update(this.wasmSdk, mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex),
+            'document_update',
+            { mnemonic: '[REDACTED]', identityId, contractId, documentType, documentId, updateData: '[REDACTED]', keyIndex }
+        );
+    }
+
 
     // ========== Utility Operations ==========
 

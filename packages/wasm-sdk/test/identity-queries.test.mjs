@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -78,7 +88,7 @@ describe('Basic Identity Queries');
 
 await test('identity_fetch - documented test identity', async () => {
     try {
-        const result = await wasmSdk.identity_fetch(sdk, TEST_IDENTITY);
+        const result = await sdk.getIdentity(TEST_IDENTITY);
         console.log('   ✓ Identity fetched successfully');
         console.log(`   ID: ${result?.id || 'N/A'}`);
         console.log(`   Balance: ${result?.balance || 'N/A'}`);
@@ -95,7 +105,7 @@ await test('identity_fetch - documented test identity', async () => {
 
 await test('get_identity_balance - documented test identity', async () => {
     try {
-        const result = await wasmSdk.get_identity_balance(sdk, TEST_IDENTITY);
+        const result = await sdk.getIdentityBalance(TEST_IDENTITY);
         console.log(`   Balance: ${result}`);
     } catch (error) {
         if (error.message.includes('network') || error.message.includes('connection')) {
@@ -314,5 +324,8 @@ console.log('- These tests use the documented testnet values from docs.html');
 console.log('- Network errors are expected when running offline');
 console.log('- Some queries may timeout if testnet is slow');
 console.log(`- Test identity ${TEST_IDENTITY} should have activity on testnet`);
+
+// Cleanup
+await sdk.destroy();
 
 process.exit(failed > 0 ? 1 : 0);

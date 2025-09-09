@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -71,7 +81,7 @@ describe('Epoch Information Queries');
 
 await test('get_epochs_info - fetch epoch information', async () => {
     try {
-        const result = await wasmSdk.get_epochs_info(
+        const result = await sdk.getEpochsInfo(
             sdk,
             1000,     // start epoch
             100,      // count
@@ -94,7 +104,7 @@ await test('get_epochs_info - fetch epoch information', async () => {
 
 await test('get_finalized_epoch_infos - fetch finalized epoch infos', async () => {
     try {
-        const result = await wasmSdk.get_finalized_epoch_infos(
+        const result = await sdk.getFinalizedEpochInfos(
             sdk,
             8635,     // start epoch
             100       // count
@@ -161,5 +171,8 @@ console.log('- Epochs are time periods in the Dash Platform');
 console.log('- Each epoch contains multiple blocks');
 console.log('- Evonodes propose blocks during consensus');
 console.log('- Network errors are expected when running offline');
+
+// Cleanup
+await sdk.destroy();
 
 process.exit(failed > 0 ? 1 : 0);

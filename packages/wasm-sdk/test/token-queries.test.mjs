@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -74,7 +84,7 @@ describe('Token Status and Info Queries');
 
 await test('get_token_statuses - fetch status for multiple tokens', async () => {
     try {
-        const result = await wasmSdk.get_token_statuses(
+        const result = await sdk.getTokenStatuses(
             sdk,
             [TOKEN_CONTRACT_1, TOKEN_CONTRACT_2]
         );
@@ -90,7 +100,7 @@ await test('get_token_statuses - fetch status for multiple tokens', async () => 
 
 await test('get_token_direct_purchase_prices - get token purchase prices', async () => {
     try {
-        const result = await wasmSdk.get_token_direct_purchase_prices(
+        const result = await sdk.getTokenDirectPurchasePrices(
             sdk,
             [TOKEN_CONTRACT_2]
         );
@@ -145,7 +155,7 @@ await test('get_token_perpetual_distribution_last_claim - get last claim info', 
 
 await test('get_token_total_supply - get token total supply', async () => {
     try {
-        const result = await wasmSdk.get_token_total_supply(
+        const result = await sdk.getTokenTotalSupply(
             sdk,
             TOKEN_CONTRACT_1
         );

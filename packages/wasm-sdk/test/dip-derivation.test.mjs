@@ -19,14 +19,25 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
 // Initialize WASM
 console.log('Initializing WASM SDK...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
 const wasmBuffer = readFileSync(wasmPath);
 await init(wasmBuffer);
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -94,7 +105,7 @@ await test('DIP9 with different features', () => {
 await test('DIP9 key derivation - mainnet', () => {
     // Test actual key derivation with DIP9 path
     const path = "m/9'/5'/5'/0/0";
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, path, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, path, "mainnet");
     
     if (!result.private_key_wif) throw new Error('Missing private_key_wif');
     if (!result.address) throw new Error('Missing address');
@@ -141,7 +152,7 @@ await test('DIP13 authentication key path', () => {
     // Build full authentication key path
     const authPath = `m/9'/5'/5'/0'/0'/${identityIndex}'/${keyIndex}'`;
     
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, authPath, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, authPath, "mainnet");
     if (!result.private_key_wif) throw new Error('Missing private key');
     if (!result.public_key) throw new Error('Missing public key');
     if (result.path !== authPath) throw new Error('Path mismatch');
@@ -152,7 +163,7 @@ await test('DIP13 registration funding key path', () => {
     const identityIndex = 0;
     const fundingPath = `m/9'/5'/5'/1'/${identityIndex}`;
     
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, fundingPath, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, fundingPath, "mainnet");
     if (!result.address) throw new Error('Missing address');
     if (!result.address.startsWith('X')) throw new Error('Should be mainnet address');
 });
@@ -162,7 +173,7 @@ await test('DIP13 top-up funding key path', () => {
     const fundingIndex = 0;
     const topUpPath = `m/9'/5'/5'/2'/${fundingIndex}`;
     
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, topUpPath, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, topUpPath, "mainnet");
     if (!result.address) throw new Error('Missing address');
     if (result.path !== topUpPath) throw new Error('Path mismatch');
 });
@@ -172,7 +183,7 @@ await test('DIP13 invitation funding key path', () => {
     const fundingIndex = 0;
     const invitePath = `m/9'/5'/5'/3'/${fundingIndex}'`;
     
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, invitePath, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, invitePath, "mainnet");
     if (!result.address) throw new Error('Missing address');
 });
 
@@ -197,7 +208,7 @@ await test('DIP14 large index support', () => {
     const largePath = "m/9'/5'/2147483647'/0/0"; // Max 31-bit value
     
     try {
-        const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, largePath, "mainnet");
+        const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, largePath, "mainnet");
         if (!result.address) throw new Error('Large index derivation failed');
     } catch (error) {
         // Some implementations might not support this yet
@@ -226,7 +237,7 @@ await test('DIP15 incoming funds base path', () => {
     // Note: Full DIP15 paths require 256-bit user IDs which may not be 
     // fully supported in current implementation
     try {
-        const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, basePath, "mainnet");
+        const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, basePath, "mainnet");
         if (!result.private_key_wif) throw new Error('Missing private key');
     } catch (error) {
         if (error.message.includes('Invalid derivation path')) {

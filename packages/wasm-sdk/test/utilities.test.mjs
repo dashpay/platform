@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -172,7 +182,7 @@ if (sdk) {
     await test('wait_for_state_transition_result - invalid hash', async () => {
         try {
             // This will fail with invalid hash
-            await wasmSdk.wait_for_state_transition_result(
+            await sdk.waitForStateTransitionResult(
                 sdk,
                 "0000000000000000000000000000000000000000000000000000000000000000"
             );
@@ -187,7 +197,7 @@ if (sdk) {
 
     await test('wait_for_state_transition_result - malformed hash', async () => {
         try {
-            await wasmSdk.wait_for_state_transition_result(sdk, "invalid-hash");
+            await sdk.waitForStateTransitionResult(sdk, "invalid-hash");
             throw new Error('Should have failed with malformed hash');
         } catch (error) {
             // Expected to fail
@@ -295,7 +305,7 @@ describe('Error Handling');
 
 await test('Function with null SDK should fail gracefully', async () => {
     try {
-        await wasmSdk.get_status(null);
+        await sdk.getStatus(null);
         throw new Error('Should have failed with null SDK');
     } catch (error) {
         if (error.message.includes('Should have failed')) {
@@ -312,7 +322,7 @@ await test('Function with freed SDK should fail gracefully', async () => {
         tempSdk.free();
         
         // Try to use freed SDK
-        await wasmSdk.get_status(tempSdk);
+        await sdk.getStatus(tempSdk);
         throw new Error('Should have failed with freed SDK');
     } catch (error) {
         if (error.message.includes('Should have failed')) {
@@ -345,7 +355,7 @@ await test('Arrays are properly validated', async () => {
     
     try {
         // Pass non-array to function expecting array
-        await wasmSdk.get_path_elements(sdk, "not-an-array", []);
+        await sdk.getPathElements(sdk, "not-an-array", []);
         throw new Error('Should have failed with non-array');
     } catch (error) {
         if (error.message.includes('Should have failed')) {
@@ -357,8 +367,11 @@ await test('Arrays are properly validated', async () => {
 
 // Clean up
 if (sdk) {
-    sdk.free();
+    // Note: Some network SDK is still using WASM builder - TODO: convert to wrapper pattern
 }
+
+// Cleanup
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 process.exit(failed > 0 ? 1 : 0);

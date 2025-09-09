@@ -19,14 +19,25 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -56,64 +67,64 @@ console.log('\nKey Generation Tests\n');
 // Mnemonic Generation Tests
 describe('Mnemonic Generation');
 
-await test('generate_mnemonic - 12 words (default)', () => {
-    const mnemonic = wasmSdk.generate_mnemonic();
+await test('generateMnemonic - 12 words (default)', async () => {
+    const mnemonic = await sdk.generateMnemonic();
     const words = mnemonic.split(' ');
     if (words.length !== 12) {
         throw new Error(`Expected 12 words, got ${words.length}`);
     }
-    if (!wasmSdk.validate_mnemonic(mnemonic)) {
+    if (!(await sdk.validateMnemonic(mnemonic))) {
         throw new Error('Generated mnemonic is invalid');
     }
 });
 
-await test('generate_mnemonic - 15 words', () => {
-    const mnemonic = wasmSdk.generate_mnemonic(15);
+await test('generateMnemonic - 15 words', async () => {
+    const mnemonic = await sdk.generateMnemonic(15);
     const words = mnemonic.split(' ');
     if (words.length !== 15) {
         throw new Error(`Expected 15 words, got ${words.length}`);
     }
-    if (!wasmSdk.validate_mnemonic(mnemonic)) {
+    if (!(await sdk.validateMnemonic(mnemonic))) {
         throw new Error('Generated mnemonic is invalid');
     }
 });
 
-await test('generate_mnemonic - 18 words', () => {
-    const mnemonic = wasmSdk.generate_mnemonic(18);
+await test('generateMnemonic - 18 words', async () => {
+    const mnemonic = await sdk.generateMnemonic(18);
     const words = mnemonic.split(' ');
     if (words.length !== 18) {
         throw new Error(`Expected 18 words, got ${words.length}`);
     }
-    if (!wasmSdk.validate_mnemonic(mnemonic)) {
+    if (!(await sdk.validateMnemonic(mnemonic))) {
         throw new Error('Generated mnemonic is invalid');
     }
 });
 
-await test('generate_mnemonic - 21 words', () => {
-    const mnemonic = wasmSdk.generate_mnemonic(21);
+await test('generateMnemonic - 21 words', async () => {
+    const mnemonic = await sdk.generateMnemonic(21);
     const words = mnemonic.split(' ');
     if (words.length !== 21) {
         throw new Error(`Expected 21 words, got ${words.length}`);
     }
-    if (!wasmSdk.validate_mnemonic(mnemonic)) {
+    if (!(await sdk.validateMnemonic(mnemonic))) {
         throw new Error('Generated mnemonic is invalid');
     }
 });
 
-await test('generate_mnemonic - 24 words', () => {
-    const mnemonic = wasmSdk.generate_mnemonic(24);
+await test('generateMnemonic - 24 words', async () => {
+    const mnemonic = await sdk.generateMnemonic(24);
     const words = mnemonic.split(' ');
     if (words.length !== 24) {
         throw new Error(`Expected 24 words, got ${words.length}`);
     }
-    if (!wasmSdk.validate_mnemonic(mnemonic)) {
+    if (!(await sdk.validateMnemonic(mnemonic))) {
         throw new Error('Generated mnemonic is invalid');
     }
 });
 
 await test('generate_mnemonic - invalid word count', () => {
     try {
-        wasmSdk.generate_mnemonic(13);
+        await sdk.generateMnemonic(13);
         throw new Error('Should have thrown error for invalid word count');
     } catch (error) {
         if (!error.message.includes('Word count must be')) {
@@ -140,8 +151,8 @@ const languages = [
 
 for (const { code, name } of languages) {
     await test(`generate_mnemonic - ${name} (${code})`, () => {
-        const mnemonic = wasmSdk.generate_mnemonic(12, code);
-        if (!wasmSdk.validate_mnemonic(mnemonic, code)) {
+        const mnemonic = await sdk.generateMnemonic(12, code);
+        if (!await sdk.validateMnemonic(mnemonic, code)) {
             throw new Error(`Generated ${name} mnemonic is invalid`);
         }
     });
@@ -149,7 +160,7 @@ for (const { code, name } of languages) {
 
 await test('generate_mnemonic - unsupported language', () => {
     try {
-        wasmSdk.generate_mnemonic(12, 'xx');
+        await sdk.generateMnemonic(12, 'xx');
         throw new Error('Should have thrown error for unsupported language');
     } catch (error) {
         if (!error.message.includes('Unsupported language code')) {
@@ -161,22 +172,22 @@ await test('generate_mnemonic - unsupported language', () => {
 // Mnemonic Validation Tests
 describe('Mnemonic Validation');
 
-await test('validate_mnemonic - valid mnemonic', () => {
-    if (!wasmSdk.validate_mnemonic(TEST_MNEMONIC)) {
+await test('validateMnemonic - valid mnemonic', async () => {
+    if (!(await sdk.validateMnemonic(TEST_MNEMONIC))) {
         throw new Error('Test mnemonic should be valid');
     }
 });
 
 await test('validate_mnemonic - invalid checksum', () => {
     const invalidMnemonic = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon";
-    if (wasmSdk.validate_mnemonic(invalidMnemonic)) {
+    if (await sdk.validateMnemonic(invalidMnemonic)) {
         throw new Error('Invalid mnemonic should not validate');
     }
 });
 
 await test('validate_mnemonic - wrong word count', () => {
     const invalidMnemonic = "abandon abandon abandon";
-    if (wasmSdk.validate_mnemonic(invalidMnemonic)) {
+    if (await sdk.validateMnemonic(invalidMnemonic)) {
         throw new Error('Mnemonic with wrong word count should not validate');
     }
 });
@@ -185,15 +196,15 @@ await test('validate_mnemonic - wrong word count', () => {
 describe('Mnemonic to Seed');
 
 await test('mnemonic_to_seed - without passphrase', () => {
-    const seed = wasmSdk.mnemonic_to_seed(TEST_MNEMONIC);
+    const seed = await sdk.mnemonicToSeed(TEST_MNEMONIC);
     if (!seed || seed.length !== 64) {
         throw new Error(`Expected 64 byte seed, got ${seed ? seed.length : 'null'}`);
     }
 });
 
 await test('mnemonic_to_seed - with passphrase', () => {
-    const seed1 = wasmSdk.mnemonic_to_seed(TEST_MNEMONIC, "passphrase");
-    const seed2 = wasmSdk.mnemonic_to_seed(TEST_MNEMONIC);
+    const seed1 = await sdk.mnemonicToSeed(TEST_MNEMONIC, "passphrase");
+    const seed2 = await sdk.mnemonicToSeed(TEST_MNEMONIC);
     
     if (!seed1 || seed1.length !== 64) {
         throw new Error('Seed with passphrase should be 64 bytes');
@@ -207,7 +218,7 @@ await test('mnemonic_to_seed - with passphrase', () => {
 
 await test('mnemonic_to_seed - invalid mnemonic', () => {
     try {
-        wasmSdk.mnemonic_to_seed("invalid mnemonic phrase");
+        await sdk.mnemonicToSeed("invalid mnemonic phrase");
         throw new Error('Should have thrown error for invalid mnemonic');
     } catch (error) {
         if (!error.message.includes('Invalid mnemonic')) {
@@ -252,7 +263,7 @@ describe('Derivation Path Functions');
 
 await test('derive_key_from_seed_with_path - BIP44 mainnet', () => {
     const path = "m/44'/5'/0'/0/0";
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, path, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, path, "mainnet");
     
     if (!result.path || result.path !== path) throw new Error('Path mismatch');
     if (!result.private_key_wif) throw new Error('Missing private_key_wif');
@@ -262,7 +273,7 @@ await test('derive_key_from_seed_with_path - BIP44 mainnet', () => {
 
 await test('derive_key_from_seed_with_path - BIP44 testnet', () => {
     const path = "m/44'/1'/0'/0/0";
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, path, "testnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, path, "testnet");
     
     if (!result.path || result.path !== path) throw new Error('Path mismatch');
     if (!result.address) throw new Error('Missing address');
@@ -271,7 +282,7 @@ await test('derive_key_from_seed_with_path - BIP44 testnet', () => {
 
 await test('derive_key_from_seed_with_path - DIP13 path', () => {
     const path = "m/9'/5'/5'/0'/0'/0'/0'";
-    const result = wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, path, "mainnet");
+    const result = await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, path, "mainnet");
     
     if (!result.path || result.path !== path) throw new Error('Path mismatch');
     if (!result.private_key_wif) throw new Error('Missing private_key_wif');
@@ -280,7 +291,7 @@ await test('derive_key_from_seed_with_path - DIP13 path', () => {
 
 await test('derive_key_from_seed_with_path - invalid path', () => {
     try {
-        wasmSdk.derive_key_from_seed_with_path(TEST_MNEMONIC, null, "invalid/path", "mainnet");
+        await sdk.deriveKeyFromSeedWithPath(TEST_MNEMONIC, null, "invalid/path", "mainnet");
         throw new Error('Should have thrown error for invalid path');
     } catch (error) {
         if (!error.message.includes('Invalid derivation path')) {
@@ -387,7 +398,7 @@ await test('xprv_to_xpub - not implemented', () => {
 describe('Key Pair Generation');
 
 await test('generate_key_pair - mainnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
+    const keyPair = await sdk.generateKeyPair("mainnet");
     
     if (!keyPair.private_key_wif) throw new Error('Missing private_key_wif');
     if (!keyPair.private_key_hex) throw new Error('Missing private_key_hex');
@@ -398,7 +409,7 @@ await test('generate_key_pair - mainnet', () => {
 });
 
 await test('generate_key_pair - testnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("testnet");
+    const keyPair = await sdk.generateKeyPair("testnet");
     
     if (!keyPair.address) throw new Error('Missing address');
     if (keyPair.network !== "testnet") throw new Error('Wrong network');
@@ -431,7 +442,7 @@ describe('Key Import');
 
 await test('key_pair_from_wif - mainnet', () => {
     // First generate a key pair to get a valid WIF
-    const generated = wasmSdk.generate_key_pair("mainnet");
+    const generated = await sdk.generateKeyPair("mainnet");
     const imported = wasmSdk.key_pair_from_wif(generated.private_key_wif);
     
     if (imported.address !== generated.address) {
@@ -453,7 +464,7 @@ await test('key_pair_from_wif - invalid WIF', () => {
 
 await test('key_pair_from_hex - mainnet', () => {
     // Generate a key pair to get valid hex
-    const generated = wasmSdk.generate_key_pair("mainnet");
+    const generated = await sdk.generateKeyPair("mainnet");
     const imported = wasmSdk.key_pair_from_hex(generated.private_key_hex, "mainnet");
     
     if (imported.address !== generated.address) {
@@ -477,8 +488,8 @@ await test('key_pair_from_hex - invalid hex', () => {
 describe('Address Operations');
 
 await test('pubkey_to_address - mainnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
-    const address = wasmSdk.pubkey_to_address(keyPair.public_key, "mainnet");
+    const keyPair = await sdk.generateKeyPair("mainnet");
+    const address = await sdk.pubkeyToAddress(keyPair.public_key, "mainnet");
     
     if (address !== keyPair.address) {
         throw new Error('Address from public key does not match');
@@ -486,8 +497,8 @@ await test('pubkey_to_address - mainnet', () => {
 });
 
 await test('pubkey_to_address - testnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("testnet");
-    const address = wasmSdk.pubkey_to_address(keyPair.public_key, "testnet");
+    const keyPair = await sdk.generateKeyPair("testnet");
+    const address = await sdk.pubkeyToAddress(keyPair.public_key, "testnet");
     
     if (address !== keyPair.address) {
         throw new Error('Address from public key does not match');
@@ -495,33 +506,33 @@ await test('pubkey_to_address - testnet', () => {
 });
 
 await test('validate_address - valid mainnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
-    if (!wasmSdk.validate_address(keyPair.address, "mainnet")) {
+    const keyPair = await sdk.generateKeyPair("mainnet");
+    if (!await sdk.validateAddress(keyPair.address, "mainnet")) {
         throw new Error('Valid mainnet address should validate');
     }
 });
 
 await test('validate_address - valid testnet', () => {
-    const keyPair = wasmSdk.generate_key_pair("testnet");
-    if (!wasmSdk.validate_address(keyPair.address, "testnet")) {
+    const keyPair = await sdk.generateKeyPair("testnet");
+    if (!await sdk.validateAddress(keyPair.address, "testnet")) {
         throw new Error('Valid testnet address should validate');
     }
 });
 
 await test('validate_address - wrong network', () => {
-    const mainnetKey = wasmSdk.generate_key_pair("mainnet");
-    const testnetKey = wasmSdk.generate_key_pair("testnet");
+    const mainnetKey = await sdk.generateKeyPair("mainnet");
+    const testnetKey = await sdk.generateKeyPair("testnet");
     
-    if (wasmSdk.validate_address(mainnetKey.address, "testnet")) {
+    if (await sdk.validateAddress(mainnetKey.address, "testnet")) {
         throw new Error('Mainnet address should not validate on testnet');
     }
-    if (wasmSdk.validate_address(testnetKey.address, "mainnet")) {
+    if (await sdk.validateAddress(testnetKey.address, "mainnet")) {
         throw new Error('Testnet address should not validate on mainnet');
     }
 });
 
 await test('validate_address - invalid address', () => {
-    if (wasmSdk.validate_address("invalid_address", "mainnet")) {
+    if (await sdk.validateAddress("invalid_address", "mainnet")) {
         throw new Error('Invalid address should not validate');
     }
 });
@@ -530,9 +541,9 @@ await test('validate_address - invalid address', () => {
 describe('Message Signing');
 
 await test('sign_message - basic', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
+    const keyPair = await sdk.generateKeyPair("mainnet");
     const message = "Hello, Dash!";
-    const signature = wasmSdk.sign_message(message, keyPair.private_key_wif);
+    const signature = await sdk.signMessage(message, keyPair.private_key_wif);
     
     if (!signature) throw new Error('No signature returned');
     if (typeof signature !== 'string') throw new Error('Signature should be string');
@@ -540,9 +551,9 @@ await test('sign_message - basic', () => {
 });
 
 await test('sign_message - different messages produce different signatures', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
-    const sig1 = wasmSdk.sign_message("Message 1", keyPair.private_key_wif);
-    const sig2 = wasmSdk.sign_message("Message 2", keyPair.private_key_wif);
+    const keyPair = await sdk.generateKeyPair("mainnet");
+    const sig1 = await sdk.signMessage("Message 1", keyPair.private_key_wif);
+    const sig2 = await sdk.signMessage("Message 2", keyPair.private_key_wif);
     
     if (sig1 === sig2) {
         throw new Error('Different messages should produce different signatures');
@@ -550,15 +561,18 @@ await test('sign_message - different messages produce different signatures', () 
 });
 
 await test('sign_message - same message produces same signature', () => {
-    const keyPair = wasmSdk.generate_key_pair("mainnet");
+    const keyPair = await sdk.generateKeyPair("mainnet");
     const message = "Test message";
-    const sig1 = wasmSdk.sign_message(message, keyPair.private_key_wif);
-    const sig2 = wasmSdk.sign_message(message, keyPair.private_key_wif);
+    const sig1 = await sdk.signMessage(message, keyPair.private_key_wif);
+    const sig2 = await sdk.signMessage(message, keyPair.private_key_wif);
     
     if (sig1 !== sig2) {
         throw new Error('Same message should produce same signature');
     }
 });
+
+// Cleanup
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 process.exit(failed > 0 ? 1 : 0);

@@ -18,20 +18,23 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
+// Pre-load WASM for Node.js compatibility
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
 
-// Prefetch quorums
-await wasmSdk.prefetch_trusted_quorums_testnet();
+// Initialize JavaScript wrapper
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
 
-// Use trusted builder
-const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
-const sdk = await builder.build();
+// JavaScript wrapper handles initialization internally
 
 try {
     const usernames = await wasmSdk.get_dpns_usernames(

@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: true,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -72,7 +82,7 @@ describe('Group Information Queries');
 
 await test('get_group_info - fetch specific group info', async () => {
     try {
-        const result = await wasmSdk.get_group_info(
+        const result = await sdk.getGroupInfo(
             sdk,
             TEST_GROUP_ID,    // group ID
             0                 // subgroup position
@@ -93,7 +103,7 @@ await test('get_group_info - fetch specific group info', async () => {
 
 await test('get_group_infos - fetch multiple group infos', async () => {
     try {
-        const result = await wasmSdk.get_group_infos(
+        const result = await sdk.getGroupInfos(
             sdk,
             TEST_GROUP_ID,    // group ID
             null,             // start after

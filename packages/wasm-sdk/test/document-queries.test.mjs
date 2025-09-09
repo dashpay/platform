@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -81,7 +91,7 @@ describe('Document Queries');
 
 await test('get_documents - DPNS domains (no filters)', async () => {
     try {
-        const result = await wasmSdk.get_documents(
+        const result = await sdk.getDocuments(
             sdk,
             DPNS_CONTRACT,
             "domain",
@@ -108,7 +118,7 @@ await test('get_documents - with where clause', async () => {
             ["normalizedParentDomainName", "==", "dash"]
         ]);
         
-        const result = await wasmSdk.get_documents(
+        const result = await sdk.getDocuments(
             sdk,
             DPNS_CONTRACT,
             "domain",
@@ -135,7 +145,7 @@ await test('get_documents - with orderBy clause', async () => {
             ["normalizedParentDomainName", "asc"]
         ]);
         
-        const result = await wasmSdk.get_documents(
+        const result = await sdk.getDocuments(
             sdk,
             DPNS_CONTRACT,
             "domain",
@@ -169,7 +179,7 @@ await test('get_documents - with complex where clause', async () => {
             ["normalizedLabel", "asc"]
         ]);
         
-        const result = await wasmSdk.get_documents(
+        const result = await sdk.getDocuments(
             sdk,
             DPNS_CONTRACT,
             "domain",
@@ -192,8 +202,7 @@ await test('get_documents - with complex where clause', async () => {
 await test('get_document - by specific ID', async () => {
     try {
         // This would need a real document ID
-        const result = await wasmSdk.get_document(
-            sdk,
+        const result = await sdk.getDocument(
             DPNS_CONTRACT,
             "domain",
             "invalidDocumentId"
@@ -280,7 +289,7 @@ describe('Token Document Queries');
 
 await test('get_documents - token documents', async () => {
     try {
-        const result = await wasmSdk.get_documents(
+        const result = await sdk.getDocuments(
             sdk,
             TOKEN_CONTRACT,
             "token",  // assuming token document type
@@ -352,5 +361,8 @@ console.log('- These tests use the documented testnet values from docs.html');
 console.log('- Network errors are expected when running offline');
 console.log('- Some queries may fail due to missing data or incorrect document types');
 console.log('- Where and orderBy clauses are properly formatted as JSON strings');
+
+// Cleanup
+await sdk.destroy();
 
 process.exit(failed > 0 ? 1 : 0);

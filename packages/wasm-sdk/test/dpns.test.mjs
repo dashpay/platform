@@ -19,14 +19,24 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+// Import JavaScript wrapper (correct approach)
+import init from '../pkg/wasm_sdk.js';
+import { WasmSDK } from '../src-js/index.js';
 
-// Initialize WASM
-console.log('Initializing WASM SDK...');
+// Pre-load WASM for Node.js compatibility
+console.log('Initializing WASM module...');
 const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
-const wasmBuffer = readFileSync(wasmPath);
-await init(wasmBuffer);
+await init(readFileSync(wasmPath));
+
+// Initialize JavaScript wrapper
+console.log('Initializing JavaScript wrapper...');
+const sdk = new WasmSDK({
+    network: 'testnet',
+    proofs: false,
+    debug: false
+});
+await sdk.initialize();
+console.log('✅ JavaScript wrapper initialized successfully');
 
 // Test utilities
 let passed = 0;
@@ -53,54 +63,54 @@ console.log('\nDPNS Tests\n');
 // Homograph Safety Tests
 describe('Homograph Safety');
 
-await test('dpns_convert_to_homograph_safe - basic ASCII', () => {
-    const result = wasmSdk.dpns_convert_to_homograph_safe("test");
+await test('dpnsConvertToHomographSafe - basic ASCII', async () => {
+    const result = await sdk.dpnsConvertToHomographSafe("test");
     if (result !== "test") {
         throw new Error(`Expected "test", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - with numbers', () => {
-    const result = wasmSdk.dpns_convert_to_homograph_safe("test123");
+await test('dpnsConvertToHomographSafe - with numbers', async () => {
+    const result = await sdk.dpnsConvertToHomographSafe("test123");
     if (result !== "test123") {
         throw new Error(`Expected "test123", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - with hyphens', () => {
-    const result = wasmSdk.dpns_convert_to_homograph_safe("test-name");
+await test('dpnsConvertToHomographSafe - with hyphens', async () => {
+    const result = await sdk.dpnsConvertToHomographSafe("test-name");
     if (result !== "test-name") {
         throw new Error(`Expected "test-name", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - uppercase to lowercase', () => {
-    const result = wasmSdk.dpns_convert_to_homograph_safe("TestName");
+await test('dpnsConvertToHomographSafe - uppercase to lowercase', async () => {
+    const result = await sdk.dpnsConvertToHomographSafe("TestName");
     if (result !== "testname") {
         throw new Error(`Expected "testname", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - special characters', () => {
+await test('dpnsConvertToHomographSafe - special characters', async () => {
     // Only homograph characters (o,i,l) are converted, other special chars are lowercased but preserved
-    const result = wasmSdk.dpns_convert_to_homograph_safe("test@name!");
+    const result = await sdk.dpnsConvertToHomographSafe("test@name!");
     if (result !== "test@name!") {
         throw new Error(`Expected "test@name!", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - ASCII homograph conversions (o,i,l)', () => {
+await test('dpnsConvertToHomographSafe - ASCII homograph conversions (o,i,l)', async () => {
     const input = "IlIooLi"; // mix of I,l,i,o
-    const result = wasmSdk.dpns_convert_to_homograph_safe(input);
+    const result = await sdk.dpnsConvertToHomographSafe(input);
     // Expect: I->i->1, l->1, I->i->1, o->0, o->0, L->l->1, i->1 = "1110011"
     if (result !== "1110011") {
         throw new Error(`Expected "1110011" for "${input}", got "${result}"`);
     }
 });
 
-await test('dpns_convert_to_homograph_safe - unicode homographs', () => {
+await test('dpnsConvertToHomographSafe - unicode homographs', async () => {
     // Only o,i,l are converted to 0,1,1 - other Unicode characters are preserved
-    const result = wasmSdk.dpns_convert_to_homograph_safe("tеst"); // е is Cyrillic
+    const result = await sdk.dpnsConvertToHomographSafe("tеst"); // е is Cyrillic
     // Cyrillic 'е' should remain as-is, only lowercased
     if (result !== "tеst") { // Should be the same (just lowercased)
         throw new Error(`Expected Cyrillic to be preserved (lowercased), got "${result}"`);
@@ -110,64 +120,64 @@ await test('dpns_convert_to_homograph_safe - unicode homographs', () => {
 // Username Validation Tests
 describe('Username Validation');
 
-await test('dpns_is_valid_username - valid basic username', () => {
-    if (!wasmSdk.dpns_is_valid_username("alice")) {
+await test('dpnsIsValidUsername - valid basic username', async () => {
+    if (!(await sdk.dpnsIsValidUsername("alice"))) {
         throw new Error('Basic username "alice" should be valid');
     }
 });
 
-await test('dpns_is_valid_username - valid with numbers', () => {
-    if (!wasmSdk.dpns_is_valid_username("alice123")) {
+await test('dpnsIsValidUsername - valid with numbers', async () => {
+    if (!(await sdk.dpnsIsValidUsername("alice123"))) {
         throw new Error('Username with numbers should be valid');
     }
 });
 
-await test('dpns_is_valid_username - valid with hyphen', () => {
-    if (!wasmSdk.dpns_is_valid_username("alice-bob")) {
+await test('dpnsIsValidUsername - valid with hyphen', async () => {
+    if (!(await sdk.dpnsIsValidUsername("alice-bob"))) {
         throw new Error('Username with hyphen should be valid');
     }
 });
 
-await test('dpns_is_valid_username - too short', () => {
-    if (wasmSdk.dpns_is_valid_username("ab")) {
+await test('dpnsIsValidUsername - too short', async () => {
+    if (await sdk.dpnsIsValidUsername("ab")) {
         throw new Error('Username shorter than 3 characters should be invalid');
     }
 });
 
-await test('dpns_is_valid_username - too long', () => {
+await test('dpnsIsValidUsername - too long', async () => {
     const longName = "a".repeat(64);
-    if (wasmSdk.dpns_is_valid_username(longName)) {
+    if (await sdk.dpnsIsValidUsername(longName)) {
         throw new Error('Username longer than 63 characters should be invalid');
     }
 });
 
-await test('dpns_is_valid_username - starts with hyphen', () => {
-    if (wasmSdk.dpns_is_valid_username("-alice")) {
+await test('dpnsIsValidUsername - starts with hyphen', async () => {
+    if (await sdk.dpnsIsValidUsername("-alice")) {
         throw new Error('Username starting with hyphen should be invalid');
     }
 });
 
-await test('dpns_is_valid_username - ends with hyphen', () => {
-    if (wasmSdk.dpns_is_valid_username("alice-")) {
+await test('dpnsIsValidUsername - ends with hyphen', async () => {
+    if (await sdk.dpnsIsValidUsername("alice-")) {
         throw new Error('Username ending with hyphen should be invalid');
     }
 });
 
-await test('dpns_is_valid_username - double hyphen', () => {
-    if (wasmSdk.dpns_is_valid_username("alice--bob")) {
+await test('dpnsIsValidUsername - double hyphen', async () => {
+    if (await sdk.dpnsIsValidUsername("alice--bob")) {
         throw new Error('Username with double hyphen should be invalid');
     }
 });
 
 
-await test('dpns_is_valid_username - special characters', () => {
-    if (wasmSdk.dpns_is_valid_username("alice@bob")) {
+await test('dpnsIsValidUsername - special characters', async () => {
+    if (await sdk.dpnsIsValidUsername("alice@bob")) {
         throw new Error('Username with special characters should be invalid');
     }
 });
 
-await test('dpns_is_valid_username - spaces', () => {
-    if (wasmSdk.dpns_is_valid_username("alice bob")) {
+await test('dpnsIsValidUsername - spaces', async () => {
+    if (await sdk.dpnsIsValidUsername("alice bob")) {
         throw new Error('Username with spaces should be invalid');
     }
 });
@@ -175,30 +185,30 @@ await test('dpns_is_valid_username - spaces', () => {
 // Contested Username Tests
 describe('Contested Username Detection');
 
-await test('dpns_is_contested_username - non-contested name', () => {
-    if (wasmSdk.dpns_is_contested_username("uniquename123")) {
+await test('dpnsIsContestedUsername - non-contested name', async () => {
+    if (await sdk.dpnsIsContestedUsername("uniquename123")) {
         throw new Error('Unique username should not be contested');
     }
 });
 
-await test('dpns_is_contested_username - common name', () => {
+await test('dpns_is_contested_username - common name', async () => {
     // Common names like "alice", "bob", "test" might be contested
-    const result = wasmSdk.dpns_is_contested_username("alice");
+    const result = await sdk.dpnsIsContestedUsername("alice");
     // This depends on implementation - just check it returns a boolean
     if (typeof result !== 'boolean') {
         throw new Error('Should return boolean');
     }
 });
 
-await test('dpns_is_contested_username - single letter', () => {
-    const result = wasmSdk.dpns_is_contested_username("a");
+await test('dpns_is_contested_username - single letter', async () => {
+    const result = await sdk.dpnsIsContestedUsername("a");
     if (typeof result !== 'boolean') {
         throw new Error('Should return boolean');
     }
 });
 
-await test('dpns_is_contested_username - three letter', () => {
-    const result = wasmSdk.dpns_is_contested_username("abc");
+await test('dpns_is_contested_username - three letter', async () => {
+    const result = await sdk.dpnsIsContestedUsername("abc");
     if (typeof result !== 'boolean') {
         throw new Error('Should return boolean');
     }
@@ -208,7 +218,7 @@ await test('dpns_is_contested_username - three letter', () => {
 describe('DPNS Network Operations (Expected to Fail)');
 
 // Initialize SDK for network tests
-let sdk = null;
+// Network SDK already initialized above
 try {
     const builder = wasmSdk.WasmSdkBuilder.new_testnet();
     sdk = await builder.build();
@@ -256,7 +266,7 @@ if (sdk) {
 
     await test('dpns_is_name_available - requires network', async () => {
         try {
-            const result = await wasmSdk.dpns_is_name_available(sdk, "testname");
+            const result = await sdk.dpnsIsNameAvailable("testname");
             // If this succeeds, it means network is available
             if (typeof result !== 'boolean') {
                 throw new Error('Should return boolean');
@@ -269,7 +279,7 @@ if (sdk) {
 
     await test('dpns_resolve_name - requires network', async () => {
         try {
-            const result = await wasmSdk.dpns_resolve_name(sdk, "alice.dash");
+            const result = await sdk.dpnsResolveName("alice.dash");
             // If this succeeds, it means network is available
             if (result && typeof result !== 'object') {
                 throw new Error('Should return object or null');
@@ -323,27 +333,27 @@ if (sdk) {
 // Edge Case Tests
 describe('DPNS Edge Cases');
 
-await test('dpns_convert_to_homograph_safe - empty string', () => {
+await test('dpnsConvertToHomographSafe - empty string', async () => {
     const result = wasmSdk.dpns_convert_to_homograph_safe("");
     if (result !== "") {
         throw new Error(`Expected empty string, got "${result}"`);
     }
 });
 
-await test('dpns_is_valid_username - empty string', () => {
+await test('dpns_is_valid_username - empty string', async () => {
     if (wasmSdk.dpns_is_valid_username("")) {
         throw new Error('Empty string should not be valid username');
     }
 });
 
-await test('dpns_is_contested_username - empty string', () => {
-    const result = wasmSdk.dpns_is_contested_username("");
+await test('dpns_is_contested_username - empty string', async () => {
+    const result = await sdk.dpnsIsContestedUsername("");
     if (typeof result !== 'boolean') {
         throw new Error('Should return boolean even for empty string');
     }
 });
 
-await test('dpns_convert_to_homograph_safe - only special characters', () => {
+await test('dpnsConvertToHomographSafe - only special characters', async () => {
     const result = wasmSdk.dpns_convert_to_homograph_safe("@#$%");
     // Special characters are preserved, only homograph chars (o,i,l) are converted
     if (result !== "@#$%") {
@@ -351,10 +361,8 @@ await test('dpns_convert_to_homograph_safe - only special characters', () => {
     }
 });
 
-// Clean up
-if (sdk) {
-    sdk.free();
-}
+// Cleanup
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 process.exit(failed > 0 ? 1 : 0);

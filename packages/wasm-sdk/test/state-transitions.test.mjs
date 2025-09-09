@@ -19,7 +19,7 @@ if (!global.crypto) {
     });
 }
 
-// Import WASM SDK
+// Import JavaScript wrapper (correct approach)
 import init, { generate_key_pair } from '../pkg/wasm_sdk.js';
 import * as wasmSdk from '../pkg/wasm_sdk.js';
 
@@ -67,7 +67,7 @@ describe('Identity State Transitions');
 await test('identity_create - requires funding', async () => {
     try {
         // Would need funding transaction
-        const result = await wasmSdk.identity_create(
+        const result = await sdk.identityCreate(
             sdk,
             TEST_MNEMONIC,
             null,   // no alias
@@ -85,10 +85,10 @@ await test('identity_create - requires funding', async () => {
 await test('identity_create with all SECP256K1 keys (common scenario)', async () => {
     try {
         // Generate unique keys for testing (1 asset lock + 3 identity keys)
-        const assetLockKey = generate_key_pair("testnet");
-        const secp256k1Key1 = generate_key_pair("testnet");
-        const secp256k1Key2 = generate_key_pair("testnet");
-        const secp256k1Key3 = generate_key_pair("testnet");
+        const assetLockKey = await sdk.generateKeyPair("testnet");
+        const secp256k1Key1 = await sdk.generateKeyPair("testnet");
+        const secp256k1Key2 = await sdk.generateKeyPair("testnet");
+        const secp256k1Key3 = await sdk.generateKeyPair("testnet");
         
         // Mock asset lock proof
         const mockAssetLockProof = JSON.stringify({
@@ -140,10 +140,10 @@ await test('identity_create with all SECP256K1 keys (common scenario)', async ()
 await test('identity_create with mixed key types (SECP256K1 and HASH160)', async () => {
     try {
         // Generate unique keys for testing (1 asset lock + 2 SECP256K1 + 1 HASH160)
-        const assetLockKey = generate_key_pair("testnet");
-        const secp256k1Key1 = generate_key_pair("testnet");
-        const secp256k1Key2 = generate_key_pair("testnet");
-        const hash160Key = generate_key_pair("testnet");
+        const assetLockKey = await sdk.generateKeyPair("testnet");
+        const secp256k1Key1 = await sdk.generateKeyPair("testnet");
+        const secp256k1Key2 = await sdk.generateKeyPair("testnet");
+        const hash160Key = await sdk.generateKeyPair("testnet");
         
         // Mock asset lock proof
         const mockAssetLockProof = JSON.stringify({
@@ -195,10 +195,10 @@ await test('identity_create with mixed key types (SECP256K1 and HASH160)', async
 await test('identity_create with only HASH160 keys', async () => {
     try {
         // Generate unique keys for testing (1 asset lock + 3 HASH160)
-        const assetLockKey = generate_key_pair("testnet");
-        const hash160Key1 = generate_key_pair("testnet");
-        const hash160Key2 = generate_key_pair("testnet");
-        const hash160Key3 = generate_key_pair("testnet");
+        const assetLockKey = await sdk.generateKeyPair("testnet");
+        const hash160Key1 = await sdk.generateKeyPair("testnet");
+        const hash160Key2 = await sdk.generateKeyPair("testnet");
+        const hash160Key3 = await sdk.generateKeyPair("testnet");
         
         // Mock asset lock proof
         const mockAssetLockProof = JSON.stringify({
@@ -258,7 +258,7 @@ await test('identity_update - requires existing identity', async () => {
             }]
         });
         
-        const result = await wasmSdk.identity_update(
+        const result = await sdk.identityUpdate(
             sdk,
             TEST_MNEMONIC,
             TEST_IDENTITY,
