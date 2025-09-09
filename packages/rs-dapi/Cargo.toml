@@ -23,7 +23,7 @@ futures = "0.3.31"
 tokio-util = "0.7.15"
 
 # gRPC framework
-tonic = "0.13.0"
+tonic = "0.14.2"
 
 
 # HTTP framework for REST/JSON-RPC
@@ -96,7 +96,7 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a86e1c
 zeroize = "1.8"
 
 [build-dependencies]
-tonic-build = "0.14.0"
+tonic-build = "0.14.2"
 
 [dev-dependencies]
 # Additional dependencies for integration tests
