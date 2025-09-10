@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document outlines the release process for the `@dashevo/dash-wasm-sdk` package, including alpha, beta, and stable releases.
+This document outlines the release process for the `dash-wasm-sdk` package, including alpha, beta, and stable releases.
 
 ## Release Types
 
@@ -120,22 +120,30 @@ Releases are automated via `.github/workflows/publish-wasm-sdk-alpha.yml`:
 
 ## Quality Gates
 
-### Build Validation
-- ✅ Rust compilation succeeds
-- ✅ WASM optimization completes
-- ✅ TypeScript definitions generated
-- ✅ Package size within limits (<15MB)
+### Enhanced Build Validation
+- ✅ Rust compilation succeeds with unified build system
+- ✅ WASM optimization completes (dash_wasm_sdk.js generation)
+- ✅ Services directory integration (6 service classes copied)
+- ✅ Package.json generation with service files included
+- ✅ JavaScript wrapper integration successful
+- ✅ TypeScript definitions generated and integrated
+- ✅ Package size within limits (~14MB, optimized from 28MB)
+- ✅ Bundle validation and structure verification
 
 ### Security Validation  
 - ✅ `npm audit` passes with no critical issues
 - ✅ `cargo audit` passes for Rust dependencies
 - ✅ No known security vulnerabilities
 
-### Functionality Validation
-- ✅ Package imports correctly in Node.js and browsers
-- ✅ Core SDK functions work (mnemonic, validation, etc.)
-- ✅ WASM initialization succeeds
-- ✅ TypeScript definitions are accurate
+### Enhanced Functionality Validation
+- ✅ Package imports correctly in Node.js and browsers with clean syntax
+- ✅ Service architecture functions correctly (6 service classes)
+- ✅ Modern JavaScript wrapper API works seamlessly
+- ✅ Resource management and cleanup operates automatically  
+- ✅ Configuration-driven initialization succeeds
+- ✅ WASM module loading via correct import path (dash_wasm_sdk.js)
+- ✅ TypeScript definitions are comprehensive and accurate
+- ✅ Error handling with structured error types functions correctly
 
 ### Integration Validation
 - ✅ Can connect to testnet
@@ -147,13 +155,13 @@ Releases are automated via `.github/workflows/publish-wasm-sdk-alpha.yml`:
 
 ### NPM Distribution Tags
 - `latest`: Stable releases (default npm install)
-- `beta`: Beta testing releases (`npm install @dashevo/dash-wasm-sdk@beta`)
-- `alpha`: Alpha testing releases (`npm install @dashevo/dash-wasm-sdk@alpha`)
+- `beta`: Beta testing releases (`npm install dash-wasm-sdk@beta`)
+- `alpha`: Alpha testing releases (`npm install dash-wasm-sdk@alpha`)
 
 ### CDN Distribution
 Packages are automatically available via:
-- unpkg: `https://unpkg.com/@dashevo/dash-wasm-sdk@alpha/`
-- jsdelivr: `https://cdn.jsdelivr.net/npm/@dashevo/dash-wasm-sdk@alpha/`
+- unpkg: `https://unpkg.com/dash-wasm-sdk@alpha/`
+- jsdelivr: `https://cdn.jsdelivr.net/npm/dash-wasm-sdk@alpha/`
 
 ## Rollback Procedures
 
@@ -162,19 +170,19 @@ Packages are automatically available via:
 #### For Alpha/Beta Releases
 ```bash
 # Remove problematic version
-npm unpublish @dashevo/dash-wasm-sdk@0.1.0-alpha.1
+npm unpublish dash-wasm-sdk@0.1.0-alpha.1
 
 # Update tag to previous version
-npm dist-tag add @dashevo/dash-wasm-sdk@0.1.0-alpha.0 alpha
+npm dist-tag add dash-wasm-sdk@0.1.0-alpha.0 alpha
 ```
 
 #### For Stable Releases
 ```bash
 # Deprecate problematic version
-npm deprecate @dashevo/dash-wasm-sdk@0.1.0 "Critical bug, use 0.0.9 instead"
+npm deprecate dash-wasm-sdk@0.1.0 "Critical bug, use 0.0.9 instead"
 
 # Update latest tag
-npm dist-tag add @dashevo/dash-wasm-sdk@0.0.9 latest
+npm dist-tag add dash-wasm-sdk@0.0.9 latest
 ```
 
 ### GitHub Release Rollback
@@ -187,7 +195,7 @@ git push origin :refs/tags/wasm-sdk-v0.1.0-alpha.1
 
 ### Communication Template
 ```markdown
-## URGENT: @dashevo/dash-wasm-sdk Rollback Notice
+## URGENT: dash-wasm-sdk Rollback Notice
 
 **Version Affected**: 0.1.0-alpha.1
 **Issue**: [Brief description of critical issue]
@@ -195,7 +203,7 @@ git push origin :refs/tags/wasm-sdk-v0.1.0-alpha.1
 
 **Immediate Action Required**:
 - If you installed 0.1.0-alpha.1, please downgrade:
-  `npm install @dashevo/dash-wasm-sdk@0.1.0-alpha.0`
+  `npm install dash-wasm-sdk@0.1.0-alpha.0`
 
 **Issue Tracking**: https://github.com/dashpay/platform/issues/XXX
 

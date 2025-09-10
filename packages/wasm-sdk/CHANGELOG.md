@@ -7,7 +7,7 @@
 ## Installation
 
 ```bash
-npm install @dashevo/dash-wasm-sdk@0.1.0
+npm install dash-wasm-sdk@0.1.0
 ```
 
 ## 🐛 Bug Fixes
@@ -35,7 +35,7 @@ If you encounter any issues or have questions:
 
 ---
 
-All notable changes to the `@dashevo/dash-wasm-sdk` package will be documented in this file.
+All notable changes to the `dash-wasm-sdk` package will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -148,12 +148,12 @@ This is the initial alpha release. No migration required.
 
 **Installation:**
 ```bash
-npm install @dashevo/dash-wasm-sdk@alpha
+npm install dash-wasm-sdk@alpha
 ```
 
 **Basic Usage:**
 ```javascript
-import initWasm, { WasmSdkBuilder } from '@dashevo/dash-wasm-sdk';
+import initWasm, { WasmSdkBuilder } from 'dash-wasm-sdk';
 
 // Initialize WASM (required)
 await initWasm();

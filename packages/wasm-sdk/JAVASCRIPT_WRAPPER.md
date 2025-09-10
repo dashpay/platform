@@ -19,7 +19,7 @@ The Dash Platform WASM SDK includes a modern JavaScript wrapper (`WasmSDK`) that
 Get started with the modern WasmSDK in under 2 minutes:
 
 ```javascript
-import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+import WasmSDK from 'dash-wasm-sdk';
 
 // 1. Create and configure SDK
 const sdk = new WasmSDK({
@@ -51,10 +51,10 @@ await sdk.destroy();
 
 ```bash
 # NPM
-npm install @dashevo/dash-wasm-sdk
+npm install dash-wasm-sdk
 
 # Yarn
-yarn add @dashevo/dash-wasm-sdk
+yarn add dash-wasm-sdk
 ```
 
 ### Node.js Environment Setup
@@ -72,11 +72,11 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 if (!global.crypto) global.crypto = webcrypto;
 
-import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+import WasmSDK from 'dash-wasm-sdk';
 
 // For CLI usage, you may need to manually load WASM binary
-import init from '@dashevo/dash-wasm-sdk/pkg/wasm_sdk.js';
-const wasmPath = join(__dirname, 'node_modules/@dashevo/dash-wasm-sdk/pkg/wasm_sdk_bg.wasm');
+import init from 'dash-wasm-sdk/pkg/dash_wasm_sdk.js';
+const wasmPath = join(__dirname, 'node_modules/dash-wasm-sdk/pkg/dash_wasm_sdk_bg.wasm');
 await init(readFileSync(wasmPath));
 ```
 
@@ -84,7 +84,7 @@ await init(readFileSync(wasmPath));
 
 ```html
 <script type="module">
-import { WasmSDK } from 'https://cdn.jsdelivr.net/npm/@dashevo/dash-wasm-sdk@latest/index.js';
+import WasmSDK from 'https://cdn.jsdelivr.net/npm/dash-wasm-sdk@latest/index.js';
 </script>
 ```
 
@@ -430,7 +430,7 @@ import {
     WasmOperationError,
     WasmConfigurationError,
     WasmTransportError
-} from '@dashevo/dash-wasm-sdk';
+} from 'dash-wasm-sdk';
 ```
 
 ### Error Handling Patterns
@@ -638,7 +638,7 @@ if (!WebAssembly) {
 }
 
 // Ensure correct import path
-import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+import WasmSDK from 'dash-wasm-sdk';
 
 // Check network configuration
 const sdk = new WasmSDK({
@@ -700,7 +700,7 @@ console.log('Resources:', sdk.getResourceStats());
 **Solutions**:
 ```typescript
 // Make sure types are imported correctly
-import { WasmSDK, WasmSDKConfig } from '@dashevo/dash-wasm-sdk';
+import WasmSDK, { WasmSDKConfig } from 'dash-wasm-sdk';
 
 // Explicit typing
 const config: WasmSDKConfig = {
@@ -755,7 +755,7 @@ If you're currently using the raw WASM bindings, here's how to migrate:
 #### Before (Raw WASM)
 
 ```javascript
-import init, { WasmSdkBuilder } from '@dashevo/dash-wasm-sdk';
+import init, { WasmSdkBuilder } from 'dash-wasm-sdk';
 
 // Complex initialization
 await init();
@@ -777,7 +777,7 @@ try {
 #### After (Modern Wrapper)
 
 ```javascript
-import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+import WasmSDK from 'dash-wasm-sdk';
 
 // Simple initialization
 const sdk = new WasmSDK({ network: 'testnet' });
@@ -834,7 +834,7 @@ client.getIdentity(identityId, (error, identity) => {
 
 ```javascript
 // New WasmSDK approach
-import { WasmSDK } from '@dashevo/dash-wasm-sdk';
+import WasmSDK from 'dash-wasm-sdk';
 
 const sdk = new WasmSDK({
     network: 'testnet',
