@@ -2,8 +2,8 @@
 //!
 //! This module provides primitives to express and evaluate subscription filters for
 //! document state transitions. The main entry point is `DriveDocumentQueryFilter`, which
-//! holds a contract reference, a document type name, and action-specific clauses
-//! (`DocumentActionClauses`).
+//! holds a contract reference, a document type name, and action-specific match clauses
+//! (`DocumentActionMatchClauses`).
 //!
 //! Filtering in brief:
 //! - Create: evaluates `new_document_clauses` on the transition's data payload.
@@ -22,22 +22,22 @@
 //!   evaluate applicable constraints before fetching the original document. Decide
 //!   whether to fetch the original document (returns Pass/Fail/NeedsOriginal).
 //! - Second check: only if the first check returned `NeedsOriginal`, fetch the original
-//!   and call `matches_document_transition_original_document()` to evaluate original-dependent
-//!   clauses.
+//!   `Document` and call `matches_original_document()` to evaluate original-dependent clauses.
 //!
-//! Validation is structural: `validate()` checks the document type exists and that
-//! action-specific composition rules hold (e.g., at least one non-empty clause where
-//! required).
+//! Validation:
+//! - `validate()` performs structural checks: confirms the document type exists for the
+//!   contract, enforces action-specific composition rules (e.g., at least one non-empty
+//!   clause where required), and validates operator/value compatibility for scalar clauses
+//!   like `owner_clause` and `price_clause`.
 
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
+use dpp::document::{Document, DocumentV0Getters};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
-use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -51,8 +51,8 @@ use dpp::platform_value::ValueMapHelper;
 /// Filter used to match document transitions for subscriptions.
 ///
 /// Targets a specific data contract and document type, and carries action-specific
-/// clauses via `DocumentActionClauses`. Use `matches_document_transition()`
-/// and `matches_document_transition_original_document()` to evaluate batch/document transitions.
+/// match clauses via `DocumentActionMatchClauses`. Use `matches_document_transition()`
+/// and `matches_original_document()` to evaluate document transitions.
 /// `validate()` performs structural checks (document type exists, clause composition rules).
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, PartialEq, Clone)]
@@ -62,7 +62,7 @@ pub struct DriveDocumentQueryFilter<'a> {
     /// Document type name
     pub document_type_name: String,
     /// Action-specific clauses
-    pub action_clauses: DocumentActionClauses,
+    pub action_clauses: DocumentActionMatchClauses,
 }
 
 /// Result of evaluating constraints for a transition before potentially fetching the original document.
@@ -88,7 +88,7 @@ pub enum TransitionCheckResult {
 /// - `Option<ValueClause>` = optional scalar constraint (owner/price); `None` = no constraint.
 /// - Action-specific “at least one present” rules are enforced by `validate()`.
 #[derive(Debug, PartialEq, Clone)]
-pub enum DocumentActionClauses {
+pub enum DocumentActionMatchClauses {
     /// Create: filters on the new document data.
     Create {
         /// Clauses on the new document data.
@@ -133,8 +133,8 @@ impl DriveDocumentQueryFilter<'_> {
     /// Check a transition using only transition-level constraints.
     ///
     /// When to run:
-    /// - Call this for each incoming transition before performing any storage reads
-    ///   to fetch the original document. It short-circuits on obvious mismatches and
+    /// - Call this for each incoming transition before
+    ///   fetching the original document. It short-circuits on obvious mismatches and
     ///   tells you if an original is needed at all for the final decision.
     ///
     /// Returns:
@@ -146,21 +146,26 @@ impl DriveDocumentQueryFilter<'_> {
     pub fn matches_document_transition(
         &self,
         document_transition: &DocumentTransition,
-        batch_owner_value: Option<&Value>,
+        batch_owner_value: Option<&Value>, // Only used for Purchase
     ) -> TransitionCheckResult {
         match (&self.action_clauses, document_transition) {
             // Create: evaluate final clauses only
             (
-                DocumentActionClauses::Create {
+                DocumentActionMatchClauses::Create {
                     new_document_clauses,
                 },
                 DocumentTransition::Create(create),
             ) => {
-                if self.evaluate_document_with_clauses(
-                    new_document_clauses,
-                    create.base(),
-                    create.data(),
-                ) {
+                // Ensure transition targets this filter's contract and document type
+                if create.base().data_contract_id() != self.contract.id()
+                    || create.base().document_type_name() != &self.document_type_name
+                {
+                    return TransitionCheckResult::Fail;
+                }
+
+                // Evaluate new-document clauses (if any)
+                let id_value: Value = create.base().id().into();
+                if self.evaluate_clauses(new_document_clauses, &id_value, create.data()) {
                     TransitionCheckResult::Pass
                 } else {
                     TransitionCheckResult::Fail
@@ -169,64 +174,81 @@ impl DriveDocumentQueryFilter<'_> {
             // Replace: evaluate new-document clauses (if non-empty); if they pass,
             // require original if `original_document_clauses` is non-empty and not primary-key-only.
             (
-                DocumentActionClauses::Replace {
+                DocumentActionMatchClauses::Replace {
                     original_document_clauses,
                     new_document_clauses,
                 },
                 DocumentTransition::Replace(replace),
             ) => {
+                // Ensure transition targets this filter's contract and document type
+                if replace.base().data_contract_id() != self.contract.id()
+                    || replace.base().document_type_name() != &self.document_type_name
+                {
+                    return TransitionCheckResult::Fail;
+                }
+
+                // Evaluate new-document clauses first (if any)
+                let id_value: Value = replace.base().id().into();
                 let final_ok = if new_document_clauses.is_empty() {
                     true
                 } else {
-                    self.evaluate_document_with_clauses(
-                        new_document_clauses,
-                        replace.base(),
-                        replace.data(),
-                    )
+                    self.evaluate_clauses(new_document_clauses, &id_value, replace.data())
                 };
                 if !final_ok {
                     return TransitionCheckResult::Fail;
                 }
-                if original_document_clauses.is_empty()
-                    || original_document_clauses.is_for_primary_key()
-                {
-                    if self.matches_document(replace.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::NeedsOriginal
+
+                // New clauses passed; gate on original-document clauses
+                if original_document_clauses.is_empty() {
+                    return TransitionCheckResult::Pass;
                 }
+                if original_document_clauses.is_for_primary_key() {
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
+                    {
+                        return TransitionCheckResult::Pass;
+                    }
+                    return TransitionCheckResult::Fail;
+                }
+                TransitionCheckResult::NeedsOriginal
             }
             // Delete: needs original only if original_document_clauses reference fields.
             // If clauses are empty or primary-key-only, we can decide without original.
             (
-                DocumentActionClauses::Delete {
+                DocumentActionMatchClauses::Delete {
                     original_document_clauses,
                 },
                 DocumentTransition::Delete(delete),
             ) => {
-                if original_document_clauses.is_empty()
-                    || original_document_clauses.is_for_primary_key()
+                // Ensure transition targets this filter's contract and document type
+                if delete.base().data_contract_id() != self.contract.id()
+                    || delete.base().document_type_name() != &self.document_type_name
                 {
-                    if self.matches_document(delete.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::NeedsOriginal
+                    return TransitionCheckResult::Fail;
                 }
+
+                // Evaluate original-document clauses (if any)
+                let id_value: Value = delete.base().id().into();
+                if original_document_clauses.is_empty() {
+                    return TransitionCheckResult::Pass;
+                }
+                if original_document_clauses.is_for_primary_key() {
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
+                    {
+                        return TransitionCheckResult::Pass;
+                    }
+                    return TransitionCheckResult::Fail;
+                }
+                TransitionCheckResult::NeedsOriginal
             }
             // Transfer: check owner (if any), then gate on original clauses
             (
-                DocumentActionClauses::Transfer {
+                DocumentActionMatchClauses::Transfer {
                     original_document_clauses,
                     owner_clause,
                 },
                 DocumentTransition::Transfer(transfer),
             ) => {
+                // Check owner clause (if any)
                 let new_owner_value: Value = transfer.recipient_owner_id().into();
                 let owner_ok = match owner_clause {
                     Some(clause) => clause.matches_value(&new_owner_value),
@@ -235,26 +257,37 @@ impl DriveDocumentQueryFilter<'_> {
                 if !owner_ok {
                     return TransitionCheckResult::Fail;
                 }
-                if original_document_clauses.is_empty()
-                    || original_document_clauses.is_for_primary_key()
+
+                // Ensure transition targets this filter's contract and document type
+                if transfer.base().data_contract_id() != self.contract.id()
+                    || transfer.base().document_type_name() != &self.document_type_name
                 {
-                    if self.matches_document(transfer.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::NeedsOriginal
+                    return TransitionCheckResult::Fail;
                 }
+
+                // Evaluate original-document clauses (if any)
+                let id_value: Value = transfer.base().id().into();
+                if original_document_clauses.is_empty() {
+                    return TransitionCheckResult::Pass;
+                }
+                if original_document_clauses.is_for_primary_key() {
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
+                    {
+                        return TransitionCheckResult::Pass;
+                    }
+                    return TransitionCheckResult::Fail;
+                }
+                TransitionCheckResult::NeedsOriginal
             }
             // UpdatePrice: check price, then gate on original clauses
             (
-                DocumentActionClauses::UpdatePrice {
+                DocumentActionMatchClauses::UpdatePrice {
                     original_document_clauses,
                     price_clause,
                 },
                 DocumentTransition::UpdatePrice(update_price),
             ) => {
+                // Check price clause (if any)
                 let price_value = Value::U64(update_price.price());
                 let price_ok = match price_clause {
                     Some(clause) => clause.matches_value(&price_value),
@@ -263,26 +296,37 @@ impl DriveDocumentQueryFilter<'_> {
                 if !price_ok {
                     return TransitionCheckResult::Fail;
                 }
-                if original_document_clauses.is_empty()
-                    || original_document_clauses.is_for_primary_key()
+
+                // Ensure transition targets this filter's contract and document type
+                if update_price.base().data_contract_id() != self.contract.id()
+                    || update_price.base().document_type_name() != &self.document_type_name
                 {
-                    if self.matches_document(update_price.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::NeedsOriginal
+                    return TransitionCheckResult::Fail;
                 }
+
+                // Evaluate original-document clauses (if any)
+                let id_value: Value = update_price.base().id().into();
+                if original_document_clauses.is_empty() {
+                    return TransitionCheckResult::Pass;
+                }
+                if original_document_clauses.is_for_primary_key() {
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
+                    {
+                        return TransitionCheckResult::Pass;
+                    }
+                    return TransitionCheckResult::Fail;
+                }
+                TransitionCheckResult::NeedsOriginal
             }
             // Purchase: check batch owner (if clause present, we must have a value), then gate on original
             (
-                DocumentActionClauses::Purchase {
+                DocumentActionMatchClauses::Purchase {
                     original_document_clauses,
                     owner_clause,
                 },
                 DocumentTransition::Purchase(purchase),
             ) => {
+                // Check owner clause (if any)
                 let owner_ok = match (owner_clause, batch_owner_value) {
                     (Some(clause), Some(val)) => clause.matches_value(val),
                     (Some(_), None) => return TransitionCheckResult::Fail, // a required context is missing
@@ -291,214 +335,101 @@ impl DriveDocumentQueryFilter<'_> {
                 if !owner_ok {
                     return TransitionCheckResult::Fail;
                 }
-                if original_document_clauses.is_empty()
-                    || original_document_clauses.is_for_primary_key()
+
+                // Ensure transition targets this filter's contract and document type
+                if purchase.base().data_contract_id() != self.contract.id()
+                    || purchase.base().document_type_name() != &self.document_type_name
                 {
-                    if self.matches_document(purchase.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::NeedsOriginal
+                    return TransitionCheckResult::Fail;
                 }
-            }
-            // Fallback for cross-action: allow only primary-key-only matches with empty data
-            _ => {
-                let pk_only = match &self.action_clauses {
-                    DocumentActionClauses::Create {
-                        new_document_clauses,
-                    } => new_document_clauses.is_for_primary_key(),
-                    DocumentActionClauses::Replace {
-                        original_document_clauses,
-                        new_document_clauses,
-                    } => {
-                        original_document_clauses.is_for_primary_key()
-                            || new_document_clauses.is_for_primary_key()
-                    }
-                    DocumentActionClauses::Delete {
-                        original_document_clauses,
-                    } => original_document_clauses.is_for_primary_key(),
-                    DocumentActionClauses::Transfer {
-                        original_document_clauses,
-                        ..
-                    } => original_document_clauses.is_for_primary_key(),
-                    DocumentActionClauses::UpdatePrice {
-                        original_document_clauses,
-                        ..
-                    } => original_document_clauses.is_for_primary_key(),
-                    DocumentActionClauses::Purchase {
-                        original_document_clauses,
-                        ..
-                    } => original_document_clauses.is_for_primary_key(),
-                };
-                if pk_only {
-                    if self.matches_document(document_transition.base(), &BTreeMap::new()) {
-                        TransitionCheckResult::Pass
-                    } else {
-                        TransitionCheckResult::Fail
-                    }
-                } else {
-                    TransitionCheckResult::Fail
+
+                // Evaluate original-document clauses (if any)
+                let id_value: Value = purchase.base().id().into();
+                if original_document_clauses.is_empty() {
+                    return TransitionCheckResult::Pass;
                 }
+                if original_document_clauses.is_for_primary_key() {
+                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
+                    {
+                        return TransitionCheckResult::Pass;
+                    }
+                    return TransitionCheckResult::Fail;
+                }
+                TransitionCheckResult::NeedsOriginal
             }
+            // Cross-action fallback: do not match. A subscription for a specific action
+            // (e.g., Purchase) must not match transitions of other actions even if the
+            // filter only targets the primary key.
+            _ => TransitionCheckResult::Fail,
         }
     }
 
-    /// Checks if a document transition matches the filter, with optional
-    /// original document data and an optional batch owner value.
+    /// Evaluates original-dependent clauses against the provided original `Document`.
     ///
     /// When to run:
-    /// - After `matches_document_transition` returns `NeedsOriginal`.
-    ///   This method evaluates only original-dependent clauses using the provided
-    ///   original document.
+    /// - After `matches_document_transition` returns `NeedsOriginal` and the caller fetches
+    ///   the original document.
+    /// - This evaluates only original-dependent clauses; transition-level checks were
+    ///   already applied during the first phase.
     #[cfg(any(feature = "server", feature = "verify"))]
-    pub fn matches_document_transition_original_document(
-        &self,
-        document_transition: &DocumentTransition,
-        original_document: Option<&BTreeMap<String, Value>>,
-    ) -> bool {
-        // Evaluate only original-dependent clauses. If the original is required
-        // but missing, return false.
-        match (&self.action_clauses, document_transition) {
-            (
-                DocumentActionClauses::Replace {
+    pub fn matches_original_document(&self, original_document: &Document) -> bool {
+        // Evaluate only original-dependent clauses. Transition base was validated earlier.
+        match &self.action_clauses {
+            DocumentActionMatchClauses::Replace {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::Delete {
+                original_document_clauses,
+            }
+            | DocumentActionMatchClauses::Transfer {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::UpdatePrice {
+                original_document_clauses,
+                ..
+            }
+            | DocumentActionMatchClauses::Purchase {
+                original_document_clauses,
+                ..
+            } => {
+                let id_value: Value = original_document.id().into();
+                self.evaluate_clauses(
                     original_document_clauses,
-                    ..
-                },
-                DocumentTransition::Replace(replace),
-            ) => original_document.map_or(false, |orig| {
-                self.evaluate_document_with_clauses(original_document_clauses, replace.base(), orig)
-            }),
-            (
-                DocumentActionClauses::Delete {
-                    original_document_clauses,
-                },
-                DocumentTransition::Delete(delete),
-            ) => original_document.map_or(false, |orig| {
-                self.evaluate_document_with_clauses(original_document_clauses, delete.base(), orig)
-            }),
-            (
-                DocumentActionClauses::Transfer {
-                    original_document_clauses,
-                    ..
-                },
-                DocumentTransition::Transfer(transfer),
-            ) => original_document.map_or(false, |orig| {
-                self.evaluate_document_with_clauses(
-                    original_document_clauses,
-                    transfer.base(),
-                    orig,
+                    &id_value,
+                    original_document.properties(),
                 )
-            }),
-            (
-                DocumentActionClauses::UpdatePrice {
-                    original_document_clauses,
-                    ..
-                },
-                DocumentTransition::UpdatePrice(update_price),
-            ) => original_document.map_or(false, |orig| {
-                self.evaluate_document_with_clauses(
-                    original_document_clauses,
-                    update_price.base(),
-                    orig,
-                )
-            }),
-            (
-                DocumentActionClauses::Purchase {
-                    original_document_clauses,
-                    ..
-                },
-                DocumentTransition::Purchase(purchase),
-            ) => original_document.map_or(false, |orig| {
-                self.evaluate_document_with_clauses(
-                    original_document_clauses,
-                    purchase.base(),
-                    orig,
-                )
-            }),
+            }
             _ => false,
         }
     }
 
-    /// Low-level helper to evaluate an in-memory document payload (`base` + `data`)
-    /// against the clauses selected for the current action.
-    ///
-    /// Prefer the transition-oriented method unless you are matching raw
-    /// in-memory data.
-    #[cfg(any(feature = "server", feature = "verify"))]
-    pub fn matches_document(
-        &self,
-        document_base_transition: &DocumentBaseTransition,
-        document_data: &BTreeMap<String, Value>,
-    ) -> bool {
-        // When action-specific clauses exist, use them; default to empty clauses when not provided
-        let clauses_ref: &InternalClauses = match &self.action_clauses {
-            DocumentActionClauses::Create {
-                new_document_clauses,
-            } => new_document_clauses,
-            DocumentActionClauses::Replace {
-                new_document_clauses,
-                ..
-            } => new_document_clauses,
-            DocumentActionClauses::Delete {
-                original_document_clauses,
-            } => original_document_clauses,
-            DocumentActionClauses::Transfer {
-                original_document_clauses,
-                ..
-            } => original_document_clauses,
-            DocumentActionClauses::Purchase {
-                original_document_clauses,
-                ..
-            } => original_document_clauses,
-            DocumentActionClauses::UpdatePrice {
-                original_document_clauses,
-                ..
-            } => original_document_clauses,
-        };
-        self.evaluate_document_with_clauses(clauses_ref, document_base_transition, document_data)
-    }
+    // Note: tests use `evaluate_clauses` directly for unit coverage of clause logic.
 
-    /// Core evaluator: checks the given base transition + document data against
-    /// the provided `InternalClauses`.
-    ///
-    /// This is used internally by action-specific matchers (e.g., Replace evaluates
-    /// both `original_document_clauses` and `new_document_clauses` separately). Most
-    /// callers should use `matches_document_transition_original_document`, which determines the
-    /// correct clause set(s) to apply for the configured `DocumentActionClauses`.
+    /// Single clause evaluator used by both transition and original-document paths.
     #[cfg(any(feature = "server", feature = "verify"))]
-    fn evaluate_document_with_clauses(
+    fn evaluate_clauses(
         &self,
         clauses: &InternalClauses,
-        document_base_transition: &DocumentBaseTransition,
+        document_id_value: &Value,
         document_data: &BTreeMap<String, Value>,
     ) -> bool {
-        // Check contract ID
-        if document_base_transition.data_contract_id() != self.contract.id() {
-            return false;
-        }
-
-        // Check document type name
-        if document_base_transition.document_type_name() != &self.document_type_name {
-            return false;
-        }
-
-        // Check primary key in clause (for document ID)
+        // Primary key IN clause
         if let Some(primary_key_in_clause) = &clauses.primary_key_in_clause {
-            if !primary_key_in_clause.matches_value(&document_base_transition.id().into()) {
+            if !primary_key_in_clause.matches_value(document_id_value) {
                 return false;
             }
         }
 
-        // Check primary key equal clause (for document ID)
+        // Primary key EQUAL clause
         if let Some(primary_key_equal_clause) = &clauses.primary_key_equal_clause {
-            if !primary_key_equal_clause.matches_value(&document_base_transition.id().into()) {
+            if !primary_key_equal_clause.matches_value(document_id_value) {
                 return false;
             }
         }
 
-        // Check in clause
+        // In clause
         if let Some(in_clause) = &clauses.in_clause {
             let field_value = get_value_by_path(document_data, &in_clause.field);
             if let Some(value) = field_value {
@@ -510,7 +441,7 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // Check range clause
+        // Range clause
         if let Some(range_clause) = &clauses.range_clause {
             let field_value = get_value_by_path(document_data, &range_clause.field);
             if let Some(value) = field_value {
@@ -522,7 +453,7 @@ impl DriveDocumentQueryFilter<'_> {
             }
         }
 
-        // Check equal clauses
+        // Equal clauses
         for (field, equal_clause) in &clauses.equal_clauses {
             let field_value = get_value_by_path(document_data, field);
             if let Some(value) = field_value {
@@ -539,7 +470,7 @@ impl DriveDocumentQueryFilter<'_> {
 
     /// Validate the filter structure and clauses.
     ///
-    /// This function doesn't check the existence of the data contract. The subscription host must check.
+    /// In addition to these validations, the subscription host should check the contract's existence.
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn validate(&self) -> Result<(), crate::error::Error> {
         // Ensure the document type exists
@@ -553,10 +484,10 @@ impl DriveDocumentQueryFilter<'_> {
             })?;
 
         match &self.action_clauses {
-            DocumentActionClauses::Create {
+            DocumentActionMatchClauses::Create {
                 new_document_clauses,
             } => validate_internal_clauses_against_schema(document_type, new_document_clauses)?,
-            DocumentActionClauses::Replace {
+            DocumentActionMatchClauses::Replace {
                 original_document_clauses,
                 new_document_clauses,
             } => {
@@ -577,12 +508,12 @@ impl DriveDocumentQueryFilter<'_> {
                     validate_internal_clauses_against_schema(document_type, new_document_clauses)?;
                 }
             }
-            DocumentActionClauses::Delete {
+            DocumentActionMatchClauses::Delete {
                 original_document_clauses,
             } => {
                 validate_internal_clauses_against_schema(document_type, original_document_clauses)?
             }
-            DocumentActionClauses::Transfer {
+            DocumentActionMatchClauses::Transfer {
                 original_document_clauses,
                 owner_clause,
             } => {
@@ -617,7 +548,7 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
             }
-            DocumentActionClauses::UpdatePrice {
+            DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses,
                 price_clause,
             } => {
@@ -698,7 +629,7 @@ impl DriveDocumentQueryFilter<'_> {
                     }
                 }
             }
-            DocumentActionClauses::Purchase {
+            DocumentActionMatchClauses::Purchase {
                 original_document_clauses,
                 owner_clause,
             } => {
@@ -769,8 +700,10 @@ fn get_value_by_path<'a>(root: &'a BTreeMap<String, Value>, path: &str) -> Optio
 mod tests {
     use super::*;
     use crate::query::{ValueClause, WhereClause, WhereOperator};
+    use dpp::document::{Document, DocumentV0};
     use dpp::prelude::Identifier;
     use dpp::state_transition::batch_transition::document_base_transition::v1::DocumentBaseTransitionV1;
+    use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
     use dpp::tests::fixtures::get_data_contract_fixture;
     use dpp::version::LATEST_PLATFORM_VERSION;
 
@@ -781,11 +714,12 @@ mod tests {
         let contract = fixture.data_contract_owned();
 
         // Create a filter with no clauses (should match if contract and type match)
+        let internal_clauses = InternalClauses::default();
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: InternalClauses::default(),
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -800,19 +734,9 @@ mod tests {
 
         let document_data = BTreeMap::new();
 
-        // Should match since contract ID and type name are correct
-        assert!(filter.matches_document(&document_base, &document_data));
-
-        // Test with wrong contract ID
-        let wrong_document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: Identifier::from([3u8; 32]),
-            document_type_name: "niceDocument".to_string(),
-            data_contract_id: Identifier::from([99u8; 32]), // Wrong ID
-            identity_contract_nonce: 0,
-            token_payment_info: None,
-        });
-
-        assert!(!filter.matches_document(&wrong_document_base, &document_data));
+        // With no clauses, evaluation should be true regardless of data
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
     }
 
     #[test]
@@ -832,8 +756,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -848,7 +772,8 @@ mod tests {
 
         let document_data = BTreeMap::new();
 
-        assert!(filter.matches_document(&matching_doc, &document_data));
+        let id_value: Value = matching_doc.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &document_data));
 
         // Test with different ID
         let non_matching_doc = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -859,7 +784,8 @@ mod tests {
             token_payment_info: None,
         });
 
-        assert!(!filter.matches_document(&non_matching_doc, &document_data));
+        let non_id_value: Value = non_matching_doc.id().into();
+        assert!(!filter.evaluate_clauses(&internal_clauses, &non_id_value, &document_data));
     }
 
     #[test]
@@ -884,8 +810,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -901,17 +827,18 @@ mod tests {
         let mut matching_data = BTreeMap::new();
         matching_data.insert("name".to_string(), Value::Text("example".to_string()));
 
-        assert!(filter.matches_document(&document_base, &matching_data));
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
 
         // Test with non-matching data
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("name".to_string(), Value::Text("different".to_string()));
 
-        assert!(!filter.matches_document(&document_base, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
 
         // Test with missing field
         let empty_data = BTreeMap::new();
-        assert!(!filter.matches_document(&document_base, &empty_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &empty_data));
     }
 
     #[test]
@@ -934,8 +861,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -950,12 +877,13 @@ mod tests {
         // Test with value in list
         let mut matching_data = BTreeMap::new();
         matching_data.insert("status".to_string(), Value::Text("active".to_string()));
-        assert!(filter.matches_document(&document_base, &matching_data));
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &matching_data));
 
         // Test with value not in list
         let mut non_matching_data = BTreeMap::new();
         non_matching_data.insert("status".to_string(), Value::Text("completed".to_string()));
-        assert!(!filter.matches_document(&document_base, &non_matching_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &non_matching_data));
     }
 
     #[test]
@@ -974,8 +902,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -990,17 +918,18 @@ mod tests {
         // Test with value greater than threshold
         let mut greater_data = BTreeMap::new();
         greater_data.insert("score".to_string(), Value::U64(75));
-        assert!(filter.matches_document(&document_base, &greater_data));
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &greater_data));
 
         // Test with value equal to threshold (should fail for GreaterThan)
         let mut equal_data = BTreeMap::new();
         equal_data.insert("score".to_string(), Value::U64(50));
-        assert!(!filter.matches_document(&document_base, &equal_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &equal_data));
 
         // Test with value less than threshold
         let mut less_data = BTreeMap::new();
         less_data.insert("score".to_string(), Value::U64(25));
-        assert!(!filter.matches_document(&document_base, &less_data));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &less_data));
     }
 
     #[test]
@@ -1025,8 +954,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -1046,7 +975,8 @@ mod tests {
         let mut data = BTreeMap::new();
         data.insert("meta".to_string(), Value::Map(nested));
 
-        assert!(filter.matches_document(&document_base, &data));
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &data));
     }
 
     #[test]
@@ -1058,7 +988,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Replace {
+            action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: InternalClauses::default(),
                 new_document_clauses: InternalClauses::default(),
             },
@@ -1069,7 +999,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Replace {
+            action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: InternalClauses::default(),
                 new_document_clauses: InternalClauses {
                     primary_key_equal_clause: Some(WhereClause {
@@ -1087,7 +1017,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Transfer {
+            action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: None,
             },
@@ -1098,7 +1028,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Transfer {
+            action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1112,7 +1042,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: None,
             },
@@ -1123,7 +1053,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: Some(ValueClause {
                     operator: WhereOperator::GreaterThan,
@@ -1137,7 +1067,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Purchase {
+            action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: None,
             },
@@ -1148,7 +1078,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Purchase {
+            action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1173,7 +1103,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Transfer {
+            action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1234,7 +1164,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Purchase {
+            action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1274,9 +1204,6 @@ mod tests {
 
     #[test]
     fn test_transfer_original_clause_only_matches_with_original_document() {
-        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::DocumentTransferTransitionV0;
-        use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::DocumentTransferTransition;
-
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
 
@@ -1293,7 +1220,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Transfer {
+            action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses {
                     equal_clauses: eq,
                     ..Default::default()
@@ -1302,34 +1229,23 @@ mod tests {
             },
         };
 
-        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: Identifier::from([9u8; 32]),
-            document_type_name: "niceDocument".to_string(),
-            data_contract_id: contract.id(),
-            identity_contract_nonce: 0,
-            token_payment_info: None,
-        });
-        let transfer_v0 = DocumentTransferTransitionV0 {
-            base: document_base,
-            revision: 1,
-            recipient_owner_id: Identifier::from([8u8; 32]),
-        };
-        let transfer = DocumentTransition::Transfer(DocumentTransferTransition::V0(transfer_v0));
-
         // Original doc present and matching
         let mut original = BTreeMap::new();
         original.insert("status".to_string(), Value::Text("active".to_string()));
-        assert!(filter.matches_document_transition_original_document(&transfer, Some(&original),));
+        let original_doc = Document::V0(DocumentV0 {
+            id: Identifier::from([9u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original,
+            ..Default::default()
+        });
+        assert!(filter.matches_original_document(&original_doc));
 
         // Without original doc, clause is required -> no match
-        assert!(!filter.matches_document_transition_original_document(&transfer, None));
+        // No call without original: first pass already signaled it is required
     }
 
     #[test]
     fn test_delete_original_clause_only_matches_with_original_document() {
-        use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::v0::DocumentDeleteTransitionV0;
-        use dpp::state_transition::batch_transition::batched_transition::document_delete_transition::DocumentDeleteTransition;
-
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
 
@@ -1346,7 +1262,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Delete {
+            action_clauses: DocumentActionMatchClauses::Delete {
                 original_document_clauses: InternalClauses {
                     equal_clauses: eq,
                     ..Default::default()
@@ -1354,32 +1270,30 @@ mod tests {
             },
         };
 
-        let document_base = DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
-            id: Identifier::from([12u8; 32]),
-            document_type_name: "niceDocument".to_string(),
-            data_contract_id: contract.id(),
-            identity_contract_nonce: 0,
-            token_payment_info: None,
-        });
-        let delete_v0 = DocumentDeleteTransitionV0 {
-            base: document_base,
-        };
-        let delete = DocumentTransition::Delete(DocumentDeleteTransition::V0(delete_v0));
-
         // Original doc present and matching
         let mut original = BTreeMap::new();
         original.insert("status".to_string(), Value::Text("active".to_string()));
-        assert!(filter.matches_document_transition_original_document(&delete, Some(&original),));
+        let original_doc = Document::V0(DocumentV0 {
+            id: Identifier::from([12u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original,
+            ..Default::default()
+        });
+        assert!(filter.matches_original_document(&original_doc));
 
         // Without original doc -> no match (required for Delete)
-        assert!(!filter.matches_document_transition_original_document(&delete, None));
+        // No call without original: first pass already signaled it is required
 
         // Original mismatching -> no match
         let mut original_bad = BTreeMap::new();
         original_bad.insert("status".to_string(), Value::Text("inactive".to_string()));
-        assert!(
-            !filter.matches_document_transition_original_document(&delete, Some(&original_bad),)
-        );
+        let original_doc_bad = Document::V0(DocumentV0 {
+            id: Identifier::from([12u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original_bad,
+            ..Default::default()
+        });
+        assert!(!filter.matches_original_document(&original_doc_bad));
     }
 
     #[test]
@@ -1410,7 +1324,7 @@ mod tests {
         let filter_price_only = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: Some(ValueClause {
                     operator: WhereOperator::GreaterThan,
@@ -1427,7 +1341,7 @@ mod tests {
         let filter_price_only_fail = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: Some(ValueClause {
                     operator: WhereOperator::GreaterThan,
@@ -1453,7 +1367,7 @@ mod tests {
         let filter_with_orig = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses {
                     equal_clauses: eq,
                     ..Default::default()
@@ -1470,11 +1384,16 @@ mod tests {
             filter_with_orig.matches_document_transition(&update, None),
             TransitionCheckResult::NeedsOriginal
         );
-        assert!(filter_with_orig
-            .matches_document_transition_original_document(&update, Some(&original_doc)));
+        let original_document = Document::V0(DocumentV0 {
+            id: Identifier::from([10u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original_doc,
+            ..Default::default()
+        });
+        assert!(filter_with_orig.matches_original_document(&original_document));
 
         // Missing original doc -> required -> no match
-        assert!(!filter_with_orig.matches_document_transition_original_document(&update, None));
+        // No call without original: first pass already signaled it is required
     }
 
     #[test]
@@ -1525,7 +1444,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Replace {
+            action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: original_clauses,
                 new_document_clauses: new_document_clauses,
             },
@@ -1548,16 +1467,27 @@ mod tests {
             filter.matches_document_transition(&replace, None),
             TransitionCheckResult::NeedsOriginal
         );
-        assert!(filter.matches_document_transition_original_document(&replace, Some(&original_doc)));
+        let original_document = Document::V0(DocumentV0 {
+            id: Identifier::from([11u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original_doc,
+            ..Default::default()
+        });
+        assert!(filter.matches_original_document(&original_document));
 
         // Original missing -> should fail as it's required
-        assert!(!filter.matches_document_transition_original_document(&replace, None));
+        // No call without original: first pass already signaled it is required
 
         // Original mismatching -> fail
         let mut original_doc_bad = BTreeMap::new();
         original_doc_bad.insert("status".to_string(), Value::Text("inactive".to_string()));
-        assert!(!filter
-            .matches_document_transition_original_document(&replace, Some(&original_doc_bad),));
+        let original_document_bad = Document::V0(DocumentV0 {
+            id: Identifier::from([11u8; 32]),
+            owner_id: Identifier::from([0u8; 32]),
+            properties: original_doc_bad,
+            ..Default::default()
+        });
+        assert!(!filter.matches_original_document(&original_document_bad));
 
         // New-data mismatching should fail in first check (do not call final)
         if let DocumentTransition::Replace(mut rep) = replace.clone() {
@@ -1586,8 +1516,8 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
-                new_document_clauses: internal_clauses,
+            action_clauses: DocumentActionMatchClauses::Create {
+                new_document_clauses: internal_clauses.clone(),
             },
         };
 
@@ -1602,27 +1532,28 @@ mod tests {
         // Test value in range
         let mut in_range = BTreeMap::new();
         in_range.insert("value".to_string(), Value::U64(15));
-        assert!(filter.matches_document(&document_base, &in_range));
+        let id_value: Value = document_base.id().into();
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &in_range));
 
         // Test lower bound (inclusive)
         let mut lower_bound = BTreeMap::new();
         lower_bound.insert("value".to_string(), Value::U64(10));
-        assert!(filter.matches_document(&document_base, &lower_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &lower_bound));
 
         // Test upper bound (inclusive)
         let mut upper_bound = BTreeMap::new();
         upper_bound.insert("value".to_string(), Value::U64(20));
-        assert!(filter.matches_document(&document_base, &upper_bound));
+        assert!(filter.evaluate_clauses(&internal_clauses, &id_value, &upper_bound));
 
         // Test below range
         let mut below = BTreeMap::new();
         below.insert("value".to_string(), Value::U64(5));
-        assert!(!filter.matches_document(&document_base, &below));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &below));
 
         // Test above range
         let mut above = BTreeMap::new();
         above.insert("value".to_string(), Value::U64(25));
-        assert!(!filter.matches_document(&document_base, &above));
+        assert!(!filter.evaluate_clauses(&internal_clauses, &id_value, &above));
     }
 
     #[test]
@@ -1646,7 +1577,7 @@ mod tests {
         let valid_filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "indexedDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
             },
         };
@@ -1673,7 +1604,7 @@ mod tests {
         let invalid_filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
             },
         };
@@ -1695,7 +1626,7 @@ mod tests {
         let primary_key_filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "indexedDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
             },
         };
@@ -1724,7 +1655,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
                     equal_clauses: eq,
                     ..Default::default()
@@ -1737,7 +1668,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
                     range_clause: Some(WhereClause {
                         field: "$id".to_string(),
@@ -1760,7 +1691,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Transfer {
+            action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
                 owner_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1774,7 +1705,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: Some(ValueClause {
                     operator: WhereOperator::Equal,
@@ -1788,7 +1719,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::UpdatePrice {
+            action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
                 price_clause: Some(ValueClause {
                     operator: WhereOperator::Between,
@@ -1808,7 +1739,7 @@ mod tests {
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
                     range_clause: Some(WhereClause {
                         field: "score".to_string(),
@@ -1837,13 +1768,13 @@ mod tests {
         let original_filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
-            action_clauses: DocumentActionClauses::Create {
+            action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
             },
         };
 
         // No conversion helpers; verify the filter holds the expected clauses
-        if let DocumentActionClauses::Create {
+        if let DocumentActionMatchClauses::Create {
             new_document_clauses,
         } = original_filter.action_clauses
         {
