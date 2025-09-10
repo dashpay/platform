@@ -341,6 +341,7 @@ impl PlatformEventsSession {
             loop {
                 match handle.recv().await {
                     Some(resp) => {
+                        tracing::debug!(?resp, "platform_mux: forwarding event to client");
                         let _ = down.send(Ok(resp));
                     }
                     None => break,
