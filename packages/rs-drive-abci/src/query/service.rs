@@ -283,17 +283,21 @@ impl PlatformFilterAdapter {
 
 impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
     fn matches(&self, event: &PlatformEvent) -> bool {
+        use dapi_grpc::platform::v0::platform_event_v0::Event as Evt;
         use dapi_grpc::platform::v0::platform_filter_v0::Kind;
         match self.inner.kind.as_ref() {
             None => false,
             Some(Kind::All(all)) => *all,
-            Some(Kind::TxHash(filter_hash)) => {
-                if let Some(evt) = &event.event {
-                    match evt {
-                        dapi_grpc::platform::v0::platform_event_v0::Event::StateTransitionResult(
-                            r,
-                        ) => r.tx_hash == *filter_hash,
-                        _ => false,
+            Some(Kind::BlockCommitted(b)) => {
+                if !*b { return false; }
+                matches!(event.event, Some(Evt::BlockCommitted(_)))
+            }
+            Some(Kind::StateTransitionResult(filter)) => {
+                // If tx_hash is provided, match only that hash; otherwise match any STR
+                if let Some(Evt::StateTransitionFinalized(ref r)) = event.event {
+                    match &filter.tx_hash {
+                        Some(h) => r.tx_hash == *h,
+                        None => true,
                     }
                 } else {
                     false

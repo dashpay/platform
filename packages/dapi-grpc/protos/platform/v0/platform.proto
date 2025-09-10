@@ -57,10 +57,17 @@ message PlatformEventMessageV0 {
 }
 
 // Initial placeholder filter and event to be refined during integration
+// Filter for StateTransitionResult events
+message StateTransitionResultFilter {
+  // When set, only match StateTransitionResult events for this tx hash.
+  optional bytes tx_hash = 1;
+}
+
 message PlatformFilterV0 {
   oneof kind {
     bool all = 1; // subscribe to all platform events
-    bytes tx_hash = 2; // subscribe to a specific state transition hash (uppercase hex in bytes)
+    bool block_committed = 2; // subscribe to BlockCommitted events only
+    StateTransitionResultFilter state_transition_result = 3; // subscribe to StateTransitionResult events (optionally filtered by tx_hash)
   }
 }
 
@@ -76,17 +83,14 @@ message PlatformEventV0 {
     uint32 tx_count = 2;
   }
 
-  message StateTransitionResult {
+  message StateTransitionFinalized {
     BlockMetadata meta = 1;
     bytes tx_hash = 2;
-    bool success = 3;
-    uint32 code = 4;
-    string info = 5;
   }
 
   oneof event {
     BlockCommitted block_committed = 1;
-    StateTransitionResult state_transition_result = 2;
+    StateTransitionFinalized state_transition_finalized = 2;
   }
 }
 

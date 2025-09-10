@@ -2043,6 +2043,7 @@ dependencies = [
  "rust_decimal_macros",
  "serde",
  "serde_json",
+ "sha2",
  "simple-signer",
  "strategy-tests",
  "tempfile",

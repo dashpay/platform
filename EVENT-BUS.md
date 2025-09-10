@@ -238,6 +238,31 @@ Additional tests (optional):
 
 ## TODOs
 
+**Implementation TODOs**
+- Proto and types
+  - [x] Update `platform.proto` with new filter variants and STR filter message.
+  - [x] Rename `StateTransitionResultFilterV0` to `StateTransitionResultFilter` and regenerate code.
+  - [x] Keep StateTransitionResult minimal: only `meta` and `tx_hash` (removed `success`, `code`, `info`).
+  - [x] Regenerate gRPC code for `dapi-grpc` and fix compile errors.
+
+- rs-drive-abci
+  - [x] Publish `StateTransitionResult` events in `abci/handler/finalize_block.rs` after commit.
+  - [x] Keep and verify `BlockCommitted` publishing.
+  - [x] Update `PlatformFilterAdapter` to new filter structure and matching rules.
+
+- rs-dapi
+  - [x] Ensure `subscribePlatformEvents` accepts new filter variants; no mux changes needed.
+  - [ ] Update any schema validations and docs.
+
+- rs-sdk
+  - [ ] Add convenience constructors for `PlatformFilterV0`.
+  - [x] Update `examples/platform_events.rs` to use new filters and print `StateTransitionResult` with tx hash.
+  - [ ] Optionally add a small helper to format tx hashes and block metadata consistently.
+
+Notes
+- The mux in `rs-dash-notify` remains id‑based; event‑kind filtering happens in Drive ABCI via `PlatformFilterAdapter`.
+- Emitting STR at the end of `finalize_block` avoids streaming partial results and guarantees consistent metadata.
+
 - New crate: `packages/rs-dash-notify`
   - [x] Create library crate with `event_bus` and `platform_mux` modules.
   - [x] Move `packages/rs-drive-abci/src/event_bus/mod.rs` into `event_bus` with minimal API changes; convert local paths to crate paths.

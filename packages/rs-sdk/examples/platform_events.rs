@@ -32,6 +32,10 @@ pub struct Config {
 
     #[serde(default)]
     pub platform_ca_cert_path: Option<std::path::PathBuf>,
+
+    // Optional hex-encoded tx hash to filter STR events
+    #[serde(default)]
+    pub state_transition_tx_hash_hex: Option<String>,
 }
 
 impl Config {
@@ -52,31 +56,65 @@ async fn main() {
     let config = Config::load();
     let sdk = setup_sdk(&config);
 
-    // Subscribe using raw EventBus handle via SDK
-    let filter = PlatformFilterV0 {
+    // Subscribe to BlockCommitted only
+    let filter_block = PlatformFilterV0 {
+        kind: Some(FilterKind::BlockCommitted(true)),
+    };
+    let (block_id, block_handle) = sdk
+        .subscribe_platform_events(filter_block)
+        .await
+        .expect("subscribe block_committed");
+
+    // Subscribe to StateTransitionFinalized; optionally filter by tx hash if provided
+    let tx_hash_bytes = config
+        .state_transition_tx_hash_hex
+        .as_deref()
+        .and_then(|s| hex::decode(s).ok());
+    let filter_str = PlatformFilterV0 {
+        kind: Some(FilterKind::StateTransitionResult(
+            dapi_grpc::platform::v0::StateTransitionResultFilter {
+                tx_hash: tx_hash_bytes,
+            },
+        )),
+    };
+    let (str_id, str_handle) = sdk
+        .subscribe_platform_events(filter_str)
+        .await
+        .expect("subscribe state_transition_result");
+
+    // Subscribe to All events as a separate stream (demonstration)
+    let filter_all = PlatformFilterV0 {
         kind: Some(FilterKind::All(true)),
     };
-    let (id, handle) = sdk
-        .subscribe_platform_events(filter)
+    let (all_id, all_handle) = sdk
+        .subscribe_platform_events(filter_all)
         .await
-        .expect("subscribe");
+        .expect("subscribe all");
 
-    println!("Subscribed with client_subscription_id={}", id);
-    println!("Waiting for BlockCommitted events... (Ctrl+C to exit)");
+    println!(
+        "Subscribed: BlockCommitted id={}, STR id={}, All id={}",
+        block_id, str_id, all_id
+    );
+    println!("Waiting for events... (Ctrl+C to exit)");
 
-    let worker_thread = tokio::spawn(worker(handle));
+    let block_worker = tokio::spawn(worker(block_handle));
+    let str_worker = tokio::spawn(worker(str_handle));
+    let all_worker = tokio::spawn(worker(all_handle));
 
-    // Handle Ctrl+C to remove subscription and exit
-    let worker_abort = worker_thread.abort_handle();
-
+    // Handle Ctrl+C to remove subscriptions and exit
+    let abort_block = block_worker.abort_handle();
+    let abort_str = str_worker.abort_handle();
+    let abort_all = all_worker.abort_handle();
     tokio::spawn(async move {
         tokio::signal::ctrl_c().await.ok();
         println!("Ctrl+C received, stopping...");
-        worker_abort.abort();
+        abort_block.abort();
+        abort_str.abort();
+        abort_all.abort();
     });
 
-    // Wait for worker thread to finish
-    worker_thread.await.ok();
+    // Wait for workers to finish
+    let _ = tokio::join!(block_worker, str_worker, all_worker);
 }
 
 async fn worker<F>(handle: SubscriptionHandle<PlatformEventsResponse, F>)
@@ -93,16 +131,27 @@ where
                     use dapi_grpc::platform::v0::platform_event_v0::Event as E;
                     if let Some(event_v0) = ev.event {
                         if let Some(event) = event_v0.event {
-                            #[allow(clippy::collapsible_match)]
-                            if let E::BlockCommitted(bc) = event {
-                                if let Some(meta) = bc.meta {
-                                    println!(
-                                    "BlockCommitted: height={} time_ms={} tx_count={} block_id_hash=0x{}",
-                                    meta.height,
-                                    meta.time_ms,
-                                    bc.tx_count,
-                                    hex::encode(meta.block_id_hash)
-                                );
+                            match event {
+                                E::BlockCommitted(bc) => {
+                                    if let Some(meta) = bc.meta {
+                                        println!(
+                                            "BlockCommitted: height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                            meta.height,
+                                            meta.time_ms,
+                                            bc.tx_count,
+                                            hex::encode(meta.block_id_hash)
+                                        );
+                                    }
+                                }
+                                E::StateTransitionFinalized(r) => {
+                                    if let Some(meta) = r.meta {
+                                        println!(
+                                            "StateTransitionFinalized: height={} tx_hash=0x{} block_id_hash=0x{}",
+                                            meta.height,
+                                            hex::encode(r.tx_hash),
+                                            hex::encode(meta.block_id_hash)
+                                        );
+                                    }
                                 }
                             }
                         }
@@ -129,11 +178,7 @@ fn setup_sdk(config: &Config) -> Sdk {
     let address = Address::from_str(&format!("{}://{}:{}", scheme, host, config.platform_port))
         .expect("parse uri");
 
-    let core_host = config
-        .core_host
-        .as_ref()
-        .map(|s| s.as_str())
-        .unwrap_or(host);
+    let core_host = config.core_host.as_deref().unwrap_or(host);
 
     #[allow(unused_mut)]
     let mut builder = SdkBuilder::new(AddressList::from_iter([address])).with_core(

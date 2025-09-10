@@ -10,6 +10,7 @@ use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::CoreRPCLike;
 use dapi_grpc::platform::v0::{platform_event_v0, PlatformEventV0};
 use dpp::dashcore::Network;
+use sha2::{Digest, Sha256};
 use std::sync::atomic::Ordering;
 use tenderdash_abci::proto::abci as proto;
 
@@ -104,7 +105,9 @@ where
         .store(block_height, Ordering::Relaxed);
 
     let bus = app.event_bus().clone();
+
     publish_block_committed_event(bus, &request_finalize_block)?;
+    publish_state_transition_result_events(bus.clone(), &request_finalize_block)?;
 
     Ok(proto::ResponseFinalizeBlock { retain_height: 0 })
 }
@@ -138,6 +141,39 @@ fn publish_block_committed_event(
     };
 
     event_bus.notify_sync(event);
+
+    Ok(())
+}
+
+fn publish_state_transition_result_events(
+    event_bus: rs_dash_notify::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    request_finalize_block: &FinalizeBlockCleanedRequest,
+) -> Result<(), Error> {
+    // Prepare BlockMetadata once
+    let header_time = request_finalize_block.block.header.time;
+    let seconds = header_time.seconds as i128;
+    let nanos = header_time.nanos as i128;
+    let time_ms = (seconds * 1000) + (nanos / 1_000_000);
+
+    let meta = platform_event_v0::BlockMetadata {
+        height: request_finalize_block.height,
+        time_ms: time_ms as u64,
+        block_id_hash: request_finalize_block.block_id.hash.to_vec(),
+    };
+
+    // For each tx in the block, compute hash and emit a StateTransitionResult
+    for tx in &request_finalize_block.block.data.txs {
+        let tx_hash = Sha256::digest(tx);
+        let event = PlatformEventV0 {
+            event: Some(platform_event_v0::Event::StateTransitionFinalized(
+                platform_event_v0::StateTransitionFinalized {
+                    meta: Some(meta.clone()),
+                    tx_hash: tx_hash.to_vec(),
+                },
+            )),
+        };
+        event_bus.notify_sync(event);
+    }
 
     Ok(())
 }
