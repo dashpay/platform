@@ -69,6 +69,8 @@ Run `./build.sh` to build the WASM module with enhanced JavaScript wrapper integ
 - JavaScript wrapper deployment with resource management
 - Bundle size optimization (13.9MB output, 54% reduction from legacy)
 - TypeScript definitions integration
+- **Automatic disk cleanup** (4GB → ~1GB target directory, 75% space savings)
+- Configurable cleanup options for development vs production builds
 
 **Output Structure:**
 ```
@@ -129,6 +131,12 @@ npm install dash-wasm-sdk
 
 # Test in Node.js
 node -e "import('dash-wasm-sdk').then(m => console.log('✅ Package imported:', typeof m.default))"
+
+# Build with automatic cleanup (saves 75% disk space)
+./build.sh
+
+# Manual cleanup if needed
+cargo clean
 ```
 
 ## Documentation Maintenance

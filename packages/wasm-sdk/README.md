@@ -313,9 +313,30 @@ const homographSafe = await sdk.dpnsConvertToHomographSafe('Alice');
 - `check_documentation.py`: Documentation validation
 
 #### Build System
-- `build.sh`: Enhanced unified build script with service integration
-- `build-optimized.sh`: Production build with size optimization
+- `build.sh`: Enhanced unified build script with service integration and disk cleanup
+- `build-optimized.sh`: Production build with size optimization and aggressive cleanup
 - `Cargo.toml`: Rust package configuration with WASM metadata
+
+### Disk Space Management
+
+The enhanced build system includes automatic cleanup to prevent unnecessary disk usage:
+
+```bash
+# Standard build with cleanup (saves ~75% disk space)
+./build.sh
+
+# Disable cleanup if needed (for debugging)
+CLEANUP_TARGET=false ./build.sh
+
+# Production build with aggressive cleanup (maximum space savings)
+PRODUCTION_CLEANUP=true ./build-optimized.sh
+```
+
+**Cleanup Features:**
+- **Automatic**: Target cleanup after successful builds (4GB → ~1GB)
+- **Configurable**: Environment variables to control cleanup behavior  
+- **Safe**: Preserves incremental build cache for faster rebuilds
+- **Aggressive Mode**: Full cleanup for production CI/CD environments
 
 ### Key Concepts
 

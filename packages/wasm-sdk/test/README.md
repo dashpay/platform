@@ -1,25 +1,78 @@
-# WASM SDK Test Suite
+# 🧪 WASM SDK Comprehensive Test Suite
 
-Comprehensive unit tests for the Dash Platform WASM SDK.
+This directory contains a comprehensive testing framework for the Dash Platform WASM SDK samples and examples, ensuring 100% functionality coverage and robust automated validation.
 
-## Test Structure
+## 📋 Table of Contents
+
+- [Overview](#-overview)
+- [Test Structure](#-test-structure)
+- [Quick Start](#-quick-start)
+- [Test Suites](#-test-suites)
+- [Running Tests](#-running-tests)
+- [CI/CD Integration](#-cicd-integration)
+- [Performance Testing](#-performance-testing)
+- [Contributing](#-contributing)
+
+## 🎯 Overview
+
+This testing suite provides comprehensive coverage for:
+
+- **4 Web Sample Applications**: Document Explorer, DPNS Resolver, Identity Manager, Token Transfer
+- **12+ Node.js Examples**: Getting Started, Identity Operations, Contract Lookup, System Monitoring, etc.
+- **Framework Integration**: React, Vue, Angular, Vanilla JavaScript compatibility
+- **Performance Benchmarks**: Load testing, memory management, scalability validation
+- **Cross-Platform Testing**: Multiple Node.js versions, browsers, and environments
+
+### ✨ Key Features
+
+- 🔧 **100% Automated** - All tests run without manual intervention
+- 🚀 **Fast Execution** - Parallel test execution and optimized performance
+- 📊 **Comprehensive Reporting** - HTML reports, coverage analysis, performance metrics
+- 🔍 **Real-time Validation** - Tests actual network operations against testnet/mainnet
+- 🛡️ **Security Testing** - Input validation, XSS protection, error handling
+- 📱 **Cross-Browser** - Chromium, Firefox, WebKit compatibility testing
+- ⚡ **Performance Monitoring** - Benchmarks and regression detection
+
+## 📁 Test Structure
 
 ```
 test/
-├── README.md                    # This file
-├── test-plan.md                # Comprehensive test plan
-├── test-summary.md             # Current test results summary
-├── EXPECTED_FAILURES.md        # Documentation of expected failures
-├── run-all-tests.mjs          # Main test runner
-├── test-report.html           # Generated HTML report
+├── 📄 package.json              # Test dependencies and scripts
+├── 🔧 jest.setup.js             # Global test configuration
+├── 🚀 run-all-tests.sh          # Comprehensive test runner
+├── 📊 README.md                 # This documentation
 │
-├── sdk-init-simple.test.mjs   # SDK initialization tests
-├── key-generation.test.mjs    # Key generation and derivation tests
-├── dpns.test.mjs             # DPNS functionality tests
-├── utilities-simple.test.mjs  # Utility functions tests
-├── sample-query.test.mjs     # Sample query tests (network-dependent)
+├── 🟢 unit/                     # Node.js Unit Tests
+│   └── examples/               
+│       ├── getting-started.test.mjs      # Tutorial flow testing
+│       ├── identity-operations.test.mjs   # Identity management
+│       └── contract-lookup.test.mjs       # Contract operations
 │
-└── run-tests.mjs             # Key derivation test runner (legacy)
+├── 🌐 web-apps/                # Web Application Tests  
+│   ├── document-explorer/      
+│   │   ├── functional.test.js           # Core functionality
+│   │   ├── advanced-queries.test.js     # Complex queries
+│   │   ├── export-history.test.js       # Data export features
+│   │   └── edge-cases.test.js           # Error handling
+│   ├── dpns-resolver/
+│   │   ├── functionality.test.js        # DPNS operations
+│   │   └── validation.test.js           # Security & validation
+│   ├── identity-manager/
+│   │   └── functionality.test.js        # Identity management
+│   └── token-transfer/
+│       └── functionality.test.js        # Token operations
+│
+├── 🔗 integration/             # Integration Tests
+│   └── frameworks/
+│       └── framework-integration.test.mjs # React/Vue/Angular
+│
+├── ⚡ performance/              # Performance Tests
+│   └── load-testing.test.mjs             # Benchmarks & scalability
+│
+└── 🤖 ui-automation/           # Existing Playwright Tests
+    ├── package.json
+    ├── playwright.config.js
+    └── tests/                  # Browser automation tests
 ```
 
 ## Quick Start

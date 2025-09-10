@@ -252,6 +252,36 @@ else
     fi
 fi
 
+# Post-build cleanup to save disk space
+if [ "${CLEANUP_TARGET:-true}" = "true" ]; then
+    echo "Performing post-build cleanup to save disk space..."
+    
+    # Show current target size before cleanup
+    if [ -d "target" ]; then
+        echo "Target directory size before cleanup: $(du -sh target 2>/dev/null | cut -f1)"
+    fi
+    
+    # Clean up intermediate build artifacts but preserve incremental cache
+    cargo clean --release 2>/dev/null || echo "No release artifacts to clean"
+    
+    # For WASM builds, we can also clean the WASM target specifically
+    if [ -d "target/wasm32-unknown-unknown" ]; then
+        echo "Cleaning WASM target artifacts..."
+        rm -rf target/wasm32-unknown-unknown/release 2>/dev/null || echo "No WASM release artifacts to clean"
+    fi
+    
+    # Show final target size after cleanup
+    if [ -d "target" ]; then
+        echo "Target directory size after cleanup: $(du -sh target 2>/dev/null | cut -f1)"
+    else
+        echo "Target directory fully cleaned"
+    fi
+    
+    echo "✅ Post-build cleanup completed"
+else
+    echo "Target cleanup skipped (CLEANUP_TARGET=false to disable)"
+fi
+
 echo "Build complete!"
 echo "Output files are in the pkg/ directory"
 ls -lah pkg/

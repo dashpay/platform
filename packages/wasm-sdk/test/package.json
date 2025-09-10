@@ -1,19 +1,64 @@
 {
   "name": "wasm-sdk-tests",
   "version": "1.0.0",
-  "description": "Tests for WASM SDK",
+  "description": "Comprehensive test suite for WASM SDK samples and examples",
+  "type": "module",
+  "private": true,
   "scripts": {
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:verbose": "jest --verbose"
+    "test:coverage": "jest --coverage",
+    "test:unit": "jest --testPathPattern=unit",
+    "test:integration": "jest --testPathPattern=integration",
+    "test:examples": "jest --testPathPattern=examples",
+    "test:web": "jest --testPathPattern=web-apps",
+    "test:performance": "jest --testPathPattern=performance",
+    "test:all": "jest --coverage --verbose",
+    "test:ci": "jest --coverage --ci --reporters=default --reporters=jest-junit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix"
+  },
+  "dependencies": {
+    "jest": "^29.7.0",
+    "jest-environment-node": "^29.7.0",
+    "jest-junit": "^16.0.0",
+    "@types/jest": "^29.5.8",
+    "supertest": "^6.3.3",
+    "axios": "^1.6.2",
+    "puppeteer": "^21.6.0"
   },
   "devDependencies": {
-    "jest": "^29.7.0"
+    "eslint": "^8.54.0",
+    "eslint-plugin-jest": "^27.6.0"
   },
   "jest": {
     "testEnvironment": "node",
     "testMatch": [
-      "**/*.test.js"
-    ]
+      "**/*.test.mjs",
+      "**/*.test.js",
+      "**/*.spec.mjs",
+      "**/*.spec.js"
+    ],
+    "collectCoverageFrom": [
+      "../examples/**/*.mjs",
+      "../samples/**/*.js",
+      "../src-js/**/*.js",
+      "!**/node_modules/**",
+      "!**/pkg/**",
+      "!**/coverage/**"
+    ],
+    "coverageDirectory": "coverage",
+    "coverageReporters": [
+      "text",
+      "lcov",
+      "html",
+      "json"
+    ],
+    "testTimeout": 60000,
+    "setupFilesAfterEnv": ["<rootDir>/jest.setup.js"],
+    "transform": {}
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

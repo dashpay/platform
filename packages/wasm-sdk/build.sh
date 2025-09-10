@@ -180,4 +180,24 @@ done
 total_kb=$((total_size / 1024))
 echo "Total bundle size: ${total_size} bytes (${total_kb}KB)"
 
+# Post-build cleanup to save disk space
+echo -e "${YELLOW}Performing post-build cleanup to save disk space...${NC}"
+cd "$SCRIPT_DIR"
+
+# Clean up build artifacts (keep incremental cache for faster rebuilds)
+if [ "${CLEANUP_TARGET:-true}" = "true" ]; then
+    echo "Cleaning target directory to save disk space..."
+    cargo clean --release 2>/dev/null || echo "No release artifacts to clean"
+    echo "✅ Target cleanup completed"
+    
+    # Show final disk usage
+    if [ -d "target" ]; then
+        echo "Remaining target size: $(du -sh target 2>/dev/null | cut -f1)"
+    else
+        echo "Target directory fully cleaned"
+    fi
+else
+    echo "Target cleanup skipped (CLEANUP_TARGET=false)"
+fi
+
 echo -e "${GREEN}✅ WASM SDK build completed successfully!${NC}"

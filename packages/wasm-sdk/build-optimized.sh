@@ -218,6 +218,43 @@ else
     echo -e "${RED}Warning: analyze-bundle.sh not found or not executable${NC}"
 fi
 
+# Post-build cleanup for production builds (aggressive cleanup)
+echo ""
+echo -e "${YELLOW}Performing aggressive post-build cleanup for production...${NC}"
+
+# Show disk usage before cleanup
+if [ -d "../target" ]; then
+    echo "Target directory size before cleanup: $(du -sh ../target 2>/dev/null | cut -f1)"
+fi
+
+# Aggressive cleanup for production builds (saves maximum space)
+cd "$SCRIPT_DIR"
+if [ "${CLEANUP_TARGET:-true}" = "true" ]; then
+    echo "Running aggressive target cleanup for production build..."
+    
+    # Clean all build artifacts except incremental cache
+    cargo clean --release 2>/dev/null || echo "No release artifacts to clean"
+    cargo clean --target wasm32-unknown-unknown 2>/dev/null || echo "No WASM artifacts to clean"
+    
+    # For production builds, we can be more aggressive with cleanup
+    if [ "${PRODUCTION_CLEANUP:-false}" = "true" ]; then
+        echo "Running full target cleanup for maximum space savings..."
+        cargo clean 2>/dev/null || echo "Target already clean"
+    fi
+    
+    echo "✅ Production cleanup completed"
+    
+    # Show final disk usage
+    if [ -d "target" ]; then
+        echo "Remaining target size: $(du -sh target 2>/dev/null | cut -f1)"
+    else
+        echo "Target directory fully cleaned"
+    fi
+else
+    echo "Target cleanup skipped (CLEANUP_TARGET=false)"
+fi
+
+cd pkg
 echo ""
 echo -e "${GREEN}🚀 Ready for npm publish!${NC}"
 echo "Size tracking data saved to: $CURRENT_BUILD_FILE"
