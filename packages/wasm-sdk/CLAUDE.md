@@ -82,7 +82,7 @@ pkg/
 ├── error-handler.js         # Structured error handling
 ├── types.d.ts              # TypeScript definitions
 ├── dash_wasm_sdk.js        # Current WASM bindings
-└── dash_wasm_sdk_bg.wasm   # WebAssembly binary (13.6MB)
+└── dash_dash_wasm_sdk_bg.wasm   # WebAssembly binary (13.6MB)
 ```
 
 ### Modern JavaScript Usage (Recommended)

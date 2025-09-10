@@ -14,10 +14,10 @@ if (!global.crypto) {
 }
 
 // 🎯 MIGRATED: Import JavaScript wrapper
-import init from '../pkg/wasm_sdk.js';
+import init from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
-const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
 await init(readFileSync(wasmPath));
 
 const sdk = new WasmSDK({ network: 'testnet', proofs: false, debug: false });

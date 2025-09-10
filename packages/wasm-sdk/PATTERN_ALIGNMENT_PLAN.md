@@ -17,7 +17,7 @@ Based on exhaustive analysis of the current codebase, I've identified significan
 ### ❌ **Pattern Divergences Found**
 
 **1. Test Files Using Direct WASM API** 
-- Tests import raw WASM: `import init, * as wasmSdk from '../pkg/wasm_sdk.js'`
+- Tests import raw WASM: `import init, * as wasmSdk from "../pkg/dash_wasm_sdk.js"'`
 - Should use JavaScript wrapper: `import { WasmSDK } from '../src-js/index.js'`
 
 **2. Inconsistent Initialization Patterns**
@@ -181,7 +181,7 @@ Tests CANNOT migrate to wrapper until wrapper implements the functions they actu
 **Current Test Patterns** (❌ ALL 24 Files Use Direct WASM):
 ```javascript
 // Direct WASM usage (current pattern in ALL tests)
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+import init, * as wasmSdk from "../pkg/dash_wasm_sdk.js"';
 const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
 const sdk = await builder.build();
 const result = await wasmSdk.identity_fetch(sdk, identityId);

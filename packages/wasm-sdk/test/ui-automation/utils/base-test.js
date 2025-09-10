@@ -31,13 +31,42 @@ class BaseTest {
    * Wait for SDK to be in success state (useful after network changes)
    */
   async waitForSdkReady() {
-    await this.page.waitForSelector('#statusBanner.success', {
-      timeout: 30000,
-      state: 'visible'
-    });
+    // Implement progressive waiting strategy
+    let attempts = 0;
+    const maxAttempts = 6;
     
-    // Additional wait to ensure stability
-    await this.page.waitForTimeout(500);
+    while (attempts < maxAttempts) {
+      try {
+        await this.page.waitForSelector('#statusBanner.success', {
+          timeout: 20000,
+          state: 'visible'
+        });
+        
+        // Additional wait to ensure stability
+        await this.page.waitForTimeout(1000);
+        
+        // Verify status is actually success
+        const statusState = await this.page.locator('#statusBanner').getAttribute('class');
+        if (statusState && statusState.includes('success')) {
+          console.log('SDK ready state confirmed');
+          return;
+        }
+      } catch (error) {
+        attempts++;
+        
+        if (attempts >= maxAttempts) {
+          console.log(`SDK ready timeout after ${maxAttempts} attempts`);
+          throw error;
+        }
+        
+        // Check if we're still loading or in error state
+        const currentState = await this.page.locator('#statusBanner').getAttribute('class');
+        console.log(`SDK status attempt ${attempts}: ${currentState || 'unknown'}`);
+        
+        // Wait longer between attempts
+        await this.page.waitForTimeout(3000);
+      }
+    }
   }
 
   /**

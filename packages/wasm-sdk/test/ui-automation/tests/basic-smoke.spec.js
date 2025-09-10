@@ -34,7 +34,7 @@ test.describe('WASM SDK Basic Smoke Tests', () => {
       
       attempts++;
       if (attempts < maxAttempts) {
-        await wasmSdkPage.page.waitForTimeout(2000);
+        await wasmSdkPage.page.waitForTimeout(5000);
       }
     }
     

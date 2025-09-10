@@ -40,8 +40,8 @@ The SDK uses a Service Worker to cache the WASM binary and JavaScript files. Thi
 
 ### Files Cached
 
-- `/pkg/wasm_sdk.js` - JavaScript bindings
-- `/pkg/wasm_sdk_bg.wasm` - WASM binary (several MB)
+- `/pkg/dash_wasm_sdk.js` - JavaScript bindings
+- `/pkg/dash_dash_wasm_sdk_bg.wasm` - WASM binary (several MB)
 - `/pkg/wasm_sdk.d.ts` - TypeScript definitions
 - `/index.html` - Main page
 

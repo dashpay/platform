@@ -20,12 +20,12 @@ if (!global.crypto) {
 }
 
 // Import JavaScript wrapper (correct approach)
-import init from '../pkg/wasm_sdk.js';
+import init from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
 // Initialize WASM
 console.log('Initializing WASM SDK...');
-const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
 const wasmBuffer = readFileSync(wasmPath);
 await init(wasmBuffer);
 

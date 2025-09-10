@@ -132,7 +132,7 @@ import init, {
     get_group_members,
     get_identity_groups,
     get_groups_data_contracts
-} from './pkg/wasm_sdk.js';
+} from "../pkg/dash_wasm_sdk.js"';
 
 // Initialize SDK
 await init();

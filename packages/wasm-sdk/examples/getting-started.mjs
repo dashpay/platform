@@ -20,7 +20,7 @@ const __dirname = dirname(__filename);
 if (!global.crypto) global.crypto = webcrypto;
 
 // Import JavaScript wrapper (the correct approach)
-import init from '../pkg/wasm_sdk.js';
+import init from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
 async function main() {
@@ -41,7 +41,7 @@ async function main() {
         console.log('-'.repeat(45));
         
         console.log('1. Pre-loading WASM module...');
-        const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+        const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
         await init(readFileSync(wasmPath));
         console.log('   ✅ WASM module loaded');
         

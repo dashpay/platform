@@ -33,11 +33,19 @@
   },
   "jest": {
     "testEnvironment": "node",
+    "experimental": {
+      "vm": true
+    },
     "testMatch": [
       "**/*.test.mjs",
       "**/*.test.js",
       "**/*.spec.mjs",
       "**/*.spec.js"
+    ],
+    "moduleFileExtensions": [
+      "js",
+      "mjs",
+      "json"
     ],
     "collectCoverageFrom": [
       "../examples/**/*.mjs",

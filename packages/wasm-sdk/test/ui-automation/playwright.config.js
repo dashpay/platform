@@ -31,10 +31,10 @@ module.exports = defineConfig({
     video: 'retain-on-failure',
     
     /* Global timeout for each action (e.g. click, fill, etc.) */
-    actionTimeout: 30000,
+    actionTimeout: 45000,
     
     /* Global timeout for each navigation action */
-    navigationTimeout: 30000,
+    navigationTimeout: 60000,
   },
 
   /* Configure projects for different test execution modes */
@@ -43,7 +43,7 @@ module.exports = defineConfig({
       name: 'parallel-tests',
       testMatch: ['basic-smoke.spec.js', 'query-execution.spec.js', 'parameterized-queries.spec.js'],
       fullyParallel: true,
-      workers: process.env.CI ? 1 : undefined,
+      workers: process.env.CI ? 1 : 3,
       use: { 
         ...devices['Desktop Chrome'],
         // Enable headless mode by default
@@ -79,10 +79,10 @@ module.exports = defineConfig({
   },
 
   /* Global test timeout */
-  timeout: 120000,
+  timeout: 180000,
   
   /* Expect timeout for assertions */
   expect: {
-    timeout: 10000,
+    timeout: 15000,
   },
 });

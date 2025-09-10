@@ -151,9 +151,9 @@ if (!global.crypto) {
 }
 
 // Import and initialize WASM
-import init, * as wasmSdk from '../pkg/wasm_sdk.js';
+import init, * as wasmSdk from "../pkg/dash_wasm_sdk.js"';
 
-const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
 const wasmBuffer = readFileSync(wasmPath);
 await init(wasmBuffer);
 

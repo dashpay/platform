@@ -6,7 +6,7 @@ The Dash Platform WASM JS SDK provides WebAssembly bindings for interacting with
 ## Quick Setup
 ```javascript
 // Import and initialize
-import init, { WasmSdk } from './pkg/wasm_sdk.js';
+import init, { WasmSdk } from "../pkg/dash_wasm_sdk.js"';
 
 await init();
 const transport = { 

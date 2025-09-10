@@ -278,14 +278,14 @@ The script handles common errors gracefully:
 
 1. **Module Import Errors**
    ```bash
-   Error: Cannot find module '../pkg/wasm_sdk.js'
+   Error: Cannot find module '../pkg/dash_wasm_sdk.js'
    ```
    - **Solution**: Run from the correct directory (wasm-sdk root)
    - Ensure the package is built: `./build.sh`
 
 2. **WASM File Not Found**
    ```bash
-   Error: ENOENT: no such file or directory, open '../pkg/wasm_sdk_bg.wasm'
+   Error: ENOENT: no such file or directory, open '../pkg/dash_wasm_sdk_bg.wasm'
    ```
    - **Solution**: Build the package: `./build.sh`
    - Check that `pkg/` directory exists

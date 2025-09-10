@@ -3,14 +3,12 @@
  * Configures global test environment, mocks, and utilities
  */
 
-import { webcrypto } from 'crypto';
-import { readFileSync } from 'fs';
-import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
+const { webcrypto } = require('crypto');
+const { readFileSync } = require('fs');
+const path = require('path');
 
-// Get directory paths
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+// Get directory paths (available globally in CommonJS)
+// __dirname is already available
 
 // Set up globals for WASM compatibility
 if (!global.crypto) {
@@ -66,9 +64,10 @@ global.withTimeout = async (promise, timeout = TEST_CONFIG.STANDARD_TIMEOUT) => 
 // WASM initialization helper
 global.initializeWasm = async () => {
     try {
-        const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
+        const wasmPath = path.join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
         const wasmBuffer = readFileSync(wasmPath);
-        const init = (await import('../pkg/dash_wasm_sdk.js')).default;
+        const wasmModule = await import('../pkg/dash_wasm_sdk.js');
+        const init = wasmModule.default;
         await init(wasmBuffer);
         return true;
     } catch (error) {

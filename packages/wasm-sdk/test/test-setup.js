@@ -20,7 +20,7 @@ global.self = global;
 // Load WASM module using eval to bypass module restrictions
 async function loadWasmModule() {
     // Read the JS file and modify it for Node.js
-    const jsPath = path.join(__dirname, '../pkg/wasm_sdk.js');
+    const jsPath = path.join(__dirname, '../pkg/dash_wasm_sdk.js');
     let jsContent = fs.readFileSync(jsPath, 'utf8');
     
     // Replace import.meta.url with a file URL
@@ -40,7 +40,7 @@ async function loadWasmModule() {
     const loadedModule = await wasmModule;
     
     // Read and initialize WASM
-    const wasmPath = path.join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+    const wasmPath = path.join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
     const wasmBuffer = fs.readFileSync(wasmPath);
     
     // Initialize the module

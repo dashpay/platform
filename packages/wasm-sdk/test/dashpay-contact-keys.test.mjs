@@ -9,7 +9,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Load WASM module in main thread first
-const wasmBuffer = readFileSync(join(__dirname, '../pkg/wasm_sdk_bg.wasm'));
+const wasmBuffer = readFileSync(join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm'));
 
 // Test runner
 async function runTest() {

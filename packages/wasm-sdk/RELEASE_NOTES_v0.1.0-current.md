@@ -117,7 +117,7 @@ pkg/
 ├── error-handler.js         # Structured errors
 ├── types.d.ts              # TypeScript definitions
 ├── dash_wasm_sdk.js        # WASM bindings
-└── dash_wasm_sdk_bg.wasm   # WebAssembly binary
+└── dash_dash_wasm_sdk_bg.wasm   # WebAssembly binary
 ```
 
 ### Quality Assurance

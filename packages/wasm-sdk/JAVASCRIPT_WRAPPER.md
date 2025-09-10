@@ -75,8 +75,8 @@ if (!global.crypto) global.crypto = webcrypto;
 import WasmSDK from 'dash-wasm-sdk';
 
 // For CLI usage, you may need to manually load WASM binary
-import init from 'dash-wasm-sdk/pkg/dash_wasm_sdk.js';
-const wasmPath = join(__dirname, 'node_modules/dash-wasm-sdk/pkg/dash_wasm_sdk_bg.wasm');
+import init from "../pkg/dash_wasm_sdk.js"';
+const wasmPath = join(__dirname, 'node_modules/dash-wasm-sdk/pkg/dash_dash_wasm_sdk_bg.wasm');
 await init(readFileSync(wasmPath));
 ```
 

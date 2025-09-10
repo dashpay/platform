@@ -19,7 +19,7 @@ const __dirname = dirname(__filename);
 if (!global.crypto) global.crypto = webcrypto;
 
 // Pre-load WASM for Node.js
-import init from '../pkg/wasm_sdk.js';
+import init from '../pkg/dash_wasm_sdk.js';
 
 // Load environment configuration
 function loadEnv() {
@@ -120,7 +120,7 @@ async function main() {
     try {
         // Pre-load WASM for Node.js compatibility
         console.log('📦 Pre-loading WASM for Node.js...');
-        const wasmPath = join(__dirname, '../pkg/wasm_sdk_bg.wasm');
+        const wasmPath = join(__dirname, '../pkg/dash_wasm_sdk_bg.wasm');
         await init(readFileSync(wasmPath));
         
         console.log('📦 Initializing JavaScript wrapper...');
