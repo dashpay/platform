@@ -34,10 +34,10 @@ use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
+use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
@@ -148,219 +148,182 @@ impl DriveDocumentQueryFilter<'_> {
         document_transition: &DocumentTransition,
         batch_owner_value: Option<&Value>, // Only used for Purchase
     ) -> TransitionCheckResult {
-        match (&self.action_clauses, document_transition) {
-            // Create: evaluate final clauses only
-            (
-                DocumentActionMatchClauses::Create {
-                    new_document_clauses,
-                },
-                DocumentTransition::Create(create),
-            ) => {
-                // Ensure transition targets this filter's contract and document type
-                if create.base().data_contract_id() != self.contract.id()
-                    || create.base().document_type_name() != &self.document_type_name
-                {
-                    return TransitionCheckResult::Fail;
-                }
+        // Fast reject on contract/type mismatch common to all transitions
+        if document_transition.base().data_contract_id() != self.contract.id()
+            || document_transition.base().document_type_name() != &self.document_type_name
+        {
+            return TransitionCheckResult::Fail;
+        }
 
-                // Evaluate new-document clauses (if any)
-                let id_value: Value = create.base().id().into();
-                if self.evaluate_clauses(new_document_clauses, &id_value, create.data()) {
-                    TransitionCheckResult::Pass
+        // Document ID value used by clause evaluation paths
+        let id_value: Value = document_transition.base().id().into();
+
+        match document_transition {
+            DocumentTransition::Create(create) => {
+                if let DocumentActionMatchClauses::Create {
+                    new_document_clauses,
+                } = &self.action_clauses
+                {
+                    if self.evaluate_clauses(new_document_clauses, &id_value, create.data()) {
+                        TransitionCheckResult::Pass
+                    } else {
+                        TransitionCheckResult::Fail
+                    }
                 } else {
                     TransitionCheckResult::Fail
                 }
             }
-            // Replace: evaluate new-document clauses (if non-empty); if they pass,
-            // require original if `original_document_clauses` is non-empty and not primary-key-only.
-            (
-                DocumentActionMatchClauses::Replace {
+            DocumentTransition::Replace(replace) => {
+                if let DocumentActionMatchClauses::Replace {
                     original_document_clauses,
                     new_document_clauses,
-                },
-                DocumentTransition::Replace(replace),
-            ) => {
-                // Ensure transition targets this filter's contract and document type
-                if replace.base().data_contract_id() != self.contract.id()
-                    || replace.base().document_type_name() != &self.document_type_name
+                } = &self.action_clauses
                 {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Evaluate new-document clauses first (if any)
-                let id_value: Value = replace.base().id().into();
-                let final_ok = if new_document_clauses.is_empty() {
-                    true
+                    let final_ok = if new_document_clauses.is_empty() {
+                        true
+                    } else {
+                        self.evaluate_clauses(new_document_clauses, &id_value, replace.data())
+                    };
+                    if !final_ok {
+                        return TransitionCheckResult::Fail;
+                    }
+                    if original_document_clauses.is_empty() {
+                        return TransitionCheckResult::Pass;
+                    }
+                    if original_document_clauses.is_for_primary_key() {
+                        if self.evaluate_clauses(
+                            original_document_clauses,
+                            &id_value,
+                            &BTreeMap::new(),
+                        ) {
+                            return TransitionCheckResult::Pass;
+                        }
+                        return TransitionCheckResult::Fail;
+                    }
+                    TransitionCheckResult::NeedsOriginal
                 } else {
-                    self.evaluate_clauses(new_document_clauses, &id_value, replace.data())
-                };
-                if !final_ok {
-                    return TransitionCheckResult::Fail;
+                    TransitionCheckResult::Fail
                 }
-
-                // New clauses passed; gate on original-document clauses
-                if original_document_clauses.is_empty() {
-                    return TransitionCheckResult::Pass;
-                }
-                if original_document_clauses.is_for_primary_key() {
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
-                    {
-                        return TransitionCheckResult::Pass;
-                    }
-                    return TransitionCheckResult::Fail;
-                }
-                TransitionCheckResult::NeedsOriginal
             }
-            // Delete: needs original only if original_document_clauses reference fields.
-            // If clauses are empty or primary-key-only, we can decide without original.
-            (
-                DocumentActionMatchClauses::Delete {
+            DocumentTransition::Delete(_) => {
+                if let DocumentActionMatchClauses::Delete {
                     original_document_clauses,
-                },
-                DocumentTransition::Delete(delete),
-            ) => {
-                // Ensure transition targets this filter's contract and document type
-                if delete.base().data_contract_id() != self.contract.id()
-                    || delete.base().document_type_name() != &self.document_type_name
+                } = &self.action_clauses
                 {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Evaluate original-document clauses (if any)
-                let id_value: Value = delete.base().id().into();
-                if original_document_clauses.is_empty() {
-                    return TransitionCheckResult::Pass;
-                }
-                if original_document_clauses.is_for_primary_key() {
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
-                    {
+                    if original_document_clauses.is_empty() {
                         return TransitionCheckResult::Pass;
                     }
-                    return TransitionCheckResult::Fail;
+                    if original_document_clauses.is_for_primary_key() {
+                        if self.evaluate_clauses(
+                            original_document_clauses,
+                            &id_value,
+                            &BTreeMap::new(),
+                        ) {
+                            return TransitionCheckResult::Pass;
+                        }
+                        return TransitionCheckResult::Fail;
+                    }
+                    TransitionCheckResult::NeedsOriginal
+                } else {
+                    TransitionCheckResult::Fail
                 }
-                TransitionCheckResult::NeedsOriginal
             }
-            // Transfer: check owner (if any), then gate on original clauses
-            (
-                DocumentActionMatchClauses::Transfer {
+            DocumentTransition::Transfer(transfer) => {
+                if let DocumentActionMatchClauses::Transfer {
                     original_document_clauses,
                     owner_clause,
-                },
-                DocumentTransition::Transfer(transfer),
-            ) => {
-                // Check owner clause (if any)
-                let new_owner_value: Value = transfer.recipient_owner_id().into();
-                let owner_ok = match owner_clause {
-                    Some(clause) => clause.matches_value(&new_owner_value),
-                    None => true,
-                };
-                if !owner_ok {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Ensure transition targets this filter's contract and document type
-                if transfer.base().data_contract_id() != self.contract.id()
-                    || transfer.base().document_type_name() != &self.document_type_name
+                } = &self.action_clauses
                 {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Evaluate original-document clauses (if any)
-                let id_value: Value = transfer.base().id().into();
-                if original_document_clauses.is_empty() {
-                    return TransitionCheckResult::Pass;
-                }
-                if original_document_clauses.is_for_primary_key() {
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
-                    {
+                    let new_owner_value: Value = transfer.recipient_owner_id().into();
+                    let owner_ok = match owner_clause {
+                        Some(clause) => clause.matches_value(&new_owner_value),
+                        None => true,
+                    };
+                    if !owner_ok {
+                        return TransitionCheckResult::Fail;
+                    }
+                    if original_document_clauses.is_empty() {
                         return TransitionCheckResult::Pass;
                     }
-                    return TransitionCheckResult::Fail;
+                    if original_document_clauses.is_for_primary_key() {
+                        if self.evaluate_clauses(
+                            original_document_clauses,
+                            &id_value,
+                            &BTreeMap::new(),
+                        ) {
+                            return TransitionCheckResult::Pass;
+                        }
+                        return TransitionCheckResult::Fail;
+                    }
+                    TransitionCheckResult::NeedsOriginal
+                } else {
+                    TransitionCheckResult::Fail
                 }
-                TransitionCheckResult::NeedsOriginal
             }
-            // UpdatePrice: check price, then gate on original clauses
-            (
-                DocumentActionMatchClauses::UpdatePrice {
+            DocumentTransition::UpdatePrice(update_price) => {
+                if let DocumentActionMatchClauses::UpdatePrice {
                     original_document_clauses,
                     price_clause,
-                },
-                DocumentTransition::UpdatePrice(update_price),
-            ) => {
-                // Check price clause (if any)
-                let price_value = Value::U64(update_price.price());
-                let price_ok = match price_clause {
-                    Some(clause) => clause.matches_value(&price_value),
-                    None => true,
-                };
-                if !price_ok {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Ensure transition targets this filter's contract and document type
-                if update_price.base().data_contract_id() != self.contract.id()
-                    || update_price.base().document_type_name() != &self.document_type_name
+                } = &self.action_clauses
                 {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Evaluate original-document clauses (if any)
-                let id_value: Value = update_price.base().id().into();
-                if original_document_clauses.is_empty() {
-                    return TransitionCheckResult::Pass;
-                }
-                if original_document_clauses.is_for_primary_key() {
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
-                    {
+                    let price_value = Value::U64(update_price.price());
+                    let price_ok = match price_clause {
+                        Some(clause) => clause.matches_value(&price_value),
+                        None => true,
+                    };
+                    if !price_ok {
+                        return TransitionCheckResult::Fail;
+                    }
+                    if original_document_clauses.is_empty() {
                         return TransitionCheckResult::Pass;
                     }
-                    return TransitionCheckResult::Fail;
+                    if original_document_clauses.is_for_primary_key() {
+                        if self.evaluate_clauses(
+                            original_document_clauses,
+                            &id_value,
+                            &BTreeMap::new(),
+                        ) {
+                            return TransitionCheckResult::Pass;
+                        }
+                        return TransitionCheckResult::Fail;
+                    }
+                    TransitionCheckResult::NeedsOriginal
+                } else {
+                    TransitionCheckResult::Fail
                 }
-                TransitionCheckResult::NeedsOriginal
             }
-            // Purchase: check batch owner (if clause present, we must have a value), then gate on original
-            (
-                DocumentActionMatchClauses::Purchase {
+            DocumentTransition::Purchase(_) => {
+                if let DocumentActionMatchClauses::Purchase {
                     original_document_clauses,
                     owner_clause,
-                },
-                DocumentTransition::Purchase(purchase),
-            ) => {
-                // Check owner clause (if any)
-                let owner_ok = match (owner_clause, batch_owner_value) {
-                    (Some(clause), Some(val)) => clause.matches_value(val),
-                    (Some(_), None) => return TransitionCheckResult::Fail, // a required context is missing
-                    (None, _) => true,
-                };
-                if !owner_ok {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Ensure transition targets this filter's contract and document type
-                if purchase.base().data_contract_id() != self.contract.id()
-                    || purchase.base().document_type_name() != &self.document_type_name
+                } = &self.action_clauses
                 {
-                    return TransitionCheckResult::Fail;
-                }
-
-                // Evaluate original-document clauses (if any)
-                let id_value: Value = purchase.base().id().into();
-                if original_document_clauses.is_empty() {
-                    return TransitionCheckResult::Pass;
-                }
-                if original_document_clauses.is_for_primary_key() {
-                    if self.evaluate_clauses(original_document_clauses, &id_value, &BTreeMap::new())
-                    {
+                    let owner_ok = match (owner_clause, batch_owner_value) {
+                        (Some(clause), Some(val)) => clause.matches_value(val),
+                        (Some(_), None) => return TransitionCheckResult::Fail,
+                        (None, _) => true,
+                    };
+                    if !owner_ok {
+                        return TransitionCheckResult::Fail;
+                    }
+                    if original_document_clauses.is_empty() {
                         return TransitionCheckResult::Pass;
                     }
-                    return TransitionCheckResult::Fail;
+                    if original_document_clauses.is_for_primary_key() {
+                        if self.evaluate_clauses(
+                            original_document_clauses,
+                            &id_value,
+                            &BTreeMap::new(),
+                        ) {
+                            return TransitionCheckResult::Pass;
+                        }
+                        return TransitionCheckResult::Fail;
+                    }
+                    TransitionCheckResult::NeedsOriginal
+                } else {
+                    TransitionCheckResult::Fail
                 }
-                TransitionCheckResult::NeedsOriginal
             }
-            // Cross-action fallback: do not match. A subscription for a specific action
-            // (e.g., Purchase) must not match transitions of other actions even if the
-            // filter only targets the primary key.
-            _ => TransitionCheckResult::Fail,
         }
     }
 
