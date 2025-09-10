@@ -896,6 +896,7 @@ impl PlatformService for QueryService {
             loop {
                 tokio::select! {
                     cmd = inbound.message() => {
+                        tracing::debug!(inbound_message = ?cmd, "received inbound message");
                         match cmd {
                             Ok(Some(PlatformEventsCommand { version: Some(CmdVersion::V0(v0)) })) => {
                                 match v0.command {
@@ -995,6 +996,7 @@ async fn events_forwarding_worker(
     use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
 
     while let Some(evt) = subscription.recv().await {
+        tracing::debug!(event = ?evt, "forwarding event");
         let resp = PlatformEventsResponse {
             version: Some(RespVersion::V0(PlatformEventsResponseV0 {
                 response: Some(Resp::Event(
@@ -1006,6 +1008,7 @@ async fn events_forwarding_worker(
             })),
         };
         if forward_tx.send(Ok(resp)).is_err() {
+            tracing::warn!("client disconnected, stopping event forwarding");
             break;
         }
     }

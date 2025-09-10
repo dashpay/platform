@@ -234,13 +234,11 @@ impl PlatformEventsMux {
         &self,
         downstream_tx: mpsc::UnboundedSender<Result<PlatformEventsResponse, Status>>,
     ) -> PlatformEventsSession {
-        let (up_idx, upstream_tx) = self.choose_upstream();
+        let (_, upstream_tx) = self.choose_upstream();
         PlatformEventsSession {
             mux: self.clone(),
-            session_id: uuid::Uuid::new_v4().to_string(),
             downstream_tx,
             upstream_tx,
-            upstream_idx: up_idx,
             subscribed_ids: Arc::new(Mutex::new(std::collections::BTreeSet::new())),
             handles: Arc::new(Mutex::new(BTreeMap::new())),
         }
@@ -300,14 +298,10 @@ impl PlatformEventsMux {
 pub struct PlatformEventsSession {
     /// Shared upstream multiplexer used by this session.
     mux: PlatformEventsMux,
-    /// Unique per‑session identifier (UUID string).
-    session_id: String,
     /// Sender for responses to the public client stream.
     downstream_tx: mpsc::UnboundedSender<Result<PlatformEventsResponse, Status>>,
     /// Sender for commands to the chosen upstream connection.
     upstream_tx: mpsc::UnboundedSender<PlatformEventsCommand>,
-    /// Index of the upstream connection chosen for this session.
-    upstream_idx: usize,
     /// Per‑session set of active subscription IDs (UUIDs)
     subscribed_ids: Arc<Mutex<std::collections::BTreeSet<String>>>,
     /// EventBus handles per subscription id
@@ -594,7 +588,9 @@ pub fn spawn_client_command_processor(
     tokio::spawn(async move {
         use tokio_stream::StreamExt;
         loop {
-            match inbound.message().await {
+            let inbound_message = inbound.message().await;
+            tracing::debug!(?inbound_message, "platform_mux: received inbound message");
+            match inbound_message {
                 Ok(Some(PlatformEventsCommand {
                     version: Some(CmdVersion::V0(v0)),
                 })) => match v0.command {
