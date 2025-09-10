@@ -1,0 +1,42 @@
+{
+  "name": "wasm-sdk-funded-tests",
+  "version": "1.0.0",
+  "description": "Funded integration tests for WASM SDK using real testnet credits",
+  "private": true,
+  "scripts": {
+    "test": "../run-funded-tests.sh --tier low --confirm-safety",
+    "test:dry-run": "../run-funded-tests.sh --dry-run --verbose",
+    "test:low": "../run-funded-tests.sh --tier low --confirm-safety",
+    "test:medium": "../run-funded-tests.sh --tier medium --confirm-safety", 
+    "test:high": "../run-funded-tests.sh --tier high --confirm-safety",
+    "validate-config": "node utils/validate-funded-config.js",
+    "check-faucet": "node utils/check-faucet-balance.js",
+    "pool-status": "node utils/identity-pool-status.js",
+    "usage-report": "node utils/generate-usage-report.js",
+    "cleanup": "node utils/cleanup-test-resources.js"
+  },
+  "dependencies": {
+    "dash": "^3.25.0",
+    "dotenv": "^16.3.1",
+    "@playwright/test": "^1.54.1",
+    "nodeforage": "^1.0.1"
+  },
+  "devDependencies": {
+    "eslint": "^8.54.0"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "dash-platform",
+    "wasm-sdk", 
+    "integration-tests",
+    "funded-tests",
+    "testnet",
+    "credits"
+  ],
+  "funding": {
+    "type": "testnet-credits",
+    "warning": "These tests consume real testnet funds. Use with caution."
+  }
+}

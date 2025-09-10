@@ -1,0 +1,314 @@
+# Funded Testing Workflow for WASM SDK
+# ⚠️ WARNING: This workflow uses real testnet funds!
+# Only runs on manual trigger with explicit approval
+
+name: 💰 Funded Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      funding_tier:
+        description: 'Funding tier for tests'
+        required: true
+        default: 'low'
+        type: choice
+        options:
+          - low
+          - medium
+          - high
+      confirm_fund_usage:
+        description: 'Confirm you understand this uses real testnet funds'
+        required: true
+        type: boolean
+      max_budget:
+        description: 'Maximum budget in DASH (safety override)'
+        required: false
+        default: '10'
+        type: string
+      dry_run:
+        description: 'Dry run mode (validate config only)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  FORCE_COLOR: 3
+  CI: true
+
+jobs:
+  # Validation Job - Always runs first
+  validate-environment:
+    name: 🔍 Validate Environment
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    
+    outputs:
+      can-proceed: ${{ steps.validation.outputs.can-proceed }}
+      estimated-cost: ${{ steps.validation.outputs.estimated-cost }}
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🔐 Validate inputs
+        id: validation
+        run: |
+          echo "🔍 Validating funded test inputs..."
+          
+          # Validate confirmation
+          if [ "${{ github.event.inputs.confirm_fund_usage }}" != "true" ]; then
+            echo "❌ Fund usage not confirmed"
+            echo "can-proceed=false" >> $GITHUB_OUTPUT
+            exit 1
+          fi
+          
+          # Validate funding tier
+          case "${{ github.event.inputs.funding_tier }}" in
+            low) estimated_cost=10 ;;
+            medium) estimated_cost=50 ;;
+            high) estimated_cost=100 ;;
+            *) 
+              echo "❌ Invalid funding tier: ${{ github.event.inputs.funding_tier }}"
+              exit 1
+              ;;
+          esac
+          
+          echo "✅ Input validation passed"
+          echo "can-proceed=true" >> $GITHUB_OUTPUT
+          echo "estimated-cost=$estimated_cost" >> $GITHUB_OUTPUT
+          echo "Estimated cost: $estimated_cost DASH"
+
+  # Security Check Job
+  security-check:
+    name: 🛡️ Security Check
+    runs-on: ubuntu-latest
+    needs: validate-environment
+    if: needs.validate-environment.outputs.can-proceed == 'true'
+    timeout-minutes: 5
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 🔐 Verify repository security
+        run: |
+          echo "🔐 Performing security checks..."
+          
+          # Check if this is the correct repository
+          if [ "${{ github.repository }}" != "dashpay/platform" ] && [ "${{ github.repository }}" != "dashevo/platform" ]; then
+            echo "⚠️ Warning: Running funded tests on non-main repository"
+            echo "Repository: ${{ github.repository }}"
+          fi
+          
+          # Check branch safety
+          if [ "${{ github.ref_name }}" = "main" ] || [ "${{ github.ref_name }}" = "master" ]; then
+            echo "⚠️ Warning: Running funded tests on main branch"
+          fi
+          
+          # Verify environment
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "✅ Dry run mode - no funds will be used"
+          else
+            echo "🚨 LIVE MODE - Real funds will be used!"
+          fi
+          
+          echo "✅ Security check completed"
+
+  # Funded Tests Job - Only runs if validation passes
+  funded-tests:
+    name: 💰 Run Funded Tests
+    runs-on: ubuntu-latest
+    needs: [validate-environment, security-check]
+    if: needs.validate-environment.outputs.can-proceed == 'true'
+    timeout-minutes: 45
+    
+    strategy:
+      matrix:
+        test-type: ['identity-operations', 'document-operations']
+      fail-fast: true # Stop all tests if any critical test fails
+      
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+        
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          
+      - name: 📦 Install dependencies
+        working-directory: packages/wasm-sdk/test/funded
+        run: |
+          npm install
+          npx playwright install chromium
+          
+      - name: 🔧 Configure test environment
+        working-directory: packages/wasm-sdk/test
+        env:
+          FAUCET_1_ADDRESS: ${{ secrets.TESTNET_FAUCET_ADDRESS }}
+          FAUCET_1_PRIVATE_KEY: ${{ secrets.TESTNET_FAUCET_PRIVATE_KEY }}
+          FAUCET_2_ADDRESS: ${{ secrets.TESTNET_BACKUP_FAUCET_ADDRESS }}
+          FAUCET_2_PRIVATE_KEY: ${{ secrets.TESTNET_BACKUP_FAUCET_PRIVATE_KEY }}
+        run: |
+          # Create environment file for funded tests
+          cat > funded/.env << EOF
+          NETWORK=testnet
+          ENABLE_FUNDED_TESTS=true
+          
+          # Faucet configuration (from secrets)
+          FAUCET_1_ADDRESS=$FAUCET_1_ADDRESS
+          FAUCET_1_PRIVATE_KEY=$FAUCET_1_PRIVATE_KEY
+          FAUCET_2_ADDRESS=$FAUCET_2_ADDRESS
+          FAUCET_2_PRIVATE_KEY=$FAUCET_2_PRIVATE_KEY
+          
+          # CI-specific limits (conservative)
+          MAX_CREDITS_PER_TEST=25000000      # 25M credits (~0.25 DASH)
+          MAX_CREDITS_PER_SUITE=100000000    # 100M credits (~1 DASH)
+          MAX_DAILY_USAGE=1000000000         # 1B credits (~10 DASH)
+          
+          # Pool configuration (smaller for CI)
+          IDENTITY_POOL_SIZE=5
+          MIN_IDENTITY_BALANCE=5000000
+          INITIAL_IDENTITY_CREDITS=30000000
+          
+          # CI optimization
+          SKIP_SYNC_BEFORE_HEIGHT=1800000
+          FAUCET_WALLET_USE_STORAGE=false
+          PARALLEL_FUNDED_WORKERS=1
+          
+          # Safety and monitoring
+          EMERGENCY_STOP_ON_ERROR=true
+          MAX_CONSECUTIVE_FAILURES=2
+          ENABLE_CREDIT_TRACKING=true
+          DRY_RUN_FUNDING=${{ github.event.inputs.dry_run }}
+          
+          # CI-specific
+          ALLOW_FUNDED_CI=true
+          CI_MODE=true
+          FUNDING_TIER=${{ github.event.inputs.funding_tier }}
+          EOF
+          
+          echo "✅ Funded test environment configured"
+          
+      - name: 🚰 Validate faucet configuration
+        working-directory: packages/wasm-sdk/test/funded
+        if: github.event.inputs.dry_run == 'false'
+        run: |
+          echo "🚰 Validating faucet access..."
+          
+          # Basic configuration check
+          if [ -z "${{ secrets.TESTNET_FAUCET_ADDRESS }}" ]; then
+            echo "❌ TESTNET_FAUCET_ADDRESS secret not configured"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.TESTNET_FAUCET_PRIVATE_KEY }}" ]; then
+            echo "❌ TESTNET_FAUCET_PRIVATE_KEY secret not configured"  
+            exit 1
+          fi
+          
+          echo "✅ Faucet configuration secrets present"
+          echo "🏦 Faucet: ${{ secrets.TESTNET_FAUCET_ADDRESS }}"
+          
+      - name: 💰 Run funded tests
+        working-directory: packages/wasm-sdk/test
+        run: |
+          echo "💰 Starting funded tests..."
+          echo "Tier: ${{ github.event.inputs.funding_tier }}"
+          echo "Max Budget: ${{ github.event.inputs.max_budget }} DASH"
+          echo "Dry Run: ${{ github.event.inputs.dry_run }}"
+          
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            ./run-funded-tests.sh --tier ${{ github.event.inputs.funding_tier }} --dry-run --verbose --confirm-safety
+          else
+            ./run-funded-tests.sh --tier ${{ github.event.inputs.funding_tier }} --verbose --confirm-safety
+          fi
+          
+      - name: 📊 Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: funded-test-results-${{ matrix.test-type }}
+          path: |
+            packages/wasm-sdk/test/funded/test-results-archive/
+            packages/wasm-sdk/test/funded/logs/
+          retention-days: 30
+          
+      - name: 📋 Comment on PR with funding report
+        uses: actions/github-script@v6
+        if: github.event_name == 'pull_request' && github.event.inputs.dry_run == 'false'
+        with:
+          script: |
+            // Create funding usage report comment
+            const tier = '${{ github.event.inputs.funding_tier }}';
+            const estimatedCost = '${{ needs.validate-environment.outputs.estimated-cost }}';
+            
+            const comment = `## 💰 Funded Test Results
+            
+            | Metric | Value |
+            |--------|-------|
+            | **Funding Tier** | ${tier} |
+            | **Estimated Cost** | ~${estimatedCost} DASH |
+            | **Network** | testnet |
+            | **Test Type** | ${{ matrix.test-type }} |
+            | **Status** | ${{ job.status }} |
+            
+            🔗 **Detailed Reports**: Check the "funded-test-results" artifacts
+            
+            ⚠️ **Important**: This test run consumed actual testnet funds.
+            
+            📊 **Usage Tracking**: Detailed credit usage logs are available in the artifacts.
+            
+            _Generated by WASM SDK funded test suite_`;
+            
+            if (context.payload.pull_request) {
+              github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+  # Summary Job
+  test-summary:
+    name: 📊 Test Summary
+    runs-on: ubuntu-latest
+    needs: [validate-environment, funded-tests]
+    if: always()
+    timeout-minutes: 5
+    
+    steps:
+      - name: 📊 Generate test summary
+        run: |
+          echo "💰 Funded Test Summary"
+          echo "====================="
+          echo "Tier: ${{ github.event.inputs.funding_tier }}"
+          echo "Estimated Cost: ${{ needs.validate-environment.outputs.estimated-cost }} DASH"
+          echo "Dry Run: ${{ github.event.inputs.dry_run }}"
+          echo "Status: ${{ needs.funded-tests.result }}"
+          echo ""
+          
+          if [ "${{ needs.funded-tests.result }}" = "success" ]; then
+            echo "✅ All funded tests completed successfully"
+          else
+            echo "❌ Some funded tests failed - check artifacts"
+          fi
+          
+          echo ""
+          echo "📁 Available Artifacts:"
+          echo "  - Detailed test results"
+          echo "  - Credit usage logs"
+          echo "  - Performance metrics"
+          echo "  - Error reports (if any)"
+          
+      - name: 🔔 Notify on failure
+        if: failure() && github.event.inputs.dry_run == 'false'
+        run: |
+          echo "🚨 Funded tests failed!"
+          echo "This may have resulted in lost testnet funds."
+          echo "Please review the test logs and investigate."
+          
+          # Additional notification logic could be added here
+          # (Slack, email, etc.)
