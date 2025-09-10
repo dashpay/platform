@@ -368,8 +368,6 @@ impl DriveDocumentQueryFilter<'_> {
         }
     }
 
-    // Note: tests use `evaluate_clauses` directly for unit coverage of clause logic.
-
     /// Single clause evaluator used by both transition and original-document paths.
     #[cfg(any(feature = "server", feature = "verify"))]
     fn evaluate_clauses(
