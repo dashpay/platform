@@ -751,7 +751,7 @@ const result = await sdk.{transition_name}(identityHex, ...params, privateKeyHex
 
 #### Identity Transitions
 
-**Identity Create** - `identityCreate`
+**Identity Create** - `createIdentity`
 *Create a new identity with initial credits*
 
 Parameters:
@@ -790,7 +790,7 @@ const publicKeys = JSON.stringify([
   }
 ]);
 
-const result = await sdk.identityCreate(assetLockProof, assetLockProofPrivateKey, publicKeys);
+const result = await sdk.createIdentity(assetLockProof, assetLockProofPrivateKey, publicKeys);
 ```
 
 **Identity Top Up** - `identityTopUp`
@@ -854,7 +854,7 @@ const result = await sdk.identityCreditWithdrawal(identityHex, /* params */, pri
 
 #### Data Contract Transitions
 
-**Data Contract Create** - `dataContractCreate`
+**Data Contract Create** - `createDataContract`
 *Create a new data contract*
 
 Parameters (in addition to identity/key):
@@ -890,7 +890,7 @@ Parameters (in addition to identity/key):
 
 Example:
 ```javascript
-const result = await sdk.dataContractCreate(identityHex, /* params */, privateKeyHex);
+const result = await sdk.createDataContract(identityHex, /* params */, privateKeyHex);
 ```
 
 **Data Contract Update** - `dataContractUpdate`
@@ -925,7 +925,7 @@ const result = await sdk.dataContractUpdate(identityHex, /* params */, privateKe
 
 #### Document Transitions
 
-**Document Create** - `documentCreate`
+**Document Create** - `createDocument`
 *Create a new document*
 
 Parameters (in addition to identity/key):
@@ -936,7 +936,7 @@ Parameters (in addition to identity/key):
 
 Example:
 ```javascript
-const result = await sdk.document_create(
+const result = await sdk.createDocument(
     identityHex,
     contractId,
     "note",

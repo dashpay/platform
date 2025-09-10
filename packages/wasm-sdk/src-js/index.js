@@ -210,9 +210,17 @@ export class WasmSDK {
     }
 
     // Identity State Transitions
-    async identityCreate(assetLockProof, assetLockPrivateKey, publicKeys) {
+    async createIdentity(assetLockProof, assetLockPrivateKey, publicKeys) {
         this._ensureInitialized();
         return this.identityService.createIdentity(assetLockProof, assetLockPrivateKey, publicKeys);
+    }
+
+    // Backward compatibility alias - deprecated
+    async identityCreate(assetLockProof, assetLockPrivateKey, publicKeys) {
+        if (this.configManager.getDebug()) {
+            console.warn('identityCreate is deprecated. Use createIdentity instead.');
+        }
+        return this.createIdentity(assetLockProof, assetLockPrivateKey, publicKeys);
     }
 
     async identityTopUp(identityId, assetLockProof, assetLockPrivateKey) {
@@ -242,9 +250,17 @@ export class WasmSDK {
         return this.documentService.getDocument(contractId, documentType, documentId);
     }
 
-    async documentCreate(mnemonic, identityId, contractId, documentType, documentData, keyIndex) {
+    async createDocument(mnemonic, identityId, contractId, documentType, documentData, keyIndex) {
         this._ensureInitialized();
         return this.documentService.createDocument(mnemonic, identityId, contractId, documentType, documentData, keyIndex);
+    }
+
+    // Backward compatibility alias - deprecated
+    async documentCreate(mnemonic, identityId, contractId, documentType, documentData, keyIndex) {
+        if (this.configManager.getDebug()) {
+            console.warn('documentCreate is deprecated. Use createDocument instead.');
+        }
+        return this.createDocument(mnemonic, identityId, contractId, documentType, documentData, keyIndex);
     }
 
     async documentUpdate(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex) {
@@ -259,9 +275,17 @@ export class WasmSDK {
         return this.contractService.getDataContract(contractId);
     }
 
-    async dataContractCreate(mnemonic, identityId, contractDefinition, keyIndex) {
+    async createDataContract(mnemonic, identityId, contractDefinition, keyIndex) {
         this._ensureInitialized();
         return this.contractService.createDataContract(mnemonic, identityId, contractDefinition, keyIndex);
+    }
+
+    // Backward compatibility alias - deprecated
+    async dataContractCreate(mnemonic, identityId, contractDefinition, keyIndex) {
+        if (this.configManager.getDebug()) {
+            console.warn('dataContractCreate is deprecated. Use createDataContract instead.');
+        }
+        return this.createDataContract(mnemonic, identityId, contractDefinition, keyIndex);
     }
 
     async dataContractUpdate(mnemonic, identityId, contractId, updateDefinition, keyIndex) {

@@ -1,1 +1,0 @@
-{"wallet_d21837966a":{"version":3,"chains":{"testnet":{"chainHeight":0,"blockHeaders":[],"transactions":{},"txMetadata":{},"fees":{"minRelay":-1},"lastSyncedHeaderHeight":-6,"lastSyncedBlockHeight":-6,"headersMetadata":{}}},"unsafeOptions":{"skipSynchronizationBeforeHeight":1800000}}}
