@@ -72,6 +72,9 @@ macro_rules! drive_method {
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
+use rs_dash_notify::platform_mux::{PlatformEventsMux, PlatformMuxSettings};
+use rs_dapi_client::AddressList;
+use std::str::FromStr;
 
 /// Platform service implementation with modular method delegation
 #[derive(Clone)]
@@ -82,6 +85,7 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
+    pub platform_events_mux: PlatformEventsMux,
 }
 
 impl PlatformServiceImpl {
@@ -107,6 +111,15 @@ impl PlatformServiceImpl {
             .add_subscription(FilterType::PlatformAllBlocks)
             .await;
 
+        // Initialize shared PlatformEventsMux for Drive streaming
+        let addresses = AddressList::from_str(&config.dapi.drive.uri)
+            .expect("invalid drive uri for platform mux");
+        let settings = PlatformMuxSettings {
+            upstream_conn_count: 2,
+        };
+        let platform_events_mux =
+            PlatformEventsMux::new(addresses, settings).expect("failed to init platform mux");
+
         Self {
             drive_client,
             tenderdash_client,
@@ -114,6 +127,7 @@ impl PlatformServiceImpl {
             config,
             platform_cache: crate::cache::LruResponseCache::new(1024, invalidation_subscription),
             subscriber_manager,
+            platform_events_mux,
         }
     }
 }
