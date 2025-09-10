@@ -1,12 +1,13 @@
 /**
- * Resource management for WASM SDK
- * Handles WASM memory management and resource cleanup
+ * Simplified Resource management for WASM SDK
+ * Focuses on explicit resource tracking with guaranteed cleanup
  */
 
-import { WasmOperationError, ErrorUtils } from './error-handler.js';
+import { WasmOperationError } from './error-handler.js';
 
 /**
- * Resource manager class for handling WASM objects and memory
+ * Simplified resource manager class for handling WASM objects and memory
+ * Removed complex auto-registration and wrapping features
  */
 export class ResourceManager {
     /**
@@ -17,7 +18,7 @@ export class ResourceManager {
         this.resourceCounter = 0;
         this.destroyed = false;
         
-        // Bind cleanup to process events
+        // Bind cleanup to process events for Node.js
         if (typeof process !== 'undefined') {
             process.on('exit', () => this.destroy());
             process.on('SIGINT', () => this.destroy());
@@ -32,10 +33,10 @@ export class ResourceManager {
     }
 
     /**
-     * Register a WASM resource for management
+     * Register a WASM resource for explicit management
      * @param {*} resource - WASM resource to manage
      * @param {string} type - Resource type for debugging
-     * @param {Function} cleanupFn - Custom cleanup function
+     * @param {Function} cleanupFn - Custom cleanup function (optional)
      * @returns {string} Resource ID for tracking
      */
     register(resource, type = 'unknown', cleanupFn = null) {
@@ -86,9 +87,9 @@ export class ResourceManager {
     }
 
     /**
-     * Release a specific resource
+     * Release a specific resource with proper error handling
      * @param {string} resourceId - Resource ID to release
-     * @returns {boolean} True if resource was released
+     * @returns {boolean} True if resource was successfully released
      */
     release(resourceId) {
         const resourceInfo = this.resources.get(resourceId);
@@ -96,190 +97,150 @@ export class ResourceManager {
             return false;
         }
         
+        let cleanupSuccess = false;
+        let cleanupError = null;
+        
         try {
             // Call custom cleanup function if provided
             if (resourceInfo.cleanupFn && typeof resourceInfo.cleanupFn === 'function') {
                 resourceInfo.cleanupFn(resourceInfo.resource);
-            }
-            
-            // Call standard WASM cleanup methods if available
-            if (resourceInfo.resource && typeof resourceInfo.resource.free === 'function') {
-                resourceInfo.resource.free();
-            } else if (resourceInfo.resource && typeof resourceInfo.resource.destroy === 'function') {
-                resourceInfo.resource.destroy();
-            } else if (resourceInfo.resource && typeof resourceInfo.resource.dispose === 'function') {
-                resourceInfo.resource.dispose();
+                cleanupSuccess = true;
+            } else {
+                // Try standard WASM cleanup methods in order of preference
+                cleanupSuccess = this._performStandardCleanup(resourceInfo.resource);
             }
         } catch (error) {
-            // Log cleanup errors but don't throw - we still want to remove the resource
-            console.warn(`Error cleaning up resource ${resourceId}:`, error);
+            cleanupError = error;
+            // Track cleanup failure but don't throw - still remove from tracking
         }
         
+        // Always remove from tracking to prevent retry loops
         this.resources.delete(resourceId);
-        return true;
+        
+        // Log cleanup failures for monitoring
+        if (!cleanupSuccess && cleanupError) {
+            console.error(`Resource cleanup failed for ${resourceId}:`, cleanupError.message);
+            // Could add metrics collection here
+        }
+        
+        return cleanupSuccess;
     }
 
     /**
      * Release all resources of a specific type
      * @param {string} type - Resource type to release
-     * @returns {number} Number of resources released
+     * @returns {Object} Cleanup results { total: number, successful: number, failed: number }
      */
     releaseByType(type) {
-        let released = 0;
+        const results = { total: 0, successful: 0, failed: 0 };
         
         for (const [resourceId, resourceInfo] of this.resources.entries()) {
             if (resourceInfo.type === type) {
+                results.total++;
                 if (this.release(resourceId)) {
-                    released++;
+                    results.successful++;
+                } else {
+                    results.failed++;
                 }
             }
         }
         
-        return released;
+        return results;
     }
 
     /**
-     * Get resource information
-     * @param {string} resourceId - Resource ID
-     * @returns {Object|null} Resource information or null if not found
+     * Execute operation with explicit resource cleanup using try-finally
+     * Simplified version without auto-registration complexity
+     * @param {Function} operation - Operation to execute
+     * @param {Array} managedResources - Resources to cleanup after operation
+     * @returns {Promise<*>} Operation result
      */
-    getResourceInfo(resourceId) {
-        const resourceInfo = this.resources.get(resourceId);
-        if (!resourceInfo) {
-            return null;
-        }
+    async executeWithCleanup(operation, managedResources = []) {
+        const resources = [...managedResources]; // Copy to avoid mutation
         
-        return {
-            id: resourceId,
-            type: resourceInfo.type,
-            createdAt: resourceInfo.createdAt,
-            lastAccessed: resourceInfo.lastAccessed,
-            age: Date.now() - resourceInfo.createdAt,
-            timeSinceAccess: Date.now() - resourceInfo.lastAccessed
-        };
+        try {
+            const result = await operation();
+            
+            // Only add to cleanup list if operation succeeded
+            if (this._isWasmResource(result)) {
+                const resourceId = this.register(result, 'operation_result');
+                resources.push(resourceId);
+            }
+            
+            return result;
+        } finally {
+            // ALWAYS cleanup registered resources, even on errors
+            resources.forEach(resourceId => {
+                if (typeof resourceId === 'string') {
+                    this.release(resourceId);
+                } else if (this._isWasmResource(resourceId)) {
+                    // Direct resource cleanup
+                    this._performStandardCleanup(resourceId);
+                }
+            });
+        }
     }
 
     /**
-     * Get statistics about managed resources
+     * Get basic resource statistics
      * @returns {Object} Resource statistics
      */
     getStats() {
         const stats = {
             totalResources: this.resources.size,
             byType: {},
-            oldestResource: null,
-            newestResource: null,
-            totalAge: 0
+            oldestResourceAge: 0,
+            newestResourceAge: 0
         };
         
         let oldestTime = Infinity;
         let newestTime = 0;
+        const now = Date.now();
         
         for (const [resourceId, resourceInfo] of this.resources.entries()) {
             // Count by type
             stats.byType[resourceInfo.type] = (stats.byType[resourceInfo.type] || 0) + 1;
             
-            // Track oldest and newest
+            // Track ages
             if (resourceInfo.createdAt < oldestTime) {
                 oldestTime = resourceInfo.createdAt;
-                stats.oldestResource = {
-                    id: resourceId,
-                    type: resourceInfo.type,
-                    createdAt: resourceInfo.createdAt
-                };
+                stats.oldestResourceAge = now - resourceInfo.createdAt;
             }
             
             if (resourceInfo.createdAt > newestTime) {
                 newestTime = resourceInfo.createdAt;
-                stats.newestResource = {
-                    id: resourceId,
-                    type: resourceInfo.type,
-                    createdAt: resourceInfo.createdAt
-                };
+                stats.newestResourceAge = now - resourceInfo.createdAt;
             }
-            
-            stats.totalAge += Date.now() - resourceInfo.createdAt;
         }
-        
-        stats.averageAge = stats.totalResources > 0 ? stats.totalAge / stats.totalResources : 0;
         
         return stats;
     }
 
     /**
-     * Clean up stale resources based on age or access time
+     * Clean up stale resources based on age
      * @param {Object} options - Cleanup options
-     * @param {number} options.maxAge - Maximum age in milliseconds
-     * @param {number} options.maxIdleTime - Maximum idle time in milliseconds
-     * @returns {number} Number of resources cleaned up
+     * @param {number} options.maxAge - Maximum age in milliseconds (default: 10 minutes)
+     * @returns {Object} Cleanup results
      */
     cleanup(options = {}) {
-        const { maxAge = 300000, maxIdleTime = 60000 } = options; // 5 minutes max age, 1 minute max idle
-        let cleanedUp = 0;
+        const { maxAge = 600000 } = options; // 10 minutes default
         const now = Date.now();
+        const results = { total: 0, cleaned: 0, failed: 0 };
         
         for (const [resourceId, resourceInfo] of this.resources.entries()) {
             const age = now - resourceInfo.createdAt;
-            const idleTime = now - resourceInfo.lastAccessed;
             
-            if (age > maxAge || idleTime > maxIdleTime) {
+            if (age > maxAge) {
+                results.total++;
                 if (this.release(resourceId)) {
-                    cleanedUp++;
+                    results.cleaned++;
+                } else {
+                    results.failed++;
                 }
             }
         }
         
-        return cleanedUp;
-    }
-
-    /**
-     * Wrap a WASM operation to automatically manage its resources
-     * @param {Function} operation - WASM operation to wrap
-     * @param {string} operationType - Operation type for error context
-     * @param {Object} options - Wrapping options
-     * @returns {Function} Wrapped operation
-     */
-    wrapOperation(operation, operationType, options = {}) {
-        const { autoRegister = true, cleanup = true } = options;
-        
-        return async (...args) => {
-            const resourceIds = [];
-            
-            try {
-                const result = await operation(...args);
-                
-                // Auto-register result if it looks like a WASM resource
-                if (autoRegister && result && typeof result === 'object') {
-                    if (typeof result.free === 'function' || 
-                        typeof result.destroy === 'function' || 
-                        typeof result.dispose === 'function') {
-                        const resourceId = this.register(result, operationType);
-                        resourceIds.push(resourceId);
-                    }
-                }
-                
-                return result;
-            } catch (error) {
-                // Clean up any resources that were created during the failed operation
-                if (cleanup) {
-                    resourceIds.forEach(id => this.release(id));
-                }
-                
-                throw ErrorUtils.createAsyncErrorHandler(operationType)(error);
-            }
-        };
-    }
-
-    /**
-     * Create a managed promise that cleans up resources on completion
-     * @param {Promise} promise - Promise to manage
-     * @param {string[]} resourceIds - Resource IDs to clean up
-     * @returns {Promise} Managed promise
-     */
-    managedPromise(promise, resourceIds = []) {
-        return promise.finally(() => {
-            resourceIds.forEach(id => this.release(id));
-        });
+        return results;
     }
 
     /**
@@ -294,18 +255,23 @@ export class ResourceManager {
         
         // Release all managed resources
         const resourceIds = Array.from(this.resources.keys());
-        let cleanedUp = 0;
+        const results = { total: resourceIds.length, successful: 0, failed: 0 };
         
         for (const resourceId of resourceIds) {
             if (this.release(resourceId)) {
-                cleanedUp++;
+                results.successful++;
+            } else {
+                results.failed++;
             }
         }
         
         this.resources.clear();
         
-        if (cleanedUp > 0) {
-            console.debug(`ResourceManager destroyed, cleaned up ${cleanedUp} resources`);
+        if (results.total > 0) {
+            console.debug(`ResourceManager destroyed: ${results.successful}/${results.total} resources cleaned successfully`);
+            if (results.failed > 0) {
+                console.warn(`ResourceManager: ${results.failed} resources failed to cleanup`);
+            }
         }
     }
 
@@ -318,7 +284,7 @@ export class ResourceManager {
     }
 
     /**
-     * Get all resource IDs
+     * Get all resource IDs (for debugging)
      * @returns {string[]} Array of resource IDs
      */
     getAllResourceIds() {
@@ -326,7 +292,7 @@ export class ResourceManager {
     }
 
     /**
-     * Get resources by type
+     * Get resources by type (for debugging)
      * @param {string} type - Resource type
      * @returns {string[]} Array of resource IDs of the specified type
      */
@@ -341,16 +307,56 @@ export class ResourceManager {
         
         return resourceIds;
     }
+
+    // ========== Private Helper Methods ==========
+
+    /**
+     * Perform standard WASM cleanup methods
+     * @private
+     * @param {*} resource - Resource to cleanup
+     * @returns {boolean} True if cleanup was successful
+     */
+    _performStandardCleanup(resource) {
+        if (!resource || typeof resource !== 'object') {
+            return false;
+        }
+        
+        try {
+            // Try cleanup methods in order of preference
+            if (typeof resource.free === 'function') {
+                resource.free();
+                return true;
+            } else if (typeof resource.destroy === 'function') {
+                resource.destroy();
+                return true;
+            } else if (typeof resource.dispose === 'function') {
+                resource.dispose();
+                return true;
+            }
+            
+            return false; // No cleanup method found
+        } catch (error) {
+            return false; // Cleanup failed
+        }
+    }
+
+    /**
+     * Check if an object looks like a WASM resource
+     * @private
+     * @param {*} obj - Object to check
+     * @returns {boolean} True if it looks like a WASM resource
+     */
+    _isWasmResource(obj) {
+        return obj && 
+               typeof obj === 'object' && 
+               (typeof obj.free === 'function' || 
+                typeof obj.destroy === 'function' || 
+                typeof obj.dispose === 'function');
+    }
 }
 
 /**
- * Global resource manager instance
- * Can be used when a single global instance is sufficient
- */
-export const globalResourceManager = new ResourceManager();
-
-/**
- * Resource management utilities
+ * Resource management utilities - simplified
  */
 export const ResourceUtils = {
     /**
@@ -374,29 +380,66 @@ export const ResourceUtils = {
     createCleanupFunction: (method = 'free') => {
         return (resource) => {
             if (resource && typeof resource[method] === 'function') {
-                resource[method]();
+                try {
+                    resource[method]();
+                    return true;
+                } catch (error) {
+                    console.warn(`Cleanup method ${method} failed:`, error.message);
+                    return false;
+                }
             }
+            return false;
         };
     },
 
     /**
-     * Auto-detect and create appropriate cleanup function
-     * @param {*} resource - Resource to create cleanup for
-     * @returns {Function|null} Cleanup function or null if none needed
+     * Execute operation with guaranteed cleanup
+     * @param {Function} operation - Operation to execute
+     * @param {Array} resources - Resources to cleanup
+     * @returns {Promise<*>} Operation result
      */
-    detectCleanupFunction: (resource) => {
-        if (!ResourceUtils.isWasmResource(resource)) {
-            return null;
+    withCleanup: async (operation, resources = []) => {
+        try {
+            return await operation();
+        } finally {
+            resources.forEach(resource => {
+                if (ResourceUtils.isWasmResource(resource)) {
+                    try {
+                        if (resource.free) resource.free();
+                        else if (resource.destroy) resource.destroy();
+                        else if (resource.dispose) resource.dispose();
+                    } catch (error) {
+                        console.warn('Resource cleanup failed:', error);
+                    }
+                }
+            });
         }
-        
-        if (typeof resource.free === 'function') {
-            return ResourceUtils.createCleanupFunction('free');
-        } else if (typeof resource.destroy === 'function') {
-            return ResourceUtils.createCleanupFunction('destroy');
-        } else if (typeof resource.dispose === 'function') {
-            return ResourceUtils.createCleanupFunction('dispose');
-        }
-        
-        return null;
     }
+};
+
+/**
+ * Add a compatibility method to ResourceManager for existing API usage
+ */
+ResourceManager.prototype.wrapOperation = function(operation, operationName, options = {}) {
+    const { autoRegister = false } = options;
+    
+    return async (...args) => {
+        const resources = [];
+        
+        try {
+            const result = await operation(...args);
+            
+            // Auto-register result if requested and it's a WASM resource
+            if (autoRegister && this._isWasmResource(result)) {
+                const resourceId = this.register(result, operationName);
+                resources.push(resourceId);
+            }
+            
+            return result;
+        } catch (error) {
+            // Clean up any resources that were registered during the failed operation
+            resources.forEach(resourceId => this.release(resourceId));
+            throw error;
+        }
+    };
 };

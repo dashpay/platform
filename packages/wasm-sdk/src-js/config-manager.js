@@ -1,28 +1,12 @@
 /**
- * Configuration management and validation for WASM SDK
- * Handles network configuration, transport settings, and parameter validation
+ * Simplified Configuration management for WASM SDK
+ * Handles essential configuration with security focus, delegates endpoint discovery to WASM SDK
  */
 
-import { WasmConfigurationError, ErrorUtils } from './error-handler.js';
+import { WasmConfigurationError } from './error-handler.js';
 
 /**
- * Default endpoints for different networks
- */
-const DEFAULT_ENDPOINTS = {
-    testnet: [
-        'https://52.12.176.90:1443/',
-        'https://54.191.132.137:1443/',
-        'https://18.144.106.20:1443/'
-    ],
-    mainnet: [
-        'https://54.186.248.81:1443/',
-        'https://52.12.176.90:1443/',
-        'https://54.191.132.137:1443/'
-    ]
-};
-
-/**
- * Default configuration values
+ * Default configuration values - simplified and essential only
  */
 const DEFAULT_CONFIG = {
     network: 'testnet',
@@ -31,69 +15,13 @@ const DEFAULT_CONFIG = {
     transport: {
         timeout: 30000,
         retries: 3,
-        retryDelay: 1000,
-        keepAlive: true
+        retryDelay: 1000
     }
 };
 
 /**
- * Configuration schema for validation
- */
-const CONFIG_SCHEMA = {
-    network: {
-        type: 'string',
-        enum: ['testnet', 'mainnet'],
-        required: false
-    },
-    proofs: {
-        type: 'boolean',
-        required: false
-    },
-    debug: {
-        type: 'boolean',
-        required: false
-    },
-    transport: {
-        type: 'object',
-        required: false,
-        properties: {
-            url: {
-                type: 'string',
-                required: false
-            },
-            urls: {
-                type: 'array',
-                items: { type: 'string' },
-                required: false
-            },
-            timeout: {
-                type: 'number',
-                min: 1000,
-                max: 300000,
-                required: false
-            },
-            retries: {
-                type: 'number',
-                min: 0,
-                max: 10,
-                required: false
-            },
-            retryDelay: {
-                type: 'number',
-                min: 100,
-                max: 10000,
-                required: false
-            },
-            keepAlive: {
-                type: 'boolean',
-                required: false
-            }
-        }
-    }
-};
-
-/**
- * Configuration manager class
+ * Simplified Configuration manager class
+ * Focuses on essential validation and delegates endpoint management to WASM SDK
  */
 export class ConfigManager {
     /**
@@ -102,8 +30,7 @@ export class ConfigManager {
      */
     constructor(userConfig = {}) {
         this.config = this._mergeConfig(userConfig);
-        this._validateConfig(this.config);
-        this._resolveEndpoints();
+        this._validateEssentials();
     }
 
     /**
@@ -147,19 +74,19 @@ export class ConfigManager {
     }
 
     /**
-     * Get primary endpoint URL
-     * @returns {string} Primary endpoint URL
+     * Get custom endpoint if provided by user
+     * @returns {string|null} Custom endpoint URL or null
      */
-    getPrimaryEndpoint() {
-        return this.config.transport.urls[0];
+    getCustomEndpoint() {
+        return this.config.transport.customEndpoint || null;
     }
 
     /**
-     * Get all endpoint URLs
-     * @returns {string[]} All endpoint URLs
+     * Check if user provided a custom endpoint
+     * @returns {boolean} True if custom endpoint provided
      */
-    getAllEndpoints() {
-        return [...this.config.transport.urls];
+    hasCustomEndpoint() {
+        return !!this.config.transport.customEndpoint;
     }
 
     /**
@@ -168,204 +95,156 @@ export class ConfigManager {
      */
     updateConfig(updates) {
         const newConfig = this._mergeConfig(updates, this.config);
-        this._validateConfig(newConfig);
+        this._validateEssentials(newConfig);
         this.config = newConfig;
-        this._resolveEndpoints();
     }
 
     /**
-     * Merge user configuration with defaults
+     * Merge user configuration with defaults using efficient shallow merge
      * @private
      * @param {Object} userConfig - User configuration
      * @param {Object} baseConfig - Base configuration to merge with
      * @returns {Object} Merged configuration
      */
     _mergeConfig(userConfig, baseConfig = DEFAULT_CONFIG) {
-        const merged = JSON.parse(JSON.stringify(baseConfig));
-        
-        if (userConfig.network !== undefined) {
-            merged.network = userConfig.network;
-        }
-        
-        if (userConfig.proofs !== undefined) {
-            merged.proofs = userConfig.proofs;
-        }
-        
-        if (userConfig.debug !== undefined) {
-            merged.debug = userConfig.debug;
-        }
-        
-        if (userConfig.transport) {
-            merged.transport = { ...merged.transport, ...userConfig.transport };
-        }
-        
-        return merged;
+        // Efficient shallow merge instead of expensive JSON deep clone
+        return {
+            network: userConfig.network || baseConfig.network,
+            proofs: userConfig.proofs !== undefined ? userConfig.proofs : baseConfig.proofs,
+            debug: userConfig.debug !== undefined ? userConfig.debug : baseConfig.debug,
+            transport: {
+                ...baseConfig.transport,
+                ...userConfig.transport,
+                // Handle custom endpoint from user's transport.url (check for undefined, not falsy)
+                customEndpoint: userConfig.transport?.url !== undefined ? userConfig.transport.url : baseConfig.transport?.customEndpoint
+            }
+        };
     }
 
     /**
-     * Validate configuration against schema
+     * Validate essential configuration - simplified and security-focused
      * @private
-     * @param {Object} config - Configuration to validate
+     * @param {Object} config - Configuration to validate (optional, uses this.config if not provided)
      * @throws {WasmConfigurationError} If configuration is invalid
      */
-    _validateConfig(config) {
-        this._validateObject(config, CONFIG_SCHEMA, '');
-    }
-
-    /**
-     * Validate an object against a schema
-     * @private
-     * @param {*} value - Value to validate
-     * @param {Object} schema - Schema to validate against
-     * @param {string} path - Current path for error reporting
-     */
-    _validateObject(value, schema, path) {
-        for (const [key, fieldSchema] of Object.entries(schema)) {
-            const fieldPath = path ? `${path}.${key}` : key;
-            const fieldValue = value[key];
-            
-            // Check required fields
-            if (fieldSchema.required && (fieldValue === undefined || fieldValue === null)) {
-                throw new WasmConfigurationError(
-                    `Required field '${fieldPath}' is missing`,
-                    fieldPath,
-                    fieldValue
-                );
-            }
-            
-            // Skip validation if field is undefined and not required
-            if (fieldValue === undefined) continue;
-            
-            // Type validation
-            this._validateType(fieldValue, fieldSchema, fieldPath);
-            
-            // Enum validation
-            if (fieldSchema.enum && !fieldSchema.enum.includes(fieldValue)) {
-                throw new WasmConfigurationError(
-                    `Field '${fieldPath}' must be one of: ${fieldSchema.enum.join(', ')}`,
-                    fieldPath,
-                    fieldValue
-                );
-            }
-            
-            // Range validation
-            if (fieldSchema.min !== undefined && fieldValue < fieldSchema.min) {
-                throw new WasmConfigurationError(
-                    `Field '${fieldPath}' must be at least ${fieldSchema.min}`,
-                    fieldPath,
-                    fieldValue
-                );
-            }
-            
-            if (fieldSchema.max !== undefined && fieldValue > fieldSchema.max) {
-                throw new WasmConfigurationError(
-                    `Field '${fieldPath}' must be at most ${fieldSchema.max}`,
-                    fieldPath,
-                    fieldValue
-                );
-            }
-            
-            // Nested object validation
-            if (fieldSchema.type === 'object' && fieldSchema.properties) {
-                this._validateObject(fieldValue, fieldSchema.properties, fieldPath);
-            }
-            
-            // Array validation
-            if (fieldSchema.type === 'array' && fieldSchema.items) {
-                if (Array.isArray(fieldValue)) {
-                    fieldValue.forEach((item, index) => {
-                        this._validateType(item, fieldSchema.items, `${fieldPath}[${index}]`);
-                    });
-                }
-            }
-        }
-    }
-
-    /**
-     * Validate field type
-     * @private
-     * @param {*} value - Value to validate
-     * @param {Object} schema - Field schema
-     * @param {string} path - Field path for error reporting
-     */
-    _validateType(value, schema, path) {
-        const expectedType = schema.type;
-        const actualType = Array.isArray(value) ? 'array' : typeof value;
-        
-        if (actualType !== expectedType) {
+    _validateEssentials(config = this.config) {
+        // Validate network
+        if (!['testnet', 'mainnet'].includes(config.network)) {
             throw new WasmConfigurationError(
-                `Field '${path}' must be of type '${expectedType}', got '${actualType}'`,
-                path,
-                value
+                `Invalid network: ${config.network}. Must be 'testnet' or 'mainnet'`,
+                'network',
+                config.network
             );
         }
-        
-        // URL validation for string types
-        if (expectedType === 'string' && path.includes('url')) {
-            this._validateUrl(value, path);
+
+        // Validate boolean fields
+        if (typeof config.proofs !== 'boolean') {
+            throw new WasmConfigurationError(
+                'proofs must be a boolean',
+                'proofs',
+                config.proofs
+            );
+        }
+
+        if (typeof config.debug !== 'boolean') {
+            throw new WasmConfigurationError(
+                'debug must be a boolean',
+                'debug',
+                config.debug
+            );
+        }
+
+        // Validate transport settings
+        if (typeof config.transport !== 'object' || config.transport === null) {
+            throw new WasmConfigurationError(
+                'transport must be an object',
+                'transport',
+                config.transport
+            );
+        }
+
+        // Validate timeout range
+        const timeout = config.transport.timeout;
+        if (typeof timeout !== 'number' || timeout < 1000 || timeout > 300000) {
+            throw new WasmConfigurationError(
+                'transport.timeout must be a number between 1000 and 300000 milliseconds',
+                'transport.timeout',
+                timeout
+            );
+        }
+
+        // Validate retries range
+        const retries = config.transport.retries;
+        if (typeof retries !== 'number' || retries < 0 || retries > 10) {
+            throw new WasmConfigurationError(
+                'transport.retries must be a number between 0 and 10',
+                'transport.retries',
+                retries
+            );
+        }
+
+        // Validate custom endpoint if provided and not empty (security-focused)
+        if (config.transport.customEndpoint !== undefined && config.transport.customEndpoint !== null) {
+            if (config.transport.customEndpoint === '') {
+                throw new WasmConfigurationError(
+                    'Custom endpoint cannot be empty string',
+                    'transport.customEndpoint',
+                    config.transport.customEndpoint
+                );
+            }
+            this._validateCustomEndpoint(config.transport.customEndpoint);
         }
     }
 
     /**
-     * Validate URL format
+     * Validate custom endpoint URL with security focus
      * @private
      * @param {string} url - URL to validate
-     * @param {string} path - Field path for error reporting
+     * @throws {WasmConfigurationError} If URL is invalid or insecure
      */
-    _validateUrl(url, path) {
-        try {
-            new URL(url);
-            
-            // Ensure HTTPS for security
-            if (!url.startsWith('https://')) {
-                throw new WasmConfigurationError(
-                    `URL '${path}' must use HTTPS protocol`,
-                    path,
-                    url
-                );
-            }
-        } catch (error) {
+    _validateCustomEndpoint(url) {
+        if (typeof url !== 'string') {
             throw new WasmConfigurationError(
-                `Field '${path}' must be a valid HTTPS URL`,
-                path,
+                'Custom endpoint must be a string',
+                'transport.customEndpoint',
                 url
             );
         }
-    }
 
-    /**
-     * Resolve endpoint URLs based on network and user configuration
-     * @private
-     */
-    _resolveEndpoints() {
-        let urls = [];
-        
-        // Use user-provided URL(s) if available
-        if (this.config.transport.url) {
-            urls.push(this.config.transport.url);
+        let parsedUrl;
+        try {
+            parsedUrl = new URL(url);
+        } catch (error) {
+            throw new WasmConfigurationError(
+                'Custom endpoint must be a valid URL',
+                'transport.customEndpoint',
+                url
+            );
         }
-        
-        if (this.config.transport.urls && this.config.transport.urls.length > 0) {
-            urls = urls.concat(this.config.transport.urls);
+
+        // Security: Enforce HTTPS
+        if (parsedUrl.protocol !== 'https:') {
+            throw new WasmConfigurationError(
+                'Custom endpoint must use HTTPS protocol for security',
+                'transport.customEndpoint',
+                url
+            );
         }
-        
-        // Fall back to default endpoints if none provided
-        if (urls.length === 0) {
-            urls = DEFAULT_ENDPOINTS[this.config.network] || DEFAULT_ENDPOINTS.testnet;
+
+        // Security: Validate port range (Dash Platform typically uses 1443)
+        const port = parsedUrl.port;
+        if (port && (parseInt(port) < 1 || parseInt(port) > 65535)) {
+            throw new WasmConfigurationError(
+                'Custom endpoint port must be between 1 and 65535',
+                'transport.customEndpoint',
+                url
+            );
         }
-        
-        // Remove duplicates while preserving order
-        const uniqueUrls = [...new Set(urls)];
-        
-        // Validate all URLs
-        uniqueUrls.forEach((url, index) => {
-            this._validateUrl(url, `transport.urls[${index}]`);
-        });
-        
-        this.config.transport.urls = uniqueUrls;
-        
-        // Remove singular url property as we now use urls array
-        delete this.config.transport.url;
+
+        // Security: Basic hostname validation (no localhost, internal IPs in production)
+        if (parsedUrl.hostname === 'localhost' || parsedUrl.hostname.startsWith('127.')) {
+            console.warn('Warning: Using localhost endpoint - only suitable for development');
+        }
     }
 
     /**
@@ -374,13 +253,14 @@ export class ConfigManager {
      * @returns {Object} Default configuration
      */
     static createDefault() {
-        return JSON.parse(JSON.stringify(DEFAULT_CONFIG));
+        return { ...DEFAULT_CONFIG };
     }
 
     /**
      * Validate a configuration object without creating an instance
      * @static
      * @param {Object} config - Configuration to validate
+     * @returns {Object} Validated configuration
      * @throws {WasmConfigurationError} If configuration is invalid
      */
     static validate(config) {
@@ -390,7 +270,7 @@ export class ConfigManager {
 }
 
 /**
- * Configuration utilities
+ * Configuration utilities - simplified
  */
 export const ConfigUtils = {
     /**
