@@ -113,6 +113,15 @@ if [ -d "../src-js" ]; then
     cp ../src-js/*.js . 2>/dev/null || echo "No .js wrapper files found"
     cp ../src-js/*.d.ts . 2>/dev/null || echo "No .d.ts wrapper files found"
     
+    # Copy services directory with all JavaScript service classes
+    if [ -d "../src-js/services" ]; then
+        echo "Copying services directory..."
+        cp -r ../src-js/services . 2>/dev/null || echo "Failed to copy services directory"
+        echo "Services directory copied successfully"
+    else
+        echo "Warning: No services directory found in src-js"
+    fi
+    
     # Update package.json to use wrapper as entry point
     if [ -f "package.json" ] && command -v node >/dev/null 2>&1; then
         node -e "
@@ -132,6 +141,17 @@ if [ -d "../src-js" ]; then
                     pkg.files.push(file);
                 }
             });
+            // Add services directory files to package
+            if (fs.existsSync('services')) {
+                console.log('  ✅ Adding services directory to package files');
+                const serviceFiles = fs.readdirSync('services').filter(f => f.endsWith('.js'));
+                serviceFiles.forEach(file => {
+                    const servicePath = \`services/\${file}\`;
+                    if (!pkg.files.includes(servicePath)) {
+                        pkg.files.push(servicePath);
+                    }
+                });
+            }
             fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
             console.log('  ✅ Package configured to use JavaScript wrapper as entry point');
         } else {

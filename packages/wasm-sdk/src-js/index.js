@@ -473,7 +473,7 @@ export class WasmSDK {
     async _loadWasmModule() {
         try {
             // Try to import from the built package
-            return await import('../pkg/wasm_sdk.js');
+            return await import('../pkg/dash_wasm_sdk.js');
         } catch (error) {
             throw new WasmInitializationError(
                 'Failed to load WASM module. Make sure the package is built correctly.',
