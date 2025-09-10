@@ -67,6 +67,7 @@ pub unsafe fn extract_user_fee_increase(
 }
 
 /// Validate that either contract ID or serialized contract is provided (but not both)
+#[allow(clippy::result_large_err)]
 pub unsafe fn validate_contract_params(
     token_contract_id: *const c_char,
     serialized_contract: *const u8,
@@ -91,6 +92,7 @@ pub unsafe fn validate_contract_params(
 }
 
 /// Parse optional public note from C string
+#[allow(clippy::result_large_err)]
 pub unsafe fn parse_optional_note(note_ptr: *const c_char) -> Result<Option<String>, FFIError> {
     if note_ptr.is_null() {
         Ok(None)
@@ -103,6 +105,7 @@ pub unsafe fn parse_optional_note(note_ptr: *const c_char) -> Result<Option<Stri
 }
 
 /// Parse identifier from raw bytes (32 bytes)
+#[allow(clippy::result_large_err)]
 pub unsafe fn parse_identifier_from_bytes(id_bytes: *const u8) -> Result<Identifier, FFIError> {
     if id_bytes.is_null() {
         return Err(FFIError::InternalError(

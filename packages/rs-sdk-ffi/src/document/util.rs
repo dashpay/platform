@@ -1,11 +1,15 @@
 use crate::sdk::SDKWrapper;
 use crate::{DashSDKError, DashSDKErrorCode, DocumentHandle, FFIError, SDKHandle};
-use dash_sdk::dpp::document::{Document, DocumentV0Getters, DocumentV0Setters};
+use dash_sdk::dpp::document::{Document, DocumentV0Setters};
 use dash_sdk::dpp::platform_value::Value;
 use std::ffi::CStr;
 use std::os::raw::c_char;
 
 /// Destroy a document
+///
+/// # Safety
+/// - `sdk_handle` and `document_handle` must be valid, non-null pointers.
+/// - Returns a pointer to an error structure on failure; caller must free with `dash_sdk_error_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_destroy(
     sdk_handle: *mut SDKHandle,
@@ -40,6 +44,10 @@ pub unsafe extern "C" fn dash_sdk_document_destroy(
 }
 
 /// Destroy a document handle
+///
+/// # Safety
+/// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `handle` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_handle_destroy(handle: *mut DocumentHandle) {
     if !handle.is_null() {
@@ -48,12 +56,20 @@ pub unsafe extern "C" fn dash_sdk_document_handle_destroy(handle: *mut DocumentH
 }
 
 /// Free a document handle (alias for destroy)
+///
+/// # Safety
+/// - Same as `dash_sdk_document_handle_destroy`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_free(handle: *mut DocumentHandle) {
     dash_sdk_document_handle_destroy(handle);
 }
 
 /// Set document properties from JSON
+///
+/// # Safety
+/// - `document_handle` and `properties_json` must be valid, non-null pointers.
+/// - `properties_json` must point to a NUL-terminated C string valid for the duration of the call.
+/// - Returns an error pointer on failure; caller must free with `dash_sdk_error_free`.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_set_properties(
     document_handle: *mut DocumentHandle,

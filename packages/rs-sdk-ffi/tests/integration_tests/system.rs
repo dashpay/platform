@@ -2,7 +2,6 @@
 
 use crate::ffi_utils::*;
 use rs_sdk_ffi::*;
-use std::ptr;
 
 /// Test fetching epochs info
 #[test]

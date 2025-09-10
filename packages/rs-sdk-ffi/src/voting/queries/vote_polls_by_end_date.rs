@@ -80,6 +80,7 @@ pub unsafe extern "C" fn dash_sdk_voting_get_vote_polls_by_end_date(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn get_vote_polls_by_end_date(
     sdk_handle: *const SDKHandle,
     start_time_ms: u64,

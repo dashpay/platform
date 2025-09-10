@@ -9,8 +9,12 @@ use std::os::raw::c_char;
 use crate::sdk::SDKWrapper;
 use crate::types::SDKHandle;
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
-
 /// Fetch identity by public key hash
+///
+/// # Safety
+/// - `sdk_handle` and `public_key_hash` must be valid, non-null pointers.
+/// - `public_key_hash` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
 ///
 /// # Parameters
 /// - `sdk_handle`: SDK handle

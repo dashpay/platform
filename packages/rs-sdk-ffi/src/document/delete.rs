@@ -21,6 +21,14 @@ use crate::types::{
 use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 
 /// Delete a document from the platform
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `document_id`, `owner_id`, `data_contract_id`, and `document_type_name` must be valid, non-null pointers to
+///   NUL-terminated C strings that remain valid for the duration of the call.
+/// - `identity_public_key_handle` and `signer_handle` must be valid, non-null pointers to initialized structures.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_delete(
     sdk_handle: *mut SDKHandle,
@@ -148,7 +156,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -177,6 +185,11 @@ pub unsafe extern "C" fn dash_sdk_document_delete(
 }
 
 /// Delete a document from the platform and wait for confirmation
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_delete` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
     sdk_handle: *mut SDKHandle,
@@ -336,7 +349,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
         let result = wrapper
             .sdk
-            .document_delete(builder, &identity_public_key, signer)
+            .document_delete(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 error!(error = %e, key_id = identity_public_key.id(), "[DOCUMENT DELETE] SDK call failed");
@@ -345,9 +358,7 @@ pub unsafe extern "C" fn dash_sdk_document_delete_and_wait(
 
         info!("[DOCUMENT DELETE] SDK call completed successfully");
 
-        let deleted_id = match result {
-            dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(id) => id,
-        };
+        let dash_sdk::platform::documents::transitions::DocumentDeleteResult::Deleted(deleted_id) = result;
 
         Ok(deleted_id)
     });
@@ -380,6 +391,7 @@ mod tests {
     use std::ptr;
 
     // Helper function to create a mock document
+    #[allow(dead_code)]
     fn create_mock_document() -> Box<Document> {
         let id = Identifier::from_bytes(&[2u8; 32]).unwrap();
         let owner_id = Identifier::from_bytes(&[1u8; 32]).unwrap();
@@ -390,7 +402,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(1),
             created_at: None,
             updated_at: None,

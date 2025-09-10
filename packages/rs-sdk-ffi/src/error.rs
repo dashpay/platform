@@ -162,6 +162,10 @@ impl From<FFIError> for DashSDKError {
 }
 
 /// Free an error message
+///
+/// # Safety
+/// - `error` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `error` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_error_free(error: *mut DashSDKError) {
     if error.is_null() {

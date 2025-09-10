@@ -19,7 +19,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `start_epoch` may be null (no explicit start); when non-null it must be a valid pointer to a NUL-terminated C string.
+/// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_system_get_epochs_info(
     sdk_handle: *const SDKHandle,

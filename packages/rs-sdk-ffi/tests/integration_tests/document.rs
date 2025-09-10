@@ -3,7 +3,6 @@
 use crate::config::Config;
 use crate::ffi_utils::*;
 use rs_sdk_ffi::*;
-use std::ptr;
 
 /// Test fetching a non-existent document
 #[test]
@@ -96,7 +95,7 @@ fn test_document_read() {
 
 /// Test searching documents with a simple query — removed due to lack of matching vectors
 /// Test searching documents with startsWith — removed due to lack of matching vectors
-
+///
 /// Test searching documents with complex query including order by
 #[test]
 fn test_document_search_with_order_by() {

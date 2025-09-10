@@ -19,7 +19,9 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer.
+/// - `start_after` and `start_at` may be null; when non-null they must point to NUL-terminated C strings with hex-encoded 32-byte hashes.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_evonode_get_proposed_epoch_blocks_by_range(
     sdk_handle: *const SDKHandle,
@@ -141,7 +143,7 @@ fn get_evonodes_proposed_epoch_blocks_by_range(
                     .map(|(pro_tx_hash, count)| {
                         format!(
                             r#"{{"pro_tx_hash":"{}","count":{}}}"#,
-                            hex::encode(&pro_tx_hash),
+                            hex::encode(pro_tx_hash),
                             count
                         )
                     })
@@ -188,10 +190,9 @@ impl
             Some(Start::StartAfter(
                 AsRef::<[u8]>::as_ref(&start_after).to_vec(),
             ))
-        } else if let Some(start_at) = self.start_at {
-            Some(Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
         } else {
-            None
+            self.start_at
+                .map(|start_at| Start::StartAt(AsRef::<[u8]>::as_ref(&start_at).to_vec()))
         };
 
         let request =

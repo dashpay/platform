@@ -8,6 +8,11 @@ use std::ffi::CString;
 use crate::types::{DashSDKIdentityInfo, IdentityHandle};
 
 /// Get identity information
+///
+/// # Safety
+/// - `identity_handle` must be a valid, non-null pointer to an `IdentityHandle` that remains valid for the duration of the call.
+/// - Returns a heap-allocated `DashSDKIdentityInfo` pointer; caller must free it using the SDK-provided destroy function.
+/// - Passing invalid or dangling pointers results in undefined behavior.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_get_info(
     identity_handle: *const IdentityHandle,
@@ -26,7 +31,7 @@ pub unsafe extern "C" fn dash_sdk_identity_get_info(
     let info = DashSDKIdentityInfo {
         id: id_str,
         balance: identity.balance(),
-        revision: identity.revision() as u64,
+        revision: identity.revision(),
         public_keys_count: identity.public_keys().len() as u32,
     };
 
@@ -34,6 +39,10 @@ pub unsafe extern "C" fn dash_sdk_identity_get_info(
 }
 
 /// Destroy an identity handle
+///
+/// # Safety
+/// - `handle` must be a pointer previously returned by this SDK or null (no-op).
+/// - After this call, `handle` becomes invalid and must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_identity_destroy(handle: *mut IdentityHandle) {
     if !handle.is_null() {

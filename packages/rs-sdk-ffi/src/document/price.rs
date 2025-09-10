@@ -13,15 +13,21 @@ use dash_sdk::dpp::document::document_methods::DocumentMethodsV0;
 use dash_sdk::dpp::document::Document;
 use dash_sdk::dpp::fee::Credits;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
-use dash_sdk::dpp::prelude::{DataContract, Identifier, UserFeeIncrease};
+use dash_sdk::dpp::prelude::{Identifier, UserFeeIncrease};
 use dash_sdk::platform::documents::transitions::DocumentSetPriceTransitionBuilder;
 use dash_sdk::platform::IdentityPublicKey;
 use drive_proof_verifier::ContextProvider;
 use std::ffi::CStr;
 use std::os::raw::c_char;
-use std::sync::Arc;
 
 /// Update document price (broadcast state transition)
+///
+/// # Safety
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `document_handle`, `data_contract_id`, `document_type_name`, `identity_public_key_handle`, and `signer_handle`
+///   must be valid, non-null pointers. `data_contract_id` and `document_type_name` must point to NUL-terminated C strings.
+/// - Optional pointers (`token_payment_info`, `put_settings`, `state_transition_creation_options`) may be null; when non-null they must be valid.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
     sdk_handle: *mut SDKHandle,
@@ -136,7 +142,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
         let state_transition = builder
             .sign(
                 &wrapper.sdk,
-                &identity_public_key,
+                identity_public_key,
                 signer,
                 wrapper.sdk.version(),
             )
@@ -159,6 +165,11 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document(
 }
 
 /// Update document price and wait for confirmation (broadcast state transition and wait for response)
+///
+/// # Safety
+/// - Same requirements as `dash_sdk_document_update_price_of_document` regarding pointer validity and lifetimes.
+/// - The function may block while waiting for confirmation; input pointers must remain valid throughout.
+/// - On success, the result may contain heap-allocated data that must be freed using SDK-provided routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
     sdk_handle: *mut SDKHandle,
@@ -272,17 +283,15 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 
         let result = wrapper
             .sdk
-            .document_set_price(builder, &identity_public_key, signer)
+            .document_set_price(builder, identity_public_key, signer)
             .await
             .map_err(|e| {
                 FFIError::InternalError(format!("Failed to update document price and wait: {}", e))
             })?;
 
-        let updated_document = match result {
-            dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(doc) => {
-                doc
-            }
-        };
+        let dash_sdk::platform::documents::transitions::DocumentSetPriceResult::Document(
+            updated_document,
+        ) = result;
 
         Ok(updated_document)
     });
@@ -303,7 +312,7 @@ pub unsafe extern "C" fn dash_sdk_document_update_price_of_document_and_wait(
 mod tests {
     use super::*;
     use crate::test_utils::test_utils::*;
-    use crate::types::DataContractHandle;
+
     use crate::DashSDKErrorCode;
 
     use dash_sdk::dpp::document::{Document, DocumentV0};
@@ -329,7 +338,7 @@ mod tests {
         let document = Document::V0(DocumentV0 {
             id,
             owner_id,
-            properties: properties,
+            properties,
             revision: Some(1),
             created_at: None,
             updated_at: None,

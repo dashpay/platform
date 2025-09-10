@@ -20,7 +20,12 @@ use std::ffi::{c_char, c_void, CStr, CString};
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - `identity_id` must be a valid, non-null pointer to a NUL-terminated C string that remains valid during the call.
+/// - `limit`, `offset`, and `order_ascending` are passed by value; no references are retained.
+/// - On success, the returned `DashSDKResult` may contain a heap-allocated C string; the caller must free
+///   it using the SDK's free routine. The result can also contain no data (null pointer).
+/// - All pointers provided to this function must be readable and valid.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_contested_resource_get_identity_votes(
     sdk_handle: *const SDKHandle,

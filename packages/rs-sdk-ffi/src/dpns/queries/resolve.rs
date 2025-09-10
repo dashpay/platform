@@ -23,6 +23,11 @@ use serde_json::json;
 /// # Returns
 /// * On success: A JSON object with the identity ID, or null if not found
 /// * On error: An error result
+///
+/// # Safety
+/// - `sdk_handle` and `name` must be valid, non-null pointers.
+/// - `name` must point to a NUL-terminated C string valid for the duration of the call.
+/// - On success, returns a C string pointer inside `DashSDKResult`; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_dpns_resolve(
     sdk_handle: *const SDKHandle,

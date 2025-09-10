@@ -1,27 +1,27 @@
-pub mod identity;
 pub mod data_contract;
 pub mod document;
 pub mod dpns;
-pub mod protocol;
 pub mod epoch;
+pub mod group;
+pub mod identity;
+pub mod protocol;
+pub mod system;
 pub mod token;
 pub mod voting;
-pub mod group;
-pub mod system;
 
 // Re-export all query functions for easy access
-pub use identity::*;
 pub use data_contract::*;
 pub use document::*;
 pub use dpns::*;
-pub use protocol::*;
 pub use epoch::*;
+pub use group::*;
+pub use identity::*;
+pub use protocol::*;
+pub use system::*;
 pub use token::*;
 pub use voting::*;
-pub use group::*;
-pub use system::*;
 
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Serialize};
 
 // Common response structure for queries with proof and metadata
 #[derive(Serialize, Deserialize, Debug)]
@@ -71,8 +71,8 @@ impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadata {
 // Helper function to convert platform Proof to our ProofInfo
 impl From<dash_sdk::platform::proto::Proof> for ProofInfo {
     fn from(proof: dash_sdk::platform::proto::Proof) -> Self {
-        use base64::{Engine as _, engine::general_purpose};
-        
+        use base64::{engine::general_purpose, Engine as _};
+
         ProofInfo {
             grovedb_proof: general_purpose::STANDARD.encode(&proof.grovedb_proof),
             quorum_hash: hex::encode(&proof.quorum_hash),

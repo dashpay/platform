@@ -17,7 +17,9 @@ use std::os::raw::c_void;
 /// * Error message if operation fails
 ///
 /// # Safety
-/// This function is unsafe because it handles raw pointers from C
+/// - `sdk_handle` must be a valid, non-null pointer to an initialized `SDKHandle`.
+/// - The function does not retain references to inputs beyond the call.
+/// - On success, returns a heap-allocated C string pointer; caller must free it using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_system_get_current_quorums_info(
     sdk_handle: *const SDKHandle,
@@ -111,9 +113,9 @@ fn get_current_quorums_info(sdk_handle: *const SDKHandle) -> Result<Option<Strin
                 let json = format!(
                     r#"{{"quorum_hashes":[{}],"current_quorum_hash":"{}","validator_sets":[{}],"last_block_proposer":"{}","last_platform_block_height":{}}}"#,
                     quorum_hashes_json.join(","),
-                    hex::encode(&info.current_quorum_hash),
+                    hex::encode(info.current_quorum_hash),
                     validator_sets_json.join(","),
-                    hex::encode(&info.last_block_proposer),
+                    hex::encode(info.last_block_proposer),
                     info.last_platform_block_height
                 );
 

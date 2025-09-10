@@ -19,6 +19,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing the last claim information
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `token_id` and `identity_id` must be valid pointers to NUL-terminated C strings and readable during the call.
+/// - The returned C string pointer (on success) must be freed by the caller using the SDK's free function to avoid memory leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     sdk_handle: *const SDKHandle,
@@ -65,12 +69,12 @@ pub unsafe extern "C" fn dash_sdk_token_get_perpetual_distribution_last_claim(
     };
 
     let result: Result<String, FFIError> = wrapper.runtime.block_on(async {
-        use dash_sdk::platform::query::{Query, TokenLastClaimQuery};
+        use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::platform::Fetch;
 
         let query = TokenLastClaimQuery {
-            token_id: token_id.clone(),
-            identity_id: identity_id.clone(),
+            token_id,
+            identity_id,
         };
 
         let last_claim = RewardDistributionMoment::fetch(&wrapper.sdk, query)

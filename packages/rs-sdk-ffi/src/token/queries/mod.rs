@@ -1,16 +1,16 @@
 // Token information operations
-pub mod balances;
-pub mod contract_info;
-pub mod direct_purchase_prices;
-pub mod identities_balances;
-pub mod identities_token_infos;
-pub mod identity_balances;
-pub mod identity_token_infos;
-pub mod info;
-pub mod perpetual_distribution_last_claim;
-pub mod pre_programmed_distributions;
-pub mod status;
-pub mod total_supply;
+mod balances;
+mod contract_info;
+mod direct_purchase_prices;
+mod identities_balances;
+mod identities_token_infos;
+mod identity_balances;
+mod identity_token_infos;
+mod info;
+mod perpetual_distribution_last_claim;
+mod pre_programmed_distributions;
+mod status;
+mod total_supply;
 
 // Re-export main functions for convenient access
 pub use balances::dash_sdk_token_get_identity_balances;

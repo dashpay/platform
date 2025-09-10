@@ -1,3 +1,4 @@
+#![allow(unexpected_cfgs, unused_variables, dead_code)]
 //! Configuration helpers for testing of rs-sdk-ffi.
 //!
 //! This module contains [Config] struct that can be used to configure tests.
@@ -144,3 +145,4 @@ impl Default for Config {
         Self::new()
     }
 }
+// per-file allows are set at the top

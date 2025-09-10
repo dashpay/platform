@@ -101,6 +101,11 @@ pub unsafe extern "C" fn dash_sdk_document_fetch_by_contract_id(
 }
 
 /// Fetch a document by ID (legacy - requires data contract handle)
+///
+/// # Safety
+/// - `sdk_handle`, `data_contract_handle`, `document_type`, and `document_id` must be valid, non-null pointers.
+/// - `document_type` and `document_id` must point to NUL-terminated C strings valid for the duration of the call.
+/// - On success, returns a handle or no data; any heap memory must be freed using SDK routines.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_document_fetch(
     sdk_handle: *const SDKHandle,

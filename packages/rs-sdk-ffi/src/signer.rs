@@ -1,7 +1,6 @@
 //! Signer interface for iOS FFI
 
 use crate::types::SignerHandle;
-use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::{IdentityPublicKey, ProtocolError};
@@ -143,6 +142,9 @@ pub type DestroyCallback = Option<unsafe extern "C" fn(signer: *mut std::os::raw
 /// - `sign_callback`: Function to sign data
 /// - `can_sign_callback`: Function to check if can sign with a key
 /// - `destroy_callback`: Optional destructor (can be NULL)
+/// # Safety
+/// - Callback function pointers must be valid and follow the required ABI and lifetime for the duration of use.
+/// - The returned `SignerHandle` must be destroyed with `dash_sdk_signer_destroy` to avoid leaks.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_create(
     sign_callback: SignCallback,
@@ -173,6 +175,9 @@ unsafe extern "C" fn default_destroy(_signer: *mut std::os::raw::c_void) {
 }
 
 /// Destroy a signer
+/// # Safety
+/// - `handle` must be a valid pointer previously returned by this SDK and not yet destroyed.
+/// - It may be null (no-op). After this call the handle must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
     if !handle.is_null() {
@@ -197,6 +202,9 @@ pub unsafe extern "C" fn dash_sdk_signer_destroy(handle: *mut SignerHandle) {
 }
 
 /// Free bytes allocated by callbacks
+/// # Safety
+/// - `bytes` must be a pointer to a buffer allocated by the corresponding FFI and compatible with `libc::free`.
+/// - It may be null (no-op). After this call the pointer must not be used again.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_bytes_free(bytes: *mut u8) {
     if !bytes.is_null() {

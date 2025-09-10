@@ -19,6 +19,10 @@ use crate::{DashSDKError, DashSDKErrorCode, DashSDKResult, FFIError};
 ///
 /// # Returns
 /// JSON string containing the contract ID and token position, or null if not found
+/// # Safety
+/// - `sdk_handle` must be a valid pointer to an initialized SDKHandle.
+/// - `token_id` must be a valid pointer to a NUL-terminated C string and readable during the call.
+/// - The returned C string pointer (on success) must be freed with the SDK's string-free function by the caller.
 #[no_mangle]
 pub unsafe extern "C" fn dash_sdk_token_get_contract_info(
     sdk_handle: *const SDKHandle,
