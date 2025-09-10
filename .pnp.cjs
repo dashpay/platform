@@ -90,6 +90,10 @@ const RAW_RUNTIME_STATE =
       "reference": "workspace:packages/wasm-drive-verify"\
     },\
     {\
+      "name": "@dashevo/wasm-sdk",\
+      "reference": "workspace:packages/wasm-sdk"\
+    },\
+    {\
       "name": "@dashevo/withdrawals-contract",\
       "reference": "workspace:packages/withdrawals-contract"\
     }\
@@ -114,6 +118,7 @@ const RAW_RUNTIME_STATE =
     ["@dashevo/wallet-lib", ["workspace:packages/wallet-lib"]],\
     ["@dashevo/wallet-utils-contract", ["workspace:packages/wallet-utils-contract"]],\
     ["@dashevo/wasm-dpp", ["workspace:packages/wasm-dpp"]],\
+    ["@dashevo/wasm-sdk", ["workspace:packages/wasm-sdk"]],\
     ["@dashevo/withdrawals-contract", ["workspace:packages/withdrawals-contract"]],\
     ["dash", ["workspace:packages/js-dash-sdk"]],\
     ["dashmate", ["workspace:packages/dashmate"]],\
@@ -3060,6 +3065,15 @@ const RAW_RUNTIME_STATE =
           ["varint", "npm:6.0.0"],\
           ["webpack", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:5.94.0"],\
           ["webpack-cli", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:4.9.1"]\
+        ],\
+        "linkType": "SOFT"\
+      }]\
+    ]],\
+    ["@dashevo/wasm-sdk", [\
+      ["workspace:packages/wasm-sdk", {\
+        "packageLocation": "./packages/wasm-sdk/",\
+        "packageDependencies": [\
+          ["@dashevo/wasm-sdk", "workspace:packages/wasm-sdk"]\
         ],\
         "linkType": "SOFT"\
       }]\

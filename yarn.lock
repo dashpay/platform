@@ -2018,6 +2018,12 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/wasm-sdk@workspace:packages/wasm-sdk":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/wasm-sdk@workspace:packages/wasm-sdk"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/withdrawals-contract@workspace:*, @dashevo/withdrawals-contract@workspace:packages/withdrawals-contract":
   version: 0.0.0-use.local
   resolution: "@dashevo/withdrawals-contract@workspace:packages/withdrawals-contract"

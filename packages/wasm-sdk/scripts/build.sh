@@ -17,4 +17,4 @@ if [ "${CARGO_BUILD_PROFILE:-}" = "dev" ] || [ "${CI:-}" != "true" ]; then
 fi
 
 # Call unified build script with default features (no need to specify)
-exec "$SCRIPT_DIR/../scripts/build-wasm.sh" --package wasm-sdk --opt-level "$OPT_LEVEL"
+exec "$SCRIPT_DIR/../../scripts/build-wasm.sh" --package wasm-sdk --opt-level "$OPT_LEVEL"

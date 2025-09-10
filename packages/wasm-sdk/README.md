@@ -61,6 +61,9 @@ curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
 
 # Build the WASM module
 ./build.sh
+
+# Build the TypeScript EvoSDK facade and bundle with WASM into dist/
+yarn workspace @dashevo/evo-sdk run build:evosdk
 ```
 
 ### Documentation
@@ -83,6 +86,10 @@ The CI will fail if documentation is out of sync with the code.
 2. Implement the corresponding method in the Rust code
 3. Regenerate documentation: `python3 generate_docs.py`
 4. Test your changes using the web interface
+5. If you modified the TS facade (js/src), rebuild the bundle:
+   ```bash
+   yarn workspace @dashevo/evo-sdk run build:evosdk
+   ```
 
 ### CI/CD
 

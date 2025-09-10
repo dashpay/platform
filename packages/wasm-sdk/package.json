@@ -1,13 +1,33 @@
 {
-  "name": "@dashevo/evo-sdk",
-  "version": "0.0.0",
+  "name": "@dashevo/wasm-sdk",
+  "version": "2.0.0",
+  "type": "module",
+  "main": "./dist/sdk.js",
+  "types": "./dist/sdk.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/sdk.d.ts",
+      "import": "./dist/sdk.js"
+    },
+    "./raw": {
+      "types": "./dist/raw/wasm_sdk.d.ts",
+      "import": "./dist/raw/wasm_sdk.js"
+    },
+    "./raw/*": "./dist/raw/*"
+  },
+  "files": [
+    "dist/**",
+    "README.md"
+  ],
   "scripts": {
-    "build": "./build.sh",
-    "build:release": "./build-optimized.sh",
-    "test": "echo 'Tests run from web interface at index.html'",
-    "prepublishOnly": "echo 'Publishing handled by pkg/package.json'"
+    "build:dev": "./scripts/build.sh && node ./scripts/bundle.cjs",
+    "build:release": "./scripts/build-optimized.sh && node ./scripts/bundle.cjs",
+    "build": "yarn build:release",
+    "prepack": "yarn build:release"
   },
   "ultra": {
-    "concurrent": ["test"]
+    "concurrent": [
+      "test"
+    ]
   }
 }
