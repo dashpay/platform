@@ -555,6 +555,7 @@ COPY --parents \
     rust-toolchain.toml \
     .cargo \
     packages/rs-dapi \
+    packages/rs-dash-notify \
     packages/rs-dpp \
     packages/rs-platform-value \
     packages/rs-platform-serialization \
@@ -843,6 +844,8 @@ COPY --parents \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
+    packages/rs-platform-wallet \
     packages/check-features \
     packages/dash-platform-balance-checker \
     /platform/
