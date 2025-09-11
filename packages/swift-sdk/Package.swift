@@ -26,5 +26,5 @@ let package = Package(
             path: "Sources/SwiftDashSDK"
         ),
     ],
-    swiftLanguageVersions: [.v6]
+    swiftLanguageModes: [.v6]
 )
