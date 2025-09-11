@@ -55,6 +55,89 @@ jobs:
         run: |
           bash packages/swift-sdk/build_ios.sh
 
+      - name: Zip XCFramework and compute checksum
+        run: |
+          cd packages/swift-sdk
+          ditto -c -k --sequesterRsrc --keepParent DashSDKFFI.xcframework DashSDKFFI.xcframework.zip
+          swift package compute-checksum DashSDKFFI.xcframework.zip > xc_checksum.txt
+
+      - name: Upload DashSDKFFI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DashSDKFFI.xcframework
+          path: |
+            packages/swift-sdk/DashSDKFFI.xcframework
+            packages/swift-sdk/DashSDKFFI.xcframework.zip
+            packages/swift-sdk/xc_checksum.txt
+          retention-days: 14
+
+      - name: Comment/update PR with artifact link and usage guide (skip if unchanged)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const fs = require('fs');
+            const marker = '<!-- DASHSDKFFI_ARTIFACT_COMMENT -->';
+            let checksum = '';
+            try { checksum = fs.readFileSync('packages/swift-sdk/xc_checksum.txt', 'utf8').trim(); } catch (e) {}
+
+            // Find existing marker comment on this PR
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100
+            });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+
+            // Extract old checksum if present
+            const extractChecksum = (text) => {
+              if (!text) return '';
+              const m = text.match(/checksum:\s*"?([a-f0-9]{64})"?/i);
+              return m ? m[1] : '';
+            };
+            const oldChecksum = existing ? extractChecksum(existing.body) : '';
+
+            if (oldChecksum && checksum && oldChecksum === checksum) {
+              core.info(`Checksum unchanged (${checksum}); skipping PR comment update.`);
+              return;
+            }
+
+            const body = `${marker}\n` +
+            `✅ DashSDKFFI.xcframework built for this PR.\n\n` +
+            `- Workflow run: ${runUrl}\n` +
+            `- Artifacts: DashSDKFFI.xcframework (folder), DashSDKFFI.xcframework.zip, xc_checksum.txt\n\n` +
+            `SwiftPM (host the zip at a stable URL, then use):\n` +
+            '```swift\n' +
+            '.binaryTarget(\n' +
+            '  name: "DashSDKFFI",\n' +
+            '  url: "https://your.cdn.example/DashSDKFFI.xcframework.zip",\n' +
+            `  checksum: "${checksum || '<paste checksum>'}"\n` +
+            ')\n' +
+            '```\n\n' +
+            `Xcode manual integration:\n` +
+            `- Download 'DashSDKFFI.xcframework' artifact from the run link above.\n` +
+            `- Drag it into your app target (Frameworks, Libraries & Embedded Content) and set Embed & Sign.\n` +
+            `- If using the Swift wrapper package, point its binaryTarget to the xcframework location or add the package and place the xcframework at the expected path.\n`;
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            }
+
       - name: Build SwiftDashSDK package (warnings as errors)
         working-directory: packages/swift-sdk
         run: |
