@@ -51,8 +51,6 @@ pub use protocol_version::*;
 pub use sdk::*;
 pub use signer::*;
 pub use signer_simple::*;
-#[cfg(feature = "dash_spv")]
-pub use spv_bridge::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;

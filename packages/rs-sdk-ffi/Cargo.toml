@@ -17,8 +17,7 @@ drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
 simple-signer = { path = "../simple-signer" }
 
-[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
-# Core SDK integration (always included for unified SDK); relative to this crate
+# Core SDK integration (always included for unified SDK)
 dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219" }
 
