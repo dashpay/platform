@@ -23,8 +23,6 @@ mod protocol_version;
 mod sdk;
 mod signer;
 mod signer_simple;
-#[cfg(feature = "dash_spv")]
-mod spv_bridge;
 mod system;
 mod token;
 mod types;
