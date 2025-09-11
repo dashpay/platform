@@ -34,6 +34,16 @@ NC='\033[0m' # No Color
 CARGO_FEATURES=""
 FRAMEWORK_NAME="DashSDKFFI"
 
+# Set iOS deployment targets to match Xcode 16 SDKs and avoid 10.0 default
+export IPHONEOS_DEPLOYMENT_TARGET="18.0"
+export IPHONESIMULATOR_DEPLOYMENT_TARGET="18.0"
+# Ensure linker uses the same min version when rustc links
+export RUSTFLAGS="${RUSTFLAGS:-} -C link-arg=-mios-version-min=${IPHONEOS_DEPLOYMENT_TARGET}"
+
+echo "Using IPHONEOS_DEPLOYMENT_TARGET=${IPHONEOS_DEPLOYMENT_TARGET}"
+echo "Using IPHONESIMULATOR_DEPLOYMENT_TARGET=${IPHONESIMULATOR_DEPLOYMENT_TARGET}"
+echo "RUSTFLAGS=${RUSTFLAGS}"
+
 echo -e "${GREEN}Building Dash SDK FFI for iOS ($BUILD_ARCH)${NC}"
 
 # Check if we have the required iOS targets installed
