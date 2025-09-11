@@ -182,7 +182,7 @@ impl AccessLogger {
             .append(true)
             .open(&file_path)
             .await?;
-            
+
         Ok(Self {
             writer: std::sync::Arc::new(tokio::sync::Mutex::new(Some(file))),
         })

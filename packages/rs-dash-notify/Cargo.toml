@@ -19,6 +19,8 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 uuid = { version = "1.10", features = ["v4"] }
+futures = "0.3"
+sender-sink = { version = "0.2.1" }
 
 # Internal workspace crates
 dapi-grpc = { path = "../dapi-grpc" }

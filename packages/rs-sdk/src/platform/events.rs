@@ -1,7 +1,9 @@
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::PlatformFilterV0;
-use rs_dash_notify::platform_mux::{
-    PlatformEventsMux, PlatformEventsSubscriptionHandle, PlatformMuxSettings,
-};
+use rs_dapi_client::transport::{create_channel, PlatformGrpcClient};
+use rs_dapi_client::Uri;
+use rs_dash_notify::GrpcPlatformEventsProducer;
+use rs_dash_notify::{EventMux, PlatformEventsSubscriptionHandle};
 use std::sync::Arc;
 
 impl crate::Sdk {
@@ -13,19 +15,36 @@ impl crate::Sdk {
         filter: PlatformFilterV0,
     ) -> Result<(String, PlatformEventsSubscriptionHandle), crate::Error> {
         use once_cell::sync::OnceCell;
-        static MUX: OnceCell<Arc<PlatformEventsMux>> = OnceCell::new();
+        static MUX: OnceCell<Arc<EventMux>> = OnceCell::new();
+
+        // Initialize global mux with a single upstream producer on first use
         let mux = if let Some(m) = MUX.get() {
             m.clone()
         } else {
-            let settings = PlatformMuxSettings {
-                upstream_conn_count: 2,
-            };
-            let m = PlatformEventsMux::new(self.address_list().clone(), settings)
-                .map_err(|e| crate::Error::SubscriptionError(format!("mux init: {}", e)))?;
-            let m = Arc::new(m);
-            let _ = MUX.set(m.clone());
-            m
+            let mux = Arc::new(EventMux::new());
+
+            // Build a gRPC client to a live address
+            let address = self.address_list().get_live_address().ok_or_else(|| {
+                crate::Error::SubscriptionError("no live DAPI address".to_string())
+            })?;
+            let uri: Uri = address.uri().clone();
+            let channel = create_channel(uri, None)
+                .map_err(|e| crate::Error::SubscriptionError(format!("channel: {e}")))?;
+            let client: PlatformGrpcClient = PlatformClient::new(channel);
+
+            // Spawn the producer bridge
+            let worker_mux = mux.clone();
+            tokio::spawn(async move {
+                let inner_mux = (*worker_mux).clone();
+                if let Err(e) = GrpcPlatformEventsProducer::run(inner_mux, client).await {
+                    tracing::error!("platform events producer terminated: {}", e);
+                }
+            });
+
+            let _ = MUX.set(mux.clone());
+            mux
         };
+
         let (id, handle) = mux
             .subscribe(filter)
             .await

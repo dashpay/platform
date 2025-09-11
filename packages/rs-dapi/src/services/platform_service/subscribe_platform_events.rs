@@ -1,22 +1,13 @@
-use std::str::FromStr;
-use std::{collections::BTreeMap, sync::Arc};
-
-use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
-use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
-use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
-use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
-use dapi_grpc::platform::v0::{PlatformEventsCommand, PlatformEventsResponse, PlatformFilterV0};
+use dapi_grpc::platform::v0::{PlatformEventsCommand, PlatformEventsResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use rs_dash_notify::event_mux::EventsResponseResult;
+use rs_dash_notify::UnboundedSenderSink;
+use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::clients::drive_client::DriveClient;
 use crate::metrics;
 
 use super::PlatformServiceImpl;
-
-// Use shared multiplexer from rs-dash-notify
-use rs_dash_notify::platform_mux::spawn_client_command_processor;
 
 impl PlatformServiceImpl {
     /// Proxy implementation of Platform::subscribePlatformEvents with upstream muxing.
@@ -28,17 +19,17 @@ impl PlatformServiceImpl {
         // Use shared upstream mux from PlatformServiceImpl
         let mux = self.platform_events_mux.clone();
 
-        let (out_tx, out_rx) = mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
-        let session = mux.register_session_with_tx(out_tx.clone()).await;
+        let (resp_tx, resp_rx) = mpsc::unbounded_channel::<EventsResponseResult>();
+        let subscriber = mux.add_subscriber().await;
         metrics::platform_events_active_sessions_inc();
 
+        // Link inbound stream to mux command channel
         let inbound = request.into_inner();
-        spawn_client_command_processor(
-            session,
-            inbound,
-            out_tx.clone(),
-        );
+        let resp_sink = UnboundedSenderSink::from(resp_tx.clone());
 
-        Ok(Response::new(UnboundedReceiverStream::new(out_rx)))
+        let mut workers = self.workers.lock().await;
+        workers.spawn(subscriber.forward(inbound, resp_sink));
+
+        Ok(Response::new(UnboundedReceiverStream::new(resp_rx)))
     }
 }

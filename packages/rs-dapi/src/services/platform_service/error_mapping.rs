@@ -26,7 +26,11 @@ pub fn map_drive_code_to_status(code: u32, info: Option<String>) -> Status {
 }
 
 /// Build StateTransitionBroadcastError consistently from code/info/data
-pub fn build_state_transition_error(code: u32, info: &str, data: Option<&str>) -> StateTransitionBroadcastError {
+pub fn build_state_transition_error(
+    code: u32,
+    info: &str,
+    data: Option<&str>,
+) -> StateTransitionBroadcastError {
     let mut error = StateTransitionBroadcastError {
         code,
         message: info.to_string(),
@@ -43,4 +47,3 @@ pub fn build_state_transition_error(code: u32, info: &str, data: Option<&str>) -
 
     error
 }
-

@@ -4,9 +4,10 @@
 mod broadcast_state_transition;
 mod error_mapping;
 mod get_status;
-mod wait_for_state_transition_result;
 mod subscribe_platform_events;
+mod wait_for_state_transition_result;
 
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
@@ -14,9 +15,12 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use futures::FutureExt;
+use rs_dash_notify::EventMux;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
@@ -69,12 +73,10 @@ macro_rules! drive_method {
     };
 }
 
+use crate::clients::drive_client::DriveChannel;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
-use rs_dash_notify::platform_mux::{PlatformEventsMux, PlatformMuxSettings};
-use rs_dapi_client::AddressList;
-use std::str::FromStr;
 
 /// Platform service implementation with modular method delegation
 #[derive(Clone)]
@@ -85,7 +87,8 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
-    pub platform_events_mux: PlatformEventsMux,
+    pub platform_events_mux: EventMux,
+    workers: Arc<Mutex<JoinSet<()>>>,
 }
 
 impl PlatformServiceImpl {
@@ -95,14 +98,15 @@ impl PlatformServiceImpl {
         config: Arc<Config>,
         subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
+        let mut workers = JoinSet::new();
         // Create WebSocket client
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(
             config.dapi.tenderdash.websocket_uri.clone(),
             1000,
         ));
         {
-            let ws = websocket_client.clone();
-            tokio::spawn(async move {
+            let ws: Arc<TenderdashWebSocketClient> = websocket_client.clone();
+            workers.spawn(async move {
                 let _ = ws.connect_and_listen().await;
             });
         }
@@ -110,16 +114,14 @@ impl PlatformServiceImpl {
         let invalidation_subscription = subscriber_manager
             .add_subscription(FilterType::PlatformAllBlocks)
             .await;
+        let event_mux = EventMux::new();
 
-        // Initialize shared PlatformEventsMux for Drive streaming
-        let addresses = AddressList::from_str(&config.dapi.drive.uri)
-            .expect("invalid drive uri for platform mux");
-        let settings = PlatformMuxSettings {
-            upstream_conn_count: 2,
-        };
-        let platform_events_mux =
-            PlatformEventsMux::new(addresses, settings).expect("failed to init platform mux");
+        let mux_client = drive_client.get_client().clone();
+        let worker_mux = event_mux.clone();
 
+        workers.spawn(async {
+            Self::event_mux_worker(worker_mux, mux_client).await.ok();
+        });
         Self {
             drive_client,
             tenderdash_client,
@@ -127,8 +129,16 @@ impl PlatformServiceImpl {
             config,
             platform_cache: crate::cache::LruResponseCache::new(1024, invalidation_subscription),
             subscriber_manager,
-            platform_events_mux,
+            platform_events_mux: event_mux,
+            workers: Arc::new(Mutex::new(workers)),
         }
+    }
+
+    async fn event_mux_worker(
+        mux: EventMux,
+        client: PlatformClient<DriveChannel>,
+    ) -> Result<(), tonic::Status> {
+        rs_dash_notify::GrpcPlatformEventsProducer::run(mux, client).await
     }
 }
 

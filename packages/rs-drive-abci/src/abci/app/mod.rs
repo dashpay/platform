@@ -9,7 +9,6 @@ mod consensus;
 pub mod execution_result;
 mod full;
 
-use rs_dash_notify::event_bus::EventBus;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::DefaultCoreRPC;
@@ -17,6 +16,7 @@ pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
+use rs_dash_notify::event_bus::EventBus;
 
 /// Provides access to the in-process Platform event bus
 pub trait EventBusApplication {

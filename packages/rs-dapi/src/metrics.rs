@@ -29,22 +29,32 @@ impl Metric {
             Metric::CacheEvent => "rsdapi_cache_events_total",
             Metric::PlatformEventsActiveSessions => "rsdapi_platform_events_active_sessions",
             Metric::PlatformEventsCommands => "rsdapi_platform_events_commands_total",
-            Metric::PlatformEventsForwardedEvents => "rsdapi_platform_events_forwarded_events_total",
+            Metric::PlatformEventsForwardedEvents => {
+                "rsdapi_platform_events_forwarded_events_total"
+            }
             Metric::PlatformEventsForwardedAcks => "rsdapi_platform_events_forwarded_acks_total",
-            Metric::PlatformEventsForwardedErrors => "rsdapi_platform_events_forwarded_errors_total",
-            Metric::PlatformEventsUpstreamStreams => "rsdapi_platform_events_upstream_streams_total",
+            Metric::PlatformEventsForwardedErrors => {
+                "rsdapi_platform_events_forwarded_errors_total"
+            }
+            Metric::PlatformEventsUpstreamStreams => {
+                "rsdapi_platform_events_upstream_streams_total"
+            }
         }
     }
 
     pub const fn help(self) -> &'static str {
         match self {
             Metric::CacheEvent => "Cache events by method and outcome (hit|miss)",
-            Metric::PlatformEventsActiveSessions => "Current number of active Platform events sessions",
+            Metric::PlatformEventsActiveSessions => {
+                "Current number of active Platform events sessions"
+            }
             Metric::PlatformEventsCommands => "Platform events commands processed by operation",
             Metric::PlatformEventsForwardedEvents => "Platform events forwarded to clients",
             Metric::PlatformEventsForwardedAcks => "Platform acks forwarded to clients",
             Metric::PlatformEventsForwardedErrors => "Platform errors forwarded to clients",
-            Metric::PlatformEventsUpstreamStreams => "Upstream subscribePlatformEvents streams started",
+            Metric::PlatformEventsUpstreamStreams => {
+                "Upstream subscribePlatformEvents streams started"
+            }
         }
     }
 }

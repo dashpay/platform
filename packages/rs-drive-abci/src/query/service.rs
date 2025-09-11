@@ -55,6 +55,7 @@ use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use rs_dash_notify::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
+use rs_dash_notify::{EventMux, UnboundedSenderSink};
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -68,6 +69,8 @@ use tracing::Instrument;
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
     event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    /// Multiplexer for Platform events
+    platform_events_mux: EventMux,
     /// background worker tasks
     workers: Arc<Mutex<tokio::task::JoinSet<()>>>,
 }
@@ -85,10 +88,25 @@ impl QueryService {
         platform: Arc<Platform<DefaultCoreRPC>>,
         event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
     ) -> Self {
+        let mux = EventMux::new();
+        let mut workers = tokio::task::JoinSet::new();
+
+        // Start local mux producer to bridge internal event_bus
+        {
+            let bus = event_bus.clone();
+            let worker_mux = mux.clone();
+            workers.spawn(async move {
+                use std::sync::Arc;
+                let mk = Arc::new(|f| PlatformFilterAdapter::new(f));
+                rs_dash_notify::run_local_platform_events_producer(worker_mux, bus, mk).await;
+            });
+        }
+
         Self {
             platform,
             event_bus,
-            workers: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
+            platform_events_mux: mux,
+            workers: Arc::new(Mutex::new(workers)),
         }
     }
 
@@ -289,7 +307,9 @@ impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
             None => false,
             Some(Kind::All(all)) => *all,
             Some(Kind::BlockCommitted(b)) => {
-                if !*b { return false; }
+                if !*b {
+                    return false;
+                }
                 matches!(event.event, Some(Evt::BlockCommitted(_)))
             }
             Some(Kind::StateTransitionResult(filter)) => {
@@ -861,155 +881,151 @@ impl PlatformService for QueryService {
     type subscribePlatformEventsStream =
         UnboundedReceiverStream<Result<PlatformEventsResponse, Status>>;
 
-    /// Reads messages from the `request` stream, processes commands, and sends responses
-    /// and events to the client through the returned stream.
+    /// Uses EventMux: forward inbound commands to mux subscriber and return its response stream
     async fn subscribe_platform_events(
         &self,
         request: Request<Streaming<PlatformEventsCommand>>,
     ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
-        use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
-        use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
-        use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
-        use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
+        let inbound = request.into_inner();
+        let (downstream_tx, rx) =
+            mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
+        let subscriber = self.platform_events_mux.add_subscriber().await;
 
-        let mut inbound = request.into_inner();
-
-        // Outgoing channel (shared across forwarders)
-        let (downstream_tx, rx) = mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
-
-        // Connection-local subscriptions routing map
-        let event_bus = self.event_bus.clone();
-        let workers = self.workers.clone();
-
-        // Process all incoming messages in a background task
-        {
-            let mut workers_guard = self.workers.lock().unwrap();
-            // as we run async task, workers_guard will be dropped once the task is spawned
-            workers_guard.spawn(async move {
-            // Local map lives in this task
-            use std::collections::HashMap;
-            let mut subs: HashMap<
-                String,
-                SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
-            > = HashMap::new();
-
-            loop {
-                tokio::select! {
-                    cmd = inbound.message() => {
-                        tracing::debug!(inbound_message = ?cmd, "received inbound message");
-                        match cmd {
-                            Ok(Some(PlatformEventsCommand { version: Some(CmdVersion::V0(v0)) })) => {
-                                match v0.command {
-                                    Some(Cmd::Add(add)) => {
-                                        let id = add.client_subscription_id;
-                                        let adapter = PlatformFilterAdapter::new(add.filter.unwrap_or_default());
-                                        let handle = event_bus.add_subscription(adapter).await;
-
-                                        {
-                                            let id = id.clone();
-                                            let handle = handle.clone();
-                                            let mut workers_guard = workers.lock().unwrap();
-                                            let events_tx = downstream_tx.clone();
-                                            workers_guard.spawn(async move {
-                                                events_forwarding_worker (
-                                                    handle,
-                                                    &id,
-                                                    events_tx
-                                                ).await;
-                                            });
-                                        }
-
-                                        subs.insert(id.clone(), handle);
-                                        // optional ack
-                                        let ack = PlatformEventsResponse{
-                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "add".to_string() }))
-                                            }))
-                                        };
-                                        let _ = downstream_tx.send(Ok(ack));
-                                    }
-                                    Some(Cmd::Remove(rem)) => {
-                                        let id = rem.client_subscription_id;
-
-                                        if subs.remove(&id).is_some() {
-                                            let ack = PlatformEventsResponse{
-                                                version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                                    response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: id, op: "remove".to_string() }))
-                                                }))
-                                            };
-                                            let _ = downstream_tx.send(Ok(ack));
-                                        }
-                                    }                                    
-                                    Some(Cmd::Ping(p)) => {
-                                        // echo ba            let mut workers_guard = workers.lock().unwrap();ck as ack
-                                        let ack = PlatformEventsResponse{
-                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0{ client_subscription_id: p.nonce.to_string(), op: "ping".to_string() }))
-                                            }))
-                                        };
-                                        let _ = downstream_tx.send(Ok(ack));
-                                    }
-                                    None => {
-                                        let err = PlatformEventsResponse{
-                                            version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                                response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing command".to_string() }))
-                                            }))
-                                        };
-                                        let _ = downstream_tx.send(Ok(err));
-                                    }
-                                }
-                            }
-                            Ok(Some(PlatformEventsCommand { version: None })) => {
-                                let err = PlatformEventsResponse{
-                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                        response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 400, message: "missing version".to_string() }))
-                                    }))
-                                };
-                                let _ = downstream_tx.send(Ok(err));
-                            }
-                            Ok(None) => { break; }
-                            Err(e) => {
-                                let err = PlatformEventsResponse{
-                                    version: Some(RespVersion::V0(PlatformEventsResponseV0{
-                                        response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0{ client_subscription_id: "".to_string(), code: 500, message: format!("{}", e) }))
-                                    }))
-                                };
-                                let _ = downstream_tx.send(Ok(err));
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
+        let mut workers = self.workers.lock().unwrap();
+        workers.spawn(async move {
+            let resp_sink = UnboundedSenderSink::from(downstream_tx);
+            subscriber.forward(inbound, resp_sink).await;
         });
-        };
+
         Ok(Response::new(UnboundedReceiverStream::new(rx)))
     }
 }
 
-async fn events_forwarding_worker(
-    subscription: SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>,
-    client_subscription_id: &str,
-    forward_tx: mpsc::UnboundedSender<Result<PlatformEventsResponse, Status>>,
+// Local event forwarding handled in rs_dash_notify shared local_bus_producer
+
+/// Local producer: consumes commands from mux and produces responses by
+/// subscribing to internal `event_bus` and forwarding events as responses.
+async fn run_local_platform_events_producer(
+    mux: EventMux,
+    event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
 ) {
+    use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
+    use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
     use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
     use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
 
-    while let Some(evt) = subscription.recv().await {
-        tracing::debug!(event = ?evt, "forwarding event");
-        let resp = PlatformEventsResponse {
-            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
-                response: Some(Resp::Event(
-                    dapi_grpc::platform::v0::PlatformEventMessageV0 {
-                        client_subscription_id: client_subscription_id.to_string(),
-                        event: Some(evt),
-                    },
-                )),
-            })),
-        };
-        if forward_tx.send(Ok(resp)).is_err() {
-            tracing::warn!("client disconnected, stopping event forwarding");
-            break;
+    let producer = mux.add_producer().await;
+    let mut cmd_rx = producer.cmd_rx;
+    let resp_tx = producer.resp_tx;
+
+    // Connection-local subscriptions routing map
+    use std::collections::HashMap;
+    let mut subs: HashMap<String, SubscriptionHandle<PlatformEvent, PlatformFilterAdapter>> =
+        HashMap::new();
+
+    while let Some(cmd_res) = cmd_rx.recv().await {
+        match cmd_res {
+            Ok(cmd) => {
+                let v0 = match cmd.version {
+                    Some(CmdVersion::V0(v0)) => v0,
+                    None => {
+                        let err = PlatformEventsResponse {
+                            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                                response: Some(Resp::Error(
+                                    dapi_grpc::platform::v0::PlatformErrorV0 {
+                                        client_subscription_id: "".to_string(),
+                                        code: 400,
+                                        message: "missing version".to_string(),
+                                    },
+                                )),
+                            })),
+                        };
+                        let _ = resp_tx.send(Ok(err));
+                        continue;
+                    }
+                };
+                match v0.command {
+                    Some(Cmd::Add(add)) => {
+                        let id = add.client_subscription_id;
+                        let adapter = PlatformFilterAdapter::new(add.filter.unwrap_or_default());
+                        let handle = event_bus.add_subscription(adapter).await;
+
+                        // Start forwarding events for this subscription
+                        let id_for = id.clone();
+                        let handle_clone = handle.clone();
+                        let resp_tx_clone = resp_tx.clone();
+                        tokio::spawn(async move {
+                            // forwarding handled in rs-dash-notify shared producer in new setup
+                            let _ = (handle_clone, id_for, resp_tx_clone);
+                        });
+
+                        subs.insert(id.clone(), handle);
+
+                        // Ack
+                        let ack = PlatformEventsResponse {
+                            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0 {
+                                    client_subscription_id: id,
+                                    op: "add".to_string(),
+                                })),
+                            })),
+                        };
+                        let _ = resp_tx.send(Ok(ack));
+                    }
+                    Some(Cmd::Remove(rem)) => {
+                        let id = rem.client_subscription_id;
+                        if subs.remove(&id).is_some() {
+                            let ack = PlatformEventsResponse {
+                                version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                                    response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0 {
+                                        client_subscription_id: id,
+                                        op: "remove".to_string(),
+                                    })),
+                                })),
+                            };
+                            let _ = resp_tx.send(Ok(ack));
+                        }
+                    }
+                    Some(Cmd::Ping(p)) => {
+                        let ack = PlatformEventsResponse {
+                            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0 {
+                                    client_subscription_id: p.nonce.to_string(),
+                                    op: "ping".to_string(),
+                                })),
+                            })),
+                        };
+                        let _ = resp_tx.send(Ok(ack));
+                    }
+                    None => {
+                        let err = PlatformEventsResponse {
+                            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                                response: Some(Resp::Error(
+                                    dapi_grpc::platform::v0::PlatformErrorV0 {
+                                        client_subscription_id: "".to_string(),
+                                        code: 400,
+                                        message: "missing command".to_string(),
+                                    },
+                                )),
+                            })),
+                        };
+                        let _ = resp_tx.send(Ok(err));
+                    }
+                }
+            }
+            Err(e) => {
+                tracing::warn!("producer received error command: {}", e);
+                let err = PlatformEventsResponse {
+                    version: Some(RespVersion::V0(PlatformEventsResponseV0 {
+                        response: Some(Resp::Error(dapi_grpc::platform::v0::PlatformErrorV0 {
+                            client_subscription_id: "".to_string(),
+                            code: 500,
+                            message: format!("{}", e),
+                        })),
+                    })),
+                };
+                let _ = resp_tx.send(Ok(err));
+            }
         }
     }
 }

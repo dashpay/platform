@@ -4,8 +4,7 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response::{
         self, wait_for_state_transition_result_response_v0,
     },
-    BroadcastStateTransitionRequest,
-    WaitForStateTransitionResultRequest,
+    BroadcastStateTransitionRequest, WaitForStateTransitionResultRequest,
 };
 use dapi_grpc::tonic::{transport::Channel, Request};
 use sha2::{Digest, Sha256};
@@ -15,7 +14,7 @@ use tracing::{error, info, warn};
 
 /// Comprehensive example demonstrating the complete state transition workflow:
 /// 1. Broadcast a state transition to the Platform
-/// 2. Wait for the state transition to be processed 
+/// 2. Wait for the state transition to be processed
 /// 3. Display the result, including proofs if requested
 ///
 /// This example shows how both broadcastStateTransition and waitForStateTransitionResult
@@ -57,7 +56,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
         eprintln!();
         eprintln!("Example:");
-        eprintln!("  {} http://localhost:3010 \"01020304abcdef...\" true", args[0]);
+        eprintln!(
+            "  {} http://localhost:3010 \"01020304abcdef...\" true",
+            args[0]
+        );
         eprintln!();
         eprintln!("This example demonstrates:");
         eprintln!("  1. Broadcasting a state transition to the Platform");
@@ -72,7 +74,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     info!("🚀 Starting state transition workflow");
     info!("📡 DAPI URL: {}", dapi_url);
-    info!("📦 State transition size: {} characters", state_transition_hex.len());
+    info!(
+        "📦 State transition size: {} characters",
+        state_transition_hex.len()
+    );
     info!("🔍 Request proof: {}", prove);
 
     // Parse the state transition data from hex
@@ -84,7 +89,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    info!("✅ State transition parsed successfully ({} bytes)", state_transition_data.len());
+    info!(
+        "✅ State transition parsed successfully ({} bytes)",
+        state_transition_data.len()
+    );
 
     // Calculate the state transition hash for monitoring
     let state_transition_hash = Sha256::digest(&state_transition_data).to_vec();
@@ -112,13 +120,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 1: Broadcast the state transition
     info!("📤 Step 1: Broadcasting state transition...");
-    
+
     let broadcast_request = Request::new(BroadcastStateTransitionRequest {
         state_transition: state_transition_data.clone(),
     });
 
     let broadcast_start = std::time::Instant::now();
-    
+
     match client.broadcast_state_transition(broadcast_request).await {
         Ok(response) => {
             let broadcast_duration = broadcast_start.elapsed();
@@ -127,7 +135,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             info!("📋 Response: {:?}", response.into_inner());
         }
         Err(status) => {
-            error!("❌ Failed to broadcast state transition: {} - {}", status.code(), status.message());
+            error!(
+                "❌ Failed to broadcast state transition: {} - {}",
+                status.code(),
+                status.message()
+            );
             error!("💡 Common causes:");
             error!("   • Invalid state transition format");
             error!("   • Insufficient balance for fees");
@@ -139,7 +151,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Step 2: Wait for the state transition to be processed
     info!("⏳ Step 2: Waiting for state transition to be processed...");
-    
+
     let wait_request = Request::new(WaitForStateTransitionResultRequest {
         version: Some(Version::V0(WaitForStateTransitionResultRequestV0 {
             state_transition_hash: state_transition_hash.clone(),
@@ -148,32 +160,40 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     });
 
     let wait_start = std::time::Instant::now();
-    
+
     // Add a timeout for the wait operation
     let wait_future = client.wait_for_state_transition_result(wait_request);
-    
+
     match tokio::time::timeout(Duration::from_secs(60), wait_future).await {
         Ok(result) => {
             match result {
                 Ok(response) => {
                     let wait_duration = wait_start.elapsed();
                     let response_inner = response.into_inner();
-                    
+
                     info!("✅ State transition result received!");
                     info!("⏱️  Wait took: {:?}", wait_duration);
-                    
+
                     // Process the response
                     match response_inner.version {
                         Some(wait_for_state_transition_result_response::Version::V0(v0)) => {
                             print_response_metadata(&v0.metadata);
 
                             match v0.result {
-                                Some(wait_for_state_transition_result_response_v0::Result::Proof(proof)) => {
+                                Some(
+                                    wait_for_state_transition_result_response_v0::Result::Proof(
+                                        proof,
+                                    ),
+                                ) => {
                                     info!("🎉 State transition processed successfully!");
                                     print_proof_info(&proof);
                                     info!("🏆 Workflow completed successfully!");
                                 }
-                                Some(wait_for_state_transition_result_response_v0::Result::Error(error)) => {
+                                Some(
+                                    wait_for_state_transition_result_response_v0::Result::Error(
+                                        error,
+                                    ),
+                                ) => {
                                     warn!("⚠️ State transition failed during processing:");
                                     print_error_info(&error);
                                     error!("❌ Workflow completed with error");
@@ -240,7 +260,11 @@ fn handle_wait_error(status: tonic::Status) {
             error!("   • There's a delay in transaction propagation");
         }
         _ => {
-            error!("❌ Unexpected gRPC error: {} - {}", status.code(), status.message());
+            error!(
+                "❌ Unexpected gRPC error: {} - {}",
+                status.code(),
+                status.message()
+            );
         }
     }
 }
@@ -249,7 +273,10 @@ fn print_response_metadata(metadata: &Option<dapi_grpc::platform::v0::ResponseMe
     if let Some(metadata) = metadata {
         info!("📊 Response Metadata:");
         info!("   📏 Block Height: {}", metadata.height);
-        info!("   🔗 Core Chain Locked Height: {}", metadata.core_chain_locked_height);
+        info!(
+            "   🔗 Core Chain Locked Height: {}",
+            metadata.core_chain_locked_height
+        );
         info!("   🌍 Epoch: {}", metadata.epoch);
         info!("   ⏰ Timestamp: {} ms", metadata.time_ms);
         info!("   📋 Protocol Version: {}", metadata.protocol_version);
@@ -261,27 +288,31 @@ fn print_response_metadata(metadata: &Option<dapi_grpc::platform::v0::ResponseMe
 
 fn print_proof_info(proof: &dapi_grpc::platform::v0::Proof) {
     info!("🔐 Cryptographic Proof:");
-    info!("   📊 GroveDB Proof Size: {} bytes", proof.grovedb_proof.len());
-    
+    info!(
+        "   📊 GroveDB Proof Size: {} bytes",
+        proof.grovedb_proof.len()
+    );
+
     if !proof.quorum_hash.is_empty() {
         info!("   👥 Quorum Hash: {}", hex::encode(&proof.quorum_hash));
     }
-    
+
     info!("   ✍️  Signature Size: {} bytes", proof.signature.len());
     info!("   🔄 Round: {}", proof.round);
-    
+
     if !proof.block_id_hash.is_empty() {
         info!("   🆔 Block ID Hash: {}", hex::encode(&proof.block_id_hash));
     }
-    
+
     info!("   🏛️  Quorum Type: {}", proof.quorum_type);
 
     // Show detailed proof data if available (truncated for readability)
     if !proof.grovedb_proof.is_empty() {
         let proof_preview = if proof.grovedb_proof.len() > 32 {
-            format!("{}...{}", 
+            format!(
+                "{}...{}",
                 hex::encode(&proof.grovedb_proof[..16]),
-                hex::encode(&proof.grovedb_proof[proof.grovedb_proof.len()-16..])
+                hex::encode(&proof.grovedb_proof[proof.grovedb_proof.len() - 16..])
             )
         } else {
             hex::encode(&proof.grovedb_proof)
@@ -291,9 +322,10 @@ fn print_proof_info(proof: &dapi_grpc::platform::v0::Proof) {
 
     if !proof.signature.is_empty() {
         let sig_preview = if proof.signature.len() > 32 {
-            format!("{}...{}", 
+            format!(
+                "{}...{}",
                 hex::encode(&proof.signature[..16]),
-                hex::encode(&proof.signature[proof.signature.len()-16..])
+                hex::encode(&proof.signature[proof.signature.len() - 16..])
             )
         } else {
             hex::encode(&proof.signature)
@@ -309,9 +341,10 @@ fn print_error_info(error: &dapi_grpc::platform::v0::StateTransitionBroadcastErr
 
     if !error.data.is_empty() {
         let data_preview = if error.data.len() > 32 {
-            format!("{}...{}", 
+            format!(
+                "{}...{}",
                 hex::encode(&error.data[..16]),
-                hex::encode(&error.data[error.data.len()-16..])
+                hex::encode(&error.data[error.data.len() - 16..])
             )
         } else {
             hex::encode(&error.data)
@@ -320,7 +353,8 @@ fn print_error_info(error: &dapi_grpc::platform::v0::StateTransitionBroadcastErr
 
         // Try to decode data as UTF-8 string if possible
         if let Ok(data_str) = String::from_utf8(error.data.clone()) {
-            if data_str.len() <= 200 { // Only show if reasonably short
+            if data_str.len() <= 200 {
+                // Only show if reasonably short
                 error!("   📝 Data (as text): {}", data_str);
             }
         }
