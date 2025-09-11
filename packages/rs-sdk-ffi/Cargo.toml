@@ -19,8 +19,8 @@ simple-signer = { path = "../simple-signer" }
 
 [target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
 # Core SDK integration (always included for unified SDK); relative to this crate
-dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi", optional = true }
-dashcore = { path = "../../../rust-dashcore/dash" }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219" }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
