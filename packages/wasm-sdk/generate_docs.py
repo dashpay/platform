@@ -401,7 +401,7 @@ def generate_docs_javascript():
     additional_functions = ['prefetch_trusted_quorums_testnet']
     
     # For imports: init is default export, others are named exports
-    named_imports = ['WasmSdkBuilder'] + wasm_functions + additional_functions
+    named_imports = ['WasmSdkBuilder', *wasm_functions, *additional_functions]
     named_imports_str = ',\n            '.join(named_imports)
     
     # For window.wasmFunctions: only include the actual functions (not init/WasmSdkBuilder)
