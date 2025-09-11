@@ -1209,13 +1209,9 @@ def generate_docs_javascript():
             });
         });'''
 
-def generate_user_docs_html(query_defs, transition_defs):
-    """Generate user-friendly HTML documentation"""
-    
-    html_content = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
+def generate_html_head():
+    """Generate HTML head section with meta tags and scripts"""
+    return '''    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Dash Platform WASM JS SDK Documentation</title>
     <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
@@ -1223,10 +1219,12 @@ def generate_user_docs_html(query_defs, transition_defs):
     <link rel="stylesheet" href="docs.css">
     <script type="module">
 ''' + generate_docs_javascript() + '''
-    </script>
-</head>
-<body>
-    <!-- Preloader -->
+    </script>'''
+
+
+def generate_preloader_html():
+    """Generate preloader HTML section"""
+    return '''    <!-- Preloader -->
     <div id="preloader">
         <div class="preloader-content">
             <div class="preloader-text">Loading WASM module...</div>
@@ -1237,9 +1235,12 @@ def generate_user_docs_html(query_defs, transition_defs):
                 <div class="progress-percent" id="progressPercent">0%</div>
             </div>
         </div>
-    </div>
-    
-    <!-- Sidebar -->
+    </div>'''
+
+
+def generate_sidebar_html(query_defs, transition_defs):
+    """Generate sidebar HTML section with table of contents"""
+    sidebar_html = '''    <!-- Sidebar -->
     <div class="sidebar">
         <h2>Table of Contents</h2>
         <div class="search-container">
@@ -1255,21 +1256,26 @@ def generate_user_docs_html(query_defs, transition_defs):
 '''
     
     # Generate sidebar links for queries
-    html_content += generate_sidebar_entries(query_defs, 'query')
+    sidebar_html += generate_sidebar_entries(query_defs, 'query')
     
-    html_content += '''        </ul>
+    sidebar_html += '''        </ul>
         
         <div class="section-header state-transitions">State Transitions</div>
         <ul>
 '''
     
     # Generate sidebar links for transitions
-    html_content += generate_sidebar_entries(transition_defs, 'transition')
+    sidebar_html += generate_sidebar_entries(transition_defs, 'transition')
     
-    html_content += '''        </ul>
-    </div>
+    sidebar_html += '''        </ul>
+    </div>'''
     
-    <!-- Main Content -->
+    return sidebar_html
+
+
+def generate_main_content_html(query_defs, transition_defs):
+    """Generate main content HTML section with documentation"""
+    main_content_html = '''    <!-- Main Content -->
     <div class="main-content">
         <nav class="nav">
             <ul>
@@ -1307,16 +1313,33 @@ def generate_user_docs_html(query_defs, transition_defs):
 '''
     
     # Add query documentation
-    html_content += generate_operation_docs(query_defs, 'query', 'query')
+    main_content_html += generate_operation_docs(query_defs, 'query', 'query')
     
     # Add state transition documentation
-    html_content += '<h2 id="transitions">State Transitions</h2>'
-    html_content += generate_operation_docs(transition_defs, 'transition', 'transition')
+    main_content_html += '<h2 id="transitions">State Transitions</h2>'
+    main_content_html += generate_operation_docs(transition_defs, 'transition', 'transition')
     
     # Close main content div
-    html_content += '''
+    main_content_html += '''
         <a href="#" class="back-to-top">↑ Top</a>
-    </div>
+    </div>'''
+    
+    return main_content_html
+
+def generate_user_docs_html(query_defs, transition_defs):
+    """Generate user-friendly HTML documentation"""
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+''' + generate_html_head() + '''
+</head>
+<body>
+''' + generate_preloader_html() + '''
+    
+''' + generate_sidebar_html(query_defs, transition_defs) + '''
+    
+''' + generate_main_content_html(query_defs, transition_defs) + '''
     
     <script>
         // Smooth scrolling for anchor links
