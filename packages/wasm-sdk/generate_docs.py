@@ -10,6 +10,81 @@ import html as html_lib
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Module-level constants extracted for maintainability
+
+# Test data for various query types - using a known testnet values
+TESTNET_TEST_DATA = {
+    'identity_id': '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
+    'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
+    'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+    'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+    'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
+    'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
+    'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
+    'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
+    'public_key_hash_non_unique': '518038dc858461bcee90478fd994bba8057b7531',
+    'pro_tx_hash': '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113',
+    'token_id': 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv',
+    'document_type': 'domain',
+    'document_id': '7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r',
+    'username': 'alice',
+    'epoch': 8635
+}
+
+# Function name mappings from API names to SDK function names
+FUNCTION_NAME_MAP = {
+    'getIdentity': 'identity_fetch',
+    'getIdentityKeys': 'get_identity_keys',
+    'getIdentitiesContractKeys': 'get_identities_contract_keys',
+    'getIdentityNonce': 'get_identity_nonce',
+    'getIdentityContractNonce': 'get_identity_contract_nonce',
+    'getIdentityBalance': 'get_identity_balance',
+    'getIdentitiesBalances': 'get_identities_balances',
+    'getIdentityBalanceAndRevision': 'get_identity_balance_and_revision',
+    'getIdentityByPublicKeyHash': 'get_identity_by_public_key_hash',
+    'getIdentityByNonUniquePublicKeyHash': 'get_identity_by_non_unique_public_key_hash',
+    'getDataContract': 'data_contract_fetch',
+    'getDataContractHistory': 'get_data_contract_history',
+    'getDataContracts': 'get_data_contracts',
+    'getDocuments': 'get_documents',
+    'getDocument': 'get_document',
+    'getDpnsUsername': 'get_dpns_usernames',
+    'dpnsCheckAvailability': 'dpns_is_name_available',
+    'dpnsResolve': 'dpns_resolve_name',
+    'dpnsSearch': 'get_documents',
+    'getContestedResources': 'get_contested_resources',
+    'getContestedResourceVoteState': 'get_contested_resource_vote_state',
+    'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
+    'getContestedResourceIdentityVotes': 'get_contested_resource_identity_votes',
+    'getVotePollsByEndDate': 'get_vote_polls_by_end_date',
+    'getProtocolVersionUpgradeState': 'get_protocol_version_upgrade_state',
+    'getProtocolVersionUpgradeVoteStatus': 'get_protocol_version_upgrade_vote_status',
+    'getEpochsInfo': 'get_epochs_info',
+    'getCurrentEpoch': 'get_current_epoch',
+    'getFinalizedEpochInfos': 'get_finalized_epoch_infos',
+    'getEvonodesProposedEpochBlocksByIds': 'get_evonodes_proposed_epoch_blocks_by_ids',
+    'getEvonodesProposedEpochBlocksByRange': 'get_evonodes_proposed_epoch_blocks_by_range',
+    'getIdentityTokenBalances': 'get_identity_token_balances',
+    'getIdentitiesTokenBalances': 'get_identities_token_balances',
+    'getIdentityTokenInfos': 'get_identity_token_infos',
+    'getIdentitiesTokenInfos': 'get_identities_token_infos',
+    'getTokenStatuses': 'get_token_statuses',
+    'getTokenDirectPurchasePrices': 'get_token_direct_purchase_prices',
+    'getTokenContractInfo': 'get_token_contract_info',
+    'getTokenPerpetualDistributionLastClaim': 'get_token_perpetual_distribution_last_claim',
+    'getTokenTotalSupply': 'get_token_total_supply',
+    'getGroupInfo': 'get_group_info',
+    'getGroupInfos': 'get_group_infos',
+    'getGroupActions': 'get_group_actions',
+    'getGroupActionSigners': 'get_group_action_signers',
+    'getStatus': 'get_status',
+    'getCurrentQuorumsInfo': 'get_current_quorums_info',
+    'getPrefundedSpecializedBalance': 'get_prefunded_specialized_balance',
+    'getTotalCreditsInPlatform': 'get_total_credits_in_platform',
+    'getPathElements': 'get_path_elements',
+    'waitForStateTransitionResult': 'wait_for_state_transition_result'
+}
+
 def load_api_definitions(api_definitions_file):
     """Load query and state transition definitions from api-definitions.json"""
     try:
@@ -28,45 +103,25 @@ def load_api_definitions(api_definitions_file):
 def generate_example_code(query_key, inputs):
     """Generate example code for a query"""
     
-    # Test data for various query types
-    # Using a known testnet identity with activity
-    test_data = {
-        'identity_id': '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
-        'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
-        'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
-        'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
-        'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
-        'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
-        'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
-        'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
-        'public_key_hash_non_unique': '518038dc858461bcee90478fd994bba8057b7531',
-        'pro_tx_hash': '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113',
-        'token_id': 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv',
-        'document_type': 'domain',
-        'document_id': '7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r',
-        'username': 'alice',
-        'epoch': 8635
-    }
-    
     # Map input names to test values
     param_mapping = {
-        'id': f"'{test_data['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
-        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['identity_id']}'",
-        'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
-        'identitiesIds': f"['{test_data['identity_id']}']",
-        'identityIds': f"['{test_data['identity_id']}']",
-        'contractId': f"'{test_data['group_contract_id']}'" if ('group' in query_key.lower() or 'Group' in query_key) else f"'{test_data['token_contract_id']}'" if ('token' in query_key.lower() or 'Token' in query_key) and 'TokenBalance' not in query_key and 'TokenInfo' not in query_key else f"'{test_data['contract_id']}'",
-        'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{test_data['data_contract_id']}'",
-        'publicKeyHash': f"'{test_data['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{test_data['public_key_hash_non_unique']}'",
-        'startProTxHash': f"'{test_data['pro_tx_hash']}'",
-        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
-        'tokenIds': f"['{test_data['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{test_data['token_id']}']",
-        'documentType': f"'{test_data['document_type']}'",
-        'documentId': f"'{test_data['document_id']}'",
-        'label': f"'{test_data['username']}'",
-        'name': f"'{test_data['username']}'",
+        'id': f"'{TESTNET_TEST_DATA['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{TESTNET_TEST_DATA['data_contract_id']}'" if 'getDataContract' in query_key else f"'{TESTNET_TEST_DATA['identity_id']}'",
+        'identityId': f"'{TESTNET_TEST_DATA['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{TESTNET_TEST_DATA['identity_id']}'",
+        'ids': f"['{TESTNET_TEST_DATA['data_contract_id']}', '{TESTNET_TEST_DATA['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{TESTNET_TEST_DATA['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'identitiesIds': f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'identityIds': f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'contractId': f"'{TESTNET_TEST_DATA['group_contract_id']}'" if ('group' in query_key.lower() or 'Group' in query_key) else f"'{TESTNET_TEST_DATA['token_contract_id']}'" if ('token' in query_key.lower() or 'Token' in query_key) and 'TokenBalance' not in query_key and 'TokenInfo' not in query_key else f"'{TESTNET_TEST_DATA['contract_id']}'",
+        'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{TESTNET_TEST_DATA['data_contract_id']}'",
+        'publicKeyHash': f"'{TESTNET_TEST_DATA['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{TESTNET_TEST_DATA['public_key_hash_non_unique']}'",
+        'startProTxHash': f"'{TESTNET_TEST_DATA['pro_tx_hash']}'",
+        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{TESTNET_TEST_DATA['token_id']}'",
+        'tokenIds': f"['{TESTNET_TEST_DATA['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{TESTNET_TEST_DATA['token_id']}']",
+        'documentType': f"'{TESTNET_TEST_DATA['document_type']}'",
+        'documentId': f"'{TESTNET_TEST_DATA['document_id']}'",
+        'label': f"'{TESTNET_TEST_DATA['username']}'",
+        'name': f"'{TESTNET_TEST_DATA['username']}'",
         'prefix': "'ali'",
-        'epoch': '1000' if 'getEpochsInfo' in query_key else test_data['epoch'],
+        'epoch': '1000' if 'getEpochsInfo' in query_key else TESTNET_TEST_DATA['epoch'],
         'keyRequestType': "'all'",
         'limit': '10',
         'count': '100',
@@ -79,9 +134,9 @@ def generate_example_code(query_key, inputs):
         'resultType': "'documents'",
         'documentTypeName': "'domain'",
         'indexName': "'parentNameAndLabel'",
-        'contestantId': f"'{test_data['identity_id']}'",
+        'contestantId': f"'{TESTNET_TEST_DATA['identity_id']}'",
         'amount': '1000000',
-        'recipientId': f"'{test_data['identity_id']}'",
+        'recipientId': f"'{TESTNET_TEST_DATA['identity_id']}'",
         'toAddress': "'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf'",
         'where': 'JSON.stringify([["normalizedParentDomainName", "==", "dash"]])',
         'orderBy': 'JSON.stringify([["normalizedLabel", "asc"]])',
@@ -94,7 +149,7 @@ def generate_example_code(query_key, inputs):
         'startActionIdIncluded': 'false',
         'actionId': "'6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ'",
         'path': "['96']",
-        'keys': f"['{test_data['identity_id']}']",
+        'keys': f"['{TESTNET_TEST_DATA['identity_id']}']",
         'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'",
         'allowIncludeLockedAndAbstainingVoteTally': 'null',
         'startAtValue': 'null',
@@ -110,10 +165,10 @@ def generate_example_code(query_key, inputs):
     # Handle special cases for functions with structured parameters
     if query_key == 'getGroupInfos':
         # getGroupInfos expects: sdk, contractId, startAtInfo (object or null), count
-        params = [f"'{test_data['group_contract_id']}'", "null", "100"]
+        params = [f"'{TESTNET_TEST_DATA['group_contract_id']}'", "null", "100"]
     elif query_key == 'getGroupActions':
         # getGroupActions expects: sdk, contractId, groupContractPosition, status, startAtInfo (object or null), count
-        params = [f"'{test_data['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
+        params = [f"'{TESTNET_TEST_DATA['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
     elif query_key == 'getDataContractHistory':
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
         # Use the specific contract ID for getDataContractHistory examples
@@ -145,61 +200,8 @@ def generate_example_code(query_key, inputs):
                 else:
                     params.append('""')
     
-    # Handle special function name mappings
-    func_name_map = {
-        'getIdentity': 'identity_fetch',
-        'getIdentityKeys': 'get_identity_keys',
-        'getIdentitiesContractKeys': 'get_identities_contract_keys',
-        'getIdentityNonce': 'get_identity_nonce',
-        'getIdentityContractNonce': 'get_identity_contract_nonce',
-        'getIdentityBalance': 'get_identity_balance',
-        'getIdentitiesBalances': 'get_identities_balances',
-        'getIdentityBalanceAndRevision': 'get_identity_balance_and_revision',
-        'getIdentityByPublicKeyHash': 'get_identity_by_public_key_hash',
-        'getIdentityByNonUniquePublicKeyHash': 'get_identity_by_non_unique_public_key_hash',
-        'getDataContract': 'data_contract_fetch',
-        'getDataContractHistory': 'get_data_contract_history',
-        'getDataContracts': 'get_data_contracts',
-        'getDocuments': 'get_documents',
-        'getDocument': 'get_document',
-        'getDpnsUsername': 'get_dpns_usernames',
-        'dpnsCheckAvailability': 'dpns_is_name_available',
-        'dpnsResolve': 'dpns_resolve_name',
-        'dpnsSearch': 'get_documents',
-        'getContestedResources': 'get_contested_resources',
-        'getContestedResourceVoteState': 'get_contested_resource_vote_state',
-        'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
-        'getContestedResourceIdentityVotes': 'get_contested_resource_identity_votes',
-        'getVotePollsByEndDate': 'get_vote_polls_by_end_date',
-        'getProtocolVersionUpgradeState': 'get_protocol_version_upgrade_state',
-        'getProtocolVersionUpgradeVoteStatus': 'get_protocol_version_upgrade_vote_status',
-        'getEpochsInfo': 'get_epochs_info',
-        'getCurrentEpoch': 'get_current_epoch',
-        'getFinalizedEpochInfos': 'get_finalized_epoch_infos',
-        'getEvonodesProposedEpochBlocksByIds': 'get_evonodes_proposed_epoch_blocks_by_ids',
-        'getEvonodesProposedEpochBlocksByRange': 'get_evonodes_proposed_epoch_blocks_by_range',
-        'getIdentityTokenBalances': 'get_identity_token_balances',
-        'getIdentitiesTokenBalances': 'get_identities_token_balances',
-        'getIdentityTokenInfos': 'get_identity_token_infos',
-        'getIdentitiesTokenInfos': 'get_identities_token_infos',
-        'getTokenStatuses': 'get_token_statuses',
-        'getTokenDirectPurchasePrices': 'get_token_direct_purchase_prices',
-        'getTokenContractInfo': 'get_token_contract_info',
-        'getTokenPerpetualDistributionLastClaim': 'get_token_perpetual_distribution_last_claim',
-        'getTokenTotalSupply': 'get_token_total_supply',
-        'getGroupInfo': 'get_group_info',
-        'getGroupInfos': 'get_group_infos',
-        'getGroupActions': 'get_group_actions',
-        'getGroupActionSigners': 'get_group_action_signers',
-        'getStatus': 'get_status',
-        'getCurrentQuorumsInfo': 'get_current_quorums_info',
-        'getPrefundedSpecializedBalance': 'get_prefunded_specialized_balance',
-        'getTotalCreditsInPlatform': 'get_total_credits_in_platform',
-        'getPathElements': 'get_path_elements',
-        'waitForStateTransitionResult': 'wait_for_state_transition_result'
-    }
-    
-    func_name = func_name_map.get(query_key, query_key)
+    # Use module-level function name mapping
+    func_name = FUNCTION_NAME_MAP.get(query_key, query_key)
     
     # Add sdk as first parameter for all functions
     all_params = ['sdk'] + params
@@ -867,20 +869,9 @@ h3 {
     color: #333;
 }'''
 
-def generate_user_docs_html(query_defs, transition_defs):
-    """Generate user-friendly HTML documentation"""
-    
-    html_content = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dash Platform WASM JS SDK Documentation</title>
-    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
-    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
-    <link rel="stylesheet" href="docs.css">
-    <script type="module">
-        import init, { 
+def generate_docs_javascript():
+    """Generate the main JavaScript module for docs.html"""
+    return '''        import init, { 
             WasmSdkBuilder,
             identity_fetch,
             get_identity_keys,
@@ -1216,7 +1207,22 @@ def generate_user_docs_html(query_defs, transition_defs):
                 // Show/hide no results message
                 noResults.style.display = hasResults ? 'none' : 'block';
             });
-        });
+        });'''
+
+def generate_user_docs_html(query_defs, transition_defs):
+    """Generate user-friendly HTML documentation"""
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dash Platform WASM JS SDK Documentation</title>
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
+    <link rel="stylesheet" href="docs.css">
+    <script type="module">
+''' + generate_docs_javascript() + '''
     </script>
 </head>
 <body>
