@@ -466,8 +466,8 @@ struct TokenActionDetailView: View {
     }
     
     private func performTokenAction() async {
-        guard let sdk = appState.sdk,
-              let identity = selectedIdentity else {
+        guard appState.sdk != nil,
+              selectedIdentity != nil else {
             appState.showError(message: "Please select an identity")
             return
         }

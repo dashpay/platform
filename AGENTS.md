@@ -43,3 +43,4 @@
 - iOS/FFI artifacts: `packages/rs-sdk-ffi` and Swift app in `packages/swift-sdk`.
 - Example: build iOS framework
   - `cd packages/rs-sdk-ffi && ./build_ios.sh`
+ - iOS Simulator MCP server: see `packages/swift-sdk/IOS_SIMULATOR_MCP.md` for Codex config, tools, and usage. Default output dir set via `IOS_SIMULATOR_MCP_DEFAULT_OUTPUT_DIR`.

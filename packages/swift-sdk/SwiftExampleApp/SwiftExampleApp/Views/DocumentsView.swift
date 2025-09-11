@@ -283,35 +283,30 @@ struct CreateDocumentView: View {
     }
     
     private func createDocument() async {
-        guard let sdk = appState.sdk,
+        guard appState.sdk != nil,
               let contract = selectedContract,
               !selectedDocumentType.isEmpty else {
             appState.showError(message: "Please select a contract and document type")
             return
         }
         
-        do {
-            isLoading = true
-            
-            // In a real app, we would use the SDK's document creation functionality
-            let document = DocumentModel(
-                id: UUID().uuidString,
-                contractId: contract.id,
-                documentType: selectedDocumentType,
-                ownerId: Data(hexString: selectedOwnerId) ?? Data(),
-                data: documentData,
-                createdAt: Date(),
-                updatedAt: Date()
-            )
-            
-            appState.documents.append(document)
-            appState.showError(message: "Document created successfully")
-            
-            isLoading = false
-        } catch {
-            appState.showError(message: "Failed to create document: \(error.localizedDescription)")
-            isLoading = false
-        }
+        isLoading = true
+        
+        // In a real app, we would use the SDK's document creation functionality
+        let document = DocumentModel(
+            id: UUID().uuidString,
+            contractId: contract.id,
+            documentType: selectedDocumentType,
+            ownerId: Data(hexString: selectedOwnerId) ?? Data(),
+            data: documentData,
+            createdAt: Date(),
+            updatedAt: Date()
+        )
+        
+        appState.documents.append(document)
+        appState.showError(message: "Document created successfully")
+        
+        isLoading = false
     }
     
     private func loadSampleContracts() {

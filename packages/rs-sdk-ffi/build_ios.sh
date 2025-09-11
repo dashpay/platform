@@ -163,6 +163,27 @@ if [ -f "$KEY_WALLET_HEADER_PATH" ] && [ -f "$SPV_HEADER_PATH" ]; then
 extern "C" {
 #endif
 
+// Forward declarations to ensure cross-refs compile regardless of merge order
+typedef struct FFIClientConfig FFIClientConfig;
+// Provide explicit opaque definitions so Swift can import the type names
+typedef struct FFIDashSpvClient { unsigned char _private[0]; } FFIDashSpvClient;
+typedef struct FFIWallet { unsigned char _private[0]; } FFIWallet;
+typedef struct FFIAccount { unsigned char _private[0]; } FFIAccount;
+typedef struct FFIAccountCollection { unsigned char _private[0]; } FFIAccountCollection;
+typedef struct FFIBLSAccount { unsigned char _private[0]; } FFIBLSAccount;
+typedef struct FFIEdDSAAccount { unsigned char _private[0]; } FFIEdDSAAccount;
+typedef struct FFIAddressPool { unsigned char _private[0]; } FFIAddressPool;
+typedef struct FFIManagedAccountCollection { unsigned char _private[0]; } FFIManagedAccountCollection;
+typedef struct FFIWalletManager { unsigned char _private[0]; } FFIWalletManager;
+typedef struct FFIManagedAccount { unsigned char _private[0]; } FFIManagedAccount;
+// Platform SDK opaque handles
+typedef struct SDKHandle { unsigned char _private[0]; } SDKHandle;
+typedef struct DataContractHandle { unsigned char _private[0]; } DataContractHandle;
+typedef struct DocumentHandle { unsigned char _private[0]; } DocumentHandle;
+typedef struct IdentityHandle { unsigned char _private[0]; } IdentityHandle;
+typedef struct IdentityPublicKeyHandle { unsigned char _private[0]; } IdentityPublicKeyHandle;
+typedef struct SignerHandle { unsigned char _private[0]; } SignerHandle;
+
 // ============================================================================
 // Key Wallet FFI Functions and Types
 // ============================================================================
@@ -198,13 +219,7 @@ EOF
         /^}  \/\/ extern "C"$/ { next }  # Skip extern "C" closing
         /^#endif.*__cplusplus/ { next }  # Skip any endif with __cplusplus
         /^#endif  \/\* KEY_WALLET_FFI_H \*\/$/ { exit }
-        in_content {
-            # Fix the ManagedWalletInfo reference in FFIManagedWallet struct
-            if (/ManagedWalletInfo \*inner;/) {
-                gsub(/ManagedWalletInfo \*inner;/, "FFIManagedWalletInfo *inner;")
-            }
-            print
-        }
+        in_content { print }
     ' "$KEY_WALLET_HEADER_PATH" >> "$MERGED_HEADER"
     
     # Add separator for SPV FFI
@@ -213,9 +228,6 @@ EOF
 // ============================================================================
 // Dash SPV FFI Functions and Types
 // ============================================================================
-
-// Forward declaration for FFIClientConfig (opaque type)
-typedef struct FFIClientConfig FFIClientConfig;
 
 EOF
     
@@ -229,9 +241,10 @@ EOF
         /^#pragma once/ { next }
         /^typedef struct CoreSDKHandle \{/ { skip = 1 }
         /^\} CoreSDKHandle;/ && skip { skip = 0; next }
-        /^typedef ClientConfig FFIClientConfig;/ { next }  # Skip broken typedef
         /^#ifdef __cplusplus$/ { next }
+        /^namespace dash_spv_ffi \{/ { next }
         /^extern "C" \{$/ { next }
+        /^\}  \/\/ namespace dash_spv_ffi$/ { next }
         /^}  \/\/ extern "C"$/ { next }
         /^#endif.*__cplusplus/ { next }
         /^#endif.*DASH_SPV_FFI_H/ { next }
@@ -294,6 +307,26 @@ else
     echo -e "${YELLOW}  cd ../../../rust-dashcore/dash-spv-ffi && cargo build --release${NC}"
 fi
 
+# Build dash-spv-ffi from local rust-dashcore for device and simulator
+RUST_DASHCORE_PATH="$PROJECT_ROOT/../rust-dashcore"
+SPV_CRATE_PATH="$RUST_DASHCORE_PATH/dash-spv-ffi"
+if [ -d "$SPV_CRATE_PATH" ]; then
+  echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
+  pushd "$SPV_CRATE_PATH" >/dev/null
+  if [ "$BUILD_ARCH" != "x86" ]; then
+    cargo build --lib --target aarch64-apple-ios --release > /tmp/cargo_build_spv_device.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi device build failed${NC}"; cat /tmp/cargo_build_spv_device.log; exit 1; }
+  fi
+  if [ "$BUILD_ARCH" = "universal" ]; then
+    cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+    cargo build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+  else
+    cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+  fi
+  popd >/dev/null
+else
+  echo -e "${YELLOW}⚠ Local rust-dashcore not found at $SPV_CRATE_PATH; SPV symbols must be provided by rs-sdk-ffi${NC}"
+fi
+
 # Create simulator library based on architecture
 mkdir -p "$OUTPUT_DIR/simulator"
 
@@ -314,6 +347,14 @@ fi
 if [ "$BUILD_ARCH" != "x86" ]; then
     mkdir -p "$OUTPUT_DIR/device"
     cp "$PROJECT_ROOT/target/aarch64-apple-ios/release/librs_sdk_ffi.a" "$OUTPUT_DIR/device/"
+    # Merge with dash-spv-ffi device lib if available
+    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a" ]; then
+      echo -e "${GREEN}Merging device libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
+      libtool -static -o "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" \
+        "$OUTPUT_DIR/device/librs_sdk_ffi.a" \
+        "$SPV_CRATE_PATH/target/aarch64-apple-ios/release/libdash_spv_ffi.a"
+      COMBINED_DEVICE_LIB=1
+    fi
 fi
 
 # Create module map; include SDK, SPV, and KeyWallet headers
@@ -365,11 +406,30 @@ rm -rf "$OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"
 XCFRAMEWORK_CMD="xcodebuild -create-xcframework"
 
 if [ "$BUILD_ARCH" != "x86" ] && [ -f "$OUTPUT_DIR/device/librs_sdk_ffi.a" ]; then
-    XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/librs_sdk_ffi.a -headers $HEADERS_DIR"
+    if [ -n "${COMBINED_DEVICE_LIB:-}" ] && [ -f "$OUTPUT_DIR/device/libDashSDKFFI_combined.a" ]; then
+      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/libDashSDKFFI_combined.a -headers $HEADERS_DIR"
+    else
+      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/device/librs_sdk_ffi.a -headers $HEADERS_DIR"
+    fi
 fi
 
 if [ -f "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" ]; then
-    XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
+    # Try to merge with SPV sim lib if it exists
+    SIM_SPV_LIB=""
+    if [ -f "$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_CRATE_PATH/target/aarch64-apple-ios-sim/release/libdash_spv_ffi.a"
+    elif [ -f "$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a" ]; then
+      SIM_SPV_LIB="$SPV_CRATE_PATH/target/x86_64-apple-ios/release/libdash_spv_ffi.a"
+    fi
+    if [ -n "$SIM_SPV_LIB" ]; then
+      echo -e "${GREEN}Merging simulator libs (rs-sdk-ffi + dash-spv-ffi)${NC}"
+      libtool -static -o "$OUTPUT_DIR/simulator/libDashSDKFFI_combined.a" \
+        "$OUTPUT_DIR/simulator/librs_sdk_ffi.a" \
+        "$SIM_SPV_LIB"
+      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/libDashSDKFFI_combined.a -headers $HEADERS_DIR"
+    else
+      XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -library $OUTPUT_DIR/simulator/librs_sdk_ffi.a -headers $HEADERS_DIR"
+    fi
 fi
 
 XCFRAMEWORK_CMD="$XCFRAMEWORK_CMD -output $OUTPUT_DIR/$FRAMEWORK_NAME.xcframework"

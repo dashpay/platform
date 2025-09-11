@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for managed wallet with address pool management and transaction checking
 public class ManagedWallet {
-    private let handle: UnsafeMutablePointer<FFIManagedWallet>
+    private let handle: UnsafeMutablePointer<FFIManagedWalletInfo>
     private let network: KeyWalletNetwork
     
     /// Create a managed wallet wrapper from a regular wallet
@@ -421,10 +421,8 @@ public class ManagedWallet {
     
     // MARK: - Private Helpers
     
-    private func getInfoHandle() -> OpaquePointer? {
-        // The handle is an FFIManagedWallet*, which contains an FFIManagedWalletInfo* as inner
-        // We treat it as opaque in Swift
-        return OpaquePointer(handle)
+    private func getInfoHandle() -> UnsafeMutablePointer<FFIManagedWalletInfo>? {
+        // The handle is an FFIManagedWalletInfo* (opaque C handle)
+        return handle
     }
 }
-

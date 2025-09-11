@@ -56,7 +56,7 @@ enum StateTransitionType: String, Codable {
 // MARK: - Identity State Transitions
 
 struct IdentityCreateTransition: StateTransition {
-    let type = StateTransitionType.identityCreate
+    var type: StateTransitionType { .identityCreate }
     let identityId: Identifier
     let publicKeys: [IdentityPublicKey]
     let balance: Credits
@@ -65,7 +65,7 @@ struct IdentityCreateTransition: StateTransition {
 }
 
 struct IdentityUpdateTransition: StateTransition {
-    let type = StateTransitionType.identityUpdate
+    var type: StateTransitionType { .identityUpdate }
     let identityId: Identifier
     let revision: Revision
     let addPublicKeys: [IdentityPublicKey]?
@@ -76,7 +76,7 @@ struct IdentityUpdateTransition: StateTransition {
 }
 
 struct IdentityTopUpTransition: StateTransition {
-    let type = StateTransitionType.identityTopUp
+    var type: StateTransitionType { .identityTopUp }
     let identityId: Identifier
     let amount: Credits
     let signature: BinaryData?
@@ -84,7 +84,7 @@ struct IdentityTopUpTransition: StateTransition {
 }
 
 struct IdentityCreditWithdrawalTransition: StateTransition {
-    let type = StateTransitionType.identityCreditWithdrawal
+    var type: StateTransitionType { .identityCreditWithdrawal }
     let identityId: Identifier
     let amount: Credits
     let coreFeePerByte: UInt32
@@ -95,7 +95,7 @@ struct IdentityCreditWithdrawalTransition: StateTransition {
 }
 
 struct IdentityCreditTransferTransition: StateTransition {
-    let type = StateTransitionType.identityCreditTransfer
+    var type: StateTransitionType { .identityCreditTransfer }
     let identityId: Identifier
     let recipientId: Identifier
     let amount: Credits
@@ -106,7 +106,7 @@ struct IdentityCreditTransferTransition: StateTransition {
 // MARK: - Data Contract State Transitions
 
 struct DataContractCreateTransition: StateTransition {
-    let type = StateTransitionType.dataContractCreate
+    var type: StateTransitionType { .dataContractCreate }
     let dataContract: DPPDataContract
     let entropy: Bytes32
     let signature: BinaryData?
@@ -114,7 +114,7 @@ struct DataContractCreateTransition: StateTransition {
 }
 
 struct DataContractUpdateTransition: StateTransition {
-    let type = StateTransitionType.dataContractUpdate
+    var type: StateTransitionType { .dataContractUpdate }
     let dataContract: DPPDataContract
     let signature: BinaryData?
     let signaturePublicKeyId: KeyID?
@@ -123,7 +123,7 @@ struct DataContractUpdateTransition: StateTransition {
 // MARK: - Document State Transitions
 
 struct DocumentsBatchTransition: StateTransition {
-    let type = StateTransitionType.documentsBatch
+    var type: StateTransitionType { .documentsBatch }
     let ownerId: Identifier
     let contractId: Identifier
     let documentTransitions: [DocumentTransition]
@@ -193,7 +193,7 @@ struct DocumentUpdatePriceTransition: Codable {
 // MARK: - Token State Transitions
 
 struct TokenTransferTransition: StateTransition {
-    let type = StateTransitionType.tokenTransfer
+    var type: StateTransitionType { .tokenTransfer }
     let tokenId: Identifier
     let senderId: Identifier
     let recipientId: Identifier
@@ -203,7 +203,7 @@ struct TokenTransferTransition: StateTransition {
 }
 
 struct TokenMintTransition: StateTransition {
-    let type = StateTransitionType.tokenMint
+    var type: StateTransitionType { .tokenMint }
     let tokenId: Identifier
     let ownerId: Identifier
     let recipientId: Identifier?
@@ -213,7 +213,7 @@ struct TokenMintTransition: StateTransition {
 }
 
 struct TokenBurnTransition: StateTransition {
-    let type = StateTransitionType.tokenBurn
+    var type: StateTransitionType { .tokenBurn }
     let tokenId: Identifier
     let ownerId: Identifier
     let amount: UInt64
@@ -222,7 +222,7 @@ struct TokenBurnTransition: StateTransition {
 }
 
 struct TokenFreezeTransition: StateTransition {
-    let type = StateTransitionType.tokenFreeze
+    var type: StateTransitionType { .tokenFreeze }
     let tokenId: Identifier
     let ownerId: Identifier
     let frozenOwnerId: Identifier
@@ -233,7 +233,7 @@ struct TokenFreezeTransition: StateTransition {
 }
 
 struct TokenUnfreezeTransition: StateTransition {
-    let type = StateTransitionType.tokenUnfreeze
+    var type: StateTransitionType { .tokenUnfreeze }
     let tokenId: Identifier
     let ownerId: Identifier
     let unfrozenOwnerId: Identifier

@@ -289,6 +289,7 @@ struct FetchContractView: View {
         }
     }
     
+    @MainActor
     private func fetchContract() async {
         guard let sdk = appState.sdk else {
             appState.showError(message: "SDK not initialized")
@@ -299,7 +300,7 @@ struct FetchContractView: View {
             isLoading = true
             
             // In a real app, we would use the SDK's contract fetching functionality
-            if let contract = try await sdk.getDataContract(id: contractIdToFetch) {
+            if (try await sdk.getDataContract(id: contractIdToFetch)) != nil {
                 // Convert SDK contract to our model
                 // For now, we'll show a success message
                 appState.showError(message: "Contract fetched successfully")

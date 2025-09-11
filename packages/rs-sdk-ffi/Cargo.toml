@@ -9,15 +9,18 @@ description = "FFI bindings for Dash Platform SDK - C-compatible interface for c
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+ 
+
 [dependencies]
 dash-sdk = { path = "../rs-sdk", features = ["dpns-contract", "dashpay-contract"] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
 simple-signer = { path = "../simple-signer" }
 
-# Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "02d902c9845d5ed9e5cb88fd32a8c254742f20fd" }
+[target.'cfg(any(target_os = "ios", target_os = "macos"))'.dependencies]
+# Core SDK integration (always included for unified SDK); relative to this crate
+dash-spv-ffi = { path = "../../../rust-dashcore/dash-spv-ffi", optional = true }
+dashcore = { path = "../../../rust-dashcore/dash" }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }

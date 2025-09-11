@@ -23,6 +23,8 @@ mod protocol_version;
 mod sdk;
 mod signer;
 mod signer_simple;
+#[cfg(feature = "dash_spv")]
+mod spv_bridge;
 mod system;
 mod token;
 mod types;
@@ -49,6 +51,8 @@ pub use protocol_version::*;
 pub use sdk::*;
 pub use signer::*;
 pub use signer_simple::*;
+#[cfg(feature = "dash_spv")]
+pub use spv_bridge::*;
 pub use system::*;
 pub use token::*;
 pub use types::*;

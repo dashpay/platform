@@ -3,7 +3,7 @@ import DashSDKFFI
 
 /// Swift wrapper for wallet manager that manages multiple wallets
 public class WalletManager {
-    private let handle: OpaquePointer
+    private let handle: UnsafeMutablePointer<FFIWalletManager>
     private let ownsHandle: Bool
     
     /// Create a new standalone wallet manager
@@ -25,21 +25,21 @@ public class WalletManager {
     
     /// Create a wallet manager from an SPV client
     /// - Parameter spvClient: The FFI SPV client handle to get the wallet manager from
-    public init(fromSPVClient spvClient: OpaquePointer) throws {
+    public init(fromSPVClient spvClient: UnsafeMutablePointer<FFIDashSpvClient>) throws {
         // Note: dash_spv_ffi_client_get_wallet_manager returns a pointer to FFIWalletManager
         // but Swift can't see that type, so we treat it as OpaquePointer
         let managerPtr = dash_spv_ffi_client_get_wallet_manager(spvClient)
-        guard let managerHandle = managerPtr else {
+        guard let managerHandle = managerPtr?.assumingMemoryBound(to: FFIWalletManager.self) else {
             throw KeyWalletError.walletError("Failed to get wallet manager from SPV client")
         }
         
-        self.handle = OpaquePointer(managerHandle)
+        self.handle = managerHandle
         self.ownsHandle = true
     }
     
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
-    /// - Parameter handle: The FFI wallet manager handle (OpaquePointer)
-    internal init(handle: OpaquePointer) {
+    /// - Parameter handle: The FFI wallet manager handle
+    internal init(handle: UnsafeMutablePointer<FFIWalletManager>) {
         self.handle = handle
         self.ownsHandle = false
     }
@@ -589,9 +589,7 @@ public class WalletManager {
         return ManagedAccountCollection(handle: collection, manager: self)
     }
     
-    internal var ffiHandle: OpaquePointer {
-        return handle
-    }
+    internal var ffiHandle: UnsafeMutablePointer<FFIWalletManager> { handle }
     
     // MARK: - Serialization
     

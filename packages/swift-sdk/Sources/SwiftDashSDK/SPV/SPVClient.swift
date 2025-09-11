@@ -35,6 +35,8 @@ public struct SPVSyncProgress {
     public let transactionProgress: Double
     public let currentHeight: UInt32
     public let targetHeight: UInt32
+    // Checkpoint height we started from (0 if none)
+    public let startHeight: UInt32
     public let rate: Double // blocks per second
     public let estimatedTimeRemaining: TimeInterval?
     
@@ -98,9 +100,8 @@ public class SPVClient: ObservableObject {
     public weak var delegate: SPVClientDelegate?
     
     // FFI handles
-    // Treat SPV client as an opaque handle to avoid relying on the C struct name
-    private var client: OpaquePointer?
-    private var config: OpaquePointer?
+    private var client: UnsafeMutablePointer<FFIDashSpvClient>?
+    private var config: UnsafeMutablePointer<FFIClientConfig>?
     
     // Callback context
     private var callbackContext: CallbackContext?
@@ -108,8 +109,12 @@ public class SPVClient: ObservableObject {
     // Network
     private let network: Network
     private var masternodeSyncEnabled: Bool = true
+    // If true, SPV will only connect to peers explicitly configured via FFI
+    public var restrictToConfiguredPeers: Bool = false
     
     // Sync tracking
+    // Height we start syncing from (checkpoint); used to render absolute heights
+    fileprivate var startFromHeight: UInt32 = 0
     private var syncStartTime: Date?
     private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
@@ -154,26 +159,51 @@ public class SPVClient: ObservableObject {
         }
 
         // Create configuration based on network raw value
-        let rawConfigPtr: UnsafeMutableRawPointer? = {
+        let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
             switch network {
             case DashSDKNetwork(rawValue: 0):
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_mainnet())
+                return dash_spv_ffi_config_mainnet()
             case DashSDKNetwork(rawValue: 1):
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_testnet())
+                return dash_spv_ffi_config_testnet()
             case DashSDKNetwork(rawValue: 2):
                 // Map devnet to custom FFINetwork value 3
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_new(FFINetwork(rawValue: 3)))
+                return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
             default:
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_testnet())
+                return dash_spv_ffi_config_testnet()
             }
         }()
         
-        guard let rawConfigPtr = rawConfigPtr else {
+        guard let configPtr = configPtr else {
             throw SPVError.configurationFailed
         }
-        
-        let configPtr = OpaquePointer(rawConfigPtr)
-        
+
+        // If requested, prefer local core peers (defaults to 127.0.0.1 with network default port)
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        if useLocalCore {
+            let peers = SPVClient.readLocalCorePeers()
+            if swiftLoggingEnabled {
+                print("[SPV][Config] Use Local Core enabled; peers=\(peers.joined(separator: ", "))")
+            }
+            // Add peers via FFI (supports "ip:port" or bare IP for network-default port)
+            for addr in peers {
+                addr.withCString { cstr in
+                    let rc = dash_spv_ffi_config_add_peer(configPtr, cstr)
+                    if rc != 0, let err = dash_spv_ffi_get_last_error() {
+                        let msg = String(cString: err)
+                        print("[SPV][Config] add_peer failed for \(addr): \(msg)")
+                    }
+                }
+            }
+            // Enforce restrict mode when using local core by default
+            restrictToConfiguredPeers = true
+        }
+
+        // Apply restrict-to-configured-peers if requested
+        if restrictToConfiguredPeers {
+            if swiftLoggingEnabled { print("[SPV][Config] Enabling restrict-to-configured-peers mode") }
+            _ = dash_spv_ffi_config_set_restrict_to_configured_peers(configPtr, true)
+        }
+
         // Set data directory if provided
         if let dataDir = dataDir {
             let result = dash_spv_ffi_config_set_data_dir(configPtr, dataDir)
@@ -225,6 +255,8 @@ public class SPVClient: ObservableObject {
             }
             let finalHeight: UInt32 = (rc == 0 && cpOutHeight > 0) ? cpOutHeight : h
             _ = dash_spv_ffi_config_set_start_from_height(configPtr, finalHeight)
+            // Remember checkpoint for UI normalization
+            self.startFromHeight = finalHeight
         }
         
         // Create client
@@ -238,6 +270,16 @@ public class SPVClient: ObservableObject {
         
         // Set up event callbacks with stable context
         setupEventCallbacks()
+    }
+
+    private static func readLocalCorePeers() -> [String] {
+        // If no override is set, default to 127.0.0.1 and let FFI pick port by network
+        let raw = UserDefaults.standard.string(forKey: "corePeerAddresses")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1")
+        return list
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
@@ -441,6 +483,7 @@ public class SPVClient: ObservableObject {
                     transactionProgress: progress.transactionProgress,
                     currentHeight: height,
                     targetHeight: progress.targetHeight,
+                    startHeight: self.startFromHeight,
                     rate: rate,
                     estimatedTimeRemaining: progress.estimatedTimeRemaining
                 )
@@ -474,11 +517,11 @@ public class SPVClient: ObservableObject {
     
     // MARK: - Wallet Manager Access
     
-    public func getWalletManager() -> OpaquePointer? {
+    public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
         guard let client = client else { return nil }
         
         let managerPtr = dash_spv_ffi_client_get_wallet_manager(client)
-        return OpaquePointer(managerPtr)
+        return managerPtr?.assumingMemoryBound(to: FFIWalletManager.self)
     }
     
     // MARK: - Statistics
@@ -605,13 +648,16 @@ private class CallbackContext {
             print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
         }
 
+        // Convert FFI progress into display-friendly absolute heights
+        let absoluteCurrent: UInt32 = (client?.startFromHeight ?? 0) &+ ffiProgress.current_height
         let progress = SPVSyncProgress(
             stage: stage,
             headerProgress: min(ffiProgress.percentage / 0.3, 1.0),
             masternodeProgress: min(max((ffiProgress.percentage - 0.3) / 0.4, 0), 1.0),
             transactionProgress: min(max((ffiProgress.percentage - 0.7) / 0.3, 0), 1.0),
-            currentHeight: ffiProgress.current_height,
+            currentHeight: absoluteCurrent,
             targetHeight: ffiProgress.total_height,
+            startHeight: client?.startFromHeight ?? 0,
             rate: ffiProgress.headers_per_second,
             estimatedTimeRemaining: estimatedTime
         )
@@ -654,6 +700,7 @@ private class CallbackContext {
                     transactionProgress: 1.0,
                     currentHeight: client.syncProgress?.targetHeight ?? 0,
                     targetHeight: client.syncProgress?.targetHeight ?? 0,
+                    startHeight: client.startFromHeight,
                     rate: 0,
                     estimatedTimeRemaining: nil
                 )

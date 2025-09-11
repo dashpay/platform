@@ -1,6 +1,7 @@
 import Foundation
 
 /// Environment variable loader for test configuration
+@MainActor
 struct EnvLoader {
     private static var envVars: [String: String] = [:]
     

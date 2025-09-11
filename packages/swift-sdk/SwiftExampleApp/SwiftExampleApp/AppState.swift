@@ -26,6 +26,22 @@ class AppState: ObservableObject {
     
     @Published var dataStatistics: (identities: Int, documents: Int, contracts: Int, tokenBalances: Int)?
     
+    @Published var useLocalPlatform: Bool {
+        didSet {
+            UserDefaults.standard.set(useLocalPlatform, forKey: "useLocalhostPlatform")
+            // Maintain backward-compat key for older SDK builds
+            UserDefaults.standard.set(useLocalPlatform, forKey: "useLocalhost")
+            Task { await switchNetwork(to: currentNetwork) }
+        }
+    }
+    
+    @Published var useLocalCore: Bool {
+        didSet {
+            UserDefaults.standard.set(useLocalCore, forKey: "useLocalhostCore")
+            // TODO: Reconfigure SPV client peers when supported
+        }
+    }
+    
     private let testSigner = TestSigner()
     private var dataManager: DataManager?
     private var modelContext: ModelContext?
@@ -38,6 +54,12 @@ class AppState: ObservableObject {
         } else {
             self.currentNetwork = .testnet
         }
+        // Migration: if legacy key set and new keys absent, propagate
+        let legacyLocal = UserDefaults.standard.bool(forKey: "useLocalhost")
+        let hasPlatformKey = UserDefaults.standard.object(forKey: "useLocalhostPlatform") != nil
+        let hasCoreKey = UserDefaults.standard.object(forKey: "useLocalhostCore") != nil
+        self.useLocalPlatform = hasPlatformKey ? UserDefaults.standard.bool(forKey: "useLocalhostPlatform") : legacyLocal
+        self.useLocalCore = hasCoreKey ? UserDefaults.standard.bool(forKey: "useLocalhostCore") : legacyLocal
     }
     
     func initializeSDK(modelContext: ModelContext) {
@@ -61,7 +83,7 @@ class AppState: ObservableObject {
                 
                 NSLog("🔵 AppState: Creating SDK instance for network: \(currentNetwork)")
                 // Create SDK instance for current network
-                let sdkNetwork = currentNetwork.sdkNetwork
+                let sdkNetwork: DashSDKNetwork = currentNetwork.sdkNetwork
                 NSLog("🔵 AppState: SDK network value: \(sdkNetwork)")
                 
                 let newSDK = try SDK(network: sdkNetwork)
@@ -166,7 +188,7 @@ class AppState: ObservableObject {
             isLoading = true
             
             // Create new SDK instance for the network
-            let sdkNetwork = network.sdkNetwork
+            let sdkNetwork: DashSDKNetwork = network.sdkNetwork
             let newSDK = try SDK(network: sdkNetwork)
             sdk = newSDK
             
@@ -505,6 +527,7 @@ class AppState: ObservableObject {
     
     // MARK: - Startup Diagnostics
     
+    @MainActor
     private func runStartupDiagnostics(sdk: SDK) async {
         NSLog("====== PLATFORM QUERY DIAGNOSTICS (STARTUP) ======")
         
@@ -523,7 +546,7 @@ class AppState: ObservableObject {
         }
         
         // Run a few key queries to test connectivity
-        let diagnosticQueries: [(name: String, test: () async throws -> Any)] = [
+        let diagnosticQueries: [(name: String, test: @MainActor () async throws -> Any)] = [
             ("Get Platform Status", {
                 try await sdk.getStatus()
             }),
@@ -590,6 +613,7 @@ class AppState: ObservableObject {
         NSLog("================================\n")
     }
     
+    @MainActor
     private func runSimpleDiagnostic(sdk: SDK) async {
         var diagnosticReport = "====== SIMPLE DIAGNOSTIC TEST ======\n"
         diagnosticReport += "Date: \(Date())\n\n"
@@ -599,11 +623,10 @@ class AppState: ObservableObject {
             diagnosticReport += "Testing: Get Platform Status...\n"
             let status = try await sdk.getStatus()
             diagnosticReport += "✅ Platform Status Success\n"
-            if let dict = status as? [String: Any] {
-                diagnosticReport += "   Version: \(dict["version"] ?? "unknown")\n"
-                diagnosticReport += "   Mode: \(dict["mode"] ?? "unknown")\n"
-                diagnosticReport += "   QuorumCount: \(dict["quorumCount"] ?? "unknown")\n"
-            }
+            let dict = status
+            diagnosticReport += "   Version: \(dict["version"] ?? "unknown")\n"
+            diagnosticReport += "   Mode: \(dict["mode"] ?? "unknown")\n"
+            diagnosticReport += "   QuorumCount: \(dict["quorumCount"] ?? "unknown")\n"
         } catch {
             diagnosticReport += "❌ Platform Status Failed: \(error)\n"
         }

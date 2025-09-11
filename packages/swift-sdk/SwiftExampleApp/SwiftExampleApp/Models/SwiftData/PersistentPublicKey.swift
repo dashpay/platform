@@ -61,17 +61,20 @@ final class PersistentPublicKey {
     
     // MARK: - Private Key Methods
     /// Check if this public key has an associated private key
+    @MainActor
     var hasPrivateKey: Bool {
         privateKeyKeychainIdentifier != nil && isPrivateKeyAvailable
     }
     
     /// Check if the private key is still available in keychain
+    @MainActor
     var isPrivateKeyAvailable: Bool {
-        guard let keychainId = privateKeyKeychainIdentifier else { return false }
+        guard privateKeyKeychainIdentifier != nil else { return false }
         return KeychainManager.shared.hasPrivateKey(identityId: Data.identifier(fromBase58: identityId) ?? Data(), keyIndex: keyId)
     }
     
     /// Retrieve the private key data from keychain
+    @MainActor
     func getPrivateKeyData() -> Data? {
         guard let identityData = Data.identifier(fromBase58: identityId) else { return nil }
         lastAccessed = Date()
@@ -79,6 +82,7 @@ final class PersistentPublicKey {
     }
     
     /// Store a private key for this public key
+    @MainActor
     func setPrivateKey(_ privateKeyData: Data) {
         guard let identityData = Data.identifier(fromBase58: identityId) else { return }
         if let keychainId = KeychainManager.shared.storePrivateKey(privateKeyData, identityId: identityData, keyIndex: keyId) {
@@ -88,9 +92,10 @@ final class PersistentPublicKey {
     }
     
     /// Remove the private key from keychain
+    @MainActor
     func removePrivateKey() {
         guard let identityData = Data.identifier(fromBase58: identityId) else { return }
-        KeychainManager.shared.deletePrivateKey(identityId: identityData, keyIndex: keyId)
+        _ = KeychainManager.shared.deletePrivateKey(identityId: identityData, keyIndex: keyId)
         self.privateKeyKeychainIdentifier = nil
     }
     
