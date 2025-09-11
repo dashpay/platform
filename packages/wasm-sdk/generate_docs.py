@@ -35,7 +35,6 @@ TESTNET_TEST_DATA = {
 FUNCTION_NAME_MAP = {
     'getIdentity': 'identity_fetch',
     'getIdentityKeys': 'get_identity_keys',
-    'getIdentitiesContractKeys': 'get_identities_contract_keys',
     'getIdentityNonce': 'get_identity_nonce',
     'getIdentityContractNonce': 'get_identity_contract_nonce',
     'getIdentityBalance': 'get_identity_balance',
@@ -43,6 +42,11 @@ FUNCTION_NAME_MAP = {
     'getIdentityBalanceAndRevision': 'get_identity_balance_and_revision',
     'getIdentityByPublicKeyHash': 'get_identity_by_public_key_hash',
     'getIdentityByNonUniquePublicKeyHash': 'get_identity_by_non_unique_public_key_hash',
+    'getIdentitiesContractKeys': 'get_identities_contract_keys',
+    'getIdentityTokenBalances': 'get_identity_token_balances',
+    'getIdentitiesTokenBalances': 'get_identities_token_balances',
+    'getIdentityTokenInfos': 'get_identity_token_infos',
+    'getIdentitiesTokenInfos': 'get_identities_token_infos',
     'getDataContract': 'data_contract_fetch',
     'getDataContractHistory': 'get_data_contract_history',
     'getDataContracts': 'get_data_contracts',
@@ -64,10 +68,6 @@ FUNCTION_NAME_MAP = {
     'getFinalizedEpochInfos': 'get_finalized_epoch_infos',
     'getEvonodesProposedEpochBlocksByIds': 'get_evonodes_proposed_epoch_blocks_by_ids',
     'getEvonodesProposedEpochBlocksByRange': 'get_evonodes_proposed_epoch_blocks_by_range',
-    'getIdentityTokenBalances': 'get_identity_token_balances',
-    'getIdentitiesTokenBalances': 'get_identities_token_balances',
-    'getIdentityTokenInfos': 'get_identity_token_infos',
-    'getIdentitiesTokenInfos': 'get_identities_token_infos',
     'getTokenStatuses': 'get_token_statuses',
     'getTokenDirectPurchasePrices': 'get_token_direct_purchase_prices',
     'getTokenContractInfo': 'get_token_contract_info',
@@ -393,58 +393,23 @@ def generate_path_elements_info():
 
 def generate_docs_javascript():
     """Generate the main JavaScript module for docs.html"""
+    
+    # Generate function lists dynamically from FUNCTION_NAME_MAP
+    wasm_functions = list(dict.fromkeys(FUNCTION_NAME_MAP.values()))
+    
+    # Additional functions not in FUNCTION_NAME_MAP
+    additional_functions = ['prefetch_trusted_quorums_testnet']
+    
+    # For imports: init is default export, others are named exports
+    named_imports = ['WasmSdkBuilder'] + wasm_functions + additional_functions
+    named_imports_str = ',\n            '.join(named_imports)
+    
+    # For window.wasmFunctions: only include the actual functions (not init/WasmSdkBuilder)
+    window_functions = wasm_functions  # Note: excluding prefetch_trusted_quorums_testnet from window object
+    window_assignments = ',\n            '.join(window_functions)
+    
     return '''        import init, { 
-            WasmSdkBuilder,
-            identity_fetch,
-            get_identity_keys,
-            get_identity_nonce,
-            get_identity_contract_nonce,
-            get_identity_balance,
-            get_identities_balances,
-            get_identity_balance_and_revision,
-            get_identity_by_public_key_hash,
-            get_identity_by_non_unique_public_key_hash,
-            get_identities_contract_keys,
-            get_identity_token_balances,
-            get_identities_token_balances,
-            get_identity_token_infos,
-            get_identities_token_infos,
-            data_contract_fetch,
-            get_data_contract_history,
-            get_data_contracts,
-            get_documents,
-            get_document,
-            get_dpns_usernames,
-            dpns_is_name_available,
-            dpns_resolve_name,
-            get_contested_resources,
-            get_contested_resource_vote_state,
-            get_contested_resource_voters_for_identity,
-            get_contested_resource_identity_votes,
-            get_vote_polls_by_end_date,
-            get_protocol_version_upgrade_state,
-            get_protocol_version_upgrade_vote_status,
-            get_epochs_info,
-            get_current_epoch,
-            get_finalized_epoch_infos,
-            get_evonodes_proposed_epoch_blocks_by_ids,
-            get_evonodes_proposed_epoch_blocks_by_range,
-            get_token_statuses,
-            get_token_direct_purchase_prices,
-            get_token_contract_info,
-            get_token_perpetual_distribution_last_claim,
-            get_token_total_supply,
-            get_group_info,
-            get_group_infos,
-            get_group_actions,
-            get_group_action_signers,
-            get_status,
-            get_current_quorums_info,
-            get_prefunded_specialized_balance,
-            get_total_credits_in_platform,
-            get_path_elements,
-            wait_for_state_transition_result,
-            prefetch_trusted_quorums_testnet
+            ''' + named_imports_str + '''
         } from './pkg/wasm_sdk.js';
         
         let sdk = null;
@@ -452,55 +417,7 @@ def generate_docs_javascript():
         
         // Make functions available globally for the examples
         window.wasmFunctions = {
-            identity_fetch,
-            get_identity_keys,
-            get_identity_nonce,
-            get_identity_contract_nonce,
-            get_identity_balance,
-            get_identities_balances,
-            get_identity_balance_and_revision,
-            get_identity_by_public_key_hash,
-            get_identity_by_non_unique_public_key_hash,
-            get_identities_contract_keys,
-            get_identity_token_balances,
-            get_identities_token_balances,
-            get_identity_token_infos,
-            get_identities_token_infos,
-            data_contract_fetch,
-            get_data_contract_history,
-            get_data_contracts,
-            get_documents,
-            get_document,
-            get_dpns_usernames,
-            dpns_is_name_available,
-            dpns_resolve_name,
-            get_contested_resources,
-            get_contested_resource_vote_state,
-            get_contested_resource_voters_for_identity,
-            get_contested_resource_identity_votes,
-            get_vote_polls_by_end_date,
-            get_protocol_version_upgrade_state,
-            get_protocol_version_upgrade_vote_status,
-            get_epochs_info,
-            get_current_epoch,
-            get_finalized_epoch_infos,
-            get_evonodes_proposed_epoch_blocks_by_ids,
-            get_evonodes_proposed_epoch_blocks_by_range,
-            get_token_statuses,
-            get_token_direct_purchase_prices,
-            get_token_contract_info,
-            get_token_perpetual_distribution_last_claim,
-            get_token_total_supply,
-            get_group_info,
-            get_group_infos,
-            get_group_actions,
-            get_group_action_signers,
-            get_status,
-            get_current_quorums_info,
-            get_prefunded_specialized_balance,
-            get_total_credits_in_platform,
-            get_path_elements,
-            wait_for_state_transition_result
+            ''' + window_assignments + '''
         };
         
         // Progress update function
