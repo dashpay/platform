@@ -731,156 +731,10 @@ def generate_docs_javascript():
             });
         });'''
 
-def generate_html_head():
-    """Generate HTML head section with meta tags and scripts"""
-    return '''    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dash Platform WASM JS SDK Documentation</title>
-    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
-    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
-    <link rel="stylesheet" href="docs.css">
-    <script type="module">
-''' + generate_docs_javascript() + '''
-    </script>'''
 
-
-def generate_preloader_html():
-    """Generate preloader HTML section"""
-    return '''    <!-- Preloader -->
-    <div id="preloader">
-        <div class="preloader-content">
-            <div class="preloader-text">Loading WASM module...</div>
-            <div class="preloader-progress">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-percent" id="progressPercent">0%</div>
-            </div>
-        </div>
-    </div>'''
-
-
-def generate_sidebar_html(query_defs, transition_defs):
-    """Generate sidebar HTML section with table of contents"""
-    sidebar_html = '''    <!-- Sidebar -->
-    <div class="sidebar">
-        <h2>Table of Contents</h2>
-        <div class="search-container">
-            <input type="text" id="sidebar-search" class="search-input" placeholder="Search queries and transitions...">
-        </div>
-        <div id="no-results" class="no-results">No results found</div>
-        <ul>
-            <li><a href="#overview">Overview</a></li>
-        </ul>
-        
-        <div class="section-header">Queries</div>
-        <ul>
-'''
-    
-    # Generate sidebar links for queries
-    sidebar_html += generate_sidebar_entries(query_defs, 'query')
-    
-    sidebar_html += '''        </ul>
-        
-        <div class="section-header state-transitions">State Transitions</div>
-        <ul>
-'''
-    
-    # Generate sidebar links for transitions
-    sidebar_html += generate_sidebar_entries(transition_defs, 'transition')
-    
-    sidebar_html += '''        </ul>
-    </div>'''
-    
-    return sidebar_html
-
-
-def generate_main_content_html(query_defs, transition_defs):
-    """Generate main content HTML section with documentation"""
-    main_content_html = '''    <!-- Main Content -->
-    <div class="main-content">
-        <nav class="nav">
-            <ul>
-                <li><a href="index.html">← Back to SDK</a></li>
-                <li><a href="AI_REFERENCE.md">AI Reference</a></li>
-                <li><a href="https://github.com/dashpay/platform" target="_blank">GitHub</a></li>
-            </ul>
-        </nav>
-        
-        <h1>Dash Platform WASM JS SDK Documentation</h1>
-        
-        <div class="category" id="overview">
-            <h2>Overview</h2>
-            <p>The Dash Platform WASM JS SDK provides a WebAssembly-based interface for interacting with the Dash Platform from JavaScript and TypeScript applications. 
-            This documentation covers all available queries and state transitions.</p>
-            
-            <h3>Key Concepts</h3>
-            <ul>
-                <li><strong>Queries</strong>: Read-only operations that fetch data from the platform</li>
-                <li><strong>State Transitions</strong>: Write operations that modify state on the platform</li>
-                <li><strong>Proofs</strong>: Cryptographic proofs can be requested for most queries to verify data authenticity</li>
-                <li><strong>Credits</strong>: The platform's unit of account for paying transaction fees</li>
-                <li><strong>Default Limits</strong>: All queries with optional limit parameters default to a maximum of 100 items if not specified</li>
-            </ul>
-            
-            <p><strong>Note:</strong> All examples below can be run directly in your browser using the testnet. Click the "Run" button to execute any example.</p>
-            
-            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-top: 15px;">
-                <strong>Test Identity:</strong> All examples use the testnet identity <code style="background-color: #fff; padding: 2px 6px; border-radius: 3px;">5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</code>
-                <br>This is a known identity with activity on testnet that you can use for testing.
-            </div>
-        </div>
-        
-        <h2 id="queries">Queries</h2>
-'''
-    
-    # Add query documentation
-    main_content_html += generate_operation_docs(query_defs, 'query', 'query')
-    
-    # Add state transition documentation
-    main_content_html += '<h2 id="transitions">State Transitions</h2>'
-    main_content_html += generate_operation_docs(transition_defs, 'transition', 'transition')
-    
-    # Close main content div
-    main_content_html += '''
-        <a href="#" class="back-to-top">↑ Top</a>
-    </div>'''
-    
-    return main_content_html
-
-def generate_user_docs_html(query_defs, transition_defs):
-    """Generate user-friendly HTML documentation"""
-    
-    html_content = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-''' + generate_html_head() + '''
-</head>
-<body>
-''' + generate_preloader_html() + '''
-    
-''' + generate_sidebar_html(query_defs, transition_defs) + '''
-    
-''' + generate_main_content_html(query_defs, transition_defs) + '''
-    
-    <script>
-        // Smooth scrolling for anchor links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            });
-        });
-    </script>
-    
-    <script>
-        // Hidden test runner feature
+def generate_test_runner_javascript():
+    """Generate the test runner JavaScript for the hidden testing feature"""
+    return '''        // Hidden test runner feature
         
         // Create the test runner UI
         const testRunnerHTML = `
@@ -1081,7 +935,158 @@ def generate_user_docs_html(query_defs, transition_defs):
                     button.textContent = 'Run';
                 }
             };
-        }
+        }'''
+
+def generate_html_head():
+    """Generate HTML head section with meta tags and scripts"""
+    return '''    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dash Platform WASM JS SDK Documentation</title>
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
+    <link rel="stylesheet" href="docs.css">
+    <script type="module">
+''' + generate_docs_javascript() + '''
+    </script>'''
+
+
+def generate_preloader_html():
+    """Generate preloader HTML section"""
+    return '''    <!-- Preloader -->
+    <div id="preloader">
+        <div class="preloader-content">
+            <div class="preloader-text">Loading WASM module...</div>
+            <div class="preloader-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-percent" id="progressPercent">0%</div>
+            </div>
+        </div>
+    </div>'''
+
+
+def generate_sidebar_html(query_defs, transition_defs):
+    """Generate sidebar HTML section with table of contents"""
+    sidebar_html = '''    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>Table of Contents</h2>
+        <div class="search-container">
+            <input type="text" id="sidebar-search" class="search-input" placeholder="Search queries and transitions...">
+        </div>
+        <div id="no-results" class="no-results">No results found</div>
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+        </ul>
+        
+        <div class="section-header">Queries</div>
+        <ul>
+'''
+    
+    # Generate sidebar links for queries
+    sidebar_html += generate_sidebar_entries(query_defs, 'query')
+    
+    sidebar_html += '''        </ul>
+        
+        <div class="section-header state-transitions">State Transitions</div>
+        <ul>
+'''
+    
+    # Generate sidebar links for transitions
+    sidebar_html += generate_sidebar_entries(transition_defs, 'transition')
+    
+    sidebar_html += '''        </ul>
+    </div>'''
+    
+    return sidebar_html
+
+
+def generate_main_content_html(query_defs, transition_defs):
+    """Generate main content HTML section with documentation"""
+    main_content_html = '''    <!-- Main Content -->
+    <div class="main-content">
+        <nav class="nav">
+            <ul>
+                <li><a href="index.html">← Back to SDK</a></li>
+                <li><a href="AI_REFERENCE.md">AI Reference</a></li>
+                <li><a href="https://github.com/dashpay/platform" target="_blank">GitHub</a></li>
+            </ul>
+        </nav>
+        
+        <h1>Dash Platform WASM JS SDK Documentation</h1>
+        
+        <div class="category" id="overview">
+            <h2>Overview</h2>
+            <p>The Dash Platform WASM JS SDK provides a WebAssembly-based interface for interacting with the Dash Platform from JavaScript and TypeScript applications. 
+            This documentation covers all available queries and state transitions.</p>
+            
+            <h3>Key Concepts</h3>
+            <ul>
+                <li><strong>Queries</strong>: Read-only operations that fetch data from the platform</li>
+                <li><strong>State Transitions</strong>: Write operations that modify state on the platform</li>
+                <li><strong>Proofs</strong>: Cryptographic proofs can be requested for most queries to verify data authenticity</li>
+                <li><strong>Credits</strong>: The platform's unit of account for paying transaction fees</li>
+                <li><strong>Default Limits</strong>: All queries with optional limit parameters default to a maximum of 100 items if not specified</li>
+            </ul>
+            
+            <p><strong>Note:</strong> All examples below can be run directly in your browser using the testnet. Click the "Run" button to execute any example.</p>
+            
+            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                <strong>Test Identity:</strong> All examples use the testnet identity <code style="background-color: #fff; padding: 2px 6px; border-radius: 3px;">5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</code>
+                <br>This is a known identity with activity on testnet that you can use for testing.
+            </div>
+        </div>
+        
+        <h2 id="queries">Queries</h2>
+'''
+    
+    # Add query documentation
+    main_content_html += generate_operation_docs(query_defs, 'query', 'query')
+    
+    # Add state transition documentation
+    main_content_html += '<h2 id="transitions">State Transitions</h2>'
+    main_content_html += generate_operation_docs(transition_defs, 'transition', 'transition')
+    
+    # Close main content div
+    main_content_html += '''
+        <a href="#" class="back-to-top">↑ Top</a>
+    </div>'''
+    
+    return main_content_html
+
+def generate_user_docs_html(query_defs, transition_defs):
+    """Generate user-friendly HTML documentation"""
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+''' + generate_html_head() + '''
+</head>
+<body>
+''' + generate_preloader_html() + '''
+    
+''' + generate_sidebar_html(query_defs, transition_defs) + '''
+    
+''' + generate_main_content_html(query_defs, transition_defs) + '''
+    
+    <script>
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+    
+    <script>
+''' + generate_test_runner_javascript() + '''
     </script>
 </body>
 </html>
