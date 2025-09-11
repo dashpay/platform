@@ -14,7 +14,7 @@ on:
 jobs:
   swift-sdk-build:
     name: Swift SDK and Example build (warnings as errors)
-    runs-on: macos-latest
+    runs-on: macos-15
     timeout-minutes: 60
 
     steps:
@@ -30,6 +30,30 @@ jobs:
         run: |
           xcodebuild -version
           swift --version
+
+      # Rust + Cargo cache to speed up FFI build
+      - name: Set up Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Add iOS Rust targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Install cbindgen (for header generation)
+        run: |
+          brew install cbindgen || true
+
+      - name: Build DashSDKFFI.xcframework and install into Swift package
+        run: |
+          bash packages/swift-sdk/build_ios.sh
 
       - name: Build SwiftDashSDK package (warnings as errors)
         working-directory: packages/swift-sdk
