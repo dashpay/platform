@@ -103,8 +103,8 @@ jobs:
         uses: actions/cache@v4
         id: cache-binaryen
         with:
-          path: ${{ env.HOME }}/.cache/binaryen/version_124
-          key: binaryen/version_124/${{ runner.os }}/x86_64
+          path: ${{ env.HOME }}/.cache/binaryen/version_121
+          key: binaryen/version_121/${{ runner.os }}/x86_64
 
       - name: Install wasm-opt if cache miss
         if: steps.cache-binaryen.outputs.cache-hit != 'true'
@@ -112,13 +112,13 @@ jobs:
           set -euxo pipefail
           mkdir -p "${HOME}/.cache/binaryen"
           curl -fsSL -o /tmp/binaryen.tar.gz \
-            "https://github.com/WebAssembly/binaryen/releases/download/version_124/binaryen-version_124-x86_64-linux.tar.gz"
+            "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz"
           tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
-          mv "${HOME}/.cache/binaryen/binaryen-version_124" "${HOME}/.cache/binaryen/version_124"
+          mv "${HOME}/.cache/binaryen/binaryen-version_121" "${HOME}/.cache/binaryen/version_121"
 
       - name: Export wasm-opt to PATH
         run: |
-          echo "${HOME}/.cache/binaryen/version_124/bin" >> $GITHUB_PATH
+          echo "${HOME}/.cache/binaryen/version_121/bin" >> $GITHUB_PATH
 
       - name: Build WASM SDK
         working-directory: packages/wasm-sdk
