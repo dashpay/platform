@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /*
-  Bundle the wasm-bindgen JS glue and WASM binary into a single ESM file.
+  Prepare publishable artifacts with a single-file SDK wrapper and raw outputs.
   - Input: pkg/wasm_sdk.js, pkg/wasm_sdk_bg.wasm, pkg/wasm_sdk.d.ts
-  - Output: dist/sdk.js (single-file with embedded WASM), dist/sdk.d.ts
+  - Output: dist/raw/* (unaltered wasm-bindgen outputs), dist/sdk.js (single-file wrapper with inlined WASM), dist/sdk.d.ts
 
   Notes:
   - We keep the exported API identical to wasm_bindgen output, including default export (init) and initSync.
-  - We replace the default loader path with inlined bytes so no network or file access is required at runtime.
+  - Wrapper inlines WASM as base64 and provides `await init()` for both Node and browser.
+  - Node: uses inlined bytes with initSync under the hood (still awaitable).
+  - Browser: compiles in a Web Worker (fallback to async compile on main thread) and then instantiates.
 */
 
 const fs = require('fs');
@@ -27,68 +29,33 @@ if (!fs.existsSync(jsPath) || !fs.existsSync(wasmPath) || !fs.existsSync(dtsPath
   process.exit(1);
 }
 
-const js = fs.readFileSync(jsPath, 'utf8');
-const wasmBase64 = fs.readFileSync(wasmPath).toString('base64');
-
-// Helper injected to decode base64 → Uint8Array in both Node and browser
-const injectHeader = `
-// Inlined WASM bytes (base64)
-const __WASM_BASE64 = '${wasmBase64}';
-function __wasmBytes() {
-  if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {
-    return Buffer.from(__WASM_BASE64, 'base64');
-  }
-  const atobFn = (typeof atob === 'function') ? atob : (s) => globalThis.atob(s);
-  const bin = atobFn(__WASM_BASE64);
-  const len = bin.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);
-  return bytes;
-}
-`;
-
-// Patch 1: default init path resolution to use inlined bytes
-const initDefaultSearch = /if \(typeof module_or_path === 'undefined'\) {\s*\n\s*module_or_path = new URL\('wasm_sdk_bg\.wasm', import\.meta\.url\);\s*\n\s*}/;
-const initDefaultReplace = `if (typeof module_or_path === 'undefined') {\n        module_or_path = __wasmBytes();\n    }`;
-
-// Patch 2: initSync to use inlined bytes when module is not provided
-const initSyncSearch = /(__wbg_init_memory\(imports\);\s*\n\s*if \(!\(module instanceof WebAssembly\.Module\)\) {)/;
-const initSyncReplace = `__wbg_init_memory(imports);\n\n    if (typeof module === 'undefined') {\n        module = __wasmBytes();\n    }\n\n    if (!(module instanceof WebAssembly.Module)) {`;
-
-let patched = js;
-
-if (!initDefaultSearch.test(patched)) {
-  console.error('Failed to find default init block to patch');
-  process.exit(1);
-}
-patched = patched.replace(initDefaultSearch, initDefaultReplace);
-
-if (!initSyncSearch.test(patched)) {
-  console.error('Failed to find initSync block to patch');
-  process.exit(1);
-}
-patched = patched.replace(initSyncSearch, initSyncReplace);
-
-// Prepend helper header
-patched = injectHeader + '\n' + patched;
-
 // Ensure dist directories and write outputs
 fs.mkdirSync(distDir, { recursive: true });
 fs.mkdirSync(rawDir, { recursive: true });
-fs.writeFileSync(path.join(distDir, 'sdk.js'), patched);
-fs.copyFileSync(dtsPath, path.join(distDir, 'sdk.d.ts'));
-
-// Also ship non-bundled artifacts for advanced/asset-pipeline users
-fs.copyFileSync(jsPath, path.join(rawDir, 'wasm_sdk.js'));
+// Copy raw wasm-bindgen outputs
+const rawJs = fs.readFileSync(jsPath, 'utf8');
+fs.writeFileSync(path.join(rawDir, 'wasm_sdk.js'), rawJs);
 fs.copyFileSync(wasmPath, path.join(rawDir, 'wasm_sdk_bg.wasm'));
 fs.copyFileSync(dtsPath, path.join(rawDir, 'wasm_sdk.d.ts'));
 if (fs.existsSync(wasmDtsPath)) {
   fs.copyFileSync(wasmDtsPath, path.join(rawDir, 'wasm_sdk_bg.wasm.d.ts'));
 }
 
+// Produce a sanitized variant of wasm_bindgen JS without the default new URL('...wasm') path,
+// so downstream bundlers importing the wrapper won't see a literal asset URL and won't emit the .wasm file.
+const defaultUrlRegex = /if\s*\(\s*typeof\s+module_or_path\s*===\s*'undefined'\s*\)\s*\{\s*module_or_path\s*=\s*new\s+URL\('wasm_sdk_bg\\.wasm',\s*import\\.meta\\.url\);\s*\}/;
+const sanitizedJs = rawJs.replace(defaultUrlRegex, "if (typeof module_or_path === 'undefined') { }");
+fs.writeFileSync(path.join(rawDir, 'wasm_sdk.no_url.js'), sanitizedJs);
+
+// Build single-file wrapper with inlined WASM and worker-based compile in the browser
+const wasmBase64 = fs.readFileSync(wasmPath).toString('base64');
+const wrapper = `// Single-file ESM wrapper around wasm-bindgen output.\n// - Inlines WASM bytes as base64.\n// - Exposes async default init() for both Node and browser.\n// - Browser compiles in a Web Worker and instantiates on main thread (fallback to async compile).\n// - Node uses initSync with inlined bytes (still awaitable for uniform API).\n\nimport rawInit, { initSync as rawInitSync } from './raw/wasm_sdk.no_url.js';\n\nexport * from './raw/wasm_sdk.no_url.js';\nexport { initSync } from './raw/wasm_sdk.no_url.js';\n\nconst __WASM_BASE64 = '${wasmBase64}';\nfunction __wasmBytes() {\n  if (typeof Buffer !== 'undefined' && typeof Buffer.from === 'function') {\n    return Buffer.from(__WASM_BASE64, 'base64');\n  }\n  const atobFn = (typeof atob === 'function') ? atob : (s) => globalThis.atob(s);\n  const bin = atobFn(__WASM_BASE64);\n  const len = bin.length;\n  const bytes = new Uint8Array(len);\n  for (let i = 0; i < len; i++) bytes[i] = bin.charCodeAt(i);\n  return bytes;\n}\n\nfunction __supportsWorker() {\n  return typeof Worker !== 'undefined' && typeof Blob !== 'undefined' && typeof URL !== 'undefined';\n}\n\nasync function __compileInWorker(bytes) {\n  if (!__supportsWorker()) {\n    return WebAssembly.compile(bytes);\n  }\n  const src = 'self.onmessage=async(e)=>{try{const m=await WebAssembly.compile(e.data);self.postMessage({ok:1,mod:m});}catch(err){self.postMessage({ok:0,err:String(err)});}}';\n  const blob = new Blob([src], { type: 'application/javascript' });\n  const url = URL.createObjectURL(blob);\n  return new Promise((resolve) => {\n    const w = new Worker(url);\n    w.onmessage = (ev) => {\n      URL.revokeObjectURL(url);\n      w.terminate();\n      const d = ev.data || {};\n      if (d.ok && d.mod) {\n        resolve(d.mod);\n      } else {\n        resolve(WebAssembly.compile(bytes));\n      }\n    };\n    // Transfer the underlying buffer to avoid copy\n    try {\n      w.postMessage(bytes.buffer, [bytes.buffer]);\n    } catch (_) {\n      // If transfer fails (detached), send a copy\n      w.postMessage(new Uint8Array(bytes));\n    }\n  });\n}\n\nconst isNode = typeof window === 'undefined' && typeof process !== 'undefined' && !!(process.versions && process.versions.node);\n\nexport default async function init(moduleOrPath) {\n  if (isNode) {\n    if (typeof moduleOrPath === 'undefined') {\n      const bytes = __wasmBytes();\n      return rawInitSync({ module: bytes });\n    }\n    return rawInit(moduleOrPath);\n  }\n  if (typeof moduleOrPath === 'undefined') {\n    const bytes = __wasmBytes();\n    let mod;\n    try {\n      mod = await __compileInWorker(bytes);\n    } catch (_) {\n      mod = await WebAssembly.compile(bytes);\n    }\n    return rawInit({ module_or_path: mod });\n  }\n  return rawInit(moduleOrPath);\n}\n`;
+fs.writeFileSync(path.join(distDir, 'sdk.js'), wrapper);
+fs.copyFileSync(dtsPath, path.join(distDir, 'sdk.d.ts'));
+
 // Basic report
 const outStat = fs.statSync(path.join(distDir, 'sdk.js'));
-console.log(`Wrote dist/sdk.js (${outStat.size} bytes) with inlined WASM (${Math.round(Buffer.byteLength(wasmBase64, 'utf8')/1024)} KB base64)`);
+console.log(`Wrote dist/sdk.js (${outStat.size} bytes) single-file wrapper (inline WASM)`);
 console.log('Wrote dist/sdk.d.ts');
 console.log('Wrote dist/raw/* (separate JS + WASM)');
 
