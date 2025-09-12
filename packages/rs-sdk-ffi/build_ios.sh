@@ -328,13 +328,29 @@ if [ -d "$SPV_CRATE_PATH" ]; then
   echo -e "${GREEN}Building dash-spv-ffi (local rust-dashcore)${NC}"
   pushd "$SPV_CRATE_PATH" >/dev/null
   if [ "$BUILD_ARCH" != "x86" ]; then
-    cargo build --lib --target aarch64-apple-ios --release > /tmp/cargo_build_spv_device.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi device build failed${NC}"; cat /tmp/cargo_build_spv_device.log; exit 1; }
+    if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
+      echo -e "${GREEN}Using toolchain '+${RUST_DASHCORE_TOOLCHAIN}' for device build${NC}"
+      cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target aarch64-apple-ios --release > /tmp/cargo_build_spv_device.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi device build failed${NC}"; cat /tmp/cargo_build_spv_device.log; exit 1; }
+    else
+      cargo build --lib --target aarch64-apple-ios --release > /tmp/cargo_build_spv_device.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi device build failed${NC}"; cat /tmp/cargo_build_spv_device.log; exit 1; }
+    fi
   fi
   if [ "$BUILD_ARCH" = "universal" ]; then
-    cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
-    cargo build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+    if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
+      echo -e "${GREEN}Using toolchain '+${RUST_DASHCORE_TOOLCHAIN}' for sim builds${NC}"
+      cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+      cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+    else
+      cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+      cargo build --lib --target x86_64-apple-ios --release > /tmp/cargo_build_spv_sim_x86.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (x86_64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_x86.log; exit 1; }
+    fi
   else
-    cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+    if [ -n "${RUST_DASHCORE_TOOLCHAIN:-}" ]; then
+      echo -e "${GREEN}Using toolchain '+${RUST_DASHCORE_TOOLCHAIN}' for sim build${NC}"
+      cargo +"${RUST_DASHCORE_TOOLCHAIN}" build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+    else
+      cargo build --lib --target aarch64-apple-ios-sim --release > /tmp/cargo_build_spv_sim_arm.log 2>&1 || { echo -e "${RED}✗ dash-spv-ffi sim (arm64) build failed${NC}"; cat /tmp/cargo_build_spv_sim_arm.log; exit 1; }
+    fi
   fi
   popd >/dev/null
 else
