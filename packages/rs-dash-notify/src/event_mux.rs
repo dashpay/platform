@@ -9,19 +9,19 @@
 //! - Fan-out responses to all subscribers whose filters match
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
-use dapi_grpc::platform::v0::PlatformEventsCommand;
-use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
 use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
+use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
 use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
+use dapi_grpc::platform::v0::PlatformEventsCommand;
 use dapi_grpc::tonic::Status;
 use futures::SinkExt;
 use sender_sink::wrappers::{SinkError, UnboundedSenderSink};
 use tokio::join;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{Mutex, mpsc};
+use tokio::sync::{mpsc, Mutex};
 
 use crate::event_bus::{EventBus, Filter as EventFilter, SubscriptionHandle};
 use dapi_grpc::platform::v0::PlatformEventsResponse;
@@ -53,37 +53,9 @@ impl Default for EventMux {
 }
 
 impl EventMux {
-    async fn cleanup_after_subscriber_sink_closed(
-        &self,
-        key: SubscriptionKey,
-        handle_id: u64,
-    ) {
-        // Remove mapping and fetch assigned producer index if any
-        let assigned = {
-            let mut subs = self.subscriptions.lock().unwrap();
-            subs.remove(&key).and_then(|info| info.assigned_producer)
-        };
-
-        // Remove the bus subscription (idempotent)
-        self.bus.remove_subscription(handle_id).await;
-
-        // Notify producer upstream
-        if let Some(idx) = assigned {
-            if let Some(tx) = self.get_producer_tx(idx).await {
-                let cmd = PlatformEventsCommand {
-                    version: Some(CmdVersion::V0(
-                        dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
-                            command: Some(Cmd::Remove(
-                                dapi_grpc::platform::v0::RemoveSubscriptionV0 {
-                                    client_subscription_id: key.id.clone(),
-                                },
-                            )),
-                        },
-                    )),
-                };
-                let _ = tx.send(Ok(cmd));
-            }
-        }
+    async fn handle_subscriber_disconnect(&self, subscriber_id: u64) {
+        tracing::debug!(subscriber_id, "event_mux: handling subscriber disconnect");
+        self.remove_subscriber(subscriber_id).await;
     }
     /// Create a new, empty EventMux without producers or subscribers.
     pub fn new() -> Self {
@@ -199,8 +171,13 @@ impl EventMux {
                         // remove it first to avoid duplicate fan-out and leaked handles.
                         if let Some((prev_sub_id, prev_handle_id, prev_assigned)) = {
                             let subs = self.subscriptions.lock().unwrap();
-                            subs.get(&SubscriptionKey { subscriber_id, id: id.clone() })
-                                .map(|info| (info.subscriber_id, info.handle.id(), info.assigned_producer))
+                            subs.get(&SubscriptionKey {
+                                subscriber_id,
+                                id: id.clone(),
+                            })
+                            .map(|info| {
+                                (info.subscriber_id, info.handle.id(), info.assigned_producer)
+                            })
                         } {
                             if prev_sub_id == subscriber_id {
                                 tracing::warn!(
@@ -228,7 +205,12 @@ impl EventMux {
                                     }
                                 }
                                 // Drop previous mapping entry (it will be replaced below)
-                                let _ = { self.subscriptions.lock().unwrap().remove(&SubscriptionKey { subscriber_id, id: id.clone() }) };
+                                let _ = {
+                                    self.subscriptions.lock().unwrap().remove(&SubscriptionKey {
+                                        subscriber_id,
+                                        id: id.clone(),
+                                    })
+                                };
                             }
                         }
 
@@ -238,7 +220,10 @@ impl EventMux {
                         {
                             let mut subs = self.subscriptions.lock().unwrap();
                             subs.insert(
-                                SubscriptionKey { subscriber_id, id: id.clone() },
+                                SubscriptionKey {
+                                    subscriber_id,
+                                    id: id.clone(),
+                                },
                                 SubscriptionInfo {
                                     subscriber_id,
                                     filter: add.filter.clone(),
@@ -249,8 +234,9 @@ impl EventMux {
                         }
 
                         // Assign producer for this subscription
-                        if let Some((_idx, prod_tx)) =
-                            self.assign_producer_for_subscription(subscriber_id, &id).await
+                        if let Some((_idx, prod_tx)) = self
+                            .assign_producer_for_subscription(subscriber_id, &id)
+                            .await
                         {
                             if prod_tx.send(Ok(cmd)).is_err() {
                                 tracing::debug!(subscription_id = %id, "event_mux: failed to send Add to producer - channel closed");
@@ -263,7 +249,7 @@ impl EventMux {
                         // Start fan-out task for this subscription
                         let tx = sub_resp_tx.clone();
                         let mux = self.clone();
-                        let key = SubscriptionKey { subscriber_id, id: id.clone() };
+                        let sub_id = subscriber_id;
                         let mut tasks = self.tasks.lock().await;
                         tasks.spawn(async move {
                             let h = handle;
@@ -272,13 +258,13 @@ impl EventMux {
                                     Some(resp) => {
                                         if tx.send(Ok(resp)).is_err() {
                                             tracing::debug!(subscription_id = %id, "event_mux: failed to send response - subscriber channel closed");
-                                            mux.cleanup_after_subscriber_sink_closed(key.clone(), h.id()).await;
+                                            mux.handle_subscriber_disconnect(sub_id).await;
                                             break;
                                         }
                                     }
                                     None => {
                                         tracing::debug!(subscription_id = %id, "event_mux: subscription ended");
-                                        mux.cleanup_after_subscriber_sink_closed(key.clone(), h.id()).await;
+                                        mux.handle_subscriber_disconnect(sub_id).await;
                                         break;
                                     }
                                 }
@@ -290,7 +276,12 @@ impl EventMux {
                         tracing::debug!(subscriber_id, subscription_id = %id, "event_mux: removing subscription");
 
                         // Remove subscription from bus and registry, and get assigned producer
-                        let removed = { self.subscriptions.lock().unwrap().remove(&SubscriptionKey { subscriber_id, id: id.clone() }) };
+                        let removed = {
+                            self.subscriptions.lock().unwrap().remove(&SubscriptionKey {
+                                subscriber_id,
+                                id: id.clone(),
+                            })
+                        };
                         let assigned = if let Some(info) = removed {
                             self.bus.remove_subscription(info.handle.id()).await;
                             info.assigned_producer
@@ -302,6 +293,7 @@ impl EventMux {
                             if let Some(tx) = self.get_producer_tx(idx).await {
                                 if tx.send(Ok(cmd)).is_err() {
                                     tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
+                                    self.handle_subscriber_disconnect(subscriber_id).await;
                                 }
                             }
                         }
@@ -313,7 +305,7 @@ impl EventMux {
 
         // subscriber disconnected: use the centralized cleanup method
         tracing::debug!(subscriber_id, "event_mux: subscriber disconnected");
-        self.remove_subscriber(subscriber_id).await;
+        self.handle_subscriber_disconnect(subscriber_id).await;
     }
 
     /// Remove a subscriber and clean up all associated resources
@@ -324,7 +316,13 @@ impl EventMux {
         let keys: Vec<SubscriptionKey> = {
             let subs = self.subscriptions.lock().unwrap();
             subs.iter()
-                .filter_map(|(key, info)| if info.subscriber_id == subscriber_id { Some(key.clone()) } else { None })
+                .filter_map(|(key, info)| {
+                    if info.subscriber_id == subscriber_id {
+                        Some(key.clone())
+                    } else {
+                        None
+                    }
+                })
                 .collect()
         };
 
@@ -384,7 +382,10 @@ impl EventMux {
         // Prefer existing assignment
         {
             let subs = self.subscriptions.lock().unwrap();
-            if let Some(info) = subs.get(&SubscriptionKey { subscriber_id, id: subscription_id.to_string() }) {
+            if let Some(info) = subs.get(&SubscriptionKey {
+                subscriber_id,
+                id: subscription_id.to_string(),
+            }) {
                 if let Some(idx) = info.assigned_producer {
                     if let Some(Some(tx)) = prods_guard.get(idx) {
                         return Some((idx, tx.clone()));
@@ -413,7 +414,10 @@ impl EventMux {
                 .subscriptions
                 .lock()
                 .unwrap()
-                .get_mut(&SubscriptionKey { subscriber_id, id: subscription_id.to_string() })
+                .get_mut(&SubscriptionKey {
+                    subscriber_id,
+                    id: subscription_id.to_string(),
+                })
             {
                 info.assigned_producer = Some(idx);
             }
@@ -511,7 +515,10 @@ impl EventMux {
         }
 
         // Assign producer and send Add
-        if let Some((_idx, tx)) = self.assign_producer_for_subscription(subscriber_id, &id).await {
+        if let Some((_idx, tx)) = self
+            .assign_producer_for_subscription(subscriber_id, &id)
+            .await
+        {
             let cmd = PlatformEventsCommand {
                 version: Some(CmdVersion::V0(
                     dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
@@ -543,8 +550,13 @@ impl EventMux {
                         )),
                     };
                     let _ = tx.send(Ok(cmd));
+                    tracing::debug!(
+                        subscription_id = %id_for_cb,
+                        "event_mux: subscription dropped, sent Remove command to producer"
+                    );
                     // Remove mapping entry for this (subscriber_id, id)
                     if let Ok(mut subs) = subs_map.lock() {
+                        tracing::debug!(subscription_id = %id_for_cb, "event_mux: removing subscription mapping");
                         subs.remove(&SubscriptionKey { subscriber_id, id: id_for_cb.clone() });
                     }
                 }))
@@ -721,7 +733,7 @@ mod tests {
     use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
     use sender_sink::wrappers::UnboundedSenderSink;
     use std::collections::HashMap;
-    use tokio::time::{Duration, timeout};
+    use tokio::time::{timeout, Duration};
 
     fn make_add_cmd(id: &str) -> PlatformEventsCommand {
         PlatformEventsCommand {

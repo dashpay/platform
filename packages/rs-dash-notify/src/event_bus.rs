@@ -48,6 +48,7 @@ where
 impl<E, F> EventBus<E, F> {
     /// Remove a subscription by id, update metrics, and invoke drop callback if present.
     pub async fn remove_subscription(&self, id: u64) {
+        tracing::debug!("event_bus: trying to remove subscription id={}", id);
         let mut subs = self.subs.write().await;
         if let Some(sub) = subs.remove(&id) {
             metrics_unsubscribe_inc();
@@ -55,6 +56,8 @@ impl<E, F> EventBus<E, F> {
             if let Some(cb) = sub.on_drop {
                 (cb)(id);
             }
+        } else {
+            tracing::debug!("event_bus: subscription id={} not found, not removed", id);
         }
     }
 }
@@ -76,6 +79,7 @@ where
 
     /// Add a new subscription using the provided filter.
     pub async fn add_subscription(&self, filter: F) -> SubscriptionHandle<E, F> {
+        tracing::debug!("event_bus: adding subscription");
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::unbounded_channel::<E>();
 
@@ -387,6 +391,8 @@ fn metrics_events_dropped_inc() {}
 
 #[cfg(test)]
 mod tests {
+    use std::process::id;
+
     use super::*;
     use tokio::time::{timeout, Duration};
 
@@ -453,5 +459,32 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(b, Evt::Num(12));
+    }
+
+    #[tokio::test]
+    async fn unsubscribe() {
+        let bus: EventBus<Evt, EvenOnly> = EventBus::new();
+        let sub = bus.add_subscription(EvenOnly).await;
+
+        bus.notify(Evt::Num(2)).await;
+        bus.notify(Evt::Num(12)).await;
+
+        bus.remove_subscription(sub.id()).await;
+
+        bus.notify(Evt::Num(3)).await; // not delivered as we already unsubscribed
+
+        let a = timeout(Duration::from_millis(200), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(a, Evt::Num(2));
+        let b = timeout(Duration::from_millis(200), sub.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(b, Evt::Num(12));
+
+        let c = timeout(Duration::from_millis(200), sub.recv()).await;
+        assert!(c.unwrap().is_none(), "only two events should be received",);
     }
 }
