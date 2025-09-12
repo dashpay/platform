@@ -28,6 +28,7 @@ jobs:
       js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
       rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
+      test-suite: ${{ steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -53,6 +54,12 @@ jobs:
         id: filter-rs-direct
         with:
           filters: .github/package-filters/rs-packages-direct.yml
+
+      - name: Check if Test Suite should run
+        id: filter-test-suite
+        uses: dorny/paths-filter@v3
+        with:
+          filters: .github/package-filters/test-suite-triggers.yml
 
   build-js:
     name: Build JS packages
@@ -208,7 +215,9 @@ jobs:
     needs:
       - build-js
       - build-images
+      - changes
     secrets: inherit
+    if: needs.changes.outputs.test-suite == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -237,5 +246,7 @@ jobs:
     needs:
       - build-js
       - build-images
+      - changes
     secrets: inherit
+    if: needs.changes.outputs.test-suite == 'true'
     uses: ./.github/workflows/tests-packges-functional.yml
