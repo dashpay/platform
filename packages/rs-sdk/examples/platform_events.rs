@@ -1,14 +1,19 @@
 use std::str::FromStr;
+use std::time::Duration;
 
 use dapi_grpc::platform::v0::platform_filter_v0::Kind as FilterKind;
 use dapi_grpc::platform::v0::PlatformFilterV0;
 use dapi_grpc::platform::v0::{
     platform_events_response::platform_events_response_v0::Response as Resp, PlatformEventsResponse,
 };
+use dash_sdk::platform::types::epoch::{Epoch, EpochQuery};
+use dash_sdk::platform::Fetch;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::{Address, AddressList};
 use rs_dash_notify::SubscriptionHandle;
 use serde::Deserialize;
+use tokio::time::sleep;
+use tokio_util::sync::DropGuard;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Deserialize)]
@@ -55,6 +60,12 @@ async fn main() {
 
     let config = Config::load();
     let sdk = setup_sdk(&config);
+    // sanity check - fetch current epoch to see if connection works
+    let epoch = Epoch::fetch(&sdk, EpochQuery::default())
+        .await
+        .expect("fetch epoch");
+    tracing::info!("Current epoch: {:?}", epoch);
+    sleep(Duration::from_secs(3)).await; // wait for connections; TODO: implement
 
     // Subscribe to BlockCommitted only
     let filter_block = PlatformFilterV0 {
@@ -177,7 +188,7 @@ fn setup_sdk(config: &Config) -> Sdk {
     let host = &config.platform_host;
     let address = Address::from_str(&format!("{}://{}:{}", scheme, host, config.platform_port))
         .expect("parse uri");
-
+    tracing::debug!("Using DAPI address: {}", address.uri());
     let core_host = config.core_host.as_deref().unwrap_or(host);
 
     #[allow(unused_mut)]

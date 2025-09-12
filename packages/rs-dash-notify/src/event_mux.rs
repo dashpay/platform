@@ -187,6 +187,7 @@ impl EventMux {
                                 tracing::debug!(subscription_id = %id, "event_mux: failed to send Add to producer - channel closed");
                             }
                         } else {
+                            // TODO: handle no producers available, possibly spawned jobs didn't start yet
                             tracing::warn!(subscription_id = %id, "event_mux: no producers available for Add");
                         }
 

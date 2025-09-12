@@ -17,6 +17,7 @@ impl GrpcPlatformEventsProducer {
     /// Connect the provided `client` to the `mux` and forward messages until completion.
     pub async fn run<C>(mux: EventMux, mut client: PlatformClient<C>) -> Result<(), Status>
     where
+        // C: DapiRequestExecutor,
         C: dapi_grpc::tonic::client::GrpcService<dapi_grpc::tonic::body::Body>,
         C::Error: Into<dapi_grpc::tonic::codegen::StdError>,
         C::ResponseBody: dapi_grpc::tonic::codegen::Body<Data = dapi_grpc::tonic::codegen::Bytes>
