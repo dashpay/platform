@@ -34,22 +34,22 @@ jobs:
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter-js
         with:
           filters: .github/package-filters/js-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter-js-direct
         with:
           filters: .github/package-filters/js-packages-direct.yml
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter-rs
         with:
           filters: .github/package-filters/rs-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter-rs-direct
         with:
           filters: .github/package-filters/rs-packages-direct.yml
