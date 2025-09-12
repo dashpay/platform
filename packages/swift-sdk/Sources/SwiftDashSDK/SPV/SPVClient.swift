@@ -146,16 +146,18 @@ public class SPVClient: ObservableObject {
         }
         
         // Initialize SPV logging (one-time). Default to off unless SPV_LOG is provided.
-        struct SPVLogInit { static var done = false }
-        if !SPVLogInit.done {
+        enum SPVLogInit {
+            static let once: Void = {
+                let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
+                level.withCString { cstr in
+                    dash_spv_ffi_init_logging(cstr)
+                }
+            }()
+        }
+        _ = SPVLogInit.once
+        if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
-            level.withCString { cstr in
-                dash_spv_ffi_init_logging(cstr)
-            }
-            SPVLogInit.done = true
-            if swiftLoggingEnabled {
-                print("[SPV][Log] Initialized SPV logging level=\(level)")
-            }
+            print("[SPV][Log] Initialized SPV logging level=\(level)")
         }
 
         // Create configuration based on network raw value
