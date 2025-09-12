@@ -72,9 +72,7 @@ try {
     console.log('Warning: Could not prefetch quorums:', error.message);
 }
 
-// Use trusted builder as required for WASM
-const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
-const sdk = await builder.build();
+// Note: Using JavaScript wrapper SDK (already initialized above)
 
 // Epoch Info Queries
 describe('Epoch Information Queries');
@@ -162,7 +160,7 @@ await test('get_evonodes_proposed_epoch_blocks_by_range - fetch blocks by range'
 });
 
 // Clean up
-sdk.free();
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 

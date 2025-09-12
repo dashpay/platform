@@ -20,7 +20,7 @@ if (!global.crypto) {
 }
 
 // Import JavaScript wrapper (correct approach)
-import init from '../pkg/dash_wasm_sdk.js';
+import init, * as wasmSdk from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
 // Initialize WASM

@@ -82,9 +82,8 @@ try {
     console.warn('Failed to prefetch trusted quorums (offline mode?):', error.message);
 }
 
-// Initialize SDK - use trusted builder for WASM
-const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
-const sdk = await builder.build();
+// Note: Using JavaScript wrapper SDK (already initialized above)
+// Direct WASM SDK not needed since wrapper provides all functionality
 
 // Document Query Tests
 describe('Document Queries');
@@ -92,14 +91,15 @@ describe('Document Queries');
 await test('get_documents - DPNS domains (no filters)', async () => {
     try {
         const result = await sdk.getDocuments(
-            sdk,
             DPNS_CONTRACT,
             "domain",
-            null,  // no where clause
-            null,  // no order by
-            10,    // limit
-            null,  // no start after
-            null   // no start at
+            {
+                where: null,
+                orderBy: null, 
+                limit: 10,
+                startAfter: null,
+                startAt: null
+            }
         );
         console.log(`   Found ${result?.length || 0} documents`);
     } catch (error) {
@@ -352,7 +352,7 @@ await test('get_epochs_info', async () => {
 });
 
 // Clean up
-sdk.free();
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 

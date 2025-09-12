@@ -26,7 +26,10 @@ const testFiles = [
     { name: 'Protocol & Version Queries', file: 'protocol-version-queries.test.mjs' },
     { name: 'System & Utility Queries', file: 'system-utility-queries.test.mjs' },
     { name: 'State Transitions', file: 'state-transitions.test.mjs' },
-    { name: 'Proof Verification', file: 'proof-verification.test.mjs' }
+    { name: 'Proof Verification', file: 'proof-verification.test.mjs' },
+    { name: 'Wrapper Methods Validation', file: 'wrapper-methods-test.mjs' },
+    { name: 'Dual Mode Testing', file: 'dual-mode-testing.test.mjs' },
+    { name: 'Quick Funded Setup', file: 'quick-funded-setup.test.mjs', requiresEnv: true }
 ];
 
 // Test results
@@ -54,8 +57,23 @@ console.log(`       WASM SDK Comprehensive Tests     `);
 console.log(`========================================${colors.reset}\n`);
 
 // Function to run a single test file
-async function runTest(name, file) {
+async function runTest(name, file, requiresEnv = false) {
     return new Promise((resolve) => {
+        // Check for required environment variables
+        if (requiresEnv && (!process.env.IDENTITY_ID || !process.env.MNEMONIC)) {
+            console.log(`${colors.yellow}Skipping ${name} - requires IDENTITY_ID and MNEMONIC environment variables${colors.reset}`);
+            resolve({
+                name,
+                passed: 0,
+                failed: 0, 
+                total: 0,
+                skipped: true,
+                duration: 0,
+                exitCode: 0
+            });
+            return;
+        }
+
         console.log(`${colors.cyan}Running ${name} tests...${colors.reset}`);
         
         const startTime = Date.now();
@@ -154,9 +172,9 @@ async function runTest(name, file) {
 
 // Run all tests sequentially
 async function runAllTests() {
-    for (const { name, file } of testFiles) {
+    for (const { name, file, requiresEnv } of testFiles) {
         try {
-            await runTest(name, file);
+            await runTest(name, file, requiresEnv);
         } catch (error) {
             console.error(`${colors.red}Error running ${name}: ${error.message}${colors.reset}`);
             results.suites.push({

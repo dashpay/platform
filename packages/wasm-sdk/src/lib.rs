@@ -18,6 +18,8 @@ pub use queries::{
 };
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use state_transitions::identity as state_transition_identity;
+pub use state_transitions::documents::*;  // Export document state transitions
+pub use state_transitions::contracts::*;  // Export contract state transitions
 pub use wallet::*;
 
 #[global_allocator]

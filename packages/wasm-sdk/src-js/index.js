@@ -263,9 +263,22 @@ export class WasmSDK {
         return this.createDocument(mnemonic, identityId, contractId, documentType, documentData, keyIndex);
     }
 
-    async documentUpdate(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex) {
+    async updateDocument(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex) {
         this._ensureInitialized();
         return this.documentService.updateDocument(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex);
+    }
+
+    async deleteDocument(mnemonic, identityId, contractId, documentType, documentId, keyIndex) {
+        this._ensureInitialized();
+        return this.documentService.deleteDocument(mnemonic, identityId, contractId, documentType, documentId, keyIndex);
+    }
+
+    // Backward compatibility aliases - deprecated
+    async documentUpdate(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex) {
+        if (this.configManager.getDebug()) {
+            console.warn('documentUpdate is deprecated. Use updateDocument instead.');
+        }
+        return this.updateDocument(mnemonic, identityId, contractId, documentType, documentId, updateData, keyIndex);
     }
 
     // ========== Contract Operations - Delegated to ContractService ==========
@@ -288,9 +301,17 @@ export class WasmSDK {
         return this.createDataContract(mnemonic, identityId, contractDefinition, keyIndex);
     }
 
-    async dataContractUpdate(mnemonic, identityId, contractId, updateDefinition, keyIndex) {
+    async updateDataContract(mnemonic, identityId, contractId, updateDefinition, keyIndex) {
         this._ensureInitialized();
         return this.contractService.updateDataContract(mnemonic, identityId, contractId, updateDefinition, keyIndex);
+    }
+
+    // Backward compatibility alias - deprecated
+    async dataContractUpdate(mnemonic, identityId, contractId, updateDefinition, keyIndex) {
+        if (this.configManager.getDebug()) {
+            console.warn('dataContractUpdate is deprecated. Use updateDataContract instead.');
+        }
+        return this.updateDataContract(mnemonic, identityId, contractId, updateDefinition, keyIndex);
     }
 
     async validateDocument(document, dataContract) {

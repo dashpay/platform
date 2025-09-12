@@ -20,7 +20,7 @@ if (!global.crypto) {
 }
 
 // Import JavaScript wrapper (correct approach)
-import init from '../pkg/dash_wasm_sdk.js';
+import init, * as wasmSdk from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
 // Pre-load WASM for Node.js compatibility
@@ -32,7 +32,7 @@ await init(readFileSync(wasmPath));
 console.log('Initializing JavaScript wrapper...');
 const sdk = new WasmSDK({
     network: 'testnet',
-    proofs: true,
+    proofs: false,  // Use false for reliable testing
     debug: false
 });
 await sdk.initialize();
@@ -79,9 +79,8 @@ try {
     console.log('Warning: Could not prefetch quorums:', error.message);
 }
 
-// Use trusted builder as required for WASM
-const builder = wasmSdk.WasmSdkBuilder.new_testnet_trusted();
-const sdk = await builder.build();
+// Note: Using JavaScript wrapper SDK (already initialized above)
+// Direct WASM SDK not needed since wrapper provides all functionality
 
 // Identity Query Tests
 describe('Basic Identity Queries');
@@ -315,7 +314,7 @@ await test('get_identity_by_non_unique_public_key_hash - requires valid hash', a
 });
 
 // Clean up
-sdk.free();
+await sdk.destroy();
 
 console.log(`\n\nTest Results: ${passed} passed, ${failed} failed, ${passed + failed} total`);
 

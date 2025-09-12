@@ -2,6 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## 🚨 CRITICAL: File Structure Rules
+
+**ONLY 3 FILES MATTER FOR PROJECT MANAGEMENT:**
+
+1. **CLAUDE.md** (this file) - Development guidance for Claude Code
+2. **PRD.md** - Pure requirements specification (what needs to be built)
+3. **PLAN.md** - THE MASTER PLAN FILE at project root (what's outstanding)
+
+## 🔴 MANDATORY RULE FOR CLAUDE CODE
+
+**ALWAYS check and update PLAN.md (project root):**
+- ✅ Check off completed items when work is done
+- ➕ Add new items when gaps are discovered  
+- 🔄 Update status and priorities as needed
+- ❌ NEVER create new plan files
+- ❌ NEVER create new status/tracking files
+- ❌ NEVER create new progress reports
+
+**The PLAN.md is the SINGLE SOURCE OF TRUTH for all outstanding work.**
+
 ## Documentation
 
 **IMPORTANT**: For comprehensive API reference and usage examples, see:
@@ -139,12 +159,41 @@ node -e "import('dash-wasm-sdk').then(m => console.log('✅ Package imported:', 
 cargo clean
 ```
 
+## Project Development Status
+
+### **Current Implementation Status**
+- **Infrastructure**: All platform operation methods exist and are accessible
+- **Authentication System**: Working (mnemonic→WIF derivation implemented)
+- **Response Format**: PRD-compliant format implemented
+- **Network Integration**: Testnet connectivity confirmed (3.4B+ credits accessible)
+- **Performance**: Exceeds PRD requirements (benchmarked)
+
+### **Outstanding Work for PRD Completion**
+**Check PLAN.md for current status and outstanding items.**
+
+**CRITICAL**: Always update PLAN.md when completing work or discovering new requirements.
+
+### **Developer Guidance**
+- **Requirements**: Follow `PRD.md` specifications exactly
+- **Current Working**: Query operations, SDK initialization, method availability
+- **Authentication**: WIF private key format working, mnemonic derivation needs debugging
+- **Testing**: Use JavaScript wrapper approach (`WasmSDK` class, not direct WASM)
+- **Network**: Use `proofs: false` for reliable testing
+
+### **Key Architecture Insights**
+- **State Transitions**: Implemented as WASM instance methods (e.g., `sdk.documentCreate()`)
+- **JavaScript Wrapper**: Service-oriented architecture with proper error handling
+- **Authentication**: WASM functions expect WIF private keys, not raw mnemonics
+- **Network Configuration**: Trusted builder required, proof verification can have issues
+
 ## Documentation Maintenance
 
-When adding new queries or state transitions:
+When adding new platform operations or queries:
 1. Update the definitions in `index.html`
 2. Run `python3 generate_docs.py` to regenerate documentation
-3. The CI will fail if documentation is out of sync
+3. Update `WASM_SDK_PRD.md` if requirements change
+4. Update `WASM_SDK_IMPLEMENTATION_PLAN.md` if timeline changes
+5. The CI will fail if documentation is out of sync
 
 ## Common Issues
 

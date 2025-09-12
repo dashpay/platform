@@ -1,0 +1,123 @@
+{
+  "totalTests": 17,
+  "passedTests": 9,
+  "failedTests": 8,
+  "successRate": "52.9%",
+  "totalTimeMs": 15428,
+  "results": {
+    "authentication": [
+      {
+        "test": "Mnemonic Validation",
+        "success": true,
+        "details": "Mnemonic format: Valid",
+        "timestamp": "2025-09-12T10:52:37.035Z"
+      },
+      {
+        "test": "Identity Access",
+        "success": true,
+        "details": "Balance: 3410602452 credits",
+        "timestamp": "2025-09-12T10:52:37.951Z"
+      },
+      {
+        "test": "MASTER Key Derivation",
+        "success": false,
+        "details": "KeyIndex 0: sdk.deriveKeyInfo is not a function",
+        "timestamp": "2025-09-12T10:52:37.951Z"
+      },
+      {
+        "test": "CRITICAL Key Derivation",
+        "success": false,
+        "details": "KeyIndex 1: sdk.deriveKeyInfo is not a function",
+        "timestamp": "2025-09-12T10:52:37.951Z"
+      },
+      {
+        "test": "HIGH Key Derivation",
+        "success": false,
+        "details": "KeyIndex 2: sdk.deriveKeyInfo is not a function",
+        "timestamp": "2025-09-12T10:52:37.951Z"
+      },
+      {
+        "test": "MEDIUM Key Derivation",
+        "success": false,
+        "details": "KeyIndex 3: sdk.deriveKeyInfo is not a function",
+        "timestamp": "2025-09-12T10:52:37.951Z"
+      }
+    ],
+    "documentOperations": [
+      {
+        "test": "Document Creation",
+        "success": false,
+        "details": "undefined (4820ms)",
+        "timestamp": "2025-09-12T10:52:44.199Z"
+      },
+      {
+        "test": "Credit Consumption Verification",
+        "success": false,
+        "details": "No credits consumed (expected due to platform issue)",
+        "timestamp": "2025-09-12T10:52:44.529Z"
+      },
+      {
+        "test": "Document Existence Verification",
+        "success": false,
+        "details": "No document ID to verify (expected due to platform issue)",
+        "timestamp": "2025-09-12T10:52:44.529Z"
+      }
+    ],
+    "contractOperations": [],
+    "dpnsOperations": [],
+    "performanceBenchmarks": [
+      {
+        "test": "Document Creation Performance",
+        "success": true,
+        "details": "4820ms (requirement: < 5000ms)",
+        "timestamp": "2025-09-12T10:52:44.529Z"
+      },
+      {
+        "test": "SDK Initialization",
+        "success": true,
+        "details": "520ms (requirement: < 5000ms)",
+        "timestamp": "2025-09-12T10:52:49.013Z"
+      },
+      {
+        "test": "Identity Query Performance",
+        "success": true,
+        "details": "292ms (requirement: < 2000ms)",
+        "timestamp": "2025-09-12T10:52:49.305Z"
+      },
+      {
+        "test": "Contract Query Performance",
+        "success": true,
+        "details": "900ms (requirement: < 3000ms)",
+        "timestamp": "2025-09-12T10:52:50.205Z"
+      }
+    ],
+    "responseFormats": [
+      {
+        "test": "Query Response Structure",
+        "success": true,
+        "details": "Identity response includes required fields: true",
+        "timestamp": "2025-09-12T10:52:47.110Z"
+      },
+      {
+        "test": "Contract Response Structure",
+        "success": false,
+        "details": "Contract response includes required fields: false",
+        "timestamp": "2025-09-12T10:52:47.982Z"
+      }
+    ],
+    "errorHandling": [
+      {
+        "test": "Invalid Identity Error Handling",
+        "success": true,
+        "details": "Proper error thrown: string decoding error provided string contained invalid character 'l' at byte 4",
+        "timestamp": "2025-09-12T10:52:50.716Z"
+      },
+      {
+        "test": "Invalid Contract Error Handling",
+        "success": true,
+        "details": "Proper error thrown: string decoding error provided string contained invalid character 'l' at byte 4",
+        "timestamp": "2025-09-12T10:52:50.716Z"
+      }
+    ]
+  }
+}

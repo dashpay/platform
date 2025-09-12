@@ -56,10 +56,31 @@ export class ContractService {
         ErrorUtils.validateRequired({ mnemonic, identityId, contractDefinition, keyIndex }, 
                                    ['mnemonic', 'identityId', 'contractDefinition', 'keyIndex']);
         
+        // Derive private key from mnemonic using working WASM function
+        let privateKeyWif;
+        
+        if (mnemonic.length === 51 || mnemonic.length === 52) {
+            // Already a WIF private key
+            privateKeyWif = mnemonic;
+        } else {
+            // Derive from mnemonic
+            try {
+                const derivationPath = `m/44'/5'/0'/0/${keyIndex}`;
+                const keyResult = await this._executeOperation(
+                    () => this.wasmModule.derive_key_from_seed_with_path(mnemonic, null, derivationPath, 'testnet'),
+                    'derive_key_from_seed_with_path',
+                    { mnemonic: '[SANITIZED]', path: derivationPath, keyIndex }
+                );
+                privateKeyWif = keyResult.private_key_wif;
+            } catch (keyError) {
+                throw new Error(`Failed to derive private key: ${keyError.message}`);
+            }
+        }
+
         return this._executeOperation(
-            () => this.wasmModule.data_contract_create(this.wasmSdk, mnemonic, identityId, contractDefinition, keyIndex),
-            'data_contract_create',
-            { mnemonic: '[SANITIZED]', identityId, contractDefinition: '[SANITIZED]', keyIndex }
+            () => this.wasmSdk.contractCreate(identityId, contractDefinition, privateKeyWif, keyIndex),
+            'contractCreate',
+            { identityId, contractDefinition: '[SANITIZED]', keyIndex, privateKey: '[SANITIZED]' }
         );
     }
 
@@ -77,8 +98,8 @@ export class ContractService {
                                    ['mnemonic', 'identityId', 'contractId', 'updateDefinition', 'keyIndex']);
         
         return this._executeOperation(
-            () => this.wasmModule.data_contract_update(this.wasmSdk, mnemonic, identityId, contractId, updateDefinition, keyIndex),
-            'data_contract_update',
+            () => this.wasmSdk.contractUpdate(contractId, identityId, updateDefinition, mnemonic, keyIndex),
+            'contractUpdate',
             { mnemonic: '[SANITIZED]', identityId, contractId, updateDefinition: '[SANITIZED]', keyIndex }
         );
     }

@@ -20,8 +20,7 @@ if (!global.crypto) {
 }
 
 // Import JavaScript wrapper (correct approach)
-import init from '../pkg/dash_wasm_sdk.js';
-import { WasmSDK } from '../src-js/index.js';
+import init, * as wasmSdk from '../pkg/dash_wasm_sdk.js';
 import { WasmSDK } from '../src-js/index.js';
 
 // Pre-load WASM for Node.js compatibility
@@ -122,7 +121,7 @@ await test('generateMnemonic - 24 words', async () => {
     }
 });
 
-await test('generate_mnemonic - invalid word count', () => {
+await test('generate_mnemonic - invalid word count', async () => {
     try {
         await sdk.generateMnemonic(13);
         throw new Error('Should have thrown error for invalid word count');

@@ -1,0 +1,40 @@
+{
+  "summary": {
+    "sessionId": "session-2025-09-11T08-38-35-033Z-y770sf",
+    "duration": 1,
+    "totalOperations": 1,
+    "totalUsage": 5000,
+    "todaysUsage": 5000,
+    "dailyLimit": 20000000000,
+    "dailyUsagePercentage": "0.0",
+    "warnings": 0,
+    "errors": 0,
+    "averageOperationCost": "5000",
+    "network": "testnet"
+  },
+  "operations": [
+    {
+      "timestamp": 1757579915033,
+      "sessionId": "session-2025-09-11T08-38-35-033Z-y770sf",
+      "type": "test-operation",
+      "identityId": "test-identity-123",
+      "amount": 5000000,
+      "satoshis": 5000,
+      "txId": "test-transaction-123",
+      "testName": "Credit tracking test",
+      "success": true,
+      "error": null,
+      "metadata": {
+        "testMode": true,
+        "framework": "validation"
+      }
+    }
+  ],
+  "warnings": [],
+  "errors": [],
+  "dailyHistory": {
+    "2025-09-10": 1000,
+    "2025-09-11": 5000
+  },
+  "generatedAt": "2025-09-11T08:38:35.034Z"
+}
