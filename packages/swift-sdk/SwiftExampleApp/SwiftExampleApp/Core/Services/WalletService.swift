@@ -486,8 +486,9 @@ extension WalletService {
 
 // MARK: - SPVClientDelegate
 
+@MainActor
 extension WalletService: SPVClientDelegate {
-    nonisolated public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
+    public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
         // Copy needed values to Sendable primitives to avoid capturing 'progress'
         let startHeight = progress.startHeight
         let currentHeight = progress.currentHeight
@@ -554,13 +555,13 @@ extension WalletService: SPVClientDelegate {
         }
     }
     
-    nonisolated public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
+    public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
         if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
             print("📦 New block: height=\(block.height)")
         }
     }
     
-    nonisolated public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
+    public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
         if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
             print("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)")
         }
@@ -572,7 +573,7 @@ extension WalletService: SPVClientDelegate {
         }
     }
     
-    nonisolated public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
+    public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
         Task { @MainActor in
             isSyncing = false
             
@@ -589,7 +590,7 @@ extension WalletService: SPVClientDelegate {
         }
     }
     
-    nonisolated public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
+    public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
         if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
             print("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers")
         }
