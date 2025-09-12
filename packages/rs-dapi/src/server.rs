@@ -1,13 +1,14 @@
 use axum::{
+    Router,
     extract::State,
     http::StatusCode,
     response::Json,
     routing::{get, post},
-    Router,
 };
 
 use serde_json::Value;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::net::TcpListener;
 use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
@@ -19,7 +20,7 @@ use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 use crate::clients::{CoreClient, DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::error::{DAPIResult, DapiError};
-use crate::logging::{middleware::AccessLogLayer, AccessLogger};
+use crate::logging::{AccessLogger, middleware::AccessLogLayer};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{clients::traits::TenderdashClientTrait, services::StreamingServiceImpl};
@@ -233,6 +234,8 @@ impl DapiServer {
         info!("gRPC compression: disabled (handled by Envoy)");
 
         dapi_grpc::tonic::transport::Server::builder()
+            .tcp_keepalive(Some(Duration::from_secs(25))) // 25 seconds keepalive
+            .timeout(std::time::Duration::from_secs(120)) // 2 minutes timeout
             .add_service(
                 PlatformServer::new(
                     Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),

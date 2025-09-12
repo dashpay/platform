@@ -10,9 +10,9 @@
       # Settings applied both to HTTP1 and HTTP2
       common_http_protocol_options:
         # A single HTTP connection timeout.
-        max_connection_duration: 600s
+        max_connection_duration: 3600s  # 1 hour
         # How long to keep the connection alive when there are no streams (requests).
-        idle_timeout: 300s
+        idle_timeout: 300s  # 5 minutes
         # Request (stream) timeout.
         # HTTP2 support multiple streams (requests) per connection.
         # For HTTP1 it applies for single request.
@@ -377,11 +377,21 @@ static_resources:
             http2_protocol_options:
               initial_stream_window_size: 65536  # 64 KiB
               initial_connection_window_size: 1048576  # 1 MiB
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
             # The maximum number of parallel requests
             max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 25  # 25 seconds
       load_assignment:
         cluster_name: rs_dapi
         endpoints:
@@ -403,11 +413,21 @@ static_resources:
             http2_protocol_options:
               initial_stream_window_size: 65536  # 64 KiB
               initial_connection_window_size: 1048576  # 1 MiB
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
             # The maximum number of parallel requests
             max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 25  # 25 seconds
       load_assignment:
         cluster_name: dapi_api
         endpoints:
@@ -427,10 +447,20 @@ static_resources:
             http2_protocol_options:
               initial_stream_window_size: 65536  # 64 KiB
               initial_connection_window_size: 1048576  # 1 MiB
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
             max_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 25  # 25 seconds
       load_assignment:
         cluster_name: dapi_core_streams
         endpoints:
@@ -443,6 +473,15 @@ static_resources:
     - name: dapi_json_rpc
       type: STRICT_DNS
       per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http_protocol_options: {}
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
@@ -450,6 +489,12 @@ static_resources:
             max_connections: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
             # The maximum number of parallel requests
             max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 25  # 25 seconds
       load_assignment:
         cluster_name: dapi_json_rpc
         endpoints:
@@ -464,6 +509,15 @@ static_resources:
     - name: rs_dapi_json_rpc
       type: STRICT_DNS
       per_connection_buffer_limit_bytes: 32768  # 32 KiB
+      typed_extension_protocol_options:
+        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+          explicit_http_config:
+            http_protocol_options: {}
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
@@ -471,6 +525,12 @@ static_resources:
             max_connections: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
             # The maximum number of parallel requests
             max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 60  # 1 minute
       load_assignment:
         cluster_name: rs_dapi_json_rpc
         endpoints:
@@ -491,11 +551,21 @@ static_resources:
             http2_protocol_options:
               initial_stream_window_size: 65536  # 64 KiB
               initial_connection_window_size: 1048576  # 1 MiB
+          # Enable upstream connection pooling with keepalive
+          upstream_http_protocol_options:
+            idle_timeout: 3600s  # 1 hour
+            max_connection_duration: 3600s  # 1 hour
       circuit_breakers:
         thresholds:
           - priority: DEFAULT
             # The maximum number of parallel requests.
             max_requests: {{= it.platform.gateway.upstreams.driveGrpc.maxRequests }}
+      # Connection pool settings for keepalive
+      upstream_connection_options:
+        tcp_keepalive:
+          keepalive_probes: 3
+          keepalive_time: 3600  # 1 hour
+          keepalive_interval: 25  # 25 seconds
       load_assignment:
         cluster_name: drive_grpc
         endpoints:

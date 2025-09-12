@@ -1,11 +1,12 @@
-use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::PlatformEventsCommand;
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::Status;
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::event_mux::unbounded_sender_sink;
 use crate::event_mux::EventMux;
+use crate::event_mux::unbounded_sender_sink;
 
 /// A reusable gRPC producer that bridges a Platform gRPC client with an [`EventMux`].
 ///
@@ -15,7 +16,13 @@ pub struct GrpcPlatformEventsProducer;
 
 impl GrpcPlatformEventsProducer {
     /// Connect the provided `client` to the `mux` and forward messages until completion.
-    pub async fn run<C>(mux: EventMux, mut client: PlatformClient<C>) -> Result<(), Status>
+    ///
+    /// The `ready` receiver is used to signal when the producer has started.
+    pub async fn run<C>(
+        mux: EventMux,
+        mut client: PlatformClient<C>,
+        ready: oneshot::Sender<()>,
+    ) -> Result<(), Status>
     where
         // C: DapiRequestExecutor,
         C: dapi_grpc::tonic::client::GrpcService<dapi_grpc::tonic::body::Body>,
@@ -36,7 +43,8 @@ impl GrpcPlatformEventsProducer {
 
         tracing::debug!("registering gRPC producer with mux");
         let producer = mux.add_producer().await;
-        tracing::debug!("gRPC producer connected to mux, starting forward loop");
+        tracing::debug!("gRPC producer connected to mux and ready, starting forward loop");
+        ready.send(()).ok();
         producer.forward(cmd_sink, resp_rx).await;
         Ok(())
     }

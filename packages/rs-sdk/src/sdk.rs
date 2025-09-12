@@ -601,16 +601,22 @@ impl Sdk {
     }
 
     /// Spawn a new worker task that will be managed by the Sdk.
-    pub(crate) async fn spawn(&self, task: impl std::future::Future<Output = ()> + Send + 'static) {
-        // crate::sync::block_on({
+    pub(crate) async fn spawn(
+        &self,
+        task: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> tokio::sync::oneshot::Receiver<()> {
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
         let mut workers = self
             .workers
             .try_lock()
             .expect("workers lock is poisoned or in use");
-        workers.spawn(task);
+        workers.spawn(async move {
+            task.await;
+            let _ = done_tx.send(());
+        });
         tokio::task::yield_now().await;
-        // })
-        // .ok(); // let the task start
+
+        done_rx
     }
 }
 

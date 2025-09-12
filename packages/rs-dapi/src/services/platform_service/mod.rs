@@ -7,7 +7,6 @@ mod get_status;
 mod subscribe_platform_events;
 mod wait_for_state_transition_result;
 
-use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::platform_server::Platform;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetStatusRequest,
@@ -19,8 +18,10 @@ use rs_dash_notify::EventMux;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
@@ -73,7 +74,6 @@ macro_rules! drive_method {
     };
 }
 
-use crate::clients::drive_client::DriveChannel;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
@@ -119,9 +119,22 @@ impl PlatformServiceImpl {
         let mux_client = drive_client.get_client().clone();
         let worker_mux = event_mux.clone();
 
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         workers.spawn(async {
-            Self::event_mux_worker(worker_mux, mux_client).await.ok();
+            if let Err(e) =
+                rs_dash_notify::GrpcPlatformEventsProducer::run(worker_mux, mux_client, ready_tx)
+                    .await
+            {
+                tracing::error!("platform events producer terminated: {}", e);
+            }
         });
+
+        if timeout(Duration::from_secs(5), ready_rx).await.is_err() {
+            tracing::warn!(
+                "timeout waiting for platform events producer to be ready; contonuing anyway"
+            );
+        }
+
         Self {
             drive_client,
             tenderdash_client,
@@ -132,13 +145,6 @@ impl PlatformServiceImpl {
             platform_events_mux: event_mux,
             workers: Arc::new(Mutex::new(workers)),
         }
-    }
-
-    async fn event_mux_worker(
-        mux: EventMux,
-        client: PlatformClient<DriveChannel>,
-    ) -> Result<(), tonic::Status> {
-        rs_dash_notify::GrpcPlatformEventsProducer::run(mux, client).await
     }
 }
 

@@ -1,19 +1,15 @@
-use std::str::FromStr;
-use std::time::Duration;
-
 use dapi_grpc::platform::v0::platform_filter_v0::Kind as FilterKind;
 use dapi_grpc::platform::v0::PlatformFilterV0;
 use dapi_grpc::platform::v0::{
     platform_events_response::platform_events_response_v0::Response as Resp, PlatformEventsResponse,
 };
-use dash_sdk::platform::types::epoch::{Epoch, EpochQuery};
-use dash_sdk::platform::Fetch;
+use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
+use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::{Address, AddressList};
 use rs_dash_notify::SubscriptionHandle;
 use serde::Deserialize;
-use tokio::time::sleep;
-use tokio_util::sync::DropGuard;
+use std::str::FromStr;
 use zeroize::Zeroizing;
 
 #[derive(Debug, Deserialize)]
@@ -61,11 +57,8 @@ async fn main() {
     let config = Config::load();
     let sdk = setup_sdk(&config);
     // sanity check - fetch current epoch to see if connection works
-    let epoch = Epoch::fetch(&sdk, EpochQuery::default())
-        .await
-        .expect("fetch epoch");
+    let epoch = Epoch::fetch_current(&sdk).await.expect("fetch epoch");
     tracing::info!("Current epoch: {:?}", epoch);
-    sleep(Duration::from_secs(3)).await; // wait for connections; TODO: implement
 
     // Subscribe to BlockCommitted only
     let filter_block = PlatformFilterV0 {
@@ -139,6 +132,7 @@ where
         {
             match v0.response {
                 Some(Resp::Event(ev)) => {
+                    let sub_id = ev.client_subscription_id;
                     use dapi_grpc::platform::v0::platform_event_v0::Event as E;
                     if let Some(event_v0) = ev.event {
                         if let Some(event) = event_v0.event {
@@ -146,7 +140,8 @@ where
                                 E::BlockCommitted(bc) => {
                                     if let Some(meta) = bc.meta {
                                         println!(
-                                            "BlockCommitted: height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                            "{} BlockCommitted: height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                            sub_id,
                                             meta.height,
                                             meta.time_ms,
                                             bc.tx_count,
@@ -157,7 +152,8 @@ where
                                 E::StateTransitionFinalized(r) => {
                                     if let Some(meta) = r.meta {
                                         println!(
-                                            "StateTransitionFinalized: height={} tx_hash=0x{} block_id_hash=0x{}",
+                                            "{} StateTransitionFinalized: height={} tx_hash=0x{} block_id_hash=0x{}",
+                                            sub_id,
                                             meta.height,
                                             hex::encode(r.tx_hash),
                                             hex::encode(meta.block_id_hash)
