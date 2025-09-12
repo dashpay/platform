@@ -37,7 +37,7 @@ jobs:
       - uses: dorny/paths-filter@v2
         id: filter-js
         with:
-          filters: .github/package-filters/js-packages.yml
+          filters: .github/package-filters/js-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v2
         id: filter-js-direct
@@ -47,7 +47,7 @@ jobs:
       - uses: dorny/paths-filter@v2
         id: filter-rs
         with:
-          filters: .github/package-filters/rs-packages.yml
+          filters: .github/package-filters/rs-packages-no-workflows.yml
 
       - uses: dorny/paths-filter@v2
         id: filter-rs-direct
