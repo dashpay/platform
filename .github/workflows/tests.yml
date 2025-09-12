@@ -26,6 +26,7 @@ jobs:
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
+      rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,6 +42,11 @@ jobs:
         id: filter-rs
         with:
           filters: .github/package-filters/rs-packages.yml
+
+      - uses: dorny/paths-filter@v2
+        id: filter-rs-direct
+        with:
+          filters: .github/package-filters/rs-packages-direct.yml
 
   build-js:
     name: Build JS packages
@@ -84,6 +90,7 @@ jobs:
     with:
       package: ${{ matrix.rs-package }}
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+      direct-packages: ${{ needs.changes.outputs.rs-packages-direct }}
 
   rs-crates-security:
     name: Rust crates security audit
