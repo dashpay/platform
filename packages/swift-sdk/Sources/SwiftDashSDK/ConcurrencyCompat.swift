@@ -4,5 +4,8 @@ import Foundation
 // These are safe under our usage patterns where FFI pointers are thread-confined
 // or explicitly synchronized at the Rust boundary.
 
-extension OpaquePointer: @unchecked Sendable {}
+extension OpaquePointer: @retroactive @unchecked Sendable {}
 
+// FFI value types from DashSDKFFI headers used across actor boundaries
+// These are plain C structs and treated as inert data blobs.
+extension FFIDetailedSyncProgress: @retroactive @unchecked Sendable {}

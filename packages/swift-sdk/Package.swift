@@ -23,7 +23,8 @@ let package = Package(
         .target(
             name: "SwiftDashSDK",
             dependencies: ["DashSDKFFI"],
-            path: "Sources/SwiftDashSDK"
+            path: "Sources/SwiftDashSDK",
+            exclude: ["KeyWallet/README.md"]
         ),
     ],
     swiftLanguageModes: [.v6]
