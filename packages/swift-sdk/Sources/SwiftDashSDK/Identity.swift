@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Swift wrapper for Dash Platform Identity
 public class Identity {
@@ -13,7 +14,7 @@ public class Identity {
     }
     
     /// Create an Identity from a C handle
-    public init?(handle: OpaquePointer) {
+    public init?(handle: UnsafeMutablePointer<IdentityHandle>) {
         // In a real implementation, this would extract data from the C handle
         // For now, create a placeholder
         self.id = "placeholder"

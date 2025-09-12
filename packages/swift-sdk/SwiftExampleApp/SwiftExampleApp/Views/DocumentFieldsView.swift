@@ -267,7 +267,7 @@ extension DocumentFieldsView {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                    .onChange(of: currentValue) { newValue in
+                    .onChange(of: currentValue) { _, newValue in
                         // Remove any non-hex characters and convert to lowercase
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
                         if cleaned != newValue {

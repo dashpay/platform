@@ -1,0 +1,263 @@
+name: Build Swift SDK and Example (no warnings)
+
+on:
+  pull_request:
+    paths:
+      - 'packages/swift-sdk/**'
+      - 'packages/rs-*/**'
+      - '.github/workflows/swift-sdk-build.yml'
+  push:
+    branches: [ main, master ]
+    paths:
+      - 'packages/swift-sdk/**'
+      - 'packages/rs-*/**'
+      - '.github/workflows/swift-sdk-build.yml'
+
+jobs:
+  swift-sdk-build:
+    name: Swift SDK and Example build (warnings as errors)
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.*'
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      # Rust + Cargo cache to speed up FFI build
+      - name: Set up Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Add iOS Rust targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Install cbindgen (for header generation)
+        run: |
+          brew install cbindgen || true
+
+      - name: Restore cached Protobuf (protoc)
+        id: cache-protoc
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Install Protobuf (protoc) if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Save cached Protobuf (protoc)
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          echo "$HOME/.local/protoc-32.0/bin" >> $GITHUB_PATH
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
+
+      - name: Determine rust-dashcore revision (from rs-dpp)
+        id: dashcore_rev
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use the same rust-dashcore revision as rs-dpp (parse single-line dep)
+          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+                | sed -E 's/.*rev[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
+                | head -n1 || true)
+          if [ -z "${REV:-}" ]; then
+            echo "Failed to determine rust-dashcore revision from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "rev=$REV" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout rust-dashcore at required revision
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BASE_DIR="$(dirname "$GITHUB_WORKSPACE")"
+          cd "$BASE_DIR"
+          if [ -d rust-dashcore/.git ]; then
+            echo "Updating existing rust-dashcore checkout"
+            cd rust-dashcore
+            git fetch --all --tags --prune
+          else
+            git clone --no-tags --filter=blob:none https://github.com/dashpay/rust-dashcore.git rust-dashcore
+            cd rust-dashcore
+          fi
+          git checkout "${{ steps.dashcore_rev.outputs.rev }}"
+
+      - name: Determine rust-dashcore toolchain channel
+        id: dashcore_toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE="$(dirname "$GITHUB_WORKSPACE")/rust-dashcore/rust-toolchain.toml"
+          if [ -f "$FILE" ]; then
+            CHANNEL=$(grep -E '^[[:space:]]*channel[[:space:]]*=' "$FILE" | sed -E 's/.*"([^"]+)".*/\1/' | head -n1 || true)
+          fi
+          CHANNEL=${CHANNEL:-stable}
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+          echo "RUST_DASHCORE_TOOLCHAIN=$CHANNEL" >> "$GITHUB_ENV"
+
+      - name: Ensure rust-dashcore toolchain has iOS targets
+        shell: bash
+        run: |
+          set -euxo pipefail
+          RUST_DASHCORE_DIR="$(dirname "$GITHUB_WORKSPACE")/rust-dashcore"
+          cd "$RUST_DASHCORE_DIR"
+          TOOLCHAIN="${{ steps.dashcore_toolchain.outputs.channel }}"
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --no-self-update
+          rustup target add --toolchain "$TOOLCHAIN" aarch64-apple-ios aarch64-apple-ios-sim x86_64-apple-ios
+
+      - name: Build DashSDKFFI.xcframework and install into Swift package
+        run: |
+          bash packages/swift-sdk/build_ios.sh
+
+      - name: Zip XCFramework and compute checksum
+        run: |
+          cd packages/swift-sdk
+          ditto -c -k --sequesterRsrc --keepParent DashSDKFFI.xcframework DashSDKFFI.xcframework.zip
+          swift package compute-checksum DashSDKFFI.xcframework.zip > xc_checksum.txt
+
+      - name: Upload DashSDKFFI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DashSDKFFI.xcframework
+          path: |
+            packages/swift-sdk/DashSDKFFI.xcframework
+            packages/swift-sdk/DashSDKFFI.xcframework.zip
+            packages/swift-sdk/xc_checksum.txt
+          retention-days: 14
+
+      - name: Comment/update PR with artifact link and usage guide (skip if unchanged)
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runUrl = `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            const fs = require('fs');
+            const marker = '<!-- DASHSDKFFI_ARTIFACT_COMMENT -->';
+            let checksum = '';
+            try { checksum = fs.readFileSync('packages/swift-sdk/xc_checksum.txt', 'utf8').trim(); } catch (e) {}
+
+            // Find existing marker comment on this PR
+            const issue_number = context.payload.pull_request.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number,
+              per_page: 100
+            });
+            const existing = comments.find(c => (c.body || '').includes(marker));
+
+            // Extract old checksum if present
+            const extractChecksum = (text) => {
+              if (!text) return '';
+              const m = text.match(/checksum:\s*"?([a-f0-9]{64})"?/i);
+              return m ? m[1] : '';
+            };
+            const oldChecksum = existing ? extractChecksum(existing.body) : '';
+
+            if (oldChecksum && checksum && oldChecksum === checksum) {
+              core.info(`Checksum unchanged (${checksum}); skipping PR comment update.`);
+              return;
+            }
+
+            const body = `${marker}\n` +
+            `✅ DashSDKFFI.xcframework built for this PR.\n\n` +
+            `- Workflow run: ${runUrl}\n` +
+            `- Artifacts: DashSDKFFI.xcframework (folder), DashSDKFFI.xcframework.zip, xc_checksum.txt\n\n` +
+            `SwiftPM (host the zip at a stable URL, then use):\n` +
+            '```swift\n' +
+            '.binaryTarget(\n' +
+            '  name: "DashSDKFFI",\n' +
+            '  url: "https://your.cdn.example/DashSDKFFI.xcframework.zip",\n' +
+            `  checksum: "${checksum || '<paste checksum>'}"\n` +
+            ')\n' +
+            '```\n\n' +
+            `Xcode manual integration:\n` +
+            `- Download 'DashSDKFFI.xcframework' artifact from the run link above.\n` +
+            `- Drag it into your app target (Frameworks, Libraries & Embedded Content) and set Embed & Sign.\n` +
+            `- If using the Swift wrapper package, point its binaryTarget to the xcframework location or add the package and place the xcframework at the expected path.\n`;
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number,
+                body
+              });
+            }
+
+      - name: Build SwiftDashSDK package (warnings as errors)
+        working-directory: packages/swift-sdk
+        run: |
+          swift build -c debug -Xswiftc -warnings-as-errors
+
+      - name: Resolve ExampleApp dependencies
+        working-directory: packages/swift-sdk
+        run: |
+          xcodebuild -project SwiftExampleApp/SwiftExampleApp.xcodeproj -resolvePackageDependencies
+
+      - name: Build SwiftExampleApp (warnings as errors)
+        working-directory: packages/swift-sdk
+        env:
+          # Treat Swift warnings as errors during xcodebuild
+          OTHER_SWIFT_FLAGS: -warnings-as-errors
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+        run: |
+          xcodebuild \
+            -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
+            -scheme SwiftExampleApp \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug \
+            ONLY_ACTIVE_ARCH=YES \
+            OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
+            build

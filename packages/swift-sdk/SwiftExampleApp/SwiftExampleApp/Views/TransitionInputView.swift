@@ -27,8 +27,8 @@ struct TransitionInputView: View {
                     }
                 }
             }
-        }
-        
+}
+
         return results.sorted(by: { $0.token.displayName < $1.token.displayName })
     }
     
@@ -336,7 +336,7 @@ struct TransitionInputView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.gray.opacity(0.1))
             .cornerRadius(8)
-            .onChange(of: value) { newValue in
+            .onChange(of: value) { _, newValue in
                 selectedContractId = newValue
                 // Notify parent to update related fields
                 onSpecialAction("contractSelected:\(newValue)")
@@ -425,7 +425,7 @@ struct TransitionInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
-                    .onChange(of: value) { newValue in
+                    .onChange(of: value) { _, newValue in
                         selectedDocumentType = newValue
                         // Notify parent to update schema
                         onSpecialAction("documentTypeSelected:\(newValue)")
@@ -552,7 +552,7 @@ struct TransitionInputView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.gray.opacity(0.1))
                     .cornerRadius(8)
-                    .onChange(of: value) { newValue in
+                    .onChange(of: value) { _, newValue in
                         if newValue == "__manual__" {
                             value = ""
                             useManualEntry = true

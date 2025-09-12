@@ -1,0 +1,135 @@
+name: Release DashSDKFFI XCFramework
+
+on:
+  push:
+    tags:
+      - 'ffi-*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag name to release (optional; defaults to current ref_name on tag push)'
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and release DashSDKFFI
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 16
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: '16.*'
+
+      - name: Show Xcode and Swift versions
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Set up Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Add iOS Rust targets
+        run: |
+          rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+
+      - name: Install cbindgen (for header generation)
+        run: |
+          brew install cbindgen || true
+
+      - name: Install protoc (Protocol Buffers compiler)
+        uses: arduino/setup-protoc@v3
+        with:
+          version: '32.x'
+
+      - name: Build DashSDKFFI.xcframework and install into Swift package
+        run: |
+          bash packages/swift-sdk/build_ios.sh
+
+      - name: Zip XCFramework and compute checksum
+        id: zip
+        run: |
+          cd packages/swift-sdk
+          ditto -c -k --sequesterRsrc --keepParent DashSDKFFI.xcframework DashSDKFFI.xcframework.zip
+          swift package compute-checksum DashSDKFFI.xcframework.zip > xc_checksum.txt
+          echo "checksum=$(cat xc_checksum.txt)" >> $GITHUB_OUTPUT
+
+      - name: Determine tag
+        id: tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            echo "name=${{ github.event.inputs.tag }}" >> $GITHUB_OUTPUT
+          else
+            # on tag push, ref_name is the tag
+            echo "name=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Check existing release for changes
+        id: check
+        uses: actions/github-script@v7
+        env:
+          NAME: ${{ steps.tag.outputs.name }}
+        with:
+          script: |
+            const tag = process.env.NAME || '${{ steps.tag.outputs.name }}';
+            const checksumNew = '${{ steps.zip.outputs.checksum }}'.trim();
+            try {
+              const rel = await github.rest.repos.getReleaseByTag({ owner: context.repo.owner, repo: context.repo.repo, tag });
+              const assets = await github.rest.repos.listReleaseAssets({ owner: context.repo.owner, repo: context.repo.repo, release_id: rel.data.id, per_page: 100 });
+              const checksumAsset = assets.data.find(a => a.name === 'xc_checksum.txt');
+              if (!checksumAsset) {
+                core.setOutput('changed', 'true');
+                return;
+              }
+              const res = await github.request('GET {url}', { url: checksumAsset.url, headers: { Accept: 'application/octet-stream' } });
+              const checksumOld = (res.data || '').toString().trim();
+              core.info(`Old checksum: ${checksumOld}, New checksum: ${checksumNew}`);
+              core.setOutput('changed', checksumOld === checksumNew ? 'false' : 'true');
+            } catch (e) {
+              // No release found -> treat as changed
+              core.info(`No existing release for tag ${tag}. Creating new.`);
+              core.setOutput('changed', 'true');
+            }
+          result-encoding: string
+
+      - name: Create/Update release (only if changed)
+        if: steps.check.outputs.changed == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.name }}
+          name: DashSDKFFI ${{ steps.tag.outputs.name }}
+          draft: false
+          prerelease: false
+          files: |
+            packages/swift-sdk/DashSDKFFI.xcframework.zip
+            packages/swift-sdk/xc_checksum.txt
+          body: |
+            DashSDKFFI.xcframework built for tag ${{ steps.tag.outputs.name }}.
+
+            SwiftPM usage:
+            ```swift
+            .binaryTarget(
+              name: "DashSDKFFI",
+              url: "https://github.com/${{ github.repository }}/releases/download/${{ steps.tag.outputs.name }}/DashSDKFFI.xcframework.zip",
+              checksum: "${{ steps.zip.outputs.checksum }}"
+            )
+            ```
+
+      - name: Skip release (no changes)
+        if: steps.check.outputs.changed != 'true'
+        run: |
+          echo "No changes detected in XCFramework; skipping release upload."

@@ -129,7 +129,7 @@ class WalletManager: ObservableObject {
         modelContainer.mainContext.insert(wallet)
         
         // Create default account model
-        let account = wallet.createAccount(at: 0)
+        _ = wallet.createAccount(at: 0)
         
         // Sync complete wallet state from Rust managed info
         try await syncWalletFromManagedInfo(for: wallet)

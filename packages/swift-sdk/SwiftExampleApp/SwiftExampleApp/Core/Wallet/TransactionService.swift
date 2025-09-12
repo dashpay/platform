@@ -60,22 +60,6 @@ class TransactionService: ObservableObject {
             // TODO: Implement broadcast with new SPV client
             // try await spvClient.broadcastTransaction(transaction.rawTransaction)
             throw TransactionError.broadcastFailed("SPV broadcast not yet implemented")
-            
-            // Create transaction record
-            let hdTransaction = HDTransaction(txHash: transaction.txid)
-            hdTransaction.rawTransaction = transaction.rawTransaction
-            hdTransaction.fee = transaction.fee
-            hdTransaction.type = "sent"
-            hdTransaction.amount = -Int64(transaction.fee) // Will be updated when we process outputs
-            hdTransaction.isPending = true
-            hdTransaction.wallet = walletManager.currentWallet
-            
-            // TODO: update UTXO state via SDK once available
-            
-            modelContainer.mainContext.insert(hdTransaction)
-            try modelContainer.mainContext.save()
-            
-            await loadTransactions()
         } catch {
             lastError = error
             throw TransactionError.broadcastFailed(error.localizedDescription)
@@ -153,9 +137,10 @@ class TransactionService: ObservableObject {
             }
         }
         
-        // Start sync without blocking UI
-        Task.detached(priority: .userInitiated) {
-            try? await spvClient.startSync()
+        // Start sync without blocking UI; inherit MainActor to avoid sending non-Sendable captures
+        let client = spvClient
+        Task(priority: .userInitiated) {
+            try? await client.startSync()
         }
     }
     

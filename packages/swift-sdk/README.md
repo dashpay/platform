@@ -2,6 +2,8 @@
 
 This Swift SDK provides iOS-friendly bindings for the Dash Platform, wrapping the `rs-sdk-ffi` crate with idiomatic Swift interfaces.
 
+See also: iOS Simulator MCP usage and Codex config in [IOS_SIMULATOR_MCP.md](./IOS_SIMULATOR_MCP.md).
+
 ## Features
 
 - **Identity Management**: Create, fetch, and manage Dash Platform identities

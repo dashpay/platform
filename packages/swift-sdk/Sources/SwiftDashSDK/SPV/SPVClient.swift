@@ -10,9 +10,11 @@ private func spvProgressCallback(
 ) {
     guard let progressPtr = progressPtr,
           let userData = userData else { return }
-    
+    let snapshot = progressPtr.pointee
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-    context.handleProgressUpdate(progressPtr)
+    DispatchQueue.main.async {
+        context.handleProgressUpdate(snapshot)
+    }
 }
 
 private func spvCompletionCallback(
@@ -21,9 +23,11 @@ private func spvCompletionCallback(
     userData: UnsafeMutableRawPointer?
 ) {
     guard let userData = userData else { return }
-    
+    let errorString: String? = errorMsg.map { String(cString: $0) }
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-    context.handleSyncCompletion(success: success, errorMsg: errorMsg)
+    DispatchQueue.main.async {
+        context.handleSyncCompletion(success: success, error: errorString)
+    }
 }
 
 // MARK: - SPV Sync Progress
@@ -35,6 +39,8 @@ public struct SPVSyncProgress {
     public let transactionProgress: Double
     public let currentHeight: UInt32
     public let targetHeight: UInt32
+    // Checkpoint height we started from (0 if none)
+    public let startHeight: UInt32
     public let rate: Double // blocks per second
     public let estimatedTimeRemaining: TimeInterval?
     
@@ -86,6 +92,7 @@ public protocol SPVClientDelegate: AnyObject {
 
 // MARK: - SPV Client
 
+@MainActor
 public class SPVClient: ObservableObject {
     // Published properties for SwiftUI
     @Published public var isConnected = false
@@ -98,9 +105,8 @@ public class SPVClient: ObservableObject {
     public weak var delegate: SPVClientDelegate?
     
     // FFI handles
-    // Treat SPV client as an opaque handle to avoid relying on the C struct name
-    private var client: OpaquePointer?
-    private var config: OpaquePointer?
+    private var client: UnsafeMutablePointer<FFIDashSpvClient>?
+    private var config: UnsafeMutablePointer<FFIClientConfig>?
     
     // Callback context
     private var callbackContext: CallbackContext?
@@ -108,8 +114,12 @@ public class SPVClient: ObservableObject {
     // Network
     private let network: Network
     private var masternodeSyncEnabled: Bool = true
+    // If true, SPV will only connect to peers explicitly configured via FFI
+    public var restrictToConfiguredPeers: Bool = false
     
     // Sync tracking
+    // Height we start syncing from (checkpoint); used to render absolute heights
+    fileprivate var startFromHeight: UInt32 = 0
     private var syncStartTime: Date?
     private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
@@ -127,10 +137,7 @@ public class SPVClient: ObservableObject {
     }
     
     deinit {
-        Task { @MainActor in
-            stop()
-            destroyClient()
-        }
+        // Minimal teardown; prefer explicit stop() by callers.
     }
     
     // MARK: - Client Lifecycle
@@ -141,39 +148,66 @@ public class SPVClient: ObservableObject {
         }
         
         // Initialize SPV logging (one-time). Default to off unless SPV_LOG is provided.
-        struct SPVLogInit { static var done = false }
-        if !SPVLogInit.done {
+        enum SPVLogInit {
+            static let once: Void = {
+                let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
+                _ = level.withCString { cstr in
+                    dash_spv_ffi_init_logging(cstr)
+                }
+            }()
+        }
+        _ = SPVLogInit.once
+        if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
-            level.withCString { cstr in
-                dash_spv_ffi_init_logging(cstr)
-            }
-            SPVLogInit.done = true
-            if swiftLoggingEnabled {
-                print("[SPV][Log] Initialized SPV logging level=\(level)")
-            }
+            print("[SPV][Log] Initialized SPV logging level=\(level)")
         }
 
         // Create configuration based on network raw value
-        let rawConfigPtr: UnsafeMutableRawPointer? = {
+        let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
             switch network {
             case DashSDKNetwork(rawValue: 0):
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_mainnet())
+                return dash_spv_ffi_config_mainnet()
             case DashSDKNetwork(rawValue: 1):
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_testnet())
+                return dash_spv_ffi_config_testnet()
             case DashSDKNetwork(rawValue: 2):
                 // Map devnet to custom FFINetwork value 3
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_new(FFINetwork(rawValue: 3)))
+                return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
             default:
-                return UnsafeMutableRawPointer(dash_spv_ffi_config_testnet())
+                return dash_spv_ffi_config_testnet()
             }
         }()
         
-        guard let rawConfigPtr = rawConfigPtr else {
+        guard let configPtr = configPtr else {
             throw SPVError.configurationFailed
         }
-        
-        let configPtr = OpaquePointer(rawConfigPtr)
-        
+
+        // If requested, prefer local core peers (defaults to 127.0.0.1 with network default port)
+        let useLocalCore = UserDefaults.standard.bool(forKey: "useLocalhostCore")
+        if useLocalCore {
+            let peers = SPVClient.readLocalCorePeers()
+            if swiftLoggingEnabled {
+                print("[SPV][Config] Use Local Core enabled; peers=\(peers.joined(separator: ", "))")
+            }
+            // Add peers via FFI (supports "ip:port" or bare IP for network-default port)
+            for addr in peers {
+                addr.withCString { cstr in
+                    let rc = dash_spv_ffi_config_add_peer(configPtr, cstr)
+                    if rc != 0, let err = dash_spv_ffi_get_last_error() {
+                        let msg = String(cString: err)
+                        print("[SPV][Config] add_peer failed for \(addr): \(msg)")
+                    }
+                }
+            }
+            // Enforce restrict mode when using local core by default
+            restrictToConfiguredPeers = true
+        }
+
+        // Apply restrict-to-configured-peers if requested
+        if restrictToConfiguredPeers {
+            if swiftLoggingEnabled { print("[SPV][Config] Enabling restrict-to-configured-peers mode") }
+            _ = dash_spv_ffi_config_set_restrict_to_configured_peers(configPtr, true)
+        }
+
         // Set data directory if provided
         if let dataDir = dataDir {
             let result = dash_spv_ffi_config_set_data_dir(configPtr, dataDir)
@@ -225,6 +259,8 @@ public class SPVClient: ObservableObject {
             }
             let finalHeight: UInt32 = (rc == 0 && cpOutHeight > 0) ? cpOutHeight : h
             _ = dash_spv_ffi_config_set_start_from_height(configPtr, finalHeight)
+            // Remember checkpoint for UI normalization
+            self.startFromHeight = finalHeight
         }
         
         // Create client
@@ -238,6 +274,16 @@ public class SPVClient: ObservableObject {
         
         // Set up event callbacks with stable context
         setupEventCallbacks()
+    }
+
+    private static func readLocalCorePeers() -> [String] {
+        // If no override is set, default to 127.0.0.1 and let FFI pick port by network
+        let raw = UserDefaults.standard.string(forKey: "corePeerAddresses")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let list = (raw?.isEmpty == false ? raw! : "127.0.0.1")
+        return list
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
     }
 
     /// Enable/disable masternode sync. If the client is running, apply the update immediately.
@@ -254,7 +300,7 @@ public class SPVClient: ObservableObject {
     }
     
     public func start() throws {
-        guard let client = client else {
+        guard self.client != nil else {
             throw SPVError.notInitialized
         }
         
@@ -262,24 +308,22 @@ public class SPVClient: ObservableObject {
         if result != 0 {
             if let errorMsg = dash_spv_ffi_get_last_error() {
                 let error = String(cString: errorMsg)
-                Task { @MainActor in self.lastError = error }
+                self.lastError = error
                 throw SPVError.startFailed(error)
             }
             throw SPVError.startFailed("Unknown error")
         }
         
-        Task { @MainActor in self.isConnected = true }
+        self.isConnected = true
     }
     
     public func stop() {
         guard let client = client else { return }
         
         dash_spv_ffi_client_stop(client)
-        Task { @MainActor in
-            self.isConnected = false
-            self.isSyncing = false
-            self.syncProgress = nil
-        }
+        self.isConnected = false
+        self.isSyncing = false
+        self.syncProgress = nil
     }
     
     private func destroyClient() {
@@ -299,7 +343,7 @@ public class SPVClient: ObservableObject {
     // MARK: - Synchronization
     
     public func startSync() async throws {
-        guard let client = client else {
+        guard self.client != nil else {
             throw SPVError.notInitialized
         }
         
@@ -307,9 +351,7 @@ public class SPVClient: ObservableObject {
             throw SPVError.alreadySyncing
         }
         
-        await MainActor.run {
-            self.isSyncing = true
-        }
+        self.isSyncing = true
         syncCancelled = false
         syncStartTime = Date()
         
@@ -374,8 +416,9 @@ public class SPVClient: ObservableObject {
                 hash = Data(bytes: hashPtr, count: 32)
             }
             
-            Task { @MainActor in
-                context.client?.handleBlockEvent(height: height, hash: hash)
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleBlockEvent(height: height, hash: hash)
             }
         }
         
@@ -395,8 +438,9 @@ public class SPVClient: ObservableObject {
                 addresses = addressesStr.components(separatedBy: ",")
             }
             
-            Task { @MainActor in
-                context.client?.handleTransactionEvent(
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
                     txid: txid,
                     confirmed: confirmed,
                     amount: amount,
@@ -441,6 +485,7 @@ public class SPVClient: ObservableObject {
                     transactionProgress: progress.transactionProgress,
                     currentHeight: height,
                     targetHeight: progress.targetHeight,
+                    startHeight: self.startFromHeight,
                     rate: rate,
                     estimatedTimeRemaining: progress.estimatedTimeRemaining
                 )
@@ -474,11 +519,11 @@ public class SPVClient: ObservableObject {
     
     // MARK: - Wallet Manager Access
     
-    public func getWalletManager() -> OpaquePointer? {
+    public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
         guard let client = client else { return nil }
         
         let managerPtr = dash_spv_ffi_client_get_wallet_manager(client)
-        return OpaquePointer(managerPtr)
+        return managerPtr?.assumingMemoryBound(to: FFIWalletManager.self)
     }
     
     // MARK: - Statistics
@@ -568,6 +613,7 @@ public class SPVClient: ObservableObject {
 
 // MARK: - Callback Context
 
+@MainActor
 private class CallbackContext {
     weak var client: SPVClient?
     
@@ -575,63 +621,53 @@ private class CallbackContext {
         self.client = client
     }
 
-    func handleProgressUpdate(_ progressPtr: UnsafePointer<FFIDetailedSyncProgress>) {
-        let ffiProgress = progressPtr.pointee
+    func handleProgressUpdate(_ ffiProgress: FFIDetailedSyncProgress) {
 
-        // Determine sync stage based on percentage
-        let stage: SPVSyncStage
-        if ffiProgress.percentage < 0.3 {
-            stage = .headers
-        } else if ffiProgress.percentage < 0.7 {
-            stage = .masternodes
-        } else if ffiProgress.percentage < 1.0 {
-            stage = .transactions
-        } else {
-            stage = .complete
-        }
+        // Compute stage and ETA outside the actor
+        let stage: SPVSyncStage = {
+            if ffiProgress.percentage < 0.3 { return .headers }
+            if ffiProgress.percentage < 0.7 { return .masternodes }
+            if ffiProgress.percentage < 1.0 { return .transactions }
+            return .complete
+        }()
+        let estimatedTime: TimeInterval? = (ffiProgress.estimated_seconds_remaining > 0)
+            ? TimeInterval(ffiProgress.estimated_seconds_remaining)
+            : nil
 
-        // Calculate estimated time remaining
-        var estimatedTime: TimeInterval? = nil
-        if ffiProgress.estimated_seconds_remaining > 0 {
-            estimatedTime = Double(ffiProgress.estimated_seconds_remaining)
-        }
+        // Update UI/state on main actor
+            guard let client = self.client else { return }
 
-        if client?.swiftLoggingEnabled == true {
-            let pct = max(0.0, min(ffiProgress.percentage, 1.0)) * 100.0
-            let cur = ffiProgress.current_height
-            let tot = ffiProgress.total_height
-            let rate = ffiProgress.headers_per_second
-            let eta = ffiProgress.estimated_seconds_remaining
-            print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
-        }
-
-        let progress = SPVSyncProgress(
-            stage: stage,
-            headerProgress: min(ffiProgress.percentage / 0.3, 1.0),
-            masternodeProgress: min(max((ffiProgress.percentage - 0.3) / 0.4, 0), 1.0),
-            transactionProgress: min(max((ffiProgress.percentage - 0.7) / 0.3, 0), 1.0),
-            currentHeight: ffiProgress.current_height,
-            targetHeight: ffiProgress.total_height,
-            rate: ffiProgress.headers_per_second,
-            estimatedTimeRemaining: estimatedTime
-        )
-        
-        let now = Date().timeIntervalSince1970
-        if let client = self.client, now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
-            client.lastProgressUIUpdate = now
-            Task { @MainActor in
-                guard let clientStrong = self.client else { return }
-                clientStrong.syncProgress = progress
-                clientStrong.delegate?.spvClient(clientStrong, didUpdateSyncProgress: progress)
+            if client.swiftLoggingEnabled {
+                let pct = max(0.0, min(ffiProgress.percentage, 1.0)) * 100.0
+                let cur = ffiProgress.current_height
+                let tot = ffiProgress.total_height
+                let rate = ffiProgress.headers_per_second
+                let eta = ffiProgress.estimated_seconds_remaining
+                print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
             }
-        }
+
+            let absoluteCurrent: UInt32 = client.startFromHeight &+ ffiProgress.current_height
+            let progress = SPVSyncProgress(
+                stage: stage,
+                headerProgress: min(ffiProgress.percentage / 0.3, 1.0),
+                masternodeProgress: min(max((ffiProgress.percentage - 0.3) / 0.4, 0), 1.0),
+                transactionProgress: min(max((ffiProgress.percentage - 0.7) / 0.3, 0), 1.0),
+                currentHeight: absoluteCurrent,
+                targetHeight: ffiProgress.total_height,
+                startHeight: client.startFromHeight,
+                rate: ffiProgress.headers_per_second,
+                estimatedTimeRemaining: estimatedTime
+            )
+
+            let now = Date().timeIntervalSince1970
+            if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
+                client.lastProgressUIUpdate = now
+                client.syncProgress = progress
+                client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
+            }
     }
     
-    func handleSyncCompletion(success: Bool, errorMsg: UnsafePointer<CChar>?) {
-        var error: String? = nil
-        if let errorMsg = errorMsg {
-            error = String(cString: errorMsg)
-        }
+    func handleSyncCompletion(success: Bool, error: String?) {
 
         if client?.swiftLoggingEnabled == true {
             if success {
@@ -641,8 +677,16 @@ private class CallbackContext {
             }
         }
 
-        Task { @MainActor in
-            guard let client = self.client else { return }
+        Task { @MainActor [weak self] in
+            guard let client = self?.client else { return }
+            if client.swiftLoggingEnabled {
+                if success {
+                    print("[SPV][Complete] Sync finished successfully")
+                } else {
+                    let errMsg = error ?? "unknown error"
+                    print("[SPV][Complete] Sync failed: \(errMsg)")
+                }
+            }
             client.isSyncing = false
             client.lastError = error
             
@@ -654,6 +698,7 @@ private class CallbackContext {
                     transactionProgress: 1.0,
                     currentHeight: client.syncProgress?.targetHeight ?? 0,
                     targetHeight: client.syncProgress?.targetHeight ?? 0,
+                    startHeight: client.startFromHeight,
                     rate: 0,
                     estimatedTimeRemaining: nil
                 )
@@ -668,7 +713,7 @@ private class CallbackContext {
 
 // MARK: - Supporting Types
 
-public struct SPVStats {
+public struct SPVStats: Sendable {
     public let connectedPeers: Int
     public let headerHeight: Int
     public let filterHeight: Int
@@ -676,7 +721,7 @@ public struct SPVStats {
 }
 
 // A lightweight snapshot of sync progress from FFISyncProgress
-public struct SPVSyncSnapshot {
+public struct SPVSyncSnapshot: Sendable {
     public let headerHeight: UInt32
     public let filterHeaderHeight: UInt32
     public let masternodeHeight: UInt32
