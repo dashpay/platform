@@ -2199,15 +2199,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "flex-error"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c606d892c9de11507fa0dcffc116434f94e105d0bbdc4e405b61519464c49d7b"
-dependencies = [
- "paste",
-]
-
-[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6012,8 +6003,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "bytes",
  "futures",
@@ -6032,19 +6023,19 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "bytes",
  "chrono",
  "derive_more 2.0.1",
- "flex-error",
  "num-derive",
  "num-traits",
  "prost 0.14.1",
  "serde",
  "subtle-encoding",
  "tenderdash-proto-compiler",
+ "thiserror 2.0.15",
  "time",
  "tonic 0.14.2",
  "tonic-prost",
@@ -6052,8 +6043,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -6062,7 +6053,7 @@ dependencies = [
  "tonic-prost-build",
  "ureq",
  "walkdir",
- "zip 4.6.1",
+ "zip 5.0.1",
 ]
 
 [[package]]
@@ -7704,9 +7695,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.6.1"
+version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
+checksum = "c7bd5b91aa407cb977468d108ca3fede2c992ea44bb1d989e21756749d7dccff"
 dependencies = [
  "arbitrary",
  "crc32fast",
