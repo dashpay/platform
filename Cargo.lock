@@ -229,17 +229,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1505bd5d3d116872e7271a6d4e16d81d0c8570876c8de68093a09ac269d8aac0"
 
 [[package]]
-name = "atty"
-version = "0.2.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d9b39be18770d11421cdb1b9947a45dd3f37e93092cbf377614828a319d5fee8"
-dependencies = [
- "hermit-abi 0.1.19",
- "libc",
- "winapi",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -814,30 +803,11 @@ checksum = "37b2a672a2cb129a2e41c10b1224bb368f9f37a2b16b612598138befd7b37eb5"
 
 [[package]]
 name = "cbindgen"
-version = "0.26.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "da6bc11b07529f16944307272d5bd9b22530bc7d05751717c9d416586cedab49"
-dependencies = [
- "clap 3.2.25",
- "heck 0.4.1",
- "indexmap 1.9.3",
- "log",
- "proc-macro2",
- "quote",
- "serde",
- "serde_json",
- "syn 1.0.109",
- "tempfile",
- "toml 0.5.11",
-]
-
-[[package]]
-name = "cbindgen"
 version = "0.27.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3fce8dd7fcfcbf3a0a87d8f515194b49d6135acab73e18bd380d1d93bb1a15eb"
 dependencies = [
- "clap 4.5.45",
+ "clap",
  "heck 0.4.1",
  "indexmap 2.10.0",
  "log",
@@ -847,7 +817,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.106",
  "tempfile",
- "toml 0.8.23",
+ "toml",
 ]
 
 [[package]]
@@ -856,7 +826,7 @@ version = "0.29.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "975982cdb7ad6a142be15bdf84aea7ec6a9e5d4d797c004d43185b24cfe4e684"
 dependencies = [
- "clap 4.5.45",
+ "clap",
  "heck 0.5.0",
  "indexmap 2.10.0",
  "log",
@@ -866,7 +836,7 @@ dependencies = [
  "serde_json",
  "syn 2.0.106",
  "tempfile",
- "toml 0.8.23",
+ "toml",
 ]
 
 [[package]]
@@ -905,7 +875,7 @@ checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 name = "check-features"
 version = "2.0.0"
 dependencies = [
- "toml 0.8.23",
+ "toml",
 ]
 
 [[package]]
@@ -995,21 +965,6 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "3.2.25"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ea181bf566f71cb9a5d17a59e1871af638180a18fb0035c92ae62b705207123"
-dependencies = [
- "atty",
- "bitflags 1.3.2",
- "clap_lex 0.2.4",
- "indexmap 1.9.3",
- "strsim 0.10.0",
- "termcolor",
- "textwrap",
-]
-
-[[package]]
-name = "clap"
 version = "4.5.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1fc0e74a703892159f5ae7d3aac52c8e6c392f5ae5f359c70b5881d60aaac318"
@@ -1026,8 +981,8 @@ checksum = "b3e7f4214277f3c7aa526a59dd3fbe306a370daee1f8b7b8c987069cd8e888a8"
 dependencies = [
  "anstream",
  "anstyle",
- "clap_lex 0.7.5",
- "strsim 0.11.1",
+ "clap_lex",
+ "strsim",
 ]
 
 [[package]]
@@ -1040,15 +995,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "clap_lex"
-version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2850f2f5a82cbf437dd5af4d49848fbdfc27c157c3d010345776f952765261c5"
-dependencies = [
- "os_str_bytes",
 ]
 
 [[package]]
@@ -1210,7 +1156,7 @@ dependencies = [
  "anes",
  "cast",
  "ciborium",
- "clap 4.5.45",
+ "clap",
  "criterion-plot",
  "is-terminal",
  "itertools 0.10.5",
@@ -1406,7 +1352,7 @@ dependencies = [
  "ident_case",
  "proc-macro2",
  "quote",
- "strsim 0.11.1",
+ "strsim",
  "syn 2.0.106",
 ]
 
@@ -1436,7 +1382,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bincode_derive",
@@ -1449,7 +1395,7 @@ name = "dash-platform-balance-checker"
 version = "2.0.0"
 dependencies = [
  "anyhow",
- "clap 4.5.45",
+ "clap",
  "dapi-grpc",
  "dash-sdk",
  "dpp",
@@ -1472,7 +1418,7 @@ dependencies = [
  "bip37-bloom-filter",
  "chrono",
  "ciborium",
- "clap 4.5.45",
+ "clap",
  "dapi-grpc",
  "dapi-grpc-macros",
  "dash-context-provider",
@@ -1507,13 +1453,13 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "anyhow",
  "async-trait",
  "bincode 1.3.3",
  "blsful",
- "clap 4.5.45",
+ "clap",
  "crossterm",
  "dashcore",
  "dashcore_hashes",
@@ -1535,9 +1481,9 @@ dependencies = [
 [[package]]
 name = "dash-spv-ffi"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
- "cbindgen 0.26.0",
+ "cbindgen 0.29.0",
  "dash-spv",
  "dashcore",
  "env_logger 0.10.2",
@@ -1558,7 +1504,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1584,12 +1530,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1602,7 +1548,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1617,7 +1563,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore-private",
@@ -1903,7 +1849,7 @@ dependencies = [
  "bs58",
  "chrono",
  "ciborium",
- "clap 4.5.45",
+ "clap",
  "console-subscriber",
  "dapi-grpc",
  "delegate",
@@ -2250,15 +2196,6 @@ dependencies = [
  "crc32fast",
  "libz-rs-sys",
  "miniz_oxide",
-]
-
-[[package]]
-name = "flex-error"
-version = "0.4.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c606d892c9de11507fa0dcffc116434f94e105d0bbdc4e405b61519464c49d7b"
-dependencies = [
- "paste",
 ]
 
 [[package]]
@@ -2746,15 +2683,6 @@ name = "heck"
 version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
-
-[[package]]
-name = "hermit-abi"
-version = "0.1.19"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "62b467343b94ba476dcb2500d242dadbb39557df889310ac77c5d99100aaac33"
-dependencies = [
- "libc",
-]
 
 [[package]]
 name = "hermit-abi"
@@ -3263,7 +3191,7 @@ version = "0.4.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e04d7f318608d35d4b61ddd75cbdaee86b023ebe2bd5a66ee0915f0bf93095a9"
 dependencies = [
- "hermit-abi 0.5.2",
+ "hermit-abi",
  "libc",
  "windows-sys 0.59.0",
 ]
@@ -3433,7 +3361,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "aes",
  "base58ck",
@@ -3461,7 +3389,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-ffi"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "cbindgen 0.29.0",
  "dash-network",
@@ -3477,7 +3405,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=02d902c9845d5ed9e5cb88fd32a8c254742f20fd#02d902c9845d5ed9e5cb88fd32a8c254742f20fd"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=befd0356bebfcd0d06d1028d8a03bfa4c78bd219#befd0356bebfcd0d06d1028d8a03bfa4c78bd219"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
@@ -4030,7 +3958,7 @@ version = "1.17.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "91df4bbde75afed763b708b7eee1e8e7651e02d97f6d5dd763e89367e957b23b"
 dependencies = [
- "hermit-abi 0.5.2",
+ "hermit-abi",
  "libc",
 ]
 
@@ -4151,12 +4079,6 @@ dependencies = [
  "pkg-config",
  "vcpkg",
 ]
-
-[[package]]
-name = "os_str_bytes"
-version = "6.6.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2355d85b9a3786f481747ced0e0ff2ba35213a1f9bd406ed906554d7af805a1"
 
 [[package]]
 name = "overload"
@@ -5154,7 +5076,6 @@ dependencies = [
  "cbindgen 0.27.0",
  "dash-sdk",
  "dash-spv-ffi",
- "dashcore",
  "dotenvy",
  "drive-proof-verifier",
  "env_logger 0.11.8",
@@ -5930,12 +5851,6 @@ dependencies = [
 
 [[package]]
 name = "strsim"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73473c0e59e6d5812c5dfe2a064a6444949f089e20eec9a2e5506596494e4623"
-
-[[package]]
-name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7da8b5736845d9f2fcb837ea5d9e2628564b3b043a70948a3f0b778838c5fb4f"
@@ -6088,8 +6003,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-abci"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "bytes",
  "futures",
@@ -6108,19 +6023,19 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "bytes",
  "chrono",
  "derive_more 2.0.1",
- "flex-error",
  "num-derive",
  "num-traits",
  "prost 0.14.1",
  "serde",
  "subtle-encoding",
  "tenderdash-proto-compiler",
+ "thiserror 2.0.15",
  "time",
  "tonic 0.14.2",
  "tonic-prost",
@@ -6128,8 +6043,8 @@ dependencies = [
 
 [[package]]
 name = "tenderdash-proto-compiler"
-version = "1.5.0-dev.1"
-source = "git+https://github.com/dashpay/rs-tenderdash-abci?rev=2956695a93a0fc33e3eb3ceb7922d511a86c5cd9#2956695a93a0fc33e3eb3ceb7922d511a86c5cd9"
+version = "1.5.0-dev.2"
+source = "git+https://github.com/dashpay/rs-tenderdash-abci?tag=v1.5.0-dev.2#3f6ac716c42125a01caceb42cc5997efa41c88fc"
 dependencies = [
  "fs_extra",
  "prost-build",
@@ -6138,7 +6053,7 @@ dependencies = [
  "tonic-prost-build",
  "ureq",
  "walkdir",
- "zip 4.6.1",
+ "zip 5.0.1",
 ]
 
 [[package]]
@@ -6188,12 +6103,6 @@ dependencies = [
  "syn 2.0.106",
  "test-case-core",
 ]
-
-[[package]]
-name = "textwrap"
-version = "0.16.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c13547615a44dc9c452a8a534638acdf07120d4b6847c8178705da06306a3057"
 
 [[package]]
 name = "thiserror"
@@ -6416,15 +6325,6 @@ dependencies = [
  "futures-sink",
  "pin-project-lite",
  "tokio",
-]
-
-[[package]]
-name = "toml"
-version = "0.5.11"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f4f7f0dd8d50a853a531c426359045b1998f04219d88799810762cd4ad314234"
-dependencies = [
- "serde",
 ]
 
 [[package]]
@@ -7795,9 +7695,9 @@ dependencies = [
 
 [[package]]
 name = "zip"
-version = "4.6.1"
+version = "5.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "caa8cd6af31c3b31c6631b8f483848b91589021b28fffe50adada48d4f4d2ed1"
+checksum = "c7bd5b91aa407cb977468d108ca3fede2c992ea44bb1d989e21756749d7dccff"
 dependencies = [
  "arbitrary",
  "crc32fast",

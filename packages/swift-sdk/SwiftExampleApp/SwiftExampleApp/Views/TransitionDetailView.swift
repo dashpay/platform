@@ -557,7 +557,7 @@ struct TransitionDetailView: View {
     
     private func executeIdentityTopUp(sdk: SDK) async throws -> Any {
         guard !selectedIdentityId.isEmpty,
-              let identity = appState.platformState.identities.first(where: { $0.idString == selectedIdentityId }) else {
+              appState.platformState.identities.contains(where: { $0.idString == selectedIdentityId }) else {
             throw SDKError.invalidParameter("No identity selected")
         }
         
@@ -614,7 +614,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the convenience method with DPPIdentity
@@ -629,7 +629,7 @@ struct TransitionDetailView: View {
             from: dppIdentity,
             toIdentityId: normalizedToIdentityId,
             amount: amount,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         // Update sender's balance in our local state
@@ -695,7 +695,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for withdrawal
@@ -711,7 +711,7 @@ struct TransitionDetailView: View {
             amount: amount,
             toAddress: toAddress,
             coreFeePerByte: coreFeePerByte,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         // Update identity's balance in our local state
@@ -871,7 +871,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for document creation
@@ -887,7 +887,7 @@ struct TransitionDetailView: View {
             documentType: documentType,
             ownerIdentity: dppIdentity,
             properties: properties,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -949,7 +949,7 @@ struct TransitionDetailView: View {
             }
         }
         
-        guard let signingKey = selectedKey, let keyData = privateKeyData else {
+        guard selectedKey != nil, let keyData = privateKeyData else {
             throw SDKError.invalidParameter("No suitable key with available private key found for signing")
         }
         
@@ -967,7 +967,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Call the document delete function
@@ -976,7 +976,7 @@ struct TransitionDetailView: View {
             documentType: documentType,
             documentId: documentId,
             ownerIdentity: dppIdentity,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return ["message": "Document deleted successfully"]
@@ -1068,7 +1068,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Call the document transfer function
@@ -1078,7 +1078,7 @@ struct TransitionDetailView: View {
             documentId: documentId,
             fromIdentity: fromIdentity,
             toIdentityId: recipientId,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -1169,7 +1169,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Call the document update price function
@@ -1179,7 +1179,7 @@ struct TransitionDetailView: View {
             documentId: documentId,
             newPrice: newPrice,
             ownerIdentity: ownerDPPIdentity,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -1254,7 +1254,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Call the document purchase function
@@ -1264,7 +1264,7 @@ struct TransitionDetailView: View {
             documentId: documentId,
             purchaserIdentity: fromIdentity,
             price: price,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -1401,7 +1401,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for document replacement
@@ -1418,7 +1418,7 @@ struct TransitionDetailView: View {
             documentId: documentId,
             ownerIdentity: dppIdentity,
             properties: properties,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -1507,7 +1507,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for minting
@@ -1526,7 +1526,7 @@ struct TransitionDetailView: View {
             amount: amount,
             ownerIdentity: dppIdentity,
             keyId: mintingKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -1604,7 +1604,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for burning
@@ -1622,7 +1622,7 @@ struct TransitionDetailView: View {
             amount: amount,
             ownerIdentity: dppIdentity,
             keyId: burningKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -1683,7 +1683,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for freezing
@@ -1701,7 +1701,7 @@ struct TransitionDetailView: View {
             targetIdentityId: targetIdentityId,
             ownerIdentity: dppIdentity,
             keyId: freezingKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -1765,7 +1765,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signerHandle))
+            dash_sdk_signer_destroy(signerHandle.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for unfreezing
@@ -1781,7 +1781,7 @@ struct TransitionDetailView: View {
             targetIdentityId: targetIdentityId,
             ownerIdentity: dppIdentity,
             keyId: unfreezingKey.id,
-            signer: OpaquePointer(signerHandle)!,
+            signer: OpaquePointer(signerHandle),
             note: formInputs["note"]
         )
         
@@ -1845,7 +1845,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signerHandle))
+            dash_sdk_signer_destroy(signerHandle.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for destroying frozen funds
@@ -1861,7 +1861,7 @@ struct TransitionDetailView: View {
             frozenIdentityId: frozenIdentityId,
             ownerIdentity: dppIdentity,
             keyId: destroyKey.id,
-            signer: OpaquePointer(signerHandle)!,
+            signer: OpaquePointer(signerHandle),
             note: formInputs["note"]
         )
         
@@ -1921,7 +1921,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for claiming
@@ -1939,7 +1939,7 @@ struct TransitionDetailView: View {
             distributionType: distributionType,
             ownerIdentity: dppIdentity,
             keyId: claimingKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -2020,7 +2020,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for transfer
@@ -2039,7 +2039,7 @@ struct TransitionDetailView: View {
             amount: amount,
             ownerIdentity: dppIdentity,
             keyId: transferKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -2102,7 +2102,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for setting price
@@ -2121,7 +2121,7 @@ struct TransitionDetailView: View {
             priceData: priceData,
             ownerIdentity: dppIdentity,
             keyId: pricingKey.id,
-            signer: OpaquePointer(signer)!,
+            signer: OpaquePointer(signer),
             note: note
         )
         
@@ -2237,7 +2237,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for contract creation
@@ -2254,7 +2254,7 @@ struct TransitionDetailView: View {
             tokenSchemas: tokenSchemas,
             groups: groups,
             contractConfig: contractConfig,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result
@@ -2336,7 +2336,7 @@ struct TransitionDetailView: View {
         }
         
         defer {
-            dash_sdk_signer_destroy(OpaquePointer(signer)!)
+            dash_sdk_signer_destroy(signer.assumingMemoryBound(to: SignerHandle.self))
         }
         
         // Use the DPPIdentity for contract update
@@ -2353,7 +2353,7 @@ struct TransitionDetailView: View {
             newDocumentSchemas: newDocumentSchemas,
             newTokenSchemas: newTokenSchemas,
             newGroups: newGroups,
-            signer: OpaquePointer(signer)!
+            signer: OpaquePointer(signer)
         )
         
         return result

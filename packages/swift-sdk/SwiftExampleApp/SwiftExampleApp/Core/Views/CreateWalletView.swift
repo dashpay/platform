@@ -200,20 +200,15 @@ struct CreateWalletView: View {
         .onAppear {
             setupInitialNetworkSelection()
         }
-        // Hidden navigation link to push backup screen
-        .overlay(
-            NavigationLink(
-                destination: SeedBackupView(
-                    mnemonic: generatedMnemonic,
-                    onConfirm: {
-                        createWallet(using: generatedMnemonic)
-                    }
-                ),
-                isActive: $showBackupScreen,
-                label: { EmptyView() }
+        // Navigate to backup screen when requested (iOS 16+ API)
+        .navigationDestination(isPresented: $showBackupScreen) {
+            SeedBackupView(
+                mnemonic: generatedMnemonic,
+                onConfirm: {
+                    createWallet(using: generatedMnemonic)
+                }
             )
-            .opacity(0)
-        )
+        }
     }
     
     private var canCreateWallet: Bool {

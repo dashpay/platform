@@ -302,7 +302,7 @@ extension PersistentDataContract {
             // Convert JSON representation back to TokenConfiguration objects
             // This is simplified - in production you'd have proper deserialization
             tokenConfigs = tokensDict.compactMap { (_, value) in
-                guard let tokenData = value as? [String: Any] else { return nil }
+                guard let _ = value as? [String: Any] else { return nil }
                 // Create TokenConfiguration from data
                 return nil // Placeholder - would implement proper conversion
             }
@@ -394,7 +394,7 @@ extension PersistentDataContract {
     
     /// Convert TokenConfiguration to JSON representation
     private static func tokenConfigurationToJSON(_ token: TokenConfiguration) -> [String: Any] {
-        var json: [String: Any] = [
+        let json: [String: Any] = [
             "name": token.name,
             "symbol": token.symbol,
             "description": token.description as Any,

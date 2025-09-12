@@ -92,10 +92,15 @@ jobs:
           BLST_PORTABLE: "1"
           IPHONEOS_DEPLOYMENT_TARGET: "18.0"
           IPHONESIMULATOR_DEPLOYMENT_TARGET: "18.0"
-          RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+          CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+          CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+          CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
         run: |
           echo "Using BLST_PORTABLE=${BLST_PORTABLE} to avoid iOS linker issues"
-          echo "Minimum iOS deployment target: ${IPHONEOS_DEPLOYMENT_TARGET} (RUSTFLAGS=${RUSTFLAGS})"
+          echo "Minimum iOS deployment target: ${IPHONEOS_DEPLOYMENT_TARGET}"
+          echo "AARCH64 iOS rustflags: ${CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS}"
+          echo "AARCH64 iOS-sim rustflags: ${CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS}"
+          echo "x86_64 iOS rustflags: ${CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS}"
           cargo build --release --target ${{ matrix.target }}
 
       - name: Verify build output

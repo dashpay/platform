@@ -63,30 +63,26 @@ class UnifiedAppState: ObservableObject {
     }
     
     func initialize() async {
-        do {
-            // Initialize Platform SDK
-            await MainActor.run {
-                platformState.initializeSDK(modelContext: modelContainer.mainContext)
-            }
-            
-            // Wait for Platform SDK to be ready
-            try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
-
-            // If SDK reports trusted mode, disable masternode SPV sync
-            if let sdk = platformState.sdk {
-                do {
-                    let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
-                    let isTrusted = status.mode.lowercased() == "trusted"
-                    await MainActor.run { self.walletService.setMasternodesEnabled(!isTrusted) }
-                } catch {
-                    // Ignore status errors; keep default (false) until known
-                }
-            }
-            
-            isInitialized = true
-        } catch {
-            self.error = error
+        // Initialize Platform SDK
+        await MainActor.run {
+            platformState.initializeSDK(modelContext: modelContainer.mainContext)
         }
+        
+        // Wait for Platform SDK to be ready
+        try? await Task.sleep(nanoseconds: 500_000_000) // 0.5 second
+
+        // If SDK reports trusted mode, disable masternode SPV sync
+        if let sdk = platformState.sdk {
+            do {
+                let status: SwiftDashSDK.SDKStatus = try sdk.getStatus()
+                let isTrusted = status.mode.lowercased() == "trusted"
+                await MainActor.run { self.walletService.setMasternodesEnabled(!isTrusted) }
+            } catch {
+                // Ignore status errors; keep default (false) until known
+            }
+        }
+        
+        isInitialized = true
     }
     
     func reset() async {
@@ -94,7 +90,7 @@ class UnifiedAppState: ObservableObject {
         error = nil
         
         // Reset services
-        await walletService.stopSync()
+        walletService.stopSync()
         
         // Reset platform state
         platformState.sdk = nil

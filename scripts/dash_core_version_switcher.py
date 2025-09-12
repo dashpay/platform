@@ -239,7 +239,11 @@ def main():
         val = sha
         resolved = (branch, sha)
 
-    repo_root = os.getcwd()
+    # Prefer git repo root to avoid depending on CWD
+    try:
+        repo_root = subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip()
+    except Exception:
+        repo_root = os.getcwd()
     edited = []
     for cargo in find_cargo_tomls(repo_root):
         if process_file(cargo, mode, val):

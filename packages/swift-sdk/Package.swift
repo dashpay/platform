@@ -1,4 +1,4 @@
-// swift-tools-version: 5.8
+// swift-tools-version: 6.0
 
 import PackageDescription
 
@@ -23,7 +23,9 @@ let package = Package(
         .target(
             name: "SwiftDashSDK",
             dependencies: ["DashSDKFFI"],
-            path: "Sources/SwiftDashSDK"
+            path: "Sources/SwiftDashSDK",
+            exclude: ["KeyWallet/README.md"]
         ),
-    ]
+    ],
+    swiftLanguageModes: [.v6]
 )

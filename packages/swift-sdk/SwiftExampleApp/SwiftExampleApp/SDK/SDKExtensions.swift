@@ -19,17 +19,5 @@ protocol Signer {
     func canSign(identityPublicKey: Data) -> Bool
 }
 
-// Global signer storage for C callbacks
-private var globalSignerStorage: Signer?
-
 // MARK: - SDK Extensions for the example app
-extension SDK {
-    /// Initialize SDK with a custom signer for the example app
-    convenience init(network: SwiftDashSDK.Network, signer: Signer) throws {
-        // Store the signer globally for C callbacks
-        globalSignerStorage = signer
-        
-        // Initialize the SDK normally
-        try self.init(network: network)
-    }
-}
+// No global signer storage is kept; signers are created and used at call sites.

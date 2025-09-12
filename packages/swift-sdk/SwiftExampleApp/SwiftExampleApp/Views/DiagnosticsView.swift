@@ -157,6 +157,7 @@ struct DiagnosticsView: View {
         }
     }
     
+    @MainActor
     private func runAllQueries() {
         guard let sdk = appState.platformState.sdk else { return }
         
@@ -169,7 +170,7 @@ struct DiagnosticsView: View {
             var testResults: [QueryTestResult] = []
             
             // Define all queries to test with categories
-            let queriesToTest: [(name: String, label: String, category: String, test: () async throws -> Any)] = [
+            let queriesToTest: [(name: String, label: String, category: String, test: @MainActor () async throws -> Any)] = [
                 // Identity Queries (10 queries)
                 ("getIdentity", "Get Identity", "Identity", {
                     try await sdk.identityGet(identityId: TestData.testIdentityId)

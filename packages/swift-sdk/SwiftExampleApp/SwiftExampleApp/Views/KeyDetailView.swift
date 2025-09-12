@@ -139,7 +139,6 @@ struct KeyDetailView: View {
         validationError = nil
         
         Task {
-            do {
                 // Parse the private key input
                 let trimmedInput = privateKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
                 
@@ -152,8 +151,8 @@ struct KeyDetailView: View {
                     return
                 }
                 
-                // Get SDK instance
-                guard let sdk = appState.sdk else {
+                // Ensure SDK exists
+                guard appState.sdk != nil else {
                     await MainActor.run {
                         validationError = "SDK not initialized"
                         isValidating = false
@@ -198,12 +197,6 @@ struct KeyDetailView: View {
                         isValidating = false
                     }
                 }
-            } catch {
-                await MainActor.run {
-                    validationError = error.localizedDescription
-                    isValidating = false
-                }
-            }
         }
     }
     

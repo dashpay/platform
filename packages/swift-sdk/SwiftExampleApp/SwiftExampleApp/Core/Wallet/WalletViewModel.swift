@@ -239,47 +239,35 @@ public class WalletViewModel: ObservableObject {
         
         isSyncing = true
         
-        do {
-            // Watch all addresses
-            for account in wallet.accounts {
-                let allAddresses = account.externalAddresses + account.internalAddresses
-                
-                for address in allAddresses {
-                    // TODO: Implement watch address with new SPV client
-            // try await spvClient.watchAddress(address.address)
-            print("Would watch address: \(address.address)")
-                }
+        // Watch all addresses
+        for account in wallet.accounts {
+            let allAddresses = account.externalAddresses + account.internalAddresses
+            for address in allAddresses {
+                // TODO: Implement watch address with new SPV client
+                // try await spvClient.watchAddress(address.address)
+                print("Would watch address: \(address.address)")
             }
-            
-            // Set up callbacks for new transactions
-            // TODO: Set up transaction callbacks with new SPV client
-            // await spvClient.onTransaction { [weak self] txInfo in
-            //     Task { @MainActor in
-            //         await self?.processIncomingTransaction(txInfo)
-            //     }
-            // }
-            
-            // Start sync
-            // TODO: Implement start sync with new SPV client
-            // try await spvClient.startSync()
-            print("Would start sync")
-        } catch {
-            self.error = error
-            showError = true
-            isSyncing = false
         }
+        
+        // Set up callbacks for new transactions (placeholder)
+        // TODO: Set up transaction callbacks with new SPV client
+        // await spvClient.onTransaction { [weak self] txInfo in
+        //     Task { @MainActor in
+        //         await self?.processIncomingTransaction(txInfo)
+        //     }
+        // }
+        
+        // Start sync (placeholder)
+        // TODO: Implement start sync with new SPV client
+        // try await spvClient.startSync()
+        print("Would start sync")
     }
     
     public func stopSync() async {
-        do {
-            // TODO: Implement stop sync with new SPV client
-            // try await spvClient.stopSync()
-            print("Would stop sync")
-            isSyncing = false
-        } catch {
-            self.error = error
-            showError = true
-        }
+        // TODO: Implement stop sync with new SPV client
+        // try await spvClient.stopSync()
+        print("Would stop sync")
+        isSyncing = false
     }
     
     // MARK: - Transaction Processing
