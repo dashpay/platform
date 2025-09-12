@@ -132,10 +132,11 @@ public class SPVClient: ObservableObject {
     }
     
     deinit {
-        Task { @MainActor in
-            stop()
-            destroyClient()
+        // Perform synchronous teardown to avoid capturing self in an escaping Task
+        if let c = client {
+            dash_spv_ffi_client_stop(c)
         }
+        destroyClient()
     }
     
     // MARK: - Client Lifecycle
