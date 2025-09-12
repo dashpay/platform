@@ -98,14 +98,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Use the same rust-dashcore revision as rs-dpp
-          REV=$(awk '
-            BEGIN { found=0 }
-            /^dashcore[[:space:]]*=/ { found=1 }
-            found {
-              if (match($0, /rev[[:space:]]*=[[:space:]]*"([^"]+)"/, m)) { print m[1]; exit }
-            }
-          ' packages/rs-dpp/Cargo.toml || true)
+          # Use the same rust-dashcore revision as rs-dpp (parse single-line dep)
+          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+                | sed -E 's/.*rev[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
+                | head -n1 || true)
           if [ -z "${REV:-}" ]; then
             echo "Failed to determine rust-dashcore revision from Cargo.toml" >&2
             exit 1
