@@ -218,49 +218,11 @@ impl<'a> WhereClause {
     }
 
     /// Evaluate this clause against a provided `Value`
+    ///
+    /// This function is used for filtering documents in memory for document subscriptions.
+    /// For query execution, the matching logic is handled in `to_path_query`.
     pub fn matches_value(&self, value: &Value) -> bool {
-        match &self.operator {
-            WhereOperator::Equal => value == &self.value,
-            WhereOperator::GreaterThan => value > &self.value,
-            WhereOperator::GreaterThanOrEquals => value >= &self.value,
-            WhereOperator::LessThan => value < &self.value,
-            WhereOperator::LessThanOrEquals => value <= &self.value,
-            WhereOperator::In => match &self.value {
-                Value::Array(array) => array.contains(value),
-                _ => false,
-            },
-            WhereOperator::Between => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value >= &bounds[0] && value <= &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeBounds => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value > &bounds[0] && value < &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeLeft => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value > &bounds[0] && value <= &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeRight => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value >= &bounds[0] && value < &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::StartsWith => {
-                if let (Value::Text(text), Value::Text(prefix)) = (value, &self.value) {
-                    text.starts_with(prefix.as_str())
-                } else {
-                    false
-                }
-            }
-        }
+        eval_operator(&self.operator, value, &self.value)
     }
 
     /// Returns the where clause `in` values if they are an array of values, else an error
@@ -1322,48 +1284,66 @@ pub struct ValueClause {
 impl ValueClause {
     /// Evaluate this clause against a provided `Value`
     pub fn matches_value(&self, value: &Value) -> bool {
-        match &self.operator {
-            WhereOperator::Equal => value == &self.value,
-            WhereOperator::GreaterThan => value > &self.value,
-            WhereOperator::GreaterThanOrEquals => value >= &self.value,
-            WhereOperator::LessThan => value < &self.value,
-            WhereOperator::LessThanOrEquals => value <= &self.value,
-            WhereOperator::In => match &self.value {
-                Value::Array(array) => array.contains(value),
+        eval_operator(&self.operator, value, &self.value)
+    }
+}
+
+/// Shared operator evaluator for both WhereClause and ValueClause
+fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool {
+    match op {
+        WhereOperator::Equal => probe == clause_val,
+        WhereOperator::GreaterThan => probe > clause_val,
+        WhereOperator::GreaterThanOrEquals => probe >= clause_val,
+        WhereOperator::LessThan => probe < clause_val,
+        WhereOperator::LessThanOrEquals => probe <= clause_val,
+        WhereOperator::In => match clause_val {
+            Value::Array(array) => array.contains(probe),
+            Value::Bytes(bytes) => match probe {
+                Value::U8(b) => bytes.contains(b),
                 _ => false,
             },
-            WhereOperator::Between => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value >= &bounds[0] && value <= &bounds[1]
+            _ => false,
+        },
+        WhereOperator::Between => match clause_val {
+            Value::Array(bounds) if bounds.len() == 2 => {
+                if !(bounds[0] <= bounds[1]) {
+                    return false;
                 }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeBounds => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value > &bounds[0] && value < &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeLeft => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value > &bounds[0] && value <= &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::BetweenExcludeRight => match &self.value {
-                Value::Array(bounds) if bounds.len() == 2 => {
-                    value >= &bounds[0] && value < &bounds[1]
-                }
-                _ => false,
-            },
-            WhereOperator::StartsWith => {
-                if let (Value::Text(text), Value::Text(prefix)) = (value, &self.value) {
-                    text.starts_with(prefix.as_str())
-                } else {
-                    false
-                }
+                probe >= &bounds[0] && probe <= &bounds[1]
             }
-        }
+            _ => false,
+        },
+        WhereOperator::BetweenExcludeBounds => match clause_val {
+            Value::Array(bounds) if bounds.len() == 2 => {
+                if !(bounds[0] <= bounds[1]) {
+                    return false;
+                }
+                probe > &bounds[0] && probe < &bounds[1]
+            }
+            _ => false,
+        },
+        WhereOperator::BetweenExcludeLeft => match clause_val {
+            Value::Array(bounds) if bounds.len() == 2 => {
+                if !(bounds[0] <= bounds[1]) {
+                    return false;
+                }
+                probe > &bounds[0] && probe <= &bounds[1]
+            }
+            _ => false,
+        },
+        WhereOperator::BetweenExcludeRight => match clause_val {
+            Value::Array(bounds) if bounds.len() == 2 => {
+                if !(bounds[0] <= bounds[1]) {
+                    return false;
+                }
+                probe >= &bounds[0] && probe < &bounds[1]
+            }
+            _ => false,
+        },
+        WhereOperator::StartsWith => match (probe, clause_val) {
+            (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
+            _ => false,
+        },
     }
 }
 
@@ -1375,10 +1355,8 @@ impl From<WhereClause> for Value {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the set of allowed operators for a given property type
-pub fn allowed_ops_for_type(
-    property_type: &dpp::data_contract::document_type::DocumentPropertyType,
-) -> &'static [WhereOperator] {
-    use dpp::data_contract::document_type::DocumentPropertyType as T;
+pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [WhereOperator] {
+    use DocumentPropertyType as T;
     use WhereOperator as Op;
     match property_type {
         T::U8
@@ -1404,7 +1382,19 @@ pub fn allowed_ops_for_type(
             Op::BetweenExcludeLeft,
             Op::BetweenExcludeRight,
         ],
-        T::String(_) => &[Op::Equal, Op::In, Op::StartsWith],
+        T::String(_) => &[
+            Op::Equal,
+            Op::In,
+            Op::StartsWith,
+            Op::GreaterThan,
+            Op::GreaterThanOrEquals,
+            Op::LessThan,
+            Op::LessThanOrEquals,
+            Op::Between,
+            Op::BetweenExcludeBounds,
+            Op::BetweenExcludeLeft,
+            Op::BetweenExcludeRight,
+        ],
         T::Identifier => &[Op::Equal, Op::In],
         T::ByteArray(_) => &[Op::Equal, Op::In],
         T::Boolean => &[Op::Equal],
@@ -1416,7 +1406,9 @@ pub fn allowed_ops_for_type(
 fn is_numeric_value(v: &Value) -> bool {
     matches!(
         v,
-        Value::U64(_)
+        Value::U128(_)
+            | Value::I128(_)
+            | Value::U64(_)
             | Value::I64(_)
             | Value::U32(_)
             | Value::I32(_)
@@ -1430,11 +1422,7 @@ fn is_numeric_value(v: &Value) -> bool {
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Validates that a value matches the expected shape for a given operator and property type
-pub fn value_shape_ok(
-    op: WhereOperator,
-    v: &Value,
-    prop_ty: &dpp::data_contract::document_type::DocumentPropertyType,
-) -> bool {
+pub fn value_shape_ok(op: WhereOperator, v: &Value, prop_ty: &DocumentPropertyType) -> bool {
     use WhereOperator as Op;
     match op {
         Op::Equal => true,
@@ -1442,10 +1430,15 @@ pub fn value_shape_ok(
         Op::StartsWith => matches!(v, Value::Text(_)),
         Op::GreaterThan | Op::GreaterThanOrEquals | Op::LessThan | Op::LessThanOrEquals => {
             match prop_ty {
-                dpp::data_contract::document_type::DocumentPropertyType::F64 => is_numeric_value(v),
+                DocumentPropertyType::F64 => is_numeric_value(v),
+                DocumentPropertyType::String(_) => {
+                    matches!(v, Value::Text(_))
+                }
                 _ => matches!(
                     v,
-                    Value::U64(_)
+                    Value::U128(_)
+                        | Value::I128(_)
+                        | Value::U64(_)
                         | Value::I64(_)
                         | Value::U32(_)
                         | Value::I32(_)
@@ -1463,12 +1456,15 @@ pub fn value_shape_ok(
             if let Value::Array(arr) = v {
                 arr.len() == 2
                     && arr.iter().all(|x| match prop_ty {
-                        dpp::data_contract::document_type::DocumentPropertyType::F64 => {
-                            is_numeric_value(x)
+                        DocumentPropertyType::F64 => is_numeric_value(x),
+                        DocumentPropertyType::String(_) => {
+                            matches!(x, Value::Text(_))
                         }
                         _ => matches!(
                             x,
-                            Value::U64(_)
+                            Value::U128(_)
+                                | Value::I128(_)
+                                | Value::U64(_)
                                 | Value::I64(_)
                                 | Value::U32(_)
                                 | Value::I32(_)
@@ -1526,10 +1522,7 @@ pub fn validate_where_clause_against_schema(
         clause.in_values()?;
         // If value provided as Bytes, only allow for U8 numeric fields
         if matches!(clause.value, Value::Bytes(_))
-            && !matches!(
-                property_type,
-                dpp::data_contract::document_type::DocumentPropertyType::U8
-            )
+            && !matches!(property_type, DocumentPropertyType::U8)
         {
             return Err(Error::Query(
                 QuerySyntaxError::InvalidWhereClauseComponents(
@@ -1546,18 +1539,88 @@ pub fn validate_where_clause_against_schema(
         ));
     }
 
+    // For Between variants, ensure bounds are in ascending order to avoid surprising matches
+    match clause.operator {
+        WhereOperator::Between
+        | WhereOperator::BetweenExcludeBounds
+        | WhereOperator::BetweenExcludeLeft
+        | WhereOperator::BetweenExcludeRight => {
+            if let Value::Array(bounds) = &clause.value {
+                if bounds.len() == 2 && !(bounds[0] <= bounds[1]) {
+                    return Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
+                        "when using between operator bounds must be ascending",
+                    )));
+                }
+            }
+        }
+        _ => {}
+    }
+
     // Additional strict type checks for Equal and In element types
-    let value_type_matches =
-        |prop_ty: &dpp::data_contract::document_type::DocumentPropertyType, v: &Value| -> bool {
-            use dpp::data_contract::document_type::DocumentPropertyType as T;
-            match prop_ty {
-                T::String(_) => matches!(v, Value::Text(_)),
-                T::Identifier => matches!(v, Value::Identifier(_)),
-                T::Boolean => matches!(v, Value::Bool(_)),
-                T::ByteArray(_) => matches!(v, Value::Bytes(_)),
-                T::F64 => matches!(v, Value::Float(_)),
+    let value_type_matches = |prop_ty: &DocumentPropertyType, v: &Value| -> bool {
+        use DocumentPropertyType as T;
+        match prop_ty {
+            T::String(_) => matches!(v, Value::Text(_)),
+            T::Identifier => matches!(v, Value::Identifier(_)),
+            T::Boolean => matches!(v, Value::Bool(_)),
+            T::ByteArray(_) => matches!(v, Value::Bytes(_)),
+            T::F64 => matches!(v, Value::Float(_)),
+            T::Date => matches!(
+                v,
+                Value::U64(_)
+                    | Value::I64(_)
+                    | Value::U32(_)
+                    | Value::I32(_)
+                    | Value::U16(_)
+                    | Value::I16(_)
+                    | Value::U8(_)
+                    | Value::I8(_)
+            ),
+            T::U8 | T::U16 | T::U32 | T::U64 | T::U128 => matches!(
+                v,
+                Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_)
+            ),
+            T::I8 | T::I16 | T::I32 | T::I64 | T::I128 => matches!(
+                v,
+                Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_) | Value::I128(_)
+            ),
+            // No validation for object/array types as operators are disallowed
+            T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
+        }
+    };
+
+    match clause.operator {
+        WhereOperator::Equal => {
+            use DocumentPropertyType as T;
+            let ok = match property_type {
+                // Accept any integer-like value for integer fields (signed/unsigned), reject floats
+                T::U8
+                | T::U16
+                | T::U32
+                | T::U64
+                | T::U128
+                | T::I8
+                | T::I16
+                | T::I32
+                | T::I64
+                | T::I128 => {
+                    matches!(
+                        clause.value,
+                        Value::U128(_)
+                            | Value::I128(_)
+                            | Value::U64(_)
+                            | Value::I64(_)
+                            | Value::U32(_)
+                            | Value::I32(_)
+                            | Value::U16(_)
+                            | Value::I16(_)
+                            | Value::U8(_)
+                            | Value::I8(_)
+                    )
+                }
+                T::F64 => matches!(clause.value, Value::Float(_)),
                 T::Date => matches!(
-                    v,
+                    clause.value,
                     Value::U64(_)
                         | Value::I64(_)
                         | Value::U32(_)
@@ -1567,22 +1630,14 @@ pub fn validate_where_clause_against_schema(
                         | Value::U8(_)
                         | Value::I8(_)
                 ),
-                T::U8 | T::U16 | T::U32 | T::U64 | T::U128 => matches!(
-                    v,
-                    Value::U8(_) | Value::U16(_) | Value::U32(_) | Value::U64(_) | Value::U128(_)
-                ),
-                T::I8 | T::I16 | T::I32 | T::I64 | T::I128 => matches!(
-                    v,
-                    Value::I8(_) | Value::I16(_) | Value::I32(_) | Value::I64(_) | Value::I128(_)
-                ),
-                // No validation for object/array types as operators are disallowed
+                T::String(_) => matches!(clause.value, Value::Text(_)),
+                T::Identifier => matches!(clause.value, Value::Identifier(_)),
+                T::ByteArray(_) => matches!(clause.value, Value::Bytes(_)),
+                T::Boolean => matches!(clause.value, Value::Bool(_)),
+                // Not applicable for object/array/variable arrays
                 T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
-            }
-        };
-
-    match clause.operator {
-        WhereOperator::Equal => {
-            if !value_type_matches(property_type, &clause.value) {
+            };
+            if !ok {
                 return Err(Error::Query(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "invalid value type for equality",
@@ -1610,7 +1665,7 @@ pub fn validate_where_clause_against_schema(
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Validate a collection of InternalClauses against the document schema
 pub fn validate_internal_clauses_against_schema(
-    document_type: dpp::data_contract::document_type::DocumentTypeRef,
+    document_type: DocumentTypeRef,
     clauses: &super::InternalClauses,
 ) -> Result<(), crate::error::Error> {
     // Basic composition
@@ -1917,28 +1972,6 @@ mod tests {
             field: "$createdAt".to_string(),
             operator: Equal,
             value: Value::Float(1.23),
-        };
-        let res = validate_where_clause_against_schema(doc_type, &clause);
-        assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
-        ));
-    }
-
-    #[test]
-    fn validate_rejects_range_on_string_field() {
-        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
-        let contract = fixture.data_contract_owned();
-        let doc_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("doc type exists");
-
-        let clause = WhereClause {
-            field: "name".to_string(),
-            operator: GreaterThan,
-            value: Value::Text("a".to_string()),
         };
         let res = validate_where_clause_against_schema(doc_type, &clause);
         assert!(matches!(

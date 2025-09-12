@@ -562,6 +562,7 @@ impl DriveDocumentQueryFilter<'_> {
                                                 | Value::I8(_)
                                         )
                                     })
+                                    && arr[0] <= arr[1]
                             }
                             _ => false,
                         },

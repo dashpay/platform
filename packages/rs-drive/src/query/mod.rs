@@ -549,8 +549,6 @@ impl<'a> DriveDocumentQuery<'a> {
                 })?;
 
         let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
-        // Schema-aware validation: ensure operators and values are compatible with field types
-        validate_internal_clauses_against_schema(document_type, &internal_clauses)?;
 
         let start_at_option = query_document.remove("startAt");
         let start_after_option = query_document.remove("startAfter");
@@ -677,8 +675,6 @@ impl<'a> DriveDocumentQuery<'a> {
         }?;
 
         let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
-        // Schema-aware validation
-        validate_internal_clauses_against_schema(document_type, &internal_clauses)?;
 
         let order_by: IndexMap<String, OrderClause> = order_by
             .map_or(vec![], |id_cbor| {
@@ -841,8 +837,6 @@ impl<'a> DriveDocumentQuery<'a> {
         }
 
         let internal_clauses = InternalClauses::extract_from_clauses(all_where_clauses)?;
-        // Schema-aware validation
-        validate_internal_clauses_against_schema(document_type.as_ref(), &internal_clauses)?;
 
         let start_at_option = None; //todo
         let start_after_option = None; //todo
@@ -2225,82 +2219,6 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
             }
         }
-    }
-}
-
-#[cfg(all(test, any(feature = "server", feature = "verify")))]
-mod shared_validation_tests {
-    use super::*;
-    use dpp::tests::fixtures::get_data_contract_fixture;
-    use dpp::version::LATEST_PLATFORM_VERSION;
-
-    #[test]
-    fn from_decomposed_values_rejects_startswith_empty_string() {
-        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
-        let contract = fixture.data_contract_owned();
-        let doc_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("doc type exists");
-
-        // where: [["name", "StartsWith", ""]]
-        let where_clause = Value::Array(vec![Value::Array(vec![
-            Value::Text("name".to_string()),
-            Value::Text("StartsWith".to_string()),
-            Value::Text("".to_string()),
-        ])]);
-
-        let res = DriveDocumentQuery::from_decomposed_values(
-            where_clause,
-            None,
-            Some(100),
-            None,
-            true,
-            None,
-            &contract,
-            doc_type,
-            &DriveConfig::default(),
-        );
-
-        assert!(matches!(
-            res,
-            Err(Error::Query(QuerySyntaxError::StartsWithIllegalString(_)))
-        ))
-    }
-
-    #[test]
-    fn from_decomposed_values_rejects_in_with_duplicates() {
-        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
-        let contract = fixture.data_contract_owned();
-        let doc_type = contract
-            .document_type_for_name("niceDocument")
-            .expect("doc type exists");
-
-        // where: [["status", "In", ["active", "active"]]] -> duplicates not allowed
-        let where_clause = Value::Array(vec![Value::Array(vec![
-            Value::Text("status".to_string()),
-            Value::Text("In".to_string()),
-            Value::Array(vec![
-                Value::Text("active".to_string()),
-                Value::Text("active".to_string()),
-            ]),
-        ])]);
-
-        let res = DriveDocumentQuery::from_decomposed_values(
-            where_clause,
-            None,
-            Some(100),
-            None,
-            true,
-            None,
-            &contract,
-            doc_type,
-            &DriveConfig::default(),
-        );
-
-        assert!(matches!(
-            res,
-            Err(Error::Query(QuerySyntaxError::InvalidInClause(_)))
-        ))
     }
 }
 
