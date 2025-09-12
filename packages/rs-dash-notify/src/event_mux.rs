@@ -9,19 +9,19 @@
 //! - Fan-out responses to all subscribers whose filters match
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
-use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
-use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 use dapi_grpc::platform::v0::PlatformEventsCommand;
+use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
+use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
+use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 use dapi_grpc::tonic::Status;
 use futures::SinkExt;
 use sender_sink::wrappers::{SinkError, UnboundedSenderSink};
 use tokio::join;
 use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::event_bus::{EventBus, Filter as EventFilter, SubscriptionHandle};
 use dapi_grpc::platform::v0::PlatformEventsResponse;
@@ -624,4 +624,251 @@ pub fn unbounded_sender_sink<T>(
     );
 
     cmd_sink
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::platform_event_v0 as pe;
+    use dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0;
+    use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
+    use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
+    use sender_sink::wrappers::UnboundedSenderSink;
+    use std::collections::BTreeSet;
+    use tokio::time::{Duration, timeout};
+
+    fn make_add_cmd(id: &str) -> PlatformEventsCommand {
+        PlatformEventsCommand {
+            version: Some(CmdVersion::V0(PlatformEventsCommandV0 {
+                command: Some(Cmd::Add(dapi_grpc::platform::v0::AddSubscriptionV0 {
+                    client_subscription_id: id.to_string(),
+                    filter: Some(PlatformFilterV0::default()),
+                })),
+            })),
+        }
+    }
+
+    fn make_event_resp(id: &str) -> PlatformEventsResponse {
+        let meta = pe::BlockMetadata {
+            height: 1,
+            time_ms: 0,
+            block_id_hash: vec![],
+        };
+        let evt = PlatformEventV0 {
+            event: Some(pe::Event::BlockCommitted(pe::BlockCommitted {
+                meta: Some(meta),
+                tx_count: 0,
+            })),
+        };
+
+        PlatformEventsResponse {
+            version: Some(
+                dapi_grpc::platform::v0::platform_events_response::Version::V0(
+                    PlatformEventsResponseV0 {
+                        response: Some(Resp::Event(PlatformEventMessageV0 {
+                            client_subscription_id: id.to_string(),
+                            event: Some(evt),
+                        })),
+                    },
+                ),
+            ),
+        }
+    }
+
+    #[tokio::test]
+    async fn should_deliver_duplicate_events_when_subscribed_twice_with_same_id() {
+        let mux = EventMux::new();
+
+        // Add a single producer to receive Add commands and accept responses
+        let EventProducer {
+            mut cmd_rx,
+            resp_tx,
+        } = mux.add_producer().await;
+
+        // Add a single subscriber
+        let EventSubscriber {
+            cmd_tx,
+            mut resp_rx,
+        } = mux.add_subscriber().await;
+
+        let sub_id = "dup-sub";
+        let add = make_add_cmd(sub_id);
+
+        // Send the same Add twice for the same client_subscription_id
+        cmd_tx.send(Ok(add.clone())).unwrap();
+        cmd_tx.send(Ok(add)).unwrap();
+
+        // Ensure the producer observes both Add commands before we emit an event
+        // (so fan-out tasks are in place)
+        for _ in 0..2 {
+            let got = timeout(Duration::from_millis(500), cmd_rx.recv())
+                .await
+                .expect("timed out waiting for Add")
+                .expect("producer channel closed")
+                .expect("Add command error");
+            // sanity check: it's an Add for our id
+            match got.version.and_then(|v| match v {
+                CmdVersion::V0(v0) => v0.command,
+            }) {
+                Some(Cmd::Add(a)) => assert_eq!(a.client_subscription_id, sub_id),
+                _ => panic!("expected Add command"),
+            }
+        }
+
+        // Emit a single event for this subscription id
+        resp_tx
+            .send(Ok(make_event_resp(sub_id)))
+            .expect("failed to send event into mux");
+
+        // Expect to receive the same event twice due to duplicate internal subscriptions
+        let first = timeout(Duration::from_millis(500), resp_rx.recv())
+            .await
+            .expect("timeout waiting first event")
+            .expect("subscriber closed")
+            .expect("event error");
+        let second = timeout(Duration::from_millis(500), resp_rx.recv())
+            .await
+            .expect("timeout waiting second event")
+            .expect("subscriber closed")
+            .expect("event error");
+
+        // Validate both carry our subscription id
+        let sub_id_from = |resp: PlatformEventsResponse| -> String {
+            match resp.version.and_then(|v| match v {
+                dapi_grpc::platform::v0::platform_events_response::Version::V0(v0) => {
+                    v0.response.and_then(|r| match r {
+                        Resp::Event(m) => Some(m.client_subscription_id),
+                        _ => None,
+                    })
+                }
+            }) {
+                Some(id) => id,
+                None => panic!("unexpected response variant"),
+            }
+        };
+
+        assert_eq!(sub_id_from(first), sub_id);
+        assert_eq!(sub_id_from(second), sub_id);
+    }
+
+    #[tokio::test]
+    async fn mux_chain_three_layers_delivers_once_per_subscriber() {
+        use tokio_stream::wrappers::UnboundedReceiverStream;
+
+        // Build three muxes
+        let mux1 = EventMux::new();
+        let mux2 = EventMux::new();
+        let mux3 = EventMux::new();
+
+        // Bridge: Mux1 -> Producer1a -> Subscriber2a -> Mux2
+        //      and Mux1 -> Producer1b -> Subscriber2b -> Mux2
+        let prod1a = mux1.add_producer().await;
+        let sub2a = mux2.add_subscriber().await;
+        // Use a sink that accepts EventsCommandResult directly (no extra Result nesting)
+        let sub2a_cmd_sink = UnboundedSenderSink::from(sub2a.cmd_tx.clone());
+        let sub2a_resp_stream = UnboundedReceiverStream::new(sub2a.resp_rx);
+        tokio::spawn(async move { prod1a.forward(sub2a_cmd_sink, sub2a_resp_stream).await });
+
+        let prod1b = mux1.add_producer().await;
+        let sub2b = mux2.add_subscriber().await;
+        let sub2b_cmd_sink = UnboundedSenderSink::from(sub2b.cmd_tx.clone());
+        let sub2b_resp_stream = UnboundedReceiverStream::new(sub2b.resp_rx);
+        tokio::spawn(async move { prod1b.forward(sub2b_cmd_sink, sub2b_resp_stream).await });
+
+        // Bridge: Mux2 -> Producer2 -> Subscriber3 -> Mux3
+        let prod2 = mux2.add_producer().await;
+        let sub3 = mux3.add_subscriber().await;
+        let sub3_cmd_sink = UnboundedSenderSink::from(sub3.cmd_tx.clone());
+        let sub3_resp_stream = UnboundedReceiverStream::new(sub3.resp_rx);
+        tokio::spawn(async move { prod2.forward(sub3_cmd_sink, sub3_resp_stream).await });
+
+        // Deepest producer where we will inject events
+        let mut prod3_cmd_rx = {
+            let p = mux3.add_producer().await;
+            (p.cmd_rx, p.resp_tx)
+        };
+        let mut p3_cmd_rx = prod3_cmd_rx.0;
+        let p3_resp_tx = prod3_cmd_rx.1;
+
+        // Two top-level subscribers on Mux1
+        let mut sub1a = mux1.add_subscriber().await;
+        let mut sub1b = mux1.add_subscriber().await;
+        let id_a = "s1a";
+        let id_b = "s1b";
+
+        // Send Add commands downstream from each subscriber
+        sub1a
+            .cmd_tx
+            .send(Ok(make_add_cmd(id_a)))
+            .expect("send add a");
+        sub1b
+            .cmd_tx
+            .send(Ok(make_add_cmd(id_b)))
+            .expect("send add b");
+
+        // Ensure deepest producer receives both Adds
+        let mut seen = BTreeSet::new();
+        for _ in 0..2 {
+            let got = timeout(Duration::from_secs(2), p3_cmd_rx.recv())
+                .await
+                .expect("timeout waiting for downstream add")
+                .expect("p3 cmd channel closed")
+                .expect("downstream add error");
+
+            match got.version.and_then(|v| match v {
+                CmdVersion::V0(v0) => v0.command,
+            }) {
+                Some(Cmd::Add(a)) => {
+                    seen.insert(a.client_subscription_id);
+                }
+                _ => panic!("expected Add at deepest producer"),
+            }
+        }
+        assert!(seen.contains(id_a) && seen.contains(id_b));
+
+        // Emit one event per subscription id at the deepest producer
+        p3_resp_tx
+            .send(Ok(make_event_resp(id_a)))
+            .expect("emit event a");
+        p3_resp_tx
+            .send(Ok(make_event_resp(id_b)))
+            .expect("emit event b");
+
+        // Receive each exactly once at the top-level subscribers
+        let a_first = timeout(Duration::from_secs(2), sub1a.resp_rx.recv())
+            .await
+            .expect("timeout waiting for a event")
+            .expect("a subscriber closed")
+            .expect("a event error");
+        let b_first = timeout(Duration::from_secs(2), sub1b.resp_rx.recv())
+            .await
+            .expect("timeout waiting for b event")
+            .expect("b subscriber closed")
+            .expect("b event error");
+
+        let get_id = |resp: PlatformEventsResponse| -> String {
+            match resp.version.and_then(|v| match v {
+                dapi_grpc::platform::v0::platform_events_response::Version::V0(v0) => {
+                    v0.response.and_then(|r| match r {
+                        Resp::Event(m) => Some(m.client_subscription_id),
+                        _ => None,
+                    })
+                }
+            }) {
+                Some(id) => id,
+                None => panic!("unexpected response variant"),
+            }
+        };
+
+        assert_eq!(get_id(a_first.clone()), id_a);
+        assert_eq!(get_id(b_first.clone()), id_b);
+
+        // Ensure no duplicates by timing out on the next recv
+        let a_dup = timeout(Duration::from_millis(200), sub1a.resp_rx.recv()).await;
+        println!("a_dup: {:?}", a_dup);
+        assert!(a_dup.is_err(), "unexpected duplicate for subscriber a");
+        let b_dup = timeout(Duration::from_millis(200), sub1b.resp_rx.recv()).await;
+        println!("b_dup: {:?}", b_dup);
+        assert!(b_dup.is_err(), "unexpected duplicate for subscriber b");
+    }
 }
