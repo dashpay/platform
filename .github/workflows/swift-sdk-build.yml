@@ -93,6 +93,35 @@ jobs:
           echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
           "$HOME/.local/protoc-32.0/bin/protoc" --version
 
+      - name: Determine rust-dashcore revision (from rs-dpp)
+        id: dashcore_rev
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Use the same rust-dashcore revision as rs-dpp
+          REV=$(awk -F '"' '/^dashcore\s*=/{f=1} f&&/rev/{print $2; exit}' packages/rs-dpp/Cargo.toml || true)
+          if [ -z "${REV:-}" ]; then
+            echo "Failed to determine rust-dashcore revision from Cargo.toml" >&2
+            exit 1
+          fi
+          echo "rev=$REV" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout rust-dashcore at required revision
+        shell: bash
+        run: |
+          set -euxo pipefail
+          BASE_DIR="$(dirname "$GITHUB_WORKSPACE")"
+          cd "$BASE_DIR"
+          if [ -d rust-dashcore/.git ]; then
+            echo "Updating existing rust-dashcore checkout"
+            cd rust-dashcore
+            git fetch --all --tags --prune
+          else
+            git clone --no-tags --filter=blob:none https://github.com/dashpay/rust-dashcore.git rust-dashcore
+            cd rust-dashcore
+          fi
+          git checkout "${{ steps.dashcore_rev.outputs.rev }}"
+
       - name: Build DashSDKFFI.xcframework and install into Swift package
         run: |
           bash packages/swift-sdk/build_ios.sh
