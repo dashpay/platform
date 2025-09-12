@@ -10,6 +10,81 @@ import html as html_lib
 from pathlib import Path
 from datetime import datetime, timezone
 
+# Module-level constants extracted for maintainability
+
+# Test data for various query types - using a known testnet values
+TESTNET_TEST_DATA = {
+    'identity_id': '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
+    'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
+    'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+    'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
+    'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
+    'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
+    'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
+    'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
+    'public_key_hash_non_unique': '518038dc858461bcee90478fd994bba8057b7531',
+    'pro_tx_hash': '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113',
+    'token_id': 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv',
+    'document_type': 'domain',
+    'document_id': '7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r',
+    'username': 'alice',
+    'epoch': 8635
+}
+
+# Function name mappings from API names to SDK function names
+FUNCTION_NAME_MAP = {
+    'getIdentity': 'identity_fetch',
+    'getIdentityKeys': 'get_identity_keys',
+    'getIdentityNonce': 'get_identity_nonce',
+    'getIdentityContractNonce': 'get_identity_contract_nonce',
+    'getIdentityBalance': 'get_identity_balance',
+    'getIdentitiesBalances': 'get_identities_balances',
+    'getIdentityBalanceAndRevision': 'get_identity_balance_and_revision',
+    'getIdentityByPublicKeyHash': 'get_identity_by_public_key_hash',
+    'getIdentityByNonUniquePublicKeyHash': 'get_identity_by_non_unique_public_key_hash',
+    'getIdentitiesContractKeys': 'get_identities_contract_keys',
+    'getIdentityTokenBalances': 'get_identity_token_balances',
+    'getIdentitiesTokenBalances': 'get_identities_token_balances',
+    'getIdentityTokenInfos': 'get_identity_token_infos',
+    'getIdentitiesTokenInfos': 'get_identities_token_infos',
+    'getDataContract': 'data_contract_fetch',
+    'getDataContractHistory': 'get_data_contract_history',
+    'getDataContracts': 'get_data_contracts',
+    'getDocuments': 'get_documents',
+    'getDocument': 'get_document',
+    'getDpnsUsername': 'get_dpns_usernames',
+    'dpnsCheckAvailability': 'dpns_is_name_available',
+    'dpnsResolve': 'dpns_resolve_name',
+    'dpnsSearch': 'get_documents',
+    'getContestedResources': 'get_contested_resources',
+    'getContestedResourceVoteState': 'get_contested_resource_vote_state',
+    'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
+    'getContestedResourceIdentityVotes': 'get_contested_resource_identity_votes',
+    'getVotePollsByEndDate': 'get_vote_polls_by_end_date',
+    'getProtocolVersionUpgradeState': 'get_protocol_version_upgrade_state',
+    'getProtocolVersionUpgradeVoteStatus': 'get_protocol_version_upgrade_vote_status',
+    'getEpochsInfo': 'get_epochs_info',
+    'getCurrentEpoch': 'get_current_epoch',
+    'getFinalizedEpochInfos': 'get_finalized_epoch_infos',
+    'getEvonodesProposedEpochBlocksByIds': 'get_evonodes_proposed_epoch_blocks_by_ids',
+    'getEvonodesProposedEpochBlocksByRange': 'get_evonodes_proposed_epoch_blocks_by_range',
+    'getTokenStatuses': 'get_token_statuses',
+    'getTokenDirectPurchasePrices': 'get_token_direct_purchase_prices',
+    'getTokenContractInfo': 'get_token_contract_info',
+    'getTokenPerpetualDistributionLastClaim': 'get_token_perpetual_distribution_last_claim',
+    'getTokenTotalSupply': 'get_token_total_supply',
+    'getGroupInfo': 'get_group_info',
+    'getGroupInfos': 'get_group_infos',
+    'getGroupActions': 'get_group_actions',
+    'getGroupActionSigners': 'get_group_action_signers',
+    'getStatus': 'get_status',
+    'getCurrentQuorumsInfo': 'get_current_quorums_info',
+    'getPrefundedSpecializedBalance': 'get_prefunded_specialized_balance',
+    'getTotalCreditsInPlatform': 'get_total_credits_in_platform',
+    'getPathElements': 'get_path_elements',
+    'waitForStateTransitionResult': 'wait_for_state_transition_result'
+}
+
 def load_api_definitions(api_definitions_file):
     """Load query and state transition definitions from api-definitions.json"""
     try:
@@ -28,45 +103,25 @@ def load_api_definitions(api_definitions_file):
 def generate_example_code(query_key, inputs):
     """Generate example code for a query"""
     
-    # Test data for various query types
-    # Using a known testnet identity with activity
-    test_data = {
-        'identity_id': '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk',
-        'specialized_balance_id': 'AzaU7zqCT7X1kxh8yWxkT9PxAgNqWDu4Gz13emwcRyAT',
-        'contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
-        'data_contract_id': 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec',
-        'data_contract_history_id': 'HLY575cNazmc5824FxqaEMEBuzFeE4a98GDRNKbyJqCM',
-        'token_contract_id': 'ALybvzfcCwMs7sinDwmtumw17NneuW7RgFtFHgjKmF3A',
-        'group_contract_id': '49PJEnNx7ReCitzkLdkDNr4s6RScGsnNexcdSZJ1ph5N',
-        'public_key_hash_unique': 'b7e904ce25ed97594e72f7af0e66f298031c1754',
-        'public_key_hash_non_unique': '518038dc858461bcee90478fd994bba8057b7531',
-        'pro_tx_hash': '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113',
-        'token_id': 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv',
-        'document_type': 'domain',
-        'document_id': '7NYmEKQsYtniQRUmxwdPGeVcirMoPh5ZPyAKz8BWFy3r',
-        'username': 'alice',
-        'epoch': 8635
-    }
-    
     # Map input names to test values
     param_mapping = {
-        'id': f"'{test_data['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{test_data['data_contract_id']}'" if 'getDataContract' in query_key else f"'{test_data['identity_id']}'",
-        'identityId': f"'{test_data['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['identity_id']}'",
-        'ids': f"['{test_data['data_contract_id']}', '{test_data['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{test_data['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{test_data['identity_id']}']",
-        'identitiesIds': f"['{test_data['identity_id']}']",
-        'identityIds': f"['{test_data['identity_id']}']",
-        'contractId': f"'{test_data['group_contract_id']}'" if ('group' in query_key.lower() or 'Group' in query_key) else f"'{test_data['token_contract_id']}'" if ('token' in query_key.lower() or 'Token' in query_key) and 'TokenBalance' not in query_key and 'TokenInfo' not in query_key else f"'{test_data['contract_id']}'",
-        'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{test_data['data_contract_id']}'",
-        'publicKeyHash': f"'{test_data['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{test_data['public_key_hash_non_unique']}'",
-        'startProTxHash': f"'{test_data['pro_tx_hash']}'",
-        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{test_data['token_id']}'",
-        'tokenIds': f"['{test_data['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{test_data['token_id']}']",
-        'documentType': f"'{test_data['document_type']}'",
-        'documentId': f"'{test_data['document_id']}'",
-        'label': f"'{test_data['username']}'",
-        'name': f"'{test_data['username']}'",
+        'id': f"'{TESTNET_TEST_DATA['data_contract_history_id']}'" if 'getDataContractHistory' in query_key else f"'{TESTNET_TEST_DATA['data_contract_id']}'" if 'getDataContract' in query_key else f"'{TESTNET_TEST_DATA['identity_id']}'",
+        'identityId': f"'{TESTNET_TEST_DATA['specialized_balance_id']}'" if 'getPrefundedSpecializedBalance' in query_key else "'5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{TESTNET_TEST_DATA['identity_id']}'",
+        'ids': f"['{TESTNET_TEST_DATA['data_contract_id']}', '{TESTNET_TEST_DATA['token_contract_id']}']" if 'getDataContracts' in query_key else f"['{TESTNET_TEST_DATA['pro_tx_hash']}']" if 'Evonodes' in query_key else f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'identitiesIds': f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'identityIds': f"['{TESTNET_TEST_DATA['identity_id']}']",
+        'contractId': f"'{TESTNET_TEST_DATA['group_contract_id']}'" if ('group' in query_key.lower() or 'Group' in query_key) else f"'{TESTNET_TEST_DATA['token_contract_id']}'" if ('token' in query_key.lower() or 'Token' in query_key) and 'TokenBalance' not in query_key and 'TokenInfo' not in query_key else f"'{TESTNET_TEST_DATA['contract_id']}'",
+        'dataContractId': "'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta'" if 'getTokenContractInfo' in query_key else f"'{TESTNET_TEST_DATA['data_contract_id']}'",
+        'publicKeyHash': f"'{TESTNET_TEST_DATA['public_key_hash_unique']}'" if 'ByPublicKeyHash' in query_key and 'NonUnique' not in query_key else f"'{TESTNET_TEST_DATA['public_key_hash_non_unique']}'",
+        'startProTxHash': f"'{TESTNET_TEST_DATA['pro_tx_hash']}'",
+        'tokenId': "'HEv1AYWQfwCffXQgmuzmzyzUo9untRTmVr67n4e4PSWa'" if 'getTokenPerpetualDistributionLastClaim' in query_key else f"'{TESTNET_TEST_DATA['token_id']}'",
+        'tokenIds': f"['{TESTNET_TEST_DATA['token_id']}', 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenStatuses' in query_key else "['H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy']" if 'getTokenDirectPurchasePrices' in query_key else f"['{TESTNET_TEST_DATA['token_id']}']",
+        'documentType': f"'{TESTNET_TEST_DATA['document_type']}'",
+        'documentId': f"'{TESTNET_TEST_DATA['document_id']}'",
+        'label': f"'{TESTNET_TEST_DATA['username']}'",
+        'name': f"'{TESTNET_TEST_DATA['username']}'",
         'prefix': "'ali'",
-        'epoch': '1000' if 'getEpochsInfo' in query_key else test_data['epoch'],
+        'epoch': '1000' if 'getEpochsInfo' in query_key else TESTNET_TEST_DATA['epoch'],
         'keyRequestType': "'all'",
         'limit': '10',
         'count': '100',
@@ -79,9 +134,9 @@ def generate_example_code(query_key, inputs):
         'resultType': "'documents'",
         'documentTypeName': "'domain'",
         'indexName': "'parentNameAndLabel'",
-        'contestantId': f"'{test_data['identity_id']}'",
+        'contestantId': f"'{TESTNET_TEST_DATA['identity_id']}'",
         'amount': '1000000',
-        'recipientId': f"'{test_data['identity_id']}'",
+        'recipientId': f"'{TESTNET_TEST_DATA['identity_id']}'",
         'toAddress': "'yNPbcFfabtNmmxKdGwhHomdYfVs6gikbPf'",
         'where': 'JSON.stringify([["normalizedParentDomainName", "==", "dash"]])',
         'orderBy': 'JSON.stringify([["normalizedLabel", "asc"]])',
@@ -94,7 +149,7 @@ def generate_example_code(query_key, inputs):
         'startActionIdIncluded': 'false',
         'actionId': "'6XJzL6Qb8Zhwxt4HFwh8NAn7q1u4dwdoUf8EmgzDudFZ'",
         'path': "['96']",
-        'keys': f"['{test_data['identity_id']}']",
+        'keys': f"['{TESTNET_TEST_DATA['identity_id']}']",
         'stateTransitionHash': "'0000000000000000000000000000000000000000000000000000000000000000'",
         'allowIncludeLockedAndAbstainingVoteTally': 'null',
         'startAtValue': 'null',
@@ -110,10 +165,10 @@ def generate_example_code(query_key, inputs):
     # Handle special cases for functions with structured parameters
     if query_key == 'getGroupInfos':
         # getGroupInfos expects: sdk, contractId, startAtInfo (object or null), count
-        params = [f"'{test_data['group_contract_id']}'", "null", "100"]
+        params = [f"'{TESTNET_TEST_DATA['group_contract_id']}'", "null", "100"]
     elif query_key == 'getGroupActions':
         # getGroupActions expects: sdk, contractId, groupContractPosition, status, startAtInfo (object or null), count
-        params = [f"'{test_data['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
+        params = [f"'{TESTNET_TEST_DATA['group_contract_id']}'", "0", "'ACTIVE'", "null", "100"]
     elif query_key == 'getDataContractHistory':
         # getDataContractHistory expects: sdk, id, limit, offset, startAtMs
         # Use the specific contract ID for getDataContractHistory examples
@@ -145,61 +200,8 @@ def generate_example_code(query_key, inputs):
                 else:
                     params.append('""')
     
-    # Handle special function name mappings
-    func_name_map = {
-        'getIdentity': 'identity_fetch',
-        'getIdentityKeys': 'get_identity_keys',
-        'getIdentitiesContractKeys': 'get_identities_contract_keys',
-        'getIdentityNonce': 'get_identity_nonce',
-        'getIdentityContractNonce': 'get_identity_contract_nonce',
-        'getIdentityBalance': 'get_identity_balance',
-        'getIdentitiesBalances': 'get_identities_balances',
-        'getIdentityBalanceAndRevision': 'get_identity_balance_and_revision',
-        'getIdentityByPublicKeyHash': 'get_identity_by_public_key_hash',
-        'getIdentityByNonUniquePublicKeyHash': 'get_identity_by_non_unique_public_key_hash',
-        'getDataContract': 'data_contract_fetch',
-        'getDataContractHistory': 'get_data_contract_history',
-        'getDataContracts': 'get_data_contracts',
-        'getDocuments': 'get_documents',
-        'getDocument': 'get_document',
-        'getDpnsUsername': 'get_dpns_usernames',
-        'dpnsCheckAvailability': 'dpns_is_name_available',
-        'dpnsResolve': 'dpns_resolve_name',
-        'dpnsSearch': 'get_documents',
-        'getContestedResources': 'get_contested_resources',
-        'getContestedResourceVoteState': 'get_contested_resource_vote_state',
-        'getContestedResourceVotersForIdentity': 'get_contested_resource_voters_for_identity',
-        'getContestedResourceIdentityVotes': 'get_contested_resource_identity_votes',
-        'getVotePollsByEndDate': 'get_vote_polls_by_end_date',
-        'getProtocolVersionUpgradeState': 'get_protocol_version_upgrade_state',
-        'getProtocolVersionUpgradeVoteStatus': 'get_protocol_version_upgrade_vote_status',
-        'getEpochsInfo': 'get_epochs_info',
-        'getCurrentEpoch': 'get_current_epoch',
-        'getFinalizedEpochInfos': 'get_finalized_epoch_infos',
-        'getEvonodesProposedEpochBlocksByIds': 'get_evonodes_proposed_epoch_blocks_by_ids',
-        'getEvonodesProposedEpochBlocksByRange': 'get_evonodes_proposed_epoch_blocks_by_range',
-        'getIdentityTokenBalances': 'get_identity_token_balances',
-        'getIdentitiesTokenBalances': 'get_identities_token_balances',
-        'getIdentityTokenInfos': 'get_identity_token_infos',
-        'getIdentitiesTokenInfos': 'get_identities_token_infos',
-        'getTokenStatuses': 'get_token_statuses',
-        'getTokenDirectPurchasePrices': 'get_token_direct_purchase_prices',
-        'getTokenContractInfo': 'get_token_contract_info',
-        'getTokenPerpetualDistributionLastClaim': 'get_token_perpetual_distribution_last_claim',
-        'getTokenTotalSupply': 'get_token_total_supply',
-        'getGroupInfo': 'get_group_info',
-        'getGroupInfos': 'get_group_infos',
-        'getGroupActions': 'get_group_actions',
-        'getGroupActionSigners': 'get_group_action_signers',
-        'getStatus': 'get_status',
-        'getCurrentQuorumsInfo': 'get_current_quorums_info',
-        'getPrefundedSpecializedBalance': 'get_prefunded_specialized_balance',
-        'getTotalCreditsInPlatform': 'get_total_credits_in_platform',
-        'getPathElements': 'get_path_elements',
-        'waitForStateTransitionResult': 'wait_for_state_transition_result'
-    }
-    
-    func_name = func_name_map.get(query_key, query_key)
+    # Use module-level function name mapping
+    func_name = FUNCTION_NAME_MAP.get(query_key, query_key)
     
     # Add sdk as first parameter for all functions
     all_params = ['sdk'] + params
@@ -388,550 +390,26 @@ def generate_path_elements_info():
                     </ul>
                 </div>'''
 
-def generate_docs_css():
-    """Generate CSS styles for docs.html"""
-    return '''body {
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-    line-height: 1.6;
-    color: #333;
-    margin: 0;
-    padding: 0;
-    background-color: #f5f5f5;
-    display: flex;
-}
 
-/* Sidebar styles */
-.sidebar {
-    width: 280px;
-    background-color: white;
-    box-shadow: 2px 0 4px rgba(0,0,0,0.1);
-    position: fixed;
-    height: 100vh;
-    overflow-y: auto;
-    padding: 20px;
-}
-
-.sidebar h2 {
-    font-size: 1.2em;
-    margin-bottom: 10px;
-    color: #2c3e50;
-}
-
-.sidebar ul {
-    list-style: none;
-    padding: 0;
-    margin: 0 0 20px 0;
-}
-
-.sidebar li {
-    margin-bottom: 5px;
-}
-
-.sidebar a {
-    color: #34495e;
-    text-decoration: none;
-    font-size: 0.9em;
-    display: block;
-    padding: 5px 10px;
-    border-radius: 3px;
-    transition: background-color 0.2s;
-}
-
-.sidebar a:hover {
-    background-color: #ecf0f1;
-    color: #2c3e50;
-}
-
-.sidebar .section-header {
-    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-    color: white;
-    padding: 12px 20px;
-    margin: 20px -20px 15px -20px;
-    font-weight: 600;
-    font-size: 0.9em;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    position: relative;
-    overflow: hidden;
-}
-
-.sidebar .section-header:before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(255, 255, 255, 0.1);
-    transform: translateX(-100%);
-    transition: transform 0.6s ease;
-}
-
-.sidebar .section-header:hover:before {
-    transform: translateX(0);
-}
-
-.sidebar .section-header.state-transitions {
-    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-}
-
-.sidebar .category {
-    font-weight: 600;
-    color: #34495e;
-    margin-top: 15px;
-    margin-bottom: 8px;
-    font-size: 0.85em;
-    padding-left: 10px;
-    border-left: 3px solid #3498db;
-}
-
-/* Search box styles */
-.search-container {
-    padding: 0 20px 20px 20px;
-    border-bottom: 1px solid #ecf0f1;
-}
-
-.search-input {
-    width: 100%;
-    padding: 8px 12px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    font-size: 0.9em;
-    outline: none;
-    transition: border-color 0.2s;
-}
-
-.search-input:focus {
-    border-color: #3498db;
-}
-
-.search-input::placeholder {
-    color: #95a5a6;
-}
-
-.sidebar li.hidden {
-    display: none;
-}
-
-.sidebar .no-results {
-    text-align: center;
-    color: #95a5a6;
-    padding: 20px;
-    font-size: 0.9em;
-    display: none;
-}
-
-/* Main content styles */
-.main-content {
-    margin-left: 320px;
-    padding: 20px 40px;
-    max-width: 900px;
-}
-
-h1, h2, h3, h4 {
-    color: #2c3e50;
-}
-
-h1 {
-    border-bottom: 3px solid #3498db;
-    padding-bottom: 10px;
-}
-
-h2 {
-    border-bottom: 2px solid #ecf0f1;
-    padding-bottom: 8px;
-    margin-top: 30px;
-}
-
-h3 {
-    color: #34495e;
-    margin-top: 25px;
-}
-
-.nav {
-    background-color: white;
-    padding: 15px;
-    border-radius: 8px;
-    margin-bottom: 30px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.nav ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-.nav li {
-    display: inline-block;
-    margin-right: 20px;
-}
-
-.nav a {
-    color: #3498db;
-    text-decoration: none;
-    font-weight: 500;
-}
-
-.nav a:hover {
-    text-decoration: underline;
-}
-
-.category {
-    background-color: white;
-    padding: 20px;
-    border-radius: 8px;
-    margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-.operation {
-    border-left: 4px solid #3498db;
-    padding-left: 20px;
-    margin-bottom: 30px;
-}
-
-.description {
-    color: #7f8c8d;
-    font-style: italic;
-    margin-bottom: 15px;
-}
-
-.parameters {
-    background-color: #ecf0f1;
-    padding: 15px;
-    border-radius: 5px;
-    margin-top: 10px;
-}
-
-.parameter {
-    margin-bottom: 10px;
-    padding: 5px 0;
-    border-bottom: 1px solid #bdc3c7;
-}
-
-.parameter:last-child {
-    border-bottom: none;
-}
-
-.param-name {
-    font-weight: bold;
-    color: #2c3e50;
-}
-
-.param-type {
-    color: #e74c3c;
-    font-family: monospace;
-    font-size: 0.9em;
-}
-
-.param-required {
-    color: #e74c3c;
-    font-weight: bold;
-}
-
-.param-optional {
-    color: #95a5a6;
-}
-
-.code-example {
-    background-color: #2c3e50;
-    color: #ecf0f1;
-    padding: 15px;
-    border-radius: 5px;
-    overflow-x: auto;
-    font-family: monospace;
-    margin-top: 10px;
-}
-
-/* Interactive example styles */
-.example-container {
-    background-color: #f8f9fa;
-    border: 1px solid #dee2e6;
-    border-radius: 5px;
-    padding: 15px;
-    margin-top: 15px;
-}
-
-.example-code {
-    background-color: #2c3e50;
-    color: #ecf0f1;
-    padding: 10px;
-    border-radius: 3px;
-    font-family: monospace;
-    font-size: 0.9em;
-    margin-bottom: 10px;
-    position: relative;
-    white-space: pre-wrap;
-    overflow-x: auto;
-}
-
-.run-button {
-    background-color: #3498db;
-    color: white;
-    border: none;
-    padding: 8px 16px;
-    border-radius: 3px;
-    cursor: pointer;
-    font-weight: 500;
-    transition: background-color 0.2s;
-}
-
-.run-button:hover {
-    background-color: #2980b9;
-}
-
-.run-button:disabled {
-    background-color: #95a5a6;
-    cursor: not-allowed;
-}
-
-.example-result {
-    margin-top: 10px;
-    padding: 10px;
-    border-radius: 3px;
-    font-family: monospace;
-    font-size: 0.85em;
-    display: none;
-}
-
-.example-result.success {
-    background-color: #d4edda;
-    border: 1px solid #c3e6cb;
-    color: #155724;
-}
-
-.example-result.error {
-    background-color: #f8d7da;
-    border: 1px solid #f5c6cb;
-    color: #721c24;
-}
-
-.loading {
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border: 3px solid rgba(255,255,255,.3);
-    border-radius: 50%;
-    border-top-color: #fff;
-    animation: spin 1s ease-in-out infinite;
-}
-
-@keyframes spin {
-    to { transform: rotate(360deg); }
-}
-
-.back-to-top {
-    position: fixed;
-    bottom: 20px;
-    right: 20px;
-    background-color: #3498db;
-    color: white;
-    padding: 10px 15px;
-    border-radius: 5px;
-    text-decoration: none;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-}
-
-.back-to-top:hover {
-    background-color: #2980b9;
-}
-
-.info-note {
-    background-color: #e3f2fd;
-    color: #1565c0;
-    padding: 12px 16px;
-    border-radius: 4px;
-    font-size: 0.9em;
-    margin: 10px 0;
-    border-left: 4px solid #1976d2;
-}
-
-.path-info {
-    background-color: #f5f7fa;
-    border: 1px solid #e1e5eb;
-    border-radius: 4px;
-    padding: 15px;
-    margin-top: 15px;
-}
-
-.path-info h6 {
-    margin-top: 15px;
-    margin-bottom: 10px;
-    color: #2c3e50;
-    font-size: 0.95em;
-}
-
-.path-info h6:first-child {
-    margin-top: 0;
-}
-
-.path-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-bottom: 15px;
-}
-
-.path-table th {
-    background-color: #e9ecef;
-    padding: 8px 12px;
-    text-align: left;
-    font-weight: 600;
-    border: 1px solid #dee2e6;
-}
-
-.path-table td {
-    padding: 8px 12px;
-    border: 1px solid #dee2e6;
-}
-
-.path-table code {
-    background-color: #fff;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: monospace;
-}
-
-.path-info ul {
-    margin: 0;
-    padding-left: 25px;
-}
-
-.path-info li {
-    margin-bottom: 5px;
-    line-height: 1.6;
-}
-
-.path-info li code {
-    background-color: #fff;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-family: monospace;
-}
-
-/* Preloader styles */
-#preloader {
-    display: none;
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.8);
-    z-index: 9999;
-}
-
-.preloader--visible {
-    display: flex;
-    justify-content: center;
-    align-items: center;
-}
-
-.preloader-content {
-    text-align: center;
-    background: white;
-    padding: 30px 50px;
-    border-radius: 10px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-}
-
-.preloader-text {
-    font-size: 16px;
-    margin-bottom: 15px;
-    color: #333;
-}
-
-.preloader-progress {
-    margin-top: 20px;
-}
-
-.progress-bar {
-    width: 300px;
-    height: 20px;
-    background-color: #f0f0f0;
-    border-radius: 10px;
-    overflow: hidden;
-    margin-bottom: 10px;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, #4CAF50, #45a049);
-    width: 0%;
-    transition: width 0.3s ease;
-}
-
-.progress-percent {
-    font-size: 14px;
-    font-weight: bold;
-    color: #333;
-}'''
-
-def generate_user_docs_html(query_defs, transition_defs):
-    """Generate user-friendly HTML documentation"""
+def generate_docs_javascript():
+    """Generate the main JavaScript module for docs.html"""
     
-    html_content = '''<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dash Platform WASM JS SDK Documentation</title>
-    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
-    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
-    <link rel="stylesheet" href="docs.css">
-    <script type="module">
-        import init, { 
-            WasmSdkBuilder,
-            identity_fetch,
-            get_identity_keys,
-            get_identity_nonce,
-            get_identity_contract_nonce,
-            get_identity_balance,
-            get_identities_balances,
-            get_identity_balance_and_revision,
-            get_identity_by_public_key_hash,
-            get_identity_by_non_unique_public_key_hash,
-            get_identities_contract_keys,
-            get_identity_token_balances,
-            get_identities_token_balances,
-            get_identity_token_infos,
-            get_identities_token_infos,
-            data_contract_fetch,
-            get_data_contract_history,
-            get_data_contracts,
-            get_documents,
-            get_document,
-            get_dpns_usernames,
-            dpns_is_name_available,
-            dpns_resolve_name,
-            get_contested_resources,
-            get_contested_resource_vote_state,
-            get_contested_resource_voters_for_identity,
-            get_contested_resource_identity_votes,
-            get_vote_polls_by_end_date,
-            get_protocol_version_upgrade_state,
-            get_protocol_version_upgrade_vote_status,
-            get_epochs_info,
-            get_current_epoch,
-            get_finalized_epoch_infos,
-            get_evonodes_proposed_epoch_blocks_by_ids,
-            get_evonodes_proposed_epoch_blocks_by_range,
-            get_token_statuses,
-            get_token_direct_purchase_prices,
-            get_token_contract_info,
-            get_token_perpetual_distribution_last_claim,
-            get_token_total_supply,
-            get_group_info,
-            get_group_infos,
-            get_group_actions,
-            get_group_action_signers,
-            get_status,
-            get_current_quorums_info,
-            get_prefunded_specialized_balance,
-            get_total_credits_in_platform,
-            get_path_elements,
-            wait_for_state_transition_result,
-            prefetch_trusted_quorums_testnet
+    # Generate function lists dynamically from FUNCTION_NAME_MAP
+    wasm_functions = list(dict.fromkeys(FUNCTION_NAME_MAP.values()))
+    
+    # Additional functions not in FUNCTION_NAME_MAP
+    additional_functions = ['prefetch_trusted_quorums_testnet']
+    
+    # For imports: init is default export, others are named exports
+    named_imports = ['WasmSdkBuilder', *wasm_functions, *additional_functions]
+    named_imports_str = ',\n            '.join(named_imports)
+    
+    # For window.wasmFunctions: only include the actual functions (not init/WasmSdkBuilder)
+    window_functions = wasm_functions  # Note: excluding prefetch_trusted_quorums_testnet from window object
+    window_assignments = ',\n            '.join(window_functions)
+    
+    return '''        import init, { 
+            ''' + named_imports_str + '''
         } from './pkg/wasm_sdk.js';
         
         let sdk = null;
@@ -939,55 +417,7 @@ def generate_user_docs_html(query_defs, transition_defs):
         
         // Make functions available globally for the examples
         window.wasmFunctions = {
-            identity_fetch,
-            get_identity_keys,
-            get_identity_nonce,
-            get_identity_contract_nonce,
-            get_identity_balance,
-            get_identities_balances,
-            get_identity_balance_and_revision,
-            get_identity_by_public_key_hash,
-            get_identity_by_non_unique_public_key_hash,
-            get_identities_contract_keys,
-            get_identity_token_balances,
-            get_identities_token_balances,
-            get_identity_token_infos,
-            get_identities_token_infos,
-            data_contract_fetch,
-            get_data_contract_history,
-            get_data_contracts,
-            get_documents,
-            get_document,
-            get_dpns_usernames,
-            dpns_is_name_available,
-            dpns_resolve_name,
-            get_contested_resources,
-            get_contested_resource_vote_state,
-            get_contested_resource_voters_for_identity,
-            get_contested_resource_identity_votes,
-            get_vote_polls_by_end_date,
-            get_protocol_version_upgrade_state,
-            get_protocol_version_upgrade_vote_status,
-            get_epochs_info,
-            get_current_epoch,
-            get_finalized_epoch_infos,
-            get_evonodes_proposed_epoch_blocks_by_ids,
-            get_evonodes_proposed_epoch_blocks_by_range,
-            get_token_statuses,
-            get_token_direct_purchase_prices,
-            get_token_contract_info,
-            get_token_perpetual_distribution_last_claim,
-            get_token_total_supply,
-            get_group_info,
-            get_group_infos,
-            get_group_actions,
-            get_group_action_signers,
-            get_status,
-            get_current_quorums_info,
-            get_prefunded_specialized_balance,
-            get_total_credits_in_platform,
-            get_path_elements,
-            wait_for_state_transition_result
+            ''' + window_assignments + '''
         };
         
         // Progress update function
@@ -1216,120 +646,12 @@ def generate_user_docs_html(query_defs, transition_defs):
                 // Show/hide no results message
                 noResults.style.display = hasResults ? 'none' : 'block';
             });
-        });
-    </script>
-</head>
-<body>
-    <!-- Preloader -->
-    <div id="preloader">
-        <div class="preloader-content">
-            <div class="preloader-text">Loading WASM module...</div>
-            <div class="preloader-progress">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="progress-percent" id="progressPercent">0%</div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Sidebar -->
-    <div class="sidebar">
-        <h2>Table of Contents</h2>
-        <div class="search-container">
-            <input type="text" id="sidebar-search" class="search-input" placeholder="Search queries and transitions...">
-        </div>
-        <div id="no-results" class="no-results">No results found</div>
-        <ul>
-            <li><a href="#overview">Overview</a></li>
-        </ul>
-        
-        <div class="section-header">Queries</div>
-        <ul>
-'''
-    
-    # Generate sidebar links for queries
-    html_content += generate_sidebar_entries(query_defs, 'query')
-    
-    html_content += '''        </ul>
-        
-        <div class="section-header state-transitions">State Transitions</div>
-        <ul>
-'''
-    
-    # Generate sidebar links for transitions
-    html_content += generate_sidebar_entries(transition_defs, 'transition')
-    
-    html_content += '''        </ul>
-    </div>
-    
-    <!-- Main Content -->
-    <div class="main-content">
-        <nav class="nav">
-            <ul>
-                <li><a href="index.html">← Back to SDK</a></li>
-                <li><a href="AI_REFERENCE.md">AI Reference</a></li>
-                <li><a href="https://github.com/dashpay/platform" target="_blank">GitHub</a></li>
-            </ul>
-        </nav>
-        
-        <h1>Dash Platform WASM JS SDK Documentation</h1>
-        
-        <div class="category" id="overview">
-            <h2>Overview</h2>
-            <p>The Dash Platform WASM JS SDK provides a WebAssembly-based interface for interacting with the Dash Platform from JavaScript and TypeScript applications. 
-            This documentation covers all available queries and state transitions.</p>
-            
-            <h3>Key Concepts</h3>
-            <ul>
-                <li><strong>Queries</strong>: Read-only operations that fetch data from the platform</li>
-                <li><strong>State Transitions</strong>: Write operations that modify state on the platform</li>
-                <li><strong>Proofs</strong>: Cryptographic proofs can be requested for most queries to verify data authenticity</li>
-                <li><strong>Credits</strong>: The platform's unit of account for paying transaction fees</li>
-                <li><strong>Default Limits</strong>: All queries with optional limit parameters default to a maximum of 100 items if not specified</li>
-            </ul>
-            
-            <p><strong>Note:</strong> All examples below can be run directly in your browser using the testnet. Click the "Run" button to execute any example.</p>
-            
-            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-top: 15px;">
-                <strong>Test Identity:</strong> All examples use the testnet identity <code style="background-color: #fff; padding: 2px 6px; border-radius: 3px;">5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</code>
-                <br>This is a known identity with activity on testnet that you can use for testing.
-            </div>
-        </div>
-        
-        <h2 id="queries">Queries</h2>
-'''
-    
-    # Add query documentation
-    html_content += generate_operation_docs(query_defs, 'query', 'query')
-    
-    # Add state transition documentation
-    html_content += '<h2 id="transitions">State Transitions</h2>'
-    html_content += generate_operation_docs(transition_defs, 'transition', 'transition')
-    
-    # Close main content div
-    html_content += '''
-        <a href="#" class="back-to-top">↑ Top</a>
-    </div>
-    
-    <script>
-        // Smooth scrolling for anchor links
-        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-            anchor.addEventListener('click', function (e) {
-                e.preventDefault();
-                const target = document.querySelector(this.getAttribute('href'));
-                if (target) {
-                    target.scrollIntoView({
-                        behavior: 'smooth',
-                        block: 'start'
-                    });
-                }
-            });
-        });
-    </script>
-    
-    <script>
-        // Hidden test runner feature
+        });'''
+
+
+def generate_test_runner_javascript():
+    """Generate the test runner JavaScript for the hidden testing feature"""
+    return '''        // Hidden test runner feature
         
         // Create the test runner UI
         const testRunnerHTML = `
@@ -1530,7 +852,158 @@ def generate_user_docs_html(query_defs, transition_defs):
                     button.textContent = 'Run';
                 }
             };
-        }
+        }'''
+
+def generate_html_head():
+    """Generate HTML head section with meta tags and scripts"""
+    return '''    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dash Platform WASM JS SDK Documentation</title>
+    <link rel="icon" type="image/svg+xml" href="https://media.dash.org/wp-content/uploads/blue-d.svg">
+    <link rel="alternate icon" type="image/png" href="https://media.dash.org/wp-content/uploads/blue-d-250.png">
+    <link rel="stylesheet" href="docs.css">
+    <script type="module">
+''' + generate_docs_javascript() + '''
+    </script>'''
+
+
+def generate_preloader_html():
+    """Generate preloader HTML section"""
+    return '''    <!-- Preloader -->
+    <div id="preloader">
+        <div class="preloader-content">
+            <div class="preloader-text">Loading WASM module...</div>
+            <div class="preloader-progress">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="progress-percent" id="progressPercent">0%</div>
+            </div>
+        </div>
+    </div>'''
+
+
+def generate_sidebar_html(query_defs, transition_defs):
+    """Generate sidebar HTML section with table of contents"""
+    sidebar_html = '''    <!-- Sidebar -->
+    <div class="sidebar">
+        <h2>Table of Contents</h2>
+        <div class="search-container">
+            <input type="text" id="sidebar-search" class="search-input" placeholder="Search queries and transitions...">
+        </div>
+        <div id="no-results" class="no-results">No results found</div>
+        <ul>
+            <li><a href="#overview">Overview</a></li>
+        </ul>
+        
+        <div class="section-header">Queries</div>
+        <ul>
+'''
+    
+    # Generate sidebar links for queries
+    sidebar_html += generate_sidebar_entries(query_defs, 'query')
+    
+    sidebar_html += '''        </ul>
+        
+        <div class="section-header state-transitions">State Transitions</div>
+        <ul>
+'''
+    
+    # Generate sidebar links for transitions
+    sidebar_html += generate_sidebar_entries(transition_defs, 'transition')
+    
+    sidebar_html += '''        </ul>
+    </div>'''
+    
+    return sidebar_html
+
+
+def generate_main_content_html(query_defs, transition_defs):
+    """Generate main content HTML section with documentation"""
+    main_content_html = '''    <!-- Main Content -->
+    <div class="main-content">
+        <nav class="nav">
+            <ul>
+                <li><a href="index.html">← Back to SDK</a></li>
+                <li><a href="AI_REFERENCE.md">AI Reference</a></li>
+                <li><a href="https://github.com/dashpay/platform" target="_blank">GitHub</a></li>
+            </ul>
+        </nav>
+        
+        <h1>Dash Platform WASM JS SDK Documentation</h1>
+        
+        <div class="category" id="overview">
+            <h2>Overview</h2>
+            <p>The Dash Platform WASM JS SDK provides a WebAssembly-based interface for interacting with the Dash Platform from JavaScript and TypeScript applications. 
+            This documentation covers all available queries and state transitions.</p>
+            
+            <h3>Key Concepts</h3>
+            <ul>
+                <li><strong>Queries</strong>: Read-only operations that fetch data from the platform</li>
+                <li><strong>State Transitions</strong>: Write operations that modify state on the platform</li>
+                <li><strong>Proofs</strong>: Cryptographic proofs can be requested for most queries to verify data authenticity</li>
+                <li><strong>Credits</strong>: The platform's unit of account for paying transaction fees</li>
+                <li><strong>Default Limits</strong>: All queries with optional limit parameters default to a maximum of 100 items if not specified</li>
+            </ul>
+            
+            <p><strong>Note:</strong> All examples below can be run directly in your browser using the testnet. Click the "Run" button to execute any example.</p>
+            
+            <div style="background-color: #e3f2fd; padding: 15px; border-radius: 5px; margin-top: 15px;">
+                <strong>Test Identity:</strong> All examples use the testnet identity <code style="background-color: #fff; padding: 2px 6px; border-radius: 3px;">5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk</code>
+                <br>This is a known identity with activity on testnet that you can use for testing.
+            </div>
+        </div>
+        
+        <h2 id="queries">Queries</h2>
+'''
+    
+    # Add query documentation
+    main_content_html += generate_operation_docs(query_defs, 'query', 'query')
+    
+    # Add state transition documentation
+    main_content_html += '<h2 id="transitions">State Transitions</h2>'
+    main_content_html += generate_operation_docs(transition_defs, 'transition', 'transition')
+    
+    # Close main content div
+    main_content_html += '''
+        <a href="#" class="back-to-top">↑ Top</a>
+    </div>'''
+    
+    return main_content_html
+
+def generate_user_docs_html(query_defs, transition_defs):
+    """Generate user-friendly HTML documentation"""
+    
+    html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+''' + generate_html_head() + '''
+</head>
+<body>
+''' + generate_preloader_html() + '''
+    
+''' + generate_sidebar_html(query_defs, transition_defs) + '''
+    
+''' + generate_main_content_html(query_defs, transition_defs) + '''
+    
+    <script>
+        // Smooth scrolling for anchor links
+        document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+            anchor.addEventListener('click', function (e) {
+                e.preventDefault();
+                const target = document.querySelector(this.getAttribute('href'));
+                if (target) {
+                    target.scrollIntoView({
+                        behavior: 'smooth',
+                        block: 'start'
+                    });
+                }
+            });
+        });
+    </script>
+    
+    <script>
+''' + generate_test_runner_javascript() + '''
     </script>
 </body>
 </html>
@@ -1859,14 +1332,6 @@ def main():
     with open(docs_file, 'w', encoding='utf-8') as f:
         f.write(user_docs_html)
     print(f"Written to {docs_file}")
-    
-    # Generate CSS file
-    print("Generating CSS file (docs.css)...")
-    docs_css = generate_docs_css()
-    css_file = script_dir / 'docs.css'
-    with open(css_file, 'w', encoding='utf-8') as f:
-        f.write(docs_css)
-    print(f"Written to {css_file}")
     
     # Generate AI reference
     print("\nGenerating AI reference (AI_REFERENCE.md)...")
