@@ -25,6 +25,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
+      js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
       rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
     steps:
@@ -37,6 +38,11 @@ jobs:
         id: filter-js
         with:
           filters: .github/package-filters/js-packages.yml
+
+      - uses: dorny/paths-filter@v2
+        id: filter-js-direct
+        with:
+          filters: .github/package-filters/js-packages-direct.yml
 
       - uses: dorny/paths-filter@v2
         id: filter-rs
@@ -129,6 +135,7 @@ jobs:
       package: ${{ matrix.js-package }}
       test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
+      direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
 
   js-deps-versions:
     name: JS dependency versions check
