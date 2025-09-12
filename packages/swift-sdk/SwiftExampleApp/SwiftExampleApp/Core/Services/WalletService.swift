@@ -496,14 +496,13 @@ extension WalletService: SPVClientDelegate {
         let stage = progress.stage
         let overall = progress.overallProgress
         let stageRawValue = stage.rawValue
+        let mappedStage = WalletService.mapSyncStage(stage)
 
         Task { @MainActor in
             let base = Double(startHeight)
             let numer = max(0.0, Double(currentHeight) - base)
             let denom = max(1.0, Double(targetHeight) - base)
             let headerPct = min(1.0, max(0.0, numer / denom))
-            
-            let mappedStage = WalletService.mapSyncStage(stage)
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
