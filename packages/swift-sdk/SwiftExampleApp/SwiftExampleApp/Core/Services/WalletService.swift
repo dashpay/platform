@@ -494,14 +494,16 @@ extension WalletService: SPVClientDelegate {
         let targetHeight = progress.targetHeight
         let rate = progress.rate
         let stage = progress.stage
-        let mappedStage = WalletService.mapSyncStage(stage)
         let overall = progress.overallProgress
+        let stageRawValue = stage.rawValue
 
         Task { @MainActor in
             let base = Double(startHeight)
             let numer = max(0.0, Double(currentHeight) - base)
             let denom = max(1.0, Double(targetHeight) - base)
             let headerPct = min(1.0, max(0.0, numer / denom))
+            
+            let mappedStage = WalletService.mapSyncStage(stage)
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
@@ -515,7 +517,7 @@ extension WalletService: SPVClientDelegate {
             )
 
             if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-                print("📊 Sync progress: \(stage.rawValue) - \(Int(overall * 100))%")
+                print("📊 Sync progress: \(stageRawValue) - \(Int(overall * 100))%")
             }
         }
 
