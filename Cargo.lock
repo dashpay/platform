@@ -5380,7 +5380,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dash-notify"
-version = "0.1.0"
+version = "2.1.0-dev.3"
 dependencies = [
  "dapi-grpc",
  "futures",

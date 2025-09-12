@@ -42,7 +42,7 @@ pub struct EventMux {
     producers: Arc<Mutex<Vec<Option<CommandSender>>>>,
     rr_counter: Arc<AtomicUsize>,
     tasks: Arc<Mutex<tokio::task::JoinSet<()>>>,
-    subscriptions: Arc<std::sync::Mutex<BTreeMap<String, SubscriptionInfo>>>,
+    subscriptions: Arc<std::sync::Mutex<BTreeMap<SubscriptionKey, SubscriptionInfo>>>,
     next_subscriber_id: Arc<AtomicUsize>,
 }
 
@@ -53,6 +53,38 @@ impl Default for EventMux {
 }
 
 impl EventMux {
+    async fn cleanup_after_subscriber_sink_closed(
+        &self,
+        key: SubscriptionKey,
+        handle_id: u64,
+    ) {
+        // Remove mapping and fetch assigned producer index if any
+        let assigned = {
+            let mut subs = self.subscriptions.lock().unwrap();
+            subs.remove(&key).and_then(|info| info.assigned_producer)
+        };
+
+        // Remove the bus subscription (idempotent)
+        self.bus.remove_subscription(handle_id).await;
+
+        // Notify producer upstream
+        if let Some(idx) = assigned {
+            if let Some(tx) = self.get_producer_tx(idx).await {
+                let cmd = PlatformEventsCommand {
+                    version: Some(CmdVersion::V0(
+                        dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
+                            command: Some(Cmd::Remove(
+                                dapi_grpc::platform::v0::RemoveSubscriptionV0 {
+                                    client_subscription_id: key.id.clone(),
+                                },
+                            )),
+                        },
+                    )),
+                };
+                let _ = tx.send(Ok(cmd));
+            }
+        }
+    }
     /// Create a new, empty EventMux without producers or subscribers.
     pub fn new() -> Self {
         Self {
@@ -163,13 +195,50 @@ impl EventMux {
                         let id = add.client_subscription_id.clone();
                         tracing::debug!(subscriber_id, subscription_id = %id, "event_mux: adding subscription");
 
+                        // If a subscription with this id already exists for this subscriber,
+                        // remove it first to avoid duplicate fan-out and leaked handles.
+                        if let Some((prev_sub_id, prev_handle_id, prev_assigned)) = {
+                            let subs = self.subscriptions.lock().unwrap();
+                            subs.get(&SubscriptionKey { subscriber_id, id: id.clone() })
+                                .map(|info| (info.subscriber_id, info.handle.id(), info.assigned_producer))
+                        } {
+                            if prev_sub_id == subscriber_id {
+                                tracing::warn!(
+                                    subscriber_id,
+                                    subscription_id = %id,
+                                    "event_mux: duplicate Add detected, removing previous subscription first"
+                                );
+                                // Remove previous bus subscription
+                                self.bus.remove_subscription(prev_handle_id).await;
+                                // Notify previously assigned producer about removal
+                                if let Some(prev_idx) = prev_assigned {
+                                    if let Some(tx) = self.get_producer_tx(prev_idx).await {
+                                        let remove_cmd = PlatformEventsCommand {
+                                            version: Some(CmdVersion::V0(
+                                                dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
+                                                    command: Some(Cmd::Remove(
+                                                        dapi_grpc::platform::v0::RemoveSubscriptionV0 {
+                                                            client_subscription_id: id.clone(),
+                                                        },
+                                                    )),
+                                                },
+                                            )),
+                                        };
+                                        let _ = tx.send(Ok(remove_cmd));
+                                    }
+                                }
+                                // Drop previous mapping entry (it will be replaced below)
+                                let _ = { self.subscriptions.lock().unwrap().remove(&SubscriptionKey { subscriber_id, id: id.clone() }) };
+                            }
+                        }
+
                         // Create subscription filtered by client_subscription_id and forward events
                         let handle = self.bus.add_subscription(IdFilter { id: id.clone() }).await;
 
                         {
                             let mut subs = self.subscriptions.lock().unwrap();
                             subs.insert(
-                                id.clone(),
+                                SubscriptionKey { subscriber_id, id: id.clone() },
                                 SubscriptionInfo {
                                     subscriber_id,
                                     filter: add.filter.clone(),
@@ -181,7 +250,7 @@ impl EventMux {
 
                         // Assign producer for this subscription
                         if let Some((_idx, prod_tx)) =
-                            self.assign_producer_for_subscription(&id).await
+                            self.assign_producer_for_subscription(subscriber_id, &id).await
                         {
                             if prod_tx.send(Ok(cmd)).is_err() {
                                 tracing::debug!(subscription_id = %id, "event_mux: failed to send Add to producer - channel closed");
@@ -193,6 +262,8 @@ impl EventMux {
 
                         // Start fan-out task for this subscription
                         let tx = sub_resp_tx.clone();
+                        let mux = self.clone();
+                        let key = SubscriptionKey { subscriber_id, id: id.clone() };
                         let mut tasks = self.tasks.lock().await;
                         tasks.spawn(async move {
                             let h = handle;
@@ -201,11 +272,13 @@ impl EventMux {
                                     Some(resp) => {
                                         if tx.send(Ok(resp)).is_err() {
                                             tracing::debug!(subscription_id = %id, "event_mux: failed to send response - subscriber channel closed");
+                                            mux.cleanup_after_subscriber_sink_closed(key.clone(), h.id()).await;
                                             break;
                                         }
                                     }
                                     None => {
                                         tracing::debug!(subscription_id = %id, "event_mux: subscription ended");
+                                        mux.cleanup_after_subscriber_sink_closed(key.clone(), h.id()).await;
                                         break;
                                     }
                                 }
@@ -217,7 +290,7 @@ impl EventMux {
                         tracing::debug!(subscriber_id, subscription_id = %id, "event_mux: removing subscription");
 
                         // Remove subscription from bus and registry, and get assigned producer
-                        let removed = { self.subscriptions.lock().unwrap().remove(&id) };
+                        let removed = { self.subscriptions.lock().unwrap().remove(&SubscriptionKey { subscriber_id, id: id.clone() }) };
                         let assigned = if let Some(info) = removed {
                             self.bus.remove_subscription(info.handle.id()).await;
                             info.assigned_producer
@@ -248,28 +321,23 @@ impl EventMux {
         tracing::debug!(subscriber_id, "event_mux: removing subscriber");
 
         // Get all subscription IDs for this subscriber by iterating through subscriptions
-        let subscription_ids: Vec<String> = {
+        let keys: Vec<SubscriptionKey> = {
             let subs = self.subscriptions.lock().unwrap();
             subs.iter()
-                .filter_map(|(id, info)| {
-                    if info.subscriber_id == subscriber_id {
-                        Some(id.clone())
-                    } else {
-                        None
-                    }
-                })
+                .filter_map(|(key, info)| if info.subscriber_id == subscriber_id { Some(key.clone()) } else { None })
                 .collect()
         };
 
         tracing::debug!(
             subscriber_id,
-            subscription_count = subscription_ids.len(),
+            subscription_count = keys.len(),
             "event_mux: found subscriptions for subscriber"
         );
 
         // Remove each subscription from the bus and notify producers
-        for id in subscription_ids {
-            let removed = { self.subscriptions.lock().unwrap().remove(&id) };
+        for key in keys {
+            let id = key.id.clone();
+            let removed = { self.subscriptions.lock().unwrap().remove(&key) };
             let assigned = if let Some(info) = removed {
                 self.bus.remove_subscription(info.handle.id()).await;
                 tracing::debug!(subscription_id = %id, "event_mux: removed subscription from bus");
@@ -306,6 +374,7 @@ impl EventMux {
 
     async fn assign_producer_for_subscription(
         &self,
+        subscriber_id: u64,
         subscription_id: &str,
     ) -> Option<(usize, mpsc::UnboundedSender<EventsCommandResult>)> {
         let prods_guard = self.producers.lock().await;
@@ -315,7 +384,7 @@ impl EventMux {
         // Prefer existing assignment
         {
             let subs = self.subscriptions.lock().unwrap();
-            if let Some(info) = subs.get(subscription_id) {
+            if let Some(info) = subs.get(&SubscriptionKey { subscriber_id, id: subscription_id.to_string() }) {
                 if let Some(idx) = info.assigned_producer {
                     if let Some(Some(tx)) = prods_guard.get(idx) {
                         return Some((idx, tx.clone()));
@@ -340,7 +409,12 @@ impl EventMux {
 
         drop(prods_guard);
         if let Some((idx, tx)) = chosen {
-            if let Some(info) = self.subscriptions.lock().unwrap().get_mut(subscription_id) {
+            if let Some(info) = self
+                .subscriptions
+                .lock()
+                .unwrap()
+                .get_mut(&SubscriptionKey { subscriber_id, id: subscription_id.to_string() })
+            {
                 info.assigned_producer = Some(idx);
             }
             Some((idx, tx))
@@ -423,7 +497,10 @@ impl EventMux {
         {
             let mut subs = self.subscriptions.lock().unwrap();
             subs.insert(
-                id.clone(),
+                SubscriptionKey {
+                    subscriber_id,
+                    id: id.clone(),
+                },
                 SubscriptionInfo {
                     subscriber_id,
                     filter: Some(filter.clone()),
@@ -434,7 +511,7 @@ impl EventMux {
         }
 
         // Assign producer and send Add
-        if let Some((_idx, tx)) = self.assign_producer_for_subscription(&id).await {
+        if let Some((_idx, tx)) = self.assign_producer_for_subscription(subscriber_id, &id).await {
             let cmd = PlatformEventsCommand {
                 version: Some(CmdVersion::V0(
                     dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
@@ -449,6 +526,7 @@ impl EventMux {
 
             // Attach drop callback to send Remove on drop
             let id_for_cb = id.clone();
+            let subs_map = self.subscriptions.clone();
             let _handle = handle
                 .clone()
                 .with_drop_cb(Arc::new(move |_h_id| {
@@ -465,8 +543,10 @@ impl EventMux {
                         )),
                     };
                     let _ = tx.send(Ok(cmd));
-                    // Note: cleanup from subscriptions map is handled by EventBus::remove_subscription path
-                    // in async contexts; when no runtime, we tolerate stale map entry.
+                    // Remove mapping entry for this (subscriber_id, id)
+                    if let Ok(mut subs) = subs_map.lock() {
+                        subs.remove(&SubscriptionKey { subscriber_id, id: id_for_cb.clone() });
+                    }
                 }))
                 .await;
 
@@ -605,6 +685,12 @@ struct SubscriptionInfo {
     handle: SubscriptionHandle<PlatformEventsResponse, IdFilter>,
 }
 
+#[derive(Clone, Ord, PartialOrd, Eq, PartialEq, Debug)]
+struct SubscriptionKey {
+    subscriber_id: u64,
+    id: String,
+}
+
 /// Public alias for platform events subscription handle used by SDK and DAPI.
 pub type PlatformEventsSubscriptionHandle = SubscriptionHandle<PlatformEventsResponse, IdFilter>;
 
@@ -634,7 +720,7 @@ mod tests {
     use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
     use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
     use sender_sink::wrappers::UnboundedSenderSink;
-    use std::collections::BTreeSet;
+    use std::collections::HashMap;
     use tokio::time::{Duration, timeout};
 
     fn make_add_cmd(id: &str) -> PlatformEventsCommand {
@@ -782,19 +868,21 @@ mod tests {
         let sub3_resp_stream = UnboundedReceiverStream::new(sub3.resp_rx);
         tokio::spawn(async move { prod2.forward(sub3_cmd_sink, sub3_resp_stream).await });
 
-        // Deepest producer where we will inject events
-        let mut prod3_cmd_rx = {
-            let p = mux3.add_producer().await;
-            (p.cmd_rx, p.resp_tx)
-        };
-        let mut p3_cmd_rx = prod3_cmd_rx.0;
-        let p3_resp_tx = prod3_cmd_rx.1;
+        // Deepest producers where we will capture commands and inject events
+        let p3a = mux3.add_producer().await;
+        let p3b = mux3.add_producer().await;
+        let mut p3a_cmd_rx = p3a.cmd_rx;
+        let p3a_resp_tx = p3a.resp_tx;
+        let mut p3b_cmd_rx = p3b.cmd_rx;
+        let p3b_resp_tx = p3b.resp_tx;
 
-        // Two top-level subscribers on Mux1
+        // Three top-level subscribers on Mux1
         let mut sub1a = mux1.add_subscriber().await;
         let mut sub1b = mux1.add_subscriber().await;
+        let mut sub1c = mux1.add_subscriber().await;
         let id_a = "s1a";
         let id_b = "s1b";
+        let id_c = "s1c";
 
         // Send Add commands downstream from each subscriber
         sub1a
@@ -805,13 +893,24 @@ mod tests {
             .cmd_tx
             .send(Ok(make_add_cmd(id_b)))
             .expect("send add b");
+        sub1c
+            .cmd_tx
+            .send(Ok(make_add_cmd(id_c)))
+            .expect("send add c");
 
-        // Ensure deepest producer receives both Adds
-        let mut seen = BTreeSet::new();
-        for _ in 0..2 {
-            let got = timeout(Duration::from_secs(2), p3_cmd_rx.recv())
-                .await
-                .expect("timeout waiting for downstream add")
+        // Ensure deepest producers receive each Add exactly once and not on both
+        let mut assigned: HashMap<String, usize> = HashMap::new();
+        for _ in 0..3 {
+            let (which, got_opt) = timeout(Duration::from_secs(2), async {
+                tokio::select! {
+                    c = p3a_cmd_rx.recv() => (0usize, c),
+                    c = p3b_cmd_rx.recv() => (1usize, c),
+                }
+            })
+            .await
+            .expect("timeout waiting for downstream add");
+
+            let got = got_opt
                 .expect("p3 cmd channel closed")
                 .expect("downstream add error");
 
@@ -819,20 +918,51 @@ mod tests {
                 CmdVersion::V0(v0) => v0.command,
             }) {
                 Some(Cmd::Add(a)) => {
-                    seen.insert(a.client_subscription_id);
+                    let id = a.client_subscription_id;
+                    if let Some(prev) = assigned.insert(id.clone(), which) {
+                        panic!(
+                            "subscription {} was dispatched to two producers: {} and {}",
+                            id, prev, which
+                        );
+                    }
                 }
                 _ => panic!("expected Add at deepest producer"),
             }
         }
-        assert!(seen.contains(id_a) && seen.contains(id_b));
+        assert!(
+            assigned.contains_key(id_a)
+                && assigned.contains_key(id_b)
+                && assigned.contains_key(id_c)
+        );
 
-        // Emit one event per subscription id at the deepest producer
-        p3_resp_tx
-            .send(Ok(make_event_resp(id_a)))
-            .expect("emit event a");
-        p3_resp_tx
-            .send(Ok(make_event_resp(id_b)))
-            .expect("emit event b");
+        // Emit one event per subscription id via the assigned deepest producer
+        match assigned.get(id_a) {
+            Some(0) => p3a_resp_tx
+                .send(Ok(make_event_resp(id_a)))
+                .expect("emit event a"),
+            Some(1) => p3b_resp_tx
+                .send(Ok(make_event_resp(id_a)))
+                .expect("emit event a"),
+            _ => panic!("missing assignment for id_a"),
+        }
+        match assigned.get(id_b) {
+            Some(0) => p3a_resp_tx
+                .send(Ok(make_event_resp(id_b)))
+                .expect("emit event b"),
+            Some(1) => p3b_resp_tx
+                .send(Ok(make_event_resp(id_b)))
+                .expect("emit event b"),
+            _ => panic!("missing assignment for id_b"),
+        }
+        match assigned.get(id_c) {
+            Some(0) => p3a_resp_tx
+                .send(Ok(make_event_resp(id_c)))
+                .expect("emit event c"),
+            Some(1) => p3b_resp_tx
+                .send(Ok(make_event_resp(id_c)))
+                .expect("emit event c"),
+            _ => panic!("missing assignment for id_c"),
+        }
 
         // Receive each exactly once at the top-level subscribers
         let a_first = timeout(Duration::from_secs(2), sub1a.resp_rx.recv())
@@ -845,6 +975,11 @@ mod tests {
             .expect("timeout waiting for b event")
             .expect("b subscriber closed")
             .expect("b event error");
+        let c_first = timeout(Duration::from_secs(2), sub1c.resp_rx.recv())
+            .await
+            .expect("timeout waiting for c event")
+            .expect("c subscriber closed")
+            .expect("c event error");
 
         let get_id = |resp: PlatformEventsResponse| -> String {
             match resp.version.and_then(|v| match v {
@@ -862,13 +997,14 @@ mod tests {
 
         assert_eq!(get_id(a_first.clone()), id_a);
         assert_eq!(get_id(b_first.clone()), id_b);
+        assert_eq!(get_id(c_first.clone()), id_c);
 
         // Ensure no duplicates by timing out on the next recv
         let a_dup = timeout(Duration::from_millis(200), sub1a.resp_rx.recv()).await;
-        println!("a_dup: {:?}", a_dup);
         assert!(a_dup.is_err(), "unexpected duplicate for subscriber a");
         let b_dup = timeout(Duration::from_millis(200), sub1b.resp_rx.recv()).await;
-        println!("b_dup: {:?}", b_dup);
         assert!(b_dup.is_err(), "unexpected duplicate for subscriber b");
+        let c_dup = timeout(Duration::from_millis(200), sub1c.resp_rx.recv()).await;
+        assert!(c_dup.is_err(), "unexpected duplicate for subscriber c");
     }
 }

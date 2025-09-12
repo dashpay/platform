@@ -1,6 +1,6 @@
 [package]
 name = "rs-dash-notify"
-version = "0.1.0"
+version = "2.1.0-dev.3"
 edition = "2021"
 license = "MIT OR Apache-2.0"
 description = "Shared event bus and Platform events multiplexer for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
