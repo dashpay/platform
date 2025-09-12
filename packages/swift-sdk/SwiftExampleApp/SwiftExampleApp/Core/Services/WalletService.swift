@@ -494,6 +494,7 @@ extension WalletService: SPVClientDelegate {
         let targetHeight = progress.targetHeight
         let rate = progress.rate
         let stage = progress.stage
+        let mappedStage = WalletService.mapSyncStage(stage)
         let overall = progress.overallProgress
 
         Task { @MainActor in
@@ -510,7 +511,7 @@ extension WalletService: SPVClientDelegate {
                 total: UInt64(targetHeight),
                 rate: rate,
                 progress: headerPct,
-                stage: mapSyncStage(stage)
+                stage: mappedStage
             )
 
             if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
@@ -594,7 +595,7 @@ extension WalletService: SPVClientDelegate {
         }
     }
     
-    private func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
+    nonisolated private static func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
         switch stage {
         case .idle:
             return .idle

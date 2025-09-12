@@ -713,7 +713,7 @@ private class CallbackContext {
 
 // MARK: - Supporting Types
 
-public struct SPVStats {
+public struct SPVStats: Sendable {
     public let connectedPeers: Int
     public let headerHeight: Int
     public let filterHeight: Int
@@ -721,7 +721,7 @@ public struct SPVStats {
 }
 
 // A lightweight snapshot of sync progress from FFISyncProgress
-public struct SPVSyncSnapshot {
+public struct SPVSyncSnapshot: Sendable {
     public let headerHeight: UInt32
     public let filterHeaderHeight: UInt32
     public let masternodeHeight: UInt32
