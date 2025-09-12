@@ -96,7 +96,7 @@ public class WalletService: ObservableObject {
                     let candidate = filtered.filter { !$0.isImported }.sorted { $0.createdAt < $1.createdAt }.first
                     if let cand = candidate {
                         let ts = UInt32(cand.createdAt.timeIntervalSince1970)
-                        if let h = client.getCheckpointHeight(beforeTimestamp: ts) {
+                        if let h = await client.getCheckpointHeight(beforeTimestamp: ts) {
                             startHeight = h
                         }
                     } else {
@@ -116,14 +116,14 @@ public class WalletService: ObservableObject {
                     }
                 }
 
-                try clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: startHeight)
+                try await clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: startHeight)
 
                 // Start the SPV client
-                try clientLocal.start()
+                try await clientLocal.start()
                 print("✅ SPV Client initialized and started successfully for \(net.rawValue)")
 
                 // Seed UI with latest checkpoint height if we don't have a header yet
-                let seedHeight = clientLocal.getLatestCheckpointHeight()
+                let seedHeight = await clientLocal.getLatestCheckpointHeight()
                 await MainActor.run {
                     if WalletService.shared.latestHeaderHeight == 0, let cp = seedHeight {
                         WalletService.shared.latestHeaderHeight = Int(cp)
@@ -467,7 +467,7 @@ extension WalletService {
             Task.detached(priority: .utility) {
                 let clientBox = await MainActor.run { WalletService.shared[keyPath: \WalletService.spvClient].map(SendableBox.init) }
                 guard let client = clientBox?.value else { return }
-                guard let stats = client.getStats() else { return }
+                guard let stats = await client.getStats() else { return }
                 await MainActor.run {
                     // Only overwrite with positive values; keep seeded values otherwise
                     if stats.headerHeight > 0 {
@@ -529,21 +529,21 @@ extension WalletService: SPVClientDelegate {
             let denom = max(1.0, Double(targetHeight) - base)
             let headerPct = min(1.0, max(0.0, numer / denom))
 
-            let txPctFinal: Double = {
-                if let snap = client?.getSyncSnapshot(), snap.headerHeight > 0 {
-                    return min(1.0, max(0.0, Double(snap.lastSyncedFilterHeight) / Double(snap.headerHeight)))
-                } else if let stats = client?.getStats(), stats.headerHeight > 0 {
-                    return min(1.0, max(0.0, Double(stats.filterHeight) / Double(stats.headerHeight)))
-                }
-                return prevTx
-            }()
+            let txPctFinal: Double
+            if let snap = await client?.getSyncSnapshot(), snap.headerHeight > 0 {
+                txPctFinal = min(1.0, max(0.0, Double(snap.lastSyncedFilterHeight) / Double(snap.headerHeight)))
+            } else if let stats = await client?.getStats(), stats.headerHeight > 0 {
+                txPctFinal = min(1.0, max(0.0, Double(stats.filterHeight) / Double(stats.headerHeight)))
+            } else {
+                txPctFinal = prevTx
+            }
 
-            let mnPctFinal: Double = {
-                if let snap = client?.getSyncSnapshot() {
-                    return snap.masternodesSynced ? 1.0 : 0.0
-                }
-                return prevMn
-            }()
+            let mnPctFinal: Double
+            if let snap = await client?.getSyncSnapshot() {
+                mnPctFinal = snap.masternodesSynced ? 1.0 : 0.0
+            } else {
+                mnPctFinal = prevMn
+            }
 
             await MainActor.run {
                 WalletService.shared.headerProgress = headerPct
