@@ -668,10 +668,11 @@ private class CallbackContext {
         let now = Date().timeIntervalSince1970
         if let client = self.client, now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
             client.lastProgressUIUpdate = now
-            Task { @MainActor in
-                guard let clientStrong = self.client else { return }
-                clientStrong.syncProgress = progress
-                clientStrong.delegate?.spvClient(clientStrong, didUpdateSyncProgress: progress)
+            let progressSnapshot = progress
+            Task { @MainActor [weak client] in
+                guard let clientStrong = client else { return }
+                clientStrong.syncProgress = progressSnapshot
+                clientStrong.delegate?.spvClient(clientStrong, didUpdateSyncProgress: progressSnapshot)
             }
         }
     }
@@ -690,8 +691,8 @@ private class CallbackContext {
             }
         }
 
-        Task { @MainActor in
-            guard let client = self.client else { return }
+        Task { @MainActor [weak client = self.client] in
+            guard let client = client else { return }
             client.isSyncing = false
             client.lastError = error
             
