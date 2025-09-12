@@ -130,6 +130,19 @@
                   cluster: {{= (it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled) ? 'dapi_api' : 'rs_dapi' }}
                   # Upstream response timeout
                   timeout: 15s
+              # rs-dapi subscribePlatformEvents endpoint with bigger timeout (now exposed directly)
+              {{ useDeprecated = it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled; }}
+              - match:
+                  path: "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents"
+                route:
+                  cluster: {{= useDeprecated ? 'dapi_api' : 'rs_dapi' }}
+                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  # Upstream response timeout
+                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  max_stream_duration:
+                    # Entire stream/request timeout
+                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}                  
               # rs-dapi waitForStateTransitionResult endpoint with bigger timeout (now exposed directly)
               {{ useDeprecated = it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled; }}
               - match:
