@@ -4,11 +4,13 @@ on:
   pull_request:
     paths:
       - 'packages/swift-sdk/**'
+      - 'packages/rs-*/**'
       - '.github/workflows/swift-sdk-build.yml'
   push:
     branches: [ main, master ]
     paths:
       - 'packages/swift-sdk/**'
+      - 'packages/rs-*/**'
       - '.github/workflows/swift-sdk-build.yml'
 
 jobs:
