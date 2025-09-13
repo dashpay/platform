@@ -19,6 +19,7 @@ pub use queries::{
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use state_transitions::identity as state_transition_identity;
 pub use wallet::*;
+pub use error::{WasmSdkError, WasmSdkErrorKind};
 
 #[global_allocator]
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;

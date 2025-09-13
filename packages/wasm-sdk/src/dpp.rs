@@ -3,7 +3,7 @@ use dash_sdk::dpp::platform_value::ReplacementType;
 use dash_sdk::dpp::serialization::PlatformDeserializable;
 use dash_sdk::dpp::serialization::ValueConvertible;
 
-use crate::error::to_js_error;
+use crate::error::to_js_error_value;
 use dash_sdk::dpp::dashcore::hashes::serde::Serialize;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -38,12 +38,12 @@ impl From<Identity> for IdentityWasm {
 #[wasm_bindgen]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(platform_version: u32) -> Result<IdentityWasm, JsError> {
-        let platform_version = &PlatformVersion::get(platform_version).map_err(to_js_error)?;
+    pub fn new(platform_version: u32) -> Result<IdentityWasm, JsValue> {
+        let platform_version = &PlatformVersion::get(platform_version).map_err(to_js_error_value)?;
 
         Identity::default_versioned(platform_version)
             .map(Into::into)
-            .map_err(to_js_error)
+            .map_err(to_js_error_value)
     }
     //
     // #[wasm_bindgen(js_name=getId)]
@@ -159,7 +159,7 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let mut value = self.inner.to_object().map_err(to_js_error)?;
+        let mut value = self.inner.to_object().map_err(to_js_error_value)?;
 
         value
             .replace_at_paths(
@@ -223,8 +223,8 @@ impl IdentityWasm {
     // }
 
     #[wasm_bindgen]
-    pub fn hash(&self) -> Result<Vec<u8>, JsError> {
-        self.inner.hash().map_err(to_js_error)
+    pub fn hash(&self) -> Result<Vec<u8>, JsValue> {
+        self.inner.hash().map_err(to_js_error_value)
     }
 
     // #[wasm_bindgen(js_name=addPublicKey)]
@@ -259,9 +259,9 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=fromBuffer)]
-    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsError> {
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsValue> {
         let identity: Identity = PlatformDeserializable::deserialize_from_bytes(buffer.as_slice())
-            .map_err(to_js_error)?;
+            .map_err(to_js_error_value)?;
         Ok(identity.into())
     }
 }
@@ -298,11 +298,14 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsError> {
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
         let platform_version = PlatformVersion::first();
 
-        let json = self.0.to_json(platform_version)?;
+        let json = self
+            .0
+            .to_json(platform_version)
+            .map_err(to_js_error_value)?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        json.serialize(&serializer).map_err(to_js_error)
+        json.serialize(&serializer).map_err(to_js_error_value)
     }
 }

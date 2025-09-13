@@ -1,3 +1,4 @@
+use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -8,11 +9,9 @@ use dash_sdk::platform::dpns_usernames::{
 };
 use dash_sdk::platform::{Fetch, Identity};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
-use crate::error::new_structured_error;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::JsValue;
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -49,52 +48,28 @@ pub async fn dpns_register_name(
     public_key_id: u32,
     private_key_wif: &str,
     preorder_callback: Option<js_sys::Function>,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, JsValue> {
     // Parse identity ID
     let identity_id_parsed = Identifier::from_string(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )
-    .map_err(|e| new_structured_error(
-        &format!("Invalid identity ID: {}", e),
-        "E_INVALID_ARGUMENT",
-        "argument",
-        Some(json!({"field":"identityId"})),
-        Some(false),
-    ))?;
+    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
     // Fetch the identity
     let identity = Identity::fetch(sdk.as_ref(), identity_id_parsed)
         .await
-        .map_err(crate::error::map_sdk_error)?
-        .ok_or_else(|| new_structured_error(
-            "Identity not found",
-            "E_NOT_FOUND",
-            "not_found",
-            Some(json!({"resource":"identity","id": identity_id })),
-            Some(false),
-        ))?;
+        .map_err(WasmSdkError::from)?
+        .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
 
     // Create signer
     let signer = SingleKeySigner::new(private_key_wif)
-        .map_err(|e| new_structured_error(
-            &format!("Invalid private key WIF: {}", e),
-            "E_INVALID_ARGUMENT",
-            "argument",
-            Some(json!({"field":"privateKeyWif"})),
-            Some(false),
-        ))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e)))?;
 
     // Get the specific identity public key
     let identity_public_key = identity
         .get_public_key_by_id(public_key_id.into())
-        .ok_or_else(|| new_structured_error(
-            &format!("Public key with ID {} not found", public_key_id),
-            "E_NOT_FOUND",
-            "not_found",
-            Some(json!({"resource":"identity_public_key","id": public_key_id})),
-            Some(false),
-        ))?
+        .ok_or_else(|| WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id)))?
         .clone();
 
     // Store the JS callback in a thread-local variable that we can access from the closure
@@ -148,7 +123,7 @@ pub async fn dpns_register_name(
         .as_ref()
         .register_dpns_name(input)
         .await
-        .map_err(JsError::from)?;
+        .map_err(WasmSdkError::from)?;
 
     // Clear the thread-local callback
     PREORDER_CALLBACK.with(|cb| {
@@ -172,32 +147,26 @@ pub async fn dpns_register_name(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     js_result
         .serialize(&serializer)
-        .map_err(|e| new_structured_error(
-            &format!("Failed to serialize result: {}", e),
-            "E_INTERNAL",
-            "internal",
-            None,
-            Some(false),
-        ))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)).into())
 }
 
 /// Check if a DPNS name is available
 #[wasm_bindgen]
-pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, JsError> {
+pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, JsValue> {
     sdk.as_ref()
         .is_dpns_name_available(label)
         .await
-        .map_err(crate::error::map_sdk_error)
+        .map_err(|e| WasmSdkError::from(e).into())
 }
 
 /// Resolve a DPNS name to an identity ID
 #[wasm_bindgen]
-pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, JsError> {
+pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, JsValue> {
     let result = sdk
         .as_ref()
         .resolve_dpns_name(name)
         .await
-        .map_err(crate::error::map_sdk_error)?;
+        .map_err(WasmSdkError::from)?;
 
     match result {
         Some(identity_id) => {
