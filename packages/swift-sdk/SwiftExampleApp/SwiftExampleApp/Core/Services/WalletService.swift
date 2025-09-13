@@ -486,7 +486,6 @@ extension WalletService {
 
 // MARK: - SPVClientDelegate
 
-@MainActor
 extension WalletService: SPVClientDelegate {
     public func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress) {
         // Copy needed values to Sendable primitives to avoid capturing 'progress'
@@ -622,7 +621,7 @@ public struct SyncProgress {
     public let stage: SyncStage
 }
 
-public enum SyncStage {
+public enum SyncStage: Sendable {
     case idle
     case connecting
     case headers

@@ -56,7 +56,7 @@ public struct SPVSyncProgress {
     }
 }
 
-public enum SPVSyncStage: String {
+public enum SPVSyncStage: String, Sendable {
     case idle = "Idle"
     case headers = "Downloading Headers"
     case masternodes = "Syncing Masternode List"
@@ -82,6 +82,7 @@ public struct SPVTransactionEvent {
 
 // MARK: - SPV Client Delegate
 
+@MainActor
 public protocol SPVClientDelegate: AnyObject {
     func spvClient(_ client: SPVClient, didUpdateSyncProgress progress: SPVSyncProgress)
     func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent)
