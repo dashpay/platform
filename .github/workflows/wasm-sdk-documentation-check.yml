@@ -1,5 +1,7 @@
 name: Check WASM SDK Documentation
 
+# TODO: Update
+
 on:
   workflow_dispatch:
   pull_request:
@@ -71,7 +73,7 @@ jobs:
         with:
           name: documentation-check-report
           path: packages/wasm-sdk/documentation-check-report.txt
-          
+
       - name: Comment PR
         if: github.event_name == 'pull_request' && steps.doc-check.outputs.status == 'failure'
         uses: actions/github-script@v7
@@ -129,7 +131,7 @@ jobs:
             git commit -m "chore: update WASM SDK documentation [skip ci]"
             git push
           fi
-          
+
       - name: Create documentation update PR (protected branches)
         if: github.event_name == 'push' && (contains(github.ref, 'master') || contains(github.ref, 'main')) && steps.doc-check.outputs.status == 'failure'
         uses: peter-evans/create-pull-request@v5
