@@ -68,15 +68,6 @@ jobs:
             "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip"
           unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
 
-      - name: Save cached protoc v32.0
-        if: steps.cache-protoc.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: |
-            ${{ env.HOME }}/.local/protoc-32.0/bin
-            ${{ env.HOME }}/.local/protoc-32.0/include
-          key: protoc/32.0/${{ runner.os }}/x86_64
-
       - name: Export protoc v32.0 to PATH
         run: |
           echo "${HOME}/.local/protoc-32.0/bin" >> $GITHUB_PATH
@@ -124,13 +115,6 @@ jobs:
             "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz"
           tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
           mv "${HOME}/.cache/binaryen/binaryen-version_121" "${HOME}/.cache/binaryen/version_121"
-
-      - name: Save cached wasm-opt
-        if: steps.cache-binaryen.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.HOME }}/.cache/binaryen/version_121
-          key: binaryen/version_121/${{ runner.os }}/x86_64
 
       - name: Export wasm-opt to PATH
         run: |
@@ -222,7 +206,7 @@ jobs:
         working-directory: packages/wasm-sdk
         run: |
           echo "Running WASM SDK comprehensive test suite..."
-          node test/run-all-tests.mjs | tee test-output.log
+          set -o pipefail && node test/run-all-tests.mjs | tee test-output.log
 
       - name: Generate job summary
         if: always()
