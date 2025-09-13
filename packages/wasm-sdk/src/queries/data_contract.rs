@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
+use crate::error::new_structured_error;
+use serde_json::json;
 
 #[wasm_bindgen]
 pub async fn data_contract_fetch(
@@ -21,8 +23,9 @@ pub async fn data_contract_fetch(
     )?;
 
     DataContract::fetch_by_identifier(sdk, id)
-        .await?
-        .ok_or_else(|| JsError::new("Data contract not found"))
+        .await
+        .map_err(crate::error::map_sdk_error)?
+        .ok_or_else(|| new_structured_error("Data contract not found", "E_NOT_FOUND", "not_found", Some(json!({"resource":"data_contract","id": base58_id })), Some(false)))
         .map(Into::into)
 }
 
@@ -37,7 +40,9 @@ pub async fn data_contract_fetch_with_proof_info(
     )?;
 
     let (contract, metadata, proof) =
-        DataContract::fetch_with_metadata_and_proof(sdk, id, None).await?;
+        DataContract::fetch_with_metadata_and_proof(sdk, id, None)
+            .await
+            .map_err(crate::error::map_sdk_error)?;
 
     match contract {
         Some(contract) => {
@@ -53,9 +58,9 @@ pub async fn data_contract_fetch_with_proof_info(
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
             response
                 .serialize(&serializer)
-                .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+                .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
         }
-        None => Err(JsError::new("Data contract not found")),
+        None => Err(new_structured_error("Data contract not found", "E_NOT_FOUND", "not_found", Some(json!({"resource":"data_contract","id": base58_id })), Some(false))),
     }
 }
 
@@ -89,7 +94,7 @@ pub async fn get_data_contract_history(
     // Fetch contract history
     let history_result = DataContractHistory::fetch(sdk.as_ref(), query)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contract history: {}", e)))?;
+        .map_err(crate::error::map_sdk_error)?;
 
     // Convert to response format
     let mut versions = BTreeMap::new();
@@ -107,7 +112,7 @@ pub async fn get_data_contract_history(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -153,7 +158,7 @@ pub async fn get_data_contracts(sdk: &WasmSdk, ids: Vec<String>) -> Result<JsVal
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }
 
 // Proof info versions for data contract queries
@@ -183,12 +188,7 @@ pub async fn get_data_contract_history_with_proof_info(
     let (history_result, metadata, proof) =
         DataContractHistory::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
             .await
-            .map_err(|e| {
-                JsError::new(&format!(
-                    "Failed to fetch data contract history with proof: {}",
-                    e
-                ))
-            })?;
+            .map_err(crate::error::map_sdk_error)?;
 
     // Convert to response format
     let mut versions = BTreeMap::new();
@@ -212,7 +212,7 @@ pub async fn get_data_contract_history_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }
 
 #[wasm_bindgen]
@@ -236,9 +236,7 @@ pub async fn get_data_contracts_with_proof_info(
     let (contracts_result, metadata, proof) =
         DataContract::fetch_many_with_metadata_and_proof(sdk.as_ref(), identifiers, None)
             .await
-            .map_err(|e| {
-                JsError::new(&format!("Failed to fetch data contracts with proof: {}", e))
-            })?;
+            .map_err(crate::error::map_sdk_error)?;
 
     // Convert to response format
     let mut data_contracts = BTreeMap::new();
@@ -264,5 +262,5 @@ pub async fn get_data_contracts_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }

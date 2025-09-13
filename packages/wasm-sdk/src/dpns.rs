@@ -8,6 +8,8 @@ use dash_sdk::platform::dpns_usernames::{
 };
 use dash_sdk::platform::{Fetch, Identity};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
+use crate::error::new_structured_error;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
@@ -53,22 +55,46 @@ pub async fn dpns_register_name(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
     )
-    .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
+    .map_err(|e| new_structured_error(
+        &format!("Invalid identity ID: {}", e),
+        "E_INVALID_ARGUMENT",
+        "argument",
+        Some(json!({"field":"identityId"})),
+        Some(false),
+    ))?;
 
     // Fetch the identity
     let identity = Identity::fetch(sdk.as_ref(), identity_id_parsed)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch identity: {}", e)))?
-        .ok_or_else(|| JsError::new("Identity not found"))?;
+        .map_err(crate::error::map_sdk_error)?
+        .ok_or_else(|| new_structured_error(
+            "Identity not found",
+            "E_NOT_FOUND",
+            "not_found",
+            Some(json!({"resource":"identity","id": identity_id })),
+            Some(false),
+        ))?;
 
     // Create signer
     let signer = SingleKeySigner::new(private_key_wif)
-        .map_err(|e| JsError::new(&format!("Invalid private key WIF: {}", e)))?;
+        .map_err(|e| new_structured_error(
+            &format!("Invalid private key WIF: {}", e),
+            "E_INVALID_ARGUMENT",
+            "argument",
+            Some(json!({"field":"privateKeyWif"})),
+            Some(false),
+        ))?;
 
     // Get the specific identity public key
     let identity_public_key = identity
         .get_public_key_by_id(public_key_id.into())
-        .ok_or_else(|| JsError::new(&format!("Public key with ID {} not found", public_key_id)))?
+        .ok_or_else(|| new_structured_error(
+            &format!("Public key with ID {} not found", public_key_id),
+            "E_NOT_FOUND",
+            "not_found",
+            Some(json!({"resource":"identity_public_key","id": public_key_id})),
+            Some(false),
+        ))?
         .clone();
 
     // Store the JS callback in a thread-local variable that we can access from the closure
@@ -122,7 +148,7 @@ pub async fn dpns_register_name(
         .as_ref()
         .register_dpns_name(input)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to register DPNS name: {}", e)))?;
+        .map_err(JsError::from)?;
 
     // Clear the thread-local callback
     PREORDER_CALLBACK.with(|cb| {
@@ -146,7 +172,13 @@ pub async fn dpns_register_name(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     js_result
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize result: {}", e)))
+        .map_err(|e| new_structured_error(
+            &format!("Failed to serialize result: {}", e),
+            "E_INTERNAL",
+            "internal",
+            None,
+            Some(false),
+        ))
 }
 
 /// Check if a DPNS name is available
@@ -155,7 +187,7 @@ pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, 
     sdk.as_ref()
         .is_dpns_name_available(label)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to check name availability: {}", e)))
+        .map_err(crate::error::map_sdk_error)
 }
 
 /// Resolve a DPNS name to an identity ID
@@ -165,7 +197,7 @@ pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, JsE
         .as_ref()
         .resolve_dpns_name(name)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to resolve DPNS name: {}", e)))?;
+        .map_err(crate::error::map_sdk_error)?;
 
     match result {
         Some(identity_id) => {

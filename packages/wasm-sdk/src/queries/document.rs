@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsCast, JsError, JsValue};
+use crate::error::new_structured_error;
+use serde_json::json;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +61,7 @@ impl DocumentResponse {
             let json_value: JsonValue = value
                 .clone()
                 .try_into()
-                .map_err(|e| JsError::new(&format!("Failed to convert value to JSON: {:?}", e)))?;
+                .map_err(|e| new_structured_error(&format!("Failed to convert value to JSON: {:?}", e), "E_INTERNAL", "internal", None, Some(false)))?;
 
             data.insert(key.clone(), json_value);
         }
@@ -92,22 +94,26 @@ impl DocumentResponse {
 fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
     let clause_array = json_clause
         .as_array()
-        .ok_or_else(|| JsError::new("where clause must be an array"))?;
+        .ok_or_else(|| new_structured_error("where clause must be an array", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where","expected":"array"})), Some(false)))?;
 
     if clause_array.len() != 3 {
-        return Err(JsError::new(
+        return Err(new_structured_error(
             "where clause must have exactly 3 elements: [field, operator, value]",
+            "E_INVALID_ARGUMENT",
+            "argument",
+            Some(json!({"field":"where","length":3})),
+            Some(false),
         ));
     }
 
     let field = clause_array[0]
         .as_str()
-        .ok_or_else(|| JsError::new("where clause field must be a string"))?
+        .ok_or_else(|| new_structured_error("where clause field must be a string", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where[0]","expected":"string"})), Some(false)))?
         .to_string();
 
     let operator_str = clause_array[1]
         .as_str()
-        .ok_or_else(|| JsError::new("where clause operator must be a string"))?;
+        .ok_or_else(|| new_structured_error("where clause operator must be a string", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where[1]","expected":"string"})), Some(false)))?;
 
     let operator = match operator_str {
         "==" | "=" => WhereOperator::Equal,
@@ -121,7 +127,7 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
         "BetweenExcludeRight" => WhereOperator::BetweenExcludeRight,
         "in" | "In" => WhereOperator::In,
         "startsWith" | "StartsWith" => WhereOperator::StartsWith,
-        _ => return Err(JsError::new(&format!("Unknown operator: {}", operator_str))),
+        _ => return Err(new_structured_error(&format!("Unknown operator: {}", operator_str), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where[1]","operator": operator_str})), Some(false))),
     };
 
     // Convert JSON value to platform Value
@@ -138,27 +144,31 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, JsError> {
 fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, JsError> {
     let clause_array = json_clause
         .as_array()
-        .ok_or_else(|| JsError::new("order by clause must be an array"))?;
+        .ok_or_else(|| new_structured_error("order by clause must be an array", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy","expected":"array"})), Some(false)))?;
 
     if clause_array.len() != 2 {
-        return Err(JsError::new(
+        return Err(new_structured_error(
             "order by clause must have exactly 2 elements: [field, direction]",
+            "E_INVALID_ARGUMENT",
+            "argument",
+            Some(json!({"field":"orderBy","length":2})),
+            Some(false),
         ));
     }
 
     let field = clause_array[0]
         .as_str()
-        .ok_or_else(|| JsError::new("order by field must be a string"))?
+        .ok_or_else(|| new_structured_error("order by field must be a string", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy[0]","expected":"string"})), Some(false)))?
         .to_string();
 
     let direction = clause_array[1]
         .as_str()
-        .ok_or_else(|| JsError::new("order by direction must be a string"))?;
+        .ok_or_else(|| new_structured_error("order by direction must be a string", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy[1]","expected":"string"})), Some(false)))?;
 
     let ascending = match direction {
         "asc" => true,
         "desc" => false,
-        _ => return Err(JsError::new("order by direction must be 'asc' or 'desc'")),
+        _ => return Err(new_structured_error("order by direction must be 'asc' or 'desc'", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy[1]","allowed":["asc","desc"]})), Some(false))),
     };
 
     Ok(OrderClause { field, ascending })
@@ -235,7 +245,7 @@ pub async fn get_documents(
     let mut query =
         DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
             .await
-            .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?;
+            .map_err(crate::error::map_sdk_error)?;
 
     // Set limit if provided
     if let Some(limit_val) = limit {
@@ -266,12 +276,12 @@ pub async fn get_documents(
     // Parse and apply where clauses
     if let Some(where_json) = where_clause {
         let json_value: JsonValue = serde_json::from_str(&where_json)
-            .map_err(|e| JsError::new(&format!("Failed to parse where clause JSON: {}", e)))?;
+            .map_err(|e| new_structured_error(&format!("Failed to parse where clause JSON: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where"})), Some(false)))?;
 
         // Expect an array of where clauses
         let where_array = json_value
             .as_array()
-            .ok_or_else(|| JsError::new("where clause must be an array of clauses"))?;
+            .ok_or_else(|| new_structured_error("where clause must be an array of clauses", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"where","expected":"array"})), Some(false)))?;
 
         for clause_json in where_array {
             let where_clause = parse_where_clause(clause_json)?;
@@ -282,12 +292,12 @@ pub async fn get_documents(
     // Parse and apply order by clauses
     if let Some(order_json) = order_by {
         let json_value: JsonValue = serde_json::from_str(&order_json)
-            .map_err(|e| JsError::new(&format!("Failed to parse order by JSON: {}", e)))?;
+            .map_err(|e| new_structured_error(&format!("Failed to parse order by JSON: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy"})), Some(false)))?;
 
         // Expect an array of order clauses
         let order_array = json_value
             .as_array()
-            .ok_or_else(|| JsError::new("order by must be an array of clauses"))?;
+            .ok_or_else(|| new_structured_error("order by must be an array of clauses", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy","expected":"array"})), Some(false)))?;
 
         for clause_json in order_array {
             let order_clause = parse_order_clause(clause_json)?;
@@ -298,18 +308,18 @@ pub async fn get_documents(
     // Execute query
     let documents_result: Documents = Document::fetch_many(sdk.as_ref(), query)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch documents: {}", e)))?;
+        .map_err(crate::error::map_sdk_error)?;
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contract: {}", e)))?
-        .ok_or_else(|| JsError::new("Data contract not found"))?;
+        .map_err(crate::error::map_sdk_error)?
+        .ok_or_else(|| new_structured_error("Data contract not found", "E_NOT_FOUND", "not_found", Some(json!({"resource":"data_contract","id": data_contract_id })), Some(false)))?;
 
     // Get the document type
     let document_type_ref = data_contract
         .document_type_for_name(document_type)
-        .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Document type not found: {}", e), "E_NOT_FOUND", "not_found", Some(json!({"resource":"document_type","name": document_type})), Some(false)))?;
 
     // Convert documents to response format
     let mut responses: Vec<DocumentResponse> = Vec::new();
@@ -327,7 +337,7 @@ pub async fn get_documents(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     responses
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }
 
 #[wasm_bindgen]
@@ -396,7 +406,7 @@ pub async fn get_documents_with_proof_info(
     // Parse and set order by clauses if provided
     if let Some(order_json) = order_by {
         let clauses: Vec<JsonValue> = serde_json::from_str(&order_json)
-            .map_err(|e| JsError::new(&format!("Invalid order by JSON: {}", e)))?;
+            .map_err(|e| new_structured_error(&format!("Invalid order by JSON: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"orderBy"})), Some(false)))?;
 
         for clause_json in clauses {
             let order_clause = parse_order_clause(&clause_json)?;
@@ -408,18 +418,18 @@ pub async fn get_documents_with_proof_info(
     let (documents_result, metadata, proof) =
         Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
             .await
-            .map_err(|e| JsError::new(&format!("Failed to fetch documents: {}", e)))?;
+            .map_err(crate::error::map_sdk_error)?;
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contract: {}", e)))?
-        .ok_or_else(|| JsError::new("Data contract not found"))?;
+        .map_err(crate::error::map_sdk_error)?
+        .ok_or_else(|| new_structured_error("Data contract not found", "E_NOT_FOUND", "not_found", Some(json!({"resource":"data_contract","id": data_contract_id })), Some(false)))?;
 
     // Get the document type
     let document_type_ref = data_contract
         .document_type_for_name(document_type)
-        .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Document type not found: {}", e), "E_NOT_FOUND", "not_found", Some(json!({"resource":"document_type","name": document_type})), Some(false)))?;
 
     // Convert documents to response format
     let mut responses: Vec<DocumentResponse> = Vec::new();
@@ -443,7 +453,7 @@ pub async fn get_documents_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
 }
 
 #[wasm_bindgen]
@@ -469,24 +479,24 @@ pub async fn get_document(
     // Create document query
     let query = DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to create document query: {}", e)))?
+        .map_err(JsError::from)?
         .with_document_id(&doc_id);
 
     // Fetch the data contract to get the document type
     let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch data contract: {}", e)))?
-        .ok_or_else(|| JsError::new("Data contract not found"))?;
+        .map_err(JsError::from)?
+        .ok_or_else(|| new_structured_error("Data contract not found", "E_NOT_FOUND", "not_found", Some(json!({"resource":"data_contract","id": data_contract_id })), Some(false)))?;
 
     // Get the document type
     let document_type = data_contract
         .document_type_for_name(document_type)
-        .map_err(|e| JsError::new(&format!("Document type not found: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Document type not found: {}", e), "E_NOT_FOUND", "not_found", Some(json!({"resource":"document_type","name": document_type})), Some(false)))?;
 
     // Execute query
     let document_result: Option<Document> = Document::fetch(sdk.as_ref(), query)
         .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch document: {}", e)))?;
+        .map_err(crate::error::map_sdk_error)?;
 
     match document_result {
         Some(doc) => {
@@ -496,7 +506,7 @@ pub async fn get_document(
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
             response
                 .serialize(&serializer)
-                .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+                .map_err(|e| new_structured_error(&format!("Failed to serialize response: {}", e), "E_INTERNAL", "internal", None, Some(false)))
         }
         None => Ok(JsValue::NULL),
     }

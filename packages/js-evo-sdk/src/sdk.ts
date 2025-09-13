@@ -122,3 +122,4 @@ export { ProtocolFacade } from './protocol/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
 export { VotingFacade } from './voting/facade.js';
+// For error types, import directly from '@dashevo/wasm-sdk/errors'

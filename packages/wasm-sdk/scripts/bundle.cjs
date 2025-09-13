@@ -18,6 +18,7 @@ const root = process.cwd();
 const pkgDir = path.join(root, 'pkg');
 const distDir = path.join(root, 'dist');
 const rawDir = path.join(distDir, 'raw');
+const typesDir = path.join(root, 'types');
 
 const jsPath = path.join(pkgDir, 'wasm_sdk.js');
 const wasmPath = path.join(pkgDir, 'wasm_sdk_bg.wasm');
@@ -53,10 +54,25 @@ const wrapper = `// Single-file ESM wrapper around wasm-bindgen output.\n// - In
 fs.writeFileSync(path.join(distDir, 'sdk.js'), wrapper);
 fs.copyFileSync(dtsPath, path.join(distDir, 'sdk.d.ts'));
 
+// Copy additional TS-only type declarations (e.g., errors)
+try {
+  const extraTypes = [
+    { src: path.join(typesDir, 'errors.d.ts'), dest: path.join(distDir, 'errors.d.ts') },
+  ];
+  for (const { src, dest } of extraTypes) {
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+    }
+  }
+} catch (e) {
+  console.warn('Warning: failed to copy extra types:', e?.message || e);
+}
+
 // Basic report
 const outStat = fs.statSync(path.join(distDir, 'sdk.js'));
 console.log(`Wrote dist/sdk.js (${outStat.size} bytes) single-file wrapper (inline WASM)`);
 console.log('Wrote dist/sdk.d.ts');
+console.log('Copied extra type declarations (if any)');
 console.log('Wrote dist/raw/* (separate JS + WASM)');
 
 // Clean up: remove pkg directory after bundling to avoid publishing it

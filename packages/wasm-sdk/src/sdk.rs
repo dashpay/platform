@@ -631,10 +631,13 @@ impl WasmSdkBuilder {
     /// Defaults to latest version if not specified.
     pub fn with_version(self, version_number: u32) -> Result<Self, JsError> {
         let version = PlatformVersion::get(version_number).map_err(|e| {
-            JsError::new(&format!(
-                "Invalid platform version {}: {}",
-                version_number, e
-            ))
+            crate::error::new_structured_error(
+                &format!("Invalid platform version {}: {}", version_number, e),
+                "E_UNSUPPORTED_VERSION",
+                "version",
+                None,
+                Some(false),
+            )
         })?;
 
         Ok(WasmSdkBuilder(self.0.with_version(version)))
@@ -696,12 +699,12 @@ pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsError> {
     use crate::context_provider::WasmTrustedContext;
 
     let trusted_context = WasmTrustedContext::new_mainnet()
-        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+        .map_err(JsError::from)?;
 
     trusted_context
         .prefetch_quorums()
         .await
-        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
+        .map_err(JsError::from)?;
 
     // Store the context for later use
     *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
@@ -714,12 +717,12 @@ pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
     use crate::context_provider::WasmTrustedContext;
 
     let trusted_context = WasmTrustedContext::new_testnet()
-        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
+        .map_err(JsError::from)?;
 
     trusted_context
         .prefetch_quorums()
         .await
-        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
+        .map_err(JsError::from)?;
 
     // Store the context for later use
     *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);

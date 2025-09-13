@@ -8,6 +8,8 @@ use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+use crate::error::new_structured_error;
+use serde_json::json;
 use web_sys;
 
 /// Derive a key from seed phrase with extended path supporting 256-bit indices
@@ -28,23 +30,29 @@ pub fn derive_key_from_seed_with_extended_path(
     let net = match network {
         "mainnet" => dashcore::Network::Dash,
         "testnet" => dashcore::Network::Testnet,
-        _ => return Err(JsError::new("Invalid network")),
+        _ => return Err(new_structured_error(
+            "Invalid network",
+            "E_INVALID_ARGUMENT",
+            "argument",
+            Some(json!({"field":"network","allowed":["mainnet","testnet"]})),
+            Some(false),
+        )),
     };
 
     // Create master extended private key from seed
     let master_key = ExtendedPrivKey::new_master(net, &seed)
-        .map_err(|e| JsError::new(&format!("Failed to create master key: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Failed to create master key: {}", e), "E_INTERNAL", "internal", None, Some(false)))?;
 
     // Parse the derivation path using dashcore's built-in parser
     // This already supports 256-bit hex values like 0x775d3854...
     let derivation_path = DerivationPath::from_str(path)
-        .map_err(|e| JsError::new(&format!("Invalid derivation path: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Invalid derivation path: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"path"})), Some(false)))?;
 
     // Use dashcore's built-in derive_priv method which handles DIP14
     let secp = Secp256k1::new();
     let derived_key = master_key
         .derive_priv(&secp, &derivation_path)
-        .map_err(|e| JsError::new(&format!("Failed to derive key: {}", e)))?;
+        .map_err(|e| new_structured_error(&format!("Failed to derive key: {}", e), "E_INTERNAL", "internal", None, Some(false)))?;
 
     // Get the extended public key
     let xpub = bip32::ExtendedPubKey::from_priv(&secp, &derived_key);
@@ -62,56 +70,56 @@ pub fn derive_key_from_seed_with_extended_path(
     let obj = js_sys::Object::new();
 
     js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
-        .map_err(|_| JsError::new("Failed to set path property"))?;
+        .map_err(|_| new_structured_error("Failed to set path property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_wif"),
         &JsValue::from_str(&private_key.to_wif()),
     )
-    .map_err(|_| JsError::new("Failed to set private_key_wif property"))?;
+    .map_err(|_| new_structured_error("Failed to set private_key_wif property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_hex"),
         &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
     )
-    .map_err(|_| JsError::new("Failed to set private_key_hex property"))?;
+    .map_err(|_| new_structured_error("Failed to set private_key_hex property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("public_key"),
         &JsValue::from_str(&hex::encode(public_key.to_bytes())),
     )
-    .map_err(|_| JsError::new("Failed to set public_key property"))?;
+    .map_err(|_| new_structured_error("Failed to set public_key property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("address"),
         &JsValue::from_str(&address.to_string()),
     )
-    .map_err(|_| JsError::new("Failed to set address property"))?;
+    .map_err(|_| new_structured_error("Failed to set address property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("network"),
         &JsValue::from_str(network),
     )
-    .map_err(|_| JsError::new("Failed to set network property"))?;
+    .map_err(|_| new_structured_error("Failed to set network property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xprv"),
         &JsValue::from_str(&derived_key.to_string()),
     )
-    .map_err(|_| JsError::new("Failed to set xprv property"))?;
+    .map_err(|_| new_structured_error("Failed to set xprv property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xpub"),
         &JsValue::from_str(&xpub.to_string()),
     )
-    .map_err(|_| JsError::new("Failed to set xpub property"))?;
+    .map_err(|_| new_structured_error("Failed to set xpub property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     Ok(obj.into())
 }
@@ -136,7 +144,7 @@ pub fn derive_dashpay_contact_key(
         // Decode base58 to bytes, then convert to hex
         let bytes = bs58::decode(sender_identity_id)
             .into_vec()
-            .map_err(|e| JsError::new(&format!("Invalid sender identity ID: {}", e)))?;
+            .map_err(|e| new_structured_error(&format!("Invalid sender identity ID: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"senderIdentityId"})), Some(false)))?;
         format!("0x{}", hex::encode(bytes))
     };
 
@@ -146,7 +154,7 @@ pub fn derive_dashpay_contact_key(
         // Decode base58 to bytes, then convert to hex
         let bytes = bs58::decode(receiver_identity_id)
             .into_vec()
-            .map_err(|e| JsError::new(&format!("Invalid receiver identity ID: {}", e)))?;
+            .map_err(|e| new_structured_error(&format!("Invalid receiver identity ID: {}", e), "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"receiverIdentityId"})), Some(false)))?;
         format!("0x{}", hex::encode(bytes))
     };
 
@@ -155,7 +163,7 @@ pub fn derive_dashpay_contact_key(
     let coin_type = match network {
         "mainnet" => 5,
         "testnet" => 1,
-        _ => return Err(JsError::new("Invalid network")),
+        _ => return Err(new_structured_error("Invalid network", "E_INVALID_ARGUMENT", "argument", Some(json!({"field":"network","allowed":["mainnet","testnet"]})), Some(false))),
     };
 
     let path = format!(
@@ -176,49 +184,49 @@ pub fn derive_dashpay_contact_key(
     // Add DIP15-specific metadata
     let obj = result
         .dyn_into::<js_sys::Object>()
-        .map_err(|_| JsError::new("Failed to cast result to object"))?;
+        .map_err(|_| new_structured_error("Failed to cast result to object", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("dipStandard"),
         &JsValue::from_str("DIP15"),
     )
-    .map_err(|_| JsError::new("Failed to set dipStandard property"))?;
+    .map_err(|_| new_structured_error("Failed to set dipStandard property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("purpose"),
         &JsValue::from_str("DashPay Contact Payment"),
     )
-    .map_err(|_| JsError::new("Failed to set purpose property"))?;
+    .map_err(|_| new_structured_error("Failed to set purpose property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("senderIdentity"),
         &JsValue::from_str(sender_identity_id),
     )
-    .map_err(|_| JsError::new("Failed to set senderIdentity property"))?;
+    .map_err(|_| new_structured_error("Failed to set senderIdentity property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("receiverIdentity"),
         &JsValue::from_str(receiver_identity_id),
     )
-    .map_err(|_| JsError::new("Failed to set receiverIdentity property"))?;
+    .map_err(|_| new_structured_error("Failed to set receiverIdentity property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("account"),
         &JsValue::from_f64(account as f64),
     )
-    .map_err(|_| JsError::new("Failed to set account property"))?;
+    .map_err(|_| new_structured_error("Failed to set account property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("addressIndex"),
         &JsValue::from_f64(address_index as f64),
     )
-    .map_err(|_| JsError::new("Failed to set addressIndex property"))?;
+    .map_err(|_| new_structured_error("Failed to set addressIndex property", "E_INTERNAL", "internal", None, Some(false)))?;
 
     Ok(obj.into())
 }
