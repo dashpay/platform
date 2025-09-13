@@ -239,6 +239,7 @@ jobs:
         env:
           OTHER_SWIFT_FLAGS: -warnings-as-errors
           SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
+          SWIFT_SUPPRESS_WARNINGS: NO
         run: |
           xcodebuild \
             -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
@@ -248,6 +249,7 @@ jobs:
             ONLY_ACTIVE_ARCH=YES \
             OTHER_SWIFT_FLAGS="$OTHER_SWIFT_FLAGS" \
             SWIFT_TREAT_WARNINGS_AS_ERRORS=$SWIFT_TREAT_WARNINGS_AS_ERRORS \
+            SWIFT_SUPPRESS_WARNINGS=$SWIFT_SUPPRESS_WARNINGS \
             build
 
       - name: Resolve ExampleApp dependencies
