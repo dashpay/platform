@@ -16,7 +16,7 @@ on:
 jobs:
   swift-sdk-build:
     name: Swift SDK and Example build (warnings as errors)
-    runs-on: macos-15
+    runs-on: [self-hosted, macOS, ARM64]
     timeout-minutes: 60
 
     steps:
