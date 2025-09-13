@@ -358,26 +358,57 @@ await test('derivation_path_dip13_testnet', () => {
     if (result.path !== "m/9'/1'/0'") throw new Error('Invalid DIP13 testnet path');
 });
 
-// Child Key Derivation Tests (expected to fail for now)
+// Child Key Derivation Tests
 describe('Child Key Derivation');
 
-await test('derive_child_public_key - not implemented', () => {
+await test('derive_child_public_key - basic functionality', () => {
+    // Generate a master extended key to get a valid xpub
+    const masterResult = wasmSdk.derive_key_from_seed_with_extended_path(TEST_MNEMONIC, null, "m/44'/5'/0'", "mainnet");
+    const parentXpub = masterResult.xpub;
+    
+    // Derive child public key
+    const childXpub = wasmSdk.derive_child_public_key(parentXpub, 0, false);
+    
+    if (!childXpub) throw new Error('No child xpub returned');
+    if (typeof childXpub !== 'string') throw new Error('Child xpub should be string');
+    if (childXpub === parentXpub) throw new Error('Child xpub should differ from parent');
+    
+    // Test different indices produce different results
+    const childXpub1 = wasmSdk.derive_child_public_key(parentXpub, 1, false);
+    if (childXpub1 === childXpub) throw new Error('Different indices should produce different xpubs');
+});
+
+await test('xprv_to_xpub - basic functionality', () => {
+    // Generate a master extended key to get a valid xprv
+    const masterResult = wasmSdk.derive_key_from_seed_with_extended_path(TEST_MNEMONIC, null, "m/44'/5'/0'", "mainnet");
+    const xprv = masterResult.xprv;
+    const expectedXpub = masterResult.xpub;
+    
+    // Convert xprv to xpub
+    const derivedXpub = wasmSdk.xprv_to_xpub(xprv);
+    
+    if (!derivedXpub) throw new Error('No xpub returned');
+    if (typeof derivedXpub !== 'string') throw new Error('Derived xpub should be string');
+    if (derivedXpub !== expectedXpub) throw new Error('Derived xpub should match expected xpub');
+});
+
+await test('derive_child_public_key - error handling', () => {
     try {
-        wasmSdk.derive_child_public_key("xpub...", 0, false);
-        throw new Error('Should have thrown not implemented error');
+        wasmSdk.derive_child_public_key("invalid_xpub", 0, false);
+        throw new Error('Should have thrown error for invalid xpub');
     } catch (error) {
-        if (!error.message.includes('not yet implemented')) {
+        if (!error.message.includes('Invalid extended public key')) {
             throw error;
         }
     }
 });
 
-await test('xprv_to_xpub - not implemented', () => {
+await test('xprv_to_xpub - error handling', () => {
     try {
-        wasmSdk.xprv_to_xpub("xprv...");
-        throw new Error('Should have thrown not implemented error');
+        wasmSdk.xprv_to_xpub("invalid_xprv");
+        throw new Error('Should have thrown error for invalid xprv');
     } catch (error) {
-        if (!error.message.includes('not yet implemented')) {
+        if (!error.message.includes('Invalid extended private key')) {
             throw error;
         }
     }
