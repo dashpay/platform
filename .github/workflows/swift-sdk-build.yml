@@ -241,7 +241,7 @@ jobs:
           SWIFT_TREAT_WARNINGS_AS_ERRORS: YES
         run: |
           xcodebuild \
-            -package-path . \
+            -project SwiftExampleApp/SwiftExampleApp.xcodeproj \
             -scheme SwiftDashSDK \
             -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
