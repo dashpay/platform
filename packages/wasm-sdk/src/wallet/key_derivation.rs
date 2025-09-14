@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use crate::error::WasmSdkError;
 use wasm_bindgen::prelude::*;
+use crate::WasmSdk;
 
 /// Dash coin type for BIP44 (mainnet)
 pub const DASH_COIN_TYPE: u32 = 5;
@@ -121,235 +122,6 @@ impl DerivationPath {
     }
 }
 
-/// Generate a new mnemonic phrase
-#[wasm_bindgen]
-pub fn generate_mnemonic(
-    word_count: Option<u32>,
-    language_code: Option<String>,
-) -> Result<String, WasmSdkError> {
-    let words = word_count.unwrap_or(12);
-
-    // Validate word count and calculate entropy bytes
-    let entropy_bytes = match words {
-        12 => 16, // 128 bits
-        15 => 20, // 160 bits
-        18 => 24, // 192 bits
-        21 => 28, // 224 bits
-        24 => 32, // 256 bits
-        _ => return Err(WasmSdkError::invalid_argument("Word count must be 12, 15, 18, 21, or 24")),
-    };
-
-    // Select language based on language code
-    let language = match language_code.as_deref() {
-        Some("en") | None => Language::English,
-        Some("zh-cn") | Some("zh_CN") | Some("zh-Hans") => Language::SimplifiedChinese,
-        Some("zh-tw") | Some("zh_TW") | Some("zh-Hant") => Language::TraditionalChinese,
-        Some("cs") => Language::Czech,
-        Some("fr") => Language::French,
-        Some("it") => Language::Italian,
-        Some("ja") => Language::Japanese,
-        Some("ko") => Language::Korean,
-        Some("pt") => Language::Portuguese,
-        Some("es") => Language::Spanish,
-        Some(code) => {
-            return Err(WasmSdkError::invalid_argument(format!(
-                "Unsupported language code: {}. Supported: en, zh-cn, zh-tw, cs, fr, it, ja, ko, pt, es",
-                code
-            )))
-        }
-    };
-
-    // Generate random entropy
-    let mut entropy = vec![0u8; entropy_bytes];
-    thread_rng().fill_bytes(&mut entropy);
-
-    // Create mnemonic from entropy
-    let mnemonic = Mnemonic::from_entropy_in(language, &entropy)
-        .map_err(|e| WasmSdkError::generic(format!("Failed to generate mnemonic: {}", e)))?;
-
-    Ok(mnemonic.to_string())
-}
-
-/// Validate a mnemonic phrase
-#[wasm_bindgen]
-pub fn validate_mnemonic(mnemonic: &str, language_code: Option<String>) -> bool {
-    // If language is specified, validate in that language
-    if let Some(code) = language_code {
-        let language = match code.as_str() {
-            "en" => Language::English,
-            "zh-cn" | "zh_CN" | "zh-Hans" => Language::SimplifiedChinese,
-            "zh-tw" | "zh_TW" | "zh-Hant" => Language::TraditionalChinese,
-            "cs" => Language::Czech,
-            "fr" => Language::French,
-            "it" => Language::Italian,
-            "ja" => Language::Japanese,
-            "ko" => Language::Korean,
-            "pt" => Language::Portuguese,
-            "es" => Language::Spanish,
-            _ => return false,
-        };
-        return Mnemonic::parse_in(language, mnemonic).is_ok();
-    }
-
-    // Otherwise, try to parse in any language
-    Mnemonic::parse_normalized(mnemonic).is_ok()
-}
-
-/// Derive a seed from a mnemonic phrase
-#[wasm_bindgen]
-pub fn mnemonic_to_seed(mnemonic: &str, passphrase: Option<String>) -> Result<Vec<u8>, WasmSdkError> {
-    // Parse the mnemonic
-    let mnemonic = Mnemonic::parse_normalized(mnemonic)
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid mnemonic phrase: {}", e)))?;
-
-    // Generate seed with optional passphrase
-    let seed = mnemonic.to_seed(passphrase.as_deref().unwrap_or(""));
-
-    Ok(seed.to_vec())
-}
-
-/// Derive a key from mnemonic phrase using BIP39/BIP44
-#[wasm_bindgen]
-pub fn derive_key_from_seed_phrase(
-    mnemonic: &str,
-    passphrase: Option<String>,
-    network: &str,
-) -> Result<JsValue, WasmSdkError> {
-    use crate::wallet::key_generation::KeyPair;
-
-    // Get seed from mnemonic
-    let seed = mnemonic_to_seed(mnemonic, passphrase)?;
-
-    // For now, we'll use the first 32 bytes of the seed as the private key
-    // Note: This is a simplified approach. Proper BIP32/BIP44 would use HD derivation
-    // with the path m/44'/5'/0'/0/0 for Dash mainnet or m/44'/1'/0'/0/0 for testnet
-    let key_bytes = if seed.len() >= 32 {
-        &seed[0..32]
-    } else {
-        // This shouldn't happen with BIP39, but handle it just in case
-        return Err(WasmSdkError::generic("Seed too short"));
-    };
-
-    let net = match network {
-        "mainnet" => dashcore::Network::Dash,
-        "testnet" => dashcore::Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-    };
-
-    // Create private key from seed bytes
-    let key_array: [u8; 32] = key_bytes
-        .try_into()
-        .map_err(|_| WasmSdkError::invalid_argument("Seed must be 32 bytes"))?;
-    let private_key = dashcore::PrivateKey::from_byte_array(&key_array, net)
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
-
-    // Get public key
-    use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
-    let secp = Secp256k1::new();
-
-    let public_key = private_key.public_key(&secp);
-    let public_key_bytes = public_key.inner.serialize();
-    // Get address
-    let address = dashcore::Address::p2pkh(&public_key, net);
-
-    let key_pair = KeyPair {
-        private_key_wif: private_key.to_wif(),
-        private_key_hex: hex::encode(key_bytes),
-        public_key: hex::encode(&public_key_bytes),
-        address: address.to_string(),
-        network: network.to_string(),
-    };
-
-    serde_wasm_bindgen::to_value(&key_pair)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
-}
-
-/// Derive a key from seed phrase with arbitrary path
-#[wasm_bindgen]
-pub fn derive_key_from_seed_with_path(
-    mnemonic: &str,
-    passphrase: Option<String>,
-    path: &str,
-    network: &str,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
-
-    // Get seed from mnemonic
-    let seed = mnemonic_to_seed(mnemonic, passphrase)?;
-
-    let net = match network {
-        "mainnet" => dashcore::Network::Dash,
-        "testnet" => dashcore::Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
-    };
-
-    // Parse derivation path
-    let derivation_path = DerivationPath::from_str(path)
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e)))?;
-
-    // Create master extended private key from seed
-    let master_key = ExtendedPrivKey::new_master(net, &seed)
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create master key: {}", e)))?;
-
-    // Derive the key at the specified path
-    let derived_key = master_key
-        .derive_priv(&dashcore::secp256k1::Secp256k1::new(), &derivation_path)
-        .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
-
-    // In v0.40-dev, ExtendedPrivKey might have a different structure
-    // Create a PrivateKey from the derived key
-    let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
-
-    // Get public key
-    let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-    let public_key = private_key.public_key(&secp);
-
-    // Get address
-    let address = dashcore::Address::p2pkh(&public_key, net);
-
-    // Create a JavaScript object directly
-    let obj = js_sys::Object::new();
-
-    js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
-        .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("private_key_wif"),
-        &JsValue::from_str(&private_key.to_wif()),
-    )
-    .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("private_key_hex"),
-        &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
-    )
-    .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("public_key"),
-        &JsValue::from_str(&hex::encode(public_key.to_bytes())),
-    )
-    .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("address"),
-        &JsValue::from_str(&address.to_string()),
-    )
-    .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("network"),
-        &JsValue::from_str(network),
-    )
-    .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
-
-    Ok(obj.into())
-}
 
 /// HD Key information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,164 +140,397 @@ pub struct HDKeyInfo {
     pub xprv: Option<String>,
 }
 
-/// Create a BIP44 mainnet derivation path
 #[wasm_bindgen]
-pub fn derivation_path_bip44_mainnet(account: u32, change: u32, index: u32) -> JsValue {
-    let path = DerivationPath::new_bip44_mainnet(account, change, index);
-    serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
-}
+impl WasmSdk {
+    /// Generate a new mnemonic phrase
+    #[wasm_bindgen(js_name = "generateMnemonic")]
+    pub fn generate_mnemonic(
+        word_count: Option<u32>,
+        language_code: Option<String>,
+    ) -> Result<String, WasmSdkError> {
+        let words = word_count.unwrap_or(12);
 
-/// Create a BIP44 testnet derivation path
-#[wasm_bindgen]
-pub fn derivation_path_bip44_testnet(account: u32, change: u32, index: u32) -> JsValue {
-    let path = DerivationPath::new_bip44_testnet(account, change, index);
-    serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
-}
+        // Validate word count and calculate entropy bytes
+        let entropy_bytes = match words {
+            12 => 16, // 128 bits
+            15 => 20, // 160 bits
+            18 => 24, // 192 bits
+            21 => 28, // 224 bits
+            24 => 32, // 256 bits
+            _ => return Err(WasmSdkError::invalid_argument("Word count must be 12, 15, 18, 21, or 24")),
+        };
 
-/// Create a DIP9 mainnet derivation path
-#[wasm_bindgen]
-pub fn derivation_path_dip9_mainnet(feature_type: u32, account: u32, index: u32) -> JsValue {
-    let path = DerivationPath::new_dip9_mainnet(feature_type, account, index);
-    serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
-}
+        // Select language based on language code
+        let language = match language_code.as_deref() {
+            Some("en") | None => Language::English,
+            Some("zh-cn") | Some("zh_CN") | Some("zh-Hans") => Language::SimplifiedChinese,
+            Some("zh-tw") | Some("zh_TW") | Some("zh-Hant") => Language::TraditionalChinese,
+            Some("cs") => Language::Czech,
+            Some("fr") => Language::French,
+            Some("it") => Language::Italian,
+            Some("ja") => Language::Japanese,
+            Some("ko") => Language::Korean,
+            Some("pt") => Language::Portuguese,
+            Some("es") => Language::Spanish,
+            Some(code) => {
+                return Err(WasmSdkError::invalid_argument(format!(
+                    "Unsupported language code: {}. Supported: en, zh-cn, zh-tw, cs, fr, it, ja, ko, pt, es",
+                    code
+                )))
+            }
+        };
 
-/// Create a DIP9 testnet derivation path
-#[wasm_bindgen]
-pub fn derivation_path_dip9_testnet(feature_type: u32, account: u32, index: u32) -> JsValue {
-    let path = DerivationPath::new_dip9_testnet(feature_type, account, index);
-    serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
-}
+        // Generate random entropy
+        let mut entropy = vec![0u8; entropy_bytes];
+        thread_rng().fill_bytes(&mut entropy);
 
-/// Create a DIP13 mainnet derivation path (for HD masternode keys)
-#[wasm_bindgen]
-pub fn derivation_path_dip13_mainnet(account: u32) -> JsValue {
-    // DIP13 uses m/9'/5'/account' format (DIP13 uses purpose 9, not 13)
-    let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, DASH_COIN_TYPE, account);
+        // Create mnemonic from entropy
+        let mnemonic = Mnemonic::from_entropy_in(language, &entropy)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to generate mnemonic: {}", e)))?;
 
-    let obj = js_sys::Object::new();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("path"),
-        &JsValue::from_str(&path_str),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("purpose"),
-        &JsValue::from_f64(DIP13_PURPOSE as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("coin_type"),
-        &JsValue::from_f64(DASH_COIN_TYPE as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("account"),
-        &JsValue::from_f64(account as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("description"),
-        &JsValue::from_str("DIP13 HD identity key path"),
-    )
-    .unwrap();
-
-    obj.into()
-}
-
-/// Create a DIP13 testnet derivation path (for HD masternode keys)
-#[wasm_bindgen]
-pub fn derivation_path_dip13_testnet(account: u32) -> JsValue {
-    // DIP13 uses m/9'/1'/account' format for testnet
-    let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, TESTNET_COIN_TYPE, account);
-
-    let obj = js_sys::Object::new();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("path"),
-        &JsValue::from_str(&path_str),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("purpose"),
-        &JsValue::from_f64(DIP13_PURPOSE as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("coin_type"),
-        &JsValue::from_f64(TESTNET_COIN_TYPE as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("account"),
-        &JsValue::from_f64(account as f64),
-    )
-    .unwrap();
-
-    js_sys::Reflect::set(
-        &obj,
-        &JsValue::from_str("description"),
-        &JsValue::from_str("DIP13 HD identity key path (testnet)"),
-    )
-    .unwrap();
-
-    obj.into()
-}
-
-/// Get child public key from extended public key
-#[wasm_bindgen]
-pub fn derive_child_public_key(xpub: &str, index: u32, hardened: bool) -> Result<String, WasmSdkError> {
-    if hardened {
-        return Err(WasmSdkError::invalid_argument(
-            "Cannot derive hardened child from extended public key",
-        ));
+        Ok(mnemonic.to_string())
     }
 
-    // Disallow indices in the hardened range for non-hardened derivation
-    if index >= 0x8000_0000 {
-        return Err(WasmSdkError::invalid_argument(
-            "Index is in hardened range; use a value < 2^31",
-        ));
+    /// Validate a mnemonic phrase
+    #[wasm_bindgen(js_name = "validateMnemonic")]
+    pub fn validate_mnemonic(mnemonic: &str, language_code: Option<String>) -> bool {
+        // If language is specified, validate in that language
+        if let Some(code) = language_code {
+            let language = match code.as_str() {
+                "en" => Language::English,
+                "zh-cn" | "zh_CN" | "zh-Hans" => Language::SimplifiedChinese,
+                "zh-tw" | "zh_TW" | "zh-Hant" => Language::TraditionalChinese,
+                "cs" => Language::Czech,
+                "fr" => Language::French,
+                "it" => Language::Italian,
+                "ja" => Language::Japanese,
+                "ko" => Language::Korean,
+                "pt" => Language::Portuguese,
+                "es" => Language::Spanish,
+                _ => return false,
+            };
+            return Mnemonic::parse_in(language, mnemonic).is_ok();
+        }
+
+        // Otherwise, try to parse in any language
+        Mnemonic::parse_normalized(mnemonic).is_ok()
     }
 
-    // Parse the extended public key
-    let parent_xpub = BIP32ExtendedPubKey::from_str(xpub)
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended public key: {}", e)))?;
+    /// Derive a seed from a mnemonic phrase
+    #[wasm_bindgen(js_name = "mnemonicToSeed")]
+    pub fn mnemonic_to_seed(mnemonic: &str, passphrase: Option<String>) -> Result<Vec<u8>, WasmSdkError> {
+        // Parse the mnemonic
+        let mnemonic = Mnemonic::parse_normalized(mnemonic)
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid mnemonic phrase: {}", e)))?;
 
-    // Build a one-step derivation path and derive
-    let child_number: ChildNumber = ChildNumber::from(index);
-    let path = BIP32DerivationPath::from(vec![child_number]);
-    let secp = Secp256k1::new();
-    let child_xpub = parent_xpub
-        .derive_pub(&secp, &path)
-        .map_err(|e| WasmSdkError::generic(format!("Failed to derive child key: {}", e)))?;
+        // Generate seed with optional passphrase
+        let seed = mnemonic.to_seed(passphrase.as_deref().unwrap_or(""));
 
-    Ok(child_xpub.to_string())
-}
+        Ok(seed.to_vec())
+    }
 
-/// Convert extended private key to extended public key
-#[wasm_bindgen]
-pub fn xprv_to_xpub(xprv: &str) -> Result<String, WasmSdkError> {
-    // Parse the extended private key and convert to extended public key
-    let ext_prv = BIP32ExtendedPrivKey::from_str(xprv)
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended private key: {}", e)))?;
-    let secp = Secp256k1::new();
-    let ext_pub = BIP32ExtendedPubKey::from_priv(&secp, &ext_prv);
-    Ok(ext_pub.to_string())
+    /// Derive a key from mnemonic phrase using BIP39/BIP44
+    #[wasm_bindgen(js_name = "deriveKeyFromSeedPhrase")]
+    pub fn derive_key_from_seed_phrase(
+        mnemonic: &str,
+        passphrase: Option<String>,
+        network: &str,
+    ) -> Result<JsValue, WasmSdkError> {
+        use crate::wallet::key_generation::KeyPair;
+
+        // Get seed from mnemonic
+        let seed = Self::mnemonic_to_seed(mnemonic, passphrase)?;
+
+        // For now, we'll use the first 32 bytes of the seed as the private key
+        // Note: This is a simplified approach. Proper BIP32/BIP44 would use HD derivation
+        // with the path m/44'/5'/0'/0/0 for Dash mainnet or m/44'/1'/0'/0/0 for testnet
+        let key_bytes = if seed.len() >= 32 {
+            &seed[0..32]
+        } else {
+            // This shouldn't happen with BIP39, but handle it just in case
+            return Err(WasmSdkError::generic("Seed too short"));
+        };
+
+        let net = match network {
+            "mainnet" => dashcore::Network::Dash,
+            "testnet" => dashcore::Network::Testnet,
+            _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
+        };
+
+        // Create private key from seed bytes
+        let key_array: [u8; 32] = key_bytes
+            .try_into()
+            .map_err(|_| WasmSdkError::invalid_argument("Seed must be 32 bytes"))?;
+        let private_key = dashcore::PrivateKey::from_byte_array(&key_array, net)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to create private key: {}", e)))?;
+
+        // Get public key
+        use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
+        let secp = Secp256k1::new();
+
+        let public_key = private_key.public_key(&secp);
+        let public_key_bytes = public_key.inner.serialize();
+        // Get address
+        let address = dashcore::Address::p2pkh(&public_key, net);
+
+        let key_pair = KeyPair {
+            private_key_wif: private_key.to_wif(),
+            private_key_hex: hex::encode(key_bytes),
+            public_key: hex::encode(&public_key_bytes),
+            address: address.to_string(),
+            network: network.to_string(),
+        };
+
+        serde_wasm_bindgen::to_value(&key_pair)
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
+    }
+
+    /// Derive a key from seed phrase with arbitrary path
+    #[wasm_bindgen(js_name = "deriveKeyFromSeedWithPath")]
+    pub fn derive_key_from_seed_with_path(
+        mnemonic: &str,
+        passphrase: Option<String>,
+        path: &str,
+        network: &str,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
+
+        // Get seed from mnemonic
+        let seed = Self::mnemonic_to_seed(mnemonic, passphrase)?;
+
+        let net = match network {
+            "mainnet" => dashcore::Network::Dash,
+            "testnet" => dashcore::Network::Testnet,
+            _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
+        };
+
+        // Parse derivation path
+        let derivation_path = DerivationPath::from_str(path)
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e)))?;
+
+        // Create master extended private key from seed
+        let master_key = ExtendedPrivKey::new_master(net, &seed)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to create master key: {}", e)))?;
+
+        // Derive the key at the specified path
+        let derived_key = master_key
+            .derive_priv(&dashcore::secp256k1::Secp256k1::new(), &derivation_path)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
+
+        // In v0.40-dev, ExtendedPrivKey might have a different structure
+        // Create a PrivateKey from the derived key
+        let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
+
+        // Get public key
+        let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
+        let public_key = private_key.public_key(&secp);
+
+        // Get address
+        let address = dashcore::Address::p2pkh(&public_key, net);
+
+        // Create a JavaScript object directly
+        let obj = js_sys::Object::new();
+
+        js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
+            .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("private_key_wif"),
+            &JsValue::from_str(&private_key.to_wif()),
+        )
+            .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("private_key_hex"),
+            &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
+        )
+            .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("public_key"),
+            &JsValue::from_str(&hex::encode(public_key.to_bytes())),
+        )
+            .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("address"),
+            &JsValue::from_str(&address.to_string()),
+        )
+            .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("network"),
+            &JsValue::from_str(network),
+        )
+            .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
+
+        Ok(obj.into())
+    }
+
+    /// Create a BIP44 mainnet derivation path
+    #[wasm_bindgen(js_name = "derivationPathBip44Mainnet")]
+    pub fn derivation_path_bip44_mainnet(account: u32, change: u32, index: u32) -> JsValue {
+        let path = DerivationPath::new_bip44_mainnet(account, change, index);
+        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    }
+
+    /// Create a BIP44 testnet derivation path
+    #[wasm_bindgen(js_name = "derivationPathBip44Testnet")]
+    pub fn derivation_path_bip44_testnet(account: u32, change: u32, index: u32) -> JsValue {
+        let path = DerivationPath::new_bip44_testnet(account, change, index);
+        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    }
+
+    /// Create a DIP9 mainnet derivation path
+    #[wasm_bindgen(js_name = "derivationPathDip9Mainnet")]
+    pub fn derivation_path_dip9_mainnet(feature_type: u32, account: u32, index: u32) -> JsValue {
+        let path = DerivationPath::new_dip9_mainnet(feature_type, account, index);
+        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    }
+
+    /// Create a DIP9 testnet derivation path
+    #[wasm_bindgen(js_name = "derivationPathDip9Testnet")]
+    pub fn derivation_path_dip9_testnet(feature_type: u32, account: u32, index: u32) -> JsValue {
+        let path = DerivationPath::new_dip9_testnet(feature_type, account, index);
+        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    }
+
+    /// Create a DIP13 mainnet derivation path (for HD masternode keys)
+    #[wasm_bindgen(js_name = "derivationPathDip13Mainnet")]
+    pub fn derivation_path_dip13_mainnet(account: u32) -> JsValue {
+        // DIP13 uses m/9'/5'/account' format (DIP13 uses purpose 9, not 13)
+        let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, DASH_COIN_TYPE, account);
+
+        let obj = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("path"),
+            &JsValue::from_str(&path_str),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("purpose"),
+            &JsValue::from_f64(DIP13_PURPOSE as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("coin_type"),
+            &JsValue::from_f64(DASH_COIN_TYPE as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("account"),
+            &JsValue::from_f64(account as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("description"),
+            &JsValue::from_str("DIP13 HD identity key path"),
+        )
+            .unwrap();
+
+        obj.into()
+    }
+
+    /// Create a DIP13 testnet derivation path (for HD masternode keys)
+    #[wasm_bindgen(js_name = "derivationPathDip13Testnet")]
+    pub fn derivation_path_dip13_testnet(account: u32) -> JsValue {
+        // DIP13 uses m/9'/1'/account' format for testnet
+        let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, TESTNET_COIN_TYPE, account);
+
+        let obj = js_sys::Object::new();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("path"),
+            &JsValue::from_str(&path_str),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("purpose"),
+            &JsValue::from_f64(DIP13_PURPOSE as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("coin_type"),
+            &JsValue::from_f64(TESTNET_COIN_TYPE as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("account"),
+            &JsValue::from_f64(account as f64),
+        )
+            .unwrap();
+
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("description"),
+            &JsValue::from_str("DIP13 HD identity key path (testnet)"),
+        )
+            .unwrap();
+
+        obj.into()
+    }
+
+    /// Get child public key from extended public key
+    #[wasm_bindgen(js_name = "deriveChildPublicKey")]
+    pub fn derive_child_public_key(xpub: &str, index: u32, hardened: bool) -> Result<String, WasmSdkError> {
+        if hardened {
+            return Err(WasmSdkError::invalid_argument(
+                "Cannot derive hardened child from extended public key",
+            ));
+        }
+
+        // Disallow indices in the hardened range for non-hardened derivation
+        if index >= 0x8000_0000 {
+            return Err(WasmSdkError::invalid_argument(
+                "Index is in hardened range; use a value < 2^31",
+            ));
+        }
+
+        // Parse the extended public key
+        let parent_xpub = BIP32ExtendedPubKey::from_str(xpub)
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended public key: {}", e)))?;
+
+        // Build a one-step derivation path and derive
+        let child_number: ChildNumber = ChildNumber::from(index);
+        let path = BIP32DerivationPath::from(vec![child_number]);
+        let secp = Secp256k1::new();
+        let child_xpub = parent_xpub
+            .derive_pub(&secp, &path)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to derive child key: {}", e)))?;
+
+        Ok(child_xpub.to_string())
+    }
+
+    /// Convert extended private key to extended public key
+    #[wasm_bindgen(js_name = "xprvToXpub")]
+    pub fn xprv_to_xpub(xprv: &str) -> Result<String, WasmSdkError> {
+        // Parse the extended private key and convert to extended public key
+        let ext_prv = BIP32ExtendedPrivKey::from_str(xprv)
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended private key: {}", e)))?;
+        let secp = Secp256k1::new();
+        let ext_pub = BIP32ExtendedPubKey::from_priv(&secp, &ext_prv);
+        Ok(ext_pub.to_string())
+    }
 }
