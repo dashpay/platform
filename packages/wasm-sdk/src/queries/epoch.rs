@@ -52,7 +52,7 @@ struct ProposerBlockCount {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEpochsInfo")]
     pub async fn get_epochs_info(
         &self,
         start_epoch: Option<u16>,
@@ -84,7 +84,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getFinalizedEpochInfos")]
     pub async fn get_finalized_epoch_infos(
         &self,
         start_epoch: Option<u16>,
@@ -167,7 +167,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIds")]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
         &self,
         epoch: u16,
@@ -208,7 +208,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByRange")]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         &self,
         epoch: u16,
@@ -270,7 +270,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getCurrentEpoch")]
     pub async fn get_current_epoch(&self) -> Result<JsValue, WasmSdkError> {
         let epoch = ExtendedEpochInfo::fetch_current(self.as_ref()).await?;
 
@@ -280,7 +280,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEpochsInfoWithProofInfo")]
     pub async fn get_epochs_info_with_proof_info(
         &self,
         start_epoch: Option<u16>,
@@ -321,7 +321,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getCurrentEpochWithProofInfo")]
     pub async fn get_current_epoch_with_proof_info(&self) -> Result<JsValue, WasmSdkError> {
         let (epoch, metadata, proof) =
             ExtendedEpochInfo::fetch_current_with_metadata_and_proof(self.as_ref())
@@ -344,7 +344,7 @@ impl WasmSdk {
 
     // Additional proof info versions for epoch queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getFinalizedEpochInfosWithProofInfo")]
     pub async fn get_finalized_epoch_infos_with_proof_info(
         &self,
         start_epoch: Option<u16>,
@@ -432,7 +432,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
@@ -446,7 +446,7 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByRangeWithProofInfo")]
     pub async fn get_evonodes_proposed_epoch_blocks_by_range_with_proof_info(
         &self,
         epoch: u16,

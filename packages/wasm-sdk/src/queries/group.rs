@@ -77,7 +77,7 @@ pub struct GroupContractPositionInfo {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupInfo")]
     pub async fn get_group_info(
         &self,
         data_contract_id: &str,
@@ -114,7 +114,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupMembers")]
     pub async fn get_group_members(
         &self,
         data_contract_id: &str,
@@ -216,7 +216,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityGroups")]
     pub async fn get_identity_groups(
         &self,
         identity_id: &str,
@@ -283,7 +283,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupInfos")]
     pub async fn get_group_infos(
         &self,
         contract_id: &str,
@@ -360,7 +360,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupActions")]
     pub async fn get_group_actions(
         &self,
         contract_id: &str,
@@ -450,7 +450,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupActionSigners")]
     pub async fn get_group_action_signers(
         &self,
         contract_id: &str,
@@ -519,7 +519,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupsDataContracts")]
     pub async fn get_groups_data_contracts(
         &self,
         data_contract_ids: Vec<String>,
@@ -569,7 +569,7 @@ impl WasmSdk {
 
     // Proof versions for group queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupInfoWithProofInfo")]
     pub async fn get_group_info_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -610,7 +610,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupInfosWithProofInfo")]
     pub async fn get_group_infos_with_proof_info(
         &self,
         contract_id: &str,
@@ -687,7 +687,7 @@ impl WasmSdk {
 
     // Additional proof info versions for remaining group queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupMembersWithProofInfo")]
     pub async fn get_group_members_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -798,7 +798,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityGroupsWithProofInfo")]
     pub async fn get_identity_groups_with_proof_info(
         &self,
         identity_id: &str,
@@ -903,7 +903,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupActionsWithProofInfo")]
     pub async fn get_group_actions_with_proof_info(
         &self,
         contract_id: &str,
@@ -1000,7 +1000,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
         contract_id: &str,
@@ -1076,7 +1076,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getGroupsDataContractsWithProofInfo")]
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
         data_contract_ids: Vec<String>,

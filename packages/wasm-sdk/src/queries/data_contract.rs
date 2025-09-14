@@ -25,7 +25,7 @@ struct DataContractsResponse {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContract")]
     pub async fn get_data_contract(
         &self,
         base58_id: &str,
@@ -45,7 +45,7 @@ impl WasmSdk {
             .map(Into::into)
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]
     pub async fn get_data_contract_with_proof_info(
         &self,
         base58_id: &str,
@@ -89,7 +89,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContractHistory")]
     pub async fn get_data_contract_history(
         &self,
         id: &str,
@@ -148,7 +148,7 @@ impl WasmSdk {
             )))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContracts")]
     pub async fn get_data_contracts(&self, ids: Vec<String>) -> Result<JsValue, WasmSdkError> {
         // Parse all contract IDs
         let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
@@ -203,7 +203,7 @@ impl WasmSdk {
 
     // Proof info versions for data contract queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContractHistoryWithProofInfo")]
     pub async fn get_data_contract_history_with_proof_info(
         &self,
         id: &str,
@@ -269,7 +269,7 @@ impl WasmSdk {
             )))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDataContractsWithProofInfo")]
     pub async fn get_data_contracts_with_proof_info(
         &self,
         ids: Vec<String>,

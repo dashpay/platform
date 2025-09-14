@@ -30,7 +30,7 @@ const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard
 #[wasm_bindgen]
 impl WasmSdk {
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResources")]
     pub async fn get_contested_resources(
         &self,
         document_type_name: &str,
@@ -111,7 +111,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentity")]
     pub async fn get_contested_resource_voters_for_identity(
         &self,
         contract_id: &str,
@@ -223,7 +223,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceIdentityVotes")]
     pub async fn get_contested_resource_identity_votes(
         &self,
         identity_id: &str,
@@ -251,7 +251,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getVotePollsByEndDate")]
     pub async fn get_vote_polls_by_end_date(
         &self,
         start_time_info: Option<String>,
@@ -275,7 +275,7 @@ impl WasmSdk {
 
     // Proof info versions for voting queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourcesWithProofInfo")]
     pub async fn get_contested_resources_with_proof_info(
         &self,
         document_type_name: &str,
@@ -371,7 +371,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
     pub async fn get_contested_resource_vote_state_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -507,7 +507,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentityWithProofInfo")]
     pub async fn get_contested_resource_voters_for_identity_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -635,7 +635,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceIdentityVotesWithProofInfo")]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
         identity_id: &str,
@@ -706,7 +706,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfo")]
     pub async fn get_vote_polls_by_end_date_with_proof_info(
         &self,
         start_time_ms: Option<u64>,
@@ -783,7 +783,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getContestedResourceVoteState")]
     pub async fn get_contested_resource_vote_state(
         &self,
         data_contract_id: &str,

@@ -18,7 +18,7 @@ struct DpnsUsernameInfo {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsernameByName")]
     pub async fn get_dpns_username_by_name(&self, username: &str) -> Result<wasm_bindgen::JsValue, WasmSdkError> {
         use dash_sdk::dpp::platform_value::Value;
         use dash_sdk::platform::documents::document_query::DocumentQuery;
@@ -81,7 +81,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsernameByNameWithProofInfo")]
     pub async fn get_dpns_username_by_name_with_proof_info(
         &self,
         username: &str,

@@ -23,7 +23,7 @@ struct ProtocolVersionUpgradeVoteStatus {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeState")]
     pub async fn get_protocol_version_upgrade_state(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::ProtocolVersionVoteCount;
@@ -64,7 +64,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatus")]
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
         start_pro_tx_hash: &str,
@@ -106,7 +106,7 @@ impl WasmSdk {
 
     // Proof versions for protocol queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeStateWithProofInfo")]
     pub async fn get_protocol_version_upgrade_state_with_proof_info(
         &self,
     ) -> Result<JsValue, WasmSdkError> {
@@ -161,7 +161,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
         start_pro_tx_hash: &str,

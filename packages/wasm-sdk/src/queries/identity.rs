@@ -68,7 +68,7 @@ pub(crate) struct TokenBalanceResponse {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentity")]
     pub async fn get_identity(&self, base58_id: &str) -> Result<IdentityWasm, WasmSdkError> {
         let id = Identifier::from_string(
             base58_id,
@@ -82,7 +82,7 @@ impl WasmSdk {
             .map(Into::into)
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityWithProofInfo")]
     pub async fn get_identity_with_proof_info(
         &self,
         base58_id: &str,
@@ -124,7 +124,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityUnproved")]
     pub async fn get_identity_unproved(
         &self,
         base58_id: &str,
@@ -171,7 +171,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityKeys")]
     pub async fn get_identity_keys(
         &self,
         identity_id: &str,
@@ -433,7 +433,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityNonce")]
     pub async fn get_identity_nonce(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
@@ -472,7 +472,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityNonceWithProofInfo")]
     pub async fn get_identity_nonce_with_proof_info(
         &self,
         identity_id: &str,
@@ -515,7 +515,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityContractNonce")]
     pub async fn get_identity_contract_nonce(
         &self,
         identity_id: &str,
@@ -569,7 +569,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityContractNonceWithProofInfo")]
     pub async fn get_identity_contract_nonce_with_proof_info(
         &self,
         identity_id: &str,
@@ -627,7 +627,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityBalance")]
     pub async fn get_identity_balance(&self, id: &str) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
@@ -666,7 +666,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesBalances")]
     pub async fn get_identities_balances(
         &self,
         identity_ids: Vec<String>,
@@ -707,7 +707,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityBalanceAndRevision")]
     pub async fn get_identity_balance_and_revision(
         &self,
         identity_id: &str,
@@ -743,7 +743,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityByPublicKeyHash")]
     pub async fn get_identity_by_public_key_hash(
         &self,
         public_key_hash: &str,
@@ -770,7 +770,7 @@ impl WasmSdk {
             .map(Into::into)
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesContractKeys")]
     pub async fn get_identities_contract_keys(
         &self,
         identities_ids: Vec<String>,
@@ -867,7 +867,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHash")]
     pub async fn get_identity_by_non_unique_public_key_hash(
         &self,
         public_key_hash: &str,
@@ -933,7 +933,7 @@ impl WasmSdk {
         Ok(js_array.into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityTokenBalances")]
     pub async fn get_identity_token_balances(
         &self,
         identity_id: &str,
@@ -990,7 +990,7 @@ impl WasmSdk {
 
     // Proof info versions for identity queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityKeysWithProofInfo")]
     pub async fn get_identity_keys_with_proof_info(
         &self,
         identity_id: &str,
@@ -1153,7 +1153,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityBalanceWithProofInfo")]
     pub async fn get_identity_balance_with_proof_info(
         &self,
         id: &str,
@@ -1200,7 +1200,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesBalancesWithProofInfo")]
     pub async fn get_identities_balances_with_proof_info(
         &self,
         identity_ids: Vec<String>,
@@ -1250,7 +1250,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityBalanceAndRevisionWithProofInfo")]
     pub async fn get_identity_balance_and_revision_with_proof_info(
         &self,
         identity_id: &str,
@@ -1294,7 +1294,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityByPublicKeyHashWithProofInfo")]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,
         public_key_hash: &str,
@@ -1346,7 +1346,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHashWithProofInfo")]
     pub async fn get_identity_by_non_unique_public_key_hash_with_proof_info(
         &self,
         public_key_hash: &str,
@@ -1424,7 +1424,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesContractKeysWithProofInfo")]
     pub async fn get_identities_contract_keys_with_proof_info(
         &self,
         identities_ids: Vec<String>,
@@ -1554,7 +1554,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityTokenBalancesWithProofInfo")]
     pub async fn get_identity_token_balances_with_proof_info(
         &self,
         identity_id: &str,

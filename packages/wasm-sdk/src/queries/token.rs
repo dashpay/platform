@@ -86,7 +86,7 @@ impl WasmSdk {
     /// ```javascript
     /// const tokenId = await sdk.calculateTokenId("Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv", 0);
     /// ```
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "calculateTokenIdFromContract")]
     pub fn calculate_token_id_from_contract(
         contract_id: &str,
         token_position: u16,
@@ -133,7 +133,7 @@ impl WasmSdk {
     /// );
     /// console.log(`Token ${priceInfo.tokenId} current price: ${priceInfo.currentPrice}`);
     /// ```
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(
         &self,
         contract_id: &str,
@@ -194,7 +194,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesTokenBalances")]
     pub async fn get_identities_token_balances(
         &self,
         identity_ids: Vec<String>,
@@ -256,7 +256,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityTokenInfos")]
     pub async fn get_identity_token_infos(
         &self,
         identity_id: &str,
@@ -327,7 +327,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesTokenInfos")]
     pub async fn get_identities_token_infos(
         &self,
         identity_ids: Vec<String>,
@@ -398,7 +398,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenStatuses")]
     pub async fn get_token_statuses(&self, token_ids: Vec<String>) -> Result<JsValue, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
@@ -442,7 +442,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenDirectPurchasePrices")]
     pub async fn get_token_direct_purchase_prices(
         &self,
         token_ids: Vec<String>,
@@ -508,7 +508,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
         data_contract_id: &str,
@@ -552,7 +552,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaim")]
     pub async fn get_token_perpetual_distribution_last_claim(
         &self,
         identity_id: &str,
@@ -701,7 +701,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenTotalSupply")]
     pub async fn get_token_total_supply(&self, token_id: &str) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
@@ -733,7 +733,7 @@ impl WasmSdk {
 
     // Proof versions for token queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesTokenBalancesWithProofInfo")]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
         identity_ids: Vec<String>,
@@ -807,7 +807,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenStatusesWithProofInfo")]
     pub async fn get_token_statuses_with_proof_info(
         &self,
         token_ids: Vec<String>,
@@ -862,7 +862,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenTotalSupplyWithProofInfo")]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
         token_id: &str,
@@ -909,7 +909,7 @@ impl WasmSdk {
 
     // Additional proof info versions for remaining token queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentityTokenInfosWithProofInfo")]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
         identity_id: &str,
@@ -990,7 +990,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getIdentitiesTokenInfosWithProofInfo")]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
         identity_ids: Vec<String>,
@@ -1071,7 +1071,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenDirectPurchasePricesWithProofInfo")]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
         token_ids: Vec<String>,
@@ -1147,7 +1147,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenContractInfoWithProofInfo")]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -1199,7 +1199,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo")]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
         identity_id: &str,

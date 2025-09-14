@@ -151,7 +151,7 @@ struct PathElement {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getStatus")]
     pub async fn get_status(&self) -> Result<JsValue, WasmSdkError> {
         use dapi_grpc::platform::v0::get_status_request::{GetStatusRequestV0, Version};
         use dapi_grpc::platform::v0::GetStatusRequest;
@@ -376,7 +376,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getCurrentQuorumsInfo")]
     pub async fn get_current_quorums_info(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::FetchUnproved;
         use drive_proof_verifier::types::{CurrentQuorumsInfo as SdkCurrentQuorumsInfo, NoParamQuery};
@@ -457,7 +457,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTotalCreditsInPlatform")]
     pub async fn get_total_credits_in_platform(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery};
@@ -485,7 +485,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
         identity_id: &str,
@@ -529,7 +529,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "waitForStateTransitionResult")]
     pub async fn wait_for_state_transition_result(
         &self,
         state_transition_hash: &str,
@@ -601,7 +601,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getPathElements")]
     pub async fn get_path_elements(
         &self,
         path: Vec<String>,
@@ -667,7 +667,7 @@ impl WasmSdk {
 
     // Proof versions for system queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getTotalCreditsInPlatformWithProofInfo")]
     pub async fn get_total_credits_in_platform_with_proof_info(
         &self,
     ) -> Result<JsValue, WasmSdkError> {
@@ -700,7 +700,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
         identity_id: &str,
@@ -739,7 +739,7 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getPathElementsWithProofInfo")]
     pub async fn get_path_elements_with_proof_info(
         &self,
         path: Vec<String>,

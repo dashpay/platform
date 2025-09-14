@@ -227,7 +227,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDocuments")]
     pub async fn get_documents(
         &self,
         data_contract_id: &str,
@@ -372,7 +372,7 @@ impl WasmSdk {
             )))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDocumentsWithProofInfo")]
     pub async fn get_documents_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -509,7 +509,7 @@ impl WasmSdk {
             )))
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
         data_contract_id: &str,
@@ -576,7 +576,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDocumentWithProofInfo")]
     pub async fn get_document_with_proof_info(
         &self,
         data_contract_id: &str,
@@ -667,7 +667,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsernames")]
     pub async fn get_dpns_usernames(
         &self,
         identity_id: &str,
@@ -753,7 +753,7 @@ impl WasmSdk {
     }
 
     // Keep the old function for backward compatibility but have it call the new one
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsername")]
     pub async fn get_dpns_username(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
         // Call the new function with limit 1
         let result = self.get_dpns_usernames(identity_id, Some(1)).await?;
@@ -770,7 +770,7 @@ impl WasmSdk {
 
     // Proof info versions for DPNS queries
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsernamesWithProofInfo")]
     pub async fn get_dpns_usernames_with_proof_info(
         &self,
         identity_id: &str,
@@ -861,7 +861,7 @@ impl WasmSdk {
             )).into())
     }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
     pub async fn get_dpns_username_with_proof_info(
         &self,
         identity_id: &str,
