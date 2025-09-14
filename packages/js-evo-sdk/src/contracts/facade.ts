@@ -9,18 +9,21 @@ export class ContractsFacade {
     this.sdk = sdk;
   }
 
-  fetch(contractId: string): Promise<wasm.DataContractWasm> {
-    return wasm.data_contract_fetch(this.sdk.wasm, contractId);
+  async fetch(contractId: string): Promise<wasm.DataContractWasm> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.data_contract_fetch(w, contractId);
   }
 
-  fetchWithProof(contractId: string): Promise<any> {
-    return wasm.data_contract_fetch_with_proof_info(this.sdk.wasm, contractId);
+  async fetchWithProof(contractId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.data_contract_fetch_with_proof_info(w, contractId);
   }
 
-  getHistory(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
+  async getHistory(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
+    const w = await this.sdk.getWasmSdkConnected();
     return wasm.get_data_contract_history(
-      this.sdk.wasm,
+      w,
       contractId,
       limit ?? null,
       null,
@@ -28,10 +31,11 @@ export class ContractsFacade {
     );
   }
 
-  getHistoryWithProof(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
+  async getHistoryWithProof(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
+    const w = await this.sdk.getWasmSdkConnected();
     return wasm.get_data_contract_history_with_proof_info(
-      this.sdk.wasm,
+      w,
       contractId,
       limit ?? null,
       null,
@@ -39,22 +43,25 @@ export class ContractsFacade {
     );
   }
 
-  getMany(contractIds: string[]): Promise<any> {
-    return wasm.get_data_contracts(this.sdk.wasm, contractIds);
+  async getMany(contractIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_data_contracts(w, contractIds);
   }
 
-  getManyWithProof(contractIds: string[]): Promise<any> {
-    return wasm.get_data_contracts_with_proof_info(this.sdk.wasm, contractIds);
+  async getManyWithProof(contractIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_data_contracts_with_proof_info(w, contractIds);
   }
 
-  create(args: { ownerId: string; definition: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
+  async create(args: { ownerId: string; definition: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
     const { ownerId, definition, privateKeyWif, keyId } = args;
-    return this.sdk.wasm.contractCreate(ownerId, asJsonString(definition)!, privateKeyWif, keyId ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractCreate(ownerId, asJsonString(definition)!, privateKeyWif, keyId ?? null);
   }
 
-  update(args: { contractId: string; ownerId: string; updates: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
+  async update(args: { contractId: string; ownerId: string; updates: unknown; privateKeyWif: string; keyId?: number }): Promise<any> {
     const { contractId, ownerId, updates, privateKeyWif, keyId } = args;
-    return this.sdk.wasm.contractUpdate(contractId, ownerId, asJsonString(updates)!, privateKeyWif, keyId ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.contractUpdate(contractId, ownerId, asJsonString(updates)!, privateKeyWif, keyId ?? null);
   }
 }
-

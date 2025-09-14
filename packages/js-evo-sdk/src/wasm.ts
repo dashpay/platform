@@ -1,11 +1,11 @@
 // ESM wrapper around @dashevo/wasm-sdk with one-time init
 import initWasmSdk, * as wasm from '@dashevo/wasm-sdk';
 
-let initPromise: Promise<void> | undefined;
+let initPromise: Promise<any> | undefined;
 
 export async function ensureInitialized(): Promise<void> {
   if (!initPromise) {
-    initPromise = initWasmSdk().then(() => undefined);
+    initPromise = initWasmSdk().then(() => wasm);
   }
   return initPromise;
 }

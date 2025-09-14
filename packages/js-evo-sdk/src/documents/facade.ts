@@ -10,7 +10,7 @@ export class DocumentsFacade {
   }
 
   // Query many documents
-  query(params: {
+  async query(params: {
     contractId: string;
     type: string;
     where?: unknown;
@@ -22,8 +22,9 @@ export class DocumentsFacade {
     const { contractId, type, where, orderBy, limit, startAfter, startAt } = params;
     const whereJson = asJsonString(where);
     const orderJson = asJsonString(orderBy);
+    const w = await this.sdk.getWasmSdkConnected();
     return wasm.get_documents(
-      this.sdk.wasm,
+      w,
       contractId,
       type,
       whereJson ?? null,
@@ -34,7 +35,7 @@ export class DocumentsFacade {
     );
   }
 
-  queryWithProof(params: {
+  async queryWithProof(params: {
     contractId: string;
     type: string;
     where?: unknown;
@@ -46,8 +47,9 @@ export class DocumentsFacade {
     const { contractId, type, where, orderBy, limit, startAfter, startAt } = params;
     const whereJson = asJsonString(where);
     const orderJson = asJsonString(orderBy);
+    const w = await this.sdk.getWasmSdkConnected();
     return wasm.get_documents_with_proof_info(
-      this.sdk.wasm,
+      w,
       contractId,
       type,
       whereJson ?? null,
@@ -58,15 +60,17 @@ export class DocumentsFacade {
     );
   }
 
-  get(contractId: string, type: string, documentId: string): Promise<any> {
-    return wasm.get_document(this.sdk.wasm, contractId, type, documentId);
+  async get(contractId: string, type: string, documentId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_document(w, contractId, type, documentId);
   }
 
-  getWithProof(contractId: string, type: string, documentId: string): Promise<any> {
-    return wasm.get_document_with_proof_info(this.sdk.wasm, contractId, type, documentId);
+  async getWithProof(contractId: string, type: string, documentId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_document_with_proof_info(w, contractId, type, documentId);
   }
 
-  create(args: {
+  async create(args: {
     contractId: string;
     type: string;
     ownerId: string;
@@ -75,7 +79,8 @@ export class DocumentsFacade {
     privateKeyWif: string;
   }): Promise<any> {
     const { contractId, type, ownerId, data, entropyHex, privateKeyWif } = args;
-    return this.sdk.wasm.documentCreate(
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentCreate(
       contractId,
       type,
       ownerId,
@@ -85,7 +90,7 @@ export class DocumentsFacade {
     );
   }
 
-  replace(args: {
+  async replace(args: {
     contractId: string;
     type: string;
     documentId: string;
@@ -95,7 +100,8 @@ export class DocumentsFacade {
     privateKeyWif: string;
   }): Promise<any> {
     const { contractId, type, documentId, ownerId, data, revision, privateKeyWif } = args;
-    return this.sdk.wasm.documentReplace(
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentReplace(
       contractId,
       type,
       documentId,
@@ -106,24 +112,27 @@ export class DocumentsFacade {
     );
   }
 
-  delete(args: { contractId: string; type: string; documentId: string; ownerId: string; privateKeyWif: string }): Promise<any> {
+  async delete(args: { contractId: string; type: string; documentId: string; ownerId: string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, privateKeyWif } = args;
-    return this.sdk.wasm.documentDelete(contractId, type, documentId, ownerId, privateKeyWif);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentDelete(contractId, type, documentId, ownerId, privateKeyWif);
   }
 
-  transfer(args: { contractId: string; type: string; documentId: string; ownerId: string; recipientId: string; privateKeyWif: string }): Promise<any> {
+  async transfer(args: { contractId: string; type: string; documentId: string; ownerId: string; recipientId: string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, recipientId, privateKeyWif } = args;
-    return this.sdk.wasm.documentTransfer(contractId, type, documentId, ownerId, recipientId, privateKeyWif);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentTransfer(contractId, type, documentId, ownerId, recipientId, privateKeyWif);
   }
 
-  purchase(args: { contractId: string; type: string; documentId: string; buyerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
+  async purchase(args: { contractId: string; type: string; documentId: string; buyerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, buyerId, price, privateKeyWif } = args;
-    return this.sdk.wasm.documentPurchase(contractId, type, documentId, buyerId, BigInt(price), privateKeyWif);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentPurchase(contractId, type, documentId, buyerId, BigInt(price), privateKeyWif);
   }
 
-  setPrice(args: { contractId: string; type: string; documentId: string; ownerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
+  async setPrice(args: { contractId: string; type: string; documentId: string; ownerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, price, privateKeyWif } = args;
-    return this.sdk.wasm.documentSetPrice(contractId, type, documentId, ownerId, BigInt(price), privateKeyWif);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.documentSetPrice(contractId, type, documentId, ownerId, BigInt(price), privateKeyWif);
   }
 }
-

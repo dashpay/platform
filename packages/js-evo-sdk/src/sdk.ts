@@ -45,14 +45,32 @@ export class EvoSDK {
   constructor(options: EvoSDKOptions = {}) {
     const { network = 'testnet', trusted = false, version, proofs, settings } = options;
     this.options = { network, trusted, version, proofs, settings } as any;
+
+    this.documents = new DocumentsFacade(this);
+    this.identities = new IdentitiesFacade(this);
+    this.contracts = new ContractsFacade(this);
+    this.tokens = new TokensFacade(this);
+    this.dpns = new DpnsFacade(this);
+    this.epoch = new EpochFacade(this);
+    this.protocol = new ProtocolFacade(this);
+    this.system = new SystemFacade(this);
+    this.group = new GroupFacade(this);
+    this.voting = new VotingFacade(this);
   }
 
   get wasm(): wasm.WasmSdk {
-    if (!this.wasmSdk) throw new Error('EvoSDK is not connected. Call await sdk.connect() first.');
+    if (!this.wasmSdk) throw new Error('SDK is not connected. Call EvoSDK#connect() first.');
     return this.wasmSdk;
   }
 
   get isConnected(): boolean { return !!this.wasmSdk; }
+
+  async getWasmSdkConnected(): Promise<wasm.WasmSdk> {
+    if (!this.wasmSdk) {
+      await this.connect();
+    }
+    return this.wasmSdk as wasm.WasmSdk;
+  }
 
   async connect(): Promise<void> {
     if (this.wasmSdk) return; // idempotent
@@ -75,33 +93,11 @@ export class EvoSDK {
     }
 
     this.wasmSdk = b.build();
-
-    // Initialize facades
-    this.documents = new DocumentsFacade(this);
-    this.identities = new IdentitiesFacade(this);
-    this.contracts = new ContractsFacade(this);
-    this.tokens = new TokensFacade(this);
-    this.dpns = new DpnsFacade(this);
-    this.epoch = new EpochFacade(this);
-    this.protocol = new ProtocolFacade(this);
-    this.system = new SystemFacade(this);
-    this.group = new GroupFacade(this);
-    this.voting = new VotingFacade(this);
   }
 
-  static fromWasm(raw: wasm.WasmSdk): EvoSDK {
+  static fromWasm(wasmSdk: wasm.WasmSdk): EvoSDK {
     const sdk = new EvoSDK();
-    (sdk as any).wasmSdk = raw;
-    sdk.documents = new DocumentsFacade(sdk);
-    sdk.identities = new IdentitiesFacade(sdk);
-    sdk.contracts = new ContractsFacade(sdk);
-    sdk.tokens = new TokensFacade(sdk);
-    sdk.dpns = new DpnsFacade(sdk);
-    sdk.epoch = new EpochFacade(sdk);
-    sdk.protocol = new ProtocolFacade(sdk);
-    sdk.system = new SystemFacade(sdk);
-    sdk.group = new GroupFacade(sdk);
-    sdk.voting = new VotingFacade(sdk);
+    (sdk as any).wasmSdk = wasmSdk;
     return sdk;
   }
 

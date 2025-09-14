@@ -20,43 +20,51 @@ export class DpnsFacade {
     return wasm.dpns_is_contested_username(label);
   }
 
-  isNameAvailable(label: string): Promise<boolean> {
-    return wasm.dpns_is_name_available(this.sdk.wasm, label);
+  async isNameAvailable(label: string): Promise<boolean> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.dpns_is_name_available(w, label);
   }
 
-  resolveName(name: string): Promise<any> {
-    return wasm.dpns_resolve_name(this.sdk.wasm, name);
+  async resolveName(name: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.dpns_resolve_name(w, name);
   }
 
-  registerName(args: { label: string; identityId: string; publicKeyId: number; privateKeyWif: string; onPreorder?: Function }): Promise<any> {
+  async registerName(args: { label: string; identityId: string; publicKeyId: number; privateKeyWif: string; onPreorder?: Function }): Promise<any> {
     const { label, identityId, publicKeyId, privateKeyWif, onPreorder } = args;
-    return wasm.dpns_register_name(this.sdk.wasm, label, identityId, publicKeyId, privateKeyWif, onPreorder ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.dpns_register_name(w, label, identityId, publicKeyId, privateKeyWif, onPreorder ?? null);
   }
 
-  usernames(identityId: string, opts: { limit?: number } = {}): Promise<any> {
+  async usernames(identityId: string, opts: { limit?: number } = {}): Promise<any> {
     const { limit } = opts;
-    return wasm.get_dpns_usernames(this.sdk.wasm, identityId, limit ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_usernames(w, identityId, limit ?? null);
   }
 
-  username(identityId: string): Promise<any> {
-    return wasm.get_dpns_username(this.sdk.wasm, identityId);
+  async username(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_username(w, identityId);
   }
 
-  usernamesWithProof(identityId: string, opts: { limit?: number } = {}): Promise<any> {
+  async usernamesWithProof(identityId: string, opts: { limit?: number } = {}): Promise<any> {
     const { limit } = opts;
-    return wasm.get_dpns_usernames_with_proof_info(this.sdk.wasm, identityId, limit ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_usernames_with_proof_info(w, identityId, limit ?? null);
   }
 
-  usernameWithProof(identityId: string): Promise<any> {
-    return wasm.get_dpns_username_with_proof_info(this.sdk.wasm, identityId);
+  async usernameWithProof(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_username_with_proof_info(w, identityId);
   }
 
-  getUsernameByName(username: string): Promise<any> {
-    return wasm.get_dpns_username_by_name(this.sdk.wasm, username);
+  async getUsernameByName(username: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_username_by_name(w, username);
   }
 
-  getUsernameByNameWithProof(username: string): Promise<any> {
-    return wasm.get_dpns_username_by_name_with_proof_info(this.sdk.wasm, username);
+  async getUsernameByNameWithProof(username: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_dpns_username_by_name_with_proof_info(w, username);
   }
 }
-

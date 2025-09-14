@@ -9,23 +9,27 @@ export class IdentitiesFacade {
     this.sdk = sdk;
   }
 
-  fetch(identityId: string): Promise<wasm.IdentityWasm> {
-    return wasm.identity_fetch(this.sdk.wasm, identityId);
+  async fetch(identityId: string): Promise<wasm.IdentityWasm> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.identity_fetch(w, identityId);
   }
 
-  fetchWithProof(identityId: string): Promise<any> {
-    return wasm.identity_fetch_with_proof_info(this.sdk.wasm, identityId);
+  async fetchWithProof(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.identity_fetch_with_proof_info(w, identityId);
   }
 
-  fetchUnproved(identityId: string): Promise<wasm.IdentityWasm> {
-    return wasm.identity_fetch_unproved(this.sdk.wasm, identityId);
+  async fetchUnproved(identityId: string): Promise<wasm.IdentityWasm> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.identity_fetch_unproved(w, identityId);
   }
 
-  getKeys(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; searchPurposeMap?: unknown; limit?: number; offset?: number }): Promise<any> {
+  async getKeys(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; searchPurposeMap?: unknown; limit?: number; offset?: number }): Promise<any> {
     const { identityId, keyRequestType, specificKeyIds, searchPurposeMap, limit, offset } = args;
     const mapJson = asJsonString(searchPurposeMap);
+    const w = await this.sdk.getWasmSdkConnected();
     return wasm.get_identity_keys(
-      this.sdk.wasm,
+      w,
       identityId,
       keyRequestType,
       specificKeyIds ? Uint32Array.from(specificKeyIds) : null,
@@ -35,29 +39,34 @@ export class IdentitiesFacade {
     );
   }
 
-  create(args: { assetLockProof: unknown; assetLockPrivateKeyWif: string; publicKeys: unknown[] }): Promise<any> {
+  async create(args: { assetLockProof: unknown; assetLockPrivateKeyWif: string; publicKeys: unknown[] }): Promise<any> {
     const { assetLockProof, assetLockPrivateKeyWif, publicKeys } = args;
-    return this.sdk.wasm.identityCreate(asJsonString(assetLockProof)!, assetLockPrivateKeyWif, asJsonString(publicKeys)!);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityCreate(asJsonString(assetLockProof)!, assetLockPrivateKeyWif, asJsonString(publicKeys)!);
   }
 
-  topUp(args: { identityId: string; assetLockProof: unknown; assetLockPrivateKeyWif: string }): Promise<any> {
+  async topUp(args: { identityId: string; assetLockProof: unknown; assetLockPrivateKeyWif: string }): Promise<any> {
     const { identityId, assetLockProof, assetLockPrivateKeyWif } = args;
-    return this.sdk.wasm.identityTopUp(identityId, asJsonString(assetLockProof)!, assetLockPrivateKeyWif);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityTopUp(identityId, asJsonString(assetLockProof)!, assetLockPrivateKeyWif);
   }
 
-  creditTransfer(args: { senderId: string; recipientId: string; amount: number | bigint | string; privateKeyWif: string; keyId?: number }): Promise<any> {
+  async creditTransfer(args: { senderId: string; recipientId: string; amount: number | bigint | string; privateKeyWif: string; keyId?: number }): Promise<any> {
     const { senderId, recipientId, amount, privateKeyWif, keyId } = args;
-    return this.sdk.wasm.identityCreditTransfer(senderId, recipientId, BigInt(amount), privateKeyWif, keyId ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityCreditTransfer(senderId, recipientId, BigInt(amount), privateKeyWif, keyId ?? null);
   }
 
-  creditWithdrawal(args: { identityId: string; toAddress: string; amount: number | bigint | string; coreFeePerByte?: number; privateKeyWif: string; keyId?: number }): Promise<any> {
+  async creditWithdrawal(args: { identityId: string; toAddress: string; amount: number | bigint | string; coreFeePerByte?: number; privateKeyWif: string; keyId?: number }): Promise<any> {
     const { identityId, toAddress, amount, coreFeePerByte = 1, privateKeyWif, keyId } = args;
-    return this.sdk.wasm.identityCreditWithdrawal(identityId, toAddress, BigInt(amount), coreFeePerByte ?? null, privateKeyWif, keyId ?? null);
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityCreditWithdrawal(identityId, toAddress, BigInt(amount), coreFeePerByte ?? null, privateKeyWif, keyId ?? null);
   }
 
-  update(args: { identityId: string; addPublicKeys?: unknown[]; disablePublicKeyIds?: number[]; privateKeyWif: string }): Promise<any> {
+  async update(args: { identityId: string; addPublicKeys?: unknown[]; disablePublicKeyIds?: number[]; privateKeyWif: string }): Promise<any> {
     const { identityId, addPublicKeys, disablePublicKeyIds, privateKeyWif } = args;
-    return this.sdk.wasm.identityUpdate(
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.identityUpdate(
       identityId,
       addPublicKeys ? asJsonString(addPublicKeys)! : null,
       disablePublicKeyIds ? Uint32Array.from(disablePublicKeyIds) : null,
@@ -65,4 +74,3 @@ export class IdentitiesFacade {
     );
   }
 }
-

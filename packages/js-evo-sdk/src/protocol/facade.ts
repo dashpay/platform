@@ -5,17 +5,18 @@ export class ProtocolFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  versionUpgradeState(): Promise<any> { return wasm.get_protocol_version_upgrade_state(this.sdk.wasm); }
-  versionUpgradeStateWithProof(): Promise<any> { return wasm.get_protocol_version_upgrade_state_with_proof_info(this.sdk.wasm); }
+  async versionUpgradeState(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return wasm.get_protocol_version_upgrade_state(w); }
+  async versionUpgradeStateWithProof(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return wasm.get_protocol_version_upgrade_state_with_proof_info(w); }
 
-  versionUpgradeVoteStatus(params: { startProTxHash: string; count: number }): Promise<any> {
+  async versionUpgradeVoteStatus(params: { startProTxHash: string; count: number }): Promise<any> {
     const { startProTxHash, count } = params;
-    return wasm.get_protocol_version_upgrade_vote_status(this.sdk.wasm, startProTxHash, count);
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_protocol_version_upgrade_vote_status(w, startProTxHash, count);
   }
 
-  versionUpgradeVoteStatusWithProof(params: { startProTxHash: string; count: number }): Promise<any> {
+  async versionUpgradeVoteStatusWithProof(params: { startProTxHash: string; count: number }): Promise<any> {
     const { startProTxHash, count } = params;
-    return wasm.get_protocol_version_upgrade_vote_status_with_proof_info(this.sdk.wasm, startProTxHash, count);
+    const w = await this.sdk.getWasmSdkConnected();
+    return wasm.get_protocol_version_upgrade_vote_status_with_proof_info(w, startProTxHash, count);
   }
 }
-
