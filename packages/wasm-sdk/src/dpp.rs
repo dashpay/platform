@@ -221,7 +221,7 @@ impl IdentityWasm {
     //     Ok(Buffer::from_bytes(&bytes))
     // }
 
-    #[wasm_bindgen]
+    #[wasm_bindgen(js_name = "hash")]
     pub fn hash(&self) -> Result<Vec<u8>, WasmSdkError> {
         let hash_bytes = self.inner.hash()?;
 
