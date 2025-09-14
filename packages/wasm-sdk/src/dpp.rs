@@ -38,7 +38,7 @@ impl From<Identity> for IdentityWasm {
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(platform_version: u32) -> Result<IdentityWasm, WasmSdkError> {
-        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| WasmSdkError::invalid_argument(format!("unknown platform version {platform_version}")))?;
+        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| WasmSdkError::invalid_argument(format!("unknown platform version {platform_version}: {e}")))?;
 
         let identity = Identity::default_versioned(platform_version)?;
 

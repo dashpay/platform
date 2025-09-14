@@ -897,7 +897,7 @@ impl WasmSdk {
             }
             None => {
                 // Fetch price from pricing schedule
-                let token_id = crate::queries::token::calculate_token_id_from_contract(
+                let token_id = Self::calculate_token_id_from_contract(
                     &data_contract_id,
                     token_position,
                 )
@@ -907,7 +907,7 @@ impl WasmSdk {
 
                 let token_ids = vec![token_id];
                 let prices =
-                    crate::queries::token::get_token_direct_purchase_prices(self, token_ids)
+                    self.get_token_direct_purchase_prices(token_ids)
                         .await?;
 
                 // Use js_sys to work with JavaScript objects

@@ -226,673 +226,676 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 }
 
 #[wasm_bindgen]
-pub async fn get_documents(
-    sdk: &WasmSdk,
-    data_contract_id: &str,
-    document_type: &str,
-    where_clause: Option<String>,
-    order_by: Option<String>,
-    limit: Option<u32>,
-    start_after: Option<String>,
-    start_at: Option<String>,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-    use dash_sdk::platform::FetchMany;
-    use drive_proof_verifier::types::Documents;
-
-    // Parse data contract ID
-    let contract_id = Identifier::from_string(
-        data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid data contract ID: {}",
-        e
-    )))?;
-
-    // Create base document query
-    let mut query =
-        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
-            .await?;
-
-    // Set limit if provided
-    if let Some(limit_val) = limit {
-        query.limit = limit_val;
-    } else {
-        query.limit = 100; // Default limit
-    }
-
-    // Handle start parameters
-    if let Some(start_after_id) = start_after {
-        let doc_id = Identifier::from_string(
-            &start_after_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!(
-            "Invalid startAfter document ID: {}",
-            e
-        )))?;
-        query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAfter(
-            doc_id.to_vec()
-        ));
-    } else if let Some(start_at_id) = start_at {
-        let doc_id = Identifier::from_string(
-            &start_at_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!(
-            "Invalid startAt document ID: {}",
-            e
-        )))?;
-        query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAt(
-            doc_id.to_vec()
-        ));
-    }
-
-    // Parse and apply where clauses
-    if let Some(where_json) = where_clause {
-        let json_value: JsonValue = serde_json::from_str(&where_json)
-            .map_err(|e| WasmSdkError::invalid_argument(format!(
-                "Failed to parse where clause JSON: {}",
-                e
-            )))?;
-
-        // Expect an array of where clauses
-        let where_array = json_value
-            .as_array()
-            .ok_or_else(|| WasmSdkError::invalid_argument(
-                "where clause must be an array of clauses",
-            ))?;
-
-        for clause_json in where_array {
-            let where_clause = parse_where_clause(clause_json)?;
-            query = query.with_where(where_clause);
-        }
-    }
-
-    // Parse and apply order by clauses
-    if let Some(order_json) = order_by {
-        let json_value: JsonValue = serde_json::from_str(&order_json)
-            .map_err(|e| WasmSdkError::invalid_argument(format!(
-                "Failed to parse order by JSON: {}",
-                e
-            )))?;
-
-        // Expect an array of order clauses
-        let order_array = json_value
-            .as_array()
-            .ok_or_else(|| WasmSdkError::invalid_argument(
-                "order by must be an array of clauses",
-            ))?;
-
-        for clause_json in order_array {
-            let order_clause = parse_order_clause(clause_json)?;
-            query = query.with_order_by(order_clause);
-        }
-    }
-
-    // Execute query
-    let documents_result: Documents = Document::fetch_many(sdk.as_ref(), query)
-        .await?;
-
-    // Fetch the data contract to get the document type
-    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
-        .await?
-        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-    // Get the document type
-    let document_type_ref = data_contract
-        .document_type_for_name(document_type)
-        .map_err(|e| WasmSdkError::not_found(format!(
-            "Document type not found: {}",
-            e
-        )))?;
-
-    // Convert documents to response format
-    let mut responses: Vec<DocumentResponse> = Vec::new();
-    for (_, doc_opt) in documents_result {
-        if let Some(doc) = doc_opt {
-            responses.push(DocumentResponse::from_document(
-                &doc,
-                &data_contract,
-                document_type_ref,
-            )?);
-        }
-    }
-
-    // Use json_compatible serializer to convert maps to objects
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    responses
-        .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!(
-            "Failed to serialize response: {}",
-            e
-        )))
-}
-
-#[wasm_bindgen]
-pub async fn get_documents_with_proof_info(
-    sdk: &WasmSdk,
-    data_contract_id: &str,
-    document_type: &str,
-    where_clause: Option<String>,
-    order_by: Option<String>,
-    limit: Option<u32>,
-    start_after: Option<String>,
-    start_at: Option<String>,
+impl WasmSdk {
+    #[wasm_bindgen]
+    pub async fn get_documents(
+        &self,
+        data_contract_id: &str,
+        document_type: &str,
+        where_clause: Option<String>,
+        order_by: Option<String>,
+        limit: Option<u32>,
+        start_after: Option<String>,
+        start_at: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-    use dash_sdk::platform::FetchMany;
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+        use dash_sdk::platform::FetchMany;
+        use drive_proof_verifier::types::Documents;
 
-    // Parse data contract ID
-    let contract_id = Identifier::from_string(
-        data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid data contract ID: {}",
-        e
-    )))?;
-
-    // Create base document query
-    let mut query =
-        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
-            .await?;
-
-    // Set limit if provided
-    if let Some(limit_val) = limit {
-        query.limit = limit_val;
-    } else {
-        query.limit = 100; // Default limit
-    }
-
-    // Handle start parameters
-    if let Some(start_after_id) = start_after {
-        let doc_id = Identifier::from_string(
-            &start_after_id,
+        // Parse data contract ID
+        let contract_id = Identifier::from_string(
+            data_contract_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-        .map_err(|e| WasmSdkError::invalid_argument(format!(
-            "Invalid startAfter document ID: {}",
-            e
-        )))?;
-        query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAfter(
-            doc_id.to_vec()
-        ));
-    } else if let Some(start_at_id) = start_at {
-        let doc_id = Identifier::from_string(
-            &start_at_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!(
-            "Invalid startAt document ID: {}",
-            e
-        )))?;
-        query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAt(
-            doc_id.to_vec()
-        ));
-    }
-
-    // Parse and set where clauses if provided
-    if let Some(where_json) = where_clause {
-        let clauses: Vec<JsonValue> = serde_json::from_str(&where_json)
             .map_err(|e| WasmSdkError::invalid_argument(format!(
-                "Invalid where clause JSON: {}",
+                "Invalid data contract ID: {}",
                 e
             )))?;
 
-        for clause_json in clauses {
-            let where_clause = parse_where_clause(&clause_json)?;
-            query = query.with_where(where_clause);
-        }
-    }
+        // Create base document query
+        let mut query =
+            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
+                .await?;
 
-    // Parse and set order by clauses if provided
-    if let Some(order_json) = order_by {
-        let clauses: Vec<JsonValue> = serde_json::from_str(&order_json)
-            .map_err(|e| WasmSdkError::invalid_argument(format!(
-                "Invalid order by JSON: {}",
+        // Set limit if provided
+        if let Some(limit_val) = limit {
+            query.limit = limit_val;
+        } else {
+            query.limit = 100; // Default limit
+        }
+
+        // Handle start parameters
+        if let Some(start_after_id) = start_after {
+            let doc_id = Identifier::from_string(
+                &start_after_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid startAfter document ID: {}",
+                    e
+                )))?;
+            query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAfter(
+                doc_id.to_vec()
+            ));
+        } else if let Some(start_at_id) = start_at {
+            let doc_id = Identifier::from_string(
+                &start_at_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid startAt document ID: {}",
+                    e
+                )))?;
+            query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAt(
+                doc_id.to_vec()
+            ));
+        }
+
+        // Parse and apply where clauses
+        if let Some(where_json) = where_clause {
+            let json_value: JsonValue = serde_json::from_str(&where_json)
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Failed to parse where clause JSON: {}",
+                    e
+                )))?;
+
+            // Expect an array of where clauses
+            let where_array = json_value
+                .as_array()
+                .ok_or_else(|| WasmSdkError::invalid_argument(
+                    "where clause must be an array of clauses",
+                ))?;
+
+            for clause_json in where_array {
+                let where_clause = parse_where_clause(clause_json)?;
+                query = query.with_where(where_clause);
+            }
+        }
+
+        // Parse and apply order by clauses
+        if let Some(order_json) = order_by {
+            let json_value: JsonValue = serde_json::from_str(&order_json)
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Failed to parse order by JSON: {}",
+                    e
+                )))?;
+
+            // Expect an array of order clauses
+            let order_array = json_value
+                .as_array()
+                .ok_or_else(|| WasmSdkError::invalid_argument(
+                    "order by must be an array of clauses",
+                ))?;
+
+            for clause_json in order_array {
+                let order_clause = parse_order_clause(clause_json)?;
+                query = query.with_order_by(order_clause);
+            }
+        }
+
+        // Execute query
+        let documents_result: Documents = Document::fetch_many(self.as_ref(), query)
+            .await?;
+
+        // Fetch the data contract to get the document type
+        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+        // Get the document type
+        let document_type_ref = data_contract
+            .document_type_for_name(document_type)
+            .map_err(|e| WasmSdkError::not_found(format!(
+                "Document type not found: {}",
                 e
             )))?;
 
-        for clause_json in clauses {
-            let order_clause = parse_order_clause(&clause_json)?;
-            query = query.with_order_by(order_clause);
+        // Convert documents to response format
+        let mut responses: Vec<DocumentResponse> = Vec::new();
+        for (_, doc_opt) in documents_result {
+            if let Some(doc) = doc_opt {
+                responses.push(DocumentResponse::from_document(
+                    &doc,
+                    &data_contract,
+                    document_type_ref,
+                )?);
+            }
         }
+
+        // Use json_compatible serializer to convert maps to objects
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        responses
+            .serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!(
+                "Failed to serialize response: {}",
+                e
+            )))
     }
 
-    // Execute query with proof
-    let (documents_result, metadata, proof) =
-        Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await?;
+    #[wasm_bindgen]
+    pub async fn get_documents_with_proof_info(
+        &self,
+        data_contract_id: &str,
+        document_type: &str,
+        where_clause: Option<String>,
+        order_by: Option<String>,
+        limit: Option<u32>,
+        start_after: Option<String>,
+        start_at: Option<String>,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+        use dash_sdk::platform::FetchMany;
 
-    // Fetch the data contract to get the document type
-    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
-        .await?
-        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        // Parse data contract ID
+        let contract_id = Identifier::from_string(
+            data_contract_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid data contract ID: {}",
+                e
+            )))?;
 
-    // Get the document type
-    let document_type_ref = data_contract
-        .document_type_for_name(document_type)
-        .map_err(|e| WasmSdkError::not_found(format!(
-            "Document type not found: {}",
-            e
-        )))?;
+        // Create base document query
+        let mut query =
+            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
+                .await?;
 
-    // Convert documents to response format
-    let mut responses: Vec<DocumentResponse> = Vec::new();
-    for (_, doc_opt) in documents_result {
-        if let Some(doc) = doc_opt {
-            responses.push(DocumentResponse::from_document(
-                &doc,
-                &data_contract,
-                document_type_ref,
-            )?);
+        // Set limit if provided
+        if let Some(limit_val) = limit {
+            query.limit = limit_val;
+        } else {
+            query.limit = 100; // Default limit
         }
-    }
 
-    let response = ProofMetadataResponse {
-        data: responses,
-        metadata: metadata.into(),
-        proof: proof.into(),
-    };
-
-    // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response
-        .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!(
-            "Failed to serialize response: {}",
-            e
-        )))
-}
-
-#[wasm_bindgen]
-pub async fn get_document(
-    sdk: &WasmSdk,
-    data_contract_id: &str,
-    document_type: &str,
-    document_id: &str,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-
-    // Parse IDs
-    let contract_id = Identifier::from_string(
-        data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid data contract ID: {}",
-        e
-    )))?;
-
-    let doc_id = Identifier::from_string(
-        document_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid document ID: {}",
-        e
-    )))?;
-
-    // Create document query
-    let query = DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
-        .await?
-        .with_document_id(&doc_id);
-
-    // Fetch the data contract to get the document type
-    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
-        .await?
-        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-    // Get the document type
-    let document_type = data_contract
-        .document_type_for_name(document_type)
-        .map_err(|e| WasmSdkError::not_found(format!(
-            "Document type not found: {}",
-            e
-        )))?;
-
-    // Execute query
-    let document_result: Option<Document> = Document::fetch(sdk.as_ref(), query)
-        .await?;
-
-    match document_result {
-        Some(doc) => {
-            let response = DocumentResponse::from_document(&doc, &data_contract, document_type)?;
-
-            // Use json_compatible serializer to convert maps to objects
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!(
-                    "Failed to serialize response: {}",
+        // Handle start parameters
+        if let Some(start_after_id) = start_after {
+            let doc_id = Identifier::from_string(
+                &start_after_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid startAfter document ID: {}",
                     e
-                )))
-        }
-        None => Ok(JsValue::NULL),
-    }
-}
-
-#[wasm_bindgen]
-pub async fn get_document_with_proof_info(
-    sdk: &WasmSdk,
-    data_contract_id: &str,
-    document_type: &str,
-    document_id: &str,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-
-    // Parse IDs
-    let contract_id = Identifier::from_string(
-        data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid data contract ID: {}",
-        e
-    )))?;
-
-    let doc_id = Identifier::from_string(
-        document_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid document ID: {}",
-        e
-    )))?;
-
-    // Create document query
-    let query = DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, document_type)
-        .await?
-        .with_document_id(&doc_id);
-
-    // Fetch the data contract to get the document type
-    let data_contract = dash_sdk::platform::DataContract::fetch(sdk.as_ref(), contract_id)
-        .await?
-        .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
-
-    // Get the document type
-    let document_type_ref = data_contract
-        .document_type_for_name(document_type)
-        .map_err(|e| WasmSdkError::not_found(format!(
-            "Document type not found: {}",
-            e
-        )))?;
-
-    // Execute query with proof
-    let (document_result, metadata, proof) =
-        Document::fetch_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await?;
-
-    match document_result {
-        Some(doc) => {
-            let doc_response =
-                DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?;
-
-            let response = ProofMetadataResponse {
-                data: doc_response,
-                metadata: metadata.into(),
-                proof: proof.into(),
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!(
-                    "Failed to serialize response: {}",
+                )))?;
+            query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAfter(
+                doc_id.to_vec()
+            ));
+        } else if let Some(start_at_id) = start_at {
+            let doc_id = Identifier::from_string(
+                &start_at_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid startAt document ID: {}",
                     e
-                )))
+                )))?;
+            query.start = Some(dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAt(
+                doc_id.to_vec()
+            ));
         }
-        None => {
-            // Return null data with proof
-            let response = ProofMetadataResponse {
-                data: Option::<DocumentResponse>::None,
-                metadata: metadata.into(),
-                proof: proof.into(),
-            };
 
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!(
-                    "Failed to serialize response: {}",
+        // Parse and set where clauses if provided
+        if let Some(where_json) = where_clause {
+            let clauses: Vec<JsonValue> = serde_json::from_str(&where_json)
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid where clause JSON: {}",
                     e
-                )))
+                )))?;
+
+            for clause_json in clauses {
+                let where_clause = parse_where_clause(&clause_json)?;
+                query = query.with_where(where_clause);
+            }
+        }
+
+        // Parse and set order by clauses if provided
+        if let Some(order_json) = order_by {
+            let clauses: Vec<JsonValue> = serde_json::from_str(&order_json)
+                .map_err(|e| WasmSdkError::invalid_argument(format!(
+                    "Invalid order by JSON: {}",
+                    e
+                )))?;
+
+            for clause_json in clauses {
+                let order_clause = parse_order_clause(&clause_json)?;
+                query = query.with_order_by(order_clause);
+            }
+        }
+
+        // Execute query with proof
+        let (documents_result, metadata, proof) =
+            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+
+        // Fetch the data contract to get the document type
+        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+        // Get the document type
+        let document_type_ref = data_contract
+            .document_type_for_name(document_type)
+            .map_err(|e| WasmSdkError::not_found(format!(
+                "Document type not found: {}",
+                e
+            )))?;
+
+        // Convert documents to response format
+        let mut responses: Vec<DocumentResponse> = Vec::new();
+        for (_, doc_opt) in documents_result {
+            if let Some(doc) = doc_opt {
+                responses.push(DocumentResponse::from_document(
+                    &doc,
+                    &data_contract,
+                    document_type_ref,
+                )?);
+            }
+        }
+
+        let response = ProofMetadataResponse {
+            data: responses,
+            metadata: metadata.into(),
+            proof: proof.into(),
+        };
+
+        // Use json_compatible serializer
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response
+            .serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!(
+                "Failed to serialize response: {}",
+                e
+            )))
+    }
+
+    #[wasm_bindgen]
+    pub async fn get_document(
+        &self,
+        data_contract_id: &str,
+        document_type: &str,
+        document_id: &str,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+
+        // Parse IDs
+        let contract_id = Identifier::from_string(
+            data_contract_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid data contract ID: {}",
+                e
+            )))?;
+
+        let doc_id = Identifier::from_string(
+            document_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid document ID: {}",
+                e
+            )))?;
+
+        // Create document query
+        let query = DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
+            .await?
+            .with_document_id(&doc_id);
+
+        // Fetch the data contract to get the document type
+        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+        // Get the document type
+        let document_type = data_contract
+            .document_type_for_name(document_type)
+            .map_err(|e| WasmSdkError::not_found(format!(
+                "Document type not found: {}",
+                e
+            )))?;
+
+        // Execute query
+        let document_result: Option<Document> = Document::fetch(self.as_ref(), query)
+            .await?;
+
+        match document_result {
+            Some(doc) => {
+                let response = DocumentResponse::from_document(&doc, &data_contract, document_type)?;
+
+                // Use json_compatible serializer to convert maps to objects
+                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                response
+                    .serialize(&serializer)
+                    .map_err(|e| WasmSdkError::serialization(format!(
+                        "Failed to serialize response: {}",
+                        e
+                    )))
+            }
+            None => Ok(JsValue::NULL),
         }
     }
-}
 
-#[wasm_bindgen]
-pub async fn get_dpns_usernames(
-    sdk: &WasmSdk,
-    identity_id: &str,
-    limit: Option<u32>,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-    use dash_sdk::platform::FetchMany;
-    use drive_proof_verifier::types::Documents;
+    #[wasm_bindgen]
+    pub async fn get_document_with_proof_info(
+        &self,
+        data_contract_id: &str,
+        document_type: &str,
+        document_id: &str,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
 
-    // DPNS contract ID on testnet
-    const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-    const DPNS_DOCUMENT_TYPE: &str = "domain";
+        // Parse IDs
+        let contract_id = Identifier::from_string(
+            data_contract_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid data contract ID: {}",
+                e
+            )))?;
 
-    // Parse identity ID
-    let identity_id_parsed = Identifier::from_string(
-        identity_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid identity ID: {}",
-        e
-    )))?;
+        let doc_id = Identifier::from_string(
+            document_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid document ID: {}",
+                e
+            )))?;
 
-    // Parse DPNS contract ID
-    let contract_id = Identifier::from_string(
-        DPNS_CONTRACT_ID,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid DPNS contract ID: {}",
-        e
-    )))?;
+        // Create document query
+        let query = DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, document_type)
+            .await?
+            .with_document_id(&doc_id);
 
-    // Create document query for DPNS domains owned by this identity
-    let mut query =
-        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
-            .await?;
+        // Fetch the data contract to get the document type
+        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
+            .await?
+            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-    // Query by records.identity using the identityId index
-    let where_clause = WhereClause {
-        field: "records.identity".to_string(),
-        operator: WhereOperator::Equal,
-        value: Value::Identifier(identity_id_parsed.to_buffer()),
-    };
+        // Get the document type
+        let document_type_ref = data_contract
+            .document_type_for_name(document_type)
+            .map_err(|e| WasmSdkError::not_found(format!(
+                "Document type not found: {}",
+                e
+            )))?;
 
-    query = query.with_where(where_clause);
+        // Execute query with proof
+        let (document_result, metadata, proof) =
+            Document::fetch_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
 
-    // Set limit from parameter or default to 10
-    query.limit = limit.unwrap_or(10);
+        match document_result {
+            Some(doc) => {
+                let doc_response =
+                    DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?;
 
-    // Execute query
-    let documents_result: Documents = Document::fetch_many(sdk.as_ref(), query)
-            .await?;
+                let response = ProofMetadataResponse {
+                    data: doc_response,
+                    metadata: metadata.into(),
+                    proof: proof.into(),
+                };
 
-    // Collect all usernames
-    let mut usernames: Vec<String> = Vec::new();
+                // Use json_compatible serializer
+                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                response
+                    .serialize(&serializer)
+                    .map_err(|e| WasmSdkError::serialization(format!(
+                        "Failed to serialize response: {}",
+                        e
+                    )))
+            }
+            None => {
+                // Return null data with proof
+                let response = ProofMetadataResponse {
+                    data: Option::<DocumentResponse>::None,
+                    metadata: metadata.into(),
+                    proof: proof.into(),
+                };
 
-    // Process all results
-    for (_, doc_opt) in documents_result {
-        if let Some(doc) = doc_opt {
-            // Extract the username from the document
-            let properties = doc.properties();
-
-            if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                properties.get("label"),
-                properties.get("normalizedParentDomainName"),
-            ) {
-                // Construct the full username
-                let username = format!("{}.{}", label, parent_domain);
-                usernames.push(username);
+                // Use json_compatible serializer
+                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+                response
+                    .serialize(&serializer)
+                    .map_err(|e| WasmSdkError::serialization(format!(
+                        "Failed to serialize response: {}",
+                        e
+                    )))
             }
         }
     }
 
-    // Return usernames as a JSON array
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    usernames
-        .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!(
-            "Failed to serialize usernames: {}",
-            e
-        )))
-}
+    #[wasm_bindgen]
+    pub async fn get_dpns_usernames(
+        &self,
+        identity_id: &str,
+        limit: Option<u32>,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+        use dash_sdk::platform::FetchMany;
+        use drive_proof_verifier::types::Documents;
 
-// Keep the old function for backward compatibility but have it call the new one
-#[wasm_bindgen]
-pub async fn get_dpns_username(sdk: &WasmSdk, identity_id: &str) -> Result<JsValue, WasmSdkError> {
-    // Call the new function with limit 1
-    let result = get_dpns_usernames(sdk, identity_id, Some(1)).await?;
+        // DPNS contract ID on testnet
+        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+        const DPNS_DOCUMENT_TYPE: &str = "domain";
 
-    // Extract the first username from the array
-    if let Some(array) = result.dyn_ref::<js_sys::Array>() {
-        if array.length() > 0 {
-            return Ok(array.get(0));
-        }
-    }
+        // Parse identity ID
+        let identity_id_parsed = Identifier::from_string(
+            identity_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid identity ID: {}",
+                e
+            )))?;
 
-    Ok(JsValue::NULL)
-}
+        // Parse DPNS contract ID
+        let contract_id = Identifier::from_string(
+            DPNS_CONTRACT_ID,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid DPNS contract ID: {}",
+                e
+            )))?;
 
-// Proof info versions for DPNS queries
+        // Create document query for DPNS domains owned by this identity
+        let mut query =
+            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+                .await?;
 
-#[wasm_bindgen]
-pub async fn get_dpns_usernames_with_proof_info(
-    sdk: &WasmSdk,
-    identity_id: &str,
-    limit: Option<u32>,
-) -> Result<JsValue, WasmSdkError> {
-    use dash_sdk::platform::documents::document_query::DocumentQuery;
-    use dash_sdk::platform::FetchMany;
+        // Query by records.identity using the identityId index
+        let where_clause = WhereClause {
+            field: "records.identity".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity_id_parsed.to_buffer()),
+        };
 
-    // DPNS contract ID on testnet
-    const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-    const DPNS_DOCUMENT_TYPE: &str = "domain";
+        query = query.with_where(where_clause);
 
-    // Parse identity ID
-    let identity_id_parsed = Identifier::from_string(
-        identity_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid identity ID: {}",
-        e
-    )))?;
+        // Set limit from parameter or default to 10
+        query.limit = limit.unwrap_or(10);
 
-    // Parse DPNS contract ID
-    let contract_id = Identifier::from_string(
-        DPNS_CONTRACT_ID,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!(
-        "Invalid DPNS contract ID: {}",
-        e
-    )))?;
-
-    // Create document query for DPNS domains owned by this identity
-    let mut query =
-        DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+        // Execute query
+        let documents_result: Documents = Document::fetch_many(self.as_ref(), query)
             .await?;
 
-    // Query by records.identity using the identityId index
-    let where_clause = WhereClause {
-        field: "records.identity".to_string(),
-        operator: WhereOperator::Equal,
-        value: Value::Identifier(identity_id_parsed.to_buffer()),
-    };
+        // Collect all usernames
+        let mut usernames: Vec<String> = Vec::new();
 
-    query = query.with_where(where_clause);
+        // Process all results
+        for (_, doc_opt) in documents_result {
+            if let Some(doc) = doc_opt {
+                // Extract the username from the document
+                let properties = doc.properties();
 
-    // Set limit from parameter or default to 10
-    query.limit = limit.unwrap_or(10);
-
-    // Execute query with proof
-    let (documents_result, metadata, proof) =
-        Document::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await?;
-
-    // Collect all usernames
-    let mut usernames: Vec<String> = Vec::new();
-
-    // Process all results
-    for (_, doc_opt) in documents_result {
-        if let Some(doc) = doc_opt {
-            // Extract the username from the document
-            let properties = doc.properties();
-
-            if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                properties.get("label"),
-                properties.get("normalizedParentDomainName"),
-            ) {
-                // Construct the full username
-                let username = format!("{}.{}", label, parent_domain);
-                usernames.push(username);
+                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
+                    properties.get("label"),
+                    properties.get("normalizedParentDomainName"),
+                ) {
+                    // Construct the full username
+                    let username = format!("{}.{}", label, parent_domain);
+                    usernames.push(username);
+                }
             }
         }
+
+        // Return usernames as a JSON array
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        usernames
+            .serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!(
+                "Failed to serialize usernames: {}",
+                e
+            )))
     }
 
-    let response = ProofMetadataResponse {
-        data: usernames,
-        metadata: metadata.into(),
-        proof: proof.into(),
-    };
+    // Keep the old function for backward compatibility but have it call the new one
+    #[wasm_bindgen]
+    pub async fn get_dpns_username(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
+        // Call the new function with limit 1
+        let result = self.get_dpns_usernames(identity_id, Some(1)).await?;
 
-    // Use json_compatible serializer
-    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    response
-        .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!(
-            "Failed to serialize response: {}",
-            e
-        )).into())
-}
-
-#[wasm_bindgen]
-pub async fn get_dpns_username_with_proof_info(
-    sdk: &WasmSdk,
-    identity_id: &str,
-) -> Result<JsValue, WasmSdkError> {
-    // Call the new function with limit 1
-    let result = get_dpns_usernames_with_proof_info(sdk, identity_id, Some(1)).await?;
-
-    // The result already contains proof info, just modify the data field
-    // Parse the result to extract first username
-    let result_obj: serde_json::Value = serde_wasm_bindgen::from_value(result.clone())
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to parse JSON: {}", e)))?;
-
-    if let Some(data_array) = result_obj.get("data").and_then(|d| d.as_array()) {
-        if let Some(first_username) = data_array.first() {
-            // Create a new response with just the first username
-            let mut modified_result = result_obj.clone();
-            modified_result["data"] = first_username.clone();
-
-            return Ok(serde_wasm_bindgen::to_value(&modified_result)
-                .map_err(|e| WasmSdkError::serialization(format!(
-                    "Failed to serialize response: {}",
-                    e
-                )))?);
+        // Extract the first username from the array
+        if let Some(array) = result.dyn_ref::<js_sys::Array>() {
+            if array.length() > 0 {
+                return Ok(array.get(0));
+            }
         }
+
+        Ok(JsValue::NULL)
     }
 
-    // If no username found, return null data with proof info
-    let mut modified_result = result_obj.clone();
-    modified_result["data"] = serde_json::Value::Null;
+    // Proof info versions for DPNS queries
 
-    Ok(serde_wasm_bindgen::to_value(&modified_result)
-        .map_err(|e| WasmSdkError::serialization(format!(
-            "Failed to serialize response: {}",
-            e
-        )))?)
+    #[wasm_bindgen]
+    pub async fn get_dpns_usernames_with_proof_info(
+        &self,
+        identity_id: &str,
+        limit: Option<u32>,
+    ) -> Result<JsValue, WasmSdkError> {
+        use dash_sdk::platform::documents::document_query::DocumentQuery;
+        use dash_sdk::platform::FetchMany;
+
+        // DPNS contract ID on testnet
+        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+        const DPNS_DOCUMENT_TYPE: &str = "domain";
+
+        // Parse identity ID
+        let identity_id_parsed = Identifier::from_string(
+            identity_id,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid identity ID: {}",
+                e
+            )))?;
+
+        // Parse DPNS contract ID
+        let contract_id = Identifier::from_string(
+            DPNS_CONTRACT_ID,
+            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+        )
+            .map_err(|e| WasmSdkError::invalid_argument(format!(
+                "Invalid DPNS contract ID: {}",
+                e
+            )))?;
+
+        // Create document query for DPNS domains owned by this identity
+        let mut query =
+            DocumentQuery::new_with_data_contract_id(self.as_ref(), contract_id, DPNS_DOCUMENT_TYPE)
+                .await?;
+
+        // Query by records.identity using the identityId index
+        let where_clause = WhereClause {
+            field: "records.identity".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity_id_parsed.to_buffer()),
+        };
+
+        query = query.with_where(where_clause);
+
+        // Set limit from parameter or default to 10
+        query.limit = limit.unwrap_or(10);
+
+        // Execute query with proof
+        let (documents_result, metadata, proof) =
+            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
+                .await?;
+
+        // Collect all usernames
+        let mut usernames: Vec<String> = Vec::new();
+
+        // Process all results
+        for (_, doc_opt) in documents_result {
+            if let Some(doc) = doc_opt {
+                // Extract the username from the document
+                let properties = doc.properties();
+
+                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
+                    properties.get("label"),
+                    properties.get("normalizedParentDomainName"),
+                ) {
+                    // Construct the full username
+                    let username = format!("{}.{}", label, parent_domain);
+                    usernames.push(username);
+                }
+            }
+        }
+
+        let response = ProofMetadataResponse {
+            data: usernames,
+            metadata: metadata.into(),
+            proof: proof.into(),
+        };
+
+        // Use json_compatible serializer
+        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        response
+            .serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!(
+                "Failed to serialize response: {}",
+                e
+            )).into())
+    }
+
+    #[wasm_bindgen]
+    pub async fn get_dpns_username_with_proof_info(
+        &self,
+        identity_id: &str,
+    ) -> Result<JsValue, WasmSdkError> {
+        // Call the new function with limit 1
+        let result = self.get_dpns_usernames_with_proof_info(identity_id, Some(1)).await?;
+
+        // The result already contains proof info, just modify the data field
+        // Parse the result to extract first username
+        let result_obj: serde_json::Value = serde_wasm_bindgen::from_value(result.clone())
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to parse JSON: {}", e)))?;
+
+        if let Some(data_array) = result_obj.get("data").and_then(|d| d.as_array()) {
+            if let Some(first_username) = data_array.first() {
+                // Create a new response with just the first username
+                let mut modified_result = result_obj.clone();
+                modified_result["data"] = first_username.clone();
+
+                return Ok(serde_wasm_bindgen::to_value(&modified_result)
+                    .map_err(|e| WasmSdkError::serialization(format!(
+                        "Failed to serialize response: {}",
+                        e
+                    )))?);
+            }
+        }
+
+        // If no username found, return null data with proof info
+        let mut modified_result = result_obj.clone();
+        modified_result["data"] = serde_json::Value::Null;
+
+        Ok(serde_wasm_bindgen::to_value(&modified_result)
+            .map_err(|e| WasmSdkError::serialization(format!(
+                "Failed to serialize response: {}",
+                e
+            )))?)
+    }
 }
