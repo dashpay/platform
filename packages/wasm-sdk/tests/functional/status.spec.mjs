@@ -8,8 +8,8 @@ describe('Status endpoint', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -18,8 +18,8 @@ describe('Status endpoint', function () {
 
   });
 
-  it('get_status', async function () {
-    const status = await sdk.get_status(client);
+  it('getStatus', async function () {
+    const status = await client.getStatus();
     expect(status).to.be.ok;
   });
 });

@@ -8,8 +8,8 @@ describe('Token pricing', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -20,10 +20,10 @@ describe('Token pricing', function () {
 
   it('calculates token id and fetches price by contract', async () => {
     const CONTRACT_ID = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
-    const tokenId = sdk.calculate_token_id_from_contract(CONTRACT_ID, 0);
+    const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(CONTRACT_ID, 0);
     expect(tokenId).to.be.a('string');
     try {
-      const info = await sdk.get_token_price_by_contract(client, CONTRACT_ID, 0);
+      const info = await client.getTokenPriceByContract(CONTRACT_ID, 0);
       expect(info).to.be.ok;
     } catch (e) {
       if (!(e.message.includes('No pricing schedule'))) {

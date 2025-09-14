@@ -13,8 +13,8 @@ describe('Basic state transitions', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 

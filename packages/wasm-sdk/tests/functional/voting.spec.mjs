@@ -8,8 +8,8 @@ describe('Contested resources & voting', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -22,8 +22,7 @@ describe('Contested resources & voting', function () {
     const PARENT = 'dash';
     const LABEL = 'therealslimshaddy5';
     try {
-      await sdk.get_contested_resources(
-        client,
+      await client.getContestedResources(
         'domain',
         DPNS_CONTRACT,
         'parentNameAndLabel',
@@ -37,8 +36,7 @@ describe('Contested resources & voting', function () {
       if (!(msg.includes('network') || msg.includes('connection') || msg.includes('Internal error'))) throw e;
     }
     try {
-      await sdk.get_contested_resource_vote_state(
-        client,
+      await client.getContestedResourceVoteState(
         DPNS_CONTRACT,
         'domain',
         'parentNameAndLabel',

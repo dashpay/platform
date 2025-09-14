@@ -7,7 +7,7 @@ describe('Key derivation', () => {
 
   describe('Path helpers (BIP44/DIP9/DIP13)', () => {
     it('BIP44 mainnet/testnet', () => {
-      const m = sdk.derivation_path_bip44_mainnet(0, 0, 0);
+      const m = sdk.WasmSdk.derivationPathBip44Mainnet(0, 0, 0);
       expect(m.purpose).to.equal(44);
       expect(m.coin_type).to.equal(5);
       expect(m.account).to.equal(0);
@@ -16,33 +16,33 @@ describe('Key derivation', () => {
       const expectedMain = `m/${m.purpose}'/${m.coin_type}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/44'/5'/0'/0/0");
 
-      const t = sdk.derivation_path_bip44_testnet(0, 0, 0);
+      const t = sdk.WasmSdk.derivationPathBip44Testnet(0, 0, 0);
       expect(t.coin_type).to.equal(1);
       const expectedTest = `m/${t.purpose}'/${t.coin_type}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/44'/1'/0'/0/0");
     });
 
     it('DIP9 mainnet/testnet', () => {
-      const m = sdk.derivation_path_dip9_mainnet(5, 0, 0);
+      const m = sdk.WasmSdk.derivationPathDip9Mainnet(5, 0, 0);
       expect(m.purpose).to.equal(9);
       expect(m.coin_type).to.equal(5);
       expect(m.account).to.equal(5);
       const expectedMain = `m/${m.purpose}'/${m.coin_type}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/9'/5'/5'/0/0");
 
-      const t = sdk.derivation_path_dip9_testnet(5, 0, 0);
+      const t = sdk.WasmSdk.derivationPathDip9Testnet(5, 0, 0);
       expect(t.coin_type).to.equal(1);
       const expectedTest = `m/${t.purpose}'/${t.coin_type}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/9'/1'/5'/0/0");
     });
 
     it('DIP13 mainnet/testnet', () => {
-      const m = sdk.derivation_path_dip13_mainnet(0);
+      const m = sdk.WasmSdk.derivationPathDip13Mainnet(0);
       expect(m.path).to.equal("m/9'/5'/0'");
       expect(m.purpose).to.equal(9);
       expect(m.description).to.equal('DIP13 HD identity key path');
 
-      const t = sdk.derivation_path_dip13_testnet(0);
+      const t = sdk.WasmSdk.derivationPathDip13Testnet(0);
       expect(t.path).to.equal("m/9'/1'/0'");
     });
   });
@@ -52,7 +52,7 @@ describe('Key derivation', () => {
 
     it('BIP44 mainnet key', () => {
       const path = "m/44'/5'/0'/0/0";
-      const r = sdk.derive_key_from_seed_with_path(seed, undefined, path, 'mainnet');
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'mainnet');
       expect(r).to.exist;
       expect(r.path).to.equal(path);
       expect(r.address.startsWith('X')).to.equal(true);
@@ -61,7 +61,7 @@ describe('Key derivation', () => {
 
     it('DIP13 authentication key', () => {
       const path = "m/9'/5'/5'/0'/0'/0'/0'";
-      const r = sdk.derive_key_from_seed_with_path(seed, undefined, path, 'mainnet');
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'mainnet');
       expect(r).to.exist;
       expect(r.path).to.equal(path);
       expect(r.private_key_wif).to.be.a('string');
@@ -70,21 +70,21 @@ describe('Key derivation', () => {
 
     it('with passphrase produces different address', () => {
       const path = "m/44'/5'/0'/0/0";
-      const withPass = sdk.derive_key_from_seed_with_path(seed, 'test passphrase', path, 'mainnet');
-      const withoutPass = sdk.derive_key_from_seed_with_path(seed, undefined, path, 'mainnet');
+      const withPass = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, 'test passphrase', path, 'mainnet');
+      const withoutPass = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'mainnet');
       expect(withPass.address).to.not.equal(withoutPass.address);
     });
 
     it('testnet address prefix', () => {
       const path = "m/44'/1'/0'/0/0";
-      const r = sdk.derive_key_from_seed_with_path(seed, undefined, path, 'testnet');
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'testnet');
       expect(r.network).to.equal('testnet');
       expect(r.address.startsWith('y')).to.equal(true);
     });
 
     it('DIP9 hardened vs non-hardened differ', () => {
-      const hardened = sdk.derive_key_from_seed_with_path(seed, null, "m/9'/5'/5'/0/0", 'mainnet');
-      const nonHardened = sdk.derive_key_from_seed_with_path(seed, null, 'm/9/5/5/0/0', 'mainnet');
+      const hardened = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, null, "m/9'/5'/5'/0/0", 'mainnet');
+      const nonHardened = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, null, 'm/9/5/5/0/0', 'mainnet');
       expect(hardened.address).to.not.equal(nonHardened.address);
     });
   });
@@ -94,14 +94,14 @@ describe('Key derivation', () => {
 
     it('Vector 1: mixed hardened/non-hardened', () => {
       const path = "m/0x775d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3b/0xf537439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89a6'/0x4c4592ca670c983fc43397dfd21a6f427fac9b4ac53cb4dcdc6522ec51e81e79/0";
-      const r = sdk.derive_key_from_seed_with_extended_path(mnemonic, null, path, 'testnet');
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(mnemonic, null, path, 'testnet');
       expect(r.xprv).to.be.a('string');
       expect(r.xpub).to.be.a('string');
     });
 
     it('Vector 2: multiple hardened with final non-hardened', () => {
       const path = "m/9'/5'/15'/0'/0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a'/0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5'/0";
-      const r = sdk.derive_key_from_seed_with_extended_path(mnemonic, null, path, 'testnet');
+      const r = sdk.WasmSdk.deriveKeyFromSeedWithExtendedPath(mnemonic, null, path, 'testnet');
       expect(r.xprv).to.be.a('string');
       expect(r.xpub).to.be.a('string');
     });
@@ -113,8 +113,8 @@ describe('Key derivation', () => {
     const receiver = '0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
 
     it('deterministic contact key for testnet', () => {
-      const r1 = sdk.derive_dashpay_contact_key(mnemonic, null, sender, receiver, 0, 0, 'testnet');
-      const r2 = sdk.derive_dashpay_contact_key(mnemonic, null, sender, receiver, 0, 0, 'testnet');
+      const r1 = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
+      const r2 = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
 
       expect(r1).to.be.ok;
       expect(r1).to.have.property('path');
@@ -136,14 +136,14 @@ describe('Key derivation', () => {
     });
 
     it('changes when sender/receiver are swapped', () => {
-      const a = sdk.derive_dashpay_contact_key(mnemonic, null, sender, receiver, 0, 0, 'testnet');
-      const b = sdk.derive_dashpay_contact_key(mnemonic, null, receiver, sender, 0, 0, 'testnet');
+      const a = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
+      const b = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, receiver, sender, 0, 0, 'testnet');
       expect(a.private_key_hex).to.not.equal(b.private_key_hex);
     });
 
     it('differs between networks (testnet vs mainnet)', () => {
-      const t = sdk.derive_dashpay_contact_key(mnemonic, null, sender, receiver, 0, 0, 'testnet');
-      const m = sdk.derive_dashpay_contact_key(mnemonic, null, sender, receiver, 0, 0, 'mainnet');
+      const t = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
+      const m = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'mainnet');
       expect(m.xprv.startsWith('xprv')).to.equal(true);
       expect(m.xpub.startsWith('xpub')).to.equal(true);
       expect(m.private_key_hex).to.not.equal(t.private_key_hex);

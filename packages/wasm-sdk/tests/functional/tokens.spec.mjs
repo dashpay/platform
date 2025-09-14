@@ -14,7 +14,7 @@ describe('Token queries', function () {
 
   before(async function () {
     await init();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -24,27 +24,27 @@ describe('Token queries', function () {
 
   // TODO: fix this test
 
-  it.skip('get_token_total_supply using derived token id', async () => {
-    const tokenId = sdk.calculate_token_id_from_contract(TOKEN_CONTRACT, 0);
-    const total = await sdk.get_token_total_supply(client, tokenId);
+  it.skip('getTokenTotalSupply using derived token id', async () => {
+    const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 0);
+    const total = await client.getTokenTotalSupply(tokenId);
     // Returns an object with totalSupply as string
     expect(total).to.be.an('object');
     expect(String(total.totalSupply)).to.match(/^\d+$/);
   });
 
-  it('get_token_statuses for multiple tokens', async () => {
-    await sdk.get_token_statuses(client, [TOKEN_CONTRACT]);
+  it('getTokenStatuses for multiple tokens', async () => {
+    await client.getTokenStatuses([TOKEN_CONTRACT]);
   });
 
-  it('get_token_direct_purchase_prices', async () => {
-    await sdk.get_token_direct_purchase_prices(client, [TOKEN_CONTRACT_2]);
+  it('getTokenDirectPurchasePrices', async () => {
+    await client.getTokenDirectPurchasePrices([TOKEN_CONTRACT_2]);
   });
 
-  it('get_token_contract_info', async () => {
-    await sdk.get_token_contract_info(client, TOKEN_CONTRACT_3);
+  it('getTokenContractInfo', async () => {
+    await client.getTokenContractInfo(TOKEN_CONTRACT_3);
   });
 
-  it('get_token_perpetual_distribution_last_claim', async () => {
-    await sdk.get_token_perpetual_distribution_last_claim(client, TEST_IDENTITY, TOKEN_CONTRACT_3);
+  it('getTokenPerpetualDistributionLastClaim', async () => {
+    await client.getTokenPerpetualDistributionLastClaim(TEST_IDENTITY, TOKEN_CONTRACT_3);
   });
 });

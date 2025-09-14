@@ -5,9 +5,9 @@ describe('WasmSdkError shape (unit)', () => {
     await init();
   });
 
-  it('invalid network on generate_key_pair exposes InvalidArgument', () => {
+  it('invalid network on generateKeyPair exposes InvalidArgument', () => {
     try {
-      sdk.generate_key_pair('devnet');
+      sdk.WasmSdk.generateKeyPair('devnet');
       expect.fail('expected to throw');
     } catch (e) {
       // wasm-bindgen returns our WasmSdkError as an object, not necessarily instanceof Error
@@ -19,9 +19,9 @@ describe('WasmSdkError shape (unit)', () => {
     }
   });
 
-  it('invalid hex on key_pair_from_hex exposes InvalidArgument', () => {
+  it('invalid hex on keyPairFromHex exposes InvalidArgument', () => {
     try {
-      sdk.key_pair_from_hex('zzzz', 'mainnet');
+      sdk.WasmSdk.keyPairFromHex('zzzz', 'mainnet');
       expect.fail('expected to throw');
     } catch (e) {
       expect(e).to.be.instanceOf(sdk.WasmSdkError);
@@ -36,7 +36,7 @@ describe('WasmSdkError shape (unit)', () => {
     const seed = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
     const path = "m/44'/5'/0'/0/0";
     try {
-      sdk.derive_key_from_seed_with_path(seed, undefined, path, 'bogus');
+      sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'bogus');
       expect.fail('expected to throw');
     } catch (e) {
       expect(e).to.be.instanceOf(sdk.WasmSdkError);

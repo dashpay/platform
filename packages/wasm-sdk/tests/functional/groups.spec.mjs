@@ -8,8 +8,8 @@ describe('Group queries', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -21,12 +21,12 @@ describe('Group queries', function () {
     const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
     const IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
     // These calls may fail in offline runs; permit network errors
-    await sdk.get_identity_groups(client, IDENTITY, 0, null, null, 10);
-    await sdk.get_group_members(client, DPNS_CONTRACT, 0, null, null, 10);
+    await client.getIdentityGroups(IDENTITY, 0, null, null, 10);
+    await client.getGroupMembers(DPNS_CONTRACT, 0, null, null, 10);
   });
 
   it('fetches groups data contracts', async () => {
     const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-    await sdk.get_groups_data_contracts(client, [DPNS_CONTRACT]);
+    await client.getGroupsDataContracts([DPNS_CONTRACT]);
   });
 });

@@ -8,8 +8,8 @@ describe('System info', function () {
 
   before(async function () {
     await init();
-    await sdk.prefetch_trusted_quorums_testnet();
-    builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
+    builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
@@ -18,13 +18,13 @@ describe('System info', function () {
 
   });
 
-  it('get_current_quorums_info', async () => {
-    const r = await sdk.get_current_quorums_info(client);
+  it('getCurrentQuorumsInfo', async () => {
+    const r = await client.getCurrentQuorumsInfo();
     expect(r).to.be.ok;
   });
 
-  it('get_total_credits_in_platform', async () => {
-    const r = await sdk.get_total_credits_in_platform(client);
+  it('getTotalCreditsInPlatform', async () => {
+    const r = await client.getTotalCreditsInPlatform();
     expect(r).to.be.an('object');
     expect(String(r.totalCreditsInPlatform)).to.match(/^\d+$/);
   });

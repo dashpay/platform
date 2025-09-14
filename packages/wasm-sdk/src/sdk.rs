@@ -25,7 +25,6 @@ pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
     Mutex<Option<crate::context_provider::WasmTrustedContext>>,
 > = Lazy::new(|| Mutex::new(None));
 
-
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
 // Dereference JsSdk to Sdk so that we can use &JsSdk everywhere where &sdk is needed
@@ -69,6 +68,45 @@ impl WasmSdk {
     /// Clone the inner Sdk (not exposed to WASM)
     pub(crate) fn inner_clone(&self) -> Sdk {
         self.0.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
+    pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let trusted_context = WasmTrustedContext::new_mainnet()
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        trusted_context
+            .prefetch_quorums()
+            .await
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        // Store the context for later use
+        *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
+    pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let trusted_context = WasmTrustedContext::new_testnet()
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        trusted_context
+            .prefetch_quorums()
+            .await
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        // Store the context for later use
+        *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+
+        Ok(())
     }
 }
 
@@ -686,42 +724,5 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name="withProofs")]
     pub fn with_proofs(self, enable_proofs: bool) -> Self {
         WasmSdkBuilder(self.0.with_proofs(enable_proofs))
-    }
-
-
-    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
-    pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
-        let trusted_context = WasmTrustedContext::new_mainnet()
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        trusted_context
-            .prefetch_quorums()
-            .await
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        // Store the context for later use
-        *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-        Ok(())
-    }
-
-    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
-    pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
-
-        let trusted_context = WasmTrustedContext::new_testnet()
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        trusted_context
-            .prefetch_quorums()
-            .await
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        // Store the context for later use
-        *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-        Ok(())
     }
 }
