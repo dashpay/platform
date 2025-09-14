@@ -22,14 +22,12 @@ struct ProtocolVersionUpgradeVoteStatus {
 }
 
 #[wasm_bindgen]
-pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue, JsValue> {
+pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
     let upgrade_result: drive_proof_verifier::types::ProtocolVersionUpgrades =
-        ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ())
-            .await
-            .map_err(WasmSdkError::from)?;
+        ProtocolVersionVoteCount::fetch_many(sdk.as_ref(), ()).await?;
 
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
@@ -61,7 +59,7 @@ pub async fn get_protocol_version_upgrade_state(sdk: &WasmSdk) -> Result<JsValue
     };
 
     serde_wasm_bindgen::to_value(&state)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -69,7 +67,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
     sdk: &WasmSdk,
     start_pro_tx_hash: &str,
     count: u32,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::dpp::dashcore::ProTxHash;
     use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
     use drive_proof_verifier::types::MasternodeProtocolVote;
@@ -86,8 +84,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
     };
 
     let votes_result = MasternodeProtocolVote::fetch_votes(sdk.as_ref(), start_hash, Some(count))
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Convert to our response format
     let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
@@ -102,7 +99,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
         .collect();
 
     serde_wasm_bindgen::to_value(&votes)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 // Proof versions for protocol queries
@@ -110,7 +107,7 @@ pub async fn get_protocol_version_upgrade_vote_status(
 #[wasm_bindgen]
 pub async fn get_protocol_version_upgrade_state_with_proof_info(
     sdk: &WasmSdk,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use crate::queries::ProofMetadataResponse;
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::ProtocolVersionVoteCount;
@@ -120,8 +117,7 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(
         _,
         _,
     ) = ProtocolVersionVoteCount::fetch_many_with_metadata_and_proof(sdk.as_ref(), (), None)
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Get the current protocol version from the SDK
     let current_version = sdk.version();
@@ -160,7 +156,7 @@ pub async fn get_protocol_version_upgrade_state_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -168,11 +164,11 @@ pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
     sdk: &WasmSdk,
     start_pro_tx_hash: &str,
     count: u32,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     // TODO: Implement once a proper fetch_many_with_metadata_and_proof method is available for MasternodeProtocolVote
     // The fetch_votes method has different parameters than fetch_many
     let _ = (sdk, start_pro_tx_hash, count); // Parameters will be used when implemented
     Err(WasmSdkError::generic(
         "get_protocol_version_upgrade_vote_status_with_proof_info is not yet implemented",
-    ).into())
+    ))
 }

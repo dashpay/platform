@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Protocol versions (upgrade state + votes)', function () {
+describe('Protocol versions', function () {
   this.timeout(60000);
 
   let client;
@@ -15,7 +15,7 @@ describe('Protocol versions (upgrade state + votes)', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
+
   });
 
   it('fetches protocol upgrade state', async () => {

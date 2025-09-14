@@ -1,4 +1,4 @@
-use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 pub mod context_provider;
 pub mod dpns;
@@ -25,7 +25,7 @@ pub use error::{WasmSdkError, WasmSdkErrorKind};
 static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[wasm_bindgen(start)]
-pub async fn start() -> Result<(), JsValue> {
+pub async fn start() -> Result<(), WasmSdkError> {
     // We use tracing-wasm together with console_error_panic_hook to get logs from the wasm module.
     // Other alternatives are:
     // * https://github.com/jquesada2016/tracing_subscriber_wasm

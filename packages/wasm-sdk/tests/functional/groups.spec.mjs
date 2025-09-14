@@ -15,7 +15,6 @@ describe('Group queries', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
   });
 
   it('fetches identity groups and group members', async () => {
@@ -27,7 +26,7 @@ describe('Group queries', function () {
   });
 
   it('fetches groups data contracts', async () => {
-    const IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
-    await sdk.get_groups_data_contracts(client, IDENTITY, 'group', 0, 10);
+    const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+    await sdk.get_groups_data_contracts(client, [DPNS_CONTRACT]);
   });
 });

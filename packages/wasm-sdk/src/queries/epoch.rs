@@ -49,7 +49,7 @@ pub async fn get_epochs_info(
     start_epoch: Option<u16>,
     count: Option<u32>,
     ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::types::epoch::EpochQuery;
 
     let query = LimitQuery {
@@ -63,8 +63,7 @@ pub async fn get_epochs_info(
 
     let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos =
         ExtendedEpochInfo::fetch_many(sdk.as_ref(), query)
-            .await
-            .map_err(WasmSdkError::from)?;
+            .await?;
 
     // Convert to our response format
     let epochs: Vec<EpochInfo> = epochs_result
@@ -73,7 +72,7 @@ pub async fn get_epochs_info(
         .collect();
 
     serde_wasm_bindgen::to_value(&epochs)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -82,14 +81,13 @@ pub async fn get_finalized_epoch_infos(
     start_epoch: Option<u16>,
     count: Option<u32>,
     ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
 
     if start_epoch.is_none() {
         return Err(WasmSdkError::invalid_argument(
             "start_epoch is required for finalized epoch queries",
-        )
-        .into());
+        ));
     }
 
     let start = start_epoch.unwrap();
@@ -127,8 +125,7 @@ pub async fn get_finalized_epoch_infos(
             sdk.as_ref(),
             query,
         )
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Convert to our response format and sort by epoch index
     let mut epochs: Vec<EpochInfo> = epochs_result
@@ -158,7 +155,7 @@ pub async fn get_finalized_epoch_infos(
     });
 
     serde_wasm_bindgen::to_value(&epochs)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -173,7 +170,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     sdk: &WasmSdk,
     epoch: u16,
     ids: Vec<String>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use drive_proof_verifier::types::ProposerBlockCountById;
 
     // Parse the ProTxHash strings
@@ -183,12 +180,11 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
             ProTxHash::from_str(&hash_str)
                 .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid ProTxHash '{}': {}", hash_str, e)))
         })
-        .collect::<Result<Vec<_>, JsValue>>()?;
+        .collect::<Result<Vec<_>, WasmSdkError>>()?;
 
     // Use FetchMany to get block counts for specific IDs
     let counts = ProposerBlockCountById::fetch_many(sdk.as_ref(), (epoch, pro_tx_hashes))
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Convert to response format
     let mut evonodes_proposed_block_counts = BTreeMap::new();
@@ -207,7 +203,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids(
     };
 
     serde_wasm_bindgen::to_value(&response)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -217,7 +213,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
     limit: Option<u32>,
     start_after: Option<String>,
     order_ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::types::proposed_blocks::ProposedBlockCountEx;
     use dash_sdk::platform::QueryStartInfo;
     use drive_proof_verifier::types::ProposerBlockCounts;
@@ -240,8 +236,7 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
         limit,
         start_info,
     )
-    .await
-    .map_err(WasmSdkError::from)?;
+    .await?;
 
     // Convert to response format
     let mut responses: Vec<ProposerBlockCount> = counts_result
@@ -270,19 +265,17 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range(
     });
 
     serde_wasm_bindgen::to_value(&responses)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
-pub async fn get_current_epoch(sdk: &WasmSdk) -> Result<JsValue, JsValue> {
-    let epoch = ExtendedEpochInfo::fetch_current(sdk.as_ref())
-        .await
-        .map_err(WasmSdkError::from)?;
+pub async fn get_current_epoch(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
+    let epoch = ExtendedEpochInfo::fetch_current(sdk.as_ref()).await?;
 
     let epoch_info = EpochInfo::from(epoch);
 
     serde_wasm_bindgen::to_value(&epoch_info)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -291,7 +284,7 @@ pub async fn get_epochs_info_with_proof_info(
     start_epoch: Option<u16>,
     count: Option<u32>,
     ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::types::epoch::EpochQuery;
 
     let query = LimitQuery {
@@ -305,8 +298,7 @@ pub async fn get_epochs_info_with_proof_info(
 
     let (epochs_result, metadata, proof) =
         ExtendedEpochInfo::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await
-            .map_err(WasmSdkError::from)?;
+            .await?;
 
     // Convert to our response format
     let epochs: Vec<EpochInfo> = epochs_result
@@ -324,15 +316,14 @@ pub async fn get_epochs_info_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
-pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, JsValue> {
+pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
     let (epoch, metadata, proof) =
         ExtendedEpochInfo::fetch_current_with_metadata_and_proof(sdk.as_ref())
-            .await
-            .map_err(WasmSdkError::from)?;
+            .await?;
 
     let epoch_info = EpochInfo::from(epoch);
 
@@ -346,7 +337,7 @@ pub async fn get_current_epoch_with_proof_info(sdk: &WasmSdk) -> Result<JsValue,
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 // Additional proof info versions for epoch queries
@@ -357,14 +348,13 @@ pub async fn get_finalized_epoch_infos_with_proof_info(
     start_epoch: Option<u16>,
     count: Option<u32>,
     ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::types::finalized_epoch::FinalizedEpochQuery;
 
     if start_epoch.is_none() {
         return Err(WasmSdkError::invalid_argument(
             "start_epoch is required for finalized epoch queries",
-        )
-        .into());
+        ));
     }
 
     let start = start_epoch.unwrap();
@@ -398,8 +388,7 @@ pub async fn get_finalized_epoch_infos_with_proof_info(
     };
 
     let (epochs_result, metadata, proof) = dash_sdk::dpp::block::finalized_epoch_info::FinalizedEpochInfo::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Convert to our response format and sort by epoch index
     let mut epochs: Vec<EpochInfo> = epochs_result
@@ -446,14 +435,13 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
     sdk: &WasmSdk,
     epoch: u16,
     pro_tx_hashes: Vec<String>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountById
     // Currently not supported due to query format issues
     let _ = (sdk, epoch, pro_tx_hashes); // Parameters will be used when implemented
     Err(WasmSdkError::generic(
         "get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info is not yet implemented",
-    )
-    .into())
+    ))
 }
 
 #[wasm_bindgen]
@@ -463,12 +451,11 @@ pub async fn get_evonodes_proposed_epoch_blocks_by_range_with_proof_info(
     limit: Option<u32>,
     start_after: Option<String>,
     order_ascending: Option<bool>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountByRange
     // Currently not supported due to query format issues
     let _ = (sdk, epoch, limit, start_after, order_ascending); // Parameters will be used when implemented
     Err(WasmSdkError::generic(
         "get_evonodes_proposed_epoch_blocks_by_range_with_proof_info is not yet implemented",
-    )
-    .into())
+    ))
 }

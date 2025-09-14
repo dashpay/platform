@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('System info (quorums, credits)', function () {
+describe('System info', function () {
   this.timeout(60000);
 
   let client;
@@ -15,7 +15,7 @@ describe('System info (quorums, credits)', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
+
   });
 
   it('get_current_quorums_info', async () => {
@@ -25,6 +25,7 @@ describe('System info (quorums, credits)', function () {
 
   it('get_total_credits_in_platform', async () => {
     const r = await sdk.get_total_credits_in_platform(client);
-    expect(r).to.be.a('number');
+    expect(r).to.be.an('object');
+    expect(String(r.totalCreditsInPlatform)).to.match(/^\d+$/);
   });
 });

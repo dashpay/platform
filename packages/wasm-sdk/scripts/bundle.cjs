@@ -54,20 +54,6 @@ const wrapper = `// Single-file ESM wrapper around wasm-bindgen output.\n// - In
 fs.writeFileSync(path.join(distDir, 'sdk.js'), wrapper);
 fs.copyFileSync(dtsPath, path.join(distDir, 'sdk.d.ts'));
 
-// Copy additional TS-only type declarations (e.g., errors)
-try {
-  const extraTypes = [
-    { src: path.join(typesDir, 'errors.d.ts'), dest: path.join(distDir, 'errors.d.ts') },
-  ];
-  for (const { src, dest } of extraTypes) {
-    if (fs.existsSync(src)) {
-      fs.copyFileSync(src, dest);
-    }
-  }
-} catch (e) {
-  console.warn('Warning: failed to copy extra types:', e?.message || e);
-}
-
 // Basic report
 const outStat = fs.statSync(path.join(distDir, 'sdk.js'));
 console.log(`Wrote dist/sdk.js (${outStat.size} bytes) single-file wrapper (inline WASM)`);

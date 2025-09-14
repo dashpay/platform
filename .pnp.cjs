@@ -2747,6 +2747,8 @@ const RAW_RUNTIME_STATE =
           ["mocha", "npm:11.1.0"],\
           ["path-browserify", "npm:1.0.1"],\
           ["process", "npm:0.11.10"],\
+          ["sinon", "npm:17.0.1"],\
+          ["sinon-chai", "virtual:e2d057e7cc143d3cb9bec864f4a2d862441b5a09f81f8e6c46e7a098cbc89e4d07017cc6e2e2142d5704bb55da853cbec2d025ebc0b30e8696c31380c00f2c7d#npm:3.7.0"],\
           ["string_decoder", "npm:1.3.0"],\
           ["terser-webpack-plugin", "virtual:da12f6bb23b671689b7f4f5cfff69cabf980ba04aff1ffd96860c787f7d5d08d32b0db765d9f16463de0d1af2c01fa6987b861cf5df2362e38e0ef415f29b51c#npm:5.3.10"],\
           ["ts-loader", "virtual:da12f6bb23b671689b7f4f5cfff69cabf980ba04aff1ffd96860c787f7d5d08d32b0db765d9f16463de0d1af2c01fa6987b861cf5df2362e38e0ef415f29b51c#npm:9.5.0"],\

@@ -9,10 +9,6 @@
       "types": "./dist/sdk.d.ts",
       "import": "./dist/sdk.js"
     },
-    "./errors": {
-      "types": "./dist/errors.d.ts",
-      "import": "./dist/errors.d.ts"
-    },
     "./raw": {
       "types": "./dist/raw/wasm_sdk.d.ts",
       "import": "./dist/raw/wasm_sdk.js"

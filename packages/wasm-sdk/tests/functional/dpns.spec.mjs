@@ -17,7 +17,6 @@ describe('Document queries', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
   });
 
   it('lists DPNS documents (no filters)', async () => {
@@ -45,9 +44,9 @@ describe('Document queries', function () {
   });
 
   it('get_document by id (should handle invalid id gracefully)', async () => {
-    expect(async () => {
-      await sdk.get_document(client, DPNS_CONTRACT, 'domain', 'invalidDocumentId')
-    }).to.be.rejected();
+    await expect(
+      sdk.get_document(client, DPNS_CONTRACT, 'domain', 'invalidDocumentId')
+    ).to.be.rejected();
   });
 
   it('fetches usernames for a known identity and verifies fields', async () => {

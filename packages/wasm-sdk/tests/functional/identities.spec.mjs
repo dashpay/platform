@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Identity queries (comprehensive)', function () {
+describe('Identity queries', function () {
   this.timeout(90000);
 
   const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
@@ -18,7 +18,7 @@ describe('Identity queries (comprehensive)', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
+
   });
 
   it('fetches identity and basic fields', async () => {
@@ -27,8 +27,13 @@ describe('Identity queries (comprehensive)', function () {
   });
 
   it('gets identity balance and nonce', async () => {
-    expect(await sdk.get_identity_balance(client, TEST_IDENTITY)).to.be.a('number');
-    expect(await sdk.get_identity_nonce(client, TEST_IDENTITY)).to.be.a('number');
+    const bal = await sdk.get_identity_balance(client, TEST_IDENTITY);
+    expect(bal).to.be.an('object');
+    expect(String(bal.balance)).to.match(/^\d+$/);
+
+    const nonce = await sdk.get_identity_nonce(client, TEST_IDENTITY);
+    expect(nonce).to.be.an('object');
+    expect(String(nonce.nonce)).to.match(/^\d+$/);
   });
 
   it('gets contract nonce and keys', async () => {
@@ -50,9 +55,12 @@ describe('Identity queries (comprehensive)', function () {
   });
 
   it('token balances/infos for identity and batches', async () => {
-    await sdk.get_identity_token_balances(client, TEST_IDENTITY);
-    await sdk.get_identities_token_balances(client, [TEST_IDENTITY]);
-    await sdk.get_identity_token_infos(client, TEST_IDENTITY);
-    await sdk.get_identities_token_infos(client, [TEST_IDENTITY]);
+    const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
+    const tokenId = sdk.calculate_token_id_from_contract(TOKEN_CONTRACT, 1);
+
+    await sdk.get_identity_token_balances(client, TEST_IDENTITY, [tokenId]);
+    await sdk.get_identities_token_balances(client, [TEST_IDENTITY], tokenId);
+    await sdk.get_identity_token_infos(client, TEST_IDENTITY, [tokenId]);
+    await sdk.get_identities_token_infos(client, [TEST_IDENTITY], 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy');
   });
 });

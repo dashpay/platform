@@ -48,7 +48,7 @@ pub async fn dpns_register_name(
     public_key_id: u32,
     private_key_wif: &str,
     preorder_callback: Option<js_sys::Function>,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     // Parse identity ID
     let identity_id_parsed = Identifier::from_string(
         identity_id,
@@ -58,8 +58,7 @@ pub async fn dpns_register_name(
 
     // Fetch the identity
     let identity = Identity::fetch(sdk.as_ref(), identity_id_parsed)
-        .await
-        .map_err(WasmSdkError::from)?
+        .await?
         .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
 
     // Create signer
@@ -100,7 +99,7 @@ pub async fn dpns_register_name(
                     });
 
                     if let Ok(js_value) = serde_wasm_bindgen::to_value(&preorder_info) {
-                        let _ = js_callback.call1(&JsValue::NULL, &js_value);
+                        let _ = js_callback.call1(&wasm_bindgen::JsValue::NULL, &js_value);
                     }
                 }
             });
@@ -122,8 +121,7 @@ pub async fn dpns_register_name(
     let result = sdk
         .as_ref()
         .register_dpns_name(input)
-        .await
-        .map_err(WasmSdkError::from)?;
+        .await?;
 
     // Clear the thread-local callback
     PREORDER_CALLBACK.with(|cb| {
@@ -147,33 +145,29 @@ pub async fn dpns_register_name(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     js_result
         .serialize(&serializer)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
 }
 
 /// Check if a DPNS name is available
 #[wasm_bindgen]
-pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, JsValue> {
+pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, WasmSdkError> {
     sdk.as_ref()
         .is_dpns_name_available(label)
         .await
-        .map_err(|e| WasmSdkError::from(e).into())
+        .map_err(WasmSdkError::from)
 }
 
 /// Resolve a DPNS name to an identity ID
 #[wasm_bindgen]
-pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, JsValue> {
-    let result = sdk
-        .as_ref()
-        .resolve_dpns_name(name)
-        .await
-        .map_err(WasmSdkError::from)?;
+pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, WasmSdkError> {
+    let result = sdk.as_ref().resolve_dpns_name(name).await?;
 
     match result {
         Some(identity_id) => {
             let id_string = identity_id
                 .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
-            Ok(JsValue::from_str(&id_string))
+            Ok(wasm_bindgen::JsValue::from_str(&id_string))
         }
-        None => Ok(JsValue::NULL),
+        None => Ok(wasm_bindgen::JsValue::NULL),
     }
 }

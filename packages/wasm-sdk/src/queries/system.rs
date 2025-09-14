@@ -1,8 +1,9 @@
+use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
+use wasm_bindgen::JsValue;
 
 // Response structures for the gRPC getStatus endpoint
 #[derive(Serialize, Deserialize, Debug)]
@@ -149,7 +150,7 @@ struct PathElement {
 }
 
 #[wasm_bindgen]
-pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
     use dapi_grpc::platform::v0::get_status_request::{GetStatusRequestV0, Version};
     use dapi_grpc::platform::v0::GetStatusRequest;
     use dash_sdk::RequestSettings;
@@ -165,14 +166,14 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
-        .map_err(|e| JsError::new(&format!("Failed to get status: {}", e)))?;
+        .map_err(|e| WasmSdkError::generic(format!("Failed to get status: {}", e)))?;
 
     // Parse the response
     use dapi_grpc::platform::v0::get_status_response::Version as ResponseVersion;
 
     let v0_response = match response.inner.version {
         Some(ResponseVersion::V0(v0)) => v0,
-        None => return Err(JsError::new("No version in GetStatus response")),
+        None => return Err(WasmSdkError::generic("No version in GetStatus response")),
     };
 
     // Map the response to our StatusResponse structure
@@ -370,17 +371,16 @@ pub async fn get_status(sdk: &WasmSdk) -> Result<JsValue, JsError> {
     };
 
     serde_wasm_bindgen::to_value(&status)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
-pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::FetchUnproved;
     use drive_proof_verifier::types::{CurrentQuorumsInfo as SdkCurrentQuorumsInfo, NoParamQuery};
 
     let quorums_result = SdkCurrentQuorumsInfo::fetch_unproved(sdk.as_ref(), NoParamQuery {})
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch quorums info: {}", e)))?;
+        .await?;
 
     // The result is Option<CurrentQuorumsInfo>
     if let Some(quorum_info) = quorums_result {
@@ -442,7 +442,7 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
         };
 
         serde_wasm_bindgen::to_value(&info)
-            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     } else {
         // No quorum info available
         let info = CurrentQuorumsInfo {
@@ -451,18 +451,17 @@ pub async fn get_current_quorums_info(sdk: &WasmSdk) -> Result<JsValue, JsError>
         };
 
         serde_wasm_bindgen::to_value(&info)
-            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 }
 
 #[wasm_bindgen]
-pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsError> {
+pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::Fetch;
     use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery};
 
-    let total_credits_result = TotalCreditsQuery::fetch(sdk.as_ref(), NoParamQuery {})
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch total credits: {}", e)))?;
+    let total_credits_result =
+        TotalCreditsQuery::fetch(sdk.as_ref(), NoParamQuery {}).await?;
 
     // TotalCreditsInPlatform is likely a newtype wrapper around u64
     let credits_value = if let Some(credits) = total_credits_result {
@@ -481,14 +480,14 @@ pub async fn get_total_credits_in_platform(sdk: &WasmSdk) -> Result<JsValue, JsE
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
 pub async fn get_prefunded_specialized_balance(
     sdk: &WasmSdk,
     identity_id: &str,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::platform::{Fetch, Identifier};
     use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
@@ -496,17 +495,11 @@ pub async fn get_prefunded_specialized_balance(
     let identity_identifier = Identifier::from_string(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
     // Fetch prefunded specialized balance
-    let balance_result = PrefundedBalance::fetch(sdk.as_ref(), identity_identifier)
-        .await
-        .map_err(|e| {
-            JsError::new(&format!(
-                "Failed to fetch prefunded specialized balance: {}",
-                e
-            ))
-        })?;
+    let balance_result = PrefundedBalance::fetch(sdk.as_ref(), identity_identifier).await?;
 
     if let Some(balance) = balance_result {
         let response = PrefundedSpecializedBalance {
@@ -518,7 +511,7 @@ pub async fn get_prefunded_specialized_balance(
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response
             .serialize(&serializer)
-            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     } else {
         // Return zero balance if not found
         let response = PrefundedSpecializedBalance {
@@ -530,7 +523,7 @@ pub async fn get_prefunded_specialized_balance(
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response
             .serialize(&serializer)
-            .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
     }
 }
 
@@ -538,7 +531,7 @@ pub async fn get_prefunded_specialized_balance(
 pub async fn wait_for_state_transition_result(
     sdk: &WasmSdk,
     state_transition_hash: &str,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
         Version, WaitForStateTransitionResultRequestV0,
     };
@@ -549,7 +542,7 @@ pub async fn wait_for_state_transition_result(
 
     // Parse the hash from hex string to bytes
     let hash_bytes = hex::decode(state_transition_hash)
-        .map_err(|e| JsError::new(&format!("Invalid state transition hash: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid state transition hash: {}", e)))?;
 
     // Create the gRPC request
     let request = WaitForStateTransitionResultRequest {
@@ -564,12 +557,10 @@ pub async fn wait_for_state_transition_result(
         .as_ref()
         .execute(request, RequestSettings::default())
         .await
-        .map_err(|e| {
-            JsError::new(&format!(
-                "Failed to wait for state transition result: {}",
-                e
-            ))
-        })?;
+        .map_err(|e| WasmSdkError::generic(format!(
+            "Failed to wait for state transition result: {}",
+            e
+        )))?;
 
     // Parse the response
     use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
@@ -605,7 +596,7 @@ pub async fn wait_for_state_transition_result(
     };
 
     serde_wasm_bindgen::to_value(&result)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -613,7 +604,7 @@ pub async fn get_path_elements(
     sdk: &WasmSdk,
     path: Vec<String>,
     keys: Vec<String>,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use dash_sdk::drive::grovedb::Element;
     use dash_sdk::platform::FetchMany;
     use drive_proof_verifier::types::{Elements, KeysInPath};
@@ -643,9 +634,7 @@ pub async fn get_path_elements(
     };
 
     // Fetch path elements
-    let path_elements_result: Elements = Element::fetch_many(sdk.as_ref(), query)
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to fetch path elements: {}", e)))?;
+    let path_elements_result: Elements = Element::fetch_many(sdk.as_ref(), query).await?;
 
     // Convert the result to our response format
     let elements: Vec<PathElement> = keys
@@ -671,7 +660,7 @@ pub async fn get_path_elements(
         .collect();
 
     serde_wasm_bindgen::to_value(&elements)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 // Proof versions for system queries
@@ -679,17 +668,14 @@ pub async fn get_path_elements(
 #[wasm_bindgen]
 pub async fn get_total_credits_in_platform_with_proof_info(
     sdk: &WasmSdk,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use crate::queries::ProofMetadataResponse;
     use dash_sdk::platform::Fetch;
     use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery};
 
     let (total_credits_result, metadata, proof) =
         TotalCreditsQuery::fetch_with_metadata_and_proof(sdk.as_ref(), NoParamQuery {}, None)
-            .await
-            .map_err(|e| {
-                JsError::new(&format!("Failed to fetch total credits with proof: {}", e))
-            })?;
+            .await?;
 
     let data = if let Some(credits) = total_credits_result {
         Some(TotalCreditsResponse {
@@ -709,14 +695,14 @@ pub async fn get_total_credits_in_platform_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
 pub async fn get_prefunded_specialized_balance_with_proof_info(
     sdk: &WasmSdk,
     identity_id: &str,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use crate::queries::ProofMetadataResponse;
     use dash_sdk::platform::{Fetch, Identifier};
     use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
@@ -725,18 +711,13 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
     let identity_identifier = Identifier::from_string(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )?;
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
     // Fetch prefunded specialized balance with proof
     let (balance_result, metadata, proof) =
         PrefundedBalance::fetch_with_metadata_and_proof(sdk.as_ref(), identity_identifier, None)
-            .await
-            .map_err(|e| {
-                JsError::new(&format!(
-                    "Failed to fetch prefunded specialized balance with proof: {}",
-                    e
-                ))
-            })?;
+            .await?;
 
     let data = PrefundedSpecializedBalance {
         identity_id: identity_id.to_string(),
@@ -753,7 +734,7 @@ pub async fn get_prefunded_specialized_balance_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }
 
 #[wasm_bindgen]
@@ -761,7 +742,7 @@ pub async fn get_path_elements_with_proof_info(
     sdk: &WasmSdk,
     path: Vec<String>,
     keys: Vec<String>,
-) -> Result<JsValue, JsError> {
+) -> Result<JsValue, WasmSdkError> {
     use crate::queries::ProofMetadataResponse;
     use dash_sdk::drive::grovedb::Element;
     use dash_sdk::platform::FetchMany;
@@ -794,10 +775,7 @@ pub async fn get_path_elements_with_proof_info(
     // Fetch path elements with proof
     let (path_elements_result, metadata, proof) =
         Element::fetch_many_with_metadata_and_proof(sdk.as_ref(), query, None)
-            .await
-            .map_err(|e| {
-                JsError::new(&format!("Failed to fetch path elements with proof: {}", e))
-            })?;
+            .await?;
 
     // Convert the result to our response format
     let elements: Vec<PathElement> = keys
@@ -830,5 +808,5 @@ pub async fn get_path_elements_with_proof_info(
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
     response
         .serialize(&serializer)
-        .map_err(|e| JsError::new(&format!("Failed to serialize response: {}", e)))
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
 }

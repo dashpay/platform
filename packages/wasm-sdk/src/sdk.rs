@@ -24,7 +24,6 @@ use std::str::FromStr;
 use std::time::Duration;
 use crate::error::WasmSdkError;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 use web_sys::{console, js_sys};
 
 #[wasm_bindgen]
@@ -319,7 +318,7 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    pub fn new_mainnet_trusted() -> Result<Self, JsValue> {
+    pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
         // Use the cached context if available, otherwise create a new one
@@ -330,7 +329,7 @@ impl WasmSdkBuilder {
         .map(Ok)
         .unwrap_or_else(|| {
             WasmTrustedContext::new_mainnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)).into())
+                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
 
         // Mainnet addresses from mnowatch.org
@@ -577,7 +576,7 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    pub fn new_testnet_trusted() -> Result<Self, JsValue> {
+    pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
         // Use the cached context if available, otherwise create a new one
@@ -588,7 +587,7 @@ impl WasmSdkBuilder {
         .map(Ok)
         .unwrap_or_else(|| {
             WasmTrustedContext::new_testnet()
-                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)).into())
+                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
 
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
@@ -612,11 +611,11 @@ impl WasmSdkBuilder {
         Ok(Self(sdk_builder))
     }
 
-    pub fn build(self) -> Result<WasmSdk, JsValue> {
+    pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
         self.0
             .build()
             .map(WasmSdk)
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)).into())
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
     }
 
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
@@ -631,7 +630,7 @@ impl WasmSdkBuilder {
     /// - ... up to latest version
     ///
     /// Defaults to latest version if not specified.
-    pub fn with_version(self, version_number: u32) -> Result<Self, JsValue> {
+    pub fn with_version(self, version_number: u32) -> Result<Self, WasmSdkError> {
         let version = PlatformVersion::get(version_number)
             .map_err(|e| WasmSdkError::invalid_argument(format!(
                 "Invalid platform version {}: {}",
@@ -693,7 +692,7 @@ pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
 > = Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]
-pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsValue> {
+pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
     use crate::context_provider::WasmTrustedContext;
 
     let trusted_context = WasmTrustedContext::new_mainnet()
@@ -711,7 +710,7 @@ pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsValue> {
 }
 
 #[wasm_bindgen]
-pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsValue> {
+pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
     use crate::context_provider::WasmTrustedContext;
 
     let trusted_context = WasmTrustedContext::new_testnet()

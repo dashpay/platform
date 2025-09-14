@@ -19,7 +19,7 @@ pub fn derive_key_from_seed_with_extended_path(
     passphrase: Option<String>,
     path: &str,
     network: &str,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
     // Debug: Log the path being processed
     web_sys::console::log_1(&format!("Processing extended path: {}", path).into());
 
@@ -29,7 +29,7 @@ pub fn derive_key_from_seed_with_extended_path(
     let net = match network {
         "mainnet" => dashcore::Network::Dash,
         "testnet" => dashcore::Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
     };
 
     // Create master extended private key from seed
@@ -63,56 +63,56 @@ pub fn derive_key_from_seed_with_extended_path(
     let obj = js_sys::Object::new();
 
     js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
-        .map_err(|_| WasmSdkError::generic("Failed to set path property").into())?;
+        .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_wif"),
         &JsValue::from_str(&private_key.to_wif()),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("private_key_hex"),
         &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("public_key"),
         &JsValue::from_str(&hex::encode(public_key.to_bytes())),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set public_key property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("address"),
         &JsValue::from_str(&address.to_string()),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set address property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("network"),
         &JsValue::from_str(network),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set network property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xprv"),
         &JsValue::from_str(&derived_key.to_string()),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set xprv property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set xprv property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("xpub"),
         &JsValue::from_str(&xpub.to_string()),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set xpub property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set xpub property"))?;
 
     Ok(obj.into())
 }
@@ -127,7 +127,8 @@ pub fn derive_dashpay_contact_key(
     account: u32,
     address_index: u32,
     network: &str,
-) -> Result<JsValue, JsValue> {
+) -> Result<JsValue, WasmSdkError> {
+    use crate::error::WasmSdkError as _WasmErrHidden;
     use bs58;
 
     // Convert base58 identity IDs to hex format if needed
@@ -156,7 +157,7 @@ pub fn derive_dashpay_contact_key(
     let coin_type = match network {
         "mainnet" => 5,
         "testnet" => 1,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
     };
 
     let path = format!(
@@ -177,49 +178,49 @@ pub fn derive_dashpay_contact_key(
     // Add DIP15-specific metadata
     let obj = result
         .dyn_into::<js_sys::Object>()
-        .map_err(|_| WasmSdkError::generic("Failed to cast result to object").into())?;
+        .map_err(|_| WasmSdkError::generic("Failed to cast result to object"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("dipStandard"),
         &JsValue::from_str("DIP15"),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set dipStandard property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set dipStandard property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("purpose"),
         &JsValue::from_str("DashPay Contact Payment"),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set purpose property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set purpose property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("senderIdentity"),
         &JsValue::from_str(sender_identity_id),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set senderIdentity property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set senderIdentity property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("receiverIdentity"),
         &JsValue::from_str(receiver_identity_id),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set receiverIdentity property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set receiverIdentity property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("account"),
         &JsValue::from_f64(account as f64),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set account property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set account property"))?;
 
     js_sys::Reflect::set(
         &obj,
         &JsValue::from_str("addressIndex"),
         &JsValue::from_f64(address_index as f64),
     )
-    .map_err(|_| WasmSdkError::generic("Failed to set addressIndex property").into())?;
+    .map_err(|_| WasmSdkError::generic("Failed to set addressIndex property"))?;
 
     Ok(obj.into())
 }

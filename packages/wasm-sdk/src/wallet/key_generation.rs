@@ -27,11 +27,11 @@ pub struct KeyPair {
 
 /// Generate a new random key pair
 #[wasm_bindgen]
-pub fn generate_key_pair(network: &str) -> Result<JsValue, JsValue> {
+pub fn generate_key_pair(network: &str) -> Result<JsValue, WasmSdkError> {
     let net = match network {
         "mainnet" => Network::Dash,
         "testnet" => Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
     };
 
     // Generate random 32 bytes
@@ -67,14 +67,14 @@ pub fn generate_key_pair(network: &str) -> Result<JsValue, JsValue> {
     };
 
     serde_wasm_bindgen::to_value(&key_pair)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
 }
 
 /// Generate multiple key pairs
 #[wasm_bindgen]
-pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<JsValue>, JsValue> {
+pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<JsValue>, WasmSdkError> {
     if count == 0 || count > 100 {
-        return Err(WasmSdkError::invalid_argument("Count must be between 1 and 100").into());
+        return Err(WasmSdkError::invalid_argument("Count must be between 1 and 100"));
     }
 
     let mut pairs = Vec::new();
@@ -86,14 +86,14 @@ pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<JsValue>, JsV
 
 /// Create key pair from private key WIF
 #[wasm_bindgen]
-pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsValue> {
+pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, WasmSdkError> {
     let private_key = PrivateKey::from_wif(private_key_wif)
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 
     let network = match private_key.network {
         Network::Dash => "mainnet",
         Network::Testnet => "testnet",
-        _ => return Err(WasmSdkError::invalid_argument("Unsupported network").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Unsupported network")),
     };
 
     // Get public key
@@ -120,23 +120,22 @@ pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, JsValue> {
     };
 
     serde_wasm_bindgen::to_value(&key_pair)
-        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)).into())
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
 }
 
 /// Create key pair from private key hex
 #[wasm_bindgen]
-pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue, JsValue> {
+pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue, WasmSdkError> {
     if private_key_hex.len() != 64 {
         return Err(WasmSdkError::invalid_argument(
             "Private key hex must be exactly 64 characters",
-        )
-        .into());
+        ));
     }
 
     let net = match network {
         "mainnet" => Network::Dash,
         "testnet" => Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
     };
 
     let key_bytes = hex::decode(private_key_hex)
@@ -153,11 +152,11 @@ pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue
 
 /// Get address from public key
 #[wasm_bindgen]
-pub fn pubkey_to_address(pubkey_hex: &str, network: &str) -> Result<String, JsValue> {
+pub fn pubkey_to_address(pubkey_hex: &str, network: &str) -> Result<String, WasmSdkError> {
     let net = match network {
         "mainnet" => Network::Dash,
         "testnet" => Network::Testnet,
-        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'").into()),
+        _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
     };
 
     let pubkey_bytes = hex::decode(pubkey_hex)
@@ -186,7 +185,7 @@ pub fn validate_address(address: &str, network: &str) -> bool {
 
 /// Sign a message with a private key
 #[wasm_bindgen]
-pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, JsValue> {
+pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, WasmSdkError> {
     let private_key = PrivateKey::from_wif(private_key_wif)
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 

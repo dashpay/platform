@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Functional: token pricing', function () {
+describe('Token pricing', function () {
   this.timeout(60000);
 
   let client;
@@ -15,7 +15,7 @@ describe('Functional: token pricing', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
+
   });
 
   it('calculates token id and fetches price by contract', async () => {
@@ -26,8 +26,7 @@ describe('Functional: token pricing', function () {
       const info = await sdk.get_token_price_by_contract(client, CONTRACT_ID, 0);
       expect(info).to.be.ok;
     } catch (e) {
-      const msg = `${e?.message || e}`;
-      if (!(msg.includes('No pricing schedule') || msg.includes('Token not found'))) {
+      if (!(e.message.includes('No pricing schedule'))) {
         throw e;
       }
     }

@@ -1,8 +1,9 @@
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
+use dash_sdk::dpp::ProtocolError;
 use rs_dapi_client::CanRetry;
 use std::fmt::Display;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
+use dash_sdk::Error::{EpochNotFound, TotalCreditsNotFound};
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -38,7 +39,8 @@ pub enum WasmSdkErrorKind {
 }
 
 /// Structured error surfaced to JS consumers
-#[wasm_bindgen]
+#[wasm_bindgen(extends = Error)]
+#[derive(Debug, Clone)]
 pub struct WasmSdkError {
     kind: WasmSdkErrorKind,
     message: String,
@@ -144,6 +146,11 @@ impl From<SdkError> for WasmSdkError {
         }
     }
 }
+impl From<ProtocolError> for WasmSdkError {
+    fn from(err: ProtocolError) -> Self {
+        Self::new(WasmSdkErrorKind::Protocol, err.to_string(), None, false)
+    }
+}
 
 impl From<StateTransitionBroadcastError> for WasmSdkError {
     fn from(err: StateTransitionBroadcastError) -> Self {
@@ -154,13 +161,6 @@ impl From<StateTransitionBroadcastError> for WasmSdkError {
             false,
         )
     }
-}
-
-// For converting explicitly at callsites, prefer `JsValue::from(wasm_error)`
-
-/// Helper to convert displayable errors into a structured JS error value
-pub(crate) fn to_js_error_value(e: impl Display) -> JsValue {
-    WasmSdkError::generic(e.to_string()).into()
 }
 
 #[wasm_bindgen]
@@ -222,5 +222,3 @@ impl WasmSdkError {
         self.retriable
     }
 }
-
-// Legacy error helper removed in favor of WasmSdkError constructors.

@@ -15,7 +15,6 @@ describe('Epochs and evonode blocks', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
   });
 
   it('gets epochs info and finalized epochs', async () => {

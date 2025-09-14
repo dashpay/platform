@@ -15,7 +15,7 @@ describe('Status endpoint', function () {
 
   after(function () {
     if (client) client.free();
-    if (builder) builder.free();
+
   });
 
   it('get_status', async function () {

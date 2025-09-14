@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Functional: utilities (prefetch + serialization)', function () {
+describe('Utilities', function () {
   before(async () => { await init(); });
   this.timeout(60000);
 

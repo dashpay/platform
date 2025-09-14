@@ -8,10 +8,10 @@ describe('WasmSdkError shape (unit)', () => {
   it('invalid network on generate_key_pair exposes InvalidArgument', () => {
     try {
       sdk.generate_key_pair('devnet');
-      throw new Error('expected to throw');
+      expect.fail('expected to throw');
     } catch (e) {
       // wasm-bindgen returns our WasmSdkError as an object, not necessarily instanceof Error
-      expect(e && typeof e).to.equal('object');
+      expect(e).to.be.instanceOf(sdk.WasmSdkError);
       expect(e.name).to.equal('InvalidArgument');
       expect(e.message).to.match(/Invalid network/i);
       expect(e.retriable).to.equal(false);
@@ -22,8 +22,9 @@ describe('WasmSdkError shape (unit)', () => {
   it('invalid hex on key_pair_from_hex exposes InvalidArgument', () => {
     try {
       sdk.key_pair_from_hex('zzzz', 'mainnet');
-      throw new Error('expected to throw');
+      expect.fail('expected to throw');
     } catch (e) {
+      expect(e).to.be.instanceOf(sdk.WasmSdkError);
       expect(e.name).to.equal('InvalidArgument');
       expect(e.retriable).to.equal(false);
       // either length or content validation may trigger first
@@ -36,8 +37,9 @@ describe('WasmSdkError shape (unit)', () => {
     const path = "m/44'/5'/0'/0/0";
     try {
       sdk.derive_key_from_seed_with_path(seed, undefined, path, 'bogus');
-      throw new Error('expected to throw');
+      expect.fail('expected to throw');
     } catch (e) {
+      expect(e).to.be.instanceOf(sdk.WasmSdkError);
       expect(e.name).to.equal('InvalidArgument');
       expect(e.message).to.match(/Invalid network/i);
     }
