@@ -1,4 +1,4 @@
-require: tests/bootstrap.cjs
+require:
+  - tests/bootstrap.cjs
 recursive: true
 timeout: 8000
-

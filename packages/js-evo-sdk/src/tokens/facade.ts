@@ -38,18 +38,17 @@ export class TokensFacade {
     return wasm.get_identities_token_balances_with_proof_info(this.sdk.wasm, identityIds, tokenId);
   }
 
-  identityTokenInfos(identityId: string, tokenIds?: string[] | null, opts: { limit?: number; offset?: number } = {}): Promise<any> {
+  identityTokenInfos(identityId: string, tokenIds: string[], opts: { limit?: number; offset?: number } = {}): Promise<any> {
     const { limit, offset } = opts;
-    return wasm.get_identity_token_infos(this.sdk.wasm, identityId, tokenIds ?? null, limit ?? null, offset ?? null);
+    return wasm.get_identity_token_infos(this.sdk.wasm, identityId, tokenIds);
   }
 
   identitiesTokenInfos(identityIds: string[], tokenId: string): Promise<any> {
     return wasm.get_identities_token_infos(this.sdk.wasm, identityIds, tokenId);
   }
 
-  identityTokenInfosWithProof(identityId: string, tokenIds?: string[] | null, opts: { limit?: number; offset?: number } = {}): Promise<any> {
-    const { limit, offset } = opts;
-    return wasm.get_identity_token_infos_with_proof_info(this.sdk.wasm, identityId, tokenIds ?? null, limit ?? null, offset ?? null);
+  identityTokenInfosWithProof(identityId: string, tokenIds: string[]): Promise<any> {
+    return wasm.get_identity_token_infos_with_proof_info(this.sdk.wasm, identityId, tokenIds);
   }
 
   identitiesTokenInfosWithProof(identityIds: string[], tokenId: string): Promise<any> {

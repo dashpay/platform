@@ -1,4 +1,5 @@
 /* eslint-disable import/no-extraneous-dependencies */
+const path = require('path');
 const webpack = require('webpack');
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
@@ -12,6 +13,21 @@ module.exports = {
   webpack: {
     mode: 'development',
     devtool: 'eval',
+    module: {
+      rules: [
+        {
+          test: /\.ts$/,
+          use: {
+            loader: 'ts-loader',
+            options: {
+              transpileOnly: true,
+              compilerOptions: { declaration: false, emitDeclarationOnly: false },
+            },
+          },
+          exclude: /node_modules/,
+        },
+      ],
+    },
     // No special wasm handling needed (WASM is inlined in dist)
     plugins: [
       new webpack.ProvidePlugin({
@@ -20,7 +36,12 @@ module.exports = {
       }),
     ],
     resolve: {
-      extensions: ['.mjs', '.js'],
+      extensions: ['.mjs', '.js', '.ts'],
+      extensionAlias: { '.js': ['.ts', '.js'] },
+      alias: {
+        // Replace real wasm-sdk with a local stub for browser unit tests
+        '@dashevo/wasm-sdk': path.resolve(__dirname, '../stubs/wasm-sdk-stub.mjs'),
+      },
       fallback: {
         fs: false,
         path: require.resolve('path-browserify'),
@@ -65,4 +86,3 @@ module.exports = {
     },
   },
 };
-

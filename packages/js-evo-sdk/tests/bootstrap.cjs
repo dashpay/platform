@@ -8,4 +8,3 @@ chai.use(dirtyChai);
 const { expect } = chai;
 const g = (typeof globalThis !== 'undefined') ? globalThis : global;
 g.expect = expect;
-
