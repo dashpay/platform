@@ -1,37 +1,33 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
-
-const isBrowser = typeof window !== 'undefined';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('ProtocolFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  let wasmSdk;
+  let client;
 
-  let wasmStubModule;
-  before(async () => { wasmStubModule = await import('@dashevo/wasm-sdk'); });
-  beforeEach(() => { wasmStubModule.__clearCalls(); });
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
+
+    this.sinon.stub(wasmSdk, 'getProtocolVersionUpgradeState').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getProtocolVersionUpgradeStateWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getProtocolVersionUpgradeVoteStatus').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getProtocolVersionUpgradeVoteStatusWithProofInfo').resolves('ok');
+  });
 
   it('versionUpgradeState and versionUpgradeStateWithProof forward', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.protocol.versionUpgradeState();
-    await sdk.protocol.versionUpgradeStateWithProof();
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include('get_protocol_version_upgrade_state');
-    expect(names).to.include('get_protocol_version_upgrade_state_with_proof_info');
+    await client.protocol.versionUpgradeState();
+    await client.protocol.versionUpgradeStateWithProof();
+    expect(wasmSdk.getProtocolVersionUpgradeState).to.be.calledOnce();
+    expect(wasmSdk.getProtocolVersionUpgradeStateWithProofInfo).to.be.calledOnce();
   });
 
   it('versionUpgradeVoteStatus and withProof forward with args', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.protocol.versionUpgradeVoteStatus({ startProTxHash: 'h', count: 5 });
-    await sdk.protocol.versionUpgradeVoteStatusWithProof({ startProTxHash: 'g', count: 3 });
-    const calls = wasmStubModule.__getCalls();
-    const a = calls.find(c => c.called === 'get_protocol_version_upgrade_vote_status');
-    const b = calls.find(c => c.called === 'get_protocol_version_upgrade_vote_status_with_proof_info');
-    expect(a.args).to.deep.equal([raw, 'h', 5]);
-    expect(b.args).to.deep.equal([raw, 'g', 3]);
+    await client.protocol.versionUpgradeVoteStatus({ startProTxHash: 'h', count: 5 });
+    await client.protocol.versionUpgradeVoteStatusWithProof({ startProTxHash: 'g', count: 3 });
+    expect(wasmSdk.getProtocolVersionUpgradeVoteStatus).to.be.calledOnceWithExactly('h', 5);
+    expect(wasmSdk.getProtocolVersionUpgradeVoteStatusWithProofInfo).to.be.calledOnceWithExactly('g', 3);
   });
 });
-

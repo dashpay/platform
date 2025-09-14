@@ -1,53 +1,55 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
-const isBrowser = typeof window !== 'undefined';
+describe('DPNSFacade', () => {
+  let wasmSdk;
+  let client;
 
-describe('DpnsFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
 
-  let wasmStubModule;
-  before(async () => { wasmStubModule = await import('@dashevo/wasm-sdk'); });
-  beforeEach(() => { wasmStubModule.__clearCalls(); });
+    this.sinon.stub(wasmSdk, 'dpnsIsNameAvailable').resolves(true);
+    this.sinon.stub(wasmSdk, 'dpnsResolveName').resolves({});
+    this.sinon.stub(wasmSdk, 'dpnsRegisterName').resolves({});
+    this.sinon.stub(wasmSdk, 'getDpnsUsernames').resolves([]);
+    this.sinon.stub(wasmSdk, 'getDpnsUsername').resolves({});
+    this.sinon.stub(wasmSdk, 'getDpnsUsernamesWithProofInfo').resolves({});
+    this.sinon.stub(wasmSdk, 'getDpnsUsernameWithProofInfo').resolves({});
+    this.sinon.stub(wasmSdk, 'getDpnsUsernameByName').resolves({});
+    this.sinon.stub(wasmSdk, 'getDpnsUsernameByNameWithProofInfo').resolves({});
+  });
 
-  it('convertToHomographSafe/isValidUsername/isContestedUsername call pure functions', () => {
-    // These are synchronous functions
-    const out1 = wasmStubModule.dpns_convert_to_homograph_safe('abc');
-    const out2 = wasmStubModule.dpns_is_valid_username('abc');
-    const out3 = wasmStubModule.dpns_is_contested_username('abc');
-    expect(out1).to.be.ok(); // stub returns record object
+  it('convertToHomographSafe/isValidUsername/isContestedUsername use class statics', () => {
+    const out1 = wasmSDKPackage.WasmSdk.dpnsConvertToHomographSafe('abc');
+    const out2 = wasmSDKPackage.WasmSdk.dpnsIsValidUsername('abc');
+    const out3 = wasmSDKPackage.WasmSdk.dpnsIsContestedUsername('abc');
+    expect(out1).to.be.ok();
     expect(typeof out2).to.not.equal('undefined');
     expect(typeof out3).to.not.equal('undefined');
   });
 
   it('name resolution and registration forward correctly', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.dpns.isNameAvailable('label');
-    await sdk.dpns.resolveName('name');
-    await sdk.dpns.registerName({ label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w' });
-    await sdk.dpns.usernames('i', { limit: 2 });
-    await sdk.dpns.username('i');
-    await sdk.dpns.usernamesWithProof('i', { limit: 3 });
-    await sdk.dpns.usernameWithProof('i');
-    await sdk.dpns.getUsernameByName('u');
-    await sdk.dpns.getUsernameByNameWithProof('u');
+    await client.dpns.isNameAvailable('label');
+    await client.dpns.resolveName('name');
+    await client.dpns.registerName({ label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w' });
+    await client.dpns.usernames('i', { limit: 2 });
+    await client.dpns.username('i');
+    await client.dpns.usernamesWithProof('i', { limit: 3 });
+    await client.dpns.usernameWithProof('i');
+    await client.dpns.getUsernameByName('u');
+    await client.dpns.getUsernameByNameWithProof('u');
 
-    const calls = wasmStubModule.__getCalls();
-    const names = calls.map(c => c.called);
-    expect(names).to.include.members([
-      'dpns_is_name_available',
-      'dpns_resolve_name',
-      'dpns_register_name',
-      'get_dpns_usernames',
-      'get_dpns_username',
-      'get_dpns_usernames_with_proof_info',
-      'get_dpns_username_with_proof_info',
-      'get_dpns_username_by_name',
-      'get_dpns_username_by_name_with_proof_info',
-    ]);
+    expect(wasmSdk.dpnsIsNameAvailable).to.be.calledOnceWithExactly('label');
+    expect(wasmSdk.dpnsResolveName).to.be.calledOnceWithExactly('name');
+    expect(wasmSdk.dpnsRegisterName).to.be.calledOnce();
+    expect(wasmSdk.getDpnsUsernames).to.be.calledOnceWithExactly('i', 2);
+    expect(wasmSdk.getDpnsUsername).to.be.calledOnceWithExactly('i');
+    expect(wasmSdk.getDpnsUsernamesWithProofInfo).to.be.calledOnceWithExactly('i', 3);
+    expect(wasmSdk.getDpnsUsernameWithProofInfo).to.be.calledOnceWithExactly('i');
+    expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u');
+    expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u');
   });
 });
-

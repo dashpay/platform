@@ -633,7 +633,7 @@ impl WasmSdk {
 
                                     // Validate timestamp: must be 0 (unset) or a reasonable Unix timestamp
                                     let validated_timestamp = if timestamp != 0 && timestamp < 1609459200 {
-                                        web_sys::console::warn_1(&format!("Invalid timestamp in raw bytes: {} (too early)", timestamp).into());
+                                    tracing::warn!(target = "wasm_sdk", timestamp, "Invalid timestamp in raw bytes (too early)");
                                         0 // Use 0 for invalid timestamps
                                     } else {
                                         timestamp
@@ -641,7 +641,7 @@ impl WasmSdk {
 
                                     // Validate block height: must be a positive value
                                     let validated_block_height = if block_height == 0 {
-                                        web_sys::console::warn_1(&"Invalid block height in raw bytes: 0 (genesis block not expected)".into());
+                                    tracing::warn!(target = "wasm_sdk", "Invalid block height in raw bytes: 0 (genesis block not expected)");
                                         1 // Use minimum valid block height
                                     } else {
                                         block_height
@@ -657,7 +657,7 @@ impl WasmSdk {
 
                                     // Validate block height
                                     let validated_block_height = if block_height == 0 {
-                                        web_sys::console::warn_1(&"Invalid block height in fallback parsing: 0".into());
+                                    tracing::warn!(target = "wasm_sdk", "Invalid block height in fallback parsing: 0");
                                         1 // Use minimum valid block height
                                     } else {
                                         block_height
@@ -665,7 +665,7 @@ impl WasmSdk {
 
                                     Some((0, validated_block_height))
                                 } else {
-                                    web_sys::console::warn_1(&format!("Insufficient raw bytes length: {} (expected 8 or 4)", bytes.len()).into());
+                                    tracing::warn!(target = "wasm_sdk", len = bytes.len(), "Insufficient raw bytes length (expected 8 or 4)");
                                     Some((0, 0))
                                 }
                             },

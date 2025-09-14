@@ -1,31 +1,30 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
-
-const isBrowser = typeof window !== 'undefined';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('GroupFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  let wasmSdk;
+  let client;
 
-  let wasmStubModule;
-  before(async () => { wasmStubModule = await import('@dashevo/wasm-sdk'); });
-  beforeEach(() => { wasmStubModule.__clearCalls(); });
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
+
+    this.sinon.stub(wasmSdk, 'getContestedResources').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getContestedResourcesWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentity').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getContestedResourceVotersForIdentityWithProofInfo').resolves('ok');
+  });
 
   it('forwards contestedResources and voters queries', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.group.contestedResources({ documentTypeName: 'dt', contractId: 'c', indexName: 'i', startAtValue: new Uint8Array([1]), limit: 2, orderAscending: false });
-    await sdk.group.contestedResourcesWithProof({ documentTypeName: 'dt', contractId: 'c', indexName: 'i' });
-    await sdk.group.contestedResourceVotersForIdentity({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], contestantId: 'id', startAtVoterInfo: 's', limit: 3, orderAscending: true });
-    await sdk.group.contestedResourceVotersForIdentityWithProof({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v2'], contestantId: 'id' });
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include.members([
-      'get_contested_resources',
-      'get_contested_resources_with_proof_info',
-      'get_contested_resource_voters_for_identity',
-      'get_contested_resource_voters_for_identity_with_proof_info',
-    ]);
+    await client.group.contestedResources({ documentTypeName: 'dt', contractId: 'c', indexName: 'i', startAtValue: new Uint8Array([1]), limit: 2, orderAscending: false });
+    await client.group.contestedResourcesWithProof({ documentTypeName: 'dt', contractId: 'c', indexName: 'i' });
+    await client.group.contestedResourceVotersForIdentity({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], contestantId: 'id', startAtVoterInfo: 's', limit: 3, orderAscending: true });
+    await client.group.contestedResourceVotersForIdentityWithProof({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v2'], contestantId: 'id' });
+    expect(wasmSdk.getContestedResources).to.be.calledOnce();
+    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnce();
+    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo).to.be.calledOnce();
   });
 });
-

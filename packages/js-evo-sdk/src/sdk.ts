@@ -80,16 +80,16 @@ export class EvoSDK {
 
     let b: wasm.WasmSdkBuilder;
     if (network === 'mainnet') {
-      b = trusted ? (wasm.WasmSdkBuilder as any).new_mainnet_trusted() : wasm.WasmSdkBuilder.new_mainnet();
+      b = trusted ? (wasm.WasmSdkBuilder as any).mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
     } else {
-      b = trusted ? (wasm.WasmSdkBuilder as any).new_testnet_trusted() : wasm.WasmSdkBuilder.new_testnet();
+      b = trusted ? (wasm.WasmSdkBuilder as any).testnetTrusted() : wasm.WasmSdkBuilder.testnet();
     }
 
-    if (version) b = b.with_version(version);
-    if (typeof proofs === 'boolean') b = b.with_proofs(proofs);
+    if (version) b = b.withVersion(version);
+    if (typeof proofs === 'boolean') b = b.withProofs(proofs);
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
-      b = b.with_settings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
+      b = b.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
     }
 
     this.wasmSdk = b.build();

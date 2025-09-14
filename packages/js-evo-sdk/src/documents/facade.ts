@@ -23,8 +23,7 @@ export class DocumentsFacade {
     const whereJson = asJsonString(where);
     const orderJson = asJsonString(orderBy);
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_documents(
-      w,
+    return w.getDocuments(
       contractId,
       type,
       whereJson ?? null,
@@ -48,8 +47,7 @@ export class DocumentsFacade {
     const whereJson = asJsonString(where);
     const orderJson = asJsonString(orderBy);
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_documents_with_proof_info(
-      w,
+    return w.getDocumentsWithProofInfo(
       contractId,
       type,
       whereJson ?? null,
@@ -62,12 +60,12 @@ export class DocumentsFacade {
 
   async get(contractId: string, type: string, documentId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_document(w, contractId, type, documentId);
+    return w.getDocument(contractId, type, documentId);
   }
 
   async getWithProof(contractId: string, type: string, documentId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_document_with_proof_info(w, contractId, type, documentId);
+    return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
   async create(args: {

@@ -7,57 +7,52 @@ describe('ContractsFacade', () => {
 
   beforeEach(async function () {
     await init();
-    let builder = wasmSDKPackage.WasmSdkBuilder.new_testnet_trusted();
-    let wasmSdk = builder.build();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
-    // class methods
-    this.sinon.stub(wasmSDKPackage, 'data_contract_fetch').resolves(true);
-    this.sinon.stub(wasmSDKPackage, 'data_contract_fetch_with_proof_info').resolves(true);
-    this.sinon.stub(wasmSDKPackage, 'get_data_contract_history').resolves(true);
-    this.sinon.stub(wasmSDKPackage, 'get_data_contract_history_with_proof_info').resolves(true);
-    this.sinon.stub(wasmSDKPackage, 'get_data_contracts').resolves(true);
-    this.sinon.stub(wasmSDKPackage, 'get_data_contracts_with_proof_info').resolves(true);
-
-    // instance methods
+    // instance methods used by ContractsFacade
+    this.sinon.stub(wasmSdk, 'getDataContract').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContractWithProofInfo').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContractHistory').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContractHistoryWithProofInfo').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContracts').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContractsWithProofInfo').resolves(true);
     this.sinon.stub(wasmSdk, 'contractCreate').resolves(true);
     this.sinon.stub(wasmSdk, 'contractUpdate').resolves(true);
   })
 
-  it('fetch() forward to free functions', async () => {
+  it('fetch() forwards to instance getDataContract', async () => {
     await client.contracts.fetch('c');
-
-    expect(wasmSdk).to.be.calledOnceWithExactly('c');
+    expect(wasmSdk.getDataContract).to.be.calledOnceWithExactly('c');
   });
 
-  it('fetchWithProof() forward to free functions', async () => {
+  it('fetchWithProof() forwards to instance getDataContractWithProofInfo', async () => {
     await client.contracts.fetchWithProof('c2');
-
-    expect(wasmSdk).to.be.calledOnceWithExactly('c2');
+    expect(wasmSdk.getDataContractWithProofInfo).to.be.calledOnceWithExactly('c2');
   });
 
   it('getHistory() converts startAtMs to BigInt and forwards', async () => {
     await client.contracts.getHistory({ contractId: 'c', limit: 3, startAtMs: 5 });
-    expect(wasmSdk.get_data_contract_history).to.be.calledOnce();
-    const args = wasmSdk.get_data_contract_history.firstCall.args;
-    expect(args[0]).to.equal(client.wasm);
-    expect(args[1]).to.equal('c');
-    expect(args[2]).to.equal(3);
-    expect(args[3]).to.equal(null);
-    expect(typeof args[4]).to.equal('bigint');
-    expect(args[4]).to.equal(5n);
+    expect(wasmSdk.getDataContractHistory).to.be.calledOnce();
+    const args = wasmSdk.getDataContractHistory.firstCall.args;
+    expect(args[0]).to.equal('c');
+    expect(args[1]).to.equal(3);
+    expect(args[2]).to.equal(null);
+    expect(typeof args[3]).to.equal('bigint');
+    expect(args[3]).to.equal(5n);
   });
 
   it('getHistoryWithProof() forwards similarly', async () => {
     await client.contracts.getHistoryWithProof({ contractId: 'c' });
-    expect(wasmSdk.get_data_contract_history_with_proof_info).to.be.calledOnceWithExactly(client.wasm, 'c', null, null, null);
+    expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly('c', null, null, null);
   });
 
   it('getMany() and getManyWithProof() forward arrays', async () => {
     await client.contracts.getMany(['a', 'b']);
     await client.contracts.getManyWithProof(['x']);
-    expect(wasmSdk.get_data_contracts).to.be.calledOnceWithExactly(client.wasm, ['a', 'b']);
-    expect(wasmSdk.get_data_contracts_with_proof_info).to.be.calledOnceWithExactly(client.wasm, ['x']);
+    expect(wasmSdk.getDataContracts).to.be.calledOnceWithExactly(['a', 'b']);
+    expect(wasmSdk.getDataContractsWithProofInfo).to.be.calledOnceWithExactly(['x']);
   });
 
   it('create() calls wasmSdk.contractCreate with JSON', async () => {

@@ -106,14 +106,12 @@ impl WasmSdk {
         };
 
         // Log debug information
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Looking for authentication key with public key: {}",
-            hex::encode(&public_key_bytes)
-        )));
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Public key hash160: {}",
-            hex::encode(&public_key_hash160)
-        )));
+        tracing::debug!(
+            target = "wasm_sdk",
+            pubkey = %hex::encode(&public_key_bytes),
+            hash160 = %hex::encode(&public_key_hash160),
+            "Looking for authentication key"
+        );
 
         // Find matching authentication key
         let (key_id, matching_key) = identity
@@ -135,11 +133,12 @@ impl WasmSdk {
                 };
 
                 if matches {
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Found matching key: ID={}, Type={:?}",
-                        key.id(),
-                        key.key_type()
-                    )));
+                    tracing::debug!(
+                        target = "wasm_sdk",
+                        id = key.id(),
+                        key_type = ?key.key_type(),
+                        "Found matching key"
+                    );
                 }
 
                 matches
@@ -318,25 +317,21 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
 
         // Log the result for debugging
-        web_sys::console::log_1(&JsValue::from_str(
-            "Processing state transition proof result",
-        ));
+        tracing::debug!(target = "wasm_sdk", "Processing state transition proof result");
 
         // Convert result to JsValue based on the type
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {
-                web_sys::console::log_1(&JsValue::from_str(&format!(
-                    "Documents in result: {}",
-                    documents.len()
-                )));
+                tracing::debug!(target = "wasm_sdk", count = documents.len(), "Documents in result");
 
                 // Try to find the created document
                 for (doc_id, maybe_doc) in documents.iter() {
-                    web_sys::console::log_1(&JsValue::from_str(&format!(
-                        "Document ID: {}, Document present: {}",
-                        doc_id.to_string(Encoding::Base58),
-                        maybe_doc.is_some()
-                    )));
+                    tracing::debug!(
+                        target = "wasm_sdk",
+                        id = %doc_id.to_string(Encoding::Base58),
+                        present = maybe_doc.is_some(),
+                        "Document entry"
+                    );
                 }
 
                 if let Some((doc_id, maybe_doc)) = documents.into_iter().next() {
@@ -444,9 +439,7 @@ impl WasmSdk {
                         )
                         .unwrap();
 
-                        web_sys::console::log_1(&JsValue::from_str(
-                            "Document created successfully, returning JS object",
-                        ));
+                        tracing::debug!(target = "wasm_sdk", "Document created successfully");
 
                         Ok(js_result.into())
                     } else {
@@ -752,9 +745,7 @@ impl WasmSdk {
                         )
                         .unwrap();
 
-                        web_sys::console::log_1(&JsValue::from_str(
-                            "Document replaced successfully",
-                        ));
+                        tracing::debug!(target = "wasm_sdk", "Document replaced successfully");
 
                         Ok(js_result.into())
                     } else {

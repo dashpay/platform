@@ -17,7 +17,7 @@ use simple_signer::{signer::SimpleSigner, SingleKeySigner};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 use crate::error::WasmSdkError;
-use web_sys;
+use tracing::{debug, error};
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -51,25 +51,15 @@ impl WasmSdk {
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
-        // Debug log all parameters
-        web_sys::console::log_1(&JsValue::from_str(&format!("identityCreate called with:")));
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "  asset_lock_proof (length {}): {}",
-            asset_lock_proof.len(),
-            if asset_lock_proof.len() > 100 {
-                format!("{}...", &asset_lock_proof[..100])
-            } else {
-                asset_lock_proof.clone()
-            }
-        )));
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "  asset_lock_proof_private_key: [REDACTED] (length: {})",
-            asset_lock_proof_private_key.len()
-        )));
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "  public_keys: {}",
-            public_keys
-        )));
+        // Debug log parameters (truncated/sanitized)
+        debug!(
+            target: "wasm_sdk",
+            len = asset_lock_proof.len(),
+            preview = %if asset_lock_proof.len() > 100 { format!("{}...", &asset_lock_proof[..100]) } else { asset_lock_proof.clone() },
+            "identityCreate called"
+        );
+        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "identityCreate private key length");
+        debug!(target: "wasm_sdk", public_keys = %public_keys, "identityCreate public keys JSON");
 
         // Parse asset lock proof - try hex first, then JSON
         let asset_lock_proof: AssetLockProof = if asset_lock_proof
@@ -93,11 +83,7 @@ impl WasmSdk {
         };
 
         // Parse private key - WIF format
-        // Log the private key format for debugging
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Private key format validation - length: {}",
-            asset_lock_proof_private_key.len()
-        )));
+        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "Private key format validation");
 
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
@@ -351,10 +337,7 @@ impl WasmSdk {
                 // Extract more detailed error information
                 let error_msg = format!("Failed to create identity: {}", e);
 
-                web_sys::console::error_1(&JsValue::from_str(&format!(
-                    "Identity creation failed: {}",
-                    error_msg
-                )));
+                error!(target: "wasm_sdk", msg = %error_msg, "Identity creation failed");
                 return Err(WasmSdkError::generic(error_msg));
             }
         };
@@ -448,11 +431,7 @@ impl WasmSdk {
         };
 
         // Parse private key - WIF format
-        // Log the private key format for debugging
-        web_sys::console::log_1(&JsValue::from_str(&format!(
-            "Private key format validation - length: {}",
-            asset_lock_proof_private_key.len()
-        )));
+        debug!(target: "wasm_sdk", pk_len = asset_lock_proof_private_key.len(), "Private key format validation");
 
         let private_key = PrivateKey::from_wif(&asset_lock_proof_private_key)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
@@ -462,12 +441,12 @@ impl WasmSdk {
             Ok(Some(identity)) => identity,
             Ok(None) => {
                 let error_msg = format!("Identity not found: {}", identifier);
-                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                error!(target: "wasm_sdk", %error_msg);
                 return Err(WasmSdkError::not_found(error_msg));
             }
             Err(e) => {
                 let error_msg = format!("Failed to fetch identity: {}", e);
-                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                error!(target: "wasm_sdk", %error_msg);
                 return Err(WasmSdkError::from(e));
             }
         };
@@ -483,7 +462,7 @@ impl WasmSdk {
             Ok(balance) => balance,
             Err(e) => {
                 let error_msg = format!("Failed to top up identity: {}", e);
-                web_sys::console::error_1(&JsValue::from_str(&error_msg));
+                error!(target: "wasm_sdk", %error_msg);
                 return Err(WasmSdkError::from(e));
             }
         };

@@ -1,79 +1,60 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
-import sinon from 'sinon';
-
-const isBrowser = typeof window !== 'undefined';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('DocumentsFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  let wasmSdk;
+  let client;
 
-  let wasmStubModule;
-  before(async () => {
-    // Karma aliases '@dashevo/wasm-sdk' to a local stub with __getCalls helpers
-    wasmStubModule = await import('@dashevo/wasm-sdk');
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
+
+    this.sinon.stub(wasmSdk, 'getDocuments').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getDocumentsWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getDocument').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getDocumentWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentCreate').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentReplace').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentDelete').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentTransfer').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentPurchase').resolves('ok');
+    this.sinon.stub(wasmSdk, 'documentSetPrice').resolves('ok');
   });
 
-  beforeEach(() => {
-    wasmStubModule.__clearCalls();
-  });
-
-  it('query() forwards to wasm.get_documents with JSON and null handling', async () => {
-    const raw = {}; // WasmSdk instance is passed to free functions
-    const sdk = EvoSDK.fromWasm(raw);
+  it('query() forwards to wasm.getDocuments with JSON and null handling', async () => {
     const where = { a: 1 };
     const order = { b: 'asc' };
-    await sdk.documents.query({ contractId: 'c', type: 't', where, orderBy: order, limit: 5, startAfter: 'x', startAt: 'y' });
-
-    const calls = wasmStubModule.__getCalls();
-    const last = calls[calls.length - 1];
-    expect(last.called).to.equal('get_documents');
-    expect(last.args[0]).to.equal(raw);
-    expect(last.args.slice(1)).to.deep.equal(['c', 't', JSON.stringify(where), JSON.stringify(order), 5, 'x', 'y']);
+    await client.documents.query({ contractId: 'c', type: 't', where, orderBy: order, limit: 5, startAfter: 'x', startAt: 'y' });
+    expect(wasmSdk.getDocuments).to.be.calledOnceWithExactly('c', 't', JSON.stringify(where), JSON.stringify(order), 5, 'x', 'y');
   });
 
-  it('queryWithProof() forwards to wasm.get_documents_with_proof_info', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.documents.queryWithProof({ contractId: 'c', type: 't' });
-    const last = wasmStubModule.__getCalls().pop();
-    expect(last.called).to.equal('get_documents_with_proof_info');
-    expect(last.args.slice(0, 3)).to.deep.equal([raw, 'c', 't']);
+  it('queryWithProof() forwards to wasm.getDocumentsWithProofInfo', async () => {
+    await client.documents.queryWithProof({ contractId: 'c', type: 't' });
+    expect(wasmSdk.getDocumentsWithProofInfo).to.be.calledOnceWithExactly('c', 't', null, null, null, null, null);
   });
 
-  it('get() forwards to wasm.get_document', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.documents.get('c', 't', 'id');
-    const last = wasmStubModule.__getCalls().pop();
-    expect(last.called).to.equal('get_document');
-    expect(last.args).to.deep.equal([raw, 'c', 't', 'id']);
+  it('get() forwards to wasm.getDocument', async () => {
+    await client.documents.get('c', 't', 'id');
+    expect(wasmSdk.getDocument).to.be.calledOnceWithExactly('c', 't', 'id');
   });
 
-  it('getWithProof() forwards to wasm.get_document_with_proof_info', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.documents.getWithProof('c', 't', 'id');
-    const last = wasmStubModule.__getCalls().pop();
-    expect(last.called).to.equal('get_document_with_proof_info');
-    expect(last.args).to.deep.equal([raw, 'c', 't', 'id']);
+  it('getWithProof() forwards to wasm.getDocumentWithProofInfo', async () => {
+    await client.documents.getWithProof('c', 't', 'id');
+    expect(wasmSdk.getDocumentWithProofInfo).to.be.calledOnceWithExactly('c', 't', 'id');
   });
 
   it('create() calls wasmSdk.documentCreate with JSON data', async () => {
-    const wasm = { documentCreate: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
     const data = { foo: 'bar' };
-    await sdk.documents.create({ contractId: 'c', type: 't', ownerId: 'o', data, entropyHex: 'ee', privateKeyWif: 'wif' });
-    sinon.assert.calledOnceWithExactly(wasm.documentCreate, 'c', 't', 'o', JSON.stringify(data), 'ee', 'wif');
+    await client.documents.create({ contractId: 'c', type: 't', ownerId: 'o', data, entropyHex: 'ee', privateKeyWif: 'wif' });
+    expect(wasmSdk.documentCreate).to.be.calledOnceWithExactly('c', 't', 'o', JSON.stringify(data), 'ee', 'wif');
   });
 
   it('replace() calls wasmSdk.documentReplace with BigInt revision', async () => {
-    const wasm = { documentReplace: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
-    await sdk.documents.replace({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', data: { n: 1 }, revision: 2, privateKeyWif: 'w' });
-    sinon.assert.calledOnce(wasm.documentReplace);
-    const [c, t, id, o, json, rev, w] = wasm.documentReplace.firstCall.args;
+    await client.documents.replace({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', data: { n: 1 }, revision: 2, privateKeyWif: 'w' });
+    expect(wasmSdk.documentReplace).to.be.calledOnce();
+    const [c, t, id, o, json, rev, w] = wasmSdk.documentReplace.firstCall.args;
     expect([c, t, id, o, w]).to.deep.equal(['c', 't', 'id', 'o', 'w']);
     expect(json).to.equal(JSON.stringify({ n: 1 }));
     expect(typeof rev).to.equal('bigint');
@@ -81,24 +62,18 @@ describe('DocumentsFacade', () => {
   });
 
   it('delete() calls wasmSdk.documentDelete', async () => {
-    const wasm = { documentDelete: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
-    await sdk.documents.delete({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', privateKeyWif: 'w' });
-    sinon.assert.calledOnceWithExactly(wasm.documentDelete, 'c', 't', 'id', 'o', 'w');
+    await client.documents.delete({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', privateKeyWif: 'w' });
+    expect(wasmSdk.documentDelete).to.be.calledOnceWithExactly('c', 't', 'id', 'o', 'w');
   });
 
   it('transfer() calls wasmSdk.documentTransfer', async () => {
-    const wasm = { documentTransfer: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
-    await sdk.documents.transfer({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', recipientId: 'r', privateKeyWif: 'w' });
-    sinon.assert.calledOnceWithExactly(wasm.documentTransfer, 'c', 't', 'id', 'o', 'r', 'w');
+    await client.documents.transfer({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', recipientId: 'r', privateKeyWif: 'w' });
+    expect(wasmSdk.documentTransfer).to.be.calledOnceWithExactly('c', 't', 'id', 'o', 'r', 'w');
   });
 
   it('purchase() calls wasmSdk.documentPurchase with BigInt amount', async () => {
-    const wasm = { documentPurchase: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
-    await sdk.documents.purchase({ contractId: 'c', type: 't', documentId: 'id', buyerId: 'b', price: '7', privateKeyWif: 'w' });
-    const args = wasm.documentPurchase.firstCall.args;
+    await client.documents.purchase({ contractId: 'c', type: 't', documentId: 'id', buyerId: 'b', price: '7', privateKeyWif: 'w' });
+    const args = wasmSdk.documentPurchase.firstCall.args;
     expect(args[0]).to.equal('c');
     expect(args[1]).to.equal('t');
     expect(args[2]).to.equal('id');
@@ -109,10 +84,8 @@ describe('DocumentsFacade', () => {
   });
 
   it('setPrice() calls wasmSdk.documentSetPrice with BigInt price', async () => {
-    const wasm = { documentSetPrice: sinon.stub().resolves('ok') };
-    const sdk = EvoSDK.fromWasm(wasm);
-    await sdk.documents.setPrice({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', price: 9, privateKeyWif: 'w' });
-    const args = wasm.documentSetPrice.firstCall.args;
+    await client.documents.setPrice({ contractId: 'c', type: 't', documentId: 'id', ownerId: 'o', price: 9, privateKeyWif: 'w' });
+    const args = wasmSdk.documentSetPrice.firstCall.args;
     expect(args[0]).to.equal('c');
     expect(args[1]).to.equal('t');
     expect(args[2]).to.equal('id');
@@ -122,4 +95,3 @@ describe('DocumentsFacade', () => {
     expect(args[5]).to.equal('w');
   });
 });
-

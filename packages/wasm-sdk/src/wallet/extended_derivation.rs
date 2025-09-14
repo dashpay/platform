@@ -9,6 +9,7 @@ use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 use web_sys;
+use tracing::debug;
 use crate::WasmSdk;
 
 #[wasm_bindgen]
@@ -23,7 +24,7 @@ impl WasmSdk {
         network: &str,
     ) -> Result<JsValue, WasmSdkError> {
         // Debug: Log the path being processed
-        web_sys::console::log_1(&format!("Processing extended path: {}", path).into());
+        debug!(target: "wasm_sdk", path, "Processing extended path");
 
         // Get seed from mnemonic
         let seed = Self::mnemonic_to_seed(mnemonic, passphrase)?;
@@ -172,7 +173,7 @@ impl WasmSdk {
             address_index
         );
 
-        web_sys::console::log_1(&format!("DashPay contact path: {}", path).into());
+        debug!(target: "wasm_sdk", path = %path, "DashPay contact path");
 
         // Use the extended derivation function
         let result = Self::derive_key_from_seed_with_extended_path(mnemonic, passphrase, &path, network)?;

@@ -39,8 +39,6 @@ module.exports = {
       extensions: ['.mjs', '.js', '.ts'],
       extensionAlias: { '.js': ['.ts', '.js'] },
       alias: {
-        // Replace real wasm-sdk with a local stub for browser unit tests
-        '@dashevo/wasm-sdk': path.resolve(__dirname, '../stubs/wasm-sdk-stub.mjs'),
       },
       fallback: {
         fs: false,

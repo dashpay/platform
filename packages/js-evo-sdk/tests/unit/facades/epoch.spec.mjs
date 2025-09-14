@@ -1,58 +1,54 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
-
-const isBrowser = typeof window !== 'undefined';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('EpochFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  let wasmSdk;
+  let client;
 
-  let wasmStubModule;
-  before(async () => { wasmStubModule = await import('@dashevo/wasm-sdk'); });
-  beforeEach(() => { wasmStubModule.__clearCalls(); });
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
+
+    this.sinon.stub(wasmSdk, 'getEpochsInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getEpochsInfoWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getFinalizedEpochInfos').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getFinalizedEpochInfosWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getCurrentEpoch').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getCurrentEpochWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIds').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByIdsWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRange').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getEvonodesProposedEpochBlocksByRangeWithProofInfo').resolves('ok');
+  });
 
   it('epochsInfo and finalizedInfos forward with null handling', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.epoch.epochsInfo({ startEpoch: 1, count: 2, ascending: true });
-    await sdk.epoch.epochsInfoWithProof({});
-    await sdk.epoch.finalizedInfos({ startEpoch: 3 });
-    await sdk.epoch.finalizedInfosWithProof({ count: 4 });
-
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include.members([
-      'get_epochs_info',
-      'get_epochs_info_with_proof_info',
-      'get_finalized_epoch_infos',
-      'get_finalized_epoch_infos_with_proof_info',
-    ]);
+    await client.epoch.epochsInfo({ startEpoch: 1, count: 2, ascending: true });
+    await client.epoch.epochsInfoWithProof({});
+    await client.epoch.finalizedInfos({ startEpoch: 3 });
+    await client.epoch.finalizedInfosWithProof({ count: 4 });
+    expect(wasmSdk.getEpochsInfo).to.be.calledOnceWithExactly(1, 2, true);
+    expect(wasmSdk.getEpochsInfoWithProofInfo).to.be.calledOnceWithExactly(null, null, null);
+    expect(wasmSdk.getFinalizedEpochInfos).to.be.calledOnceWithExactly(3, null, null);
+    expect(wasmSdk.getFinalizedEpochInfosWithProofInfo).to.be.calledOnceWithExactly(null, 4, null);
   });
 
   it('current and currentWithProof forward', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.epoch.current();
-    await sdk.epoch.currentWithProof();
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include('get_current_epoch');
-    expect(names).to.include('get_current_epoch_with_proof_info');
+    await client.epoch.current();
+    await client.epoch.currentWithProof();
+    expect(wasmSdk.getCurrentEpoch).to.be.calledOnce();
+    expect(wasmSdk.getCurrentEpochWithProofInfo).to.be.calledOnce();
   });
 
   it('evonodesProposedBlocks* forward with args', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.epoch.evonodesProposedBlocksByIds(10, ['a', 'b']);
-    await sdk.epoch.evonodesProposedBlocksByIdsWithProof(11, ['x']);
-    await sdk.epoch.evonodesProposedBlocksByRange(12, { limit: 2, startAfter: 's', orderAscending: false });
-    await sdk.epoch.evonodesProposedBlocksByRangeWithProof(13, {});
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include.members([
-      'get_evonodes_proposed_epoch_blocks_by_ids',
-      'get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info',
-      'get_evonodes_proposed_epoch_blocks_by_range',
-      'get_evonodes_proposed_epoch_blocks_by_range_with_proof_info',
-    ]);
+    await client.epoch.evonodesProposedBlocksByIds(10, ['a', 'b']);
+    await client.epoch.evonodesProposedBlocksByIdsWithProof(11, ['x']);
+    await client.epoch.evonodesProposedBlocksByRange(12, { limit: 2, startAfter: 's', orderAscending: false });
+    await client.epoch.evonodesProposedBlocksByRangeWithProof(13, {});
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByIds).to.be.calledOnceWithExactly(10, ['a', 'b']);
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByIdsWithProofInfo).to.be.calledOnceWithExactly(11, ['x']);
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByRange).to.be.calledOnceWithExactly(12, 2, 's', false);
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByRangeWithProofInfo).to.be.calledOnceWithExactly(13, null, null, null);
   });
 });
-

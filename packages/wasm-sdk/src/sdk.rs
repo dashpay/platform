@@ -726,3 +726,26 @@ impl WasmSdkBuilder {
         WasmSdkBuilder(self.0.with_proofs(enable_proofs))
     }
 }
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Configure tracing/logging level or filter (static, global)
+    ///
+    /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
+    /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
+    #[wasm_bindgen(js_name = "setLogLevel")]
+    pub fn set_log_level(level_or_filter: &str) -> Result<(), WasmSdkError> {
+        crate::logging::set_log_level(level_or_filter)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdkBuilder {
+    /// Configure tracing/logging via the builder
+    /// Returns a new builder with logging configured
+    #[wasm_bindgen(js_name = "withLogs")]
+    pub fn with_logs(self, level_or_filter: &str) -> Result<Self, WasmSdkError> {
+        crate::logging::set_log_level(level_or_filter)?;
+        Ok(self)
+    }
+}

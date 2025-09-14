@@ -25,3 +25,9 @@ exports.mochaHooks = {
         this.sinon.restore();
     },
 };
+
+// In browser (Karma), Mocha won't auto-load Node-style root hooks via exports.
+// Register them explicitly when mocha global is available.
+if (typeof globalThis !== 'undefined' && globalThis.mocha && typeof globalThis.mocha.setup === 'function') {
+    globalThis.mocha.setup({ rootHooks: exports.mochaHooks });
+}

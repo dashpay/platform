@@ -7201,6 +7201,7 @@ dependencies = [
  "simple-signer",
  "thiserror 2.0.15",
  "tracing",
+ "tracing-subscriber",
  "tracing-wasm",
  "wasm-bindgen",
  "wasm-bindgen-futures",

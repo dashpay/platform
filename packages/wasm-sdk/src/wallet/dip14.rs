@@ -9,6 +9,7 @@ use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;
 use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
 use hex;
+use tracing::debug;
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 use std::convert::TryInto;
@@ -141,14 +142,12 @@ impl Dip14ExtendedPrivKey {
         })?;
 
         // Debug: log parent and IL values before addition
-        web_sys::console::log_1(
-            &format!(
-                "Parent key: {}",
-                hex::encode(&self.private_key.secret_bytes())
-            )
-            .into(),
+        debug!(
+            target: "wasm_sdk",
+            parent_key = %hex::encode(&self.private_key.secret_bytes()),
+            il_tweak = %hex::encode(&il_scalar_bytes),
+            "DIP14 derive: parent and IL"
         );
-        web_sys::console::log_1(&format!("IL (tweak): {}", hex::encode(&il_scalar_bytes)).into());
 
         // Perform scalar addition: child_key = parent_key + IL (mod n)
         let child_key = self
@@ -157,12 +156,10 @@ impl Dip14ExtendedPrivKey {
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
 
         // Debug: log result after addition
-        web_sys::console::log_1(
-            &format!(
-                "Child key after addition: {}",
-                hex::encode(&child_key.secret_bytes())
-            )
-            .into(),
+        debug!(
+            target: "wasm_sdk",
+            child_key = %hex::encode(&child_key.secret_bytes()),
+            "DIP14 derive: child key after addition"
         );
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)

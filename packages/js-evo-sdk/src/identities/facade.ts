@@ -11,25 +11,24 @@ export class IdentitiesFacade {
 
   async fetch(identityId: string): Promise<wasm.IdentityWasm> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.identity_fetch(w, identityId);
+    return w.getIdentity(identityId);
   }
 
   async fetchWithProof(identityId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.identity_fetch_with_proof_info(w, identityId);
+    return w.getIdentityWithProofInfo(identityId);
   }
 
   async fetchUnproved(identityId: string): Promise<wasm.IdentityWasm> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.identity_fetch_unproved(w, identityId);
+    return w.getIdentityUnproved(identityId);
   }
 
   async getKeys(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; searchPurposeMap?: unknown; limit?: number; offset?: number }): Promise<any> {
     const { identityId, keyRequestType, specificKeyIds, searchPurposeMap, limit, offset } = args;
     const mapJson = asJsonString(searchPurposeMap);
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identity_keys(
-      w,
+    return w.getIdentityKeys(
       identityId,
       keyRequestType,
       specificKeyIds ? Uint32Array.from(specificKeyIds) : null,

@@ -271,9 +271,7 @@ impl WasmSdk {
         // Note: Owner and moderator roles would require additional contract queries
         // which are not yet implemented in the SDK. For now, return a warning.
         if owner_data_contracts.is_some() || moderator_data_contracts.is_some() {
-            web_sys::console::warn_1(&JsValue::from_str(
-                "Warning: Owner and moderator role queries are not yet implemented",
-            ));
+            tracing::warn!(target = "wasm_sdk", "Owner/moderator role queries are not yet implemented");
         }
 
         // Use json_compatible serializer to convert response
@@ -871,9 +869,7 @@ impl WasmSdk {
         // Note: Owner and moderator roles would require additional contract queries
         // which are not yet implemented in the SDK. For now, return a warning.
         if owner_data_contracts.is_some() || moderator_data_contracts.is_some() {
-            web_sys::console::warn_1(&JsValue::from_str(
-                "Warning: Owner and moderator role queries are not yet implemented",
-            ));
+            tracing::warn!(target = "wasm_sdk", "Owner/moderator role queries are not yet implemented");
         }
 
         let response = ProofMetadataResponse {

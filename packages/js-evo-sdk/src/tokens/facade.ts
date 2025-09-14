@@ -12,88 +12,88 @@ export class TokensFacade {
   // Queries
   async priceByContract(contractId: string, tokenPosition: number): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_price_by_contract(w, contractId, tokenPosition);
+    return w.getTokenPriceByContract(contractId, tokenPosition);
   }
 
   async totalSupply(tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_total_supply(w, tokenId);
+    return w.getTokenTotalSupply(tokenId);
   }
 
   async totalSupplyWithProof(tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_total_supply_with_proof_info(w, tokenId);
+    return w.getTokenTotalSupplyWithProofInfo(tokenId);
   }
 
   async statuses(tokenIds: string[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_statuses(w, tokenIds);
+    return w.getTokenStatuses(tokenIds);
   }
 
   async statusesWithProof(tokenIds: string[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_statuses_with_proof_info(w, tokenIds);
+    return w.getTokenStatusesWithProofInfo(tokenIds);
   }
 
   async balances(identityIds: string[], tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identities_token_balances(w, identityIds, tokenId);
+    return w.getIdentitiesTokenBalances(identityIds, tokenId);
   }
 
   async balancesWithProof(identityIds: string[], tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identities_token_balances_with_proof_info(w, identityIds, tokenId);
+    return w.getIdentitiesTokenBalancesWithProofInfo(identityIds, tokenId);
   }
 
   async identityTokenInfos(identityId: string, tokenIds: string[], opts: { limit?: number; offset?: number } = {}): Promise<any> {
     const { limit, offset } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identity_token_infos(w, identityId, tokenIds);
+    return w.getIdentityTokenInfos(identityId, tokenIds);
   }
 
   async identitiesTokenInfos(identityIds: string[], tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identities_token_infos(w, identityIds, tokenId);
+    return w.getIdentitiesTokenInfos(identityIds, tokenId);
   }
 
   async identityTokenInfosWithProof(identityId: string, tokenIds: string[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identity_token_infos_with_proof_info(w, identityId, tokenIds);
+    return w.getIdentityTokenInfosWithProofInfo(identityId, tokenIds);
   }
 
   async identitiesTokenInfosWithProof(identityIds: string[], tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_identities_token_infos_with_proof_info(w, identityIds, tokenId);
+    return w.getIdentitiesTokenInfosWithProofInfo(identityIds, tokenId);
   }
 
   async directPurchasePrices(tokenIds: string[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_direct_purchase_prices(w, tokenIds);
+    return w.getTokenDirectPurchasePrices(tokenIds);
   }
 
   async directPurchasePricesWithProof(tokenIds: string[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_direct_purchase_prices_with_proof_info(w, tokenIds);
+    return w.getTokenDirectPurchasePricesWithProofInfo(tokenIds);
   }
 
   async contractInfo(contractId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_contract_info(w, contractId);
+    return w.getTokenContractInfo(contractId);
   }
 
   async contractInfoWithProof(contractId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_contract_info_with_proof_info(w, contractId);
+    return w.getTokenContractInfoWithProofInfo(contractId);
   }
 
   async perpetualDistributionLastClaim(identityId: string, tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_perpetual_distribution_last_claim(w, identityId, tokenId);
+    return w.getTokenPerpetualDistributionLastClaim(identityId, tokenId);
   }
 
   async perpetualDistributionLastClaimWithProof(identityId: string, tokenId: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return wasm.get_token_perpetual_distribution_last_claim_with_proof_info(w, identityId, tokenId);
+    return w.getTokenPerpetualDistributionLastClaimWithProofInfo(identityId, tokenId);
   }
 
   // Transitions

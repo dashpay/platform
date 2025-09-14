@@ -50,13 +50,16 @@ await init();
 const { address } = sdk.generate_key_pair('testnet');
 console.log('Address:', address);
 
+// Optional: enable logs (silent by default)
+await sdk.WasmSdk.setLogLevel('warn'); // or 'info' | 'debug' | full filter
+
 // Platform queries via a client
-let builder = sdk.WasmSdkBuilder.new_testnet_trusted();
-builder = builder.with_settings(5000, 10000, 3, true);
-const client = await builder.build();
+let builder = sdk.WasmSdkBuilder.testnetTrusted();
+builder = builder.withSettings(5000, 10000, 3, true);
+const client = await builder.withLogs('warn').build();
 
 const DPNS = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
-const docs = await sdk.get_documents(client, DPNS, 'domain', null, null, 5, null, null);
+const docs = await client.getDocuments(DPNS, 'domain', null, null, 5, null, null);
 console.log('Docs:', docs.length);
 
 client.free();
@@ -160,13 +163,27 @@ const m = sdk.generate_mnemonic(12);
 const r = sdk.derive_key_from_seed_with_path(m, undefined, "m/44'/5'/0'/0/0", 'mainnet');
 
 // Network client
-let b = sdk.WasmSdkBuilder.new_testnet_trusted();
-const client = await b.with_settings(5000, 10000, 3, true).build();
-const status = await sdk.get_status(client);
+let b = sdk.WasmSdkBuilder.testnetTrusted();
+const client = await b.withSettings(5000, 10000, 3, true).withLogs('info').build();
+const status = await client.getStatus();
 client.free();
 ```
 
 The full surface includes identity, document, contract, token, group, epoch/system, and proof helpers.
+
+### Logging
+
+By default, the SDK is silent. You can enable tracing logs globally or via the builder:
+
+```js
+// Globally
+await sdk.WasmSdk.setLogLevel('info');
+
+// Or on the builder (applies immediately)
+await sdk.WasmSdkBuilder.new_testnet().withLogs('wasm_sdk=debug,rs_dapi_client=warn').build();
+```
+
+Accepted values are simple levels ('off'|'error'|'warn'|'info'|'debug'|'trace') or a full EnvFilter string.
 
 ---
 
@@ -203,7 +220,7 @@ In addition to read-only queries, the SDK exposes helpers to construct and submi
 import init, * as sdk from '@dashevo/wasm-sdk';
 await init();
 
-const builder = sdk.WasmSdkBuilder.new_testnet_trusted();
+const builder = sdk.WasmSdkBuilder.testnetTrusted();
 const client = await builder.build();
 
 // Identity create (example — requires a valid proof and keys)

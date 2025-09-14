@@ -1,41 +1,45 @@
 import { EvoSDK } from '../../../dist/evo-sdk.module.js';
-
-const isBrowser = typeof window !== 'undefined';
+import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('SystemFacade', () => {
-  if (!isBrowser) {
-    it('skips in Node environment (browser-only)', function () { this.skip(); });
-    return;
-  }
+  let wasmSdk;
+  let client;
 
-  let wasmStubModule;
-  before(async () => { wasmStubModule = await import('@dashevo/wasm-sdk'); });
-  beforeEach(() => { wasmStubModule.__clearCalls(); });
+  beforeEach(async function () {
+    await init();
+    const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
+    wasmSdk = builder.build();
+    client = EvoSDK.fromWasm(wasmSdk);
 
-  it('forwards all methods to free functions', async () => {
-    const raw = {};
-    const sdk = EvoSDK.fromWasm(raw);
-    await sdk.system.status();
-    await sdk.system.currentQuorumsInfo();
-    await sdk.system.totalCreditsInPlatform();
-    await sdk.system.totalCreditsInPlatformWithProof();
-    await sdk.system.prefundedSpecializedBalance('i');
-    await sdk.system.prefundedSpecializedBalanceWithProof('i');
-    await sdk.system.waitForStateTransitionResult('h');
-    await sdk.system.pathElements(['p'], ['k']);
-    await sdk.system.pathElementsWithProof(['p2'], ['k2']);
-    const names = wasmStubModule.__getCalls().map(c => c.called);
-    expect(names).to.include.members([
-      'get_status',
-      'get_current_quorums_info',
-      'get_total_credits_in_platform',
-      'get_total_credits_in_platform_with_proof_info',
-      'get_prefunded_specialized_balance',
-      'get_prefunded_specialized_balance_with_proof_info',
-      'wait_for_state_transition_result',
-      'get_path_elements',
-      'get_path_elements_with_proof_info',
-    ]);
+    this.sinon.stub(wasmSdk, 'getStatus').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getCurrentQuorumsInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatform').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getTotalCreditsInPlatformWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalance').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getPrefundedSpecializedBalanceWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'waitForStateTransitionResult').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getPathElements').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getPathElementsWithProofInfo').resolves('ok');
+  });
+
+  it('forwards all methods to instance methods', async () => {
+    await client.system.status();
+    await client.system.currentQuorumsInfo();
+    await client.system.totalCreditsInPlatform();
+    await client.system.totalCreditsInPlatformWithProof();
+    await client.system.prefundedSpecializedBalance('i');
+    await client.system.prefundedSpecializedBalanceWithProof('i');
+    await client.system.waitForStateTransitionResult('h');
+    await client.system.pathElements(['p'], ['k']);
+    await client.system.pathElementsWithProof(['p2'], ['k2']);
+    expect(wasmSdk.getStatus).to.be.calledOnce();
+    expect(wasmSdk.getCurrentQuorumsInfo).to.be.calledOnce();
+    expect(wasmSdk.getTotalCreditsInPlatform).to.be.calledOnce();
+    expect(wasmSdk.getTotalCreditsInPlatformWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.getPrefundedSpecializedBalance).to.be.calledOnce();
+    expect(wasmSdk.getPrefundedSpecializedBalanceWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.waitForStateTransitionResult).to.be.calledOnce();
+    expect(wasmSdk.getPathElements).to.be.calledOnce();
+    expect(wasmSdk.getPathElementsWithProofInfo).to.be.calledOnce();
   });
 });
-
