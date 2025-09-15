@@ -1298,14 +1298,14 @@ impl ValueClause {
 }
 
 /// Shared operator evaluator for both WhereClause and ValueClause
-fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool {
-    match op {
-        WhereOperator::Equal => probe == clause_val,
-        WhereOperator::GreaterThan => probe > clause_val,
-        WhereOperator::GreaterThanOrEquals => probe >= clause_val,
-        WhereOperator::LessThan => probe < clause_val,
-        WhereOperator::LessThanOrEquals => probe <= clause_val,
-        WhereOperator::In => match clause_val {
+fn eval_operator(where_operator: &WhereOperator, probe: &Value, clause_value: &Value) -> bool {
+    match where_operator {
+        WhereOperator::Equal => probe == clause_value,
+        WhereOperator::GreaterThan => probe > clause_value,
+        WhereOperator::GreaterThanOrEquals => probe >= clause_value,
+        WhereOperator::LessThan => probe < clause_value,
+        WhereOperator::LessThanOrEquals => probe <= clause_value,
+        WhereOperator::In => match clause_value {
             Value::Array(array) => array.contains(probe),
             Value::Bytes(bytes) => match probe {
                 Value::U8(b) => bytes.contains(b),
@@ -1313,7 +1313,7 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             },
             _ => false,
         },
-        WhereOperator::Between => match clause_val {
+        WhereOperator::Between => match clause_value {
             Value::Array(bounds) if bounds.len() == 2 => {
                 if !(bounds[0] <= bounds[1]) {
                     return false;
@@ -1322,7 +1322,7 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             }
             _ => false,
         },
-        WhereOperator::BetweenExcludeBounds => match clause_val {
+        WhereOperator::BetweenExcludeBounds => match clause_value {
             Value::Array(bounds) if bounds.len() == 2 => {
                 if !(bounds[0] <= bounds[1]) {
                     return false;
@@ -1331,7 +1331,7 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             }
             _ => false,
         },
-        WhereOperator::BetweenExcludeLeft => match clause_val {
+        WhereOperator::BetweenExcludeLeft => match clause_value {
             Value::Array(bounds) if bounds.len() == 2 => {
                 if !(bounds[0] <= bounds[1]) {
                     return false;
@@ -1340,7 +1340,7 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             }
             _ => false,
         },
-        WhereOperator::BetweenExcludeRight => match clause_val {
+        WhereOperator::BetweenExcludeRight => match clause_value {
             Value::Array(bounds) if bounds.len() == 2 => {
                 if !(bounds[0] <= bounds[1]) {
                     return false;
@@ -1349,15 +1349,15 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             }
             _ => false,
         },
-        WhereOperator::StartsWith => match (probe, clause_val) {
+        WhereOperator::StartsWith => match (probe, clause_value) {
             (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
             _ => false,
         },
     }
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the set of allowed operators for a given property type
+#[cfg(any(feature = "server", feature = "verify"))]
 pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [WhereOperator] {
     match property_type {
         T::U8
@@ -1404,9 +1404,9 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
 }
 
 #[cfg(any(feature = "server", feature = "verify"))]
-fn is_numeric_value(v: &Value) -> bool {
+fn is_numeric_value(value: &Value) -> bool {
     matches!(
-        v,
+        value,
         Value::U128(_)
             | Value::I128(_)
             | Value::U64(_)
@@ -1421,21 +1421,25 @@ fn is_numeric_value(v: &Value) -> bool {
     )
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
 /// Validates that a value matches the expected shape for a given operator and property type
-pub fn value_shape_ok(op: WhereOperator, v: &Value, prop_ty: &DocumentPropertyType) -> bool {
-    match op {
+#[cfg(any(feature = "server", feature = "verify"))]
+pub fn value_shape_ok(
+    where_operator: WhereOperator,
+    value: &Value,
+    property_type: &DocumentPropertyType,
+) -> bool {
+    match where_operator {
         Op::Equal => true,
-        Op::In => matches!(v, Value::Array(_) | Value::Bytes(_)),
-        Op::StartsWith => matches!(v, Value::Text(_)),
+        Op::In => matches!(value, Value::Array(_) | Value::Bytes(_)),
+        Op::StartsWith => matches!(value, Value::Text(_)),
         Op::GreaterThan | Op::GreaterThanOrEquals | Op::LessThan | Op::LessThanOrEquals => {
-            match prop_ty {
-                DocumentPropertyType::F64 => is_numeric_value(v),
+            match property_type {
+                DocumentPropertyType::F64 => is_numeric_value(value),
                 DocumentPropertyType::String(_) => {
-                    matches!(v, Value::Text(_))
+                    matches!(value, Value::Text(_))
                 }
                 _ => matches!(
-                    v,
+                    value,
                     Value::U128(_)
                         | Value::I128(_)
                         | Value::U64(_)
@@ -1453,9 +1457,9 @@ pub fn value_shape_ok(op: WhereOperator, v: &Value, prop_ty: &DocumentPropertyTy
         | Op::BetweenExcludeBounds
         | Op::BetweenExcludeLeft
         | Op::BetweenExcludeRight => {
-            if let Value::Array(arr) = v {
+            if let Value::Array(arr) = value {
                 arr.len() == 2
-                    && arr.iter().all(|x| match prop_ty {
+                    && arr.iter().all(|x| match property_type {
                         DocumentPropertyType::F64 => is_numeric_value(x),
                         DocumentPropertyType::String(_) => {
                             matches!(x, Value::Text(_))
