@@ -1270,6 +1270,12 @@ impl<'a> WhereClause {
     }
 }
 
+impl From<WhereClause> for Value {
+    fn from(value: WhereClause) -> Self {
+        Value::Array(vec![value.field.into(), value.operator.into(), value.value])
+    }
+}
+
 /// Value-only clause used when there is no field lookup involved
 /// (e.g., comparing a transition-supplied scalar like owner id or price).
 #[derive(Clone, Debug, PartialEq)]
@@ -1344,12 +1350,6 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
             (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
             _ => false,
         },
-    }
-}
-
-impl From<WhereClause> for Value {
-    fn from(value: WhereClause) -> Self {
-        Value::Array(vec![value.field.into(), value.operator.into(), value.value])
     }
 }
 
