@@ -48,12 +48,14 @@ Legend:
 
 ## P0 — Protocol Translation Minimums
 
-- [ ] JSON-RPC: implement legacy methods
-  - [ ] `getBestBlockHash`
-  - [ ] `getBlockHash`
+- [x] JSON-RPC: implement legacy methods
+  - [x] `getBestBlockHash`
+  - [x] `getBlockHash`
   - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs` (dispatch)
-- [ ] REST: minimally expose Platform `getStatus` (already) and add Core `best-block-height`, `transaction/{hash}`
+  - Notes: Translator implemented with tests; server dispatch returns hex strings
+- [x] REST: minimally expose Platform `getStatus` and Core `best-block-height`, `transaction/{hash}`
   - Files: `src/server.rs`, `src/protocol/rest_translator.rs`
+  - Routes: `/v1/platform/status`, `/v1/core/best-block-height`, `/v1/core/transaction/:id`
 
 ## P1 — Protocol Translation Coverage
 
@@ -82,6 +84,7 @@ Legend:
 - [ ] Integration tests for Platform broadcast + wait (with/without proofs)
 - [ ] Streaming tests: bloom filtering, proofs, subscription lifecycle
 - [ ] Protocol translation tests (REST/JSON-RPC ↔ gRPC round-trips)
+  - Progress: JSON-RPC translator unit tests added in `src/protocol/jsonrpc_translator.rs`
 - [ ] CI workflow to build, test, and lint
 - [ ] Drive-proxy smoke tests for all `drive_method!` endpoints
   - Spin up a minimal tonic Platform test server to capture requests and return canned responses
