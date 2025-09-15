@@ -217,9 +217,9 @@ impl<'a> WhereClause {
         self.field == "$id"
     }
 
-    /// Evaluate this clause against a provided `Value`
+    /// Evaluate this WhereClause against a provided `Value`
     ///
-    /// This function is used for filtering documents in memory for document subscriptions.
+    /// Only used for filtering documents in memory for document subscriptions.
     /// For query execution, the matching logic is handled in `to_path_query`.
     pub fn matches_value(&self, value: &Value) -> bool {
         eval_operator(&self.operator, value, &self.value)
