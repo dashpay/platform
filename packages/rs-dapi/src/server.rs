@@ -274,6 +274,14 @@ impl DapiServer {
             )
             .route("/v1/core/transaction/:id", get(handle_rest_get_transaction))
             .route(
+                "/v1/core/block/hash/:hash",
+                get(handle_rest_get_block_by_hash),
+            )
+            .route(
+                "/v1/core/block/height/:height",
+                get(handle_rest_get_block_by_height),
+            )
+            .route(
                 "/v1/core/transaction/broadcast",
                 post(handle_rest_broadcast_transaction),
             )
@@ -474,6 +482,90 @@ async fn handle_rest_get_transaction(
     }
 }
 
+async fn handle_rest_get_block_by_hash(
+    State(state): State<RestAppState>,
+    Path(hash): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    use dapi_grpc::core::v0::GetBlockResponse;
+
+    // Build request via translator
+    let grpc_req = match state.translator.translate_get_block_by_hash(hash).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    // Call Core service
+    let GetBlockResponse { block } = match state
+        .core_service
+        .get_block(dapi_grpc::tonic::Request::new(grpc_req))
+        .await
+    {
+        Ok(resp) => resp.into_inner(),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    // Translate response
+    match state.translator.translate_block_response(block).await {
+        Ok(json) => Ok(Json(json)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )),
+    }
+}
+
+async fn handle_rest_get_block_by_height(
+    State(state): State<RestAppState>,
+    Path(height): Path<u32>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    use dapi_grpc::core::v0::GetBlockResponse;
+
+    // Build request via translator
+    let grpc_req = match state.translator.translate_get_block_by_height(height).await {
+        Ok(r) => r,
+        Err(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    // Call Core service
+    let GetBlockResponse { block } = match state
+        .core_service
+        .get_block(dapi_grpc::tonic::Request::new(grpc_req))
+        .await
+    {
+        Ok(resp) => resp.into_inner(),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    // Translate response
+    match state.translator.translate_block_response(block).await {
+        Ok(json) => Ok(Json(json)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )),
+    }
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct BroadcastTxBody {
@@ -490,8 +582,18 @@ async fn handle_rest_broadcast_transaction(
 ) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
     use dapi_grpc::core::v0::BroadcastTransactionRequest;
 
+    let tx_bytes = match hex::decode(&body.transaction) {
+        Ok(b) => b,
+        Err(e) => {
+            return Err((
+                StatusCode::BAD_REQUEST,
+                Json(serde_json::json!({"error": format!("invalid hex transaction: {}", e)})),
+            ));
+        }
+    };
+
     let req = BroadcastTransactionRequest {
-        transaction: body.transaction,
+        transaction: tx_bytes,
         allow_high_fees: body.allow_high_fees.unwrap_or(false),
         bypass_limits: body.bypass_limits.unwrap_or(false),
     };

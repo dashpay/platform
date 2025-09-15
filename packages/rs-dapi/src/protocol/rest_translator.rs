@@ -2,6 +2,7 @@
 
 use crate::error::{DapiError, DapiResult};
 use dapi_grpc::core::v0::GetTransactionResponse as CoreGetTransactionResponse;
+use dapi_grpc::core::v0::{get_block_request, GetBlockRequest};
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use serde_json::Value;
 
@@ -58,6 +59,27 @@ impl RestTranslator {
             "confirmations": response.confirmations,
             "isInstantLocked": response.is_instant_locked,
             "isChainLocked": response.is_chain_locked
+        }))
+    }
+
+    // Build gRPC GetBlockRequest by block hash
+    pub async fn translate_get_block_by_hash(&self, hash: String) -> DapiResult<GetBlockRequest> {
+        Ok(GetBlockRequest {
+            block: Some(get_block_request::Block::Hash(hash)),
+        })
+    }
+
+    // Build gRPC GetBlockRequest by block height
+    pub async fn translate_get_block_by_height(&self, height: u32) -> DapiResult<GetBlockRequest> {
+        Ok(GetBlockRequest {
+            block: Some(get_block_request::Block::Height(height)),
+        })
+    }
+
+    // Convert gRPC GetBlockResponse bytes into REST JSON
+    pub async fn translate_block_response(&self, block_bytes: Vec<u8>) -> DapiResult<Value> {
+        Ok(serde_json::json!({
+            "block": hex::encode(block_bytes)
         }))
     }
 }
