@@ -273,6 +273,10 @@ impl DapiServer {
                 get(handle_rest_get_best_block_height),
             )
             .route("/v1/core/transaction/:id", get(handle_rest_get_transaction))
+            .route(
+                "/v1/core/transaction/broadcast",
+                post(handle_rest_broadcast_transaction),
+            )
             .with_state(app_state);
 
         // Add access logging middleware if available
@@ -468,6 +472,47 @@ async fn handle_rest_get_transaction(
             Json(serde_json::json!({"error": e.to_string()})),
         )),
     }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BroadcastTxBody {
+    transaction: String,
+    #[serde(default)]
+    allow_high_fees: Option<bool>,
+    #[serde(default)]
+    bypass_limits: Option<bool>,
+}
+
+async fn handle_rest_broadcast_transaction(
+    State(state): State<RestAppState>,
+    axum::Json(body): axum::Json<BroadcastTxBody>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    use dapi_grpc::core::v0::BroadcastTransactionRequest;
+
+    let req = BroadcastTransactionRequest {
+        transaction: body.transaction,
+        allow_high_fees: body.allow_high_fees.unwrap_or(false),
+        bypass_limits: body.bypass_limits.unwrap_or(false),
+    };
+
+    let grpc_response = match state
+        .core_service
+        .broadcast_transaction(dapi_grpc::tonic::Request::new(req))
+        .await
+    {
+        Ok(resp) => resp.into_inner(),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    Ok(Json(serde_json::json!({
+        "transactionId": grpc_response.transaction_id
+    })))
 }
 
 // JSON-RPC handlers
