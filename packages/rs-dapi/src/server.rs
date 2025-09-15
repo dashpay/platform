@@ -272,13 +272,16 @@ impl DapiServer {
                 "/v1/core/best-block-height",
                 get(handle_rest_get_best_block_height),
             )
-            .route("/v1/core/transaction/:id", get(handle_rest_get_transaction))
             .route(
-                "/v1/core/block/hash/:hash",
+                "/v1/core/transaction/{id}",
+                get(handle_rest_get_transaction),
+            )
+            .route(
+                "/v1/core/block/hash/{hash}",
                 get(handle_rest_get_block_by_hash),
             )
             .route(
-                "/v1/core/block/height/:height",
+                "/v1/core/block/height/{height}",
                 get(handle_rest_get_block_by_height),
             )
             .route(
