@@ -28,10 +28,7 @@ use {
             document_type::{DocumentTypeRef, Index, IndexProperty},
             DataContract,
         },
-        document::{
-            document_methods::DocumentMethodsV0,
-            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
-        },
+        document::{document_methods::DocumentMethodsV0, Document, DocumentV0Getters},
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
         version::PlatformVersion,
         ProtocolError,
@@ -45,9 +42,11 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
+#[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(feature = "server")]
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -473,7 +472,7 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Self, Error> {
         if let Some(contract_id) = query_document
             .remove_optional_identifier("contract_id")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if contract.id() != contract_id {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -487,7 +486,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         if let Some(document_type_name) = query_document
             .remove_optional_string("document_type_name")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if document_type.name() != &document_type_name {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -501,7 +500,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
@@ -518,11 +517,11 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let offset: Option<u16> = query_document
             .remove_optional_integer("offset")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document
@@ -573,7 +572,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -589,7 +588,7 @@ impl<'a> DriveDocumentQuery<'a> {
                                 if let Value::Array(clauses_components) = order_clause {
                                     let order_clause =
                                         OrderClause::from_components(&clauses_components)
-                                            .map_err(Error::GroveDB);
+                                            .map_err(Error::from);
                                     match order_clause {
                                         Ok(order_clause) => {
                                             Some(Ok((order_clause.field.clone(), order_clause)))
@@ -854,7 +853,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -953,9 +952,14 @@ impl<'a> DriveDocumentQuery<'a> {
                         drive_version,
                     )
                     .map_err(|e| match e {
-                        Error::GroveDB(GroveError::PathKeyNotFound(_))
-                        | Error::GroveDB(GroveError::PathNotFound(_))
-                        | Error::GroveDB(GroveError::PathParentLayerNotFound(_)) => {
+                        Error::GroveDB(e)
+                            if matches!(
+                                e.as_ref(),
+                                GroveError::PathKeyNotFound(_)
+                                    | GroveError::PathNotFound(_)
+                                    | GroveError::PathParentLayerNotFound(_)
+                            ) =>
+                        {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
@@ -1010,7 +1014,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 vec![&start_at_path_query, &main_path_query],
                 &platform_version.drive.grove_version,
             )
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {
@@ -1862,7 +1866,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
             })
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
-            .map_err(Error::Protocol)?;
+            .map_err(Error::from)?;
 
         let final_query = match last_clause {
             None => {
@@ -2170,9 +2174,16 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok((Vec::new(), 0))
+            }
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -2207,9 +2218,14 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
                 Ok((QueryResultElements::new(), 0))
             }
             _ => {
@@ -2664,7 +2680,10 @@ mod tests {
         // Convert the encoded bytes to a hex string
         let hex_string = hex::encode(encoded);
 
-        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e746974790105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0010101000101030000000001010000010101000101030000000000010600");
+        // Note: The expected encoding changed due to an upstream GroveDB
+        // serialization update. Keep this value in sync with the current
+        // GroveDB revision pinned in Cargo.toml.
+        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e74697479010105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c00101010001010103000000000001010000010101000101010300000000000000010600");
     }
 
     #[test]

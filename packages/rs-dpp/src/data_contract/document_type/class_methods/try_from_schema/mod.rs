@@ -46,7 +46,7 @@ impl DocumentType {
         token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
         data_contact_config: &DataContractConfig,
         full_validation: bool,
-        validation_operations: &mut Vec<ProtocolValidationOperation>,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match platform_version

@@ -6,11 +6,11 @@ on:
     types: [opened, synchronize, reopened, ready_for_review]
     branches:
       - master
-      - 'v[0-9]+\.[0-9]+-dev'
+      - 'v*-dev'
   push:
     branches:
       - master
-      - 'v[0-9]+\.[0-9]+-dev'
+      - 'v*-dev'
   schedule:
     - cron: "30 4 * * *"
 
@@ -25,22 +25,41 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       js-packages: ${{ steps.filter-js.outputs.changes }}
+      js-packages-direct: ${{ steps.filter-js-direct.outputs.changes }}
       rs-packages: ${{ steps.filter-rs.outputs.changes }}
+      rs-packages-direct: ${{ steps.filter-rs-direct.outputs.changes }}
+      test-suite: ${{ steps.filter-test-suite.outputs.run }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
         id: filter-js
         with:
-          filters: .github/package-filters/js-packages.yml
+          filters: .github/package-filters/js-packages-no-workflows.yml
 
-      - uses: dorny/paths-filter@v2
+      - uses: dorny/paths-filter@v3
+        id: filter-js-direct
+        with:
+          filters: .github/package-filters/js-packages-direct.yml
+
+      - uses: dorny/paths-filter@v3
         id: filter-rs
         with:
-          filters: .github/package-filters/rs-packages.yml
+          filters: .github/package-filters/rs-packages-no-workflows.yml
+
+      - uses: dorny/paths-filter@v3
+        id: filter-rs-direct
+        with:
+          filters: .github/package-filters/rs-packages-direct.yml
+
+      - name: Check if Test Suite should run
+        id: filter-test-suite
+        uses: dorny/paths-filter@v3
+        with:
+          filters: .github/package-filters/test-suite-triggers.yml
 
   build-js:
     name: Build JS packages
@@ -84,6 +103,7 @@ jobs:
     with:
       package: ${{ matrix.rs-package }}
       check-each-feature: ${{ contains(fromJSON('["dash-sdk","rs-dapi-client","dapi-grpc","dpp","drive-abci"]'), matrix.rs-package) }}
+      direct-packages: ${{ needs.changes.outputs.rs-packages-direct }}
 
   rs-crates-security:
     name: Rust crates security audit
@@ -122,6 +142,7 @@ jobs:
       package: ${{ matrix.js-package }}
       test-command: ${{ matrix.js-package == 'dashmate' && 'test:unit' || 'test' }}
       skip-tests: ${{ contains(matrix.js-package, 'platform-test-suite') }}
+      direct-packages: ${{ needs.changes.outputs.js-packages-direct }}
 
   js-deps-versions:
     name: JS dependency versions check
@@ -194,7 +215,9 @@ jobs:
     needs:
       - build-js
       - build-images
+      - changes
     secrets: inherit
+    if: needs.changes.outputs.test-suite == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -223,5 +246,7 @@ jobs:
     needs:
       - build-js
       - build-images
+      - changes
     secrets: inherit
+    if: needs.changes.outputs.test-suite == 'true'
     uses: ./.github/workflows/tests-packges-functional.yml

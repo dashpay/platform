@@ -23,13 +23,18 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
-], default-features = false, tag = "v0.39.6" }
+], default-features = false }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
 hex = { version = "0.4" }
@@ -63,9 +68,9 @@ indexmap = { version = "2.7.0", features = ["serde"] }
 strum = { version = "0.26", features = ["derive"] }
 json-schema-compatibility-validator = { path = '../rs-json-schema-compatibility-validator', optional = true }
 once_cell = "1.19.0"
+tracing = { version = "0.1.41" }
 
 [dev-dependencies]
-test-case = { version = "3.3" }
 tokio = { version = "1.40", features = ["full"] }
 pretty_assertions = { version = "1.4.1" }
 dpp = { path = ".", default-features = false, features = ["all_features_without_client", "token-reward-explanations"] }
@@ -76,8 +81,16 @@ log = { version = "0.4.27" }
 
 [features]
 default = ["state-transitions"]
+core_bincode = ["dashcore/bincode"]
 core_verification = ["dashcore/message_verification"]
 core_quorum_validation = ["dashcore/quorum_validation"]
+core_key_wallet = ["dep:key-wallet"]
+core_key_wallet_bincode = ["dep:key-wallet", "key-wallet/bincode"]
+core_key_wallet_bip_38 = ["dep:key-wallet", "key-wallet/bip38"]
+core_key_wallet_manager = ["dep:key-wallet-manager"]
+core_key_wallet_serde = ["dep:key-wallet", "key-wallet/serde"]
+core_spv = ["dep:dash-spv"]
+core_rpc_client = ["dep:dashcore-rpc"]
 bls-signatures = ["dashcore/bls"]
 ed25519-dalek = ["dashcore/eddsa"]
 all_features = [
@@ -133,6 +146,7 @@ dash-sdk-features = [
   "state-transition-signing",
   "client",
   "platform-value-cbor",
+  "core_rpc_client"
 ]
 all_features_without_client = [
   "json-object",
@@ -188,6 +202,7 @@ abci = [
   "core-types",
   "core-types-serialization",
   "core-types-serde-conversion",
+  "core_rpc_client"
 ]
 cbor = ["ciborium"]
 validation = [

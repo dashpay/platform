@@ -24,12 +24,11 @@ keywords-contract = ["dash-sdk/keywords-contract", "rs-sdk-trusted-context-provi
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", default-features = false }
-simple-signer = { path = "../simple-signer" }
+dash-sdk = { path = "../rs-sdk", features = ["serde", "core_key_wallet"], default-features = false }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", branch = "v0.40-dev", features = ["std", "secp-recovery"] }
 web-sys = { version = "0.3.4", features = [
     'console',
     'Document',
@@ -42,7 +41,7 @@ web-sys = { version = "0.3.4", features = [
 wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
-tracing = { version = "0.1" }
+tracing = { version = "0.1.41" }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }

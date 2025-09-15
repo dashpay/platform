@@ -6,7 +6,7 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
-use dpp::ProtocolError;
+use dpp::{dashcore_rpc, ProtocolError};
 use rs_dapi_client::transport::TransportError;
 use rs_dapi_client::{CanRetry, DapiClientError, ExecutionError};
 use std::fmt::Debug;
@@ -14,6 +14,7 @@ use std::time::Duration;
 
 /// Error type for the SDK
 // TODO: Propagate server address and retry information so that the user can retrieve it
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     /// SDK is not configured properly
@@ -36,7 +37,7 @@ pub enum Error {
     InvalidProvedResponse(String),
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
-    DapiClientError(String),
+    DapiClientError(rs_dapi_client::DapiClientError),
     #[cfg(feature = "mocks")]
     /// DAPI mocks error
     #[error("Dapi mocks error: {0}")]
@@ -160,7 +161,8 @@ impl From<DapiClientError> for Error {
             }
         }
 
-        Self::DapiClientError(value.to_string())
+        // Preserve the original DAPI client error for structured inspection
+        Self::DapiClientError(value)
     }
 }
 
@@ -170,13 +172,14 @@ impl From<PlatformVersionError> for Error {
     }
 }
 
+// Retain legacy behavior for generic execution errors that are not DapiClientError
 impl<T> From<ExecutionError<T>> for Error
 where
     ExecutionError<T>: ToString,
 {
     fn from(value: ExecutionError<T>) -> Self {
-        // TODO: Improve error handling
-        Self::DapiClientError(value.to_string())
+        // Fallback to a generic string representation
+        Self::Generic(value.to_string())
     }
 }
 

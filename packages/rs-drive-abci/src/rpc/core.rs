@@ -1,12 +1,12 @@
-use dashcore_rpc::dashcore_rpc_json::{
-    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
-    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
-};
-use dashcore_rpc::json::GetRawTransactionResult;
-use dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::dashcore::ephemerealdata::chain_lock::ChainLock;
 use dpp::dashcore::{Block, BlockHash, QuorumHash, Transaction, Txid};
 use dpp::dashcore::{Header, InstantLock};
+use dpp::dashcore_rpc::dashcore_rpc_json::{
+    AssetUnlockStatusResult, ExtendedQuorumDetails, ExtendedQuorumListResult, GetChainTipsResult,
+    MasternodeListDiff, MnSyncStatus, QuorumInfoResult, QuorumType, SoftforkInfo,
+};
+use dpp::dashcore_rpc::json::GetRawTransactionResult;
+use dpp::dashcore_rpc::{Auth, Client, Error, RpcApi};
 use dpp::prelude::TimestampMillis;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -58,8 +58,8 @@ pub trait CoreRPCLike {
         match self.get_transaction_extended_info(transaction_id) {
             Ok(transaction_info) => Ok(Some(transaction_info)),
             // Return None if transaction with specified tx id is not present
-            Err(Error::JsonRpc(dashcore_rpc::jsonrpc::error::Error::Rpc(
-                dashcore_rpc::jsonrpc::error::RpcError {
+            Err(Error::JsonRpc(dpp::dashcore_rpc::jsonrpc::error::Error::Rpc(
+                dpp::dashcore_rpc::jsonrpc::error::RpcError {
                     code: CORE_RPC_INVALID_ADDRESS_OR_KEY,
                     ..
                 },
@@ -173,12 +173,12 @@ macro_rules! retry {
                 Ok(result) => Some(Ok(result)),
                 Err(e) => {
                     match e {
-                        dashcore_rpc::Error::JsonRpc(
+                        dpp::dashcore_rpc::Error::JsonRpc(
                             // Retry on transport connection error
-                            dashcore_rpc::jsonrpc::error::Error::Transport(_)
-                            | dashcore_rpc::jsonrpc::error::Error::Rpc(
+                            dpp::dashcore_rpc::jsonrpc::error::Error::Transport(_)
+                            | dpp::dashcore_rpc::jsonrpc::error::Error::Rpc(
                                 // Retry on Core RPC "not ready" errors
-                                dashcore_rpc::jsonrpc::error::RpcError {
+                                dpp::dashcore_rpc::jsonrpc::error::RpcError {
                                     code:
                                         CORE_RPC_ERROR_IN_WARMUP
                                         | CORE_RPC_CLIENT_NOT_CONNECTED

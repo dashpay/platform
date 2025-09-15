@@ -61,7 +61,10 @@ impl Drive {
                 Ok(Some(u64::from_be_bytes(array)))
             }
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => Ok(None),
+            Ok(None) => Ok(None),
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)) => {
+                Ok(None)
+            }
 
             Ok(Some(_)) => Err(Error::Drive(DriveError::CorruptedElementType(
                 "Last moment was present but was not an item",

@@ -25,7 +25,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         let Some(element) = element else {
             return Ok(None);

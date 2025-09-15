@@ -543,7 +543,5 @@ mod test {
             result_error,
             "data corruption error: expected merk to contain value at key 0x08 for tree"
         );
-
-        println!("db path: {:?}", &db_path);
     }
 }

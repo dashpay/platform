@@ -1,10 +1,13 @@
-use dashcore::signer;
-use dashcore::PrivateKey;
+use dpp::dashcore;
+use dpp::dashcore::signer;
+use dpp::dashcore::Network;
+use dpp::dashcore::PrivateKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::ProtocolError;
+use tracing::{debug, warn};
 
 /// A simple signer that uses a single private key
 /// This is designed for WASM and other single-key use cases
@@ -21,6 +24,17 @@ impl SingleKeySigner {
         Ok(Self { private_key })
     }
 
+    pub fn new_from_slice(private_key_data: &[u8], network: Network) -> Result<Self, String> {
+        if private_key_data.len() != 32 {
+            return Err("Private key must be 32 bytes".to_string());
+        }
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(private_key_data);
+        let private_key = PrivateKey::from_byte_array(&arr, network)
+            .map_err(|e| format!("Invalid private key: {}", e))?;
+        Ok(Self { private_key })
+    }
+
     /// Create a new SingleKeySigner from a hex-encoded private key
     pub fn from_hex(private_key_hex: &str, network: dashcore::Network) -> Result<Self, String> {
         if private_key_hex.len() != 64 {
@@ -34,7 +48,9 @@ impl SingleKeySigner {
             return Err("Private key must be 32 bytes".to_string());
         }
 
-        let private_key = PrivateKey::from_slice(&key_bytes, network)
+        let mut arr = [0u8; 32];
+        arr.copy_from_slice(&key_bytes);
+        let private_key = PrivateKey::from_byte_array(&arr, network)
             .map_err(|e| format!("Invalid private key bytes: {}", e))?;
 
         Ok(Self { private_key })
@@ -70,13 +86,18 @@ impl Signer for SingleKeySigner {
         // Only support ECDSA keys for now
         match identity_public_key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                // Do not log private key material. Log data fingerprint only.
+                debug!(data_hex = %hex::encode(data), "SingleKeySigner: signing data");
                 let signature = signer::sign(data, &self.private_key.inner.secret_bytes())?;
                 Ok(signature.to_vec().into())
             }
-            _ => Err(ProtocolError::Generic(format!(
-                "SingleKeySigner only supports ECDSA keys, got {:?}",
-                identity_public_key.key_type()
-            ))),
+            _ => {
+                warn!(key_type = ?identity_public_key.key_type(), "SingleKeySigner: unsupported key type");
+                Err(ProtocolError::Generic(format!(
+                    "SingleKeySigner only supports ECDSA keys, got {:?}",
+                    identity_public_key.key_type()
+                )))
+            }
         }
     }
 
@@ -86,7 +107,7 @@ impl Signer for SingleKeySigner {
             KeyType::ECDSA_SECP256K1 => {
                 // Compare full public key
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,
@@ -100,10 +121,10 @@ impl Signer for SingleKeySigner {
             }
             KeyType::ECDSA_HASH160 => {
                 // Compare hash160 of public key
-                use dashcore::hashes::{hash160, Hash};
+                use dpp::dashcore::hashes::{hash160, Hash};
 
                 let secp = dashcore::secp256k1::Secp256k1::new();
-                let secret_key = match dashcore::secp256k1::SecretKey::from_slice(
+                let secret_key = match dashcore::secp256k1::SecretKey::from_byte_array(
                     &self.private_key.inner.secret_bytes(),
                 ) {
                     Ok(sk) => sk,
@@ -129,44 +150,45 @@ mod tests {
     use dashcore::Network;
 
     #[test]
-    fn test_single_key_signer_from_wif() {
+    fn test_single_key_signer_from_wif() -> Result<(), String> {
         // Create a valid testnet WIF
-        let private_key = PrivateKey::from_slice(
-            &[0x01; 32], // Valid 32-byte private key
-            Network::Testnet,
-        )
-        .unwrap();
+        let private_key = PrivateKey::from_byte_array(&[0x01; 32], Network::Testnet)
+            .map_err(|e| format!("failed to create test key: {}", e))?;
         let wif = private_key.to_wif();
 
-        let signer = SingleKeySigner::new(&wif).unwrap();
+        let signer =
+            SingleKeySigner::new(&wif).map_err(|e| format!("signer init failed: {}", e))?;
         assert!(signer.private_key().to_wif().starts_with('c')); // Testnet WIF
         assert_eq!(signer.private_key().to_wif(), wif);
+        Ok(())
     }
 
     #[test]
-    fn test_single_key_signer_from_hex() {
+    fn test_single_key_signer_from_hex() -> Result<(), String> {
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let signer = SingleKeySigner::from_hex(hex, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_hex(hex, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
+        Ok(())
     }
 
     #[test]
-    fn test_single_key_signer_auto_detect() {
+    fn test_single_key_signer_auto_detect() -> Result<(), String> {
         // Test hex detection
         let hex = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
-        let signer = SingleKeySigner::from_string(hex, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_string(hex, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert_eq!(signer.private_key().inner.secret_bytes().len(), 32);
 
         // Test WIF detection
-        let private_key = PrivateKey::from_slice(
-            &[0x02; 32], // Valid 32-byte private key
-            Network::Testnet,
-        )
-        .unwrap();
+        let private_key = PrivateKey::from_byte_array(&[0x02; 32], Network::Testnet)
+            .map_err(|e| format!("failed to create test key: {}", e))?;
         let wif = private_key.to_wif();
 
-        let signer = SingleKeySigner::from_string(&wif, Network::Testnet).unwrap();
+        let signer = SingleKeySigner::from_string(&wif, Network::Testnet)
+            .map_err(|e| format!("signer init failed: {}", e))?;
         assert!(signer.private_key().to_wif().starts_with('c'));
         assert_eq!(signer.private_key().to_wif(), wif);
+        Ok(())
     }
 }

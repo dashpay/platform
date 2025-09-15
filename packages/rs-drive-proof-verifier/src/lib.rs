@@ -1,5 +1,6 @@
 //! Proof verification library for Dash Drive
 #![warn(missing_docs)]
+#![allow(clippy::result_large_err)]
 
 /// Errors that can occur during proof verification
 pub mod error;

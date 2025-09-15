@@ -49,16 +49,32 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
-      - name: Install system dependencies (protoc, clang, llvm)
-        run: |
-          # Install protoc
-          curl -Lo /tmp/protoc.zip \
-            "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-x86_64.zip"
-          unzip -o /tmp/protoc.zip -d ${HOME}/.local
-          echo "${HOME}/.local/bin" >> $GITHUB_PATH
-          export PATH="${PATH}:${HOME}/.local/bin"
+      - name: Cache and install protoc (v32.0)
+        uses: actions/cache@v4
+        id: cache-protoc
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/x86_64
 
-          # Install clang and llvm
+      - name: Install protoc v32.0 if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        run: |
+          set -euxo pipefail
+          PROTOC_DIR="${HOME}/.local/protoc-32.0"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-x86_64.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Export protoc v32.0 to PATH
+        run: |
+          echo "${HOME}/.local/protoc-32.0/bin" >> $GITHUB_PATH
+          echo "PROTOC=${HOME}/.local/protoc-32.0/bin/protoc" >> $GITHUB_ENV
+
+      - name: Install clang and llvm
+        run: |
           sudo apt update -qq
           sudo apt install -qq --yes clang llvm
 
@@ -83,42 +99,26 @@ jobs:
             echo "wasm-pack already installed"
           fi
 
-      - name: Install wasm-opt
+      - name: Cache and install wasm-opt (Binaryen)
+        uses: actions/cache@v4
+        id: cache-binaryen
+        with:
+          path: ${{ env.HOME }}/.cache/binaryen/version_121
+          key: binaryen/version_121/${{ runner.os }}/x86_64
+
+      - name: Install wasm-opt if cache miss
+        if: steps.cache-binaryen.outputs.cache-hit != 'true'
         run: |
-          if ! command -v wasm-opt &> /dev/null; then
-            echo "Installing wasm-opt from GitHub releases..."
-            # Get the latest release version
-            WASM_OPT_VERSION=$(curl -s https://api.github.com/repos/WebAssembly/binaryen/releases/latest | grep -oP '"tag_name": "\K[^"]+')
-            echo "Installing wasm-opt version: $WASM_OPT_VERSION"
+          set -euxo pipefail
+          mkdir -p "${HOME}/.cache/binaryen"
+          curl -fsSL -o /tmp/binaryen.tar.gz \
+            "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz"
+          tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
+          mv "${HOME}/.cache/binaryen/binaryen-version_121" "${HOME}/.cache/binaryen/version_121"
 
-            # Detect architecture
-            ARCH=$(uname -m)
-            if [ "$ARCH" = "x86_64" ]; then
-              BINARYEN_ARCH="x86_64"
-            elif [ "$ARCH" = "aarch64" ] || [ "$ARCH" = "arm64" ]; then
-              BINARYEN_ARCH="aarch64"
-            else
-              echo "Unsupported architecture: $ARCH"
-              exit 1
-            fi
-
-            echo "Detected architecture: $ARCH, using binaryen arch: $BINARYEN_ARCH"
-
-            # Download and extract binaryen
-            curl -L "https://github.com/WebAssembly/binaryen/releases/download/${WASM_OPT_VERSION}/binaryen-${WASM_OPT_VERSION}-${BINARYEN_ARCH}-linux.tar.gz" -o /tmp/binaryen.tar.gz
-            tar -xzf /tmp/binaryen.tar.gz -C /tmp
-
-            # Move wasm-opt to PATH
-            sudo mv /tmp/binaryen-${WASM_OPT_VERSION}/bin/wasm-opt /usr/local/bin/
-            sudo chmod +x /usr/local/bin/wasm-opt
-
-            # Clean up
-            rm -rf /tmp/binaryen.tar.gz /tmp/binaryen-${WASM_OPT_VERSION}
-
-            echo "wasm-opt installed successfully"
-          else
-            echo "wasm-opt already installed"
-          fi
+      - name: Export wasm-opt to PATH
+        run: |
+          echo "${HOME}/.cache/binaryen/version_121/bin" >> $GITHUB_PATH
 
       - name: Build WASM SDK
         working-directory: packages/wasm-sdk
@@ -206,7 +206,7 @@ jobs:
         working-directory: packages/wasm-sdk
         run: |
           echo "Running WASM SDK comprehensive test suite..."
-          node test/run-all-tests.mjs | tee test-output.log
+          set -o pipefail && node test/run-all-tests.mjs | tee test-output.log
 
       - name: Generate job summary
         if: always()

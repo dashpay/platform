@@ -1,8 +1,8 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use dashcore::signer;
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
+use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;

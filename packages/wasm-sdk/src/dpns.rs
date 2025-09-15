@@ -1,14 +1,16 @@
-use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 use crate::sdk::WasmSdk;
-use serde::{Serialize, Deserialize};
-use dash_sdk::platform::dpns_usernames::{convert_to_homograph_safe_chars, is_contested_username, is_valid_username, RegisterDpnsNameInput};
-use dash_sdk::platform::{Fetch, Identity};
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::prelude::Identifier;
+use dash_sdk::platform::dpns_usernames::{
+    convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
+    RegisterDpnsNameInput,
+};
+use dash_sdk::platform::{Fetch, Identity};
+use serde::{Deserialize, Serialize};
 use simple_signer::SingleKeySigner;
-use std::sync::Mutex;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -50,36 +52,37 @@ pub async fn dpns_register_name(
     let identity_id_parsed = Identifier::from_string(
         identity_id,
         dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    ).map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
-    
+    )
+    .map_err(|e| JsError::new(&format!("Invalid identity ID: {}", e)))?;
+
     // Fetch the identity
     let identity = Identity::fetch(sdk.as_ref(), identity_id_parsed)
         .await
         .map_err(|e| JsError::new(&format!("Failed to fetch identity: {}", e)))?
         .ok_or_else(|| JsError::new("Identity not found"))?;
-    
+
     // Create signer
     let signer = SingleKeySigner::new(private_key_wif)
         .map_err(|e| JsError::new(&format!("Invalid private key WIF: {}", e)))?;
-    
+
     // Get the specific identity public key
     let identity_public_key = identity
         .get_public_key_by_id(public_key_id.into())
         .ok_or_else(|| JsError::new(&format!("Public key with ID {} not found", public_key_id)))?
         .clone();
-    
+
     // Store the JS callback in a thread-local variable that we can access from the closure
     thread_local! {
         static PREORDER_CALLBACK: std::cell::RefCell<Option<js_sys::Function>> = std::cell::RefCell::new(None);
     }
-    
+
     // Set the callback if provided
     if let Some(ref js_callback) = preorder_callback {
         PREORDER_CALLBACK.with(|cb| {
             *cb.borrow_mut() = Some(js_callback.clone());
         });
     }
-    
+
     // Create a Rust callback that will call the JavaScript callback
     let callback_box = if preorder_callback.is_some() {
         Some(Box::new(move |doc: &Document| {
@@ -94,7 +97,7 @@ pub async fn dpns_register_name(
                         "createdAtCoreBlockHeight": doc.created_at_core_block_height(),
                         "message": "Preorder document submitted successfully",
                     });
-                    
+
                     if let Ok(js_value) = serde_wasm_bindgen::to_value(&preorder_info) {
                         let _ = js_callback.call1(&JsValue::NULL, &js_value);
                     }
@@ -104,7 +107,7 @@ pub async fn dpns_register_name(
     } else {
         None
     };
-    
+
     // Create registration input with the callback
     let input = RegisterDpnsNameInput {
         label: label.to_string(),
@@ -113,41 +116,42 @@ pub async fn dpns_register_name(
         signer,
         preorder_callback: callback_box,
     };
-    
+
     // Register the name
-    let result = sdk.as_ref()
+    let result = sdk
+        .as_ref()
         .register_dpns_name(input)
         .await
         .map_err(|e| JsError::new(&format!("Failed to register DPNS name: {}", e)))?;
-    
+
     // Clear the thread-local callback
     PREORDER_CALLBACK.with(|cb| {
         *cb.borrow_mut() = None;
     });
-    
+
     // Convert result to JS-friendly format
     let js_result = RegisterDpnsNameResult {
-        preorder_document_id: result.preorder_document.id().to_string(
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
-        ),
-        domain_document_id: result.domain_document.id().to_string(
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
-        ),
+        preorder_document_id: result
+            .preorder_document
+            .id()
+            .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+        domain_document_id: result
+            .domain_document
+            .id()
+            .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
         full_domain_name: result.full_domain_name,
     };
-    
+
     // Serialize to JsValue
     let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-    js_result.serialize(&serializer)
+    js_result
+        .serialize(&serializer)
         .map_err(|e| JsError::new(&format!("Failed to serialize result: {}", e)))
 }
 
 /// Check if a DPNS name is available
 #[wasm_bindgen]
-pub async fn dpns_is_name_available(
-    sdk: &WasmSdk,
-    label: &str,
-) -> Result<bool, JsError> {
+pub async fn dpns_is_name_available(sdk: &WasmSdk, label: &str) -> Result<bool, JsError> {
     sdk.as_ref()
         .is_dpns_name_available(label)
         .await
@@ -156,22 +160,19 @@ pub async fn dpns_is_name_available(
 
 /// Resolve a DPNS name to an identity ID
 #[wasm_bindgen]
-pub async fn dpns_resolve_name(
-    sdk: &WasmSdk,
-    name: &str,
-) -> Result<JsValue, JsError> {
-    let result = sdk.as_ref()
+pub async fn dpns_resolve_name(sdk: &WasmSdk, name: &str) -> Result<JsValue, JsError> {
+    let result = sdk
+        .as_ref()
         .resolve_dpns_name(name)
         .await
         .map_err(|e| JsError::new(&format!("Failed to resolve DPNS name: {}", e)))?;
-    
+
     match result {
         Some(identity_id) => {
-            let id_string = identity_id.to_string(
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58
-            );
+            let id_string = identity_id
+                .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
             Ok(JsValue::from_str(&id_string))
-        },
+        }
         None => Ok(JsValue::NULL),
     }
 }

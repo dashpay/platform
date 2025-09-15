@@ -66,7 +66,7 @@ impl Drive {
                 if key == identity_id {
                     if let Some(element) = maybe_element {
                         //this is the balance
-                        let signed_balance = element.as_sum_item_value().map_err(Error::GroveDB)?;
+                        let signed_balance = element.as_sum_item_value().map_err(Error::from)?;
                         if signed_balance < 0 {
                             return Err(Error::Proof(ProofError::Overflow(
                                 "balance can't be negative",
@@ -86,7 +86,7 @@ impl Drive {
                 }
             } else if path == identity_path && key == vec![IdentityTreeRevision as u8] {
                 if let Some(element) = maybe_element {
-                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    let item_bytes = element.into_item_bytes().map_err(Error::from)?;
                     //this is the revision
                     revision = Some(Revision::from_be_bytes(item_bytes.try_into().map_err(
                         |_| {
@@ -103,7 +103,7 @@ impl Drive {
                 }
             } else if path == identity_keys_path {
                 if let Some(element) = maybe_element {
-                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    let item_bytes = element.into_item_bytes().map_err(Error::from)?;
                     let key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
                     keys.insert(key.id(), key);
                 } else {

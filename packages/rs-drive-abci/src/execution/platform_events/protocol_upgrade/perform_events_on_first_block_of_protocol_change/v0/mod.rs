@@ -287,7 +287,7 @@ impl<C> Platform<C> {
             .map(|element| {
                 let contested_document_resource_vote_poll_bytes = element
                     .into_item_bytes()
-                    .map_err(drive::error::Error::GroveDB)?;
+                    .map_err(drive::error::Error::from)?;
                 let vote_poll =
                     VotePoll::deserialize_from_bytes(&contested_document_resource_vote_poll_bytes)?;
                 match vote_poll {

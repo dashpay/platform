@@ -111,7 +111,6 @@ const testData = {
               "5RG84o6KsTaZudDqS8ytbaRB8QP4YYQ2uwzb6Hj8cfjX"
             ],
             contractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-            documentTypeName: "domain",
             purposes: ["0", "3"] // Authentication and Transfer
           }
         ]
@@ -402,8 +401,6 @@ const testData = {
             documentTypeName: "domain",
             dataContractId: "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
             indexName: "parentNameAndLabel",
-            resultType: "documents",
-            allowIncludeLockedAndAbstainingVoteTally: false,
             limit: 10,
             offset: 0,
             orderAscending: true

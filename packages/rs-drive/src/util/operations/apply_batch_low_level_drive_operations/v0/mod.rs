@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Operation application returns drive::Error with rich causes
 use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;

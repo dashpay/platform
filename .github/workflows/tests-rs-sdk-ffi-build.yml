@@ -1,0 +1,121 @@
+name: Test rs-sdk-ffi build
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'packages/rs-sdk-ffi/**'
+      - 'packages/rs-sdk/**'
+      - '.github/workflows/tests-rs-sdk-ffi-build.yml'
+  push:
+    branches:
+      - master
+      - 'v*-dev'
+    paths:
+      - 'packages/rs-sdk-ffi/**'
+      - 'packages/rs-sdk/**'
+      - '.github/workflows/tests-rs-sdk-ffi-build.yml'
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-ffi-ios:
+    name: Build rs-sdk-ffi for iOS targets
+    # macOS runners are required to access Apple SDKs (no osxcross here)
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [aarch64-apple-ios, aarch64-apple-ios-sim]
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: ./.github/actions/rust
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Add Rust target
+        run: |
+          rustup target add ${{ matrix.target }}
+
+      - name: Restore cached Protobuf (protoc)
+        id: cache-protoc
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Install Protobuf (protoc) if cache miss
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euxo pipefail
+          VERSION=32.0
+          OS=osx-universal_binary
+          PROTOC_DIR="$HOME/.local/protoc-${VERSION}"
+          mkdir -p "$PROTOC_DIR"
+          curl -fsSL -H "Authorization: token ${GITHUB_TOKEN}" \
+            -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v${VERSION}/protoc-${VERSION}-${OS}.zip"
+          unzip -o /tmp/protoc.zip -d "$PROTOC_DIR"
+
+      - name: Save cached Protobuf (protoc)
+        if: steps.cache-protoc.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ${{ env.HOME }}/.local/protoc-32.0/bin
+            ${{ env.HOME }}/.local/protoc-32.0/include
+          key: protoc/32.0/${{ runner.os }}/universal
+
+      - name: Verify protoc and export env
+        run: |
+          set -euxo pipefail
+          export PATH="$HOME/.local/protoc-32.0/bin:$PATH"
+          echo "PROTOC=$HOME/.local/protoc-32.0/bin/protoc" >> "$GITHUB_ENV"
+          "$HOME/.local/protoc-32.0/bin/protoc" --version
+          # Ensure build scripts see an absolute PROTOC path (some parse parent dirs)
+          echo "PROTOC=$(which protoc)" >> "$GITHUB_ENV"
+          # Enable backtraces for clearer failure logs if any build.rs panics
+          echo "RUST_BACKTRACE=1" >> "$GITHUB_ENV"
+
+      - name: Build FFI library
+        working-directory: packages/rs-sdk-ffi
+        env:
+          BLST_PORTABLE: "1"
+          IPHONEOS_DEPLOYMENT_TARGET: "18.0"
+          IPHONESIMULATOR_DEPLOYMENT_TARGET: "18.0"
+          CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+          CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+          CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS: "-C link-arg=-mios-version-min=18.0"
+        run: |
+          echo "Using BLST_PORTABLE=${BLST_PORTABLE} to avoid iOS linker issues"
+          echo "Minimum iOS deployment target: ${IPHONEOS_DEPLOYMENT_TARGET}"
+          echo "AARCH64 iOS rustflags: ${CARGO_TARGET_AARCH64_APPLE_IOS_RUSTFLAGS}"
+          echo "AARCH64 iOS-sim rustflags: ${CARGO_TARGET_AARCH64_APPLE_IOS_SIM_RUSTFLAGS}"
+          echo "x86_64 iOS rustflags: ${CARGO_TARGET_X86_64_APPLE_IOS_RUSTFLAGS}"
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Verify build output
+        run: |
+          LIB=target/${{ matrix.target }}/release/librs_sdk_ffi.a
+          if [ ! -f "$LIB" ]; then
+            echo "Error: FFI library was not built for ${{ matrix.target }}"
+            exit 1
+          fi
+          echo "FFI library successfully built for ${{ matrix.target }}"
+          ls -la "$LIB"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rs-sdk-ffi-${{ matrix.target }}-release
+          path: |
+            target/${{ matrix.target }}/release/librs_sdk_ffi.a

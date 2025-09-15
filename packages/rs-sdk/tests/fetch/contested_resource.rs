@@ -345,9 +345,23 @@ async fn contested_resources_fields(
             }
         }
         Err(expected) if result.is_err() => {
-            let result = result.expect_err("error");
-            if !result.to_string().contains(expected) {
-                Err(format!("EXPECTED: {} GOT: {:?}\n", expected, result))
+            let err = result.expect_err("error");
+            // Prefer structured check for InvalidArgument code
+            if expected.contains("InvalidArgument") {
+                use dash_sdk::Error as SdkError;
+                use rs_dapi_client::transport::TransportError;
+                use rs_dapi_client::DapiClientError;
+                if let SdkError::DapiClientError(DapiClientError::Transport(
+                    TransportError::Grpc(status),
+                )) = &err
+                {
+                    if status.code() == dapi_grpc::tonic::Code::InvalidArgument {
+                        return Ok(());
+                    }
+                }
+            }
+            if !err.to_string().contains(expected) {
+                Err(format!("EXPECTED: {} GOT: {:?}\n", expected, err))
             } else {
                 Ok(())
             }

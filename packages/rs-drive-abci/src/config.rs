@@ -2,8 +2,8 @@ use crate::logging::LogConfigs;
 use crate::utils::from_str_or_number;
 use crate::{abci::config::AbciConfig, error::Error};
 use bincode::{Decode, Encode};
-use dashcore_rpc::json::QuorumType;
 use dpp::dashcore::Network;
+use dpp::dashcore_rpc::json::QuorumType;
 use dpp::util::deserializer::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use drive::config::DriveConfig;
@@ -912,8 +912,8 @@ impl Default for PlatformTestConfig {
 mod tests {
     use super::FromEnv;
     use crate::logging::LogDestination;
-    use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use dpp::dashcore::Network;
+    use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
     use std::env;
 
     #[test]

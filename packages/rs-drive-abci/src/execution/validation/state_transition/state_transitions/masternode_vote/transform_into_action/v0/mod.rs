@@ -1,6 +1,5 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use dashcore_rpc::dashcore_rpc_json::MasternodeType;
 use dpp::consensus::state::state_error::StateError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
 use dpp::consensus::state::voting::masternode_vote_already_present_error::MasternodeVoteAlreadyPresentError;
@@ -8,6 +7,7 @@ use dpp::consensus::state::voting::masternode_voted_too_many_times::MasternodeVo
 use dpp::consensus::ConsensusError;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeType;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;

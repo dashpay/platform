@@ -13,14 +13,14 @@ use {
         },
         query::{Query, QueryItem},
     },
-    dpp::{
-        identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0,
-        identity::{KeyID, Purpose, SecurityLevel},
-    },
+    dpp::identity::{KeyID, Purpose, SecurityLevel},
     grovedb::{PathQuery, SizedQuery},
     integer_encoding::VarInt,
     std::{collections::BTreeMap, ops::RangeFull},
 };
+
+#[cfg(feature = "server")]
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 
 #[cfg(feature = "server")]
 use {
@@ -176,7 +176,7 @@ fn element_to_identity_public_key(element: Element) -> Result<IdentityPublicKey,
         )));
     };
 
-    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::Protocol)
+    IdentityPublicKey::deserialize_from_bytes(value.as_slice()).map_err(Error::from)
 }
 
 #[cfg(feature = "server")]

@@ -47,7 +47,7 @@ impl Drive {
         let element = proved_key_values.remove(0).2;
 
         let group = element
-            .map(|element| element.into_item_bytes().map_err(Error::GroveDB))
+            .map(|element| element.into_item_bytes().map_err(Error::from))
             .transpose()?
             .map(|bytes| Group::deserialize_from_bytes(&bytes))
             .transpose()?;

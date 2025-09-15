@@ -32,7 +32,7 @@ impl Drive {
                 &drive_version.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         query_result
             .to_key_elements()
