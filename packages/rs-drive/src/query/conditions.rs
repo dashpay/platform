@@ -17,8 +17,6 @@ use sqlparser::ast;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
-use DocumentPropertyType as T;
-use WhereOperator as Op;
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
@@ -221,9 +219,6 @@ impl<'a> WhereClause {
     }
 
     /// Evaluate this WhereClause against a provided `Value`
-    ///
-    /// Only used for filtering documents in memory for document subscriptions.
-    /// For query execution, the matching logic is handled in `to_path_query`.
     pub fn matches_value(&self, value: &Value) -> bool {
         eval_operator(&self.operator, value, &self.value)
     }
@@ -1360,46 +1355,48 @@ fn eval_operator(where_operator: &WhereOperator, probe: &Value, clause_value: &V
 #[cfg(any(feature = "server", feature = "verify"))]
 pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [WhereOperator] {
     match property_type {
-        T::U8
-        | T::I8
-        | T::U16
-        | T::I16
-        | T::U32
-        | T::I32
-        | T::U64
-        | T::I64
-        | T::U128
-        | T::I128
-        | T::F64
-        | T::Date => &[
-            Op::Equal,
-            Op::In,
-            Op::GreaterThan,
-            Op::GreaterThanOrEquals,
-            Op::LessThan,
-            Op::LessThanOrEquals,
-            Op::Between,
-            Op::BetweenExcludeBounds,
-            Op::BetweenExcludeLeft,
-            Op::BetweenExcludeRight,
+        DocumentPropertyType::U8
+        | DocumentPropertyType::I8
+        | DocumentPropertyType::U16
+        | DocumentPropertyType::I16
+        | DocumentPropertyType::U32
+        | DocumentPropertyType::I32
+        | DocumentPropertyType::U64
+        | DocumentPropertyType::I64
+        | DocumentPropertyType::U128
+        | DocumentPropertyType::I128
+        | DocumentPropertyType::F64
+        | DocumentPropertyType::Date => &[
+            WhereOperator::Equal,
+            WhereOperator::In,
+            WhereOperator::GreaterThan,
+            WhereOperator::GreaterThanOrEquals,
+            WhereOperator::LessThan,
+            WhereOperator::LessThanOrEquals,
+            WhereOperator::Between,
+            WhereOperator::BetweenExcludeBounds,
+            WhereOperator::BetweenExcludeLeft,
+            WhereOperator::BetweenExcludeRight,
         ],
-        T::String(_) => &[
-            Op::Equal,
-            Op::In,
-            Op::StartsWith,
-            Op::GreaterThan,
-            Op::GreaterThanOrEquals,
-            Op::LessThan,
-            Op::LessThanOrEquals,
-            Op::Between,
-            Op::BetweenExcludeBounds,
-            Op::BetweenExcludeLeft,
-            Op::BetweenExcludeRight,
+        DocumentPropertyType::String(_) => &[
+            WhereOperator::Equal,
+            WhereOperator::In,
+            WhereOperator::StartsWith,
+            WhereOperator::GreaterThan,
+            WhereOperator::GreaterThanOrEquals,
+            WhereOperator::LessThan,
+            WhereOperator::LessThanOrEquals,
+            WhereOperator::Between,
+            WhereOperator::BetweenExcludeBounds,
+            WhereOperator::BetweenExcludeLeft,
+            WhereOperator::BetweenExcludeRight,
         ],
-        T::Identifier => &[Op::Equal, Op::In],
-        T::ByteArray(_) => &[Op::Equal, Op::In],
-        T::Boolean => &[Op::Equal],
-        T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => &[],
+        DocumentPropertyType::Identifier => &[WhereOperator::Equal, WhereOperator::In],
+        DocumentPropertyType::ByteArray(_) => &[WhereOperator::Equal, WhereOperator::In],
+        DocumentPropertyType::Boolean => &[WhereOperator::Equal],
+        DocumentPropertyType::Object(_)
+        | DocumentPropertyType::Array(_)
+        | DocumentPropertyType::VariableTypeArray(_) => &[],
     }
 }
 
@@ -1429,34 +1426,35 @@ pub fn value_shape_ok(
     property_type: &DocumentPropertyType,
 ) -> bool {
     match where_operator {
-        Op::Equal => true,
-        Op::In => matches!(value, Value::Array(_) | Value::Bytes(_)),
-        Op::StartsWith => matches!(value, Value::Text(_)),
-        Op::GreaterThan | Op::GreaterThanOrEquals | Op::LessThan | Op::LessThanOrEquals => {
-            match property_type {
-                DocumentPropertyType::F64 => is_numeric_value(value),
-                DocumentPropertyType::String(_) => {
-                    matches!(value, Value::Text(_))
-                }
-                _ => matches!(
-                    value,
-                    Value::U128(_)
-                        | Value::I128(_)
-                        | Value::U64(_)
-                        | Value::I64(_)
-                        | Value::U32(_)
-                        | Value::I32(_)
-                        | Value::U16(_)
-                        | Value::I16(_)
-                        | Value::U8(_)
-                        | Value::I8(_)
-                ),
+        WhereOperator::Equal => true,
+        WhereOperator::In => matches!(value, Value::Array(_) | Value::Bytes(_)),
+        WhereOperator::StartsWith => matches!(value, Value::Text(_)),
+        WhereOperator::GreaterThan
+        | WhereOperator::GreaterThanOrEquals
+        | WhereOperator::LessThan
+        | WhereOperator::LessThanOrEquals => match property_type {
+            DocumentPropertyType::F64 => is_numeric_value(value),
+            DocumentPropertyType::String(_) => {
+                matches!(value, Value::Text(_))
             }
-        }
-        Op::Between
-        | Op::BetweenExcludeBounds
-        | Op::BetweenExcludeLeft
-        | Op::BetweenExcludeRight => {
+            _ => matches!(
+                value,
+                Value::U128(_)
+                    | Value::I128(_)
+                    | Value::U64(_)
+                    | Value::I64(_)
+                    | Value::U32(_)
+                    | Value::I32(_)
+                    | Value::U16(_)
+                    | Value::I16(_)
+                    | Value::U8(_)
+                    | Value::I8(_)
+            ),
+        },
+        WhereOperator::Between
+        | WhereOperator::BetweenExcludeBounds
+        | WhereOperator::BetweenExcludeLeft
+        | WhereOperator::BetweenExcludeRight => {
             if let Value::Array(arr) = value {
                 arr.len() == 2
                     && arr.iter().all(|x| match property_type {
@@ -1491,18 +1489,53 @@ pub fn validate_where_clause_against_schema(
     document_type: DocumentTypeRef,
     clause: &WhereClause,
 ) -> Result<(), crate::error::Error> {
-    // Check that the field exists
-    let property = document_type
-        .flattened_properties()
-        .get(&clause.field)
-        .ok_or_else(|| {
-            Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                "unknown field in where clause",
-            ))
-        })?;
+    // Resolve field type: support meta/system fields first, then fall back to schema properties
+    // Recognized meta fields mirror the SQL builder mapping in this module
+    fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
+        // Only consider the first path segment for meta fields
+        let head = field.split('.').next().unwrap_or(field);
+        match head {
+            // Identifiers
+            "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
+            // Dates (millis since epoch)
+            "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+            // Block heights and core block heights
+            "$createdAtBlockHeight"
+            | "$updatedAtBlockHeight"
+            | "$transferredAtBlockHeight"
+            | "$createdAtCoreBlockHeight"
+            | "$updatedAtCoreBlockHeight"
+            | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
+            // Revision and protocol version are integers
+            "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
+            // Type name is a string
+            "$type" => Some(DocumentPropertyType::String(
+                dpp::data_contract::document_type::StringPropertySizes {
+                    min_length: None,
+                    max_length: None,
+                },
+            )),
+            _ => None,
+        }
+    }
+
+    let property_type_cow = if let Some(meta_ty) = meta_field_property_type(&clause.field) {
+        Cow::Owned(meta_ty)
+    } else {
+        // Check that the field exists in the schema
+        let property = document_type
+            .flattened_properties()
+            .get(&clause.field)
+            .ok_or_else(|| {
+                Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
+                    "unknown field in where clause",
+                ))
+            })?;
+        Cow::Borrowed(&property.property_type)
+    };
 
     // Check operator is allowed for field type
-    let property_type = &property.property_type;
+    let property_type = property_type_cow.as_ref();
     if !allowed_ops_for_type(property_type).contains(&clause.operator) {
         return Err(Error::Query(
             QuerySyntaxError::InvalidWhereClauseComponents("operator not allowed for field type"),
@@ -2002,5 +2035,93 @@ mod tests {
         };
         let res = validate_where_clause_against_schema(doc_type, &clause);
         assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_meta_owner_id_in_identifiers() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$ownerId".to_string(),
+            operator: In,
+            value: Value::Array(vec![
+                Value::Identifier([1u8; 32]),
+                Value::Identifier([2u8; 32]),
+            ]),
+        };
+        let res = validate_where_clause_against_schema(doc_type, &clause);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_meta_created_at_between_integers() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("uniqueDates")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$createdAt".to_string(),
+            operator: crate::query::conditions::WhereOperator::Between,
+            value: Value::Array(vec![Value::U64(1000), Value::U64(2000)]),
+        };
+        let res = validate_where_clause_against_schema(doc_type, &clause);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_rejects_meta_revision_float_equality() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$revision".to_string(),
+            operator: Equal,
+            value: Value::Float(3.14),
+        };
+        let res = validate_where_clause_against_schema(doc_type, &clause);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn validate_accepts_meta_created_at_block_height_range() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("uniqueDates")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$createdAtBlockHeight".to_string(),
+            operator: GreaterThanOrEquals,
+            value: Value::U64(100),
+        };
+        let res = validate_where_clause_against_schema(doc_type, &clause);
+        assert!(res.is_ok());
+    }
+
+    #[test]
+    fn validate_accepts_meta_data_contract_id_equality() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("niceDocument")
+            .expect("doc type exists");
+
+        let clause = WhereClause {
+            field: "$dataContractId".to_string(),
+            operator: Equal,
+            value: Value::Identifier([3u8; 32]),
+        };
+        let res = validate_where_clause_against_schema(doc_type, &clause);
+        assert!(res.is_ok());
     }
 }
