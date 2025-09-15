@@ -46,19 +46,31 @@ Legend:
 - [ ] Provide initial masternode list diff on subscription
   - Files: `src/services/streaming_service/masternode_list_stream.rs`
 
-## P0 — Protocol Translation Minimums
+## P0 — Protocol Translation Minimums (Parity with JS DAPI)
 
-- [x] JSON-RPC: implement legacy methods
+- [x] JSON-RPC: legacy parity endpoints
   - [x] `getBestBlockHash`
   - [x] `getBlockHash`
   - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs` (dispatch)
   - Notes: Translator implemented with tests; server dispatch returns hex strings
-- [x] REST: minimally expose Platform `getStatus` and Core `best-block-height`, `transaction/{hash}`
+
+## P2 — Protocol Translation (Non-legacy extras)
+
+- [x] REST gateway: minimal endpoints (not present in JS DAPI)
   - Files: `src/server.rs`, `src/protocol/rest_translator.rs`
-  - Routes: `/v1/platform/status`, `/v1/core/best-block-height`, `/v1/core/transaction/:id`
-
-## P1 — Protocol Translation Coverage
-
+  - Routes implemented:
+    - `/v1/platform/status` → Platform `get_status`
+    - `/v1/core/best-block-height` → Core `get_best_block_height`
+    - `/v1/core/transaction/:id` → Core `get_transaction`
+    - `/v1/core/transaction/broadcast` → Core `broadcast_transaction`
+    - `/v1/core/block/hash/:hash` → Core `get_block` by hash
+    - `/v1/core/block/height/:height` → Core `get_block` by height
+  - Response shapes are simple JSON wrappers (hex-encoded where appropriate)
+- [x] JSON-RPC extension: `sendRawTransaction` (not in JS DAPI docs)
+  - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs`
+  - Accepts `hex[, allowHighFees, bypassLimits]`; returns txid string
+- [x] JSON-RPC extension: Platform `getStatus` (not in JS DAPI docs)
+  - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs`
 - [ ] REST: complete mapping for Core and Platform endpoints listed in DESIGN.md
 - [ ] Optional: REST/JSON-RPC streaming via WebSockets to mirror gRPC streams
 

@@ -664,6 +664,27 @@ async fn handle_jsonrpc_request(
                 }
             }
         }
+        JsonRpcCall::CoreBroadcastTransaction(req_broadcast) => {
+            let result = state
+                .core_service
+                .broadcast_transaction(dapi_grpc::tonic::Request::new(req_broadcast))
+                .await;
+            match result {
+                Ok(resp) => {
+                    let txid = resp.into_inner().transaction_id;
+                    let ok = state
+                        .translator
+                        .ok_response(serde_json::json!(txid), request_id);
+                    Json(serde_json::to_value(ok).unwrap_or_default())
+                }
+                Err(e) => {
+                    let dapi_error =
+                        crate::error::DapiError::Internal(format!("Core gRPC error: {}", e));
+                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                }
+            }
+        }
         JsonRpcCall::CoreGetBestBlockHash => {
             use dapi_grpc::core::v0::GetBlockchainStatusRequest;
             let resp = match state

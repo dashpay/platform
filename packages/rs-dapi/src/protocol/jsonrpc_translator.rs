@@ -2,6 +2,7 @@
 
 use crate::error::{DapiError, DapiResult};
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
+use dapi_grpc::core::v0::BroadcastTransactionRequest;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -40,6 +41,8 @@ pub enum JsonRpcCall {
     CoreGetBestBlockHash,
     /// Core: getBlockHash(height)
     CoreGetBlockHash { height: u32 },
+    /// Core: sendRawTransaction(rawtx[, allowHighFees, bypassLimits])
+    CoreBroadcastTransaction(BroadcastTransactionRequest),
 }
 
 impl JsonRpcTranslator {
@@ -71,6 +74,16 @@ impl JsonRpcTranslator {
                 let height =
                     parse_first_u32_param(json_rpc.params).map_err(DapiError::InvalidArgument)?;
                 Ok((JsonRpcCall::CoreGetBlockHash { height }, json_rpc.id))
+            }
+            "sendRawTransaction" => {
+                let (tx, allow_high_fees, bypass_limits) =
+                    parse_send_raw_tx_params(json_rpc.params).map_err(DapiError::InvalidArgument)?;
+                let req = BroadcastTransactionRequest {
+                    transaction: tx,
+                    allow_high_fees,
+                    bypass_limits,
+                };
+                Ok((JsonRpcCall::CoreBroadcastTransaction(req), json_rpc.id))
             }
             _ => Err(DapiError::InvalidArgument(format!(
                 "Unknown method: {}",
@@ -149,6 +162,32 @@ fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
             }
         }
         _ => Err("params must be an array".to_string()),
+    }
+}
+
+fn parse_send_raw_tx_params(params: Option<Value>) -> Result<(Vec<u8>, bool, bool), String> {
+    match params {
+        // Typical JSON-RPC usage: positional array
+        Some(Value::Array(a)) => {
+            if a.is_empty() {
+                return Err("missing raw transaction parameter".to_string());
+            }
+            let raw_hex = a[0]
+                .as_str()
+                .ok_or_else(|| "raw transaction must be a hex string".to_string())?;
+            let tx = hex::decode(raw_hex)
+                .map_err(|_| "raw transaction must be valid hex".to_string())?;
+
+            let allow_high_fees = a.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
+            let bypass_limits = a.get(2).and_then(|v| v.as_bool()).unwrap_or(false);
+            Ok((tx, allow_high_fees, bypass_limits))
+        }
+        // Accept single string too
+        Some(Value::String(s)) => {
+            let tx = hex::decode(&s).map_err(|_| "raw transaction must be valid hex".to_string())?;
+            Ok((tx, false, false))
+        }
+        _ => Err("params must be an array or hex string".to_string()),
     }
 }
 
@@ -266,5 +305,41 @@ mod tests {
         assert_eq!(r.error.unwrap().code, -32003);
         let r = t.error_response(DapiError::Internal("x".into()), None);
         assert_eq!(r.error.unwrap().code, -32603);
+    }
+
+    #[tokio::test]
+    async fn translate_send_raw_transaction_basic() {
+        let t = JsonRpcTranslator::default();
+        let req = JsonRpcRequest {
+            jsonrpc: "2.0".to_string(),
+            method: "sendRawTransaction".to_string(),
+            params: Some(json!(["deadbeef"])),
+            id: Some(json!(7)),
+        };
+        let (call, id) = t.translate_request(req).await.expect("translate ok");
+        match call {
+            JsonRpcCall::CoreBroadcastTransaction(r) => {
+                assert_eq!(r.transaction, hex::decode("deadbeef").unwrap());
+                assert!(!r.allow_high_fees);
+                assert!(!r.bypass_limits);
+            }
+            _ => panic!("expected CoreBroadcastTransaction"),
+        }
+        assert_eq!(id, Some(json!(7)));
+    }
+
+    #[test]
+    fn parse_send_raw_tx_params_variants() {
+        // string
+        let (tx, a, b) = parse_send_raw_tx_params(Some(json!("ff"))).unwrap();
+        assert_eq!(tx, vec![0xff]);
+        assert!(!a && !b);
+        // array with flags
+        let (tx, a, b) = parse_send_raw_tx_params(Some(json!(["ff", true, true]))).unwrap();
+        assert_eq!(tx, vec![0xff]);
+        assert!(a && b);
+        // errors
+        assert!(parse_send_raw_tx_params(Some(json!([]))).is_err());
+        assert!(parse_send_raw_tx_params(Some(json!([123]))).is_err());
     }
 }
