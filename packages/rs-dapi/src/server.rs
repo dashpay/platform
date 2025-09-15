@@ -1,9 +1,9 @@
 use axum::{
-    Router,
-    extract::State,
+    extract::{Path, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
+    Router,
 };
 
 use serde_json::Value;
@@ -14,13 +14,13 @@ use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::{error, info, warn};
 
-use dapi_grpc::core::v0::core_server::CoreServer;
+use dapi_grpc::core::v0::core_server::{Core as CoreTrait, CoreServer};
 use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 
 use crate::clients::{CoreClient, DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::error::{DAPIResult, DapiError};
-use crate::logging::{AccessLogger, middleware::AccessLogLayer};
+use crate::logging::{middleware::AccessLogLayer, AccessLogger};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{clients::traits::TenderdashClientTrait, services::StreamingServiceImpl};
@@ -261,11 +261,18 @@ impl DapiServer {
         let app_state = RestAppState {
             platform_service: Arc::try_unwrap(self.platform_service.clone())
                 .unwrap_or_else(|arc| (*arc).clone()),
+            core_service: Arc::try_unwrap(self.core_service.clone())
+                .unwrap_or_else(|arc| (*arc).clone()),
             translator: self.rest_translator.clone(),
         };
 
         let mut app = Router::new()
             .route("/v1/platform/status", get(handle_rest_get_status))
+            .route(
+                "/v1/core/best-block-height",
+                get(handle_rest_get_best_block_height),
+            )
+            .route("/v1/core/transaction/:id", get(handle_rest_get_transaction))
             .with_state(app_state);
 
         // Add access logging middleware if available
@@ -291,6 +298,8 @@ impl DapiServer {
 
         let app_state = JsonRpcAppState {
             platform_service: Arc::try_unwrap(self.platform_service.clone())
+                .unwrap_or_else(|arc| (*arc).clone()),
+            core_service: Arc::try_unwrap(self.core_service.clone())
                 .unwrap_or_else(|arc| (*arc).clone()),
             translator: self.jsonrpc_translator.clone(),
         };
@@ -341,12 +350,14 @@ impl DapiServer {
 #[derive(Clone)]
 struct RestAppState {
     platform_service: PlatformServiceImpl,
+    core_service: CoreServiceImpl,
     translator: Arc<RestTranslator>,
 }
 
 #[derive(Clone)]
 struct JsonRpcAppState {
     platform_service: PlatformServiceImpl,
+    core_service: CoreServiceImpl,
     translator: Arc<JsonRpcTranslator>,
 }
 
@@ -394,6 +405,71 @@ async fn handle_rest_get_status(
     }
 }
 
+async fn handle_rest_get_best_block_height(
+    State(state): State<RestAppState>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    use dapi_grpc::core::v0::GetBestBlockHeightRequest;
+
+    let grpc_response = match state
+        .core_service
+        .get_best_block_height(dapi_grpc::tonic::Request::new(GetBestBlockHeightRequest {}))
+        .await
+    {
+        Ok(resp) => resp.into_inner(),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    match state
+        .translator
+        .translate_best_block_height(grpc_response.height)
+        .await
+    {
+        Ok(json) => Ok(Json(json)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )),
+    }
+}
+
+async fn handle_rest_get_transaction(
+    State(state): State<RestAppState>,
+    Path(id): Path<String>,
+) -> Result<Json<Value>, (StatusCode, Json<Value>)> {
+    use dapi_grpc::core::v0::GetTransactionRequest;
+
+    let grpc_response = match state
+        .core_service
+        .get_transaction(dapi_grpc::tonic::Request::new(GetTransactionRequest { id }))
+        .await
+    {
+        Ok(resp) => resp.into_inner(),
+        Err(e) => {
+            return Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(serde_json::json!({"error": e.to_string()})),
+            ));
+        }
+    };
+
+    match state
+        .translator
+        .translate_transaction_response(grpc_response)
+        .await
+    {
+        Ok(json) => Ok(Json(json)),
+        Err(e) => Err((
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({"error": e.to_string()})),
+        )),
+    }
+}
+
 // JSON-RPC handlers
 async fn handle_jsonrpc_request(
     State(state): State<JsonRpcAppState>,
@@ -401,8 +477,8 @@ async fn handle_jsonrpc_request(
 ) -> Json<Value> {
     let id = json_rpc.id.clone();
 
-    // Translate JSON-RPC request to gRPC
-    let (grpc_request, request_id) = match state.translator.translate_request(json_rpc).await {
+    // Translate JSON-RPC request
+    let (call, request_id) = match state.translator.translate_request(json_rpc).await {
         Ok((req, id)) => (req, id),
         Err(e) => {
             let error_response = state.translator.error_response(e, id);
@@ -410,30 +486,80 @@ async fn handle_jsonrpc_request(
         }
     };
 
-    // Call the gRPC service
-    let grpc_response = match state
-        .platform_service
-        .get_status(dapi_grpc::tonic::Request::new(grpc_request))
-        .await
-    {
-        Ok(resp) => resp.into_inner(),
-        Err(e) => {
-            let dapi_error = crate::error::DapiError::Internal(format!("gRPC error: {}", e));
-            let error_response = state.translator.error_response(dapi_error, request_id);
-            return Json(serde_json::to_value(error_response).unwrap_or_default());
-        }
-    };
+    use crate::protocol::JsonRpcCall;
+    match call {
+        JsonRpcCall::PlatformGetStatus(grpc_request) => {
+            let grpc_response = match state
+                .platform_service
+                .get_status(dapi_grpc::tonic::Request::new(grpc_request))
+                .await
+            {
+                Ok(resp) => resp.into_inner(),
+                Err(e) => {
+                    let dapi_error =
+                        crate::error::DapiError::Internal(format!("gRPC error: {}", e));
+                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    return Json(serde_json::to_value(error_response).unwrap_or_default());
+                }
+            };
 
-    // Translate gRPC response back to JSON-RPC
-    match state
-        .translator
-        .translate_response(grpc_response, request_id)
-        .await
-    {
-        Ok(json_rpc_response) => Json(serde_json::to_value(json_rpc_response).unwrap_or_default()),
-        Err(e) => {
-            let error_response = state.translator.error_response(e, id);
-            Json(serde_json::to_value(error_response).unwrap_or_default())
+            match state
+                .translator
+                .translate_response(grpc_response, request_id)
+                .await
+            {
+                Ok(json_rpc_response) => {
+                    Json(serde_json::to_value(json_rpc_response).unwrap_or_default())
+                }
+                Err(e) => {
+                    let error_response = state.translator.error_response(e, id);
+                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                }
+            }
+        }
+        JsonRpcCall::CoreGetBestBlockHash => {
+            use dapi_grpc::core::v0::GetBlockchainStatusRequest;
+            let resp = match state
+                .core_service
+                .get_blockchain_status(dapi_grpc::tonic::Request::new(
+                    GetBlockchainStatusRequest {},
+                ))
+                .await
+            {
+                Ok(r) => r.into_inner(),
+                Err(e) => {
+                    let dapi_error =
+                        crate::error::DapiError::Internal(format!("Core gRPC error: {}", e));
+                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    return Json(serde_json::to_value(error_response).unwrap_or_default());
+                }
+            };
+            let best_block_hash_hex = resp
+                .chain
+                .map(|c| hex::encode(c.best_block_hash))
+                .unwrap_or_default();
+            let ok = state
+                .translator
+                .ok_response(serde_json::json!(best_block_hash_hex), request_id);
+            Json(serde_json::to_value(ok).unwrap_or_default())
+        }
+        JsonRpcCall::CoreGetBlockHash { height } => {
+            // Use underlying core client via service
+            let result = state.core_service.core_client.get_block_hash(height).await;
+            match result {
+                Ok(hash) => {
+                    let ok = state
+                        .translator
+                        .ok_response(serde_json::json!(hash.to_string()), request_id);
+                    Json(serde_json::to_value(ok).unwrap_or_default())
+                }
+                Err(e) => {
+                    let dapi_error =
+                        crate::error::DapiError::Internal(format!("Core RPC error: {}", e));
+                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                }
+            }
         }
     }
 }

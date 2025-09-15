@@ -1,6 +1,7 @@
 // REST to gRPC translator
 
 use crate::error::{DapiError, DapiResult};
+use dapi_grpc::core::v0::GetTransactionResponse as CoreGetTransactionResponse;
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use serde_json::Value;
 
@@ -37,5 +38,26 @@ impl RestTranslator {
             .map_err(|e| DapiError::Internal(format!("Failed to serialize response: {}", e)))?;
 
         Ok(json_value)
+    }
+
+    // Convert gRPC best block height response to REST JSON
+    pub async fn translate_best_block_height(&self, height: u32) -> DapiResult<Value> {
+        Ok(serde_json::json!({ "height": height }))
+    }
+
+    // Convert gRPC GetTransactionResponse back to REST JSON
+    pub async fn translate_transaction_response(
+        &self,
+        response: CoreGetTransactionResponse,
+    ) -> DapiResult<Value> {
+        let block_hash_hex = hex::encode(response.block_hash);
+        Ok(serde_json::json!({
+            "transaction": response.transaction,
+            "blockHash": block_hash_hex,
+            "height": response.height,
+            "confirmations": response.confirmations,
+            "isInstantLocked": response.is_instant_locked,
+            "isChainLocked": response.is_chain_locked
+        }))
     }
 }
