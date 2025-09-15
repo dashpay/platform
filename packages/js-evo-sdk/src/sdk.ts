@@ -14,6 +14,10 @@ import { VotingFacade } from './voting/facade.js';
 export interface ConnectionOptions {
   version?: number;
   proofs?: boolean;
+  // Configure tracing/logging emitted from the underlying Wasm SDK.
+  // Accepts simple levels: 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
+  // or a full EnvFilter string like: 'wasm_sdk=debug,rs_dapi_client=warn'
+  logs?: string;
   settings?: {
     connectTimeoutMs?: number;
     timeoutMs?: number;
@@ -43,8 +47,8 @@ export class EvoSDK {
   public voting!: VotingFacade;
 
   constructor(options: EvoSDKOptions = {}) {
-    const { network = 'testnet', trusted = false, version, proofs, settings } = options;
-    this.options = { network, trusted, version, proofs, settings } as any;
+    const { network = 'testnet', trusted = false, version, proofs, settings, logs } = options;
+    this.options = { network, trusted, version, proofs, settings, logs } as any;
 
     this.documents = new DocumentsFacade(this);
     this.identities = new IdentitiesFacade(this);
@@ -76,7 +80,7 @@ export class EvoSDK {
     if (this.wasmSdk) return; // idempotent
     await initWasm();
 
-    const { network, trusted, version, proofs, settings } = this.options;
+    const { network, trusted, version, proofs, settings, logs } = this.options;
 
     let b: wasm.WasmSdkBuilder;
     if (network === 'mainnet') {
@@ -87,6 +91,7 @@ export class EvoSDK {
 
     if (version) b = b.withVersion(version);
     if (typeof proofs === 'boolean') b = b.withProofs(proofs);
+    if (logs) b = b.withLogs(logs);
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
       b = b.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
