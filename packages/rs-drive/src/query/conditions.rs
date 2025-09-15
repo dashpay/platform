@@ -1,25 +1,28 @@
 //! Query Conditions
 //!
 
-use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use grovedb::Query;
-use sqlparser::ast;
-use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet};
-use std::fmt::Display;
-use WhereOperator::{
-    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
-    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
-};
-
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+#[cfg(any(feature = "server", feature = "verify"))]
+use crate::query::InternalClauses;
+use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::{DocumentPropertyType, DocumentType, DocumentTypeRef};
 use dpp::document::document_methods::DocumentMethodsV0;
 use dpp::document::Document;
 use dpp::platform_value::Value;
 use dpp::version::PlatformVersion;
+use grovedb::Query;
+use sqlparser::ast;
+use std::borrow::Cow;
+use std::collections::{BTreeMap, BTreeSet};
+use std::fmt::Display;
+use DocumentPropertyType as T;
+use WhereOperator as Op;
+use WhereOperator::{
+    Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
+    GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
+};
 
 /// Converts SQL values to CBOR.
 fn sql_value_to_platform_value(sql_value: ast::Value) -> Option<Value> {
@@ -1356,8 +1359,6 @@ fn eval_operator(op: &WhereOperator, probe: &Value, clause_val: &Value) -> bool 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Returns the set of allowed operators for a given property type
 pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [WhereOperator] {
-    use DocumentPropertyType as T;
-    use WhereOperator as Op;
     match property_type {
         T::U8
         | T::I8
@@ -1423,7 +1424,6 @@ fn is_numeric_value(v: &Value) -> bool {
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Validates that a value matches the expected shape for a given operator and property type
 pub fn value_shape_ok(op: WhereOperator, v: &Value, prop_ty: &DocumentPropertyType) -> bool {
-    use WhereOperator as Op;
     match op {
         Op::Equal => true,
         Op::In => matches!(v, Value::Array(_) | Value::Bytes(_)),
@@ -1666,7 +1666,7 @@ pub fn validate_where_clause_against_schema(
 /// Validate a collection of InternalClauses against the document schema
 pub fn validate_internal_clauses_against_schema(
     document_type: DocumentTypeRef,
-    clauses: &super::InternalClauses,
+    clauses: &InternalClauses,
 ) -> Result<(), crate::error::Error> {
     // Basic composition
     if !clauses.verify() {
