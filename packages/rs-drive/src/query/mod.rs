@@ -3,9 +3,7 @@ use std::sync::Arc;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
     conditions::{
-        allowed_ops_for_type, validate_internal_clauses_against_schema,
-        validate_where_clause_against_schema, value_shape_ok, ValueClause, WhereClause,
-        WhereOperator,
+        validate_internal_clauses_against_schema, ValueClause, WhereClause, WhereOperator,
     },
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
