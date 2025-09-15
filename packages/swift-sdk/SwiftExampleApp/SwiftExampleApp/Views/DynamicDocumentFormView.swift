@@ -33,11 +33,36 @@ struct DynamicDocumentFormView: View {
         .onAppear {
             parseSchema()
         }
-        .onChange(of: stringValues) { _ in updateDocumentData() }
-        .onChange(of: numberValues) { _ in updateDocumentData() }
-        .onChange(of: boolValues) { _ in updateDocumentData() }
-        .onChange(of: arrayValues) { _ in updateDocumentData() }
+        .modifier(DocumentFormChangeHandler(stringValues: $stringValues,
+                                            numberValues: $numberValues,
+                                            boolValues: $boolValues,
+                                            arrayValues: $arrayValues,
+                                            onChange: updateDocumentData))
     }
+
+// Helper ViewModifier to use new onChange signatures on iOS 17+ while keeping compatibility
+private struct DocumentFormChangeHandler: ViewModifier {
+    @Binding var stringValues: [String: String]
+    @Binding var numberValues: [String: Double]
+    @Binding var boolValues: [String: Bool]
+    @Binding var arrayValues: [String: [String]]
+    let onChange: () -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content
+                .onChange(of: stringValues) { _, _ in onChange() }
+                .onChange(of: numberValues) { _, _ in onChange() }
+                .onChange(of: boolValues) { _, _ in onChange() }
+                .onChange(of: arrayValues) { _, _ in onChange() }
+        } else {
+            content
+                .onChange(of: stringValues) { _ in onChange() }
+                .onChange(of: numberValues) { _ in onChange() }
+                .onChange(of: boolValues) { _ in onChange() }
+                .onChange(of: arrayValues) { _ in onChange() }
+        }
+    }
+}
     
     @ViewBuilder
     private func fieldView(for fieldName: String, schema: [String: Any]) -> some View {
@@ -87,8 +112,6 @@ struct DynamicDocumentFormView: View {
     @ViewBuilder
     private func stringField(for fieldName: String, schema: [String: Any]) -> some View {
         let maxLength = schema["maxLength"] as? Int
-        let minLength = schema["minLength"] as? Int
-        let pattern = schema["pattern"] as? String
         let format = schema["format"] as? String
         let enumValues = schema["enum"] as? [String]
         
@@ -189,7 +212,7 @@ struct DynamicDocumentFormView: View {
                     .textFieldStyle(RoundedBorderTextFieldStyle())
                     .autocapitalization(.none)
                     .disableAutocorrection(true)
-                    .onChange(of: stringValues[fieldName] ?? "") { newValue in
+                    .onChange(of: stringValues[fieldName] ?? "") { _, newValue in
                         // Remove any non-hex characters and convert to lowercase
                         let cleaned = newValue.lowercased().filter { "0123456789abcdef".contains($0) }
                         if cleaned != newValue {
@@ -245,7 +268,7 @@ struct DynamicDocumentFormView: View {
             
             if let properties = schema["properties"] as? [String: Any] {
                 ForEach(Array(properties.keys.sorted()), id: \.self) { subFieldName in
-                    if let subFieldSchema = properties[subFieldName] as? [String: Any] {
+                    if properties[subFieldName] is [String: Any] {
                         HStack {
                             Text("• \(subFieldName)")
                                 .font(.caption)

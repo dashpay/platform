@@ -3,7 +3,13 @@ import SwiftDashSDK
 import DashSDKFFI
 
 // MARK: - Platform Query Extensions for SDK
+@MainActor
 extension SDK {
+    // Helper to pass non-Sendable pointers across @Sendable closures when safe
+    private final class SendablePtr<T>: @unchecked Sendable {
+        let ptr: UnsafeMutablePointer<T>
+        init(_ p: UnsafeMutablePointer<T>) { self.ptr = p }
+    }
     
     // MARK: - Helper Functions
     
@@ -96,66 +102,21 @@ extension SDK {
     // MARK: - Identity Queries
     
     /// Get an identity by ID
+    @MainActor
     public func identityGet(identityId: String) async throws -> [String: Any] {
         print("🔵 SDK.identityGet: Called with ID: \(identityId)")
         
-        guard let handle = handle else {
+        guard let sdkHandle = handle else {
             print("❌ SDK.identityGet: SDK handle is nil")
             throw SDKError.invalidState("SDK not initialized")
         }
         
-        print("🔵 SDK.identityGet: SDK handle exists: \(handle)")
-        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle: \(handle) and ID: \(identityId)")
-        
-        // Call the FFI function on a background queue with timeout
-        return try await withCheckedThrowingContinuation { continuation in
-            // Use a flag to ensure continuation is only resumed once
-            let continuationResumed = NSLock()
-            var isResumed = false
-            
-            DispatchQueue.global(qos: .userInitiated).async {
-                print("🔵 SDK.identityGet: On background queue, calling FFI...")
-                
-                // Create a timeout
-                let timeoutWorkItem = DispatchWorkItem {
-                    continuationResumed.lock()
-                    defer { continuationResumed.unlock() }
-                    
-                    if !isResumed {
-                        isResumed = true
-                        print("❌ SDK.identityGet: FFI call timed out after 30 seconds")
-                        continuation.resume(throwing: SDKError.timeout("Identity fetch timed out"))
-                    }
-                }
-                DispatchQueue.global().asyncAfter(deadline: .now() + 30, execute: timeoutWorkItem)
-                
-                // Make the FFI call
-                let result = dash_sdk_identity_fetch(handle, identityId)
-                
-                // Cancel timeout if we got a result
-                timeoutWorkItem.cancel()
-                
-                print("🔵 SDK.identityGet: FFI call returned, processing result...")
-                
-                // Try to resume with the result
-                continuationResumed.lock()
-                defer { continuationResumed.unlock() }
-                
-                if !isResumed {
-                    isResumed = true
-                    do {
-                        let jsonResult = try self.processJSONResult(result)
-                        print("✅ SDK.identityGet: Successfully processed result")
-                        continuation.resume(returning: jsonResult)
-                    } catch {
-                        print("❌ SDK.identityGet: Error processing result: \(error)")
-                        continuation.resume(throwing: error)
-                    }
-                } else {
-                    print("⚠️ SDK.identityGet: Continuation already resumed (likely from timeout), ignoring FFI result")
-                }
-            }
-        }
+        print("🔵 SDK.identityGet: SDK handle exists: \(sdkHandle)")
+        print("🔵 SDK.identityGet: About to call dash_sdk_identity_fetch with handle and ID: \(identityId)")
+
+        // Make the FFI call directly and return the parsed JSON
+        let result = dash_sdk_identity_fetch(sdkHandle, identityId)
+        return try processJSONResult(result)
     }
     
     /// Get identity keys
@@ -288,7 +249,7 @@ extension SDK {
     /// Add a data contract to the trusted context provider cache
     /// This allows the SDK to use the contract without fetching it from the network
     public func addContractToContext(contractId: String, binaryData: Data) throws {
-        guard let handle = handle else {
+        guard self.handle != nil else {
             throw SDKError.invalidState("SDK not initialized")
         }
         
@@ -408,7 +369,8 @@ extension SDK {
         
         defer {
             // Clean up contract handle when done
-            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            dash_sdk_data_contract_destroy(contractPtr)
         }
         
         // Create search parameters struct with proper string handling
@@ -422,7 +384,7 @@ extension SDK {
                     if let orderByClause = orderByClauseCString {
                         return orderByClause.withUnsafeBufferPointer { orderByPtr in
                             var searchParams = DashSDKDocumentSearchParams()
-                            searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                            searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
                             searchParams.document_type = documentTypePtr.baseAddress
                             searchParams.where_json = wherePtr.baseAddress
                             searchParams.order_by_json = orderByPtr.baseAddress
@@ -442,7 +404,7 @@ extension SDK {
                         }
                     } else {
                         var searchParams = DashSDKDocumentSearchParams()
-                        searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                        searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
                         searchParams.document_type = documentTypePtr.baseAddress
                         searchParams.where_json = wherePtr.baseAddress
                         searchParams.order_by_json = nil
@@ -463,7 +425,7 @@ extension SDK {
                 }
             } else {
                 var searchParams = DashSDKDocumentSearchParams()
-                searchParams.data_contract_handle = OpaquePointer(contractHandle)
+                searchParams.data_contract_handle = UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
                 searchParams.document_type = documentTypePtr.baseAddress
                 searchParams.where_json = nil
                 searchParams.order_by_json = nil
@@ -478,6 +440,7 @@ extension SDK {
     }
     
     /// Get a specific document
+    @MainActor
     public func documentGet(dataContractId: String, documentType: String, documentId: String) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -497,11 +460,12 @@ extension SDK {
         
         defer {
             // Clean up contract handle when done
-            dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+            let contractPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+            dash_sdk_data_contract_destroy(contractPtr)
         }
         
         // Now fetch the document
-        let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentType, documentId)
+        let documentResult = dash_sdk_document_fetch(handle, contractHandle.assumingMemoryBound(to: DataContractHandle.self), documentType, documentId)
         
         if let error = documentResult.error {
             let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
@@ -515,11 +479,11 @@ extension SDK {
         
         defer {
             // Clean up document handle
-            dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+            dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
         }
         
         // Get document info to convert to JSON
-        let info = dash_sdk_document_get_info(OpaquePointer(documentHandle))
+        let info = dash_sdk_document_get_info(documentHandle.assumingMemoryBound(to: DocumentHandle.self))
         defer {
             if let info = info {
                 dash_sdk_document_info_free(info)
@@ -588,6 +552,7 @@ extension SDK {
     // MARK: - DPNS Queries
     
     /// Get DPNS usernames for identity
+    @MainActor
     public func dpnsGetUsername(identityId: String, limit: UInt32?) async throws -> [[String: Any]] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -620,6 +585,7 @@ extension SDK {
     }
     
     /// Get non-resolved DPNS contests for a specific identity
+    @MainActor
     public func dpnsGetNonResolvedContestsForIdentity(identityId: String, limit: UInt32?) async throws -> [String: Any] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -684,6 +650,7 @@ extension SDK {
     }
     
     /// Get current DPNS contests (active vote polls)
+    @MainActor
     public func dpnsGetCurrentContests(startTime: UInt64 = 0, endTime: UInt64 = 0, limit: UInt16 = 100) async throws -> [String: UInt64] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -717,18 +684,13 @@ extension SDK {
     }
     
     /// Get the vote state for a contested DPNS username
+    @MainActor
     public func dpnsGetContestedVoteState(name: String, limit: UInt32 = 100) async throws -> [String: Any] {
         guard let handle = self.handle else {
             throw SDKError.invalidState("SDK not initialized")
         }
-        
-        let result = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let result = name.withCString { namePtr in
-                    dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit)
-                }
-                continuation.resume(returning: result)
-            }
+        let result = name.withCString { namePtr in
+            dash_sdk_dpns_get_contested_vote_state(handle, namePtr, limit)
         }
         
         // Check for error
@@ -850,6 +812,7 @@ extension SDK {
     }
     
     /// Search DPNS names by prefix
+    @MainActor
     public func dpnsSearch(prefix: String, limit: UInt32? = nil) async throws -> [[String: Any]] {
         guard let handle = handle else {
             throw SDKError.invalidState("SDK not initialized")
@@ -1030,7 +993,7 @@ extension SDK {
         }
         
         // If no data, return empty result
-        guard let dataPtr = result.data else {
+        if result.data == nil {
             return ["upgrades": []]
         }
         
@@ -1136,11 +1099,9 @@ extension SDK {
         
         // Convert JSON object to [String: UInt64]
         var balances: [String: UInt64] = [:]
-        if let dict = json as? [String: Any] {
-            for (tokenId, balance) in dict {
-                if let balanceNum = balance as? NSNumber {
-                    balances[tokenId] = balanceNum.uint64Value
-                }
+        for (tokenId, balance) in json {
+            if let balanceNum = balance as? NSNumber {
+                balances[tokenId] = balanceNum.uint64Value
             }
         }
         

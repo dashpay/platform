@@ -1,10 +1,10 @@
 import SwiftUI
 import SwiftDashSDK
-import SwiftDashSDK
 
 struct KeysListView: View {
+    struct IdentifiableInt: Identifiable { let id: Int }
     let identity: IdentityModel
-    @State private var showingPrivateKey: Int? = nil
+    @State private var showingPrivateKey: IdentifiableInt? = nil
     @State private var copiedKeyId: Int? = nil
     
     private var privateKeysAvailableCount: Int {
@@ -22,7 +22,7 @@ struct KeysListView: View {
                         // For keys with private keys, use a button instead of NavigationLink
                         Button(action: {
                             print("🔑 View Private button pressed for key \(publicKey.id)")
-                            showingPrivateKey = Int(publicKey.id)
+                            showingPrivateKey = IdentifiableInt(id: Int(publicKey.id))
                         }) {
                             KeyRowView(
                                 publicKey: publicKey,
@@ -58,7 +58,7 @@ struct KeysListView: View {
                         .foregroundColor(.green)
                 }
                 
-                if let votingKey = identity.votingPrivateKey {
+                if identity.votingPrivateKey != nil {
                     HStack {
                         Label("Voting Key", systemImage: "hand.raised.fill")
                         Spacer()
@@ -67,7 +67,7 @@ struct KeysListView: View {
                     }
                 }
                 
-                if let ownerKey = identity.ownerPrivateKey {
+                if identity.ownerPrivateKey != nil {
                     HStack {
                         Label("Owner Key", systemImage: "person.badge.key.fill")
                         Spacer()
@@ -80,10 +80,10 @@ struct KeysListView: View {
         .navigationTitle("Identity Keys")
         .navigationBarTitleDisplayMode(.inline)
         .sheet(item: $showingPrivateKey) { keyId in
-            let _ = print("🔑 Sheet presenting for keyId: \(keyId)")
+            let _ = print("🔑 Sheet presenting for keyId: \(keyId.id)")
             PrivateKeyView(
                 identity: identity,
-                keyId: UInt32(keyId),
+                keyId: UInt32(keyId.id),
                 onCopy: { keyId in
                     copiedKeyId = keyId
                     DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
@@ -413,7 +413,4 @@ struct CopiedToast: View {
 }
 
 
-// Extension to make Int identifiable for sheet presentation
-extension Int: Identifiable {
-    public var id: Int { self }
-}
+// Int Identifiable workaround removed; using wrapper type instead

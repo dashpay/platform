@@ -53,8 +53,8 @@ extension Data {
 }
 
 /// Swift wrapper for the Dash Platform SDK
-public class SDK {
-    public private(set) var handle: OpaquePointer?
+public final class SDK: @unchecked Sendable {
+    public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
     
     /// Identities operations
     public lazy var identities = Identities(sdk: self)
@@ -83,17 +83,13 @@ public class SDK {
         print("🔵 SDK: Logging enabled at level: \(level)")
     }
     
-    /// Testnet DAPI addresses from WASM SDK (verified working)
-    private static let testnetDAPIAddresses = [
-      "http://35.92.255.144:1443",
-        "https://52.12.176.90:1443",
-        "https://35.82.197.197:1443",
-        "https://44.240.98.102:1443",
-        "https://52.34.144.50:1443",
-        "https://44.239.39.153:1443",
-        "https://35.164.23.245:1443",
-        "https://54.149.33.167:1443"
-    ].joined(separator: ",")
+    /// Local Platform DAPI addresses; override via UserDefaults key "platformDAPIAddresses"
+    private static var platformDAPIAddresses: String {
+        if let override = UserDefaults.standard.string(forKey: "platformDAPIAddresses"), !override.isEmpty {
+            return override
+        }
+        return "http://127.0.0.1:1443"
+    }
     
     /// Create a new SDK instance with trusted setup
     /// 
@@ -108,20 +104,8 @@ public class SDK {
         config.network = network
         print("🔵 SDK.init: Network config set to: \(config.network)")
         
-        // Set DAPI addresses based on network
-        switch network {
-        case DashSDKNetwork(rawValue: 0): // Mainnet
-            config.dapi_addresses = nil // Use default mainnet addresses
-        case DashSDKNetwork(rawValue: 1): // Testnet
-            // Use the testnet addresses provided by the user
-            config.dapi_addresses = nil // Will be set below
-        case DashSDKNetwork(rawValue: 2): // Devnet
-            config.dapi_addresses = nil // Use default devnet addresses
-        case DashSDKNetwork(rawValue: 3): // Local
-            config.dapi_addresses = nil // Use default local addresses
-        default:
-            config.dapi_addresses = nil
-        }
+        // Default to SDK-provided addresses; may override below
+        config.dapi_addresses = nil
         
         config.skip_asset_lock_proof_verification = false
         config.request_retry_count = 1
@@ -130,9 +114,12 @@ public class SDK {
         // Create SDK with trusted setup
         print("🔵 SDK.init: Creating SDK with trusted setup...")
         let result: DashSDKResult
-        if network == DashSDKNetwork(rawValue: 1) { // Testnet
-            print("🔵 SDK.init: Using testnet DAPI addresses")
-            result = Self.testnetDAPIAddresses.withCString { addressesCStr -> DashSDKResult in
+        // Force local DAPI regardless of selected network when enabled
+        let forceLocal = UserDefaults.standard.bool(forKey: "useLocalhostPlatform")
+        if forceLocal {
+            let localAddresses = Self.platformDAPIAddresses
+            print("🔵 SDK.init: Using local DAPI addresses: \(localAddresses)")
+            result = localAddresses.withCString { addressesCStr -> DashSDKResult in
                 var mutableConfig = config
                 mutableConfig.dapi_addresses = addressesCStr
                 print("🔵 SDK.init: Calling dash_sdk_create_trusted...")
@@ -160,7 +147,7 @@ public class SDK {
         }
         
         // Store the handle
-        handle = OpaquePointer(result.data)
+        handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
     }
     
     /// Load known contracts into the trusted context provider
@@ -217,7 +204,6 @@ public class SDK {
     
     deinit {
         if let handle = handle {
-            // The handle is already the correct type for the C function
             dash_sdk_destroy(handle)
         }
     }
@@ -251,7 +237,7 @@ public class SDK {
             dash_sdk_string_free(jsonCStr)
         }
         
-        guard let data = jsonStr.data(using: .utf8) else {
+        guard let data = jsonStr.data(using: String.Encoding.utf8) else {
             throw SDKError.serializationError("Invalid JSON data")
         }
         
@@ -280,6 +266,7 @@ public class SDK {
     // }
     
     /// Get an identity by ID
+    @MainActor
     public func getIdentity(id: String) async throws -> Identity? {
         // This would call the C function to get identity
         // For now, return nil as placeholder
@@ -287,6 +274,7 @@ public class SDK {
     }
     
     /// Get a data contract by ID
+    @MainActor
     public func getDataContract(id: String) async throws -> DataContract? {
         // This would call the C function to get data contract
         // For now, return nil as placeholder
@@ -581,4 +569,3 @@ public class Contracts {
         return nil
     }
 }
-

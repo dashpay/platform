@@ -350,13 +350,11 @@ struct IdentityDetailView: View {
         isLoadingDPNS = true
         defer { isLoadingDPNS = false }
         
-        guard let sdk = appState.sdk else { return }
+        guard appState.sdk != nil else { return }
         
-        // Fetch both regular and contested names in parallel
-        async let regularNamesTask = fetchRegularDPNSNames(identity: identity)
-        async let contestedNamesTask = fetchContestedDPNSNames(identity: identity)
-        
-        let (regular, contested) = await (regularNamesTask, contestedNamesTask)
+        // Fetch regular and contested names sequentially to avoid sending non-Sendable results across tasks
+        let regular = await fetchRegularDPNSNames(identity: identity)
+        let contested = await fetchContestedDPNSNames(identity: identity)
         
         await MainActor.run {
             let regularNames = regular.0
@@ -375,6 +373,7 @@ struct IdentityDetailView: View {
         }
     }
     
+    @MainActor
     private func fetchRegularDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
         guard let sdk = appState.sdk else { return ([], [:]) }
         
@@ -393,6 +392,7 @@ struct IdentityDetailView: View {
         }
     }
     
+    @MainActor
     private func fetchContestedDPNSNames(identity: IdentityModel) async -> ([String], [String: Any]) {
         guard let sdk = appState.sdk else { return ([], [:]) }
         

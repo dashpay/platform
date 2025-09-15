@@ -1,4 +1,5 @@
 import Foundation
+import DashSDKFFI
 
 /// Swift wrapper for Dash Platform Data Contract
 public class DataContract {
@@ -13,7 +14,7 @@ public class DataContract {
     }
     
     /// Create a DataContract from a C handle
-    public init?(handle: OpaquePointer) {
+    public init?(handle: UnsafeMutablePointer<DataContractHandle>) {
         // In a real implementation, this would extract data from the C handle
         // For now, create a placeholder
         self.id = "placeholder"

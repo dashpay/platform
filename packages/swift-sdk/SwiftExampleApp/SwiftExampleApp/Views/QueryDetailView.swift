@@ -459,24 +459,20 @@ struct QueryDetailView: View {
             
             // Query all contested resource votes by this identity, filtered for DPNS
             let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-            let result = try await sdk.getContestedResourceIdentityVotes(
+            let votes = try await sdk.getContestedResourceIdentityVotes(
                 identityId: identityId,
                 limit: limit,
                 offset: 0,
                 orderAscending: orderAscending
             )
-            
             // Filter results to only show DPNS-related votes
-            if let votes = result as? [[String: Any]] {
-                let dpnsVotes = votes.filter { vote in
-                    if let contractId = vote["contractId"] as? String {
-                        return contractId == dpnsContractId
-                    }
-                    return false
+            let dpnsVotes = votes.filter { vote in
+                if let contractId = vote["contractId"] as? String {
+                    return contractId == dpnsContractId
                 }
-                return dpnsVotes
+                return false
             }
-            return result
+            return dpnsVotes
             
         case "getDpnsVotePollsByEndDate":
             let startDateStr = queryInputs["startDate"] ?? ""
@@ -491,7 +487,7 @@ struct QueryDetailView: View {
             let endTimestamp: UInt64? = endDateStr.isEmpty ? nil :
                 (dateFormatter.date(from: endDateStr)?.timeIntervalSince1970).map { UInt64($0 * 1000) }
             
-            let result = try await sdk.getVotePollsByEndDate(
+            let polls = try await sdk.getVotePollsByEndDate(
                 startTimeMs: startTimestamp,
                 endTimeMs: endTimestamp,
                 limit: limit,
@@ -501,16 +497,13 @@ struct QueryDetailView: View {
             
             // Filter to only DPNS-related polls
             let dpnsContractId = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec"
-            if let polls = result as? [[String: Any]] {
-                let dpnsPolls = polls.filter { poll in
-                    if let contractId = poll["contractId"] as? String {
-                        return contractId == dpnsContractId
-                    }
-                    return false
+            let dpnsPolls = polls.filter { poll in
+                if let contractId = poll["contractId"] as? String {
+                    return contractId == dpnsContractId
                 }
-                return dpnsPolls
+                return false
             }
-            return result
+            return dpnsPolls
             
         // Voting & Contested Resources Queries
         case "getContestedResources":
@@ -1165,4 +1158,3 @@ struct QueryInput {
         self.placeholder = placeholder
     }
 }
-

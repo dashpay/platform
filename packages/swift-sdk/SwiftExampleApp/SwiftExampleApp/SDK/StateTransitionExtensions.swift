@@ -2,64 +2,57 @@ import Foundation
 import SwiftDashSDK
 import DashSDKFFI
 
+// MARK: - OpaquePointer -> typed FFI helpers
+@inline(__always) private func idConst(_ p: OpaquePointer) -> UnsafePointer<IdentityHandle> { UnsafePointer(p) }
+@inline(__always) private func idMut(_ p: OpaquePointer) -> UnsafeMutablePointer<IdentityHandle> { UnsafeMutablePointer(p) }
+@inline(__always) private func signerConst(_ p: OpaquePointer) -> UnsafePointer<SignerHandle> { UnsafePointer(p) }
+@inline(__always) private func signerMut(_ p: OpaquePointer) -> UnsafeMutablePointer<SignerHandle> { UnsafeMutablePointer(p) }
+@inline(__always) private func idPubKeyConst(_ p: OpaquePointer) -> UnsafePointer<IdentityPublicKeyHandle> { UnsafePointer(p) }
+@inline(__always) private func dataContractConst(_ p: OpaquePointer) -> UnsafePointer<DataContractHandle> { UnsafePointer(p) }
+@inline(__always) private func dataContractMut(_ p: OpaquePointer) -> UnsafeMutablePointer<DataContractHandle> { UnsafeMutablePointer(p) }
+@inline(__always) private func documentConst(_ p: OpaquePointer) -> UnsafePointer<DocumentHandle> { UnsafePointer(p) }
+@inline(__always) private func documentMut(_ p: OpaquePointer) -> UnsafeMutablePointer<DocumentHandle> { UnsafeMutablePointer(p) }
+
+// MARK: - Sendable wrappers
+private final class SendableOpaque: @unchecked Sendable { let p: OpaquePointer; init(_ p: OpaquePointer) { self.p = p } }
+
 // MARK: - Key Selection Helpers
 
 /// Helper to select the appropriate key for signing operations
 /// Returns the key we most likely have the private key for
 private func selectSigningKey(from identity: DPPIdentity, operation: String) -> IdentityPublicKey? {
-    // IMPORTANT: We need to use the key that we actually have the private key for
-    // First, check which keys we have private keys for
-    print("🔑 [\(operation)] Checking available private keys for identity \(identity.id.toBase58String())")
-    
-    var keysWithPrivateKeys: [IdentityPublicKey] = []
-    for key in identity.publicKeys.values {
-        let privateKey = KeychainManager.shared.retrievePrivateKey(
-            identityId: identity.id,
-            keyIndex: Int32(key.id)
-        )
-        if privateKey != nil {
-            keysWithPrivateKeys.append(key)
-            print("✅ [\(operation)] Found private key for key ID \(key.id) (purpose: \(key.purpose), security: \(key.securityLevel))")
-        } else {
-            print("❌ [\(operation)] No private key for key ID \(key.id)")
+    // Select a suitable public key based on policy only. Availability of a
+    // matching private key is enforced by the caller when creating the signer.
+    print("🔑 [\(operation)] Selecting public key for identity \(identity.id.toBase58String())")
+
+    let keys = Array(identity.publicKeys.values)
+
+    // For contract create/update, require CRITICAL + AUTHENTICATION
+    if operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE" {
+        if let k = keys.first(where: { $0.securityLevel == .critical && $0.purpose == .authentication }) {
+            print("📝 [\(operation)] Selected CRITICAL AUTHENTICATION key #\(k.id)")
+            return k
         }
-    }
-    
-    guard !keysWithPrivateKeys.isEmpty else {
-        print("❌ [\(operation)] No keys with available private keys found!")
+        print("❌ [\(operation)] No CRITICAL AUTHENTICATION key found")
         return nil
     }
-    
-    // For contract creation and updates, ONLY critical AUTHENTICATION key is allowed
-    if operation == "CONTRACT CREATE" || operation == "CONTRACT UPDATE" {
-        let criticalAuthKey = keysWithPrivateKeys.first { 
-            $0.securityLevel == .critical && $0.purpose == .authentication
-        }
-        if criticalAuthKey == nil {
-            print("❌ [\(operation)] Data contract operations require a critical AUTHENTICATION key, but none found with private key!")
-        }
-        return criticalAuthKey
+
+    // Otherwise prefer CRITICAL, then AUTHENTICATION, then any
+    if let k = keys.first(where: { $0.securityLevel == .critical }) {
+        print("📝 [\(operation)] Selected CRITICAL key #\(k.id)")
+        return k
     }
-    
-    // For other operations, prefer critical key if we have its private key
-    let criticalKey = keysWithPrivateKeys.first { $0.securityLevel == .critical }
-    
-    // Fall back to authentication key, then any key
-    let keyToUse = criticalKey ?? keysWithPrivateKeys.first { key in
-        key.purpose == .authentication
-    } ?? keysWithPrivateKeys.first
-    
-    if let key = keyToUse {
-        print("📝 [\(operation)] Selected key ID \(key.id) - purpose: \(key.purpose), type: \(key.keyType), security: \(key.securityLevel)")
-    } else {
-        print("❌ [\(operation)] No public key found for identity")
+    if let k = keys.first(where: { $0.purpose == .authentication }) {
+        print("📝 [\(operation)] Selected AUTHENTICATION key #\(k.id)")
+        return k
     }
-    
-    return keyToUse
+    let k = keys.first
+    if let k = k { print("📝 [\(operation)] Selected fallback key #\(k.id)") }
+    return k
 }
 
 /// Helper to create a public key handle from an IdentityPublicKey
-private func createPublicKeyHandle(from key: IdentityPublicKey, operation: String) -> OpaquePointer? {
+private func createPublicKeyHandle(from key: IdentityPublicKey, operation: String) -> UnsafeMutablePointer<IdentityPublicKeyHandle>? {
     let keyData = key.data
     let keyType = key.keyType.ffiValue
     let purpose = key.purpose.ffiValue
@@ -92,18 +85,19 @@ private func createPublicKeyHandle(from key: IdentityPublicKey, operation: Strin
     }
     
     print("✅ [\(operation)] Public key handle created from local data")
-    return OpaquePointer(keyHandle)
+    return keyHandle.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
 }
 
 // MARK: - State Transition Extensions
 
+@MainActor
 extension SDK {
     
     // MARK: - Identity Handle Management
     
     /// Convert a DPPIdentity to an identity handle
     /// The returned handle must be freed with dash_sdk_identity_destroy when done
-    public func identityToHandle(_ identity: DPPIdentity) throws -> OpaquePointer {
+    nonisolated public func identityToHandle(_ identity: DPPIdentity) throws -> OpaquePointer {
         // Convert identity ID to 32-byte array
         let idBytes = identity.id // identity.id is already Data
         guard idBytes.count == 32 else {
@@ -174,7 +168,8 @@ extension SDK {
                     if result.data_type.rawValue == 3, // ResultIdentityHandle
                        let identityHandle = result.data {
                         // Get identity info from the handle
-                        let infoPtr = dash_sdk_identity_get_info(OpaquePointer(identityHandle)!)
+                        let idPtr = identityHandle.assumingMemoryBound(to: IdentityHandle.self)
+                        let infoPtr = dash_sdk_identity_get_info(UnsafePointer(idPtr))
                         
                         if let info = infoPtr {
                             // Convert the C struct to a Swift dictionary
@@ -194,12 +189,12 @@ extension SDK {
                             dash_sdk_identity_info_free(info)
                             
                             // Destroy the identity handle
-                            dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                            dash_sdk_identity_destroy(idPtr)
                             
                             continuation.resume(returning: identityDict)
                         } else {
                             // Destroy the identity handle
-                            dash_sdk_identity_destroy(OpaquePointer(identityHandle)!)
+                            dash_sdk_identity_destroy(idPtr)
                             continuation.resume(throwing: SDKError.internalError("Failed to get identity info"))
                         }
                     } else {
@@ -222,6 +217,7 @@ extension SDK {
         outputIndex: UInt32,
         privateKey: Data
     ) async throws -> UInt64 {
+        let idBox = SendableOpaque(identity)
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -239,7 +235,7 @@ extension SDK {
                         privateKey.withUnsafeBytes { keyBytes in
                             dash_sdk_identity_topup_with_instant_lock(
                                 handle,
-                                identity,
+                                idConst(idBox.p),
                                 instantLockBytes.bindMemory(to: UInt8.self).baseAddress!,
                                 UInt(instantLock.count),
                                 txBytes.bindMemory(to: UInt8.self).baseAddress!,
@@ -257,7 +253,8 @@ extension SDK {
                     if result.data_type.rawValue == 3, // ResultIdentityHandle
                        let toppedUpIdentityHandle = result.data {
                         // Get identity info from the handle to retrieve the new balance
-                        let infoPtr = dash_sdk_identity_get_info(OpaquePointer(toppedUpIdentityHandle)!)
+                        let idPtr = toppedUpIdentityHandle.assumingMemoryBound(to: IdentityHandle.self)
+                        let infoPtr = dash_sdk_identity_get_info(UnsafePointer(idPtr))
                         
                         if let info = infoPtr {
                             let balance = info.pointee.balance
@@ -266,12 +263,12 @@ extension SDK {
                             dash_sdk_identity_info_free(info)
                             
                             // Destroy the topped up identity handle
-                            dash_sdk_identity_destroy(OpaquePointer(toppedUpIdentityHandle)!)
+                            dash_sdk_identity_destroy(idPtr)
                             
                             continuation.resume(returning: balance)
                         } else {
                             // Destroy the identity handle
-                            dash_sdk_identity_destroy(OpaquePointer(toppedUpIdentityHandle)!)
+                            dash_sdk_identity_destroy(idPtr)
                             continuation.resume(throwing: SDKError.internalError("Failed to get identity info after topup"))
                         }
                     } else {
@@ -294,6 +291,8 @@ extension SDK {
         publicKeyId: UInt32 = 0,
         signer: OpaquePointer
     ) async throws -> (senderBalance: UInt64, receiverBalance: UInt64) {
+        let fromBox = SendableOpaque(fromIdentity)
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -305,11 +304,11 @@ extension SDK {
                 let result = toIdentityId.withCString { toIdCStr in
                     dash_sdk_identity_transfer_credits(
                         handle,
-                        fromIdentity,
+                        idConst(fromBox.p),
                         toIdCStr,
                         amount,
                         publicKeyId,
-                        signer,
+                        signerConst(signerBox.p),
                         nil  // Default put settings
                     )
                 }
@@ -345,6 +344,8 @@ extension SDK {
         publicKeyId: UInt32 = 0,
         signer: OpaquePointer
     ) async throws -> UInt64 {
+        let idBox = SendableOpaque(identity)
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -356,12 +357,12 @@ extension SDK {
                 let result = toAddress.withCString { addressCStr in
                     dash_sdk_identity_withdraw(
                         handle,
-                        identity,
+                        idConst(idBox.p),
                         addressCStr,
                         amount,
                         coreFeePerByte,
                         publicKeyId,
-                        signer,
+                        signerConst(signerBox.p),
                         nil  // Default put settings
                     )
                 }
@@ -401,12 +402,18 @@ extension SDK {
         properties: [String: Any],
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         let startTime = Date()
         print("📝 [DOCUMENT CREATE] Starting at \(startTime)")
         print("📝 [DOCUMENT CREATE] Contract ID: \(contractId)")
         print("📝 [DOCUMENT CREATE] Document Type: \(documentType)")
         print("📝 [DOCUMENT CREATE] Owner ID: \(ownerIdentity.idString)")
-        
+        // Pre-serialize properties to avoid capturing non-Sendable dictionary in concurrent closure
+        guard let propertiesDataPre = try? JSONSerialization.data(withJSONObject: properties),
+              let propertiesJsonPre = String(data: propertiesDataPre, encoding: .utf8) else {
+            throw SDKError.invalidParameter("Failed to serialize properties to JSON")
+        }
+
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -415,14 +422,8 @@ extension SDK {
                     return
                 }
                 
-                // Convert properties to JSON
                 print("📝 [DOCUMENT CREATE] Converting properties to JSON...")
-                guard let propertiesData = try? JSONSerialization.data(withJSONObject: properties),
-                      let propertiesJson = String(data: propertiesData, encoding: .utf8) else {
-                    print("❌ [DOCUMENT CREATE] Failed to serialize properties")
-                    continuation.resume(throwing: SDKError.invalidParameter("Failed to serialize properties to JSON"))
-                    return
-                }
+                let propertiesJson = propertiesJsonPre
                 print("✅ [DOCUMENT CREATE] Properties JSON created: \(propertiesJson.prefix(100))...")
                 
                 // 1. Create document using contract from trusted context (no network fetches needed)
@@ -469,7 +470,7 @@ extension SDK {
                 }
                 
                 // Cast the result data to DashSDKDocumentCreateResult pointer
-                let createResultPtr = UnsafeMutablePointer<DashSDKDocumentCreateResult>(OpaquePointer(resultData))
+                let createResultPtr = resultData.assumingMemoryBound(to: DashSDKDocumentCreateResult.self)
                 let createResultStruct = createResultPtr.pointee
                 let documentHandle = createResultStruct.document_handle
                 let entropy = createResultStruct.entropy
@@ -527,7 +528,7 @@ extension SDK {
                                 docTypeCStr,
                                 entropyPtr,
                                 keyHandle,
-                                signer,
+                                signerConst(signerBox.p),
                                 tokenPaymentInfo,
                                 putSettings,
                                 stateTransitionOptions
@@ -549,8 +550,9 @@ extension SDK {
                 } else if putResult.data_type == DashSDKFFI.String,
                           let jsonData = putResult.data {
                     // Parse the returned JSON
-                    let jsonString = String(cString: UnsafePointer<CChar>(OpaquePointer(jsonData)))
-                    dash_sdk_string_free(UnsafeMutablePointer<CChar>(mutating: UnsafePointer<CChar>(OpaquePointer(jsonData))))
+                    let jsonPtr = jsonData.assumingMemoryBound(to: CChar.self)
+                    let jsonString = String(cString: jsonPtr)
+                    dash_sdk_string_free(jsonPtr)
                     
                     print("✅ [DOCUMENT CREATE] Success! Total operation time: \(Date().timeIntervalSince(startTime)) seconds")
                     print("📝 [DOCUMENT CREATE] Response: \(jsonString.prefix(200))...")
@@ -578,6 +580,12 @@ extension SDK {
         properties: [String: Any],
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
+        // Pre-serialize properties to avoid capturing non-Sendable dictionary in concurrent closure
+        guard let propertiesDataPre = try? JSONSerialization.data(withJSONObject: properties),
+              let propertiesJsonPre = String(data: propertiesDataPre, encoding: .utf8) else {
+            throw SDKError.invalidParameter("Failed to serialize properties to JSON")
+        }
         let startTime = Date()
         print("📝 [DOCUMENT REPLACE] Starting at \(startTime)")
         print("📝 [DOCUMENT REPLACE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
@@ -615,7 +623,8 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
+                    let dcPtr = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+                    dash_sdk_data_contract_destroy(dcPtr)
                 }
                 
                 // Now fetch the document using the contract handle
@@ -623,7 +632,7 @@ extension SDK {
                     documentId.withCString { docIdCStr in
                         dash_sdk_document_fetch(
                             handle,
-                            OpaquePointer(contractHandle),
+                            UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self)),
                             docTypeCStr,
                             docIdCStr
                         )
@@ -649,21 +658,16 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_document_free(OpaquePointer(documentHandle))
+                    dash_sdk_document_free(documentHandle.assumingMemoryBound(to: DocumentHandle.self))
                 }
                 
                 print("✅ [DOCUMENT REPLACE] Document fetched successfully")
                 
                 // 2. Update the document properties
-                // Convert properties to JSON and set on the document
-                guard let propertiesData = try? JSONSerialization.data(withJSONObject: properties),
-                      let propertiesJson = String(data: propertiesData, encoding: .utf8) else {
-                    continuation.resume(throwing: SDKError.invalidParameter("Failed to serialize properties to JSON"))
-                    return
-                }
-                
-                propertiesJson.withCString { propsCStr in
-                    dash_sdk_document_set_properties(OpaquePointer(documentHandle), propsCStr)
+                // Use pre-serialized JSON to avoid capturing non-Sendable value types
+                let propertiesJson = propertiesJsonPre
+                _ = propertiesJson.withCString { propsCStr in
+                    dash_sdk_document_set_properties(documentHandle.assumingMemoryBound(to: DocumentHandle.self), propsCStr)
                 }
                 
                 // 3. Get appropriate key for signing
@@ -691,17 +695,17 @@ extension SDK {
                 
                 let replaceResult = contractId.withCString { contractIdCStr in
                     documentType.withCString { docTypeCStr in
-                        dash_sdk_document_replace_on_platform_and_wait(
-                            handle,
-                            OpaquePointer(documentHandle),
-                            contractIdCStr,
-                            docTypeCStr,
-                            keyHandle,
-                            signer,
-                            nil, // token payment info
-                            nil, // put settings
-                            nil  // state transition options
-                        )
+                            dash_sdk_document_replace_on_platform_and_wait(
+                                handle,
+                                UnsafePointer(documentHandle.assumingMemoryBound(to: DocumentHandle.self)),
+                                contractIdCStr,
+                                docTypeCStr,
+                                keyHandle,
+                                signerConst(signerBox.p),
+                                nil, // token payment info
+                                nil, // put settings
+                                nil  // state transition options
+                            )
                     }
                 }
                 
@@ -716,7 +720,7 @@ extension SDK {
                 } else if replaceResult.data_type == DashSDKFFI.ResultDocumentHandle,
                           let resultHandle = replaceResult.data {
                     // Document was successfully replaced
-                    dash_sdk_document_free(OpaquePointer(resultHandle))
+                    dash_sdk_document_free(resultHandle.assumingMemoryBound(to: DocumentHandle.self))
                     
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT REPLACE] Document replaced successfully")
@@ -740,6 +744,7 @@ extension SDK {
         ownerIdentity: DPPIdentity,
         signer: OpaquePointer
     ) async throws {
+        let signerBox = SendableOpaque(signer)
         let startTime = Date()
         print("🗑️ [DOCUMENT DELETE] Starting at \(startTime)")
         print("🗑️ [DOCUMENT DELETE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
@@ -787,7 +792,7 @@ extension SDK {
                         contractIdCString,
                         documentTypeCString,
                         keyHandle,
-                        signer,
+                        signerConst(signerBox.p),
                         nil,  // token_payment_info
                         nil,  // put_settings
                         nil   // state_transition_creation_options
@@ -824,6 +829,7 @@ extension SDK {
         toIdentityId: String,
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         let startTime = Date()
         print("🔁 [DOCUMENT TRANSFER] Starting at \(startTime)")
         print("🔁 [DOCUMENT TRANSFER] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
@@ -880,7 +886,8 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
+                    let dcPtr2 = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+                    dash_sdk_data_contract_destroy(dcPtr2)
                 }
                 
                 let contractFetchTime = Date().timeIntervalSince(contractFetchStartTime)
@@ -892,7 +899,7 @@ extension SDK {
                 // Now fetch the document using the contract handle
                 let fetchResult = dash_sdk_document_fetch(
                     handle,
-                    OpaquePointer(contractHandle),
+                    UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self)),
                     documentTypeCString,
                     documentIdCString
                 )
@@ -910,7 +917,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle)!)
+                    dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
                 }
                 
                 print("✅ [DOCUMENT TRANSFER] Document fetched successfully")
@@ -922,12 +929,12 @@ extension SDK {
                 print("🔄 [DOCUMENT TRANSFER] Creating state transition...")
                 let transitionResult = dash_sdk_document_transfer_to_identity(
                     handle,
-                    OpaquePointer(documentHandle),
+                    UnsafePointer(documentHandle.assumingMemoryBound(to: DocumentHandle.self)),
                     toIdentityCString,
                     contractIdCString,
                     documentTypeCString,
                     keyHandle,
-                    signer,
+                    signerConst(signerBox.p),
                     nil,  // token_payment_info
                     nil,  // put_settings
                     nil   // state_transition_creation_options
@@ -946,12 +953,12 @@ extension SDK {
                 print("🔄 [DOCUMENT TRANSFER] Broadcasting and waiting for confirmation...")
                 let result = dash_sdk_document_transfer_to_identity_and_wait(
                     handle,
-                    OpaquePointer(documentHandle),
+                    UnsafePointer(documentHandle.assumingMemoryBound(to: DocumentHandle.self)),
                     toIdentityCString,
                     contractIdCString,
                     documentTypeCString,
                     keyHandle,
-                    signer,
+                    signerConst(signerBox.p),
                     nil,  // token_payment_info
                     nil,  // put_settings
                     nil   // state_transition_creation_options
@@ -1008,6 +1015,7 @@ extension SDK {
         ownerIdentity: DPPIdentity,
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         let startTime = Date()
         print("💰 [DOCUMENT UPDATE PRICE] Starting...")
         print("💰 [DOCUMENT UPDATE PRICE] Contract: \(contractId), Type: \(documentType)")
@@ -1041,7 +1049,8 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle)!)
+                    let dcPtr3 = contractHandle.assumingMemoryBound(to: DataContractHandle.self)
+                    dash_sdk_data_contract_destroy(dcPtr3)
                 }
                 
                 // Step 2: Fetch the document
@@ -1050,7 +1059,7 @@ extension SDK {
                     documentId.withCString { docIdCStr in
                         dash_sdk_document_fetch(
                             handle,
-                            OpaquePointer(contractHandle),
+                            UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self)),
                             docTypeCStr,
                             docIdCStr
                         )
@@ -1072,7 +1081,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle)!)
+                    dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
                 }
                 
                 print("✅ [DOCUMENT UPDATE PRICE] Document fetched successfully")
@@ -1099,12 +1108,12 @@ extension SDK {
                     documentType.withCString { documentTypeCStr in
                         dash_sdk_document_update_price_of_document_and_wait(
                             handle,
-                            OpaquePointer(documentHandle),
+                            UnsafePointer(documentHandle.assumingMemoryBound(to: DocumentHandle.self)),
                             contractIdCStr,
                             documentTypeCStr,
                             newPrice,
                             keyHandle,
-                            signer,
+                            signerConst(signerBox.p),
                             nil,  // token_payment_info
                             nil,  // put_settings
                             nil   // state_transition_creation_options
@@ -1142,6 +1151,7 @@ extension SDK {
         price: UInt64,
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         let startTime = Date()
         print("🛍️ [DOCUMENT PURCHASE] Starting at \(startTime)")
         print("🛍️ [DOCUMENT PURCHASE] Contract: \(contractId), Type: \(documentType), Doc: \(documentId)")
@@ -1152,7 +1162,6 @@ extension SDK {
         }
         
         return try await withCheckedThrowingContinuation { continuation in
-            Task {
                 // Convert strings to C strings
                 guard let contractIdCString = contractId.cString(using: .utf8),
                       let documentTypeCString = documentType.cString(using: .utf8),
@@ -1197,7 +1206,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+                    dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
                 }
                 
                 print("📝 [DOCUMENT PURCHASE] Contract fetched in \(Date().timeIntervalSince(contractFetchStartTime)) seconds")
@@ -1206,7 +1215,7 @@ extension SDK {
                 print("📝 [DOCUMENT PURCHASE] Step 2: Fetching document...")
                 let documentFetchStart = Date()
                 
-                let documentResult = dash_sdk_document_fetch(handle, OpaquePointer(contractHandle), documentTypeCString, documentIdCString)
+                let documentResult = dash_sdk_document_fetch(handle, UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self)), documentTypeCString, documentIdCString)
                 
                 if let error = documentResult.error {
                     let errorMessage = error.pointee.message != nil ? String(cString: error.pointee.message!) : "Unknown error"
@@ -1221,7 +1230,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_document_destroy(handle, OpaquePointer(documentHandle))
+                    dash_sdk_document_destroy(handle, documentHandle.assumingMemoryBound(to: DocumentHandle.self))
                 }
                 
                 print("📝 [DOCUMENT PURCHASE] Document fetched in \(Date().timeIntervalSince(documentFetchStart)) seconds")
@@ -1233,13 +1242,13 @@ extension SDK {
                 
                 let result = dash_sdk_document_purchase_and_wait(
                     handle,
-                    OpaquePointer(documentHandle),
+                    UnsafePointer(documentHandle.assumingMemoryBound(to: DocumentHandle.self)),
                     contractIdCString,
                     documentTypeCString,
                     price,
                     purchaserIdCString,
                     keyHandle,
-                    signer,
+                    signerConst(signerBox.p),
                     nil,  // token_payment_info - null for now
                     nil,  // put_settings - null for now
                     nil   // state_transition_creation_options - null for now
@@ -1263,15 +1272,17 @@ extension SDK {
                 // The result should contain the purchased document
                 if let documentData = result.data {
                     // We received the purchased document back
-                    let purchasedDocHandle = OpaquePointer(documentData)
+                    let purchasedDocHandle = documentData.assumingMemoryBound(to: DocumentHandle.self)
                     
-                    // Get info about the purchased document
-                    var purchasedDocInfo: [String: Any] = [:]
+                    // Get info about the purchased document (extract Sendable primitives)
+                    var purchasedId: String? = nil
+                    var purchasedOwner: String? = nil
+                    var purchasedRevision: UInt64 = 0
                     if let info = dash_sdk_document_get_info(purchasedDocHandle) {
                         let docInfo = info.pointee
-                        purchasedDocInfo["id"] = String(cString: docInfo.id)
-                        purchasedDocInfo["owner_id"] = String(cString: docInfo.owner_id)
-                        purchasedDocInfo["revision"] = docInfo.revision
+                        if let idPtr = docInfo.id { purchasedId = String(cString: idPtr) }
+                        if let ownerPtr = docInfo.owner_id { purchasedOwner = String(cString: ownerPtr) }
+                        purchasedRevision = docInfo.revision
                         dash_sdk_document_info_free(info)
                     }
                     
@@ -1281,25 +1292,31 @@ extension SDK {
                     let totalTime = Date().timeIntervalSince(startTime)
                     print("✅ [DOCUMENT PURCHASE] Purchase completed and confirmed in \(totalTime) seconds")
                     print("📦 [DOCUMENT PURCHASE] Document successfully purchased and ownership transferred")
-                    print("📄 [DOCUMENT PURCHASE] New owner: \(purchasedDocInfo["owner_id"] ?? "unknown")")
+                    print("📄 [DOCUMENT PURCHASE] New owner: \(purchasedOwner ?? "unknown")")
                     
-                    // Return success with the purchased document info
-                    continuation.resume(returning: [
-                        "success": true,
-                        "message": "Document purchased successfully",
-                        "transitionType": "documentPurchase",
-                        "contractId": contractId,
-                        "documentType": documentType,
-                        "documentId": documentId,
-                        "price": price,
-                        "purchasedDocument": purchasedDocInfo
-                    ])
+                    // Return success with the purchased document info on main actor to avoid sending non-Sendable values
+                    DispatchQueue.main.async {
+                        let purchasedDocInfo: [String: Any] = [
+                            "id": purchasedId as Any,
+                            "owner_id": purchasedOwner as Any,
+                            "revision": purchasedRevision
+                        ]
+                        continuation.resume(returning: [
+                            "success": true,
+                            "message": "Document purchased successfully",
+                            "transitionType": "documentPurchase",
+                            "contractId": contractId,
+                            "documentType": documentType,
+                            "documentId": documentId,
+                            "price": price,
+                            "purchasedDocument": purchasedDocInfo
+                        ])
+                    }
                 } else {
                     print("❌ [DOCUMENT PURCHASE] No data returned from purchase")
                     continuation.resume(throwing: SDKError.internalError("No data returned from document purchase"))
                     return
                 }
-            }
         }
     }
     
@@ -1326,6 +1343,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         print("🟦 TOKEN MINT: Starting token mint operation")
         print("🟦 TOKEN MINT: Contract ID: \(contractId)")
         print("🟦 TOKEN MINT: Recipient ID: \(recipientId ?? "owner (default)")")
@@ -1356,7 +1374,7 @@ extension SDK {
                 defer {
                     print("🟦 TOKEN MINT: Cleaning up identity handle")
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -1392,7 +1410,7 @@ extension SDK {
                 // Get the public key handle for the minting key
                 print("🟦 TOKEN MINT: Getting public key handle for key ID: \(keyId)")
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(keyId)
                 )
                 
@@ -1406,7 +1424,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 print("✅ TOKEN MINT: Successfully got public key handle")
                 defer {
                     print("🟦 TOKEN MINT: Cleaning up public key handle")
@@ -1448,7 +1466,7 @@ extension SDK {
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
                                         publicKeyHandle,
-                                        signer,
+                                        signerConst(signerBox.p),
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
@@ -1466,7 +1484,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -1505,6 +1523,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -1523,7 +1542,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -1548,7 +1567,7 @@ extension SDK {
                 
                 // Get the public key handle for the freezing key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(freezingKey.id)
                 )
                 
@@ -1561,7 +1580,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -1588,7 +1607,7 @@ extension SDK {
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
                                         publicKeyHandle,
-                                        signer,
+                                        signerConst(signerBox.p),
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
@@ -1601,7 +1620,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -1636,6 +1655,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -1654,7 +1674,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -1679,7 +1699,7 @@ extension SDK {
                 
                 // Get the public key handle for the unfreezing key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(unfreezingKey.id)
                 )
                 
@@ -1692,7 +1712,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -1719,7 +1739,7 @@ extension SDK {
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
                                         publicKeyHandle,
-                                        signer,
+                                        signerConst(signerBox.p),
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
@@ -1732,7 +1752,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -1767,6 +1787,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -1785,7 +1806,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -1800,7 +1821,7 @@ extension SDK {
                 
                 // Get the public key handle for the burning key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(burningKey.id)
                 )
                 
@@ -1813,7 +1834,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -1839,7 +1860,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -1852,7 +1873,7 @@ extension SDK {
                                 ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                 &params,
                                 publicKeyHandle,
-                                signer,
+                                signerConst(signerBox.p),
                                 nil,  // Default put settings
                                 nil   // Default state transition options
                             )
@@ -1886,6 +1907,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -1904,7 +1926,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -1929,7 +1951,7 @@ extension SDK {
                 
                 // Get the public key handle for the destroy key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(destroyKey.id)
                 )
                 
@@ -1942,7 +1964,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -1969,7 +1991,7 @@ extension SDK {
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
                                         publicKeyHandle,
-                                        signer,
+                                        signerConst(signerBox.p),
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
@@ -1982,7 +2004,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -2017,6 +2039,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -2035,7 +2058,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -2043,7 +2066,7 @@ extension SDK {
                 
                 // Get the public key handle for the claiming key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(keyId)
                 )
                 
@@ -2056,7 +2079,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -2088,13 +2111,13 @@ extension SDK {
                         if let note = note {
                             return note.withCString { noteCStr in
                                 params.public_note = noteCStr
-                                
+                            
                                 return dash_sdk_token_claim(
                                     handle,
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -2107,7 +2130,7 @@ extension SDK {
                                 ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                 &params,
                                 publicKeyHandle,
-                                signer,
+                                signerConst(signerBox.p),
                                 nil,  // Default put settings
                                 nil   // Default state transition options
                             )
@@ -2142,6 +2165,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -2160,7 +2184,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -2178,7 +2202,7 @@ extension SDK {
                 
                 // Get the public key handle for the transfer key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(keyId)
                 )
                 
@@ -2191,7 +2215,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -2221,7 +2245,7 @@ extension SDK {
                                         ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                         &params,
                                         publicKeyHandle,
-                                        signer,
+                                        signerConst(signerBox.p),
                                         nil,  // Default put settings
                                         nil   // Default state transition options
                                     )
@@ -2234,13 +2258,13 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
-                            }
-                        }
-                    }
+            }
+        }
+    }
                 }
                 
                 if result.error == nil {
@@ -2270,6 +2294,7 @@ extension SDK {
         signer: OpaquePointer,
         note: String? = nil
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
         return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[String: Any], Error>) in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -2288,7 +2313,7 @@ extension SDK {
                 
                 defer {
                     // Clean up the identity handle when done
-                    dash_sdk_identity_destroy(ownerIdentityHandle)
+                    dash_sdk_identity_destroy(idMut(ownerIdentityHandle))
                 }
                 
                 // Get the owner ID from the identity
@@ -2296,7 +2321,7 @@ extension SDK {
                 
                 // Get the public key handle for the pricing key
                 let keyHandleResult = dash_sdk_identity_get_public_key_by_id(
-                    ownerIdentityHandle,
+                    idConst(ownerIdentityHandle),
                     UInt8(keyId)
                 )
                 
@@ -2309,7 +2334,7 @@ extension SDK {
                     return
                 }
                 
-                let publicKeyHandle = OpaquePointer(keyHandleData)!
+                let publicKeyHandle = keyHandleData.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
                     // Clean up the public key handle when done
                     dash_sdk_identity_public_key_destroy(publicKeyHandle)
@@ -2361,7 +2386,7 @@ extension SDK {
                                     ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                     &params,
                                     publicKeyHandle,
-                                    signer,
+                                    signerConst(signerBox.p),
                                     nil,  // Default put settings
                                     nil   // Default state transition options
                                 )
@@ -2374,7 +2399,7 @@ extension SDK {
                                 ownerIdBytes.bindMemory(to: UInt8.self).baseAddress!,
                                 &params,
                                 publicKeyHandle,
-                                signer,
+                                signerConst(signerBox.p),
                                 nil,  // Default put settings
                                 nil   // Default state transition options
                             )
@@ -2410,6 +2435,13 @@ extension SDK {
         contractConfig: [String: Any],
         signer: OpaquePointer
     ) async throws -> [String: Any] {
+        let signerBox = SendableOpaque(signer)
+        // Pre-serialize schemas to avoid capturing non-Sendable values
+        let schemasToUsePre = documentSchemas ?? [:]
+        guard let jsonDataPre = try? JSONSerialization.data(withJSONObject: schemasToUsePre),
+              let jsonStringPre = String(data: jsonDataPre, encoding: .utf8) else {
+            throw SDKError.serializationError("Failed to serialize contract schema")
+        }
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async { [weak self] in
                 guard let self = self, let handle = self.handle else {
@@ -2417,16 +2449,8 @@ extension SDK {
                     return
                 }
                 
-                // The FFI function expects just the document schemas directly
-                // Token schemas, groups, and other config are not supported yet
-                let schemasToUse = documentSchemas ?? [:]
-                
-                // Convert to JSON string
-                guard let jsonData = try? JSONSerialization.data(withJSONObject: schemasToUse),
-                      let jsonString = String(data: jsonData, encoding: .utf8) else {
-                    continuation.resume(throwing: SDKError.serializationError("Failed to serialize contract schema"))
-                    return
-                }
+                // Use pre-serialized schema JSON
+                let jsonString = jsonStringPre
                 
                 print("📄 [CONTRACT CREATE] Sending document schemas: \(jsonString)")
                 
@@ -2437,14 +2461,14 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_identity_destroy(identityHandle)
+                    dash_sdk_identity_destroy(idMut(identityHandle))
                 }
                 
                 // Step 1: Create the contract locally
                 let createResult = jsonString.withCString { jsonCStr in
                     dash_sdk_data_contract_create(
                         handle,
-                        identityHandle,
+                        idConst(identityHandle),
                         jsonCStr
                     )
                 }
@@ -2462,7 +2486,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(contractHandle))
+                    dash_sdk_data_contract_destroy(contractHandle.assumingMemoryBound(to: DataContractHandle.self))
                 }
                 
                 // Step 2: Select signing key (must be critical authentication key for contract creation)
@@ -2484,9 +2508,9 @@ extension SDK {
                 // Step 3: Broadcast the contract to the network
                 let putResult = dash_sdk_data_contract_put_to_platform_and_wait(
                     handle,
-                    OpaquePointer(contractHandle),
+                    UnsafePointer(contractHandle.assumingMemoryBound(to: DataContractHandle.self)),
                     keyHandle,
-                    signer
+                    signerConst(signerBox.p)
                 )
                 
                 if let error = putResult.error {
@@ -2583,14 +2607,14 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_identity_destroy(identityHandle)
+                    dash_sdk_identity_destroy(idMut(identityHandle))
                 }
                 
                 // Create the updated contract
                 let createResult = jsonString.withCString { jsonCStr in
                     dash_sdk_data_contract_create(
                         handle,
-                        identityHandle,
+                        idConst(identityHandle),
                         jsonCStr
                     )
                 }
@@ -2608,7 +2632,7 @@ extension SDK {
                 }
                 
                 defer {
-                    dash_sdk_data_contract_destroy(OpaquePointer(updatedContractHandle))
+                    dash_sdk_data_contract_destroy(updatedContractHandle.assumingMemoryBound(to: DataContractHandle.self))
                 }
                 
                 // Select signing key (must be critical authentication key for contract update)
@@ -2630,7 +2654,7 @@ extension SDK {
                 // Broadcast the updated contract to the network
                 let putResult = dash_sdk_data_contract_put_to_platform_and_wait(
                     handle,
-                    OpaquePointer(updatedContractHandle),
+                    UnsafePointer(updatedContractHandle.assumingMemoryBound(to: DataContractHandle.self)),
                     keyHandle,
                     signer
                 )
@@ -2661,6 +2685,7 @@ extension SDK {
 
 // MARK: - Convenience Methods with DPPIdentity
 
+@MainActor
 extension SDK {
     /// Transfer credits between identities (convenience method with DPPIdentity)
     public func transferCredits(
@@ -2673,7 +2698,7 @@ extension SDK {
         let identityHandle = try identityToHandle(identity)
         defer {
             // Clean up the handle when done
-            dash_sdk_identity_destroy(identityHandle)
+            dash_sdk_identity_destroy(idMut(identityHandle))
         }
         
         // Call the lower-level method
@@ -2698,7 +2723,7 @@ extension SDK {
         let identityHandle = try identityToHandle(identity)
         defer {
             // Clean up the handle when done
-            dash_sdk_identity_destroy(identityHandle)
+            dash_sdk_identity_destroy(idMut(identityHandle))
         }
         
         // Call the lower-level method
@@ -2723,7 +2748,7 @@ extension SDK {
         let identityHandle = try identityToHandle(identity)
         defer {
             // Clean up the handle when done
-            dash_sdk_identity_destroy(identityHandle)
+            dash_sdk_identity_destroy(idMut(identityHandle))
         }
         
         // Call the lower-level method
@@ -2739,7 +2764,7 @@ extension SDK {
     
     // MARK: - Helper Methods
     
-    private func normalizeIdentityId(_ identityId: String) -> String {
+    nonisolated private func normalizeIdentityId(_ identityId: String) -> String {
         // Remove any prefix
         let cleanId = identityId
             .replacingOccurrences(of: "id:", with: "")

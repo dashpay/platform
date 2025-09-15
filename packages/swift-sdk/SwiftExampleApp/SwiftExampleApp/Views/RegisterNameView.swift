@@ -151,7 +151,7 @@ struct RegisterNameView: View {
                         .textContentType(.username)
                         .autocapitalization(.none)
                         .autocorrectionDisabled(true)
-                        .onChange(of: username) { _ in
+                        .modifier(UsernameChangeHandler(username: $username) {
                             // Cancel any existing timer
                             checkTimer?.invalidate()
                             
@@ -173,7 +173,7 @@ struct RegisterNameView: View {
                                     }
                                 }
                             }
-                        }
+                        })
                     
                     if !normalizedUsername.isEmpty {
                         VStack(alignment: .leading, spacing: 4) {
@@ -480,9 +480,9 @@ struct RegisterNameView: View {
                     throw SDKError.internalError("Failed to create public key from data")
                 }
                 
-                let publicKeyOpaquePtr = OpaquePointer(publicKeyPtr)
+                let publicKeyTypedPtr = publicKeyPtr.assumingMemoryBound(to: IdentityPublicKeyHandle.self)
                 defer {
-                    dash_sdk_identity_public_key_destroy(publicKeyOpaquePtr)
+                    dash_sdk_identity_public_key_destroy(publicKeyTypedPtr)
                 }
                 
                 // Create signer from private key
@@ -503,7 +503,7 @@ struct RegisterNameView: View {
                     throw SDKError.internalError("Failed to create signer")
                 }
                 
-                let signerHandle = OpaquePointer(signerData)
+                let signerHandle = signerData.assumingMemoryBound(to: SignerHandle.self)
                 defer {
                     dash_sdk_signer_destroy(signerHandle)
                 }
@@ -514,7 +514,7 @@ struct RegisterNameView: View {
                         handle,
                         namePtr,
                         UnsafeRawPointer(identityOpaquePtr),
-                        UnsafeRawPointer(publicKeyOpaquePtr),
+                        UnsafeRawPointer(publicKeyTypedPtr),
                         UnsafeRawPointer(signerHandle)
                     )
                 }
@@ -630,6 +630,19 @@ struct RegisterNameView: View {
                     isRegistering = false
                 }
             }
+        }
+    }
+
+}
+
+private struct UsernameChangeHandler: ViewModifier {
+    @Binding var username: String
+    let onChange: () -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.onChange(of: username) { _, _ in onChange() }
+        } else {
+            content.onChange(of: username) { _ in onChange() }
         }
     }
 }

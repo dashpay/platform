@@ -2,6 +2,7 @@ import Foundation
 import Security
 
 /// Manages secure storage of private keys in the iOS Keychain
+@MainActor
 final class KeychainManager {
     static let shared = KeychainManager()
     
@@ -33,7 +34,7 @@ final class KeychainManager {
         ]
         
         // Add metadata
-        var metadata: [String: Any] = [
+        let metadata: [String: Any] = [
             "identityId": identityId.toHexString(),
             "keyIndex": keyIndex,
             "createdAt": Date().timeIntervalSince1970

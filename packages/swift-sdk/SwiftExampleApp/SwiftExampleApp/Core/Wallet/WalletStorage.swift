@@ -1,4 +1,5 @@
 import Foundation
+import LocalAuthentication
 import Security
 import CryptoKit
 
@@ -171,12 +172,14 @@ public class WalletStorage {
     }
     
     public func retrieveSeedWithBiometric() throws -> Data {
+        let context = LAContext()
+        context.localizedReason = "Authenticate to access your wallet"
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: keychainService,
             kSecAttrAccount as String: biometricKeychainAccount,
             kSecReturnData as String: true,
-            kSecUseOperationPrompt as String: "Authenticate to access your wallet"
+            kSecUseAuthenticationContext as String: context
         ]
         
         var result: AnyObject?

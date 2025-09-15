@@ -74,7 +74,7 @@ struct IdentitiesView: View {
     }
     
     private func refreshAllBalances() async {
-        guard let sdk = appState.sdk else { return }
+        guard appState.sdk != nil else { return }
         
         // Get all non-local identities
         let nonLocalIdentities = appState.identities.filter { !$0.isLocal }
@@ -84,47 +84,47 @@ struct IdentitiesView: View {
         // Fetch each identity's balance and DPNS name
         await withTaskGroup(of: Void.self) { group in
             for identity in nonLocalIdentities {
+                // Capture only Sendable primitives for the concurrent task
+                let identityId = identity.id
+                let identityIdString = identity.idString
+                let needsDPNS = (identity.dpnsName == nil && identity.mainDpnsName == nil)
+
                 group.addTask {
                     do {
-                        // Fetch identity data
-                        let fetchedIdentity = try await sdk.identityGet(identityId: identity.idString)
-                        
-                        // Update balance
-                        if let balanceValue = fetchedIdentity["balance"] {
-                            var newBalance: UInt64 = 0
-                            if let balanceNum = balanceValue as? NSNumber {
-                                newBalance = balanceNum.uint64Value
-                            } else if let balanceString = balanceValue as? String,
-                                      let balanceUInt = UInt64(balanceString) {
-                                newBalance = balanceUInt
-                            }
-                            
-                            await MainActor.run {
-                                appState.updateIdentityBalance(id: identity.id, newBalance: newBalance)
-                            }
-                        }
-                        
-                        // Also try to fetch DPNS name if we don't have one
-                        if identity.dpnsName == nil && identity.mainDpnsName == nil {
-                            do {
-                                let usernames = try await sdk.dpnsGetUsername(
-                                    identityId: identity.idString,
-                                    limit: 1
-                                )
-                                
-                                if let firstUsername = usernames.first,
-                                   let label = firstUsername["label"] as? String {
-                                    await MainActor.run {
-                                        appState.updateIdentityDPNSName(id: identity.id, dpnsName: label)
+                        // Perform SDK calls and state updates on the main actor
+                        try await Task { @MainActor in
+                            guard let sdk = appState.sdk else { return }
+
+                            let fetchedIdentity = try await sdk.identityGet(identityId: identityIdString)
+
+                            if let balanceValue = fetchedIdentity["balance"] {
+                                let newBalanceLocal: UInt64 = {
+                                    if let balanceNum = balanceValue as? NSNumber {
+                                        return balanceNum.uint64Value
+                                    } else if let balanceString = balanceValue as? String,
+                                              let balanceUInt = UInt64(balanceString) {
+                                        return balanceUInt
+                                    } else {
+                                        return 0
                                     }
-                                }
-                            } catch {
-                                // Silently fail - not all identities have DPNS names
+                                }()
+                                appState.updateIdentityBalance(id: identityId, newBalance: newBalanceLocal)
                             }
-                        }
+
+                            if needsDPNS {
+                                do {
+                                    let usernames = try await sdk.dpnsGetUsername(identityId: identityIdString, limit: 1)
+                                    if let firstUsername = usernames.first,
+                                       let label = firstUsername["label"] as? String {
+                                        appState.updateIdentityDPNSName(id: identityId, dpnsName: label)
+                                    }
+                                } catch {
+                                    // ignore
+                                }
+                            }
+                        }.value
                     } catch {
-                        // Log error but continue with other identities
-                        print("Failed to refresh identity \(identity.idString): \(error)")
+                        print("Failed to refresh identity \(identityIdString): \(error)")
                     }
                 }
             }
