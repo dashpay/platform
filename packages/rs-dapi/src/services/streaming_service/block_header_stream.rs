@@ -4,7 +4,7 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::debug;
+use tracing::{debug, trace, warn};
 
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
 
@@ -16,14 +16,22 @@ impl StreamingServiceImpl {
         Response<UnboundedReceiverStream<Result<BlockHeadersWithChainLocksResponse, Status>>>,
         Status,
     > {
+        trace!("subscribe_to_block_headers_with_chain_locks_impl=begin");
         let req = request.into_inner();
 
         // Validate parameters
         let count = req.count;
         let from_block = req.from_block.clone();
 
+        trace!(
+            count,
+            has_from_block = from_block.is_some(),
+            "block_headers=request_parsed"
+        );
+
         // Validate that we have from_block when count > 0
         if from_block.is_none() && count > 0 {
+            warn!("block_headers=missing_from_block count>0");
             return Err(Status::invalid_argument(
                 "Must specify from_block when count > 0",
             ));
@@ -37,6 +45,8 @@ impl StreamingServiceImpl {
 
         // Add subscription to manager
         let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
+        let subscriber_id = subscription_handle.id().to_string();
+        debug!(subscriber_id, "block_headers=subscription_created");
 
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
@@ -44,6 +54,11 @@ impl StreamingServiceImpl {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
                     StreamingEvent::CoreRawBlock { data } => {
+                        trace!(
+                            subscriber_id = sub_handle.id(),
+                            payload_size = data.len(),
+                            "block_headers=forward_block"
+                        );
                         let block_headers = BlockHeaders {
                             headers: vec![data],
                         };
@@ -56,6 +71,11 @@ impl StreamingServiceImpl {
                         Ok(response)
                     }
                     StreamingEvent::CoreChainLock { data } => {
+                        trace!(
+                            subscriber_id = sub_handle.id(),
+                            payload_size = data.len(),
+                            "block_headers=forward_chain_lock"
+                        );
                         let response = BlockHeadersWithChainLocksResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data)
@@ -65,6 +85,11 @@ impl StreamingServiceImpl {
                         Ok(response)
                     }
                     _ => {
+                        trace!(
+                            subscriber_id = sub_handle.id(),
+                            event = ?message,
+                            "block_headers=ignore_event"
+                        );
                         // Ignore other message types for this subscription
                         continue;
                     }
@@ -72,12 +97,16 @@ impl StreamingServiceImpl {
 
                 if tx.send(response).is_err() {
                     debug!(
-                        "Client disconnected from block header subscription: {}",
-                        sub_handle.id()
+                        subscriber_id = sub_handle.id(),
+                        "block_headers=client_disconnected"
                     );
                     break;
                 }
             }
+            debug!(
+                subscriber_id = sub_handle.id(),
+                "block_headers=subscription_task_finished"
+            );
         });
 
         // Handle historical data if requested
@@ -86,19 +115,13 @@ impl StreamingServiceImpl {
                 match from_block {
                     dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash) => {
                         // TODO: Process historical block headers from block hash
-                        debug!(
-                            "Historical block header processing requested from hash: {:?}",
-                            hash
-                        );
+                        debug!(subscriber_id, ?hash, "block_headers=historical_from_hash_request");
                         self.process_historical_blocks_from_hash(&hash, count as usize)
                             .await?;
                     }
                     dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height) => {
                         // TODO: Process historical block headers from height
-                        debug!(
-                            "Historical block header processing requested from height: {}",
-                            height
-                        );
+                        debug!(subscriber_id, height, "block_headers=historical_from_height_request");
                         self.process_historical_blocks_from_height(
                             height as usize,
                             count as usize,
@@ -110,6 +133,7 @@ impl StreamingServiceImpl {
         }
 
         let stream = UnboundedReceiverStream::new(rx);
+        debug!(subscriber_id, "block_headers=stream_ready");
         Ok(Response::new(stream))
     }
 
@@ -124,7 +148,7 @@ impl StreamingServiceImpl {
         // 1. Look up the block height for the given hash
         // 2. Fetch the requested number of blocks starting from that height
         // 3. Send block headers to the subscriber
-        debug!("Processing historical blocks from hash not yet implemented");
+        trace!("block_headers=historical_from_hash_unimplemented");
         Ok(())
     }
 
@@ -140,7 +164,7 @@ impl StreamingServiceImpl {
         // 2. Extract block headers
         // 3. Send headers to the subscriber
         // 4. Include any available chain locks
-        debug!("Processing historical blocks from height not yet implemented");
+        trace!("block_headers=historical_from_height_unimplemented");
         Ok(())
     }
 }

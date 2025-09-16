@@ -16,7 +16,7 @@ use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::task::JoinSet;
 use tokio::time::{Duration, sleep};
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub(crate) use masternode_list_sync::MasternodeListSync;
 pub(crate) use subscriber_manager::{
@@ -45,7 +45,10 @@ impl StreamingServiceImpl {
         core_client: CoreClient,
         config: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        trace!("Creating streaming service with ZMQ listener");
+        trace!(
+            zmq_url = %config.dapi.core.zmq_url,
+            "Creating streaming service with default ZMQ listener"
+        );
         let zmq_listener: Arc<dyn ZmqListenerTrait> =
             Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
 
@@ -66,7 +69,10 @@ impl StreamingServiceImpl {
         config: Arc<Config>,
         zmq_listener: Arc<dyn ZmqListenerTrait>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
-        trace!("Creating streaming service with custom ZMQ listener");
+        trace!(
+            zmq_url = %config.dapi.core.zmq_url,
+            "Creating streaming service with provided ZMQ listener"
+        );
         let subscriber_manager = Arc::new(SubscriberManager::new());
         let masternode_list_sync = Arc::new(MasternodeListSync::new(
             core_client.clone(),
@@ -96,7 +102,13 @@ impl StreamingServiceImpl {
             td_client, sub_mgr,
         ));
 
-        info!("Started streaming service background tasks");
+        info!(
+            zmq_url = %config.dapi.core.zmq_url,
+            drive = %config.dapi.drive.uri,
+            tenderdash_http = %config.dapi.tenderdash.uri,
+            tenderdash_ws = %config.dapi.tenderdash.websocket_uri,
+            "Started streaming service background tasks"
+        );
 
         Ok(Self {
             drive_client,
@@ -117,12 +129,20 @@ impl StreamingServiceImpl {
     ) {
         trace!("Starting Tenderdash tx forwarder loop");
         let mut transaction_rx = tenderdash_client.subscribe_to_transactions();
+        let mut forwarded_events: u64 = 0;
         loop {
             match transaction_rx.recv().await {
                 Ok(event) => {
+                    debug!(
+                        hash = %event.hash,
+                        height = event.height,
+                        forwarded = forwarded_events,
+                        "Forwarding Tenderdash transaction event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::PlatformTx { event })
                         .await;
+                    forwarded_events = forwarded_events.saturating_add(1);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     warn!(
@@ -132,11 +152,18 @@ impl StreamingServiceImpl {
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    warn!("Tenderdash event receiver closed");
+                    warn!(
+                        forwarded = forwarded_events,
+                        "Tenderdash transaction event receiver closed"
+                    );
                     break;
                 }
             }
         }
+        trace!(
+            forwarded = forwarded_events,
+            "Tenderdash tx forwarder loop exited"
+        );
     }
 
     /// Background worker: subscribe to Tenderdash transactions and forward to subscribers
@@ -146,12 +173,18 @@ impl StreamingServiceImpl {
     ) {
         trace!("Starting Tenderdash block forwarder loop");
         let mut block_rx = tenderdash_client.subscribe_to_blocks();
+        let mut forwarded_events: u64 = 0;
         loop {
             match block_rx.recv().await {
                 Ok(event) => {
+                    debug!(
+                        forwarded = forwarded_events,
+                        "Forwarding Tenderdash block event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::PlatformBlock { event })
                         .await;
+                    forwarded_events = forwarded_events.saturating_add(1);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     warn!(
@@ -161,11 +194,18 @@ impl StreamingServiceImpl {
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    warn!("Tenderdash block event receiver closed");
+                    warn!(
+                        forwarded = forwarded_events,
+                        "Tenderdash block event receiver closed"
+                    );
                     break;
                 }
             }
         }
+        trace!(
+            forwarded = forwarded_events,
+            "Tenderdash block forwarder loop exited"
+        );
     }
 
     /// Background worker: subscribe to ZMQ and process events, with retry/backoff
@@ -202,41 +242,66 @@ impl StreamingServiceImpl {
         subscriber_manager: Arc<SubscriberManager>,
     ) {
         trace!("Starting ZMQ event processing loop");
+        let mut processed_events: u64 = 0;
         while let Ok(event) = zmq_events.recv().await {
+            processed_events = processed_events.saturating_add(1);
             match event {
                 ZmqEvent::RawTransaction { data } => {
-                    trace!("Processing raw transaction event");
+                    trace!(
+                        size = data.len(),
+                        processed = processed_events,
+                        "Processing raw transaction event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::CoreRawTransaction { data })
                         .await;
                 }
                 ZmqEvent::RawBlock { data } => {
-                    trace!("Processing raw block event");
+                    trace!(
+                        size = data.len(),
+                        processed = processed_events,
+                        "Processing raw block event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::CoreRawBlock { data })
                         .await;
                 }
                 ZmqEvent::RawTransactionLock { data } => {
-                    trace!("Processing transaction lock event");
+                    trace!(
+                        size = data.len(),
+                        processed = processed_events,
+                        "Processing transaction lock event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::CoreInstantLock { data })
                         .await;
                 }
                 ZmqEvent::RawChainLock { data } => {
-                    trace!("Processing chain lock event");
+                    trace!(
+                        size = data.len(),
+                        processed = processed_events,
+                        "Processing chain lock event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::CoreChainLock { data })
                         .await;
                 }
                 ZmqEvent::HashBlock { hash } => {
-                    trace!("Processing new block hash event");
+                    trace!(
+                        size = hash.len(),
+                        processed = processed_events,
+                        "Processing new block hash event"
+                    );
                     subscriber_manager
                         .notify(StreamingEvent::CoreNewBlockHash { hash })
                         .await;
                 }
             }
         }
-        trace!("ZMQ event processing loop ended");
+        trace!(
+            processed = processed_events,
+            "ZMQ event processing loop ended"
+        );
     }
 
     /// Returns current health of the ZMQ streaming pipeline

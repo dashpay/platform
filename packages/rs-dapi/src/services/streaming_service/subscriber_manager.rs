@@ -1,8 +1,8 @@
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::sync::{Mutex, RwLock, mpsc};
-use tracing::{debug, warn};
+use tracing::{debug, trace, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
@@ -51,7 +51,7 @@ impl<T> SubscriptionHandle<T> {
 }
 
 struct SubscriptionHandleInner<T> {
-    subs: Weak<RwLock<HashMap<SubscriptionId, Subscription>>>,
+    subs: Weak<RwLock<BTreeMap<SubscriptionId, Subscription>>>,
     id: SubscriptionId,
     rx: Mutex<mpsc::UnboundedReceiver<T>>, // guarded receiver
 }
@@ -94,14 +94,14 @@ pub enum StreamingEvent {
 /// Manages all active streaming subscriptions
 #[derive(Debug)]
 pub struct SubscriberManager {
-    subscriptions: Arc<RwLock<HashMap<SubscriptionId, Subscription>>>,
+    subscriptions: Arc<RwLock<BTreeMap<SubscriptionId, Subscription>>>,
     subscription_counter: AtomicU64,
 }
 
 impl SubscriberManager {
     pub fn new() -> Self {
         Self {
-            subscriptions: Arc::new(RwLock::new(HashMap::new())),
+            subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
             subscription_counter: AtomicU64::new(0),
         }
     }
@@ -110,6 +110,7 @@ impl SubscriberManager {
     pub async fn add_subscription(&self, filter: FilterType) -> SubscriptionHandle<StreamingEvent> {
         let (sender, receiver) = mpsc::unbounded_channel::<StreamingEvent>();
         let id = self.generate_subscription_id();
+        let filter_debug = filter.clone();
         let subscription = Subscription {
             id: id.clone(),
             filter,
@@ -121,6 +122,7 @@ impl SubscriberManager {
             .await
             .insert(id.clone(), subscription);
         debug!("Added subscription: {}", id);
+        trace!(subscription_id = %id, filter = ?filter_debug, "subscription_manager=added");
 
         SubscriptionHandle(Arc::new(SubscriptionHandleInner::<StreamingEvent> {
             subs: Arc::downgrade(&self.subscriptions),
@@ -131,8 +133,10 @@ impl SubscriberManager {
 
     /// Remove a subscription
     pub async fn remove_subscription(&self, id: &str) {
-        if self.subscriptions.write().await.remove(id).is_some() {
+        let mut guard = self.subscriptions.write().await;
+        if guard.remove(id).is_some() {
             debug!("Removed subscription: {}", id);
+            trace!(subscription_id = %id, count_left = guard.len(), "subscription_manager=removed");
         }
     }
 }
@@ -208,6 +212,12 @@ impl SubscriberManager {
     pub async fn notify(&self, event: StreamingEvent) {
         let subscriptions = self.subscriptions.read().await;
 
+        trace!(
+            active_subscriptions = subscriptions.len(),
+            event = ?event,
+            "subscription_manager=notify_start"
+        );
+
         let mut dead_subs = vec![];
         for (id, subscription) in subscriptions.iter() {
             if Self::event_matches_filter(&subscription.filter, &event) {
@@ -218,6 +228,8 @@ impl SubscriberManager {
                         subscription.id, e
                     );
                 }
+            } else {
+                trace!(subscription_id = %id, "subscription_manager=filter_no_match");
             }
         }
         drop(subscriptions); // release read lock before acquiring write lock
@@ -253,7 +265,7 @@ impl SubscriberManager {
 
     fn event_matches_filter(filter: &FilterType, event: &StreamingEvent) -> bool {
         use StreamingEvent::*;
-        match (filter, event) {
+        let matched = match (filter, event) {
             (FilterType::PlatformAllTxs, PlatformTx { .. }) => true,
             (FilterType::PlatformTxId(id), PlatformTx { event }) => &event.hash == id,
             (FilterType::PlatformAllBlocks, PlatformBlock { .. }) => true,
@@ -268,7 +280,9 @@ impl SubscriberManager {
             (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
             (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
             _ => false,
-        }
+        };
+        trace!(filter = ?filter, event = ?event, matched, "subscription_manager=filter_evaluated");
+        matched
     }
 }
 
