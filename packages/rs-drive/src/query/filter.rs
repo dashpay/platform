@@ -42,9 +42,7 @@ use dpp::state_transition::batch_transition::document_base_transition::v0::v0_me
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use crate::query::{
-    validate_internal_clauses_against_schema, InternalClauses, ValueClause, WhereOperator,
-};
+use crate::query::{InternalClauses, ValueClause, WhereOperator};
 use crate::error::{query::QuerySyntaxError, Error};
 use dpp::platform_value::ValueMapHelper;
 
@@ -447,7 +445,7 @@ impl DriveDocumentQueryFilter<'_> {
         match &self.action_clauses {
             DocumentActionMatchClauses::Create {
                 new_document_clauses,
-            } => validate_internal_clauses_against_schema(document_type, new_document_clauses)?,
+            } => new_document_clauses.validate_against_schema(document_type)?,
             DocumentActionMatchClauses::Replace {
                 original_document_clauses,
                 new_document_clauses,
@@ -460,20 +458,15 @@ impl DriveDocumentQueryFilter<'_> {
                     ));
                 }
                 if !original_document_clauses.is_empty() {
-                    validate_internal_clauses_against_schema(
-                        document_type,
-                        original_document_clauses,
-                    )?;
+                    original_document_clauses.validate_against_schema(document_type)?;
                 }
                 if !new_document_clauses.is_empty() {
-                    validate_internal_clauses_against_schema(document_type, new_document_clauses)?;
+                    new_document_clauses.validate_against_schema(document_type)?;
                 }
             }
             DocumentActionMatchClauses::Delete {
                 original_document_clauses,
-            } => {
-                validate_internal_clauses_against_schema(document_type, original_document_clauses)?
-            }
+            } => original_document_clauses.validate_against_schema(document_type)?,
             DocumentActionMatchClauses::Transfer {
                 original_document_clauses,
                 owner_clause,
@@ -486,10 +479,7 @@ impl DriveDocumentQueryFilter<'_> {
                     ));
                 }
                 if !original_document_clauses.is_empty() {
-                    validate_internal_clauses_against_schema(
-                        document_type,
-                        original_document_clauses,
-                    )?;
+                    original_document_clauses.validate_against_schema(document_type)?;
                 }
                 if let Some(owner) = owner_clause {
                     let ok = match owner.operator {
@@ -521,10 +511,7 @@ impl DriveDocumentQueryFilter<'_> {
                     ));
                 }
                 if !original_document_clauses.is_empty() {
-                    validate_internal_clauses_against_schema(
-                        document_type,
-                        original_document_clauses,
-                    )?;
+                    original_document_clauses.validate_against_schema(document_type)?;
                 }
                 if let Some(price) = price_clause {
                     let ok = match price.operator {
@@ -603,10 +590,7 @@ impl DriveDocumentQueryFilter<'_> {
                     ));
                 }
                 if !original_document_clauses.is_empty() {
-                    validate_internal_clauses_against_schema(
-                        document_type,
-                        original_document_clauses,
-                    )?;
+                    original_document_clauses.validate_against_schema(document_type)?;
                 }
                 if let Some(owner) = owner_clause {
                     let ok = match owner.operator {

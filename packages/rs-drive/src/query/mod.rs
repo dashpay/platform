@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
-    conditions::{
-        validate_internal_clauses_against_schema, ValueClause, WhereClause, WhereOperator,
-    },
+    conditions::{ValueClause, WhereClause, WhereOperator},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
@@ -300,6 +298,102 @@ impl InternalClauses {
                 QuerySyntaxError::InvalidWhereClauseComponents("Query has invalid where clauses"),
             )),
         }
+    }
+
+    /// Validate this collection of InternalClauses against the document schema
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn validate_against_schema(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> Result<(), crate::error::Error> {
+        // Basic composition
+        if !self.verify() {
+            return Err(Error::Query(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "invalid composition of where clauses",
+                ),
+            ));
+        }
+
+        // Validate in_clause against schema
+        if let Some(in_clause) = &self.in_clause {
+            // Forbid $id in non-primary-key clauses
+            if in_clause.field == "$id" {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                ));
+            }
+            in_clause.validate_against_schema(document_type)?;
+        }
+
+        // Validate range_clause against schema
+        if let Some(range_clause) = &self.range_clause {
+            // Forbid $id in non-primary-key clauses
+            if range_clause.field == "$id" {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                ));
+            }
+            range_clause.validate_against_schema(document_type)?;
+        }
+
+        // Validate equal_clauses against schema
+        for (field, eq_clause) in &self.equal_clauses {
+            // Forbid $id in non-primary-key clauses
+            if field.as_str() == "$id" {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                ));
+            }
+            eq_clause.validate_against_schema(document_type)?;
+        }
+
+        // Validate primary key clauses typing
+        if let Some(pk_eq) = &self.primary_key_equal_clause {
+            if pk_eq.operator != WhereOperator::Equal
+                || !matches!(pk_eq.value, Value::Identifier(_))
+            {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key equality must compare an identifier",
+                    ),
+                ));
+            }
+        }
+        if let Some(pk_in) = &self.primary_key_in_clause {
+            if pk_in.operator != WhereOperator::In {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must use IN operator",
+                    ),
+                ));
+            }
+            // enforce array shape and no duplicates/size
+            pk_in.in_values()?;
+            if let Value::Array(arr) = &pk_in.value {
+                if !arr.iter().all(|v| matches!(v, Value::Identifier(_))) {
+                    return Err(Error::Query(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "primary key IN must contain identifiers",
+                        ),
+                    ));
+                }
+            } else {
+                return Err(Error::Query(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must contain an array of identifiers",
+                    ),
+                ));
+            }
+        }
+
+        Ok(())
     }
 }
 
