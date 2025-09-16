@@ -5,19 +5,19 @@ use crate::clients::CoreClient;
 use crate::config::Config;
 use crate::services::streaming_service::{FilterType, StreamingServiceImpl};
 use dapi_grpc::core::v0::{
-    core_server::Core, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
+    BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
     BroadcastTransactionRequest, BroadcastTransactionResponse, GetBestBlockHeightRequest,
     GetBestBlockHeightResponse, GetBlockRequest, GetBlockResponse, GetBlockchainStatusRequest,
     GetBlockchainStatusResponse, GetEstimatedTransactionFeeRequest,
     GetEstimatedTransactionFeeResponse, GetMasternodeStatusRequest, GetMasternodeStatusResponse,
     GetTransactionRequest, GetTransactionResponse, MasternodeListRequest, MasternodeListResponse,
-    TransactionsWithProofsRequest, TransactionsWithProofsResponse,
+    TransactionsWithProofsRequest, TransactionsWithProofsResponse, core_server::Core,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::hashes::Hash;
 use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::trace;
+use tracing::{debug, error, trace};
 
 /// Core service implementation that handles blockchain and streaming operations
 #[derive(Clone)]
@@ -84,7 +84,7 @@ impl Core for CoreServiceImpl {
             None => {
                 return Err(Status::invalid_argument(
                     "either height or hash must be provided",
-                ))
+                ));
             }
         };
 
@@ -169,71 +169,103 @@ impl Core for CoreServiceImpl {
         _request: Request<GetBlockchainStatusRequest>,
     ) -> Result<Response<GetBlockchainStatusResponse>, Status> {
         trace!("Received get_blockchain_status request");
-        let (bc_info, net_info) = tokio::join!(
+
+        trace!("Fetching blockchain_info and network_info from Core");
+        let (bc_info_res, net_info_res) = tokio::join!(
             self.core_client.get_blockchain_info(),
             self.core_client.get_network_info()
         );
 
-        let bc_info = bc_info.map_err(tonic::Status::from)?;
-        let net_info = net_info.map_err(tonic::Status::from)?;
+        if let Err(ref err) = bc_info_res {
+            error!(error = ?err, "Failed to retrieve blockchain info from Core RPC");
+        }
+        if let Err(ref err) = net_info_res {
+            error!(error = ?err, "Failed to retrieve network info from Core RPC");
+        }
+
+        let bc_info = bc_info_res.ok();
+        let net_info = net_info_res.ok();
+
+        trace!(?bc_info, "Core blockchain info retrieved");
+        trace!(?net_info, "Core network info retrieved");
 
         use dapi_grpc::core::v0::get_blockchain_status_response as respmod;
 
         // Version
-        let version = respmod::Version {
-            protocol: net_info.protocol_version as u32,
-            software: net_info.version as u32,
-            agent: net_info.subversion.clone(),
-        };
+        let version = net_info.as_ref().map(|info| respmod::Version {
+            protocol: info.protocol_version as u32,
+            software: info.version as u32,
+            agent: info.subversion.clone(),
+        });
 
         // Time
-        let time = respmod::Time {
-            now: chrono::Utc::now().timestamp() as u32,
-            offset: net_info.time_offset as i32,
-            median: bc_info.median_time as u32,
-        };
-
-        // Status and sync progress
-        let sync_progress = bc_info.verification_progress;
-        let status = if !bc_info.warnings.is_empty() {
-            respmod::Status::Error as i32
-        } else if sync_progress >= 0.9999 {
-            respmod::Status::Ready as i32
+        let time = if let Some(bc) = &bc_info
+            && let Some(net) = &net_info
+        {
+            let now = chrono::Utc::now().timestamp() as u32;
+            let offset = net.time_offset as i32;
+            let median = bc.median_time as u32;
+            Some(respmod::Time {
+                now,
+                offset,
+                median,
+            })
         } else {
-            respmod::Status::Syncing as i32
+            None
         };
 
-        // Chain
-        let best_block_hash_bytes = bc_info.best_block_hash.to_byte_array().to_vec();
-        let chain_work_bytes = bc_info.chainwork.clone();
-        let chain = respmod::Chain {
-            name: bc_info.chain,
-            headers_count: bc_info.headers as u32,
-            blocks_count: bc_info.blocks as u32,
-            best_block_hash: best_block_hash_bytes,
-            difficulty: bc_info.difficulty,
-            chain_work: chain_work_bytes,
-            is_synced: status == respmod::Status::Ready as i32,
-            sync_progress,
+        let (chain, status) = if let Some(info) = &bc_info {
+            // Status and sync progress
+            let sync_progress = info.verification_progress;
+            let status = if !info.warnings.is_empty() {
+                respmod::Status::Error as i32
+            } else if sync_progress >= 0.9999 {
+                respmod::Status::Ready as i32
+            } else {
+                respmod::Status::Syncing as i32
+            };
+
+            // Chain
+            let best_block_hash_bytes = info.best_block_hash.to_byte_array().to_vec();
+            let chain_work_bytes = info.chainwork.clone();
+            let chain = respmod::Chain {
+                name: info.chain.clone(),
+                headers_count: info.headers as u32,
+                blocks_count: info.blocks as u32,
+                best_block_hash: best_block_hash_bytes,
+                difficulty: info.difficulty,
+                chain_work: chain_work_bytes,
+                is_synced: status == respmod::Status::Ready as i32,
+                sync_progress,
+            };
+            (Some(chain), Some(status))
+        } else {
+            (None, None)
         };
 
         // Network
-        let network = respmod::Network {
-            peers_count: net_info.connections as u32,
+        let network = net_info.as_ref().map(|info| respmod::Network {
+            peers_count: info.connections as u32,
             fee: Some(respmod::NetworkFee {
-                relay: net_info.relay_fee.to_dash(),
-                incremental: net_info.incremental_fee.to_dash(),
+                relay: info.relay_fee.to_dash(),
+                incremental: info.incremental_fee.to_dash(),
             }),
-        };
+        });
 
         let response = GetBlockchainStatusResponse {
-            version: Some(version),
-            time: Some(time),
-            status,
-            sync_progress,
-            chain: Some(chain),
-            network: Some(network),
+            version,
+            time,
+            status: status.unwrap_or(respmod::Status::Error as i32),
+            sync_progress: chain.as_ref().map(|c| c.sync_progress).unwrap_or(0.0),
+            chain,
+            network,
         };
+
+        trace!(
+            status = status,
+            sync_progress = response.sync_progress,
+            "Returning get_blockchain_status response"
+        );
 
         Ok(Response::new(response))
     }
