@@ -215,6 +215,9 @@ services:
       - DAPI_TENDERDASH_URI=http://drive_tenderdash:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
       - DAPI_TENDERDASH_WEBSOCKET_URI=ws://drive_tenderdash:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}/websocket
       - DAPI_CORE_ZMQ_URL=tcp://core:${CORE_ZMQ_PORT:?err}
+      - DAPI_CORE_RPC_URL=http://core:${CORE_RPC_PORT:?err}
+      - DAPI_CORE_RPC_USER=dapi
+      - DAPI_CORE_RPC_PASS=${CORE_RPC_USERS_DAPI_PASSWORD:?err}
       - DAPI_STATE_TRANSITION_WAIT_TIMEOUT=${PLATFORM_DAPI_API_WAIT_FOR_ST_RESULT_TIMEOUT:?err}
       - DAPI_LOGGING_LEVEL=trace
     expose:
