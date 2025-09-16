@@ -1395,6 +1395,7 @@ impl<'a> WhereClause {
         &self,
         document_type: DocumentTypeRef,
     ) -> Result<(), crate::error::Error> {
+        // First determine the property type of self.field
         let property_type_cow = if let Some(meta_ty) = meta_field_property_type(&self.field) {
             Cow::Owned(meta_ty)
         } else {
@@ -1425,7 +1426,7 @@ impl<'a> WhereClause {
             if let Value::Text(s) = &self.value {
                 if s.is_empty() {
                     return Err(Error::Query(QuerySyntaxError::StartsWithIllegalString(
-                        "starts with can not start with an empty string",
+                        "starts_with can not start with an empty string",
                     )));
                 }
             }
@@ -1476,7 +1477,7 @@ impl<'a> WhereClause {
             _ => {}
         }
 
-        // Additional strict type checks for Equal and In element types
+        // Check value type matches field type for equality and IN operators
         let value_type_matches = |prop_ty: &DocumentPropertyType, v: &Value| -> bool {
             use DocumentPropertyType as T;
             match prop_ty {
@@ -1509,6 +1510,7 @@ impl<'a> WhereClause {
             }
         };
 
+        // For equality, allow some type coercion (e.g. integer types)
         match self.operator {
             WhereOperator::Equal => {
                 use DocumentPropertyType as T;
