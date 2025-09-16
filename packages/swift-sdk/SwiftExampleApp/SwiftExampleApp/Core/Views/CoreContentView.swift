@@ -34,7 +34,54 @@ struct CoreContentView: View {
     // Computed properties to ensure progress values are always valid
     private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
     private var safeMasternodeProgress: Double { min(max(walletService.masternodeProgress, 0.0), 1.0) }
-    private var safeTransactionProgress: Double { min(max(walletService.transactionProgress, 0.0), 1.0) }
+    private var safeTransactionProgress: Double {
+        // Use only the event-driven value to avoid misleading jumps
+        min(max(walletService.transactionProgress, 0.0), 1.0)
+    }
+
+    // Display helpers
+    private var currentSyncPhaseTitle: String {
+        if safeHeaderProgress < 1.0 {
+            return "Headers (\(Int(safeHeaderProgress * 100))%)"
+        } else if safeMasternodeProgress < 1.0 {
+            return "Masternode List (\(Int(safeMasternodeProgress * 100))%)"
+        } else if safeTransactionProgress < 1.0 {
+            return "Transactions (\(Int(safeTransactionProgress * 100))%)"
+        } else {
+            return "Complete"
+        }
+    }
+
+    private var headerHeightsDisplay: String? {
+        let cur = walletService.headerCurrentHeight
+        let tot = walletService.headerTargetHeight
+        // Show "current/target" as soon as we know a target, even if current is 0
+        guard tot > 0 else { return nil }
+
+        // Format current height allowing zero to render as "0" rather than "—"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        let curStr = formatter.string(from: NSNumber(value: max(cur, 0))) ?? String(max(cur, 0))
+        let totStr = formattedHeight(tot)
+        return "\(curStr)/\(totStr)"
+    }
+
+    private var filterHeightsDisplay: String? {
+        let cur = walletService.latestFilterHeight
+        let tot = walletService.headerTargetHeight
+        guard tot > 0 else { return nil }
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+
+        let numerator = formatter.string(from: NSNumber(value: max(cur, 0))) ?? String(max(cur, 0))
+        let denominator = formattedHeight(tot)
+        return "\(numerator)/\(denominator)"
+    }
     
 var body: some View {
     List {
@@ -44,7 +91,7 @@ var body: some View {
                     // Main sync control
                     HStack {
                         if walletService.isSyncing {
-                            Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
+                            Label("Syncing: \(currentSyncPhaseTitle)", systemImage: "arrow.triangle.2.circlepath")
                                 .font(.headline)
                                 .foregroundColor(.blue)
                         } else {
@@ -74,7 +121,7 @@ var body: some View {
                         progress: safeHeaderProgress,
                         detail: "\(Int(safeHeaderProgress * 100))% complete",
                         icon: "doc.text",
-                        trailingValue: formattedHeight(walletService.latestHeaderHeight),
+                        trailingValue: headerHeightsDisplay,
                         onRestart: restartHeaderSync
                     )
                     
@@ -94,9 +141,13 @@ var body: some View {
                         progress: safeTransactionProgress,
                         detail: "Filters & Blocks: \(Int(safeTransactionProgress * 100))%",
                         icon: "arrow.left.arrow.right",
-                        trailingValue: formattedHeight(walletService.latestFilterHeight),
+                        trailingValue: filterHeightsDisplay,
                         onRestart: restartTransactionSync
                     )
+                    // Blocks hit counter
+                    Text("Blocks hit: \(walletService.blocksHit)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
             }

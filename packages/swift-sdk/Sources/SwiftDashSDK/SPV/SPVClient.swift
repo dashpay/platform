@@ -1,6 +1,30 @@
 import Foundation
 import DashSDKFFI
 
+// MARK: - Logging
+
+public enum SPVLogLevel: String, Sendable {
+    case off
+    case error
+    case warn
+    case info
+    case debug
+    case trace
+    case paranoid
+}
+
+extension SPVClient {
+    /// Initialize SPV/Rust-side logging. Call once early in app startup.
+    /// If not called, `initialize(...)` will default to reading `SPV_LOG` env var.
+    @MainActor
+    public static func initializeLogging(_ level: SPVLogLevel) {
+        level.rawValue.withCString { cstr in
+            _ = dash_spv_ffi_init_logging(cstr)
+        }
+        LogInitState.manualInitialized = true
+    }
+}
+
 // MARK: - C Callback Functions
 // These must be global functions to be used as C function pointers
 
@@ -39,6 +63,7 @@ public struct SPVSyncProgress {
     public let transactionProgress: Double
     public let currentHeight: UInt32
     public let targetHeight: UInt32
+    public let filterHeight: UInt32
     // Checkpoint height we started from (0 if none)
     public let startHeight: UInt32
     public let rate: Double // blocks per second
@@ -89,6 +114,7 @@ public protocol SPVClientDelegate: AnyObject {
     func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent)
     func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?)
     func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int)
+    func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int)
 }
 
 // MARK: - SPV Client
@@ -101,6 +127,7 @@ public class SPVClient: ObservableObject {
     @Published public var syncProgress: SPVSyncProgress?
     @Published public var peerCount: Int = 0
     @Published public var lastError: String?
+    @Published public var blocksHit: Int = 0
     
     // Delegate for callbacks
     public weak var delegate: SPVClientDelegate?
@@ -133,9 +160,15 @@ public class SPVClient: ObservableObject {
         return false
     }()
     
+    // Removed: Temporary poller for filter header progress (now event-driven via FFI)
+    
     public init(network: Network = DashSDKNetwork(rawValue: 1)) {
         self.network = network
     }
+
+    // Expose a read-only view of the sync base (checkpoint) height for UI/consumers.
+    // This is the absolute blockchain height we consider as the base when syncing from a checkpoint.
+    public var baseSyncHeight: UInt32 { startFromHeight }
     
     deinit {
         // Minimal teardown; prefer explicit stop() by callers.
@@ -143,21 +176,19 @@ public class SPVClient: ObservableObject {
     
     // MARK: - Client Lifecycle
     
+    @MainActor
     public func initialize(dataDir: String? = nil, masternodesEnabled: Bool? = nil, startHeight: UInt32? = nil) throws {
         guard client == nil else {
             throw SPVError.alreadyInitialized
         }
         
-        // Initialize SPV logging (one-time). Default to off unless SPV_LOG is provided.
-        enum SPVLogInit {
-            static let once: Void = {
-                let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
-                _ = level.withCString { cstr in
-                    dash_spv_ffi_init_logging(cstr)
-                }
-            }()
+        // Initialize SPV logging (one-time) unless already initialized manually.
+        if !LogInitState.manualInitialized {
+            let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
+            _ = level.withCString { cstr in
+                dash_spv_ffi_init_logging(cstr)
+            }
         }
-        _ = SPVLogInit.once
         if swiftLoggingEnabled {
             let level = (ProcessInfo.processInfo.environment["SPV_LOG"] ?? "off")
             print("[SPV][Log] Initialized SPV logging level=\(level)")
@@ -299,6 +330,20 @@ public class SPVClient: ObservableObject {
             if rc2 != 0 { throw SPVError.configurationFailed }
         }
     }
+
+    /// Update the starting checkpoint height (sync-from base) at runtime.
+    /// Applies to the next sync start and persists in the client's config.
+    public func setStartFromHeight(_ height: UInt32) throws {
+        self.startFromHeight = height
+        if let config = self.config {
+            let rc = dash_spv_ffi_config_set_start_from_height(config, height)
+            if rc != 0 { throw SPVError.configurationFailed }
+        }
+        if let client = self.client, let config = self.config {
+            let rc2 = dash_spv_ffi_client_update_config(client, config)
+            if rc2 != 0 { throw SPVError.configurationFailed }
+        }
+    }
     
     public func start() throws {
         guard self.client != nil else {
@@ -355,6 +400,20 @@ public class SPVClient: ObservableObject {
         self.isSyncing = true
         syncCancelled = false
         syncStartTime = Date()
+        blocksHit = 0
+        // Reset UI progress to known baseline (0%) before events arrive
+        self.syncProgress = SPVSyncProgress(
+            stage: .headers,
+            headerProgress: 0.0,
+            masternodeProgress: 0.0,
+            transactionProgress: 0.0,
+            currentHeight: self.startFromHeight,
+            targetHeight: 0,
+            filterHeight: self.startFromHeight,
+            startHeight: self.startFromHeight,
+            rate: 0.0,
+            estimatedTimeRemaining: nil
+        )
         
         // Use a stable callback context; create if needed
         let context: CallbackContext
@@ -385,6 +444,7 @@ public class SPVClient: ObservableObject {
             }
         }
         DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
+        // Filter progress now updates via FFI event callback; no polling needed
     }
     
     public func cancelSync() {
@@ -394,6 +454,7 @@ public class SPVClient: ObservableObject {
         dash_spv_ffi_client_cancel_sync(client)
         isSyncing = false
         syncProgress = nil
+        // No-op (event-driven)
     }
     
     // MARK: - Event Callbacks
@@ -450,10 +511,95 @@ public class SPVClient: ObservableObject {
                 )
             }
         }
+
+        callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                guard let client = clientRef else { return }
+                client.blocksHit &+= 1
+                client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
+            }
+        }
+
+        callbacks.on_filter_headers_progress = { filterHeight, headerHeight, percentage, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleFilterHeadersProgress(
+                    filterHeight: filterHeight,
+                    headerHeight: headerHeight,
+                    percentage: percentage
+                )
+            }
+        }
         
         callbacks.user_data = contextPtr
         
         dash_spv_ffi_client_set_event_callbacks(client, callbacks)
+    }
+
+    // MARK: - Filter progress event handler
+    private func handleFilterHeadersProgress(filterHeight: UInt32, headerHeight: UInt32, percentage: Double) {
+        // Normalize with checkpoint base so the UI progress is meaningful
+        let base = startFromHeight
+        let reportedFilter = filterHeight
+        let reportedHeader = headerHeight
+        let usesAbsolute = reportedFilter >= base && reportedHeader >= base
+
+        let absoluteHeader: UInt32
+        let absoluteFilter: UInt32
+        if usesAbsolute {
+            absoluteHeader = reportedHeader
+            absoluteFilter = reportedFilter
+        } else {
+            absoluteHeader = base &+ reportedHeader
+            absoluteFilter = base &+ reportedFilter
+        }
+
+        if absoluteHeader > base {
+            let denom = max(1, Int(absoluteHeader &- base))
+            let num = max(0, Int(absoluteFilter &- base))
+            let pct = min(1.0, max(0.0, Double(num) / Double(denom)))
+
+            // If we already have a progress struct, update it; otherwise create a minimal one
+            let updated: SPVSyncProgress
+            if let prog = self.syncProgress {
+                updated = SPVSyncProgress(
+                    stage: prog.stage,
+                    headerProgress: prog.headerProgress,
+                    masternodeProgress: prog.masternodeProgress,
+                    transactionProgress: pct,
+                    currentHeight: prog.currentHeight,
+                    targetHeight: prog.targetHeight,
+                    filterHeight: absoluteFilter,
+                    startHeight: base,
+                    rate: prog.rate,
+                    estimatedTimeRemaining: prog.estimatedTimeRemaining
+                )
+            } else {
+                updated = SPVSyncProgress(
+                    stage: .transactions,
+                    headerProgress: 0.0,
+                    masternodeProgress: 0.0,
+                    transactionProgress: pct,
+                    currentHeight: base,
+                    targetHeight: base,
+                    filterHeight: absoluteFilter,
+                    startHeight: base,
+                    rate: 0.0,
+                    estimatedTimeRemaining: nil
+                )
+            }
+            self.syncProgress = updated
+            self.delegate?.spvClient(self, didUpdateSyncProgress: updated)
+
+            if swiftLoggingEnabled {
+                print("[SPV][FilterHeadersProgress] header=\(absoluteHeader) filterHdr=\(absoluteFilter) base=\(base) -> \(Int(pct*100))%")
+            }
+        }
     }
     
     // MARK: - Event Handlers
@@ -475,10 +621,13 @@ public class SPVClient: ObservableObject {
         if isSyncing, let progress = syncProgress {
             // Update height tracking for rate calculation
             if lastBlockHeight > 0 {
-                let blocksDiff = height - lastBlockHeight
+                // Use signed math and clamp to avoid underflow on reorgs or height resets
+                let blocksDiffSigned = Int64(height) - Int64(lastBlockHeight)
+                let blocksDiff = blocksDiffSigned > 0 ? blocksDiffSigned : 0
+
                 let timeDiff = Date().timeIntervalSince(syncStartTime ?? Date())
                 let rate = timeDiff > 0 ? Double(blocksDiff) / timeDiff : 0
-                
+
                 let updatedProgress = SPVSyncProgress(
                     stage: progress.stage,
                     headerProgress: progress.headerProgress,
@@ -486,15 +635,17 @@ public class SPVClient: ObservableObject {
                     transactionProgress: progress.transactionProgress,
                     currentHeight: height,
                     targetHeight: progress.targetHeight,
+                    filterHeight: progress.filterHeight,
                     startHeight: self.startFromHeight,
                     rate: rate,
                     estimatedTimeRemaining: progress.estimatedTimeRemaining
                 )
-                
+
                 syncProgress = updatedProgress
                 delegate?.spvClient(self, didUpdateSyncProgress: updatedProgress)
             }
-            
+
+            // Always record the latest observed height (even across reorgs)
             lastBlockHeight = height
         }
     }
@@ -548,6 +699,28 @@ public class SPVClient: ObservableObject {
         return stats
     }
 
+    // MARK: - Tip Info
+    /// Returns the current chain tip height known to the client (absolute), or nil if unavailable.
+    public func getTipHeight() -> UInt32? {
+        guard let client = client else { return nil }
+        var out: UInt32 = 0
+        let rc = dash_spv_ffi_client_get_tip_height(client, &out)
+        if rc == 0 { return out }
+        return nil
+    }
+
+    /// Returns the current chain tip hash (32 bytes) known to the client, or nil if unavailable.
+    public func getTipHash() -> Data? {
+        guard let client = client else { return nil }
+        var buf = [UInt8](repeating: 0, count: 32)
+        let rc = buf.withUnsafeMutableBufferPointer { bp -> Int32 in
+            guard let base = bp.baseAddress else { return -1 }
+            return dash_spv_ffi_client_get_tip_hash(client, base)
+        }
+        if rc == 0 { return Data(buf) }
+        return nil
+    }
+
     // MARK: - Sync Snapshot
     public func getSyncSnapshot() -> SPVSyncSnapshot? {
         guard let client = client else { return nil }
@@ -574,6 +747,30 @@ public class SPVClient: ObservableObject {
         // Derive FFINetwork matching how we built config
         let ffiNet: FFINetwork
         switch network {
+        case DashSDKNetwork(rawValue: 0): // mainnet
+            ffiNet = FFINetwork(rawValue: 0)
+        case DashSDKNetwork(rawValue: 1): // testnet
+            ffiNet = FFINetwork(rawValue: 1)
+        case DashSDKNetwork(rawValue: 2): // devnet
+            ffiNet = FFINetwork(rawValue: 3)
+        default:
+            ffiNet = FFINetwork(rawValue: 1)
+        }
+
+        var outHeight: UInt32 = 0
+        var outHash = [UInt8](repeating: 0, count: 32)
+        let rc: Int32 = outHash.withUnsafeMutableBufferPointer { buf in
+            dash_spv_ffi_checkpoint_latest(ffiNet, &outHeight, buf.baseAddress)
+        }
+        guard rc == 0 else { return nil }
+        return outHeight
+    }
+
+    /// Static helper: get latest checkpoint height for an arbitrary network
+    /// without depending on the client's configured network.
+    public static func latestCheckpointHeight(forNetwork net: DashSDKNetwork) -> UInt32? {
+        let ffiNet: FFINetwork
+        switch net {
         case DashSDKNetwork(rawValue: 0): // mainnet
             ffiNet = FFINetwork(rawValue: 0)
         case DashSDKNetwork(rawValue: 1): // testnet
@@ -623,49 +820,65 @@ private class CallbackContext {
     }
 
     func handleProgressUpdate(_ ffiProgress: FFIDetailedSyncProgress) {
+        // Avoid relying on C enum bridging; derive simple stage from percentage
+        let stage: SPVSyncStage = (ffiProgress.percentage >= 100.0) ? .complete : .headers
 
-        // Compute stage and ETA outside the actor
-        let stage: SPVSyncStage = {
-            if ffiProgress.percentage < 0.3 { return .headers }
-            if ffiProgress.percentage < 0.7 { return .masternodes }
-            if ffiProgress.percentage < 1.0 { return .transactions }
-            return .complete
-        }()
         let estimatedTime: TimeInterval? = (ffiProgress.estimated_seconds_remaining > 0)
             ? TimeInterval(ffiProgress.estimated_seconds_remaining)
             : nil
 
-        // Update UI/state on main actor
-            guard let client = self.client else { return }
+        guard let client = self.client else { return }
 
-            if client.swiftLoggingEnabled {
-                let pct = max(0.0, min(ffiProgress.percentage, 1.0)) * 100.0
-                let cur = ffiProgress.current_height
-                let tot = ffiProgress.total_height
-                let rate = ffiProgress.headers_per_second
-                let eta = ffiProgress.estimated_seconds_remaining
-                print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
-            }
+        if client.swiftLoggingEnabled {
+            // ffiProgress.percentage is 0..100
+            let pct = max(0.0, min(ffiProgress.percentage, 100.0))
+            let cur = ffiProgress.current_height
+            let tot = ffiProgress.total_height
+            let rate = ffiProgress.headers_per_second
+            let eta = ffiProgress.estimated_seconds_remaining
+            print("[SPV][Progress] stage=\(stage.rawValue) pct=\(String(format: "%.2f", pct))% height=\(cur)/\(tot) rate=\(String(format: "%.2f", rate)) hdr/s eta=\(eta)s")
+        }
 
-            let absoluteCurrent: UInt32 = client.startFromHeight &+ ffiProgress.current_height
-            let progress = SPVSyncProgress(
-                stage: stage,
-                headerProgress: min(ffiProgress.percentage / 0.3, 1.0),
-                masternodeProgress: min(max((ffiProgress.percentage - 0.3) / 0.4, 0), 1.0),
-                transactionProgress: min(max((ffiProgress.percentage - 0.7) / 0.3, 0), 1.0),
-                currentHeight: absoluteCurrent,
-                targetHeight: ffiProgress.total_height,
-                startHeight: client.startFromHeight,
-                rate: ffiProgress.headers_per_second,
-                estimatedTimeRemaining: estimatedTime
-            )
+        // Guard against an inconsistent baseline (e.g., previous checkpoint from another network)
+        let safeBase: UInt32 = (client.startFromHeight > ffiProgress.total_height) ? 0 : client.startFromHeight
+        // Newer FFI builds already report absolute heights, so detect this case to avoid double-adding the baseline.
+        let reportedCurrent = ffiProgress.current_height
+        let reportedTotal = max(ffiProgress.total_height, reportedCurrent)
+        let usesAbsoluteHeights = reportedCurrent >= safeBase && reportedTotal >= safeBase
 
-            let now = Date().timeIntervalSince1970
-            if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
-                client.lastProgressUIUpdate = now
-                client.syncProgress = progress
-                client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
-            }
+        let absoluteCurrent: UInt32
+        let absoluteTotal: UInt32
+
+        if usesAbsoluteHeights {
+            absoluteCurrent = reportedCurrent
+            absoluteTotal = reportedTotal
+        } else {
+            // Older FFI builds reported offsets from the checkpoint, so lift them to absolute heights before surfacing.
+            absoluteCurrent = safeBase &+ reportedCurrent
+            absoluteTotal = safeBase &+ reportedTotal
+        }
+        let headerPct = min(max(ffiProgress.percentage / 100.0, 0.0), 1.0) // normalize 0..1
+        let currentTxPct = client.syncProgress?.transactionProgress ?? 0.0 // keep event-driven value
+
+        let progress = SPVSyncProgress(
+            stage: stage,
+            headerProgress: headerPct,
+            masternodeProgress: 0.0, // no dedicated event yet
+            transactionProgress: currentTxPct,
+            currentHeight: absoluteCurrent,
+            targetHeight: absoluteTotal,
+            filterHeight: client.syncProgress?.filterHeight ?? safeBase,
+            startHeight: safeBase,
+            rate: ffiProgress.headers_per_second,
+            estimatedTimeRemaining: estimatedTime
+        )
+
+        let now = Date().timeIntervalSince1970
+        if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
+            client.lastProgressUIUpdate = now
+            client.syncProgress = progress
+            client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
+        }
     }
     
     func handleSyncCompletion(success: Bool, error: String?) {
@@ -699,6 +912,7 @@ private class CallbackContext {
                     transactionProgress: 1.0,
                     currentHeight: client.syncProgress?.targetHeight ?? 0,
                     targetHeight: client.syncProgress?.targetHeight ?? 0,
+                    filterHeight: client.syncProgress?.filterHeight ?? (client.syncProgress?.targetHeight ?? 0),
                     startHeight: client.startFromHeight,
                     rate: 0,
                     estimatedTimeRemaining: nil
@@ -761,4 +975,11 @@ public enum SPVError: LocalizedError {
             return "Sync failed: \(reason)"
         }
     }
+}
+
+// MARK: - Private global state
+
+@MainActor
+private enum LogInitState {
+    static var manualInitialized: Bool = false
 }

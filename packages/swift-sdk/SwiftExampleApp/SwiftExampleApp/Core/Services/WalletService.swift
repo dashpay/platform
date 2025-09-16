@@ -3,6 +3,92 @@ import SwiftData
 import Combine
 @preconcurrency import SwiftDashSDK
 
+// MARK: - Logging Preferences
+
+enum LoggingPreset: String {
+    case low
+    case medium
+    case high
+
+    fileprivate var priority: Int {
+        switch self {
+        case .low: return 0
+        case .medium: return 1
+        case .high: return 2
+        }
+    }
+
+    fileprivate func allows(_ threshold: LoggingPreset) -> Bool {
+        priority >= threshold.priority
+    }
+}
+
+enum LoggingPreferences {
+    private static let defaultsKey = "SwiftSDKLogLevel"
+
+    @discardableResult
+    @MainActor
+    static func configure() -> LoggingPreset {
+        let preset = loadPreset()
+        let spvLevel: SPVLogLevel
+        let enableSwiftVerbose: Bool
+
+        switch preset {
+        case .high:
+            spvLevel = .trace
+            enableSwiftVerbose = true
+        case .medium:
+            spvLevel = .info
+            enableSwiftVerbose = false
+        case .low:
+            spvLevel = .off
+            enableSwiftVerbose = false
+        }
+
+        setenv("SPV_SWIFT_LOG", enableSwiftVerbose ? "1" : "0", 1)
+        setenv("SPV_LOG", spvLevel.rawValue, 1)
+        SPVClient.initializeLogging(spvLevel)
+
+        return preset
+    }
+
+    static var preset: LoggingPreset { loadPreset() }
+
+    static var shouldEmitDefaultLogs: Bool { preset == .high }
+
+    static func allows(_ threshold: LoggingPreset) -> Bool {
+        preset.allows(threshold)
+    }
+
+    private static func loadPreset() -> LoggingPreset {
+        if let stored = UserDefaults.standard.string(forKey: defaultsKey)?.lowercased(),
+           let preset = LoggingPreset(rawValue: stored) {
+            return preset
+        }
+        return .low
+    }
+}
+
+enum SDKLogger {
+    static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {
+        guard LoggingPreferences.allows(level) else { return }
+        Swift.print(message)
+    }
+
+    static func error(_ message: String) {
+        Swift.print(message)
+    }
+}
+
+func print(_ items: Any..., separator: String = " ", terminator: String = "\n") {
+    let output = items.map { String(describing: $0) }.joined(separator: separator)
+    let lowercased = output.lowercased()
+    let shouldAlwaysPrint = output.contains("❌") || output.contains("⚠️") || lowercased.contains("error")
+
+    guard LoggingPreferences.shouldEmitDefaultLogs || shouldAlwaysPrint else { return }
+    Swift.print(output, terminator: terminator)
+}
+
 @MainActor
 public class WalletService: ObservableObject {
     // Sendable wrapper to move non-Sendable references across actor boundaries when safe
@@ -18,6 +104,10 @@ public class WalletService: ObservableObject {
     @Published public var headerProgress: Double = 0
     @Published public var masternodeProgress: Double = 0
     @Published public var transactionProgress: Double = 0
+    // Absolute heights for header sync display (current/target)
+    @Published public var headerCurrentHeight: Int = 0
+    @Published public var headerTargetHeight: Int = 0
+    @Published public var blocksHit: Int = 0
     @Published public var lastSyncError: Error?
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     @Published var currentNetwork: Network = .testnet
@@ -26,7 +116,7 @@ public class WalletService: ObservableObject {
     private var modelContainer: ModelContainer?
     private var syncTask: Task<Void, Never>?
     private var balanceUpdateTask: Task<Void, Never>?
-    private var spvStatsTimer: Timer?
+    // Stats polling removed (progress is event-driven)
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     private(set) var walletManager: WalletManager?
@@ -43,6 +133,9 @@ public class WalletService: ObservableObject {
     // Control whether to sync masternode list (default false; enable only in non-trusted mode)
     @Published var shouldSyncMasternodes: Bool = false
     
+    // Expose base sync height to UI in a safe way
+    public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
+    
     private init() {}
     
     deinit {
@@ -54,14 +147,15 @@ public class WalletService: ObservableObject {
     }
     
     func configure(modelContainer: ModelContainer, network: Network = .testnet) {
-        print("=== WalletService.configure START ===")
+        LoggingPreferences.configure()
+        SDKLogger.log("=== WalletService.configure START ===", minimumLevel: .medium)
         self.modelContainer = modelContainer
         self.currentNetwork = network
-        print("ModelContainer set: \(modelContainer)")
-        print("Network set: \(network.rawValue)")
-        
+        SDKLogger.log("ModelContainer set: \(modelContainer)", minimumLevel: .high)
+        SDKLogger.log("Network set: \(network.rawValue)", minimumLevel: .medium)
+
         // Initialize SPV Client wrapper
-        print("Initializing SPV Client for \(network.rawValue)...")
+        SDKLogger.log("Initializing SPV Client for \(network.rawValue)...", minimumLevel: .medium)
         spvClient = SPVClient(network: network.sdkNetwork)
         spvClient?.delegate = self
         
@@ -75,52 +169,25 @@ public class WalletService: ObservableObject {
             do {
                 // Initialize the SPV client with proper configuration
                 let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
-                // Determine a start height based on checkpoint before the oldest (non-imported) wallet
-                var startHeight: UInt32? = nil
-                do {
-                    // Fetch only the fields we need on the main actor, avoid moving PersistentModels across actors
-                    let walletInfos: [(createdAt: Date, isImported: Bool, networks: Int)] = try await MainActor.run {
-                        let descriptor = FetchDescriptor<HDWallet>()
-                        let wallets = try self.modelContainer?.mainContext.fetch(descriptor) ?? []
-                        return wallets.map { ($0.createdAt, $0.isImported, Int($0.networks)) }
-                    }
-                    // Filter to current network
-                    let filtered = walletInfos.filter { w in
-                        switch net {
-                        case .mainnet: return (w.networks & 1) != 0
-                        case .testnet: return (w.networks & 2) != 0
-                        case .devnet: return (w.networks & 8) != 0
-                        }
-                    }
-                    // Prefer oldest non-imported wallet
-                    let candidate = filtered.filter { !$0.isImported }.sorted { $0.createdAt < $1.createdAt }.first
-                    if let cand = candidate {
-                        let ts = UInt32(cand.createdAt.timeIntervalSince1970)
-                        if let h = await client.getCheckpointHeight(beforeTimestamp: ts) {
-                            startHeight = h
-                        }
-                    } else {
-                        // Fallback for imported-only
-                        switch net {
-                        case .mainnet:
-                            startHeight = 730_000
-                        case .testnet, .devnet:
-                            startHeight = 0
-                        }
-                    }
-                } catch {
-                    // If fetch fails, fall back per-network
-                    switch net {
-                    case .mainnet: startHeight = 730_000
-                    case .testnet, .devnet: startHeight = 0
+                // Determine baseline from stored per-wallet per-network sync-from heights
+                let baseline: UInt32 = await MainActor.run { self.computeNetworkBaselineSyncFromHeight(for: net) }
+                SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
+
+                try await clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: baseline)
+                SDKLogger.log("✅ SPV Client initialized successfully for \(net.rawValue) (deferred start)", minimumLevel: .medium)
+
+                // Fetch current known tip from SPV (via FFI) and show it in the Headers row
+                let tip: UInt32? = await MainActor.run { clientLocal.getTipHeight() }
+                let checkpoint: UInt32? = await clientLocal.getLatestCheckpointHeight()
+                await MainActor.run {
+                    WalletService.shared.headerCurrentHeight = Int(baseline)
+                    WalletService.shared.latestFilterHeight = Int(baseline)
+                    if let t = tip, t > 0 {
+                        WalletService.shared.headerTargetHeight = Int(t)
+                    } else if let cp = checkpoint, cp > 0 {
+                        WalletService.shared.headerTargetHeight = Int(cp)
                     }
                 }
-
-                try await clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: startHeight)
-
-                // Start the SPV client
-                try await clientLocal.start()
-                print("✅ SPV Client initialized and started successfully for \(net.rawValue)")
 
                 // Seed UI with latest checkpoint height if we don't have a header yet
                 let seedHeight = await clientLocal.getLatestCheckpointHeight()
@@ -128,7 +195,6 @@ public class WalletService: ObservableObject {
                     if WalletService.shared.latestHeaderHeight == 0, let cp = seedHeight {
                         WalletService.shared.latestHeaderHeight = Int(cp)
                     }
-                    WalletService.shared.beginSPVStatsPolling()
                 }
 
                 // Create SDK wallet manager (unified, not tied to SPV pointer for now)
@@ -144,31 +210,31 @@ public class WalletService: ObservableObject {
                             modelContainer: mc,
                             spvClient: clientLocal
                         )
-                        print("✅ WalletManager wrapper initialized successfully")
+                        SDKLogger.log("✅ WalletManager wrapper initialized successfully", minimumLevel: .medium)
                     }
                 } catch {
-                    print("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
+                    SDKLogger.error("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
                 }
             } catch {
-                print("❌ Failed to initialize SPV Client: \(error)")
+                SDKLogger.error("❌ Failed to initialize SPV Client: \(error)")
                 await MainActor.run { WalletService.shared.lastSyncError = error }
             }
         }
         
-        print("Loading current wallet...")
+        SDKLogger.log("Loading current wallet...", minimumLevel: .medium)
         loadCurrentWallet()
-        print("=== WalletService.configure END ===")
+        SDKLogger.log("=== WalletService.configure END ===", minimumLevel: .medium)
     }
-    
+
     public func setSharedSDK(_ sdk: Any) {
         self.sdk = sdk
-        print("✅ WalletService configured with shared SDK")
+        SDKLogger.log("✅ WalletService configured with shared SDK", minimumLevel: .medium)
     }
     
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil, networks: [Network]? = nil) async throws -> HDWallet {
+    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil, networks: [Network]? = nil, isImport: Bool = false) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -199,6 +265,39 @@ public class WalletService: ObservableObject {
             
             // Load the newly created wallet
             await loadWallet(wallet)
+
+            // Set per-network sync-from heights
+            // Imported wallets: mainnet=730000, testnet=0, devnet=0
+            // New wallets: use current known tip for the selected network (fallback to latestHeaderHeight/checkpoint)
+            let isImported = isImport
+            if isImported {
+                // Imported wallet: use fixed per-network baselines
+                wallet.syncFromMainnet = 730_000
+                wallet.syncFromTestnet = 0
+                wallet.syncFromDevnet = 0
+            } else {
+                // New wallet: per selected network, use the latest checkpoint height of that chain
+                let nets = networks ?? [walletNetwork]
+                for n in nets {
+                    switch n {
+                    case .mainnet:
+                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) ?? 0
+                        print("[WalletService] New wallet baseline mainnet checkpoint=\(cp)")
+                        wallet.syncFromMainnet = Int(cp)
+                    case .testnet:
+                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) ?? 0
+                        print("[WalletService] New wallet baseline testnet checkpoint=\(cp)")
+                        wallet.syncFromTestnet = Int(cp)
+                    case .devnet:
+                        let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) ?? 0
+                        print("[WalletService] New wallet baseline devnet checkpoint=\(cp)")
+                        wallet.syncFromDevnet = Int(cp)
+                    }
+                }
+            }
+
+            // Persist sync-from changes
+            try modelContainer?.mainContext.save()
             
             print("=== WalletService.createWallet SUCCESS ===")
             return wallet
@@ -265,12 +364,38 @@ public class WalletService: ObservableObject {
             return
         }
         
+        // Compute baseline from all wallets on the active network and apply before starting
+        let baseline: UInt32 = computeNetworkBaselineSyncFromHeight(for: currentNetwork)
+        do {
+            try spvClient.setStartFromHeight(baseline)
+            print("[SPV][Baseline] StartFromHeight applied=\(baseline) for \(currentNetwork.rawValue) before startSync()")
+            // Also print per-wallet values for debugging
+            logPerWalletSyncFromHeights(for: currentNetwork)
+        } catch {
+            print("[SPV][Config] Failed to set StartFromHeight: \(error)")
+        }
+
         isSyncing = true
         lastSyncError = nil
         
         // Kick off sync without blocking the main thread
         Task.detached(priority: .userInitiated) {
             do {
+                // Ensure the underlying client is started (connected) before syncing
+                let connected = await spvClient.isConnected
+                if connected == false {
+                    do {
+                        try await spvClient.start()
+                        print("[SPV] Client started (connected) before sync")
+                    } catch {
+                        await MainActor.run {
+                            WalletService.shared.lastSyncError = error
+                            WalletService.shared.isSyncing = false
+                        }
+                        print("❌ Failed to start client: \(error)")
+                        return
+                    }
+                }
                 try await spvClient.startSync()
             } catch {
                 await MainActor.run {
@@ -287,8 +412,6 @@ public class WalletService: ObservableObject {
         isSyncing = false
         syncProgress = nil
         detailedSyncProgress = nil
-        spvStatsTimer?.invalidate()
-        spvStatsTimer = nil
     }
     
     // MARK: - Network Management
@@ -458,32 +581,6 @@ public class WalletService: ObservableObject {
     }
 }
 
-// MARK: - SPV Stats Polling
-extension WalletService {
-    private func beginSPVStatsPolling() {
-        spvStatsTimer?.invalidate()
-        spvStatsTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { _ in
-            // Call FFI off the main actor to avoid UI stalls
-            Task.detached(priority: .utility) {
-                let clientBox = await MainActor.run { WalletService.shared[keyPath: \WalletService.spvClient].map(SendableBox.init) }
-                guard let client = clientBox?.value else { return }
-                guard let stats = await client.getStats() else { return }
-                await MainActor.run {
-                    // Only overwrite with positive values; keep seeded values otherwise
-                    if stats.headerHeight > 0 {
-                        WalletService.shared.latestHeaderHeight = max(WalletService.shared.latestHeaderHeight, stats.headerHeight)
-                    }
-                    if stats.filterHeight > 0 {
-                        WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, stats.filterHeight)
-                    }
-                    // Keep latestMasternodeListHeight as 0 until available
-                }
-            }
-        }
-        if let t = spvStatsTimer { RunLoop.main.add(t, forMode: .common) }
-    }
-}
-
 // MARK: - SPVClientDelegate
 
 extension WalletService: SPVClientDelegate {
@@ -506,6 +603,12 @@ extension WalletService: SPVClientDelegate {
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
+            // Update absolute heights for display
+            WalletService.shared.headerCurrentHeight = Int(currentHeight)
+            WalletService.shared.headerTargetHeight = Int(targetHeight)
+            WalletService.shared.latestFilterHeight = Int(progress.filterHeight)
+            // Trust event-driven transaction progress from SPVClient
+            WalletService.shared.transactionProgress = progress.transactionProgress
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(currentHeight),
@@ -515,56 +618,21 @@ extension WalletService: SPVClientDelegate {
                 stage: mappedStage
             )
 
-            if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-                print("📊 Sync progress: \(stageRawValue) - \(Int(overall * 100))%")
-            }
+            SDKLogger.log("📊 Sync progress: \(stageRawValue) - \(Int(overall * 100))%", minimumLevel: .high)
         }
 
-        Task.detached(priority: .utility) {
-            let (clientBox, prevTx, prevMn): (SendableBox<SPVClient>?, Double, Double) = await MainActor.run {
-                (WalletService.shared[keyPath: \WalletService.spvClient].map(SendableBox.init), WalletService.shared.transactionProgress, WalletService.shared.masternodeProgress)
-            }
-            let client = clientBox?.value
-
-            let base = Double(startHeight)
-            let numer = max(0.0, Double(currentHeight) - base)
-            let denom = max(1.0, Double(targetHeight) - base)
-            let headerPct = min(1.0, max(0.0, numer / denom))
-
-            let txPctFinal: Double
-            if let snap = await client?.getSyncSnapshot(), snap.headerHeight > 0 {
-                txPctFinal = min(1.0, max(0.0, Double(snap.lastSyncedFilterHeight) / Double(snap.headerHeight)))
-            } else if let stats = await client?.getStats(), stats.headerHeight > 0 {
-                txPctFinal = min(1.0, max(0.0, Double(stats.filterHeight) / Double(stats.headerHeight)))
-            } else {
-                txPctFinal = prevTx
-            }
-
-            let mnPctFinal: Double
-            if let snap = await client?.getSyncSnapshot() {
-                mnPctFinal = snap.masternodesSynced ? 1.0 : 0.0
-            } else {
-                mnPctFinal = prevMn
-            }
-
-            await MainActor.run {
-                WalletService.shared.headerProgress = headerPct
-                WalletService.shared.transactionProgress = txPctFinal
-                WalletService.shared.masternodeProgress = mnPctFinal
-            }
+        // Use event-driven transaction progress from SPVClient (no polling fallback)
+        Task { @MainActor in
+            WalletService.shared.transactionProgress = progress.transactionProgress
         }
     }
     
     public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
-        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-            print("📦 New block: height=\(block.height)")
-        }
+        SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
     }
     
     public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-            print("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)")
-        }
+        SDKLogger.log("💰 New transaction: \(transaction.txid.hexString) - amount=\(transaction.amount)", minimumLevel: .high)
         
         // Update transactions and balance
         Task { @MainActor in
@@ -573,27 +641,25 @@ extension WalletService: SPVClientDelegate {
         }
     }
     
+    public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
+        blocksHit = count
+    }
+    
     public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
         Task { @MainActor in
             isSyncing = false
             
             if success {
-                if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-                    print("✅ Sync completed successfully")
-                }
+                SDKLogger.log("✅ Sync completed successfully", minimumLevel: .medium)
             } else {
-                if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-                    print("❌ Sync failed: \(error ?? "Unknown error")")
-                }
+                SDKLogger.error("❌ Sync failed: \(error ?? "Unknown error")")
                 lastSyncError = SPVError.syncFailed(error ?? "Unknown error")
             }
         }
     }
     
     public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
-        if ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"] == "1" {
-            print("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers")
-        }
+        SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
     }
     
     nonisolated private static func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
@@ -609,6 +675,62 @@ extension WalletService: SPVClientDelegate {
         case .complete:
             return .complete
         }
+    }
+}
+
+// MARK: - Baseline Computation & Debug Logging
+extension WalletService {
+    /// Compute the baseline start-from height across all wallets enabled on the given network.
+    /// Defaults: mainnet=730_000, testnet=0, devnet=0 when no wallets are present.
+    @MainActor
+    func computeNetworkBaselineSyncFromHeight(for network: Network) -> UInt32 {
+        let defaults: [Network: Int] = [.mainnet: 730_000, .testnet: 0, .devnet: 0]
+        guard let ctx = modelContainer?.mainContext else {
+            return UInt32(defaults[network] ?? 0)
+        }
+
+        let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
+        // Filter to wallets that include this network
+        let filtered = wallets.filter { w in
+            switch network {
+            case .mainnet: return (w.networks & 1) != 0
+            case .testnet: return (w.networks & 2) != 0
+            case .devnet:  return (w.networks & 8) != 0
+            }
+        }
+        let perWalletHeights: [Int] = filtered.map { w in
+            switch network {
+            case .mainnet: return max(0, w.syncFromMainnet)
+            case .testnet: return max(0, w.syncFromTestnet)
+            case .devnet:  return max(0, w.syncFromDevnet)
+            }
+        }
+
+        if let minValue = perWalletHeights.min() {
+            return UInt32(minValue)
+        }
+        return UInt32(defaults[network] ?? 0)
+    }
+
+    /// Print a concise list of per-wallet sync-from heights for debugging purposes.
+    @MainActor
+    func logPerWalletSyncFromHeights(for network: Network) {
+        guard let ctx = modelContainer?.mainContext else { return }
+        let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
+        let items: [(String, Int)] = wallets.compactMap { w in
+            // Show only wallets on this network
+            let enabled: Bool
+            let h: Int
+            switch network {
+            case .mainnet: enabled = (w.networks & 1) != 0; h = w.syncFromMainnet
+            case .testnet: enabled = (w.networks & 2) != 0; h = w.syncFromTestnet
+            case .devnet:  enabled = (w.networks & 8) != 0; h = w.syncFromDevnet
+            }
+            guard enabled else { return nil }
+            return (w.id.uuidString.prefix(8).description, max(0, h))
+        }
+        let summary = items.map { "\($0.0):\($0.1)" }.joined(separator: ", ")
+        print("[SPV][Baseline] Per-wallet sync-from heights for \(network.rawValue): [\(summary)]")
     }
 }
 

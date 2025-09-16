@@ -262,6 +262,39 @@ struct WalletInfoView: View {
                         }
                     }
                 }
+
+                // Sync From (per-network) Section
+                Section("Sync From (Block Height)") {
+                    // Show only enabled networks for clarity
+                    if mainnetEnabled {
+                        HStack {
+                            Text("Mainnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromMainnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if testnetEnabled {
+                        HStack {
+                            Text("Testnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromTestnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if devnetEnabled {
+                        HStack {
+                            Text("Devnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromDevnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if !mainnetEnabled && !testnetEnabled && !devnetEnabled {
+                        Text("No networks enabled")
+                            .foregroundColor(.secondary)
+                    }
+                }
                 
                 // Delete Wallet Section
                 Section {
@@ -343,6 +376,13 @@ struct WalletInfoView: View {
                 devnetAccountCount = list.count
             }
         } else { devnetAccountCount = nil }
+    }
+
+    // Format a block height with thousands separators
+    private func formatHeight(_ h: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: h)) ?? "\(h)"
     }
     
     private func saveWalletName() {

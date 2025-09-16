@@ -95,20 +95,36 @@ struct GlobalSyncIndicator: View {
     @EnvironmentObject var walletService: WalletService
     let showDetails: Bool
     
+    // Helpers
+    private var phaseTitle: String {
+        let h = min(max(walletService.headerProgress, 0.0), 1.0)
+        let m = min(max(walletService.masternodeProgress, 0.0), 1.0)
+        let t = min(max(walletService.transactionProgress, 0.0), 1.0)
+        // If transactions are in progress, always show that phase
+        if t > 0.0 && t < 1.0 { return "Transactions (\(Int(t * 100))%)" }
+        if h < 1.0 { return "Headers (\(Int(h * 100))%)" }
+        if m < 1.0 { return "Masternode List (\(Int(m * 100))%)" }
+        return "Complete"
+    }
+    
+    private func fmt(_ value: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: value)) ?? "\(value)"
+    }
+    
     var body: some View {
         VStack(spacing: 0) {
-            if let progress = walletService.detailedSyncProgress as? SyncProgress {
+            if walletService.detailedSyncProgress != nil {
                 if showDetails {
                     HStack {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.caption)
                             .symbolEffect(.pulse)
-                        Text("Syncing: \(Int(progress.progress * 100))%")
+                        Text("Syncing: \(phaseTitle)")
                             .font(.caption)
                         Spacer()
-                        Text("\(progress.current)/\(progress.total)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        // No right-side numbers in the top bar per design
                         Button(action: { walletService.stopSync() }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
@@ -121,9 +137,14 @@ struct GlobalSyncIndicator: View {
                 }
                 // Thin progress bar always shown
                 GeometryReader { geometry in
+                    // Use current phase progress for the thin bar (prioritize transactions)
+                    let h = min(max(walletService.headerProgress, 0.0), 1.0)
+                    let m = min(max(walletService.masternodeProgress, 0.0), 1.0)
+                    let t = min(max(walletService.transactionProgress, 0.0), 1.0)
+                    let p: Double = (t > 0.0 && t < 1.0) ? t : ((h < 1.0) ? h : ((m < 1.0) ? m : 1.0))
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: geometry.size.width * progress.progress)
+                        .frame(width: geometry.size.width * p)
                 }
                 .frame(height: 2)
             }

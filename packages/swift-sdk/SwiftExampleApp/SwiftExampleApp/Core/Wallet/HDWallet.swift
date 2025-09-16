@@ -34,6 +34,13 @@ public final class HDWallet: HDWalletModels {
     // Networks bitfield - tracks which networks this wallet is available on
     // Uses FFINetworks values: DASH(mainnet)=1, TESTNET=2, DEVNET=8
     public var networks: UInt32
+
+    // Per-network sync-from heights (absolute block heights)
+    // These indicate the starting block to sync from for each network.
+    // 0 means start from genesis.
+    public var syncFromMainnet: Int
+    public var syncFromTestnet: Int
+    public var syncFromDevnet: Int
     
     init(label: String, network: Network, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
@@ -55,6 +62,11 @@ public final class HDWallet: HDWalletModels {
         case .devnet:
             self.networks = 8  // DEVNET
         }
+
+        // Default sync-from values (will be overridden by WalletService on creation)
+        self.syncFromMainnet = 0
+        self.syncFromTestnet = 0
+        self.syncFromDevnet = 0
     }
     
     var dashNetwork: Network {
