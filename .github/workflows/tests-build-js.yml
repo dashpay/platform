@@ -57,6 +57,10 @@ jobs:
         run: cargo binstall wasm-bindgen-cli@0.2.100
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Install wasm-bindgen-cli
+        run: cargo binstall wasm-pack
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
       - name: Restore cached wasm-opt (Binaryen)
         id: cache-binaryen
         uses: actions/cache@v4
