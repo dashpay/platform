@@ -15,7 +15,6 @@ pub trait Filter<E>: Send + Sync {
 struct Subscription<E, F> {
     filter: F,
     sender: mpsc::UnboundedSender<E>,
-    on_drop: Option<Arc<dyn Fn(u64) + Send + Sync>>, // invoked when removed
 }
 
 /// Generic, clonable in‑process event bus with pluggable filtering.
@@ -46,16 +45,13 @@ where
 }
 
 impl<E, F> EventBus<E, F> {
-    /// Remove a subscription by id, update metrics, and invoke drop callback if present.
+    /// Remove a subscription by id and update metrics.
     pub async fn remove_subscription(&self, id: u64) {
         tracing::debug!("event_bus: trying to remove subscription id={}", id);
         let mut subs = self.subs.write().await;
-        if let Some(sub) = subs.remove(&id) {
+        if subs.remove(&id).is_some() {
             metrics_unsubscribe_inc();
             metrics_active_gauge_set(subs.len());
-            if let Some(cb) = sub.on_drop {
-                (cb)(id);
-            }
         } else {
             tracing::debug!("event_bus: subscription id={} not found, not removed", id);
         }
@@ -83,11 +79,7 @@ where
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::unbounded_channel::<E>();
 
-        let sub = Subscription {
-            filter,
-            sender: tx,
-            on_drop: None,
-        };
+        let sub = Subscription { filter, sender: tx };
 
         {
             let mut subs = self.subs.write().await;
@@ -103,8 +95,6 @@ where
             event_bus: self.clone(),
         }
     }
-
-    // Note: use SubscriptionHandle::with_drop_cb to attach a drop callback after subscription.
 
     /// Publish an event to all subscribers whose filters match, using
     /// the current Tokio runtime if available, otherwise log a warning.
@@ -209,21 +199,14 @@ where
         rx.recv().await
     }
 
-    /// Attach a drop callback to this subscription. The callback is invoked
-    /// when the subscription is removed (explicitly or via RAII drop of the
-    /// last handle). Consumes and returns the handle.
-    pub async fn with_drop_cb(self, on_drop: Arc<dyn Fn(u64) + Send + Sync>) -> Self {
-        if let Ok(mut subs) = self.event_bus.subs.try_write() {
-            if let Some(sub) = subs.get_mut(&self.id) {
-                sub.on_drop = Some(on_drop);
-            }
-        } else {
-            // Fallback to awaited write if try_write() is contended
-            let mut subs = self.event_bus.subs.write().await;
-            if let Some(sub) = subs.get_mut(&self.id) {
-                sub.on_drop = Some(on_drop);
-            }
-        }
+    /// Disable automatic unsubscription when the last handle is dropped.
+    ///
+    /// By default, dropping the final [`SubscriptionHandle`] removes the
+    /// subscription from the [`EventBus`]. Calling this method keeps the
+    /// subscription registered so that the caller can explicitly remove it
+    /// via [`EventBus::remove_subscription`].
+    pub fn no_unsubscribe_on_drop(mut self) -> Self {
+        self.drop = false;
         self
     }
 }
@@ -248,12 +231,9 @@ where
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
                     if let Ok(mut subs) = bus.subs.try_write() {
-                        if let Some(sub) = subs.remove(&id) {
+                        if subs.remove(&id).is_some() {
                             metrics_unsubscribe_inc();
                             metrics_active_gauge_set(subs.len());
-                            if let Some(cb) = sub.on_drop {
-                                (cb)(id);
-                            }
                         }
                     }
                 }
@@ -459,6 +439,23 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(b, Evt::Num(12));
+    }
+
+    #[tokio::test]
+    async fn no_unsubscribe_on_drop_allows_manual_cleanup() {
+        let bus: EventBus<Evt, EvenOnly> = EventBus::new();
+        let handle = bus
+            .add_subscription(EvenOnly)
+            .await
+            .no_unsubscribe_on_drop();
+        let id = handle.id();
+
+        drop(handle);
+        // Automatic removal should not happen
+        assert_eq!(bus.subscription_count().await, 1);
+
+        bus.remove_subscription(id).await;
+        assert_eq!(bus.subscription_count().await, 0);
     }
 
     #[tokio::test]

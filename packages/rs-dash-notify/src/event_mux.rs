@@ -215,7 +215,11 @@ impl EventMux {
                         }
 
                         // Create subscription filtered by client_subscription_id and forward events
-                        let handle = self.bus.add_subscription(IdFilter { id: id.clone() }).await;
+                        let handle = self
+                            .bus
+                            .add_subscription(IdFilter { id: id.clone() })
+                            .await
+                            .no_unsubscribe_on_drop();
 
                         {
                             let mut subs = self.subscriptions.lock().unwrap();
@@ -531,37 +535,6 @@ impl EventMux {
             };
             let _ = tx.send(Ok(cmd));
 
-            // Attach drop callback to send Remove on drop
-            let id_for_cb = id.clone();
-            let subs_map = self.subscriptions.clone();
-            let _handle = handle
-                .clone()
-                .with_drop_cb(Arc::new(move |_h_id| {
-                    // Best-effort remove; send synchronously on unbounded channel
-                    let cmd = PlatformEventsCommand {
-                        version: Some(CmdVersion::V0(
-                            dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
-                                command: Some(Cmd::Remove(
-                                    dapi_grpc::platform::v0::RemoveSubscriptionV0 {
-                                        client_subscription_id: id_for_cb.clone(),
-                                    },
-                                )),
-                            },
-                        )),
-                    };
-                    let _ = tx.send(Ok(cmd));
-                    tracing::debug!(
-                        subscription_id = %id_for_cb,
-                        "event_mux: subscription dropped, sent Remove command to producer"
-                    );
-                    // Remove mapping entry for this (subscriber_id, id)
-                    if let Ok(mut subs) = subs_map.lock() {
-                        tracing::debug!(subscription_id = %id_for_cb, "event_mux: removing subscription mapping");
-                        subs.remove(&SubscriptionKey { subscriber_id, id: id_for_cb.clone() });
-                    }
-                }))
-                .await;
-
             Ok((id, handle))
         } else {
             tracing::warn!(subscription_id = %id, "event_mux: no producers available for Add");
@@ -809,7 +782,7 @@ mod tests {
                 CmdVersion::V0(v0) => v0.command,
             }) {
                 Some(Cmd::Add(a)) => assert_eq!(a.client_subscription_id, sub_id),
-                _ => panic!("expected Add command"),
+                other => panic!("expected Add command, got {:?}", other),
             }
         }
 

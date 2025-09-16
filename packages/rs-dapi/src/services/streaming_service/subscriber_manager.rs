@@ -63,7 +63,7 @@ impl<T> Drop for SubscriptionHandleInner<T> {
             tokio::spawn(async move {
                 let mut map = subs.write().await;
                 if map.remove(&id).is_some() {
-                    debug!("Removed subscription (Drop): {}", id);
+                    debug!(left = map.len(), "Removed subscription (Drop): {}", id);
                 }
             });
         }
