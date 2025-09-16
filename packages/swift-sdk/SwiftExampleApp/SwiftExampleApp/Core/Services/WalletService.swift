@@ -181,21 +181,13 @@ public class WalletService: ObservableObject {
 
                 // Fetch current known tip from SPV (via FFI) and show it in the Headers row
                 let tip: UInt32? = await MainActor.run { clientLocal.getTipHeight() }
-                let checkpoint: UInt32? = await clientLocal.getLatestCheckpointHeight()
+                let checkpoint: UInt32? = await MainActor.run { clientLocal.getLatestCheckpointHeight() }
                 await MainActor.run {
-                    WalletService.shared.headerCurrentHeight = Int(baseline)
-                    WalletService.shared.latestFilterHeight = Int(baseline)
-                    if let t = tip, t > 0 {
-                        WalletService.shared.headerTargetHeight = Int(t)
-                    } else if let cp = checkpoint, cp > 0 {
-                        WalletService.shared.headerTargetHeight = Int(cp)
-                    }
-                }
-
-                // Seed UI with latest checkpoint height if we don't have a header yet
-                let seedHeight = await clientLocal.getLatestCheckpointHeight()
-                await MainActor.run {
-                    if WalletService.shared.latestHeaderHeight == 0, let cp = seedHeight {
+                    WalletService.shared.applyBaselineHeights(
+                        baseline: Int(baseline),
+                        knownTip: tip ?? checkpoint
+                    )
+                    if WalletService.shared.latestHeaderHeight == 0, let cp = checkpoint ?? tip {
                         WalletService.shared.latestHeaderHeight = Int(cp)
                     }
                 }
@@ -479,10 +471,11 @@ public class WalletService: ObservableObject {
         headerProgress = 0
         masternodeProgress = 0
         transactionProgress = 0
-        headerCurrentHeight = 0
-        headerTargetHeight = 0
+
+        let baseline = Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+        applyBaselineHeights(baseline: baseline, knownTip: nil)
+
         latestHeaderHeight = 0
-        latestFilterHeight = 0
         latestMasternodeListHeight = 0
         blocksHit = 0
         syncProgress = nil
@@ -682,12 +675,21 @@ extension WalletService: SPVClientDelegate {
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
-            // Update absolute heights for display
-            WalletService.shared.headerCurrentHeight = Int(currentHeight)
-            WalletService.shared.headerTargetHeight = Int(targetHeight)
-            WalletService.shared.latestFilterHeight = Int(progress.filterHeight)
-            // Trust event-driven transaction progress from SPVClient
-            WalletService.shared.transactionProgress = progress.transactionProgress
+
+            let baseHeight = Int(startHeight)
+            let absHeader = max(Int(currentHeight), baseHeight)
+            let absTarget = max(Int(targetHeight), baseHeight)
+            let absFilterRaw = max(Int(progress.filterHeight), baseHeight)
+            let absFilter = min(absFilterRaw, absTarget)
+
+            WalletService.shared.headerCurrentHeight = absHeader
+            WalletService.shared.headerTargetHeight = absTarget
+            WalletService.shared.latestFilterHeight = absFilter
+
+            let filterNumerator = max(0.0, Double(absFilter - baseHeight))
+            let filterDenominator = max(1.0, Double(absTarget - baseHeight))
+            let filterPct = min(1.0, filterNumerator / filterDenominator)
+            WalletService.shared.transactionProgress = filterPct
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(currentHeight),
@@ -790,6 +792,19 @@ extension WalletService {
             return UInt32(minValue)
         }
         return UInt32(defaults[network] ?? 0)
+    }
+
+    /// Apply baseline heights to the UI counters with an optional known tip.
+    @MainActor
+    private func applyBaselineHeights(baseline: Int, knownTip: UInt32?) {
+        headerCurrentHeight = baseline
+        latestFilterHeight = baseline
+
+        if let tip = knownTip, tip > 0 {
+            headerTargetHeight = Int(tip)
+        } else if headerTargetHeight < baseline {
+            headerTargetHeight = baseline
+        }
     }
 
     /// Print a concise list of per-wallet sync-from heights for debugging purposes.
