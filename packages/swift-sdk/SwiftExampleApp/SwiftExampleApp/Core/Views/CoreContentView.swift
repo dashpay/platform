@@ -125,16 +125,18 @@ var body: some View {
                         onRestart: restartHeaderSync
                     )
                     
-                    // Masternode list sync progress
-                    SyncProgressRow(
-                        title: "Masternode List",
-                        progress: safeMasternodeProgress,
-                        detail: "\(Int(safeMasternodeProgress * 100))% complete",
-                        icon: "server.rack",
-                        trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
-                        onRestart: restartMasternodeSync
-                    )
-                    
+                    if walletService.shouldSyncMasternodes {
+                        // Masternode list sync progress
+                        SyncProgressRow(
+                            title: "Masternode List",
+                            progress: safeMasternodeProgress,
+                            detail: "\(Int(safeMasternodeProgress * 100))% complete",
+                            icon: "server.rack",
+                            trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
+                            onRestart: restartMasternodeSync
+                        )
+                    }
+
                     // Transactions sync progress (filters/blocks)
                     SyncProgressRow(
                         title: "Transactions",
