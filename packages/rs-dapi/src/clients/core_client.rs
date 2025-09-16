@@ -123,17 +123,18 @@ impl CoreClient {
         base_block: &dashcore_rpc::dashcore::BlockHash,
         block: &dashcore_rpc::dashcore::BlockHash,
     ) -> DAPIResult<serde_json::Value> {
-        trace!("Core RPC: getmnlistdiff");
+        trace!("Core RPC: protx diff");
         let base_hex = base_block.to_string();
         let block_hex = block.to_string();
         let client = self.client.clone();
 
         let diff = tokio::task::spawn_blocking(move || {
             let params = [
+                serde_json::Value::String("diff".to_string()),
                 serde_json::Value::String(base_hex),
                 serde_json::Value::String(block_hex),
             ];
-            client.call("getmnlistdiff", &params)
+            client.call("protx", &params)
         })
         .await
         .to_dapi_result()?;
