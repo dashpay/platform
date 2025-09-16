@@ -56,7 +56,7 @@ class ReconnectableStream extends EventEmitter {
 
     const opts = { ...defaultOptions, ...options };
 
-    this.logger = opts.logger || { debug: () => {} };
+    this.logger = opts.logger || { debug: () => { } };
 
     /**
      * Auto-reconnect interval in millisecond
@@ -298,6 +298,12 @@ class ReconnectableStream extends EventEmitter {
   cancel() {
     // eslint-disable-next-line no-unused-expressions
     this.logger.debug('[ReconnectableStream] Canceling streams');
+
+    // Log stack trace to identify where cancel is called from
+    // TODO: remove after debugging
+    const stack = new Error('Cancel called from').stack;
+    this.logger.debug('[ReconnectableStream] Cancel stack trace:', stack);
+
     this.stopAutoReconnect();
     // Hack for browsers to properly unsubscribe from ERROR event.
     // (It will continue propagating despite of calling cancel)
