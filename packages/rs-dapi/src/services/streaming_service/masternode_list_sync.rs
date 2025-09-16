@@ -4,7 +4,7 @@ use ciborium::ser::into_writer;
 use dashcore_rpc::dashcore::hashes::Hash as HashTrait;
 use dashcore_rpc::dashcore::BlockHash;
 use tokio::sync::{Mutex, Notify, RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, trace, warn};
 
 use crate::clients::CoreClient;
 use crate::error::{DAPIResult, DapiError};
@@ -40,15 +40,16 @@ impl MasternodeListSync {
     pub fn spawn_initial_sync(self: &Arc<Self>) {
         let this = Arc::clone(self);
         tokio::spawn(async move {
+            trace!("masternode_sync=initial start");
             match this.sync_best_chain_lock().await {
                 Ok(true) => {
-                    info!("Initial masternode list sync completed");
+                    info!("masternode_sync=initial completed");
                 }
                 Ok(false) => {
-                    debug!("No chain lock available yet for initial masternode list sync");
+                    debug!("masternode_sync=initial no_chain_lock");
                 }
                 Err(err) => {
-                    warn!("Failed to perform initial masternode list sync: {}", err);
+                    warn!(error = %err, "masternode_sync=initial failed");
                 }
             }
         });
@@ -57,28 +58,33 @@ impl MasternodeListSync {
     pub fn start_chain_lock_listener(self: &Arc<Self>, subscriber_manager: Arc<SubscriberManager>) {
         let this = Arc::clone(self);
         tokio::spawn(async move {
+            trace!("masternode_sync=listener started");
             let handle = subscriber_manager
                 .add_subscription(FilterType::CoreChainLocks)
                 .await;
 
             while let Some(event) = handle.recv().await {
                 if let StreamingEvent::CoreChainLock { .. } = event {
+                    trace!("masternode_sync=listener chain_lock_event");
                     this.handle_chain_lock_notification().await;
                 }
             }
-            debug!("Chain lock listener stopped");
+            debug!("masternode_sync=listener stopped");
         });
     }
 
     pub async fn ensure_ready(&self) -> DAPIResult<()> {
         if self.state.read().await.full_diff.is_some() {
+            trace!("masternode_sync=ensure_ready cached");
             return Ok(());
         }
 
         if self.sync_best_chain_lock().await? {
+            trace!("masternode_sync=ensure_ready synced_now");
             return Ok(());
         }
 
+        trace!("masternode_sync=ensure_ready wait_notify");
         self.ready_notify.notified().await;
         Ok(())
     }
@@ -94,19 +100,27 @@ impl MasternodeListSync {
 
     pub async fn handle_chain_lock_notification(&self) {
         match self.sync_best_chain_lock().await {
-            Ok(true) => {}
+            Ok(true) => {
+                trace!("masternode_sync=chain_lock handled");
+            }
             Ok(false) => {
-                debug!("Chain lock notification received but no best chain lock available yet");
+                debug!("masternode_sync=chain_lock no_best_lock");
             }
             Err(err) => {
-                warn!("Failed to sync masternode list on chain lock: {}", err);
+                warn!(error = %err, "masternode_sync=chain_lock failed");
             }
         }
     }
 
     async fn sync_best_chain_lock(&self) -> DAPIResult<bool> {
+        trace!("masternode_sync=sync_best_chain_lock fetch");
         match self.core_client.get_best_chain_lock().await? {
             Some(chain_lock) => {
+                trace!(
+                    block_hash = %chain_lock.block_hash,
+                    height = chain_lock.block_height,
+                    "masternode_sync=sync_best_chain_lock obtained"
+                );
                 self.sync_to_chain_lock(chain_lock.block_hash, chain_lock.block_height)
                     .await?;
                 Ok(true)
@@ -116,6 +130,7 @@ impl MasternodeListSync {
     }
 
     async fn sync_to_chain_lock(&self, block_hash: BlockHash, height: u32) -> DAPIResult<()> {
+        trace!(%block_hash, height, "masternode_sync=sync_to_chain_lock start");
         let _guard = self.update_lock.lock().await;
 
         if self
@@ -127,7 +142,7 @@ impl MasternodeListSync {
             .filter(|current| *current == &block_hash)
             .is_some()
         {
-            debug!("Masternode list already synced for block {}", block_hash);
+            debug!(%block_hash, "masternode_sync=sync_to_chain_lock already_current");
             return Ok(());
         }
 
@@ -147,12 +162,20 @@ impl MasternodeListSync {
             None
         };
 
+        trace!(
+            previous = previous_hash.map(|h| h.to_string()),
+            has_incremental = diff_bytes.is_some(),
+            "masternode_sync=sync_to_chain_lock diffs_prepared"
+        );
+
         {
             let mut state = self.state.write().await;
             state.block_hash = Some(block_hash);
             state.block_height = Some(height);
             state.full_diff = Some(full_diff.clone());
         }
+
+        trace!("masternode_sync=sync_to_chain_lock state_updated");
 
         let payload = diff_bytes.unwrap_or_else(|| full_diff.clone());
         self.subscriber_manager
@@ -171,12 +194,19 @@ impl MasternodeListSync {
     }
 
     async fn fetch_diff(&self, base: Option<&BlockHash>, block: &BlockHash) -> DAPIResult<Vec<u8>> {
+        trace!(
+            base = base.map(|h| h.to_string()),
+            block = %block,
+            "masternode_sync=fetch_diff start"
+        );
         let base_hash = base.cloned().unwrap_or_else(Self::null_block_hash);
         let diff = self.core_client.mn_list_diff(&base_hash, block).await?;
 
         let mut buffer = Vec::new();
         into_writer(&diff, &mut buffer)
             .map_err(|e| DapiError::internal(format!("failed to encode masternode diff: {}", e)))?;
+
+        trace!(size = buffer.len(), "masternode_sync=fetch_diff encoded");
 
         Ok(buffer)
     }

@@ -367,6 +367,7 @@ impl ZmqListener {
                         .map(|bytes| bytes.to_vec())
                         .collect();
                     if let Some(event) = Self::parse_zmq_message(frames) {
+                        tracing::trace!(?event, "Received ZMQ event");
                         if let Err(e) = sender.send(event) {
                             warn!("Failed to send ZMQ event: {}", e);
                         }
