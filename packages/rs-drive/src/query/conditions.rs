@@ -18,33 +18,6 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
-/// Map known meta/system fields to their corresponding property types.
-/// Meta fields are top-level and always start with `$`.
-fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
-    match field {
-        // Identifiers
-        "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
-        // Dates (millis since epoch)
-        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
-        // Block heights and core block heights
-        "$createdAtBlockHeight"
-        | "$updatedAtBlockHeight"
-        | "$transferredAtBlockHeight"
-        | "$createdAtCoreBlockHeight"
-        | "$updatedAtCoreBlockHeight"
-        | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
-        // Revision and protocol version are integers
-        "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
-        // Type name is a string
-        "$type" => Some(DocumentPropertyType::String(
-            dpp::data_contract::document_type::StringPropertySizes {
-                min_length: None,
-                max_length: None,
-            },
-        )),
-        _ => None,
-    }
-}
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
@@ -1787,6 +1760,34 @@ pub fn validate_internal_clauses_against_schema(
     }
 
     Ok(())
+}
+
+/// Map known meta/system fields to their corresponding property types.
+/// Meta fields are top-level and always start with `$`.
+fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
+    match field {
+        // Identifiers
+        "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
+        // Dates (millis since epoch)
+        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+        // Block heights and core block heights
+        "$createdAtBlockHeight"
+        | "$updatedAtBlockHeight"
+        | "$transferredAtBlockHeight"
+        | "$createdAtCoreBlockHeight"
+        | "$updatedAtCoreBlockHeight"
+        | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
+        // Revision and protocol version are integers
+        "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
+        // Type name is a string
+        "$type" => Some(DocumentPropertyType::String(
+            dpp::data_contract::document_type::StringPropertySizes {
+                min_length: None,
+                max_length: None,
+            },
+        )),
+        _ => None,
+    }
 }
 
 #[cfg(feature = "server")]
