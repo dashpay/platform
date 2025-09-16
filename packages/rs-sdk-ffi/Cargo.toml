@@ -9,16 +9,20 @@ description = "FFI bindings for Dash Platform SDK - C-compatible interface for c
 [lib]
 crate-type = ["staticlib", "cdylib", "rlib"]
 
- 
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", features = ["dpns-contract", "dashpay-contract"] }
+dash-sdk = { path = "../rs-sdk", features = [
+    "dpns-contract",
+    "dashpay-contract",
+] }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
-rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = ["dpns-contract"] }
+rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider", features = [
+    "dpns-contract",
+] }
 simple-signer = { path = "../simple-signer" }
 
 # Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "9b85df8a7cf5b8b2da6d2625b0eea4e9623b7d1e", optional = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
@@ -54,11 +58,11 @@ reqwest = { version = "0.12", features = ["json", "rustls-tls-native-roots"] }
 cbindgen = "0.27"
 
 [profile.release]
-lto = "fat"              # Enable cross-crate optimization
-codegen-units = 1        # Single codegen unit for better optimization
-strip = "symbols"        # Strip debug symbols for smaller size
-opt-level = "z"          # Optimize for size
-panic = "abort"          # Required for iOS
+lto = "fat"       # Enable cross-crate optimization
+codegen-units = 1 # Single codegen unit for better optimization
+strip = "symbols" # Strip debug symbols for smaller size
+opt-level = "z"   # Optimize for size
+panic = "abort"   # Required for iOS
 
 [dev-dependencies]
 hex = "0.4"

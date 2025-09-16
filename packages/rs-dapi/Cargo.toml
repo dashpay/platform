@@ -89,7 +89,7 @@ rs-dash-notify = { path = "../rs-dash-notify" }
 rs-dapi-client = { path = "../rs-dapi-client" }
 
 # Dash Core RPC client
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "a86e1cd7b95910ef5ab43c75afa27c102a89cc54" }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "9b85df8a7cf5b8b2da6d2625b0eea4e9623b7d1e" }
 zeroize = "1.8"
 
 [build-dependencies]

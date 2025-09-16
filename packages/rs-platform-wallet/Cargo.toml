@@ -11,11 +11,11 @@ description = "Platform wallet with identity management support"
 dpp = { path = "../rs-dpp" }
 
 # Key wallet dependencies (from rust-dashcore)
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219" }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "9b85df8a7cf5b8b2da6d2625b0eea4e9623b7d1e" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "9b85df8a7cf5b8b2da6d2625b0eea4e9623b7d1e", optional = true }
 
 # Core dependencies
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219" }
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "9b85df8a7cf5b8b2da6d2625b0eea4e9623b7d1e" }
 
 # Standard dependencies
 serde = { version = "1.0", features = ["derive"] }
