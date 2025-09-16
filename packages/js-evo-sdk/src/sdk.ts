@@ -47,8 +47,9 @@ export class EvoSDK {
   public voting!: VotingFacade;
 
   constructor(options: EvoSDKOptions = {}) {
-    const { network = 'testnet', trusted = false, version, proofs, settings, logs } = options;
-    this.options = { network, trusted, version, proofs, settings, logs } as any;
+    // Apply defaults while preserving any future connection options
+    const { network = 'testnet', trusted = false, ...connection } = options;
+    this.options = { network, trusted, ...connection };
 
     this.documents = new DocumentsFacade(this);
     this.identities = new IdentitiesFacade(this);
@@ -82,22 +83,28 @@ export class EvoSDK {
 
     const { network, trusted, version, proofs, settings, logs } = this.options;
 
-    let b: wasm.WasmSdkBuilder;
+    let builder: wasm.WasmSdkBuilder;
     if (network === 'mainnet') {
-      b = trusted ? (wasm.WasmSdkBuilder as any).mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
+      await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
+
+      builder = trusted ? wasm.WasmSdkBuilder.mainnetTrusted() : wasm.WasmSdkBuilder.mainnet();
+    } else if (network === 'testnet') {
+      await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
+
+      builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
     } else {
-      b = trusted ? (wasm.WasmSdkBuilder as any).testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+      throw new Error(`Unknown network: ${network}`);
     }
 
-    if (version) b = b.withVersion(version);
-    if (typeof proofs === 'boolean') b = b.withProofs(proofs);
-    if (logs) b = b.withLogs(logs);
+    if (version) builder = builder.withVersion(version);
+    if (typeof proofs === 'boolean') builder = builder.withProofs(proofs);
+    if (logs) builder = builder.withLogs(logs);
     if (settings) {
       const { connectTimeoutMs, timeoutMs, retries, banFailedAddress } = settings;
-      b = b.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
+      builder = builder.withSettings(connectTimeoutMs ?? null, timeoutMs ?? null, retries ?? null, banFailedAddress ?? null);
     }
 
-    this.wasmSdk = b.build();
+    this.wasmSdk = builder.build();
   }
 
   static fromWasm(wasmSdk: wasm.WasmSdk): EvoSDK {

@@ -23,8 +23,9 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.json && webpack --config webpack.config.cjs",
     "lint": "eslint .",
-    "test": "yarn run test:unit",
-    "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run"
+    "test": "yarn run test:unit && yarn run test:functional",
+    "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
+    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000"
   },
   "devDependencies": {
     "assert": "^2.0.0",

@@ -1,0 +1,34 @@
+import { EvoSDK } from '../../dist/evo-sdk.module.js';
+import { TEST_IDS } from './fixtures/testnet.mjs';
+
+describe('Data Contracts', function () {
+  let sdk;
+
+  this.timeout(60000);
+
+  before(async () => {
+    sdk = EvoSDK.testnetTrusted();
+    await sdk.connect();
+  })
+
+  it('fetch() returns data contract', async () => {
+    const res = await sdk.contracts.fetch(TEST_IDS.dataContractId);
+    expect(res).to.exist;
+  });
+
+  it('fetchWithProof() returns proof info', async () => {
+    const res = await sdk.contracts.fetchWithProof(TEST_IDS.dataContractId);
+    expect(res).to.exist;
+  });
+
+  it('getHistory() returns history for contract', async () => {
+    const res = await sdk.contracts.getHistory({ contractId: TEST_IDS.groupContractId, limit: 1 });
+    expect(res).to.exist;
+  });
+
+  it('getMany() returns multiple contracts', async () => {
+    const res = await sdk.contracts.getMany([TEST_IDS.dataContractId]);
+    expect(res).to.exist;
+  });
+});
+
