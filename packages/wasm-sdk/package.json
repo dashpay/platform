@@ -19,6 +19,10 @@
     "dist/**",
     "README.md"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.18"
+  },
   "scripts": {
     "build:dev": "./scripts/build.sh && node ./scripts/bundle.cjs",
     "build:release": "./scripts/build-optimized.sh && node ./scripts/bundle.cjs",

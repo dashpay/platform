@@ -13,6 +13,10 @@
       "import": "./dist/evo-sdk.module.js"
     }
   },
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18.18"
+  },
   "files": [
     "dist/**",
     "README.md"
