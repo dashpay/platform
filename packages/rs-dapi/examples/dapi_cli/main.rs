@@ -1,7 +1,6 @@
+mod core;
 mod error;
-mod masternode;
-mod state_transition;
-mod transactions;
+mod platform;
 
 use clap::{ArgAction, Parser, Subcommand};
 use error::CliResult;
@@ -27,16 +26,12 @@ struct Cli {
 
 #[derive(Subcommand, Debug)]
 enum Command {
-    /// Stream transactions with proofs from the Core gRPC service
-    Transactions(transactions::TransactionsCommand),
-    /// Stream masternode list diffs from the Core gRPC service
-    Masternode(masternode::MasternodeCommand),
-    /// Platform state transition helpers
-    #[command(subcommand_required = true)]
-    StateTransition {
-        #[command(subcommand)]
-        command: state_transition::StateTransitionCommand,
-    },
+    /// Core gRPC helpers
+    #[command(subcommand)]
+    Core(core::CoreCommand),
+    /// Platform gRPC helpers
+    #[command(subcommand)]
+    Platform(platform::PlatformCommand),
 }
 
 fn init_tracing(verbosity: u8) {
@@ -59,9 +54,8 @@ async fn main() -> CliResult<()> {
     init_tracing(cli.verbose);
 
     match cli.command {
-        Command::Transactions(cmd) => transactions::run(&cli.url, cmd).await?,
-        Command::Masternode(cmd) => masternode::run(&cli.url, cmd).await?,
-        Command::StateTransition { command } => state_transition::run(&cli.url, command).await?,
+        Command::Core(command) => core::run(&cli.url, command).await?,
+        Command::Platform(command) => platform::run(&cli.url, command).await?,
     }
 
     Ok(())
