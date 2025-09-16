@@ -1,6 +1,6 @@
 use crate::error::MapToDapiResult;
 use crate::{DAPIResult, DapiError};
-use dashcore_rpc::{Auth, Client, RpcApi};
+use dashcore_rpc::{jsonrpc, Auth, Client, RpcApi};
 use std::sync::Arc;
 use tracing::trace;
 use zeroize::Zeroizing;
@@ -85,6 +85,59 @@ impl CoreClient {
         let hash = dashcore_rpc::dashcore::BlockHash::from_str(hash_hex)
             .map_err(|e| DapiError::client(format!("Invalid block hash: {}", e)))?;
         self.get_block_bytes_by_hash(hash).await
+    }
+
+    pub async fn get_block_header_info(
+        &self,
+        hash: &dashcore_rpc::dashcore::BlockHash,
+    ) -> DAPIResult<dashcore_rpc::json::GetBlockHeaderResult> {
+        trace!("Core RPC: get_block_header_info");
+        let hash = *hash;
+        let client = self.client.clone();
+        let header = tokio::task::spawn_blocking(move || client.get_block_header_info(&hash))
+            .await
+            .to_dapi_result()?;
+        Ok(header)
+    }
+
+    pub async fn get_best_chain_lock(
+        &self,
+    ) -> DAPIResult<Option<dashcore_rpc::dashcore::ChainLock>> {
+        trace!("Core RPC: get_best_chain_lock");
+        let client = self.client.clone();
+        match tokio::task::spawn_blocking(move || client.get_best_chain_lock()).await {
+            Ok(Ok(chain_lock)) => Ok(Some(chain_lock)),
+            Ok(Err(dashcore_rpc::Error::JsonRpc(jsonrpc::Error::Rpc(rpc))))
+                if rpc.code == -32603 =>
+            {
+                // Dash Core returns -32603 when no chain lock is available yet
+                Ok(None)
+            }
+            Ok(Err(e)) => Err(DapiError::from(e)),
+            Err(e) => Err(DapiError::from(e)),
+        }
+    }
+
+    pub async fn mn_list_diff(
+        &self,
+        base_block: &dashcore_rpc::dashcore::BlockHash,
+        block: &dashcore_rpc::dashcore::BlockHash,
+    ) -> DAPIResult<serde_json::Value> {
+        trace!("Core RPC: getmnlistdiff");
+        let base_hex = base_block.to_string();
+        let block_hex = block.to_string();
+        let client = self.client.clone();
+
+        let diff = tokio::task::spawn_blocking(move || {
+            let params = [
+                serde_json::Value::String(base_hex),
+                serde_json::Value::String(block_hex),
+            ];
+            client.call("getmnlistdiff", &params)
+        })
+        .await
+        .to_dapi_result()?;
+        Ok(diff)
     }
 
     pub async fn get_blockchain_info(

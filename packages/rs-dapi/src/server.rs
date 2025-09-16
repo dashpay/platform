@@ -50,9 +50,18 @@ impl DapiServer {
             .await?,
         );
 
+        // Create Dash Core RPC client
+        let core_client = CoreClient::new(
+            config.dapi.core.rpc_url.clone(),
+            config.dapi.core.rpc_user.clone(),
+            config.dapi.core.rpc_pass.clone().into(),
+        )
+        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
+
         let streaming_service = Arc::new(StreamingServiceImpl::new(
             drive_client.clone(),
             tenderdash_client.clone(),
+            core_client.clone(),
             config.clone(),
         )?);
 
@@ -63,14 +72,6 @@ impl DapiServer {
             streaming_service.subscriber_manager.clone(),
         )
         .await;
-
-        // Create Dash Core RPC client
-        let core_client = CoreClient::new(
-            config.dapi.core.rpc_url.clone(),
-            config.dapi.core.rpc_user.clone(),
-            config.dapi.core.rpc_pass.clone().into(),
-        )
-        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 
         let core_service =
             CoreServiceImpl::new(streaming_service, config.clone(), core_client).await;
@@ -110,9 +111,17 @@ impl DapiServer {
         let tenderdash_client: Arc<dyn TenderdashClientTrait> =
             Arc::new(MockTenderdashClient::new());
 
+        let core_client = CoreClient::new(
+            config.dapi.core.rpc_url.clone(),
+            config.dapi.core.rpc_user.clone(),
+            config.dapi.core.rpc_pass.clone().into(),
+        )
+        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
+
         let streaming_service = Arc::new(StreamingServiceImpl::new(
             drive_client.clone(),
             tenderdash_client.clone(),
+            core_client.clone(),
             config.clone(),
         )?);
 
@@ -123,13 +132,6 @@ impl DapiServer {
             streaming_service.subscriber_manager.clone(),
         )
         .await;
-
-        let core_client = CoreClient::new(
-            config.dapi.core.rpc_url.clone(),
-            config.dapi.core.rpc_user.clone(),
-            config.dapi.core.rpc_pass.clone().into(),
-        )
-        .map_err(|e| DapiError::Client(format!("Failed to create Core RPC client: {}", e)))?;
 
         let core_service =
             CoreServiceImpl::new(streaming_service.clone(), config.clone(), core_client).await;

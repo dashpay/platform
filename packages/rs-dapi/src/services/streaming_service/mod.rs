@@ -4,11 +4,13 @@
 mod block_header_stream;
 mod bloom;
 mod masternode_list_stream;
+mod masternode_list_sync;
 mod subscriber_manager;
 mod transaction_stream;
 mod zmq_listener;
 
 use crate::clients::traits::TenderdashClientTrait;
+use crate::clients::CoreClient;
 use crate::config::Config;
 use std::sync::Arc;
 use tokio::sync::broadcast;
@@ -16,6 +18,7 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, Duration};
 use tracing::{error, info, trace, warn};
 
+pub(crate) use masternode_list_sync::MasternodeListSync;
 pub(crate) use subscriber_manager::{
     FilterType, StreamingEvent, SubscriberManager, SubscriptionHandle,
 };
@@ -26,9 +29,11 @@ pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 pub struct StreamingServiceImpl {
     pub drive_client: crate::clients::drive_client::DriveClient,
     pub tenderdash_client: Arc<dyn TenderdashClientTrait>,
+    pub core_client: CoreClient,
     pub config: Arc<Config>,
     pub zmq_listener: Arc<dyn ZmqListenerTrait>,
     pub subscriber_manager: Arc<SubscriberManager>,
+    pub masternode_list_sync: Arc<MasternodeListSync>,
     /// Background workers; aborted when the last reference is dropped
     pub workers: Arc<JoinSet<()>>,
 }
@@ -37,24 +42,38 @@ impl StreamingServiceImpl {
     pub fn new(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        core_client: CoreClient,
         config: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         trace!("Creating streaming service with ZMQ listener");
         let zmq_listener: Arc<dyn ZmqListenerTrait> =
             Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
 
-        Self::create_with_common_setup(drive_client, tenderdash_client, config, zmq_listener)
+        Self::create_with_common_setup(
+            drive_client,
+            tenderdash_client,
+            core_client,
+            config,
+            zmq_listener,
+        )
     }
 
     /// Create a new streaming service with a custom ZMQ listener (useful for testing)
     fn create_with_common_setup(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        core_client: CoreClient,
         config: Arc<Config>,
         zmq_listener: Arc<dyn ZmqListenerTrait>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         trace!("Creating streaming service with custom ZMQ listener");
         let subscriber_manager = Arc::new(SubscriberManager::new());
+        let masternode_list_sync = Arc::new(MasternodeListSync::new(
+            core_client.clone(),
+            subscriber_manager.clone(),
+        ));
+        masternode_list_sync.spawn_initial_sync();
+        masternode_list_sync.start_chain_lock_listener(subscriber_manager.clone());
 
         // Prepare background workers set
         let mut workers = JoinSet::new();
@@ -82,9 +101,11 @@ impl StreamingServiceImpl {
         Ok(Self {
             drive_client,
             tenderdash_client,
+            core_client,
             config,
             zmq_listener,
             subscriber_manager,
+            masternode_list_sync,
             workers: Arc::new(workers),
         })
     }

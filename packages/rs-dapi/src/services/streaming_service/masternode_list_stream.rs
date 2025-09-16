@@ -2,7 +2,7 @@ use dapi_grpc::core::v0::{MasternodeListRequest, MasternodeListResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
 
@@ -23,6 +23,7 @@ impl StreamingServiceImpl {
 
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
+        let tx_stream = tx.clone();
         tokio::spawn(async move {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
@@ -39,7 +40,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if tx.send(response).is_err() {
+                if tx_stream.send(response).is_err() {
                     debug!(
                         "Client disconnected from masternode list subscription: {}",
                         sub_handle.id()
@@ -49,11 +50,25 @@ impl StreamingServiceImpl {
             }
         });
 
-        // Send initial full masternode list
-        tokio::spawn(async move {
-            // TODO: Get current masternode list and send as initial diff
-            debug!("Should send initial full masternode list");
-        });
+        if let Err(err) = self.masternode_list_sync.ensure_ready().await {
+            return Err(tonic::Status::from(err));
+        }
+
+        if let Some(diff) = self.masternode_list_sync.current_full_diff().await {
+            if tx
+                .send(Ok(MasternodeListResponse {
+                    masternode_list_diff: diff,
+                }))
+                .is_err()
+            {
+                debug!(
+                    "Client disconnected from masternode list subscription before initial response: {}",
+                    subscription_handle.id()
+                );
+            }
+        } else {
+            debug!("Masternode list diff not available yet for initial response");
+        }
 
         let stream = UnboundedReceiverStream::new(rx);
         Ok(Response::new(stream))

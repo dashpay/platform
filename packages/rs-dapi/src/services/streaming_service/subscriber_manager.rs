@@ -26,6 +26,8 @@ pub enum FilterType {
     CoreAllBlocks,
     /// All masternodes filter (no filtering)
     CoreAllMasternodes,
+    /// Chain lock events only
+    CoreChainLocks,
     /// New Core block hash notifications (for cache invalidation)
     CoreNewBlockHash,
 }
@@ -264,6 +266,7 @@ impl SubscriberManager {
             (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
             (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
             (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
+            (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
             _ => false,
         }
     }

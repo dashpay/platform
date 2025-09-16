@@ -1,8 +1,8 @@
 // JSON-RPC to gRPC translator and legacy Core helpers
 
 use crate::error::{DapiError, DapiResult};
-use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use dapi_grpc::core::v0::BroadcastTransactionRequest;
+use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -77,7 +77,8 @@ impl JsonRpcTranslator {
             }
             "sendRawTransaction" => {
                 let (tx, allow_high_fees, bypass_limits) =
-                    parse_send_raw_tx_params(json_rpc.params).map_err(DapiError::InvalidArgument)?;
+                    parse_send_raw_tx_params(json_rpc.params)
+                        .map_err(DapiError::InvalidArgument)?;
                 let req = BroadcastTransactionRequest {
                     transaction: tx,
                     allow_high_fees,
@@ -184,7 +185,8 @@ fn parse_send_raw_tx_params(params: Option<Value>) -> Result<(Vec<u8>, bool, boo
         }
         // Accept single string too
         Some(Value::String(s)) => {
-            let tx = hex::decode(&s).map_err(|_| "raw transaction must be valid hex".to_string())?;
+            let tx =
+                hex::decode(&s).map_err(|_| "raw transaction must be valid hex".to_string())?;
             Ok((tx, false, false))
         }
         _ => Err("params must be an array or hex string".to_string()),

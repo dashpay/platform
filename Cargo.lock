@@ -5245,6 +5245,7 @@ dependencies = [
  "base64 0.22.1",
  "blake3",
  "chrono",
+ "ciborium",
  "clap",
  "dapi-grpc",
  "dashcore-rpc 0.39.6",

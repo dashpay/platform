@@ -1,12 +1,12 @@
-use dapi_grpc::platform::v0::PlatformEventsCommand;
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
+use dapi_grpc::platform::v0::PlatformEventsCommand;
 use dapi_grpc::tonic::Status;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
-use crate::event_mux::EventMux;
 use crate::event_mux::unbounded_sender_sink;
+use crate::event_mux::EventMux;
 
 /// A reusable gRPC producer that bridges a Platform gRPC client with an [`EventMux`].
 ///
