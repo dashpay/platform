@@ -15,8 +15,36 @@ use dpp::version::PlatformVersion;
 use grovedb::Query;
 use sqlparser::ast;
 use std::borrow::Cow;
+use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Display;
+/// Map known meta/system fields to their corresponding property types.
+/// Meta fields are top-level and always start with `$`.
+fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
+    match field {
+        // Identifiers
+        "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
+        // Dates (millis since epoch)
+        "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
+        // Block heights and core block heights
+        "$createdAtBlockHeight"
+        | "$updatedAtBlockHeight"
+        | "$transferredAtBlockHeight"
+        | "$createdAtCoreBlockHeight"
+        | "$updatedAtCoreBlockHeight"
+        | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
+        // Revision and protocol version are integers
+        "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
+        // Type name is a string
+        "$type" => Some(DocumentPropertyType::String(
+            dpp::data_contract::document_type::StringPropertySizes {
+                min_length: None,
+                max_length: None,
+            },
+        )),
+        _ => None,
+    }
+}
 use WhereOperator::{
     Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
     GreaterThanOrEquals, In, LessThan, LessThanOrEquals, StartsWith,
@@ -172,6 +200,73 @@ impl WhereOperator {
             _ => None,
         }
     }
+
+    /// Shared operator evaluator for both WhereClause and ValueClause
+    pub fn eval(&self, probe: &Value, clause_value: &Value) -> bool {
+        match self {
+            WhereOperator::Equal => probe == clause_value,
+            WhereOperator::GreaterThan => probe > clause_value,
+            WhereOperator::GreaterThanOrEquals => probe >= clause_value,
+            WhereOperator::LessThan => probe < clause_value,
+            WhereOperator::LessThanOrEquals => probe <= clause_value,
+            WhereOperator::In => match clause_value {
+                Value::Array(array) => array.contains(probe),
+                Value::Bytes(bytes) => match probe {
+                    Value::U8(b) => bytes.contains(b),
+                    _ => false,
+                },
+                _ => false,
+            },
+            WhereOperator::Between => match clause_value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    match bounds[0].partial_cmp(&bounds[1]) {
+                        Some(Ordering::Less) | Some(Ordering::Equal) => {
+                            probe >= &bounds[0] && probe <= &bounds[1]
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeBounds => match clause_value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    match bounds[0].partial_cmp(&bounds[1]) {
+                        Some(Ordering::Less) | Some(Ordering::Equal) => {
+                            probe > &bounds[0] && probe < &bounds[1]
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeLeft => match clause_value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    match bounds[0].partial_cmp(&bounds[1]) {
+                        Some(Ordering::Less) | Some(Ordering::Equal) => {
+                            probe > &bounds[0] && probe <= &bounds[1]
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            },
+            WhereOperator::BetweenExcludeRight => match clause_value {
+                Value::Array(bounds) if bounds.len() == 2 => {
+                    match bounds[0].partial_cmp(&bounds[1]) {
+                        Some(Ordering::Less) | Some(Ordering::Equal) => {
+                            probe >= &bounds[0] && probe < &bounds[1]
+                        }
+                        _ => false,
+                    }
+                }
+                _ => false,
+            },
+            WhereOperator::StartsWith => match (probe, clause_value) {
+                (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
+                _ => false,
+            },
+        }
+    }
 }
 
 impl Display for WhereOperator {
@@ -216,11 +311,6 @@ impl<'a> WhereClause {
     /// Returns true if the `WhereClause` is an identifier
     pub fn is_identifier(&self) -> bool {
         self.field == "$id"
-    }
-
-    /// Evaluate this WhereClause against a provided `Value`
-    pub fn matches_value(&self, value: &Value) -> bool {
-        eval_operator(&self.operator, value, &self.value)
     }
 
     /// Returns the where clause `in` values if they are an array of values, else an error
@@ -1081,22 +1171,19 @@ impl<'a> WhereClause {
                     )));
                 };
 
-                let property_type = match field_name.as_str() {
-                    "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
-                    "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                    "$revision" => Cow::Owned(DocumentPropertyType::U64),
-                    _ => {
-                        let property = document_type
-                            .flattened_properties()
-                            .get(&field_name)
-                            .ok_or_else(|| {
-                                Error::Query(QuerySyntaxError::InvalidSQL(format!(
-                                    "Invalid query: property named {} not in document type",
-                                    field_name
-                                )))
-                            })?;
-                        Cow::Borrowed(&property.property_type)
-                    }
+                let property_type = if let Some(ty) = meta_field_property_type(&field_name) {
+                    Cow::Owned(ty)
+                } else {
+                    let property = document_type
+                        .flattened_properties()
+                        .get(&field_name)
+                        .ok_or_else(|| {
+                            Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                                "Invalid query: property named {} not in document type",
+                                field_name
+                            )))
+                        })?;
+                    Cow::Borrowed(&property.property_type)
                 };
 
                 let mut in_values: Vec<Value> = Vec::new();
@@ -1219,22 +1306,19 @@ impl<'a> WhereClause {
                         panic!("unreachable: confirmed it's identifier variant");
                     };
 
-                    let property_type = match field_name.as_str() {
-                        "$id" | "$ownerId" => Cow::Owned(DocumentPropertyType::Identifier),
-                        "$createdAt" | "$updatedAt" => Cow::Owned(DocumentPropertyType::Date),
-                        "$revision" => Cow::Owned(DocumentPropertyType::U64),
-                        _ => {
-                            let property = document_type
-                                .flattened_properties()
-                                .get(&field_name)
-                                .ok_or_else(|| {
-                                    Error::Query(QuerySyntaxError::InvalidSQL(format!(
-                                        "Invalid query: property named {} not in document type",
-                                        field_name
-                                    )))
-                                })?;
-                            Cow::Borrowed(&property.property_type)
-                        }
+                    let property_type = if let Some(ty) = meta_field_property_type(&field_name) {
+                        Cow::Owned(ty)
+                    } else {
+                        let property = document_type
+                            .flattened_properties()
+                            .get(&field_name)
+                            .ok_or_else(|| {
+                                Error::Query(QuerySyntaxError::InvalidSQL(format!(
+                                    "Invalid query: property named {} not in document type",
+                                    field_name
+                                )))
+                            })?;
+                        Cow::Borrowed(&property.property_type)
                     };
 
                     let transformed_value = if let ast::Expr::Value(value) = value_expr {
@@ -1266,6 +1350,11 @@ impl<'a> WhereClause {
             ))),
         }
     }
+
+    /// Evaluate this WhereClause against a provided `Value`
+    pub fn matches_value(&self, value: &Value) -> bool {
+        self.operator.eval(value, &self.value)
+    }
 }
 
 impl From<WhereClause> for Value {
@@ -1275,7 +1364,6 @@ impl From<WhereClause> for Value {
 }
 
 /// Value-only clause used when there is no field lookup involved
-/// (e.g., comparing a transition-supplied scalar like owner id or price).
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ValueClause {
@@ -1288,66 +1376,7 @@ pub struct ValueClause {
 impl ValueClause {
     /// Evaluate this clause against a provided `Value`
     pub fn matches_value(&self, value: &Value) -> bool {
-        eval_operator(&self.operator, value, &self.value)
-    }
-}
-
-/// Shared operator evaluator for both WhereClause and ValueClause
-fn eval_operator(where_operator: &WhereOperator, probe: &Value, clause_value: &Value) -> bool {
-    match where_operator {
-        WhereOperator::Equal => probe == clause_value,
-        WhereOperator::GreaterThan => probe > clause_value,
-        WhereOperator::GreaterThanOrEquals => probe >= clause_value,
-        WhereOperator::LessThan => probe < clause_value,
-        WhereOperator::LessThanOrEquals => probe <= clause_value,
-        WhereOperator::In => match clause_value {
-            Value::Array(array) => array.contains(probe),
-            Value::Bytes(bytes) => match probe {
-                Value::U8(b) => bytes.contains(b),
-                _ => false,
-            },
-            _ => false,
-        },
-        WhereOperator::Between => match clause_value {
-            Value::Array(bounds) if bounds.len() == 2 => {
-                if !(bounds[0] <= bounds[1]) {
-                    return false;
-                }
-                probe >= &bounds[0] && probe <= &bounds[1]
-            }
-            _ => false,
-        },
-        WhereOperator::BetweenExcludeBounds => match clause_value {
-            Value::Array(bounds) if bounds.len() == 2 => {
-                if !(bounds[0] <= bounds[1]) {
-                    return false;
-                }
-                probe > &bounds[0] && probe < &bounds[1]
-            }
-            _ => false,
-        },
-        WhereOperator::BetweenExcludeLeft => match clause_value {
-            Value::Array(bounds) if bounds.len() == 2 => {
-                if !(bounds[0] <= bounds[1]) {
-                    return false;
-                }
-                probe > &bounds[0] && probe <= &bounds[1]
-            }
-            _ => false,
-        },
-        WhereOperator::BetweenExcludeRight => match clause_value {
-            Value::Array(bounds) if bounds.len() == 2 => {
-                if !(bounds[0] <= bounds[1]) {
-                    return false;
-                }
-                probe >= &bounds[0] && probe < &bounds[1]
-            }
-            _ => false,
-        },
-        WhereOperator::StartsWith => match (probe, clause_value) {
-            (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
-            _ => false,
-        },
+        self.operator.eval(value, &self.value)
     }
 }
 
@@ -1489,36 +1518,6 @@ pub fn validate_where_clause_against_schema(
     document_type: DocumentTypeRef,
     clause: &WhereClause,
 ) -> Result<(), crate::error::Error> {
-    // Resolve field type: support meta/system fields first, then fall back to schema properties
-    // Recognized meta fields mirror the SQL builder mapping in this module
-    fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
-        // Only consider the first path segment for meta fields
-        let head = field.split('.').next().unwrap_or(field);
-        match head {
-            // Identifiers
-            "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
-            // Dates (millis since epoch)
-            "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
-            // Block heights and core block heights
-            "$createdAtBlockHeight"
-            | "$updatedAtBlockHeight"
-            | "$transferredAtBlockHeight"
-            | "$createdAtCoreBlockHeight"
-            | "$updatedAtCoreBlockHeight"
-            | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
-            // Revision and protocol version are integers
-            "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
-            // Type name is a string
-            "$type" => Some(DocumentPropertyType::String(
-                dpp::data_contract::document_type::StringPropertySizes {
-                    min_length: None,
-                    max_length: None,
-                },
-            )),
-            _ => None,
-        }
-    }
-
     let property_type_cow = if let Some(meta_ty) = meta_field_property_type(&clause.field) {
         Cow::Owned(meta_ty)
     } else {
@@ -1583,10 +1582,15 @@ pub fn validate_where_clause_against_schema(
         | WhereOperator::BetweenExcludeLeft
         | WhereOperator::BetweenExcludeRight => {
             if let Value::Array(bounds) = &clause.value {
-                if bounds.len() == 2 && !(bounds[0] <= bounds[1]) {
-                    return Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
-                        "when using between operator bounds must be ascending",
-                    )));
+                if bounds.len() == 2 {
+                    match bounds[0].partial_cmp(&bounds[1]) {
+                        Some(Ordering::Less) | Some(Ordering::Equal) => {}
+                        _ => {
+                            return Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
+                                "when using between operator bounds must be ascending",
+                            )));
+                        }
+                    }
                 }
             }
         }
