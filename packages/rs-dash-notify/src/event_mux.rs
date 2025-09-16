@@ -747,37 +747,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn should_deliver_duplicate_events_when_subscribed_twice_with_same_id() {
+    async fn should_deliver_events_once_per_subscriber_with_shared_id() {
         let mux = EventMux::new();
 
-        // Add a single producer to receive Add commands and accept responses
+        // Single producer captures Add/Remove commands and accepts responses
         let EventProducer {
             mut cmd_rx,
             resp_tx,
         } = mux.add_producer().await;
 
-        // Add a single subscriber
+        // Two subscribers share the same client_subscription_id
         let EventSubscriber {
-            cmd_tx,
-            mut resp_rx,
+            cmd_tx: mut sub1_cmd_tx,
+            resp_rx: mut resp_rx1,
+        } = mux.add_subscriber().await;
+        let EventSubscriber {
+            cmd_tx: mut sub2_cmd_tx,
+            resp_rx: mut resp_rx2,
         } = mux.add_subscriber().await;
 
         let sub_id = "dup-sub";
-        let add = make_add_cmd(sub_id);
 
-        // Send the same Add twice for the same client_subscription_id
-        cmd_tx.send(Ok(add.clone())).unwrap();
-        cmd_tx.send(Ok(add)).unwrap();
+        sub1_cmd_tx
+            .send(Ok(make_add_cmd(sub_id)))
+            .expect("send add for subscriber 1");
+        sub2_cmd_tx
+            .send(Ok(make_add_cmd(sub_id)))
+            .expect("send add for subscriber 2");
 
-        // Ensure the producer observes both Add commands before we emit an event
-        // (so fan-out tasks are in place)
+        // Ensure producer receives both Add commands
         for _ in 0..2 {
-            let got = timeout(Duration::from_millis(500), cmd_rx.recv())
+            let got = timeout(Duration::from_secs(1), cmd_rx.recv())
                 .await
-                .expect("timed out waiting for Add")
+                .expect("timeout waiting for Add")
                 .expect("producer channel closed")
                 .expect("Add command error");
-            // sanity check: it's an Add for our id
             match got.version.and_then(|v| match v {
                 CmdVersion::V0(v0) => v0.command,
             }) {
@@ -786,25 +790,12 @@ mod tests {
             }
         }
 
-        // Emit a single event for this subscription id
+        // Emit a single event targeting the shared subscription id
         resp_tx
             .send(Ok(make_event_resp(sub_id)))
             .expect("failed to send event into mux");
 
-        // Expect to receive the same event twice due to duplicate internal subscriptions
-        let first = timeout(Duration::from_millis(500), resp_rx.recv())
-            .await
-            .expect("timeout waiting first event")
-            .expect("subscriber closed")
-            .expect("event error");
-        let second = timeout(Duration::from_millis(500), resp_rx.recv())
-            .await
-            .expect("timeout waiting second event")
-            .expect("subscriber closed")
-            .expect("event error");
-
-        // Validate both carry our subscription id
-        let sub_id_from = |resp: PlatformEventsResponse| -> String {
+        let extract_id = |resp: PlatformEventsResponse| -> String {
             match resp.version.and_then(|v| match v {
                 dapi_grpc::platform::v0::platform_events_response::Version::V0(v0) => {
                     v0.response.and_then(|r| match r {
@@ -818,8 +809,47 @@ mod tests {
             }
         };
 
-        assert_eq!(sub_id_from(first), sub_id);
-        assert_eq!(sub_id_from(second), sub_id);
+        let ev1 = timeout(Duration::from_secs(1), resp_rx1.recv())
+            .await
+            .expect("timeout waiting for subscriber1 event")
+            .expect("subscriber1 channel closed")
+            .expect("subscriber1 event error");
+        let ev2 = timeout(Duration::from_secs(1), resp_rx2.recv())
+            .await
+            .expect("timeout waiting for subscriber2 event")
+            .expect("subscriber2 channel closed")
+            .expect("subscriber2 event error");
+
+        assert_eq!(extract_id(ev1), sub_id);
+        assert_eq!(extract_id(ev2), sub_id);
+
+        // Ensure no duplicate deliveries per subscriber
+        assert!(timeout(Duration::from_millis(100), resp_rx1.recv())
+            .await
+            .is_err());
+        assert!(timeout(Duration::from_millis(100), resp_rx2.recv())
+            .await
+            .is_err());
+
+        // Drop subscribers to trigger Remove for both
+        drop(sub1_cmd_tx);
+        drop(resp_rx1);
+        drop(sub2_cmd_tx);
+        drop(resp_rx2);
+
+        for _ in 0..2 {
+            let got = timeout(Duration::from_secs(1), cmd_rx.recv())
+                .await
+                .expect("timeout waiting for Remove")
+                .expect("producer channel closed")
+                .expect("Remove command error");
+            match got.version.and_then(|v| match v {
+                CmdVersion::V0(v0) => v0.command,
+            }) {
+                Some(Cmd::Remove(r)) => assert_eq!(r.client_subscription_id, sub_id),
+                other => panic!("expected Remove command, got {:?}", other),
+            }
+        }
     }
 
     #[tokio::test]
