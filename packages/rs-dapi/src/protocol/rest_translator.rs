@@ -2,7 +2,7 @@
 
 use crate::error::{DapiError, DapiResult};
 use dapi_grpc::core::v0::GetTransactionResponse as CoreGetTransactionResponse;
-use dapi_grpc::core::v0::{get_block_request, GetBlockRequest};
+use dapi_grpc::core::v0::{GetBlockRequest, get_block_request};
 use dapi_grpc::platform::v0::{GetStatusRequest, GetStatusResponse};
 use serde_json::Value;
 

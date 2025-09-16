@@ -1,12 +1,12 @@
 use clap::{ArgAction, Parser, Subcommand};
-use rs_dapi::error::DapiError;
 use rs_dapi::DAPIResult;
+use rs_dapi::error::DapiError;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use tracing::{error, info, trace};
 
 use rs_dapi::config::Config;
-use rs_dapi::logging::{init_logging, LoggingCliConfig};
+use rs_dapi::logging::{LoggingCliConfig, init_logging};
 use rs_dapi::server::DapiServer;
 
 #[derive(Debug, Subcommand)]
@@ -120,11 +120,15 @@ impl Cli {
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Client(msg) if msg.contains("Failed to connect") => {
-                            error!("Client connection failed. Use --force to start without affected services.");
+                            error!(
+                                "Client connection failed. Use --force to start without affected services."
+                            );
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Transport(_) => {
-                            error!("Transport error occurred. Use --force to start without affected services.");
+                            error!(
+                                "Transport error occurred. Use --force to start without affected services."
+                            );
                             return Err(format!("Connection error: {}", e));
                         }
                         _ => return Err(e.to_string()),

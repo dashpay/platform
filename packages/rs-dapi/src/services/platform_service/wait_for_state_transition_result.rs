@@ -2,8 +2,9 @@ use super::error_mapping::build_state_transition_error;
 use crate::services::platform_service::PlatformServiceImpl;
 use crate::services::streaming_service::FilterType;
 use dapi_grpc::platform::v0::{
-    wait_for_state_transition_result_request, wait_for_state_transition_result_response, Proof,
-    ResponseMetadata, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
+    Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
+    WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
+    wait_for_state_transition_result_response,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use std::time::Duration;
@@ -94,7 +95,10 @@ impl PlatformServiceImpl {
                 }
                 Ok(Some(message)) => {
                     // Ignore other message types
-                    warn!(?message, "Received non-matching message, ignoring; this should not happen due to filtering");
+                    warn!(
+                        ?message,
+                        "Received non-matching message, ignoring; this should not happen due to filtering"
+                    );
                     continue;
                 }
                 Ok(None) => {

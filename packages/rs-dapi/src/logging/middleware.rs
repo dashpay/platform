@@ -12,7 +12,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
 use tower::{Layer, Service};
-use tracing::{debug, error, info_span, Instrument};
+use tracing::{Instrument, debug, error, info_span};
 
 /// Tower layer for access logging
 #[derive(Clone)]

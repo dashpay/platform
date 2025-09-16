@@ -1,7 +1,7 @@
 use dapi_grpc::platform::v0::{
+    GetStatusRequest, GetStatusResponse,
     get_status_response::get_status_response_v0,
     get_status_response::{self, GetStatusResponseV0},
-    GetStatusRequest, GetStatusResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use tracing::error;

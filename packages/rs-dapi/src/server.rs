@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::{Path, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
-    Router,
 };
 
 use serde_json::Value;
@@ -20,7 +20,7 @@ use dapi_grpc::platform::v0::platform_server::{Platform, PlatformServer};
 use crate::clients::{CoreClient, DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::error::{DAPIResult, DapiError};
-use crate::logging::{middleware::AccessLogLayer, AccessLogger};
+use crate::logging::{AccessLogger, middleware::AccessLogLayer};
 use crate::protocol::{JsonRpcRequest, JsonRpcTranslator, RestTranslator};
 use crate::services::{CoreServiceImpl, PlatformServiceImpl};
 use crate::{clients::traits::TenderdashClientTrait, services::StreamingServiceImpl};

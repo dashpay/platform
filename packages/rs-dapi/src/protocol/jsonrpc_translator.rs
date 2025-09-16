@@ -268,18 +268,24 @@ mod tests {
     #[test]
     fn parse_first_param_validates_types() {
         assert_eq!(parse_first_u32_param(Some(json!([0]))).unwrap(), 0);
-        assert!(parse_first_u32_param(Some(json!(["x"])))
-            .unwrap_err()
-            .contains("number"));
+        assert!(
+            parse_first_u32_param(Some(json!(["x"])))
+                .unwrap_err()
+                .contains("number")
+        );
         // Out of range
         let big = (u64::from(u32::MAX)) + 1;
-        assert!(parse_first_u32_param(Some(json!([big])))
-            .unwrap_err()
-            .contains("range"));
+        assert!(
+            parse_first_u32_param(Some(json!([big])))
+                .unwrap_err()
+                .contains("range")
+        );
         // Not an array
-        assert!(parse_first_u32_param(Some(json!({"height": 1})))
-            .unwrap_err()
-            .contains("array"));
+        assert!(
+            parse_first_u32_param(Some(json!({"height": 1})))
+                .unwrap_err()
+                .contains("array")
+        );
     }
 
     #[tokio::test]

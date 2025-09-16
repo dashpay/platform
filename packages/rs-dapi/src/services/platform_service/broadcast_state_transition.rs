@@ -208,7 +208,7 @@ impl PlatformServiceImpl {
                     );
 
                     Err(Status::internal(
-                        "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround."
+                        "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.",
                     ))
                 }
             }

@@ -1,18 +1,18 @@
 use std::sync::Arc;
 
 use dapi_grpc::drive::v0::drive_internal_client::DriveInternalClient;
-use dapi_grpc::platform::v0::{platform_client::PlatformClient, GetStatusRequest};
+use dapi_grpc::platform::v0::{GetStatusRequest, platform_client::PlatformClient};
 use serde::{Deserialize, Serialize};
 
 use tower::ServiceBuilder;
 use tower_http::{
+    LatencyUnit,
     trace::{
         DefaultMakeSpan, DefaultOnBodyChunk, DefaultOnEos, DefaultOnFailure, DefaultOnRequest,
         DefaultOnResponse, Trace, TraceLayer,
     },
-    LatencyUnit,
 };
-use tracing::{debug, error, info, trace, Level};
+use tracing::{Level, debug, error, info, trace};
 
 /// gRPC client factory for interacting with Dash Platform Drive
 ///

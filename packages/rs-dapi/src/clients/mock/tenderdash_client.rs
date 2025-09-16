@@ -1,4 +1,4 @@
-use crate::{clients::tenderdash_websocket::BlockEvent, DAPIResult};
+use crate::{DAPIResult, clients::tenderdash_websocket::BlockEvent};
 use async_trait::async_trait;
 
 use crate::clients::{

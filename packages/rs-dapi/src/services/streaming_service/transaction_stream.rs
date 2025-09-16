@@ -7,9 +7,9 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info};
 
+use crate::services::streaming_service::StreamingServiceImpl;
 use crate::services::streaming_service::bloom::bloom_flags_from_int;
 use crate::services::streaming_service::subscriber_manager::{FilterType, StreamingEvent};
-use crate::services::streaming_service::StreamingServiceImpl;
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_transactions_with_proofs_impl(

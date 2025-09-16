@@ -3,7 +3,7 @@
 //! This module provides structured logging with access logging in standard formats,
 //! and log rotation support.
 
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Registry};
+use tracing_subscriber::{Registry, layer::SubscriberExt, util::SubscriberInitExt};
 
 use crate::config::LoggingConfig;
 

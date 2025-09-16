@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};

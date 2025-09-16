@@ -1,6 +1,6 @@
 use crate::error::MapToDapiResult;
 use crate::{DAPIResult, DapiError};
-use dashcore_rpc::{jsonrpc, Auth, Client, RpcApi};
+use dashcore_rpc::{Auth, Client, RpcApi, jsonrpc};
 use std::sync::Arc;
 use tracing::trace;
 use zeroize::Zeroizing;

@@ -1,7 +1,7 @@
 use dapi_grpc::platform::v0::{PlatformEventsCommand, PlatformEventsResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
-use rs_dash_notify::event_mux::EventsResponseResult;
 use rs_dash_notify::UnboundedSenderSink;
+use rs_dash_notify::event_mux::EventsResponseResult;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 

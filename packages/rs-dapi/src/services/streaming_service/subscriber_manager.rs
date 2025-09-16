@@ -1,12 +1,12 @@
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 use tracing::{debug, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
-use dashcore_rpc::dashcore::{consensus::encode::deserialize, Transaction as CoreTx};
+use dashcore_rpc::dashcore::{Transaction as CoreTx, consensus::encode::deserialize};
 
 /// Unique identifier for a subscription
 pub type SubscriptionId = String;
@@ -285,7 +285,7 @@ mod tests {
     use dashcore_rpc::dashcore::consensus::encode::serialize;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash, ScriptBuf, TxIn, TxOut};
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[tokio::test]
     async fn test_subscription_management() {

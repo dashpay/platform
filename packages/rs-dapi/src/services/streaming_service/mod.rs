@@ -9,13 +9,13 @@ mod subscriber_manager;
 mod transaction_stream;
 mod zmq_listener;
 
-use crate::clients::traits::TenderdashClientTrait;
 use crate::clients::CoreClient;
+use crate::clients::traits::TenderdashClientTrait;
 use crate::config::Config;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::task::JoinSet;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tracing::{error, info, trace, warn};
 
 pub(crate) use masternode_list_sync::MasternodeListSync;

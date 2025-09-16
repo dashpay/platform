@@ -25,6 +25,7 @@ impl GrpcNativeHandler {
 }
 
 fn create_dummy_status_response() -> GetStatusResponse {
+    use dapi_grpc::platform::v0::get_status_response::GetStatusResponseV0;
     use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::version::protocol::{
         Drive, Tenderdash,
     };
@@ -34,7 +35,6 @@ fn create_dummy_status_response() -> GetStatusResponse {
     use dapi_grpc::platform::v0::get_status_response::get_status_response_v0::{
         Chain, Network, Node, StateSync, Time, Version,
     };
-    use dapi_grpc::platform::v0::get_status_response::GetStatusResponseV0;
 
     let software = Software {
         dapi: "rs-dapi-0.1.0".to_string(),

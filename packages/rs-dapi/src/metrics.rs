@@ -1,7 +1,7 @@
 use once_cell::sync::Lazy;
 use prometheus::{
-    register_int_counter, register_int_counter_vec, register_int_gauge, Encoder, IntCounter,
-    IntCounterVec, IntGauge, TextEncoder,
+    Encoder, IntCounter, IntCounterVec, IntGauge, TextEncoder, register_int_counter,
+    register_int_counter_vec, register_int_gauge,
 };
 
 /// Enum for all metric names used in rs-dapi

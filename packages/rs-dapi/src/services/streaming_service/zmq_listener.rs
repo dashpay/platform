@@ -1,26 +1,26 @@
 use std::future::Future;
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
 
 use crate::error::{DAPIResult, DapiError};
 use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::select;
+use tokio::sync::Mutex;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
-use tokio::sync::Mutex;
-use tokio::time::{sleep, Duration};
+use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
 use tracing::span;
 use tracing::{error, info, warn};
-use zeromq::prelude::*;
 use zeromq::SocketEvent;
 use zeromq::SubSocket;
 use zeromq::ZmqError;
 use zeromq::ZmqMessage;
 use zeromq::ZmqResult;
+use zeromq::prelude::*;
 
 /// ZMQ topics that we subscribe to from Dash Core
 
