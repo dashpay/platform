@@ -117,13 +117,14 @@ public class WalletService: ObservableObject {
     private var syncTask: Task<Void, Never>?
     private var balanceUpdateTask: Task<Void, Never>?
     // Stats polling removed (progress is event-driven)
+    private var isClearingStorage = false
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     private(set) var walletManager: WalletManager?
     
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
-    
+
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
     // Latest sync stats (for UI)
@@ -132,9 +133,37 @@ public class WalletService: ObservableObject {
     @Published var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
     // Control whether to sync masternode list (default false; enable only in non-trusted mode)
     @Published var shouldSyncMasternodes: Bool = false
-    
+
     // Expose base sync height to UI in a safe way
     public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
+
+    private static let resumeSafetyMargin: Int = 120
+
+    private func resumeStateURL(for network: Network) -> URL? {
+        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let dir = docs.appendingPathComponent("SPV", isDirectory: true)
+            .appendingPathComponent("ResumeState", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("\(network.rawValue).json", isDirectory: false)
+    }
+
+    private func persistedResumeHeight(for network: Network) -> Int {
+        guard let url = resumeStateURL(for: network),
+              let data = try? Data(contentsOf: url),
+              let string = String(data: data, encoding: .utf8),
+              let value = Int(string.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            return 0
+        }
+        return value
+    }
+
+    private func persistResumeHeight(_ height: Int, for network: Network) {
+        guard let url = resumeStateURL(for: network) else { return }
+        let clamped = max(0, height)
+        try? "\(clamped)".data(using: .utf8)?.write(to: url, options: .atomic)
+    }
     
     private init() {}
     
@@ -170,7 +199,11 @@ public class WalletService: ObservableObject {
                 // Initialize the SPV client with proper configuration
                 let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
                 // Determine baseline from stored per-wallet per-network sync-from heights
-                let baseline: UInt32 = await MainActor.run { self.computeNetworkBaselineSyncFromHeight(for: net) }
+                let baseline: UInt32 = await MainActor.run {
+                    let walletBaseline = self.computeNetworkBaselineSyncFromHeight(for: net)
+                    let persisted = UInt32(max(0, self.persistedResumeHeight(for: net)))
+                    return max(walletBaseline, persisted)
+                }
                 SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
 
                 try await clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: baseline)
@@ -359,6 +392,10 @@ public class WalletService: ObservableObject {
     
     public func startSync() async {
         guard !isSyncing else { return }
+        guard !isClearingStorage else {
+            print("[SPV][Start] Skipping startSync while a storage clear is in progress")
+            return
+        }
         guard let spvClient = spvClient else {
             print("❌ SPV Client not initialized")
             return
@@ -378,29 +415,40 @@ public class WalletService: ObservableObject {
         isSyncing = true
         lastSyncError = nil
         
-        // Kick off sync without blocking the main thread
-        Task.detached(priority: .userInitiated) {
+        let serviceBox = SendableBox(self)
+        syncTask = Task.detached(priority: .userInitiated) {
+            let service = serviceBox.value
+            defer {
+                Task { @MainActor in service.syncTask = nil }
+            }
+
+            if Task.isCancelled { return }
+
             do {
                 // Ensure the underlying client is started (connected) before syncing
                 let connected = await spvClient.isConnected
                 if connected == false {
+                    if Task.isCancelled { return }
                     do {
                         try await spvClient.start()
+                        if Task.isCancelled { return }
                         print("[SPV] Client started (connected) before sync")
                     } catch {
                         await MainActor.run {
-                            WalletService.shared.lastSyncError = error
-                            WalletService.shared.isSyncing = false
+                            service.lastSyncError = error
+                            service.isSyncing = false
                         }
                         print("❌ Failed to start client: \(error)")
                         return
                     }
                 }
+
+                if Task.isCancelled { return }
                 try await spvClient.startSync()
             } catch {
                 await MainActor.run {
-                    WalletService.shared.lastSyncError = error
-                    WalletService.shared.isSyncing = false
+                    service.lastSyncError = error
+                    service.isSyncing = false
                 }
                 print("❌ Sync failed: \(error)")
             }
@@ -408,10 +456,71 @@ public class WalletService: ObservableObject {
     }
     
     public func stopSync() {
+        syncTask?.cancel()
+        syncTask = nil
         spvClient?.cancelSync()
         isSyncing = false
         syncProgress = nil
         detailedSyncProgress = nil
+    }
+
+    /// Clear SPV persistence either fully (headers, filters, state) or just the sync snapshot.
+    public func clearSpvStorage(fullReset: Bool = true) {
+        guard !isClearingStorage else {
+            print("[SPV][Clear] Clear already in progress, ignoring duplicate request")
+            return
+        }
+        guard let spvClient = spvClient else { return }
+
+        isClearingStorage = true
+        stopSync()
+
+        let clientBox = SendableBox(spvClient)
+        let serviceBox = SendableBox(self)
+
+        Task.detached(priority: .userInitiated) {
+            let client = clientBox.value
+            let service = serviceBox.value
+
+            do {
+                if fullReset {
+                    try await client.clearStorage()
+                } else {
+                    try await client.clearSyncState()
+                }
+
+                await MainActor.run {
+                    service.resetAfterClearingStorage(fullReset: fullReset)
+                }
+            } catch {
+                await MainActor.run {
+                    service.lastSyncError = error
+                }
+                print("❌ Failed to clear SPV storage: \(error)")
+            }
+
+            await MainActor.run {
+                service.isClearingStorage = false
+            }
+        }
+    }
+
+    private func resetAfterClearingStorage(fullReset: Bool) {
+        headerProgress = 0
+        masternodeProgress = 0
+        transactionProgress = 0
+        headerCurrentHeight = 0
+        headerTargetHeight = 0
+        latestHeaderHeight = 0
+        latestFilterHeight = 0
+        latestMasternodeListHeight = 0
+        blocksHit = 0
+        syncProgress = nil
+        detailedSyncProgress = nil
+        lastSyncError = nil
+
+        let modeDescription = fullReset ? "full storage" : "sync-state"
+        print("[SPV][Clear] Completed \(modeDescription) reset for \(currentNetwork.rawValue)")
     }
     
     // MARK: - Network Management
@@ -610,6 +719,37 @@ extension WalletService: SPVClientDelegate {
             // Trust event-driven transaction progress from SPVClient
             WalletService.shared.transactionProgress = progress.transactionProgress
 
+            let resumeHeight = max(0, Int(currentHeight) - WalletService.resumeSafetyMargin)
+            WalletService.shared.persistResumeHeight(resumeHeight, for: WalletService.shared.currentNetwork)
+            print("[SPV][Resume] network=\(WalletService.shared.currentNetwork.rawValue) height=\(resumeHeight)")
+
+            if let wallet = WalletService.shared.currentWallet,
+               let context = WalletService.shared.modelContainer?.mainContext {
+                var updated = false
+
+                switch WalletService.shared.currentNetwork {
+                case .mainnet:
+                    if resumeHeight > wallet.syncFromMainnet {
+                        wallet.syncFromMainnet = resumeHeight
+                        updated = true
+                    }
+                case .testnet:
+                    if resumeHeight > wallet.syncFromTestnet {
+                        wallet.syncFromTestnet = resumeHeight
+                        updated = true
+                    }
+                case .devnet:
+                    if resumeHeight > wallet.syncFromDevnet {
+                        wallet.syncFromDevnet = resumeHeight
+                        updated = true
+                    }
+                }
+
+                if updated {
+                    try? context.save()
+                }
+            }
+
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(currentHeight),
                 total: UInt64(targetHeight),
@@ -706,7 +846,8 @@ extension WalletService {
             }
         }
 
-        if let minValue = perWalletHeights.min() {
+        let positiveHeights = perWalletHeights.filter { $0 > 0 }
+        if let minValue = positiveHeights.min() {
             return UInt32(minValue)
         }
         return UInt32(defaults[network] ?? 0)

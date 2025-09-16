@@ -40,18 +40,6 @@ struct CoreContentView: View {
     }
 
     // Display helpers
-    private var currentSyncPhaseTitle: String {
-        if safeHeaderProgress < 1.0 {
-            return "Headers (\(Int(safeHeaderProgress * 100))%)"
-        } else if safeMasternodeProgress < 1.0 {
-            return "Masternode List (\(Int(safeMasternodeProgress * 100))%)"
-        } else if safeTransactionProgress < 1.0 {
-            return "Transactions (\(Int(safeTransactionProgress * 100))%)"
-        } else {
-            return "Complete"
-        }
-    }
-
     private var headerHeightsDisplay: String? {
         let cur = walletService.headerCurrentHeight
         let tot = walletService.headerTargetHeight
@@ -89,19 +77,9 @@ var body: some View {
             Section("Sync Status") {
                 VStack(spacing: 16) {
                     // Main sync control
-                    HStack {
-                        if walletService.isSyncing {
-                            Label("Syncing: \(currentSyncPhaseTitle)", systemImage: "arrow.triangle.2.circlepath")
-                                .font(.headline)
-                                .foregroundColor(.blue)
-                        } else {
-                            Label("Sync Paused", systemImage: "pause.circle")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
-                        
+                    HStack(spacing: 12) {
                         Spacer()
-                        
+
                         Button(action: toggleSync) {
                             HStack(spacing: 4) {
                                 Image(systemName: walletService.isSyncing ? "pause.fill" : "play.fill")
@@ -113,6 +91,20 @@ var body: some View {
                             .foregroundColor(.white)
                             .cornerRadius(8)
                         }
+                        .buttonStyle(.plain)
+
+                        Button(action: clearSyncData) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("Clear")
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
                     }
                     
                     // Headers sync progress
@@ -261,6 +253,10 @@ var body: some View {
             // TODO: Call walletService.restartTransactionSync() when implemented
             print("Restarting transaction sync...")
         }
+    }
+
+    private func clearSyncData() {
+        walletService.clearSpvStorage(fullReset: true)
     }
 }
 

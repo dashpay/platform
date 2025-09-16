@@ -371,7 +371,45 @@ public class SPVClient: ObservableObject {
         self.isSyncing = false
         self.syncProgress = nil
     }
-    
+
+    /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
+    public func clearStorage() throws {
+        guard let client = client else { throw SPVError.notInitialized }
+
+        let rc = dash_spv_ffi_client_clear_storage(client)
+        if rc != 0 {
+            if let errorMsg = dash_spv_ffi_get_last_error() {
+                let message = String(cString: errorMsg)
+                throw SPVError.storageOperationFailed(message)
+            } else {
+                throw SPVError.storageOperationFailed("Failed to clear SPV storage (code \(rc))")
+            }
+        }
+
+        self.isConnected = false
+        self.isSyncing = false
+        self.syncProgress = nil
+        self.lastError = nil
+    }
+
+    /// Clear only the persisted sync-state snapshot while keeping headers/filters.
+    public func clearSyncState() throws {
+        guard let client = client else { throw SPVError.notInitialized }
+
+        let rc = dash_spv_ffi_client_clear_sync_state(client)
+        if rc != 0 {
+            if let errorMsg = dash_spv_ffi_get_last_error() {
+                let message = String(cString: errorMsg)
+                throw SPVError.storageOperationFailed(message)
+            } else {
+                throw SPVError.storageOperationFailed("Failed to clear sync state (code \(rc))")
+            }
+        }
+
+        self.syncProgress = nil
+        self.lastError = nil
+    }
+
     private func destroyClient() {
         if let client = client {
             dash_spv_ffi_client_destroy(client)
@@ -956,6 +994,7 @@ public enum SPVError: LocalizedError {
     case startFailed(String)
     case alreadySyncing
     case syncFailed(String)
+    case storageOperationFailed(String)
     
     public var errorDescription: String? {
         switch self {
@@ -973,6 +1012,8 @@ public enum SPVError: LocalizedError {
             return "SPV client is already syncing"
         case .syncFailed(let reason):
             return "Sync failed: \(reason)"
+        case .storageOperationFailed(let reason):
+            return reason
         }
     }
 }
