@@ -5,6 +5,7 @@ import DashSDKFFI
 struct WalletDetailView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @Environment(\.dismiss) private var dismiss
     let wallet: HDWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
@@ -84,8 +85,10 @@ struct WalletDetailView: View {
                 .environmentObject(unifiedAppState)
         }
         .sheet(isPresented: $showWalletInfo) {
-            WalletInfoView(wallet: wallet)
-                .environmentObject(walletService)
+            WalletInfoView(wallet: wallet) {
+                dismiss()
+            }
+            .environmentObject(walletService)
         }
         .task {
             await walletService.loadWallet(wallet)
@@ -101,6 +104,7 @@ struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     let wallet: HDWallet
+    var onWalletDeleted: () -> Void = {}
     
     @State private var editedName: String = ""
     @State private var isEditingName = false
@@ -449,7 +453,7 @@ struct WalletInfoView: View {
             // Dismiss both the info view and the wallet detail view
             await MainActor.run {
                 dismiss()
-                // The navigation will automatically go back when the wallet is deleted
+                onWalletDeleted()
             }
             
             // Notify the wallet service to reload

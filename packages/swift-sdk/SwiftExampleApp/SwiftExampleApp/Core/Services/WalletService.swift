@@ -137,34 +137,6 @@ public class WalletService: ObservableObject {
     // Expose base sync height to UI in a safe way
     public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
 
-    private static let resumeSafetyMargin: Int = 120
-
-    private func resumeStateURL(for network: Network) -> URL? {
-        guard let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-            return nil
-        }
-        let dir = docs.appendingPathComponent("SPV", isDirectory: true)
-            .appendingPathComponent("ResumeState", isDirectory: true)
-        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        return dir.appendingPathComponent("\(network.rawValue).json", isDirectory: false)
-    }
-
-    private func persistedResumeHeight(for network: Network) -> Int {
-        guard let url = resumeStateURL(for: network),
-              let data = try? Data(contentsOf: url),
-              let string = String(data: data, encoding: .utf8),
-              let value = Int(string.trimmingCharacters(in: .whitespacesAndNewlines)) else {
-            return 0
-        }
-        return value
-    }
-
-    private func persistResumeHeight(_ height: Int, for network: Network) {
-        guard let url = resumeStateURL(for: network) else { return }
-        let clamped = max(0, height)
-        try? "\(clamped)".data(using: .utf8)?.write(to: url, options: .atomic)
-    }
-    
     private init() {}
     
     deinit {
@@ -200,9 +172,7 @@ public class WalletService: ObservableObject {
                 let dataDir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first?.appendingPathComponent("SPV").path
                 // Determine baseline from stored per-wallet per-network sync-from heights
                 let baseline: UInt32 = await MainActor.run {
-                    let walletBaseline = self.computeNetworkBaselineSyncFromHeight(for: net)
-                    let persisted = UInt32(max(0, self.persistedResumeHeight(for: net)))
-                    return max(walletBaseline, persisted)
+                    self.computeNetworkBaselineSyncFromHeight(for: net)
                 }
                 SDKLogger.log("[SPV][Baseline] Using baseline startFromHeight=\(baseline) on \(net.rawValue) during initialize()", minimumLevel: .high)
 
@@ -718,37 +688,6 @@ extension WalletService: SPVClientDelegate {
             WalletService.shared.latestFilterHeight = Int(progress.filterHeight)
             // Trust event-driven transaction progress from SPVClient
             WalletService.shared.transactionProgress = progress.transactionProgress
-
-            let resumeHeight = max(0, Int(currentHeight) - WalletService.resumeSafetyMargin)
-            WalletService.shared.persistResumeHeight(resumeHeight, for: WalletService.shared.currentNetwork)
-            print("[SPV][Resume] network=\(WalletService.shared.currentNetwork.rawValue) height=\(resumeHeight)")
-
-            if let wallet = WalletService.shared.currentWallet,
-               let context = WalletService.shared.modelContainer?.mainContext {
-                var updated = false
-
-                switch WalletService.shared.currentNetwork {
-                case .mainnet:
-                    if resumeHeight > wallet.syncFromMainnet {
-                        wallet.syncFromMainnet = resumeHeight
-                        updated = true
-                    }
-                case .testnet:
-                    if resumeHeight > wallet.syncFromTestnet {
-                        wallet.syncFromTestnet = resumeHeight
-                        updated = true
-                    }
-                case .devnet:
-                    if resumeHeight > wallet.syncFromDevnet {
-                        wallet.syncFromDevnet = resumeHeight
-                        updated = true
-                    }
-                }
-
-                if updated {
-                    try? context.save()
-                }
-            }
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(currentHeight),
