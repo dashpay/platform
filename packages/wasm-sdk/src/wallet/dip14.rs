@@ -141,26 +141,11 @@ impl Dip14ExtendedPrivKey {
             Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string())
         })?;
 
-        // Debug: log parent and IL values before addition
-        debug!(
-            target: "wasm_sdk",
-            parent_key = %hex::encode(&self.private_key.secret_bytes()),
-            il_tweak = %hex::encode(&il_scalar_bytes),
-            "DIP14 derive: parent and IL"
-        );
-
         // Perform scalar addition: child_key = parent_key + IL (mod n)
         let child_key = self
             .private_key
             .add_tweak(&tweak)
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
-
-        // Debug: log result after addition
-        debug!(
-            target: "wasm_sdk",
-            child_key = %hex::encode(&child_key.secret_bytes()),
-            "DIP14 derive: child key after addition"
-        );
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)
         let parent_pubkey = PublicKey::from_secret_key(&secp, &self.private_key);
