@@ -85,6 +85,7 @@ pub enum TransitionCheckResult {
 /// - Empty `InternalClauses` = no constraint for document-data checks.
 /// - `Option<ValueClause>` = optional scalar constraint (owner/price); `None` = no constraint.
 /// - Action-specific “at least one present” rules are enforced by `validate()`.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, PartialEq, Clone)]
 pub enum DocumentActionMatchClauses {
     /// Create: filters on the new document data.
