@@ -1,4 +1,4 @@
-import { EvoSDK } from '../../../dist/evo-sdk.module.js';
+import { EvoSDK } from '../../../dist/sdk.js';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
 
 describe('DocumentsFacade', () => {

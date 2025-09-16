@@ -2,15 +2,15 @@
   "name": "@dashevo/evo-sdk",
   "version": "2.0.0",
   "type": "module",
-  "main": "./dist/evo-sdk.module.js",
+  "main": "./dist/sdk.js",
   "types": "./dist/sdk.d.ts",
   "exports": {
     ".": {
       "types": "./dist/sdk.d.ts",
-      "import": "./dist/evo-sdk.module.js"
+      "import": "./dist/sdk.js"
     },
     "./module": {
-      "import": "./dist/evo-sdk.module.js"
+      "import": "./dist/sdk.js"
     }
   },
   "sideEffects": false,
@@ -29,7 +29,7 @@
     "lint": "eslint .",
     "test": "yarn run test:unit && yarn run test:functional",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
-    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000",
+    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000  && karma start ./tests/karma/karma.functional.conf.cjs --single-run",
     "prepack": "yarn build"
   },
   "devDependencies": {

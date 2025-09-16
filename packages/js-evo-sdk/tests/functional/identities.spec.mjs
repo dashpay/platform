@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { EvoSDK } from '../../dist/evo-sdk.module.js';
-import { TEST_IDS, TEST_SECRETS } from './fixtures/testnet.mjs';
+import { EvoSDK } from '../../dist/sdk.js';
+import { TEST_IDS, TEST_SECRETS } from '../fixtures/testnet.mjs';
 
 describe('Identities', function () {
   this.timeout(60000);

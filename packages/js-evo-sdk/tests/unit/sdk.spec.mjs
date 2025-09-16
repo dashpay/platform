@@ -1,4 +1,4 @@
-import { EvoSDK } from '../../dist/evo-sdk.module.js';
+import { EvoSDK } from '../../dist/sdk.js';
 
 describe('EvoSDK', () => {
   it('exposes constructor and factories', () => {
@@ -9,7 +9,9 @@ describe('EvoSDK', () => {
     expect(EvoSDK.mainnetTrusted).to.be.a('function');
   });
 
-  it('connects and sets isConnected', async () => {
+  it('connects and sets isConnected', async function () {
+    this.timeout(90000);
+
     const sdk = new EvoSDK();
     expect(sdk.isConnected).to.equal(false);
     await sdk.connect();

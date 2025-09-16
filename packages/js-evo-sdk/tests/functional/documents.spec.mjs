@@ -1,6 +1,6 @@
 import { expect } from 'chai';
-import { EvoSDK } from '../../dist/evo-sdk.module.js';
-import { TEST_IDS } from './fixtures/testnet.mjs';
+import { EvoSDK } from '../../dist/sdk.js';
+import { TEST_IDS } from '../fixtures/testnet.mjs';
 
 describe('Documents', function () {
   this.timeout(90000);
@@ -16,7 +16,7 @@ describe('Documents', function () {
       contractId: TEST_IDS.dataContractId,
       type: TEST_IDS.documentType,
       limit: 5,
-      orderBy: [['$createdAt', 'desc']],
+      orderBy: [['normalizedLabel', 'desc']],
     });
     expect(res).to.exist;
   });
