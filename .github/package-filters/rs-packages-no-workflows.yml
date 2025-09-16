@@ -1,0 +1,70 @@
+wallet-utils-contract: &wallet-utils-contract
+  - packages/wallet-utils-contract/**
+
+token-history-contract: &token-history-contract
+  - packages/token-history-contract/**
+
+dashpay-contract: &dashpay-contract
+  - packages/dashpay-contract/**
+
+masternode-reward-shares-contract: &masternode-reward-shares-contract
+  - packages/masternode-reward-shares-contract/**
+
+withdrawals-contract: &withdrawals-contract
+  - packages/withdrawals-contract/**
+
+dpns-contract: &dpns-contract
+  - packages/dpns-contract/**
+
+json-schema-compatibility-validator: &json-schema-compatibility-validator
+  - packages/rs-json-schema-compatibility-validator/**
+
+dpp: &dpp
+  - packages/rs-dpp/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - *wallet-utils-contract
+  - *token-history-contract
+  - *json-schema-compatibility-validator
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+
+wasm-dpp:
+  - packages/wasm-dpp/**
+  - *dpp
+
+drive: &drive
+  - packages/rs-drive/**
+  - *dpp
+
+drive-abci:
+  - packages/rs-drive-abci/**
+  - *drive
+
+dapi-grpc: &dapi_grpc
+  - packages/rs-platform-version/**
+  - packages/rs-dapi-grpc-macros/**
+  - packages/dapi-grpc/**
+
+rs-dapi-client: &dapi_client
+  - packages/rs-dapi-client/**
+  - *dapi_grpc
+
+dash-sdk:
+  - packages/rs-drive-proof-verifier/**
+  - packages/rs-sdk/**
+  - *dapi_client
+  - *drive
+
+rs-sdk-ffi:
+  - packages/rs-sdk-ffi/**
+  - packages/rs-sdk/**
+  - packages/rs-drive-proof-verifier/**
+  - *dapi_client
+  - *drive

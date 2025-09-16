@@ -3,10 +3,10 @@ import DashSDKFFI
 
 /// Swift wrapper for a collection of accounts
 public class AccountCollection {
-    private let handle: OpaquePointer
+    private let handle: UnsafeMutablePointer<FFIAccountCollection>
     private weak var wallet: Wallet?
     
-    internal init(handle: OpaquePointer, wallet: Wallet) {
+    internal init(handle: UnsafeMutablePointer<FFIAccountCollection>, wallet: Wallet) {
         self.handle = handle
         self.wallet = wallet
     }
@@ -22,7 +22,7 @@ public class AccountCollection {
         guard let rawPointer = account_collection_get_provider_operator_keys(handle) else {
             return nil
         }
-        let accountHandle = OpaquePointer(rawPointer)
+        let accountHandle = rawPointer.assumingMemoryBound(to: FFIBLSAccount.self)
         return BLSAccount(handle: accountHandle, wallet: wallet)
     }
     
@@ -33,7 +33,7 @@ public class AccountCollection {
         guard let rawPointer = account_collection_get_provider_platform_keys(handle) else {
             return nil
         }
-        let accountHandle = OpaquePointer(rawPointer)
+        let accountHandle = rawPointer.assumingMemoryBound(to: FFIEdDSAAccount.self)
         return EdDSAAccount(handle: accountHandle, wallet: wallet)
     }
     

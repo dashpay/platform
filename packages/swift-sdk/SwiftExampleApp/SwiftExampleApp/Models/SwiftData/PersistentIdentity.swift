@@ -125,6 +125,7 @@ final class PersistentIdentity {
 
 extension PersistentIdentity {
     /// Convert to app's IdentityModel
+    @MainActor
     func toIdentityModel() -> IdentityModel {
         let publicKeyModels = publicKeys.compactMap { $0.toIdentityPublicKey() }
         
@@ -159,6 +160,7 @@ extension PersistentIdentity {
     }
     
     /// Create from IdentityModel
+    @MainActor
     static func from(_ model: IdentityModel, network: String = "testnet") -> PersistentIdentity {
         // Store special keys in keychain first
         var votingKeyId: String? = nil

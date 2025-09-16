@@ -198,3 +198,9 @@ public enum PlatformValue: Codable, Equatable {
     
     // Coding implementation would go here
 }
+
+// In Swift 6 strict concurrency, PlatformValue is frequently passed across
+// actor boundaries as part of dictionaries. Its cases contain only Sendable
+// payloads (Bool, integers, Double, String, Data, arrays/maps of PlatformValue).
+// We mark it as @unchecked Sendable to permit usage in cross-actor contexts.
+extension PlatformValue: @unchecked Sendable {}

@@ -149,7 +149,7 @@ impl BalanceChangeForIdentity {
         match self.change {
             AddToBalance { .. } => {
                 // when we add balance we are sure that all the storage fee and processing fee has
-                // been payed
+                // been paid
                 Ok(self.into_fee_result())
             }
             RemoveFromBalance {

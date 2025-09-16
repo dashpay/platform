@@ -1,5 +1,5 @@
 import Foundation
-import SwiftDashSDK
+@preconcurrency import SwiftDashSDK
 
 // MARK: - Identity Models based on DPP
 
@@ -33,6 +33,9 @@ public struct DPPIdentity: Identifiable, Codable, Equatable {
         self.revision = revision
     }
 }
+
+// Mark unchecked Sendable to silence strict checks for nested non-Sendable members.
+extension DPPIdentity: @unchecked Sendable {}
 
 // Note: Identity key types (KeyType, KeyPurpose, SecurityLevel, IdentityPublicKey, ContractBounds) 
 // are now imported from SwiftDashSDK

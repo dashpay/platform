@@ -1,59 +1,32 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-# Build verification script for Swift SDK
+echo "=== SwiftDashSDK Build Verification (iOS) ==="
 
-echo "=== Swift SDK Build Verification ==="
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+echo "Step 1: Build/Install XCFramework via unified script"
+"$SCRIPT_DIR/build_ios.sh"
+
 echo
-
-# Step 1: Try to build the crate
-echo "Step 1: Building Swift SDK..."
-if cargo build -p swift-sdk 2>/dev/null; then
-    echo "✅ Build successful"
+echo "Step 2: Verify Xcode build (if available)"
+if command -v xcodebuild >/dev/null 2>&1; then
+  set +e
+  xcodebuild -project "$SCRIPT_DIR/SwiftExampleApp/SwiftExampleApp.xcodeproj" \
+             -scheme SwiftExampleApp \
+             -sdk iphonesimulator \
+             -destination 'platform=iOS Simulator,name=iPhone 16' \
+             -quiet build
+  XC_STATUS=$?
+  set -e
+  if [[ $XC_STATUS -ne 0 ]]; then
+    echo "❌ Xcode build failed"
+    exit $XC_STATUS
+  fi
+  echo "✅ Example app builds for iOS Simulator"
 else
-    echo "❌ Build failed"
-    exit 1
-fi
-
-# Step 2: Check if library was created
-echo
-echo "Step 2: Checking library output..."
-if [ -f "../../target/debug/libswift_sdk.a" ] || [ -f "../../target/debug/libswift_sdk.dylib" ]; then
-    echo "✅ Library file created"
-else
-    echo "❌ Library file not found"
-    exit 1
-fi
-
-# Step 3: List exported symbols (on macOS/Linux)
-echo
-echo "Step 3: Checking exported symbols..."
-if command -v nm >/dev/null 2>&1; then
-    echo "Exported swift_dash_* functions:"
-    nm -g ../../target/debug/libswift_sdk.* 2>/dev/null | grep "swift_dash_" | head -10
-    echo "... and more"
-else
-    echo "⚠️  'nm' command not found, skipping symbol check"
-fi
-
-# Step 4: Check header generation readiness
-echo
-echo "Step 4: Header generation readiness..."
-if [ -f "cbindgen.toml" ]; then
-    echo "✅ cbindgen configuration found"
-else
-    echo "❌ cbindgen.toml not found"
+  echo "⚠️  xcodebuild not found; skipping local build. Run this on macOS with Xcode to verify."
 fi
 
 echo
-echo "=== Verification Summary ==="
-echo "The Swift SDK is ready for use in iOS projects!"
-echo
-echo "To generate C headers for Swift:"
-echo "  cargo install cbindgen"
-echo "  cbindgen -c cbindgen.toml -o SwiftDashSDK.h"
-echo
-echo "To use in iOS project:"
-echo "  1. Build with: cargo build --release -p swift-sdk"
-echo "  2. Add the .a file to your Xcode project"
-echo "  3. Import the generated header in your Swift bridging header"
-echo "  4. Call functions from Swift!"
+echo "✅ Verification complete"

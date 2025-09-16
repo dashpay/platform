@@ -82,7 +82,7 @@ enum WIFParser {
         let zeroCount = data.prefix(while: { $0 == 0 }).count
         
         // Convert data to big integer
-        var num = data.reduce(into: [UInt8]()) { result, byte in
+        let num = data.reduce(into: [UInt8]()) { result, byte in
             var carry = UInt(byte)
             for i in 0..<result.count {
                 carry += UInt(result[i]) << 8

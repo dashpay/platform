@@ -22,9 +22,9 @@ struct DocumentWithPriceView: View {
             HStack {
                 TextField("Enter document ID", text: $documentId)
                     .textFieldStyle(RoundedBorderTextFieldStyle())
-                    .onChange(of: documentId) { newValue in
-                        handleDocumentIdChange(newValue)
-                    }
+                    .modifier(DocumentIdChangeHandler(documentId: $documentId) {
+                        handleDocumentIdChange($0)
+                    })
                 
                 if isLoading {
                     ProgressView()
@@ -326,6 +326,19 @@ struct DocumentWithPriceView: View {
             return "\(credits) credits"
         } else {
             return String(format: "%.8f DASH", dashAmount)
+        }
+    }
+}
+
+// Cross-version onChange helper for documentId
+private struct DocumentIdChangeHandler: ViewModifier {
+    @Binding var documentId: String
+    let onChange: (String) -> Void
+    func body(content: Content) -> some View {
+        if #available(iOS 17.0, *) {
+            content.onChange(of: documentId) { _, newValue in onChange(newValue) }
+        } else {
+            content.onChange(of: documentId) { newValue in onChange(newValue) }
         }
     }
 }
