@@ -22,7 +22,22 @@ fn cleanup_env_vars() {
     ];
 
     for var in &env_vars {
-        std::env::remove_var(var);
+        remove_env_var(var);
+    }
+}
+
+fn set_env_var(key: &str, value: &str) {
+    // SAFETY: manipulating process environment is inherently unsafe when multiple
+    // threads are running. Tests using these helpers are serialized to avoid races.
+    unsafe {
+        std::env::set_var(key, value);
+    }
+}
+
+fn remove_env_var(key: &str) {
+    // SAFETY: see set_env_var comment; tests are serialized.
+    unsafe {
+        std::env::remove_var(key);
     }
 }
 
@@ -39,8 +54,8 @@ fn test_default_config_uses_uris() {
 #[serial]
 fn test_config_load_with_uri_env_vars() {
     // Set environment variables
-    std::env::set_var("DAPI_DRIVE_URI", "http://custom-drive:8000");
-    std::env::set_var("DAPI_TENDERDASH_URI", "http://custom-tenderdash:9000");
+    set_env_var("DAPI_DRIVE_URI", "http://custom-drive:8000");
+    set_env_var("DAPI_TENDERDASH_URI", "http://custom-tenderdash:9000");
 
     let config = Config::load().expect("Config should load successfully");
 
@@ -49,8 +64,8 @@ fn test_config_load_with_uri_env_vars() {
     assert_eq!(config.dapi.tenderdash.uri, "http://custom-tenderdash:9000");
 
     // Clean up
-    std::env::remove_var("DAPI_DRIVE_URI");
-    std::env::remove_var("DAPI_TENDERDASH_URI");
+    remove_env_var("DAPI_DRIVE_URI");
+    remove_env_var("DAPI_TENDERDASH_URI");
 }
 
 #[tokio::test]
@@ -182,8 +197,8 @@ DAPI_DRIVE_URI=http://dotenv-drive:9000
     fs::write(temp_file.path(), env_content).expect("Failed to write temp file");
 
     // Set environment variables that should override .env file
-    std::env::set_var("DAPI_GRPC_SERVER_PORT", "7005");
-    std::env::set_var("DAPI_TENDERDASH_URI", "http://env-tenderdash:10000");
+    set_env_var("DAPI_GRPC_SERVER_PORT", "7005");
+    set_env_var("DAPI_TENDERDASH_URI", "http://env-tenderdash:10000");
 
     // Load config from the temp file
     let config = Config::load_from_dotenv(Some(temp_file.path().to_path_buf()))
