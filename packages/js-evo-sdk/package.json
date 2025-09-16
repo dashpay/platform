@@ -25,7 +25,7 @@
     "lint": "eslint .",
     "test": "yarn run test:unit && yarn run test:functional",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
-    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000"
+    "prepack": "yarn build"
   },
   "devDependencies": {
     "assert": "^2.0.0",
