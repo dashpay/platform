@@ -8,12 +8,8 @@ name = "rs-dapi"
 path = "src/main.rs"
 
 [[example]]
-name = "transaction_monitor"
-path = "examples/transaction_monitor.rs"
-
-[[example]]
-name = "state_transition_monitor"
-path = "examples/state_transition_monitor.rs"
+name = "dapi_cli"
+path = "examples/dapi_cli/main.rs"
 
 [dependencies]
 # Async runtime
@@ -35,6 +31,7 @@ tower-http = { version = "0.6.6", features = ["cors", "trace"] }
 serde = { version = "1.0.219", features = ["derive"] }
 serde_json = "1.0.141"
 ciborium = "0.2"
+anyhow = "1.0"
 
 # Configuration
 envy = "0.4.2"
