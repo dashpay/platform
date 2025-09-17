@@ -897,8 +897,8 @@ impl WasmSdk {
             .await?;
 
         let data = supply_result.map(|supply| TokenTotalSupplyResponse {
-                total_supply: supply.token_supply.to_string(),
-            });
+            total_supply: supply.token_supply.to_string(),
+        });
 
         let response = ProofMetadataResponse {
             data,

@@ -693,8 +693,8 @@ impl WasmSdk {
                 .await?;
 
         let data = total_credits_result.map(|credits| TotalCreditsResponse {
-                total_credits_in_platform: credits.0.to_string(),
-            });
+            total_credits_in_platform: credits.0.to_string(),
+        });
 
         let response = ProofMetadataResponse {
             data,

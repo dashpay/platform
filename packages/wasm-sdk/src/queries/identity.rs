@@ -228,7 +228,7 @@ impl WasmSdk {
                         identity_id: id.to_vec(),
                         prove: false,
                         limit: Some(limit.unwrap_or(100)), // Always provide a limit when prove=false
-                        offset: None, // Offsets not supported when prove=false
+                        offset: None,                      // Offsets not supported when prove=false
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SpecificKeys(SpecificKeys { key_ids })),
                         }),
@@ -357,7 +357,7 @@ impl WasmSdk {
                         identity_id: id.to_vec(),
                         prove: false,
                         limit: Some(limit.unwrap_or(100)), // Always provide a limit when prove=false
-                        offset: None, // Offsets not supported when prove=false
+                        offset: None,                      // Offsets not supported when prove=false
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SearchKey(SearchKey { purpose_map })),
                         }),

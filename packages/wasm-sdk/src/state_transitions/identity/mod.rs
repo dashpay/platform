@@ -108,7 +108,11 @@ impl WasmSdk {
         let mut identity_public_keys = std::collections::BTreeMap::new();
         let mut signer = SimpleSigner::default();
 
-        for (key_id, key_data) in keys_array.iter().enumerate().map(|(key, value)| (key as u32, value)) {
+        for (key_id, key_data) in keys_array
+            .iter()
+            .enumerate()
+            .map(|(key, value)| (key as u32, value))
+        {
             let key_type_str = key_data["keyType"]
                 .as_str()
                 .ok_or_else(|| WasmSdkError::invalid_argument("keyType is required"))?;

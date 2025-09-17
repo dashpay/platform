@@ -131,7 +131,6 @@ impl WasmSdk {
         address_index: u32,
         network: &str,
     ) -> Result<JsValue, WasmSdkError> {
-        
         use bs58;
 
         // Convert base58 identity IDs to hex format if needed
