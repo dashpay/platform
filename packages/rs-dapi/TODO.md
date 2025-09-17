@@ -41,6 +41,9 @@ Legend:
 
 - [x] Remove panic on ZMQ startup; add retry/backoff and health reporting
   - Files: `src/services/streaming_service/mod.rs`
+- [x] Implement historical streaming for `subscribeToBlockHeadersWithChainLocks`
+  - Files: `src/services/streaming_service/block_header_stream.rs`
+  - Notes: For `count > 0`, stream historical headers (80-byte headers) from Core RPC in chunks and close stream. For `count = 0`, forward live ZMQ Core blocks/chainlocks.
 - [ ] Implement basic bloom filter matching + transaction parsing
   - Files: `src/services/streaming_service/transaction_filter.rs`
 - [ ] Provide initial masternode list diff on subscription

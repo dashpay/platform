@@ -37,19 +37,45 @@ impl StreamingServiceImpl {
             ));
         }
 
-        // Create filter (no filtering needed for block headers - all blocks)
-        let filter = FilterType::CoreAllBlocks;
-
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
 
+        // If count > 0, this is a historical-only stream.
+        // We must send the requested headers and then end the stream (no live updates).
+        if count > 0 {
+            match from_block {
+                Some(dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash)) => {
+                    debug!(
+                        hash = %hex::encode(&hash),
+                        count,
+                        "block_headers=historical_from_hash_request"
+                    );
+                    self.process_historical_blocks_from_hash(&hash, count as usize, tx)
+                        .await?;
+                }
+                Some(dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height)) => {
+                    debug!(height, count, "block_headers=historical_from_height_request");
+                    self.process_historical_blocks_from_height(height as usize, count as usize, tx)
+                        .await?;
+                }
+                None => unreachable!(),
+            }
+
+            let stream = UnboundedReceiverStream::new(rx);
+            debug!("block_headers=historical_stream_ready");
+            return Ok(Response::new(stream));
+        }
+
+        // Otherwise (count == 0), subscribe for continuous updates.
+        // Create filter (no filtering needed for block headers - all blocks)
+        let filter = FilterType::CoreAllBlocks;
+
         // Add subscription to manager
-        let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
-        let subscriber_id = subscription_handle.id().to_string();
+        let sub_handle = self.subscriber_manager.add_subscription(filter).await;
+        let subscriber_id = sub_handle.id().to_string();
         debug!(subscriber_id, "block_headers=subscription_created");
 
         // Spawn task to convert internal messages to gRPC responses
-        let sub_handle = subscription_handle.clone();
         tokio::spawn(async move {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
@@ -64,10 +90,9 @@ impl StreamingServiceImpl {
                         };
                         let response = BlockHeadersWithChainLocksResponse {
                             responses: Some(
-                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers)
+                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers),
                             ),
                         };
-
                         Ok(response)
                     }
                     StreamingEvent::CoreChainLock { data } => {
@@ -78,10 +103,9 @@ impl StreamingServiceImpl {
                         );
                         let response = BlockHeadersWithChainLocksResponse {
                             responses: Some(
-                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data)
+                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data),
                             ),
                         };
-
                         Ok(response)
                     }
                     _ => {
@@ -109,29 +133,6 @@ impl StreamingServiceImpl {
             );
         });
 
-        // Handle historical data if requested
-        if count > 0 {
-            if let Some(from_block) = from_block {
-                match from_block {
-                    dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash) => {
-                        // TODO: Process historical block headers from block hash
-                        debug!(subscriber_id, ?hash, "block_headers=historical_from_hash_request");
-                        self.process_historical_blocks_from_hash(&hash, count as usize)
-                            .await?;
-                    }
-                    dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height) => {
-                        // TODO: Process historical block headers from height
-                        debug!(subscriber_id, height, "block_headers=historical_from_height_request");
-                        self.process_historical_blocks_from_height(
-                            height as usize,
-                            count as usize,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-
         let stream = UnboundedReceiverStream::new(rx);
         debug!(subscriber_id, "block_headers=stream_ready");
         Ok(Response::new(stream))
@@ -140,31 +141,108 @@ impl StreamingServiceImpl {
     /// Process historical blocks from a specific block hash
     async fn process_historical_blocks_from_hash(
         &self,
-        _from_hash: &[u8],
-        _count: usize,
+        from_hash: &[u8],
+        count: usize,
+        tx: mpsc::UnboundedSender<Result<BlockHeadersWithChainLocksResponse, Status>>,
     ) -> Result<(), Status> {
-        // TODO: Implement historical block processing from hash
-        // This should:
-        // 1. Look up the block height for the given hash
-        // 2. Fetch the requested number of blocks starting from that height
-        // 3. Send block headers to the subscriber
-        trace!("block_headers=historical_from_hash_unimplemented");
-        Ok(())
+        use std::str::FromStr;
+        // Derive starting height from hash, then delegate to height-based fetch
+        let hash_hex = hex::encode(from_hash);
+        let hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+            .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+
+        let header_info = self
+            .core_client
+            .get_block_header_info(&hash)
+            .await
+            .map_err(Status::from)?;
+
+        let start_height = header_info.height as usize;
+        self.process_historical_blocks_from_height(start_height, count, tx)
+            .await
     }
 
     /// Process historical blocks from a specific block height
     async fn process_historical_blocks_from_height(
         &self,
-        _from_height: usize,
-        _count: usize,
+        from_height: usize,
+        count: usize,
+        tx: mpsc::UnboundedSender<Result<BlockHeadersWithChainLocksResponse, Status>>,
     ) -> Result<(), Status> {
-        // TODO: Implement historical block processing from height
-        // This should:
-        // 1. Fetch blocks starting from the given height
-        // 2. Extract block headers
-        // 3. Send headers to the subscriber
-        // 4. Include any available chain locks
-        trace!("block_headers=historical_from_height_unimplemented");
+        // Fetch blocks sequentially and send only block headers (80 bytes each)
+        // Chunk responses to avoid huge gRPC messages.
+        const CHUNK_SIZE: usize = 1000;
+
+        trace!(
+            from_height,
+            count, "block_headers=historical_from_height_begin"
+        );
+
+        let mut collected: Vec<Vec<u8>> = Vec::with_capacity(CHUNK_SIZE);
+        let mut sent: usize = 0;
+
+        for i in 0..count {
+            let height = (from_height + i) as u32;
+            // Resolve hash
+            let hash = match self.core_client.get_block_hash(height).await {
+                Ok(h) => h,
+                Err(e) => {
+                    // Stop on first error (e.g., height beyond tip)
+                    trace!(height, error = ?e, "block_headers=historical_get_block_hash_failed");
+                    break;
+                }
+            };
+
+            // Fetch block bytes and slice header (first 80 bytes)
+            let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
+                Ok(b) => b,
+                Err(e) => {
+                    trace!(height, error = ?e, "block_headers=historical_get_block_failed");
+                    break;
+                }
+            };
+            if block_bytes.len() < 80 {
+                // Malformed block; abort
+                return Err(Status::internal(
+                    "Received malformed block bytes (len < 80)",
+                ));
+            }
+            let header_bytes = block_bytes[..80].to_vec();
+            collected.push(header_bytes);
+
+            if collected.len() >= CHUNK_SIZE {
+                let bh = BlockHeaders {
+                    headers: collected.drain(..).collect(),
+                };
+                let response = BlockHeadersWithChainLocksResponse {
+                    responses: Some(
+                        dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
+                    ),
+                };
+                if tx.send(Ok(response)).is_err() {
+                    debug!("block_headers=historical_client_disconnected");
+                    return Ok(());
+                }
+                sent += CHUNK_SIZE;
+            }
+        }
+
+        // Flush remaining headers
+        if !collected.is_empty() {
+            let bh = BlockHeaders { headers: collected };
+            let response = BlockHeadersWithChainLocksResponse {
+                responses: Some(
+                    dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
+                ),
+            };
+            let _ = tx.send(Ok(response));
+            sent += 1; // mark as sent (approximate)
+        }
+
+        trace!(
+            from_height,
+            count, sent, "block_headers=historical_from_height_end"
+        );
         Ok(())
     }
 }
