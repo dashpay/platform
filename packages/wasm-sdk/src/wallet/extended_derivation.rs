@@ -3,14 +3,14 @@
 //! Implements 256-bit derivation paths for DashPay contact keys
 
 use crate::error::WasmSdkError;
+use crate::WasmSdk;
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use std::str::FromStr;
+use tracing::debug;
 use wasm_bindgen::prelude::*;
 use web_sys;
-use tracing::debug;
-use crate::WasmSdk;
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -41,8 +41,9 @@ impl WasmSdk {
 
         // Parse the derivation path using dashcore's built-in parser
         // This already supports 256-bit hex values like 0x775d3854...
-        let derivation_path = DerivationPath::from_str(path)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e)))?;
+        let derivation_path = DerivationPath::from_str(path).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e))
+        })?;
 
         // Use dashcore's built-in derive_priv method which handles DIP14
         let secp = Secp256k1::new();
@@ -73,49 +74,49 @@ impl WasmSdk {
             &JsValue::from_str("private_key_wif"),
             &JsValue::from_str(&private_key.to_wif()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("private_key_hex"),
             &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("public_key"),
             &JsValue::from_str(&hex::encode(public_key.to_bytes())),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("address"),
             &JsValue::from_str(&address.to_string()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("network"),
             &JsValue::from_str(network),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("xprv"),
             &JsValue::from_str(&derived_key.to_string()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set xprv property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set xprv property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("xpub"),
             &JsValue::from_str(&xpub.to_string()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set xpub property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set xpub property"))?;
 
         Ok(obj.into())
     }
@@ -139,9 +140,9 @@ impl WasmSdk {
             sender_identity_id.to_string()
         } else {
             // Decode base58 to bytes, then convert to hex
-            let bytes = bs58::decode(sender_identity_id)
-                .into_vec()
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid sender identity ID: {}", e)))?;
+            let bytes = bs58::decode(sender_identity_id).into_vec().map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid sender identity ID: {}", e))
+            })?;
             format!("0x{}", hex::encode(bytes))
         };
 
@@ -149,9 +150,9 @@ impl WasmSdk {
             receiver_identity_id.to_string()
         } else {
             // Decode base58 to bytes, then convert to hex
-            let bytes = bs58::decode(receiver_identity_id)
-                .into_vec()
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid receiver identity ID: {}", e)))?;
+            let bytes = bs58::decode(receiver_identity_id).into_vec().map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid receiver identity ID: {}", e))
+            })?;
             format!("0x{}", hex::encode(bytes))
         };
 
@@ -176,7 +177,8 @@ impl WasmSdk {
         debug!(target: "wasm_sdk", path = %path, "DashPay contact path");
 
         // Use the extended derivation function
-        let result = Self::derive_key_from_seed_with_extended_path(mnemonic, passphrase, &path, network)?;
+        let result =
+            Self::derive_key_from_seed_with_extended_path(mnemonic, passphrase, &path, network)?;
 
         // Add DIP15-specific metadata
         let obj = result
@@ -188,42 +190,42 @@ impl WasmSdk {
             &JsValue::from_str("dipStandard"),
             &JsValue::from_str("DIP15"),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set dipStandard property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set dipStandard property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("purpose"),
             &JsValue::from_str("DashPay Contact Payment"),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set purpose property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set purpose property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("senderIdentity"),
             &JsValue::from_str(sender_identity_id),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set senderIdentity property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set senderIdentity property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("receiverIdentity"),
             &JsValue::from_str(receiver_identity_id),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set receiverIdentity property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set receiverIdentity property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("account"),
             &JsValue::from_f64(account as f64),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set account property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set account property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("addressIndex"),
             &JsValue::from_f64(address_index as f64),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set addressIndex property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set addressIndex property"))?;
 
         Ok(obj.into())
     }

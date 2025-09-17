@@ -50,4 +50,3 @@ pub fn set_log_level(level_or_filter: &str) -> Result<(), WasmSdkError> {
     let _ = RELOAD_HANDLE.set(handle);
     Ok(())
 }
-

@@ -2,6 +2,8 @@
 //!
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
+use crate::error::WasmSdkError;
+use crate::WasmSdk;
 use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
@@ -12,9 +14,7 @@ use dash_sdk::dpp::key_wallet::bip32::{
 use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use crate::error::WasmSdkError;
 use wasm_bindgen::prelude::*;
-use crate::WasmSdk;
 
 /// Dash coin type for BIP44 (mainnet)
 pub const DASH_COIN_TYPE: u32 = 5;
@@ -98,7 +98,9 @@ impl DerivationPath {
     pub fn from_string(path: &str) -> Result<DerivationPath, WasmSdkError> {
         let parts: Vec<&str> = path.trim_start_matches("m/").split('/').collect();
         if parts.len() != 5 {
-            return Err(WasmSdkError::invalid_argument("Invalid derivation path format"));
+            return Err(WasmSdkError::invalid_argument(
+                "Invalid derivation path format",
+            ));
         }
 
         let parse_hardened = |s: &str| -> Result<u32, WasmSdkError> {
@@ -121,7 +123,6 @@ impl DerivationPath {
         })
     }
 }
-
 
 /// HD Key information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -157,7 +158,11 @@ impl WasmSdk {
             18 => 24, // 192 bits
             21 => 28, // 224 bits
             24 => 32, // 256 bits
-            _ => return Err(WasmSdkError::invalid_argument("Word count must be 12, 15, 18, 21, or 24")),
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "Word count must be 12, 15, 18, 21, or 24",
+                ))
+            }
         };
 
         // Select language based on language code
@@ -218,10 +223,14 @@ impl WasmSdk {
 
     /// Derive a seed from a mnemonic phrase
     #[wasm_bindgen(js_name = "mnemonicToSeed")]
-    pub fn mnemonic_to_seed(mnemonic: &str, passphrase: Option<String>) -> Result<Vec<u8>, WasmSdkError> {
+    pub fn mnemonic_to_seed(
+        mnemonic: &str,
+        passphrase: Option<String>,
+    ) -> Result<Vec<u8>, WasmSdkError> {
         // Parse the mnemonic
-        let mnemonic = Mnemonic::parse_normalized(mnemonic)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid mnemonic phrase: {}", e)))?;
+        let mnemonic = Mnemonic::parse_normalized(mnemonic).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid mnemonic phrase: {}", e))
+        })?;
 
         // Generate seed with optional passphrase
         let seed = mnemonic.to_seed(passphrase.as_deref().unwrap_or(""));
@@ -281,8 +290,9 @@ impl WasmSdk {
             network: network.to_string(),
         };
 
-        serde_wasm_bindgen::to_value(&key_pair)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
+        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
+        })
     }
 
     /// Derive a key from seed phrase with arbitrary path
@@ -305,8 +315,9 @@ impl WasmSdk {
         };
 
         // Parse derivation path
-        let derivation_path = DerivationPath::from_str(path)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e)))?;
+        let derivation_path = DerivationPath::from_str(path).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e))
+        })?;
 
         // Create master extended private key from seed
         let master_key = ExtendedPrivKey::new_master(net, &seed)
@@ -339,35 +350,35 @@ impl WasmSdk {
             &JsValue::from_str("private_key_wif"),
             &JsValue::from_str(&private_key.to_wif()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("private_key_hex"),
             &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("public_key"),
             &JsValue::from_str(&hex::encode(public_key.to_bytes())),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("address"),
             &JsValue::from_str(&address.to_string()),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("network"),
             &JsValue::from_str(network),
         )
-            .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
+        .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
 
         Ok(obj.into())
     }
@@ -413,35 +424,35 @@ impl WasmSdk {
             &JsValue::from_str("path"),
             &JsValue::from_str(&path_str),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("purpose"),
             &JsValue::from_f64(DIP13_PURPOSE as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("coin_type"),
             &JsValue::from_f64(DASH_COIN_TYPE as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("account"),
             &JsValue::from_f64(account as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("description"),
             &JsValue::from_str("DIP13 HD identity key path"),
         )
-            .unwrap();
+        .unwrap();
 
         obj.into()
     }
@@ -459,42 +470,46 @@ impl WasmSdk {
             &JsValue::from_str("path"),
             &JsValue::from_str(&path_str),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("purpose"),
             &JsValue::from_f64(DIP13_PURPOSE as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("coin_type"),
             &JsValue::from_f64(TESTNET_COIN_TYPE as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("account"),
             &JsValue::from_f64(account as f64),
         )
-            .unwrap();
+        .unwrap();
 
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("description"),
             &JsValue::from_str("DIP13 HD identity key path (testnet)"),
         )
-            .unwrap();
+        .unwrap();
 
         obj.into()
     }
 
     /// Get child public key from extended public key
     #[wasm_bindgen(js_name = "deriveChildPublicKey")]
-    pub fn derive_child_public_key(xpub: &str, index: u32, hardened: bool) -> Result<String, WasmSdkError> {
+    pub fn derive_child_public_key(
+        xpub: &str,
+        index: u32,
+        hardened: bool,
+    ) -> Result<String, WasmSdkError> {
         if hardened {
             return Err(WasmSdkError::invalid_argument(
                 "Cannot derive hardened child from extended public key",
@@ -509,8 +524,9 @@ impl WasmSdk {
         }
 
         // Parse the extended public key
-        let parent_xpub = BIP32ExtendedPubKey::from_str(xpub)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended public key: {}", e)))?;
+        let parent_xpub = BIP32ExtendedPubKey::from_str(xpub).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid extended public key: {}", e))
+        })?;
 
         // Build a one-step derivation path and derive
         let child_number: ChildNumber = ChildNumber::from(index);
@@ -527,8 +543,9 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "xprvToXpub")]
     pub fn xprv_to_xpub(xprv: &str) -> Result<String, WasmSdkError> {
         // Parse the extended private key and convert to extended public key
-        let ext_prv = BIP32ExtendedPrivKey::from_str(xprv)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid extended private key: {}", e)))?;
+        let ext_prv = BIP32ExtendedPrivKey::from_str(xprv).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid extended private key: {}", e))
+        })?;
         let secp = Secp256k1::new();
         let ext_pub = BIP32ExtendedPubKey::from_priv(&secp, &ext_prv);
         Ok(ext_pub.to_string())

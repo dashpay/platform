@@ -29,7 +29,6 @@ const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard
 
 #[wasm_bindgen]
 impl WasmSdk {
-
     #[wasm_bindgen(js_name = "getContestedResources")]
     pub async fn get_contested_resources(
         &self,
@@ -51,14 +50,14 @@ impl WasmSdk {
         // Parse result_type to get start_index_values
         // The result_type parameter actually specifies what we want to query
         // For contested domain names in DPNS, we query at the "dash" parent domain level
-        let start_index_values = if index_name == "parentNameAndLabel" && document_type_name == "domain"
-        {
-            // For DPNS domains, start at the parent domain level (e.g., "dash")
-            vec![] // Empty to get all contested resources at any parent domain
-        } else {
-            // For other types, may need different index values
-            vec![]
-        };
+        let start_index_values =
+            if index_name == "parentNameAndLabel" && document_type_name == "domain" {
+                // For DPNS domains, start at the parent domain level (e.g., "dash")
+                vec![] // Empty to get all contested resources at any parent domain
+            } else {
+                // For other types, may need different index values
+                vec![]
+            };
 
         // Create start_at_value_info if provided
         let start_at_value_info = start_at_value.map(|bytes| {
@@ -90,7 +89,9 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to get contested resources: {}", e)))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to get contested resources: {}", e))
+            })?;
 
         // For now, return a simple response structure
         // The actual response parsing would require the ContestedResource type
@@ -106,9 +107,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        result
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        result.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentity")]
@@ -144,18 +145,26 @@ impl WasmSdk {
                 // Create a platform Value from the string
                 let platform_value = Value::Text(s);
                 // Serialize using bincode
-                let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
-                    .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize index value: {}", e)))?;
+                let serialized =
+                    bincode::encode_to_vec(&platform_value, BINCODE_CONFIG).map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to serialize index value: {}",
+                            e
+                        ))
+                    })?;
                 index_values_bytes.push(serialized);
             } else {
-                return Err(WasmSdkError::invalid_argument("Index values must be strings"));
+                return Err(WasmSdkError::invalid_argument(
+                    "Index values must be strings",
+                ));
             }
         }
 
         // Parse start_at_voter_info if provided
         let start_at_identifier_info = if let Some(info_str) = start_at_voter_info {
-            let info: serde_json::Value = serde_json::from_str(&info_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid start_at_voter_info JSON: {}", e)))?;
+            let info: serde_json::Value = serde_json::from_str(&info_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid start_at_voter_info JSON: {}", e))
+            })?;
 
             if let (Some(start_id), Some(included)) = (
                 info.get("startIdentifier"),
@@ -163,7 +172,9 @@ impl WasmSdk {
             ) {
                 let start_identifier = start_id
                     .as_str()
-                    .ok_or_else(|| WasmSdkError::invalid_argument("startIdentifier must be a string"))?
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument("startIdentifier must be a string")
+                    })?
                     .as_bytes()
                     .to_vec();
                 let start_identifier_included = included.as_bool().unwrap_or(true);
@@ -203,7 +214,9 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!("Failed to get contested resource voters: {}", e)))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to get contested resource voters: {}", e))
+            })?;
 
         // For now, return a simple response structure
         let result = serde_json::json!({
@@ -218,9 +231,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        result
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        result.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceIdentityVotes")]
@@ -247,8 +260,9 @@ impl WasmSdk {
             "metadata": {}
         });
 
-        serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&result).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getVotePollsByEndDate")]
@@ -269,8 +283,9 @@ impl WasmSdk {
             "metadata": {}
         });
 
-        serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&result).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     // Proof info versions for voting queries
@@ -298,14 +313,14 @@ impl WasmSdk {
         // Parse result_type to get start_index_values
         // The result_type parameter actually specifies what we want to query
         // For contested domain names in DPNS, we query at the "dash" parent domain level
-        let start_index_values = if index_name == "parentNameAndLabel" && document_type_name == "domain"
-        {
-            // For DPNS domains, start at the parent domain level (e.g., "dash")
-            vec![] // Empty to get all contested resources at any parent domain
-        } else {
-            // For other types, may need different index values
-            vec![]
-        };
+        let start_index_values =
+            if index_name == "parentNameAndLabel" && document_type_name == "domain" {
+                // For DPNS domains, start at the parent domain level (e.g., "dash")
+                vec![] // Empty to get all contested resources at any parent domain
+            } else {
+                // For other types, may need different index values
+                vec![]
+            };
 
         // Create start_at_value_info if provided
         let start_at_value_info = start_at_value.map(|bytes| {
@@ -337,10 +352,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get contested resources with proof: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get contested resources with proof: {}",
+                    e
+                ))
+            })?;
 
         // Extract metadata and proof from response
         let metadata = response
@@ -366,9 +383,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
@@ -401,8 +418,12 @@ impl WasmSdk {
 
         // Parse start_at_identifier_info if provided
         let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
-            let info: serde_json::Value = serde_json::from_str(&info_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid start_at_identifier_info JSON: {}", e)))?;
+            let info: serde_json::Value = serde_json::from_str(&info_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Invalid start_at_identifier_info JSON: {}",
+                    e
+                ))
+            })?;
 
             if let (Some(start_id), Some(included)) = (
                 info.get("startIdentifier"),
@@ -410,7 +431,9 @@ impl WasmSdk {
             ) {
                 let start_identifier = start_id
                     .as_str()
-                    .ok_or_else(|| WasmSdkError::invalid_argument("startIdentifier must be a string"))?
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument("startIdentifier must be a string")
+                    })?
                     .as_bytes()
                     .to_vec();
                 let start_identifier_included = included.as_bool().unwrap_or(true);
@@ -433,11 +456,18 @@ impl WasmSdk {
                 // Create a platform Value from the string
                 let platform_value = Value::Text(s);
                 // Serialize using bincode
-                let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
-                    .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize index value: {}", e)))?;
+                let serialized =
+                    bincode::encode_to_vec(&platform_value, BINCODE_CONFIG).map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to serialize index value: {}",
+                            e
+                        ))
+                    })?;
                 index_values_bytes.push(serialized);
             } else {
-                return Err(WasmSdkError::invalid_argument("Index values must be strings"));
+                return Err(WasmSdkError::invalid_argument(
+                    "Index values must be strings",
+                ));
             }
         }
 
@@ -451,7 +481,8 @@ impl WasmSdk {
                     index_values: index_values_bytes,
                     // TODO: This should use the _result_type parameter instead of allow_include_locked_and_abstaining_vote_tally
                     // Current logic is incorrect - these are independent concerns
-                    result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) {
+                    result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false)
+                    {
                         0
                     } else {
                         1
@@ -470,10 +501,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get contested resource vote state with proof: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get contested resource vote state with proof: {}",
+                    e
+                ))
+            })?;
 
         // Extract metadata and proof from response
         let metadata = response
@@ -502,9 +535,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentityWithProofInfo")]
@@ -541,18 +574,29 @@ impl WasmSdk {
                 // Create a platform Value from the string
                 let platform_value = Value::Text(s);
                 // Serialize using bincode
-                let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
-                    .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize index value: {}", e)))?;
+                let serialized =
+                    bincode::encode_to_vec(&platform_value, BINCODE_CONFIG).map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to serialize index value: {}",
+                            e
+                        ))
+                    })?;
                 index_values_bytes.push(serialized);
             } else {
-                return Err(WasmSdkError::invalid_argument("Index values must be strings"));
+                return Err(WasmSdkError::invalid_argument(
+                    "Index values must be strings",
+                ));
             }
         }
 
         // Parse start_at_identifier_info if provided
         let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
-            let info: serde_json::Value = serde_json::from_str(&info_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid start_at_identifier_info JSON: {}", e)))?;
+            let info: serde_json::Value = serde_json::from_str(&info_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Invalid start_at_identifier_info JSON: {}",
+                    e
+                ))
+            })?;
 
             if let (Some(start_id), Some(included)) = (
                 info.get("startIdentifier"),
@@ -560,7 +604,9 @@ impl WasmSdk {
             ) {
                 let start_identifier = start_id
                     .as_str()
-                    .ok_or_else(|| WasmSdkError::invalid_argument("startIdentifier must be a string"))?
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument("startIdentifier must be a string")
+                    })?
                     .as_bytes()
                     .to_vec();
                 let start_identifier_included = included.as_bool().unwrap_or(true);
@@ -600,10 +646,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get contested resource voters with proof: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get contested resource voters with proof: {}",
+                    e
+                ))
+            })?;
 
         // Extract metadata and proof from response
         let metadata = response
@@ -630,9 +678,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceIdentityVotesWithProofInfo")]
@@ -671,10 +719,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get contested resource identity votes with proof: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get contested resource identity votes with proof: {}",
+                    e
+                ))
+            })?;
 
         // Extract metadata and proof from response
         let metadata = response
@@ -701,9 +751,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfo")]
@@ -748,10 +798,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get vote polls by end date with proof: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get vote polls by end date with proof: {}",
+                    e
+                ))
+            })?;
 
         // Extract metadata and proof from response
         let metadata = response
@@ -778,9 +830,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVoteState")]
@@ -811,8 +863,12 @@ impl WasmSdk {
 
         // Parse start_at_identifier_info if provided
         let start_at_identifier_info = if let Some(info_str) = start_at_identifier_info {
-            let info: serde_json::Value = serde_json::from_str(&info_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid start_at_identifier_info JSON: {}", e)))?;
+            let info: serde_json::Value = serde_json::from_str(&info_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Invalid start_at_identifier_info JSON: {}",
+                    e
+                ))
+            })?;
 
             if let (Some(start_id), Some(included)) = (
                 info.get("startIdentifier"),
@@ -820,7 +876,9 @@ impl WasmSdk {
             ) {
                 let start_identifier = start_id
                     .as_str()
-                    .ok_or_else(|| WasmSdkError::invalid_argument("startIdentifier must be a string"))?
+                    .ok_or_else(|| {
+                        WasmSdkError::invalid_argument("startIdentifier must be a string")
+                    })?
                     .as_bytes()
                     .to_vec();
                 let start_identifier_included = included.as_bool().unwrap_or(true);
@@ -843,11 +901,18 @@ impl WasmSdk {
                 // Create a platform Value from the string
                 let platform_value = Value::Text(s);
                 // Serialize using bincode
-                let serialized = bincode::encode_to_vec(&platform_value, BINCODE_CONFIG)
-                    .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize index value: {}", e)))?;
+                let serialized =
+                    bincode::encode_to_vec(&platform_value, BINCODE_CONFIG).map_err(|e| {
+                        WasmSdkError::serialization(format!(
+                            "Failed to serialize index value: {}",
+                            e
+                        ))
+                    })?;
                 index_values_bytes.push(serialized);
             } else {
-                return Err(WasmSdkError::invalid_argument("Index values must be strings"));
+                return Err(WasmSdkError::invalid_argument(
+                    "Index values must be strings",
+                ));
             }
         }
 
@@ -861,7 +926,8 @@ impl WasmSdk {
                     index_values: index_values_bytes,
                     // TODO: This should use the _result_type parameter instead of allow_include_locked_and_abstaining_vote_tally
                     // Current logic is incorrect - these are independent concerns
-                    result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false) {
+                    result_type: if allow_include_locked_and_abstaining_vote_tally.unwrap_or(false)
+                    {
                         0
                     } else {
                         1
@@ -880,10 +946,12 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to get contested resource vote state: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to get contested resource vote state: {}",
+                    e
+                ))
+            })?;
 
         // Return a simple response structure
         let result = serde_json::json!({
@@ -901,8 +969,8 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        result
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        result.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 }

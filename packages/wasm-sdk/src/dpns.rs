@@ -56,7 +56,7 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         // Fetch the identity
         let identity = Identity::fetch(self.as_ref(), identity_id_parsed)
@@ -64,13 +64,16 @@ impl WasmSdk {
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
 
         // Create signer
-        let signer = SingleKeySigner::new(private_key_wif)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e)))?;
+        let signer = SingleKeySigner::new(private_key_wif).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e))
+        })?;
 
         // Get the specific identity public key
         let identity_public_key = identity
             .get_public_key_by_id(public_key_id.into())
-            .ok_or_else(|| WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id)))?
+            .ok_or_else(|| {
+                WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id))
+            })?
             .clone();
 
         // Store the JS callback in a thread-local variable that we can access from the closure
@@ -120,10 +123,7 @@ impl WasmSdk {
         };
 
         // Register the name
-        let result = self
-            .as_ref()
-            .register_dpns_name(input)
-            .await?;
+        let result = self.as_ref().register_dpns_name(input).await?;
 
         // Clear the thread-local callback
         PREORDER_CALLBACK.with(|cb| {

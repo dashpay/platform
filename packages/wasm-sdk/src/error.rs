@@ -1,9 +1,9 @@
-use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use dash_sdk::dpp::ProtocolError;
+use dash_sdk::Error::{EpochNotFound, TotalCreditsNotFound};
+use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
 use std::fmt::Display;
 use wasm_bindgen::prelude::wasm_bindgen;
-use dash_sdk::Error::{EpochNotFound, TotalCreditsNotFound};
 
 /// Structured error surfaced to JS consumers
 #[wasm_bindgen]
@@ -53,7 +53,12 @@ pub struct WasmSdkError {
 // wasm-bindgen getters defined below in the second impl block
 
 impl WasmSdkError {
-    fn new<M: Into<String>>(kind: WasmSdkErrorKind, message: M, code: Option<i32>, retriable: bool) -> Self {
+    fn new<M: Into<String>>(
+        kind: WasmSdkErrorKind,
+        message: M,
+        code: Option<i32>,
+        retriable: bool,
+    ) -> Self {
         Self {
             kind,
             message: message.into(),
@@ -87,28 +92,46 @@ impl From<SdkError> for WasmSdkError {
             AlreadyExists(msg) => Self::new(WasmSdkErrorKind::AlreadyExists, msg, None, retriable),
             Config(msg) => Self::new(WasmSdkErrorKind::Config, msg, None, retriable),
             Drive(e) => Self::new(WasmSdkErrorKind::Drive, e.to_string(), None, retriable),
-            DriveProofError(e, _proof, _block_info) => {
-                Self::new(WasmSdkErrorKind::DriveProofError, e.to_string(), None, retriable)
-            }
+            DriveProofError(e, _proof, _block_info) => Self::new(
+                WasmSdkErrorKind::DriveProofError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
             Protocol(e) => Self::new(WasmSdkErrorKind::Protocol, e.to_string(), None, retriable),
             Proof(e) => Self::new(WasmSdkErrorKind::Proof, e.to_string(), None, retriable),
-            InvalidProvedResponse(msg) => {
-                Self::new(WasmSdkErrorKind::InvalidProvedResponse, msg, None, retriable)
-            }
-            DapiClientError(e) => {
-                Self::new(WasmSdkErrorKind::DapiClientError, e.to_string(), None, retriable)
-            }
+            InvalidProvedResponse(msg) => Self::new(
+                WasmSdkErrorKind::InvalidProvedResponse,
+                msg,
+                None,
+                retriable,
+            ),
+            DapiClientError(e) => Self::new(
+                WasmSdkErrorKind::DapiClientError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
             #[cfg(feature = "mocks")]
-            DapiMocksError(e) => {
-                Self::new(WasmSdkErrorKind::DapiMocksError, e.to_string(), None, retriable)
-            }
+            DapiMocksError(e) => Self::new(
+                WasmSdkErrorKind::DapiMocksError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
             CoreError(e) => Self::new(WasmSdkErrorKind::CoreError, e.to_string(), None, retriable),
-            MerkleBlockError(e) => {
-                Self::new(WasmSdkErrorKind::MerkleBlockError, e.to_string(), None, retriable)
-            }
-            CoreClientError(e) => {
-                Self::new(WasmSdkErrorKind::CoreClientError, e.to_string(), None, retriable)
-            }
+            MerkleBlockError(e) => Self::new(
+                WasmSdkErrorKind::MerkleBlockError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
+            CoreClientError(e) => Self::new(
+                WasmSdkErrorKind::CoreClientError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
             MissingDependency(kind, id) => Self::new(
                 WasmSdkErrorKind::MissingDependency,
                 format!("Required {} not found: {}", kind, id),
@@ -129,7 +152,11 @@ impl From<SdkError> for WasmSdkError {
             ),
             TimeoutReached(duration, msg) => Self::new(
                 WasmSdkErrorKind::TimeoutReached,
-                format!("SDK operation timeout {} secs reached: {}", duration.as_secs(), msg),
+                format!(
+                    "SDK operation timeout {} secs reached: {}",
+                    duration.as_secs(),
+                    msg
+                ),
                 None,
                 retriable,
             ),

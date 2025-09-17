@@ -1,3 +1,4 @@
+use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -16,7 +17,6 @@ use simple_signer::SingleKeySigner;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use crate::error::WasmSdkError;
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -47,8 +47,10 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid owner ID: {}", e)))?;
 
         // Parse contract definition JSON
-        let contract_json: serde_json::Value = serde_json::from_str(&contract_definition)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract definition JSON: {}", e)))?;
+        let contract_json: serde_json::Value =
+            serde_json::from_str(&contract_definition).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid contract definition JSON: {}", e))
+            })?;
 
         // Fetch owner identity
         let owner_identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
@@ -62,9 +64,10 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
+        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
+            &private_key_bytes,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
@@ -106,9 +109,11 @@ impl WasmSdk {
                         && key.data().as_slice() == public_key_hash160.as_slice()
                 })
                 .map(|(_, key)| key.clone())
-                .ok_or_else(|| WasmSdkError::not_found(
-                    "No matching authentication key found for the provided private key",
-                ))?
+                .ok_or_else(|| {
+                    WasmSdkError::not_found(
+                        "No matching authentication key found for the provided private key",
+                    )
+                })?
         };
 
         // Create the data contract from JSON definition
@@ -221,8 +226,10 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid owner ID: {}", e)))?;
 
         // Parse contract updates JSON
-        let updates_json: serde_json::Value = serde_json::from_str(&contract_updates)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract updates JSON: {}", e)))?;
+        let updates_json: serde_json::Value =
+            serde_json::from_str(&contract_updates).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid contract updates JSON: {}", e))
+            })?;
 
         // Fetch the existing contract
         let existing_contract = DataContract::fetch(&sdk, contract_identifier)
@@ -231,7 +238,9 @@ impl WasmSdk {
 
         // Verify ownership
         if existing_contract.owner_id() != owner_identifier {
-            return Err(WasmSdkError::invalid_argument("Identity does not own this contract"));
+            return Err(WasmSdkError::invalid_argument(
+                "Identity does not own this contract",
+            ));
         }
 
         // Fetch owner identity
@@ -246,9 +255,10 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
+        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
+            &private_key_bytes,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
@@ -290,9 +300,11 @@ impl WasmSdk {
                         && key.data().as_slice() == public_key_hash160.as_slice()
                 })
                 .map(|(_, key)| key.clone())
-                .ok_or_else(|| WasmSdkError::not_found(
-                    "No matching authentication key found for the provided private key",
-                ))?
+                .ok_or_else(|| {
+                    WasmSdkError::not_found(
+                        "No matching authentication key found for the provided private key",
+                    )
+                })?
         };
 
         // Create updated contract from JSON definition

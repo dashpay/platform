@@ -60,8 +60,9 @@ impl WasmSdk {
             threshold_reached,
         };
 
-        serde_wasm_bindgen::to_value(&state)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&state).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatus")]
@@ -76,17 +77,17 @@ impl WasmSdk {
         use std::str::FromStr;
 
         // Parse the ProTxHash
-        let start_hash = if start_pro_tx_hash.is_empty() {
-            None
-        } else {
-            Some(
-                ProTxHash::from_str(start_pro_tx_hash)
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid ProTxHash: {}", e)))?,
-            )
-        };
+        let start_hash =
+            if start_pro_tx_hash.is_empty() {
+                None
+            } else {
+                Some(ProTxHash::from_str(start_pro_tx_hash).map_err(|e| {
+                    WasmSdkError::invalid_argument(format!("Invalid ProTxHash: {}", e))
+                })?)
+            };
 
-        let votes_result = MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count))
-            .await?;
+        let votes_result =
+            MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
 
         // Convert to our response format
         let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
@@ -100,8 +101,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&votes)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&votes).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     // Proof versions for protocol queries
@@ -156,9 +158,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]

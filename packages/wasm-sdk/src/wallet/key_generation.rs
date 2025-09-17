@@ -2,14 +2,14 @@
 //!
 //! Provides key generation and address derivation without full HD wallet support
 
+use crate::error::WasmSdkError;
+use crate::WasmSdk;
 use dash_sdk::dpp::dashcore::hashes::{sha256, Hash};
 use dash_sdk::dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
 use dash_sdk::dpp::dashcore::{Address, Network, PrivateKey, PublicKey};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
-use crate::error::WasmSdkError;
 use wasm_bindgen::prelude::*;
-use crate::WasmSdk;
 
 /// Key pair information
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,13 +34,18 @@ impl WasmSdk {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
-            _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "Invalid network. Use 'mainnet' or 'testnet'",
+                ))
+            }
         };
 
         // Generate random 32 bytes
         let mut key_bytes = [0u8; 32];
-        getrandom::getrandom(&mut key_bytes)
-            .map_err(|e| WasmSdkError::generic(format!("Failed to generate random bytes: {}", e)))?;
+        getrandom::getrandom(&mut key_bytes).map_err(|e| {
+            WasmSdkError::generic(format!("Failed to generate random bytes: {}", e))
+        })?;
 
         // Create private key
         let private_key = PrivateKey::from_byte_array(&key_bytes, net)
@@ -56,8 +61,9 @@ impl WasmSdk {
 
         // Get address
         let address = Address::p2pkh(
-            &PublicKey::from_slice(&public_key_bytes)
-                .map_err(|e| WasmSdkError::generic(format!("Failed to create public key: {}", e)))?,
+            &PublicKey::from_slice(&public_key_bytes).map_err(|e| {
+                WasmSdkError::generic(format!("Failed to create public key: {}", e))
+            })?,
             net,
         );
 
@@ -69,15 +75,18 @@ impl WasmSdk {
             network: network.to_string(),
         };
 
-        serde_wasm_bindgen::to_value(&key_pair)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
+        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
+        })
     }
 
     /// Generate multiple key pairs
     #[wasm_bindgen(js_name = "generateKeyPairs")]
     pub fn generate_key_pairs(network: &str, count: u32) -> Result<Vec<JsValue>, WasmSdkError> {
         if count == 0 || count > 100 {
-            return Err(WasmSdkError::invalid_argument("Count must be between 1 and 100"));
+            return Err(WasmSdkError::invalid_argument(
+                "Count must be between 1 and 100",
+            ));
         }
 
         let mut pairs = Vec::new();
@@ -109,8 +118,9 @@ impl WasmSdk {
 
         // Get address
         let address = Address::p2pkh(
-            &PublicKey::from_slice(&public_key_bytes)
-                .map_err(|e| WasmSdkError::generic(format!("Failed to create public key: {}", e)))?,
+            &PublicKey::from_slice(&public_key_bytes).map_err(|e| {
+                WasmSdkError::generic(format!("Failed to create public key: {}", e))
+            })?,
             private_key.network,
         );
 
@@ -122,13 +132,17 @@ impl WasmSdk {
             network: network.to_string(),
         };
 
-        serde_wasm_bindgen::to_value(&key_pair)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e)))
+        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
+        })
     }
 
     /// Create key pair from private key hex
     #[wasm_bindgen(js_name = "keyPairFromHex")]
-    pub fn key_pair_from_hex(private_key_hex: &str, network: &str) -> Result<JsValue, WasmSdkError> {
+    pub fn key_pair_from_hex(
+        private_key_hex: &str,
+        network: &str,
+    ) -> Result<JsValue, WasmSdkError> {
         if private_key_hex.len() != 64 {
             return Err(WasmSdkError::invalid_argument(
                 "Private key hex must be exactly 64 characters",
@@ -138,7 +152,11 @@ impl WasmSdk {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
-            _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "Invalid network. Use 'mainnet' or 'testnet'",
+                ))
+            }
         };
 
         let key_bytes = hex::decode(private_key_hex)
@@ -159,7 +177,11 @@ impl WasmSdk {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
-            _ => return Err(WasmSdkError::invalid_argument("Invalid network. Use 'mainnet' or 'testnet'")),
+            _ => {
+                return Err(WasmSdkError::invalid_argument(
+                    "Invalid network. Use 'mainnet' or 'testnet'",
+                ))
+            }
         };
 
         let pubkey_bytes = hex::decode(pubkey_hex)

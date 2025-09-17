@@ -71,8 +71,7 @@ impl WasmSdk {
         };
 
         let epochs_result: drive_proof_verifier::types::ExtendedEpochInfos =
-            ExtendedEpochInfo::fetch_many(self.as_ref(), query)
-                .await?;
+            ExtendedEpochInfo::fetch_many(self.as_ref(), query).await?;
 
         // Convert to our response format
         let epochs: Vec<EpochInfo> = epochs_result
@@ -80,8 +79,9 @@ impl WasmSdk {
             .filter_map(|(_, epoch_opt)| epoch_opt.map(Into::into))
             .collect();
 
-        serde_wasm_bindgen::to_value(&epochs)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&epochs).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getFinalizedEpochInfos")]
@@ -134,7 +134,7 @@ impl WasmSdk {
                 self.as_ref(),
                 query,
             )
-                .await?;
+            .await?;
 
         // Convert to our response format and sort by epoch index
         let mut epochs: Vec<EpochInfo> = epochs_result
@@ -163,8 +163,9 @@ impl WasmSdk {
             }
         });
 
-        serde_wasm_bindgen::to_value(&epochs)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&epochs).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIds")]
@@ -179,14 +180,18 @@ impl WasmSdk {
         let pro_tx_hashes: Vec<ProTxHash> = ids
             .into_iter()
             .map(|hash_str| {
-                ProTxHash::from_str(&hash_str)
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid ProTxHash '{}': {}", hash_str, e)))
+                ProTxHash::from_str(&hash_str).map_err(|e| {
+                    WasmSdkError::invalid_argument(format!(
+                        "Invalid ProTxHash '{}': {}",
+                        hash_str, e
+                    ))
+                })
             })
             .collect::<Result<Vec<_>, WasmSdkError>>()?;
 
         // Use FetchMany to get block counts for specific IDs
-        let counts = ProposerBlockCountById::fetch_many(self.as_ref(), (epoch, pro_tx_hashes))
-            .await?;
+        let counts =
+            ProposerBlockCountById::fetch_many(self.as_ref(), (epoch, pro_tx_hashes)).await?;
 
         // Convert to response format
         let mut evonodes_proposed_block_counts = BTreeMap::new();
@@ -204,8 +209,9 @@ impl WasmSdk {
             evonodes_proposed_block_counts,
         };
 
-        serde_wasm_bindgen::to_value(&response)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&response).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByRange")]
@@ -222,8 +228,9 @@ impl WasmSdk {
 
         // Parse start_after if provided
         let start_info = if let Some(start) = start_after {
-            let pro_tx_hash = ProTxHash::from_str(&start)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid start_after ProTxHash: {}", e)))?;
+            let pro_tx_hash = ProTxHash::from_str(&start).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid start_after ProTxHash: {}", e))
+            })?;
             Some(QueryStartInfo {
                 start_key: pro_tx_hash.to_byte_array().to_vec(),
                 start_included: false,
@@ -238,7 +245,7 @@ impl WasmSdk {
             limit,
             start_info,
         )
-            .await?;
+        .await?;
 
         // Convert to response format
         let mut responses: Vec<ProposerBlockCount> = counts_result
@@ -247,7 +254,8 @@ impl WasmSdk {
             .map(|(identifier, count)| {
                 // Convert Identifier back to ProTxHash
                 let bytes = identifier.to_buffer();
-                let hash = dash_sdk::dpp::dashcore::hashes::sha256d::Hash::from_slice(&bytes).unwrap();
+                let hash =
+                    dash_sdk::dpp::dashcore::hashes::sha256d::Hash::from_slice(&bytes).unwrap();
                 let pro_tx_hash = ProTxHash::from_raw_hash(hash);
                 ProposerBlockCount {
                     proposer_pro_tx_hash: pro_tx_hash.to_string(),
@@ -266,8 +274,9 @@ impl WasmSdk {
             }
         });
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getCurrentEpoch")]
@@ -276,8 +285,9 @@ impl WasmSdk {
 
         let epoch_info = EpochInfo::from(epoch);
 
-        serde_wasm_bindgen::to_value(&epoch_info)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&epoch_info).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getEpochsInfoWithProofInfo")]
@@ -316,16 +326,15 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getCurrentEpochWithProofInfo")]
     pub async fn get_current_epoch_with_proof_info(&self) -> Result<JsValue, WasmSdkError> {
         let (epoch, metadata, proof) =
-            ExtendedEpochInfo::fetch_current_with_metadata_and_proof(self.as_ref())
-                .await?;
+            ExtendedEpochInfo::fetch_current_with_metadata_and_proof(self.as_ref()).await?;
 
         let epoch_info = EpochInfo::from(epoch);
 
@@ -337,9 +346,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     // Additional proof info versions for epoch queries
@@ -427,9 +436,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+        })
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]

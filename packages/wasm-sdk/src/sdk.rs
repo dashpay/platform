@@ -1,4 +1,5 @@
 use crate::context_provider::WasmContext;
+use crate::error::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dash_sdk::dpp::version::PlatformVersion;
@@ -10,9 +11,7 @@ use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 use std::time::Duration;
-use crate::error::WasmSdkError;
 use wasm_bindgen::prelude::wasm_bindgen;
-
 
 // Store shared trusted contexts
 use once_cell::sync::Lazy;
@@ -134,7 +133,7 @@ impl WasmSdkBuilder {
         PlatformVersion::latest().protocol_version
     }
 
-    #[wasm_bindgen(js_name="mainnet")]
+    #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
         // Mainnet addresses from mnowatch.org
         let mainnet_addresses = vec![
@@ -358,7 +357,7 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    #[wasm_bindgen(js_name="mainnetTrusted")]
+    #[wasm_bindgen(js_name = "mainnetTrusted")]
     pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
@@ -595,7 +594,7 @@ impl WasmSdkBuilder {
         Ok(Self(sdk_builder))
     }
 
-    #[wasm_bindgen(js_name="testnet")]
+    #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks
@@ -618,7 +617,7 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    #[wasm_bindgen(js_name="testnetTrusted")]
+    #[wasm_bindgen(js_name = "testnetTrusted")]
     pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
@@ -661,7 +660,7 @@ impl WasmSdkBuilder {
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
     }
 
-    #[wasm_bindgen(js_name="withContextProvider")]
+    #[wasm_bindgen(js_name = "withContextProvider")]
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
@@ -674,13 +673,14 @@ impl WasmSdkBuilder {
     /// - ... up to latest version
     ///
     /// Defaults to latest version if not specified.
-    #[wasm_bindgen(js_name="withVersion")]
+    #[wasm_bindgen(js_name = "withVersion")]
     pub fn with_version(self, version_number: u32) -> Result<Self, WasmSdkError> {
-        let version = PlatformVersion::get(version_number)
-            .map_err(|e| WasmSdkError::invalid_argument(format!(
+        let version = PlatformVersion::get(version_number).map_err(|e| {
+            WasmSdkError::invalid_argument(format!(
                 "Invalid platform version {}: {}",
                 version_number, e
-            )))?;
+            ))
+        })?;
 
         Ok(WasmSdkBuilder(self.0.with_version(version)))
     }
@@ -692,7 +692,7 @@ impl WasmSdkBuilder {
     /// - timeout_ms: Timeout for single request (in milliseconds)
     /// - retries: Number of retries in case of failed requests
     /// - ban_failed_address: Whether to ban DAPI address if node not responded or responded with error
-    #[wasm_bindgen(js_name="withSettings")]
+    #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
         connect_timeout_ms: Option<u32>,
@@ -721,7 +721,7 @@ impl WasmSdkBuilder {
         WasmSdkBuilder(self.0.with_settings(settings))
     }
 
-    #[wasm_bindgen(js_name="withProofs")]
+    #[wasm_bindgen(js_name = "withProofs")]
     pub fn with_proofs(self, enable_proofs: bool) -> Self {
         WasmSdkBuilder(self.0.with_proofs(enable_proofs))
     }

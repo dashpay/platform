@@ -3,6 +3,7 @@ use dash_sdk::dpp::platform_value::ReplacementType;
 use dash_sdk::dpp::serialization::PlatformDeserializable;
 use dash_sdk::dpp::serialization::ValueConvertible;
 
+use crate::WasmSdkError;
 use dash_sdk::dpp::dashcore::hashes::serde::Serialize;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -11,7 +12,6 @@ use dash_sdk::platform::{DataContract, Identity};
 use platform_value::string_encoding::Encoding;
 use wasm_bindgen::prelude::*;
 use web_sys::js_sys;
-use crate::WasmSdkError;
 
 #[wasm_bindgen]
 #[derive(Clone)]
@@ -38,7 +38,11 @@ impl From<Identity> for IdentityWasm {
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(platform_version: u32) -> Result<IdentityWasm, WasmSdkError> {
-        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| WasmSdkError::invalid_argument(format!("unknown platform version {platform_version}: {e}")))?;
+        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| {
+            WasmSdkError::invalid_argument(format!(
+                "unknown platform version {platform_version}: {e}"
+            ))
+        })?;
 
         let identity = Identity::default_versioned(platform_version)?;
 
@@ -158,7 +162,9 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
-        let mut value = self.inner.to_object().map_err(|e| WasmSdkError::serialization(format!("failed to convert identity to Object: {e}")))?;
+        let mut value = self.inner.to_object().map_err(|e| {
+            WasmSdkError::serialization(format!("failed to convert identity to Object: {e}"))
+        })?;
 
         value
             .replace_at_paths(
@@ -185,7 +191,8 @@ impl IdentityWasm {
             .map_err(|e| WasmSdkError::serialization(e.to_string()))?
             .to_string();
 
-        js_sys::JSON::parse(&json).map_err(|e| WasmSdkError::serialization(format!("failed to parse JSON: {:?}", e)))
+        js_sys::JSON::parse(&json)
+            .map_err(|e| WasmSdkError::serialization(format!("failed to parse JSON: {:?}", e)))
     }
     //
     // #[wasm_bindgen(js_name=toObject)]
@@ -262,7 +269,11 @@ impl IdentityWasm {
     #[wasm_bindgen(js_name=fromBuffer)]
     pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, WasmSdkError> {
         let identity: Identity = PlatformDeserializable::deserialize_from_bytes(buffer.as_slice())
-            .map_err(|e| WasmSdkError::serialization(format!("failed to deserialize identity from bytes: {e}")))?;
+            .map_err(|e| {
+                WasmSdkError::serialization(format!(
+                    "failed to deserialize identity from bytes: {e}"
+                ))
+            })?;
         Ok(identity.into())
     }
 }
@@ -302,11 +313,14 @@ impl DataContractWasm {
     pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
         let platform_version = PlatformVersion::first();
 
-        let json = self
-            .0
-            .to_json(platform_version)
-            .map_err(|e| WasmSdkError::serialization(format!("failed to convert data contract convert to json: {}", e)))?;
+        let json = self.0.to_json(platform_version).map_err(|e| {
+            WasmSdkError::serialization(format!(
+                "failed to convert data contract convert to json: {}",
+                e
+            ))
+        })?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        json.serialize(&serializer).map_err(|e| WasmSdkError::serialization(format!("can't serialize to json: {}", e)))
+        json.serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!("can't serialize to json: {}", e)))
     }
 }

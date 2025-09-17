@@ -1,3 +1,4 @@
+use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -14,10 +15,9 @@ use dash_sdk::platform::transition::top_up_identity::TopUpIdentity;
 use dash_sdk::platform::Fetch;
 use js_sys;
 use simple_signer::{signer::SimpleSigner, SingleKeySigner};
+use tracing::{debug, error};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use crate::error::WasmSdkError;
-use tracing::{debug, error};
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -67,19 +67,26 @@ impl WasmSdk {
             .all(|c| c.is_ascii_hexdigit())
         {
             // It's hex encoded - decode and parse as JSON from the decoded bytes
-            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid asset lock proof hex: {}", e)))?;
+            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid asset lock proof hex: {}", e))
+            })?;
 
             // Convert bytes to string and parse as JSON
-            let json_str = String::from_utf8(asset_lock_proof_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid UTF-8 in asset lock proof: {}", e)))?;
+            let json_str = String::from_utf8(asset_lock_proof_bytes).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid UTF-8 in asset lock proof: {}", e))
+            })?;
 
-            serde_json::from_str(&json_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Failed to parse asset lock proof JSON: {}", e)))?
+            serde_json::from_str(&json_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to parse asset lock proof JSON: {}",
+                    e
+                ))
+            })?
         } else {
             // Try JSON directly
-            serde_json::from_str(&asset_lock_proof)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid asset lock proof JSON: {}", e)))?
+            serde_json::from_str(&asset_lock_proof).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid asset lock proof JSON: {}", e))
+            })?
         };
 
         // Parse private key - WIF format
@@ -89,8 +96,9 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
 
         // Parse public keys from JSON
-        let keys_data: serde_json::Value = serde_json::from_str(&public_keys)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid JSON for public_keys: {}", e)))?;
+        let keys_data: serde_json::Value = serde_json::from_str(&public_keys).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid JSON for public_keys: {}", e))
+        })?;
 
         let keys_array = keys_data
             .as_array()
@@ -157,7 +165,10 @@ impl WasmSdk {
                     if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
                         // Decode private key from hex
                         let bytes = hex::decode(private_key_hex).map_err(|e| {
-                            WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e))
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid private key hex: {}",
+                                e
+                            ))
                         })?;
 
                         if bytes.len() != 32 {
@@ -176,16 +187,23 @@ impl WasmSdk {
                                 &private_key_array,
                                 self.network(),
                             )
-                            .map_err(|e| WasmSdkError::generic(format!(
-                                "Failed to derive ECDSA_HASH160 public key data: {}",
-                                e
-                            )))?;
+                            .map_err(|e| {
+                                WasmSdkError::generic(format!(
+                                    "Failed to derive ECDSA_HASH160 public key data: {}",
+                                    e
+                                ))
+                            })?;
 
                         // HASH160 keys are not used for signing during identity creation
                         (derived_data, [0u8; 32])
                     } else if let Some(data_str) = key_data["data"].as_str() {
                         let key_data_bytes = dash_sdk::dpp::dashcore::base64::decode(data_str)
-                            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid base64 key data: {}", e)))?;
+                            .map_err(|e| {
+                                WasmSdkError::invalid_argument(format!(
+                                    "Invalid base64 key data: {}",
+                                    e
+                                ))
+                            })?;
 
                         // Enforce correct HASH160 size (20 bytes).
                         if key_data_bytes.len() != 20 {
@@ -208,7 +226,12 @@ impl WasmSdk {
                         key_data["privateKeyHex"].as_str()
                     {
                         // Decode private key from hex
-                        let bytes = hex::decode(private_key_hex).map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e)))?;
+                        let bytes = hex::decode(private_key_hex).map_err(|e| {
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid private key hex: {}",
+                                e
+                            ))
+                        })?;
 
                         if bytes.len() != 32 {
                             return Err(WasmSdkError::invalid_argument(format!(
@@ -222,7 +245,12 @@ impl WasmSdk {
                         private_key_array
                     } else if let Some(private_key_wif) = key_data["privateKeyWif"].as_str() {
                         // Parse WIF format private key
-                        let private_key = PrivateKey::from_wif(private_key_wif).map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF private key: {}", e)))?;
+                        let private_key = PrivateKey::from_wif(private_key_wif).map_err(|e| {
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid WIF private key: {}",
+                                e
+                            ))
+                        })?;
                         private_key.inner.secret_bytes()
                     } else {
                         return Err(WasmSdkError::invalid_argument(
@@ -233,10 +261,12 @@ impl WasmSdk {
                     // Derive public key data from private key
                     let public_key_data = key_type
                         .public_key_data_from_private_key_data(&private_key_bytes, self.network())
-                        .map_err(|e| WasmSdkError::generic(format!(
-                            "Failed to derive ECDSA_SECP256K1 public key data: {}",
-                            e
-                        )))?;
+                        .map_err(|e| {
+                            WasmSdkError::generic(format!(
+                                "Failed to derive ECDSA_SECP256K1 public key data: {}",
+                                e
+                            ))
+                        })?;
 
                     (public_key_data, private_key_bytes)
                 }
@@ -252,7 +282,10 @@ impl WasmSdk {
                         if let Some(private_key_hex) = key_data["privateKeyHex"].as_str() {
                             // Decode private key from hex
                             let bytes = hex::decode(private_key_hex).map_err(|e| {
-                                WasmSdkError::invalid_argument(format!("Invalid private key hex: {}", e))
+                                WasmSdkError::invalid_argument(format!(
+                                    "Invalid private key hex: {}",
+                                    e
+                                ))
                             })?;
 
                             if bytes.len() != 32 {
@@ -266,16 +299,20 @@ impl WasmSdk {
                             private_key_array.copy_from_slice(&bytes);
                             private_key_array
                         } else {
-                            return Err(WasmSdkError::invalid_argument("BLS12_381 keys require privateKeyHex"));
+                            return Err(WasmSdkError::invalid_argument(
+                                "BLS12_381 keys require privateKeyHex",
+                            ));
                         };
 
                     // Derive public key data from private key
                     let public_key_data = key_type
                         .public_key_data_from_private_key_data(&private_key_bytes, self.network())
-                        .map_err(|e| WasmSdkError::generic(format!(
-                            "Failed to derive BLS12_381 public key data: {}",
-                            e
-                        )))?;
+                        .map_err(|e| {
+                            WasmSdkError::generic(format!(
+                                "Failed to derive BLS12_381 public key data: {}",
+                                e
+                            ))
+                        })?;
 
                     (public_key_data, private_key_bytes)
                 }
@@ -415,19 +452,26 @@ impl WasmSdk {
             .all(|c| c.is_ascii_hexdigit())
         {
             // It's hex encoded - decode and parse as JSON from the decoded bytes
-            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid asset lock proof hex: {}", e)))?;
+            let asset_lock_proof_bytes = hex::decode(&asset_lock_proof).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid asset lock proof hex: {}", e))
+            })?;
 
             // Convert bytes to string and parse as JSON
-            let json_str = String::from_utf8(asset_lock_proof_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid UTF-8 in asset lock proof: {}", e)))?;
+            let json_str = String::from_utf8(asset_lock_proof_bytes).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid UTF-8 in asset lock proof: {}", e))
+            })?;
 
-            serde_json::from_str(&json_str)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Failed to parse asset lock proof JSON: {}", e)))?
+            serde_json::from_str(&json_str).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to parse asset lock proof JSON: {}",
+                    e
+                ))
+            })?
         } else {
             // Try JSON directly
-            serde_json::from_str(&asset_lock_proof)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid asset lock proof JSON: {}", e)))?
+            serde_json::from_str(&asset_lock_proof).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid asset lock proof JSON: {}", e))
+            })?
         };
 
         // Parse private key - WIF format
@@ -539,12 +583,16 @@ impl WasmSdk {
 
         // Validate not sending to self
         if sender_identifier == recipient_identifier {
-            return Err(WasmSdkError::invalid_argument("Cannot transfer credits to yourself"));
+            return Err(WasmSdkError::invalid_argument(
+                "Cannot transfer credits to yourself",
+            ));
         }
 
         // Validate amount
         if amount == 0 {
-            return Err(WasmSdkError::invalid_argument("Transfer amount must be greater than 0"));
+            return Err(WasmSdkError::invalid_argument(
+                "Transfer amount must be greater than 0",
+            ));
         }
 
         // Fetch sender identity
@@ -559,9 +607,10 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
+        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
+            &private_key_bytes,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
@@ -585,10 +634,12 @@ impl WasmSdk {
                         && key.key_type() == KeyType::ECDSA_HASH160
                         && key.data().as_slice() == public_key_hash160.as_slice()
                 })
-                .ok_or_else(|| WasmSdkError::not_found(format!(
-                    "Key with ID {} not found or doesn't match private key",
-                    requested_key_id
-                )))?
+                .ok_or_else(|| {
+                    WasmSdkError::not_found(format!(
+                        "Key with ID {} not found or doesn't match private key",
+                        requested_key_id
+                    ))
+                })?
         } else {
             // Find any matching transfer key
             sender_identity
@@ -600,7 +651,11 @@ impl WasmSdk {
                         && key.data().as_slice() == public_key_hash160.as_slice()
                 })
                 .map(|(_, key)| key)
-                .ok_or_else(|| WasmSdkError::not_found("No matching transfer key found for the provided private key"))?
+                .ok_or_else(|| {
+                    WasmSdkError::not_found(
+                        "No matching transfer key found for the provided private key",
+                    )
+                })?
         };
 
         // Get identity nonce
@@ -625,7 +680,9 @@ impl WasmSdk {
             sdk.version(),
             None, // No version override
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create transfer transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
+        })?;
 
         // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -727,9 +784,10 @@ impl WasmSdk {
             .secret_bytes();
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
-        let secret_key =
-            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
+        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
+            &private_key_bytes,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid secret key: {}", e)))?;
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
@@ -916,17 +974,20 @@ impl WasmSdk {
                     && key.data().as_slice() == public_key_hash160.as_slice()
             })
             .map(|(id, _)| *id)
-            .ok_or_else(|| WasmSdkError::invalid_argument("Provided private key does not match any master key"))?;
+            .ok_or_else(|| {
+                WasmSdkError::invalid_argument("Provided private key does not match any master key")
+            })?;
 
         // Parse and prepare keys to add
         let keys_to_add: Vec<IdentityPublicKey> = if let Some(keys_json) = add_public_keys {
             // Parse JSON array of keys
-            let keys_data: serde_json::Value = serde_json::from_str(&keys_json)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid JSON for add_public_keys: {}", e)))?;
+            let keys_data: serde_json::Value = serde_json::from_str(&keys_json).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid JSON for add_public_keys: {}", e))
+            })?;
 
-            let keys_array = keys_data
-                .as_array()
-                .ok_or_else(|| WasmSdkError::invalid_argument("add_public_keys must be a JSON array"))?;
+            let keys_array = keys_data.as_array().ok_or_else(|| {
+                WasmSdkError::invalid_argument("add_public_keys must be a JSON array")
+            })?;
 
             // Get the current max key ID
             let mut next_key_id = identity.public_keys().keys().max().copied().unwrap_or(0) + 1;
@@ -987,8 +1048,12 @@ impl WasmSdk {
 
                     // Decode key data from base64
                     let key_data =
-                        dash_sdk::dpp::dashcore::base64::decode(data_str)
-                            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid base64 key data: {}", e)))?;
+                        dash_sdk::dpp::dashcore::base64::decode(data_str).map_err(|e| {
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid base64 key data: {}",
+                                e
+                            ))
+                        })?;
 
                     // Create the identity public key
                     use dash_sdk::dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -1170,12 +1235,14 @@ impl WasmSdk {
                 .all(|c| c.is_ascii_hexdigit())
         {
             // Looks like hex
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Hex)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid ProTxHash (hex): {}", e)))?
+            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Hex).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (hex): {}", e))
+            })?
         } else {
             // Try base58
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Base58)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid ProTxHash (base58): {}", e)))?
+            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (base58): {}", e))
+            })?
         };
 
         // Parse contract ID
@@ -1183,8 +1250,10 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Parse index values from JSON
-        let index_values_json: serde_json::Value = serde_json::from_str(&index_values)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid index values JSON: {}", e)))?;
+        let index_values_json: serde_json::Value =
+            serde_json::from_str(&index_values).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid index values JSON: {}", e))
+            })?;
 
         let index_values_array = index_values_json
             .as_array()
@@ -1208,7 +1277,9 @@ impl WasmSdk {
                     }
                 }
                 serde_json::Value::Bool(b) => Ok(dash_sdk::dpp::platform_value::Value::Bool(*b)),
-                _ => Err(WasmSdkError::invalid_argument("Unsupported index value type")),
+                _ => Err(WasmSdkError::invalid_argument(
+                    "Unsupported index value type",
+                )),
             })
             .collect::<Result<Vec<_>, WasmSdkError>>()?;
 
@@ -1224,7 +1295,10 @@ impl WasmSdk {
                 .ok_or_else(|| WasmSdkError::invalid_argument("Invalid vote choice format"))?;
             let identity_id =
                 Identifier::from_string(identity_id_str, Encoding::Base58).map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid identity ID in vote choice: {}", e))
+                    WasmSdkError::invalid_argument(format!(
+                        "Invalid identity ID in vote choice: {}",
+                        e
+                    ))
                 })?;
             ResourceVoteChoice::TowardsIdentity(identity_id)
         } else {
@@ -1236,21 +1310,26 @@ impl WasmSdk {
             && voting_key_wif.chars().all(|c| c.is_ascii_hexdigit())
         {
             // Looks like hex
-            let key_bytes = hex::decode(&voting_key_wif)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid hex private key: {}", e)))?;
+            let key_bytes = hex::decode(&voting_key_wif).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid hex private key: {}", e))
+            })?;
             if key_bytes.len() != 32 {
-                return Err(WasmSdkError::invalid_argument("Private key must be 32 bytes"));
+                return Err(WasmSdkError::invalid_argument(
+                    "Private key must be 32 bytes",
+                ));
             }
             let key_array: [u8; 32] = key_bytes
                 .as_slice()
                 .try_into()
                 .map_err(|_| WasmSdkError::invalid_argument("Private key must be 32 bytes"))?;
-            PrivateKey::from_byte_array(&key_array, self.network())
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key bytes: {}", e)))?
+            PrivateKey::from_byte_array(&key_array, self.network()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid private key bytes: {}", e))
+            })?
         } else {
             // Try WIF
-            PrivateKey::from_wif(&voting_key_wif)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF private key: {}", e)))?
+            PrivateKey::from_wif(&voting_key_wif).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid WIF private key: {}", e))
+            })?
         };
 
         // Create the voting public key from the private key

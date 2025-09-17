@@ -96,7 +96,7 @@ impl WasmSdk {
             contract_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
@@ -147,7 +147,7 @@ impl WasmSdk {
             &token_id_string,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Fetch token prices
         let prices_result: drive_proof_verifier::types::TokenDirectPurchasePrices =
@@ -178,8 +178,9 @@ impl WasmSdk {
                     base_price,
                 };
 
-                serde_wasm_bindgen::to_value(&response)
-                    .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+                serde_wasm_bindgen::to_value(&response).map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+                })
             } else {
                 Err(WasmSdkError::not_found(format!(
                     "No pricing schedule found for token at contract {} position {}",
@@ -208,7 +209,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Parse identity IDs
         let identities: Result<Vec<Identifier>, _> = identity_ids
@@ -241,7 +242,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 balances_result.get(&id).and_then(|balance_opt| {
                     balance_opt.map(|balance| IdentityTokenBalanceResponse {
@@ -252,8 +253,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getIdentityTokenInfos")]
@@ -270,7 +272,7 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         // Parse token IDs
         let tokens: Result<Vec<Identifier>, _> = token_ids
@@ -303,7 +305,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 infos_result.get(&id).and_then(|info_opt| {
                     info_opt.as_ref().map(|info| {
@@ -323,8 +325,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfos")]
@@ -341,7 +344,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Parse identity IDs
         let identities: Result<Vec<Identifier>, _> = identity_ids
@@ -374,7 +377,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 infos_result.get(&id).and_then(|info_opt| {
                     info_opt.as_ref().map(|info| {
@@ -394,12 +397,16 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into())
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenStatuses")]
-    pub async fn get_token_statuses(&self, token_ids: Vec<String>) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_token_statuses(
+        &self,
+        token_ids: Vec<String>,
+    ) -> Result<JsValue, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
         // Parse token IDs
@@ -427,7 +434,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 statuses_result.get(&id).and_then(|status_opt| {
                     status_opt.as_ref().map(|status| TokenStatusResponse {
@@ -438,8 +445,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePrices")]
@@ -504,8 +512,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&responses)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
@@ -521,7 +530,7 @@ impl WasmSdk {
             data_contract_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Fetch token contract info
         let info_result = TokenContractInfo::fetch(self.as_ref(), contract_id).await?;
@@ -544,9 +553,9 @@ impl WasmSdk {
 
             // Use json_compatible serializer
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            response.serialize(&serializer).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         } else {
             Ok(JsValue::NULL)
         }
@@ -563,13 +572,13 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         let token_identifier = Identifier::from_string(
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Use direct gRPC request instead of high-level SDK fetch to avoid proof verification issues
         use dapi_grpc::platform::v0::{
@@ -597,10 +606,12 @@ impl WasmSdk {
             .inner_sdk()
             .execute(request, rs_dapi_client::RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to fetch token perpetual distribution last claim: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!(
+                    "Failed to fetch token perpetual distribution last claim: {}",
+                    e
+                ))
+            })?;
 
         // Extract result from response and convert to our expected format
         let claim_result = match response.inner.version {
@@ -693,9 +704,9 @@ impl WasmSdk {
 
             // Use json_compatible serializer
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            response.serialize(&serializer).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         } else {
             Ok(JsValue::NULL)
         }
@@ -711,7 +722,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Fetch total supply
         let supply_result = TotalSingleTokenBalance::fetch(self.as_ref(), token_identifier).await?;
@@ -723,9 +734,9 @@ impl WasmSdk {
 
             // Use json_compatible serializer
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            response.serialize(&serializer).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         } else {
             Ok(JsValue::NULL)
         }
@@ -746,7 +757,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Parse identity IDs
         let identities: Result<Vec<Identifier>, _> = identity_ids
@@ -772,8 +783,7 @@ impl WasmSdk {
             drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances,
             _,
             _,
-        ) = TokenAmount::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
-            .await?;
+        ) = TokenAmount::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         // Convert to response format
         let responses: Vec<IdentityTokenBalanceResponse> = identity_ids
@@ -783,7 +793,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 balances_result.get(&id).and_then(|balance_opt| {
                     balance_opt.map(|balance| IdentityTokenBalanceResponse {
@@ -802,9 +812,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenStatusesWithProofInfo")]
@@ -838,7 +848,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 statuses_result.get(&id).and_then(|status_opt| {
                     status_opt.as_ref().map(|status| TokenStatusResponse {
@@ -857,9 +867,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenTotalSupplyWithProofInfo")]
@@ -875,7 +885,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Fetch total supply with proof
         let (supply_result, metadata, proof) =
@@ -884,7 +894,7 @@ impl WasmSdk {
                 token_identifier,
                 None,
             )
-                .await?;
+            .await?;
 
         let data = if let Some(supply) = supply_result {
             Some(TokenTotalSupplyResponse {
@@ -902,9 +912,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     // Additional proof info versions for remaining token queries
@@ -923,7 +933,7 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         // Parse token IDs
         let tokens: Result<Vec<Identifier>, _> = token_ids
@@ -957,7 +967,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 infos_result.get(&id).and_then(|info_opt| {
                     info_opt.as_ref().map(|info| {
@@ -985,9 +995,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfosWithProofInfo")]
@@ -1004,7 +1014,7 @@ impl WasmSdk {
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Parse identity IDs
         let identities: Result<Vec<Identifier>, _> = identity_ids
@@ -1038,7 +1048,7 @@ impl WasmSdk {
                     &id_str,
                     dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
                 )
-                    .ok()?;
+                .ok()?;
 
                 infos_result.get(&id).and_then(|info_opt| {
                     info_opt.as_ref().map(|info| {
@@ -1066,9 +1076,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePricesWithProofInfo")]
@@ -1093,8 +1103,12 @@ impl WasmSdk {
 
         // Fetch token prices with proof - use slice reference
         let (prices_result, metadata, proof): (TokenDirectPurchasePrices, _, _) =
-            TokenPricingSchedule::fetch_many_with_metadata_and_proof(self.as_ref(), &tokens[..], None)
-                .await?;
+            TokenPricingSchedule::fetch_many_with_metadata_and_proof(
+                self.as_ref(),
+                &tokens[..],
+                None,
+            )
+            .await?;
 
         // Convert to response format
         let responses: Vec<TokenPriceResponse> = token_ids
@@ -1142,9 +1156,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenContractInfoWithProofInfo")]
@@ -1160,7 +1174,7 @@ impl WasmSdk {
             data_contract_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Fetch token contract info with proof
         let (info_result, metadata, proof) =
@@ -1194,9 +1208,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo")]
@@ -1214,13 +1228,13 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         let token_identifier = Identifier::from_string(
             token_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
 
         // Create query
         let query = TokenLastClaimQuery {
@@ -1265,8 +1279,8 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 }

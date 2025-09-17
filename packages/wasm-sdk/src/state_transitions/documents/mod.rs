@@ -2,6 +2,7 @@
 //!
 //! This module provides WASM bindings for document operations like create, replace, delete, etc.
 
+use crate::error::WasmSdkError;
 use crate::sdk::{WasmSdk, MAINNET_TRUSTED_CONTEXT, TESTNET_TRUSTED_CONTEXT};
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -27,7 +28,6 @@ use serde_json;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use crate::error::WasmSdkError;
 use web_sys;
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
@@ -90,9 +90,10 @@ impl WasmSdk {
 
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let private_key_bytes = private_key.inner.secret_bytes();
-        let secret_key =
-            dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(&private_key_bytes)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
+        let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
+            &private_key_bytes,
+        )
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?;
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize().to_vec();
@@ -157,7 +158,8 @@ impl WasmSdk {
         private_key_wif: &str,
         network: dash_sdk::dpp::dashcore::Network,
     ) -> Result<SingleKeySigner, WasmSdkError> {
-        SingleKeySigner::from_string(private_key_wif, network).map_err(WasmSdkError::invalid_argument)
+        SingleKeySigner::from_string(private_key_wif, network)
+            .map_err(WasmSdkError::invalid_argument)
     }
 
     /// Build JavaScript result object for state transition results
@@ -242,15 +244,19 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid entropy hex: {}", e)))?;
 
         if entropy_bytes.len() != 32 {
-            return Err(WasmSdkError::invalid_argument("Entropy must be exactly 32 bytes"));
+            return Err(WasmSdkError::invalid_argument(
+                "Entropy must be exactly 32 bytes",
+            ));
         }
 
         let mut entropy_array = [0u8; 32];
         entropy_array.copy_from_slice(&entropy_bytes);
 
         // Parse document data
-        let document_data_value: serde_json::Value = serde_json::from_str(&document_data)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid JSON document data: {}", e)))?;
+        let document_data_value: serde_json::Value =
+            serde_json::from_str(&document_data).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid JSON document data: {}", e))
+            })?;
 
         // Fetch and cache the data contract
         let data_contract = self.fetch_and_cache_contract(contract_id).await?;
@@ -308,7 +314,9 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create document transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create document transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -317,12 +325,19 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::generic(format!("Failed to broadcast transition: {}", e)))?;
 
         // Log the result for debugging
-        tracing::debug!(target = "wasm_sdk", "Processing state transition proof result");
+        tracing::debug!(
+            target = "wasm_sdk",
+            "Processing state transition proof result"
+        );
 
         // Convert result to JsValue based on the type
         match proof_result {
             StateTransitionProofResult::VerifiedDocuments(documents) => {
-                tracing::debug!(target = "wasm_sdk", count = documents.len(), "Documents in result");
+                tracing::debug!(
+                    target = "wasm_sdk",
+                    count = documents.len(),
+                    "Documents in result"
+                );
 
                 // Try to find the created document
                 for (doc_id, maybe_doc) in documents.iter() {
@@ -561,8 +576,10 @@ impl WasmSdk {
         let doc_id = doc_id.unwrap();
 
         // Parse document data
-        let document_data_value: serde_json::Value = serde_json::from_str(&document_data)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid JSON document data: {}", e)))?;
+        let document_data_value: serde_json::Value =
+            serde_json::from_str(&document_data).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid JSON document data: {}", e))
+            })?;
 
         // Fetch and cache the data contract
         let data_contract = self.fetch_and_cache_contract(contract_id).await?;
@@ -586,7 +603,9 @@ impl WasmSdk {
             owner_id: owner_identifier,
             properties: document_data_platform_value
                 .into_btree_string_map()
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to convert document data: {}", e)))?,
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to convert document data: {}", e))
+                })?,
             revision: Some(revision + 1),
             created_at: None,
             updated_at: None,
@@ -626,10 +645,12 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!(
-            "Failed to create document replace transition: {}",
-            e
-        )))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!(
+                "Failed to create document replace transition: {}",
+                e
+            ))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -1063,9 +1084,7 @@ impl WasmSdk {
         let state_transition: StateTransition = transition.into();
 
         // Broadcast the state transition
-        state_transition
-            .broadcast(&sdk, None)
-            .await?;
+        state_transition.broadcast(&sdk, None).await?;
 
         // Return the result with document ID and new owner
         Self::build_js_result_object(
@@ -1193,7 +1212,9 @@ impl WasmSdk {
             sdk.version(),
             None, // Default options
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create purchase transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create purchase transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = transition
@@ -1353,18 +1374,15 @@ impl WasmSdk {
             sdk.version(),
             None, // options
         )
-        .map_err(|e| WasmSdkError::generic(format!(
-            "Failed to create price update transition: {}",
-            e
-        )))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create price update transition: {}", e))
+        })?;
 
         // The transition is already signed, convert to StateTransition
         let state_transition: StateTransition = transition.into();
 
         // Broadcast the state transition
-        state_transition
-            .broadcast(&sdk, None)
-            .await?;
+        state_transition.broadcast(&sdk, None).await?;
 
         // Return the result with document ID and price
         Self::build_js_result_object(

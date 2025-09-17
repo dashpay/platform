@@ -2,6 +2,7 @@
 //!
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
+use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::document::DocumentV0Getters;
@@ -17,7 +18,6 @@ use serde_json;
 use serde_wasm_bindgen::to_value;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use crate::error::WasmSdkError;
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
 
@@ -40,8 +40,9 @@ impl WasmSdk {
 
         let recipient = if let Some(recipient_str) = recipient_id {
             Some(
-                Identifier::from_string(&recipient_str, Encoding::Base58)
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e)))?,
+                Identifier::from_string(&recipient_str, Encoding::Base58).map_err(|e| {
+                    WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e))
+                })?,
             )
         } else {
             None
@@ -97,7 +98,9 @@ impl WasmSdk {
                     "recipientId": recipient_id.to_string(Encoding::Base58),
                     "newBalance": new_balance.to_string()
                 }))
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
+                })
             }
             StateTransitionProofResult::VerifiedTokenActionWithDocument(doc) => {
                 to_value(&serde_json::json!({
@@ -105,7 +108,9 @@ impl WasmSdk {
                     "documentId": doc.id().to_string(Encoding::Base58),
                     "message": "Token operation recorded successfully"
                 }))
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
+                })
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithDocument(power, doc) => {
                 to_value(&serde_json::json!({
@@ -113,7 +118,9 @@ impl WasmSdk {
                     "groupPower": power,
                     "document": doc.is_some()
                 }))
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
+                })
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithTokenBalance(
                 power,
@@ -378,7 +385,9 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create transfer transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create transfer transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -427,7 +436,9 @@ impl WasmSdk {
 
         // Parse identity to freeze
         let frozen_identity_id = Identifier::from_string(&identity_to_freeze, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity to freeze: {}", e)))?;
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid identity to freeze: {}", e))
+            })?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -516,9 +527,10 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to unfreeze
-        let frozen_identity_id =
-            Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity to unfreeze: {}", e)))?;
+        let frozen_identity_id = Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
+            .map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid identity to unfreeze: {}", e))
+        })?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -559,7 +571,9 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create unfreeze transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create unfreeze transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -608,8 +622,12 @@ impl WasmSdk {
 
         // Parse identity whose frozen tokens to destroy
         let frozen_identity_id =
-            Identifier::from_string(&identity_id, Encoding::Base58)
-                .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity to destroy frozen funds: {}", e)))?;
+            Identifier::from_string(&identity_id, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Invalid identity to destroy frozen funds: {}",
+                    e
+                ))
+            })?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -650,10 +668,9 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!(
-            "Failed to create destroy frozen transition: {}",
-            e
-        )))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create destroy frozen transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -718,16 +735,19 @@ impl WasmSdk {
             match price_type.to_lowercase().as_str() {
                 "single" => {
                     // Parse single price
-                    let price_credits: Credits = price_data
-                        .parse::<u64>()
-                        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid price credits: {}", e)))?;
+                    let price_credits: Credits = price_data.parse::<u64>().map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid price credits: {}", e))
+                    })?;
                     Some(TokenPricingSchedule::SinglePrice(price_credits))
                 }
                 "tiered" | "set" => {
                     // Parse tiered pricing map from JSON
                     let price_map: std::collections::HashMap<String, u64> =
                         serde_json::from_str(&price_data).map_err(|e| {
-                            WasmSdkError::invalid_argument(format!("Invalid tiered pricing JSON: {}", e))
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid tiered pricing JSON: {}",
+                                e
+                            ))
                         })?;
 
                     // Convert to BTreeMap<TokenAmount, Credits>
@@ -743,7 +763,9 @@ impl WasmSdk {
                     }
 
                     if btree_map.is_empty() {
-                        return Err(WasmSdkError::invalid_argument("Tiered pricing map cannot be empty"));
+                        return Err(WasmSdkError::invalid_argument(
+                            "Tiered pricing map cannot be empty",
+                        ));
                     }
 
                     Some(TokenPricingSchedule::SetPrices(btree_map))
@@ -792,7 +814,9 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create set price transition: {}", e)))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!("Failed to create set price transition: {}", e))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -822,7 +846,9 @@ impl WasmSdk {
                         }
                     })
                 }))
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
+                .map_err(|e| {
+                    WasmSdkError::serialization(format!("Failed to serialize result: {}", e))
+                })
             }
             StateTransitionProofResult::VerifiedTokenGroupActionWithTokenPricingSchedule(
                 power,
@@ -891,24 +917,20 @@ impl WasmSdk {
         let price_credits: Credits = match total_agreed_price {
             Some(price_str) => {
                 // Use provided price
-                price_str
-                    .parse::<u64>()
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid total agreed price: {}", e)))?
+                price_str.parse::<u64>().map_err(|e| {
+                    WasmSdkError::invalid_argument(format!("Invalid total agreed price: {}", e))
+                })?
             }
             None => {
                 // Fetch price from pricing schedule
-                let token_id = Self::calculate_token_id_from_contract(
-                    &data_contract_id,
-                    token_position,
-                )
-                .map_err(|e| {
-                    WasmSdkError::generic(format!("Failed to calculate token ID: {:?}", e))
-                })?;
+                let token_id =
+                    Self::calculate_token_id_from_contract(&data_contract_id, token_position)
+                        .map_err(|e| {
+                            WasmSdkError::generic(format!("Failed to calculate token ID: {:?}", e))
+                        })?;
 
                 let token_ids = vec![token_id];
-                let prices =
-                    self.get_token_direct_purchase_prices(token_ids)
-                        .await?;
+                let prices = self.get_token_direct_purchase_prices(token_ids).await?;
 
                 // Use js_sys to work with JavaScript objects
                 use js_sys::{Array, Reflect};
@@ -927,13 +949,14 @@ impl WasmSdk {
 
                 // Get current price from the price object
                 let current_price_prop =
-                    Reflect::get(&first_price, &JsValue::from_str("currentPrice"))
-                        .map_err(|_| WasmSdkError::generic("Failed to get currentPrice property"))?;
+                    Reflect::get(&first_price, &JsValue::from_str("currentPrice")).map_err(
+                        |_| WasmSdkError::generic("Failed to get currentPrice property"),
+                    )?;
 
                 // Convert to string and parse
-                let price_str = current_price_prop
-                    .as_string()
-                    .ok_or_else(|| WasmSdkError::invalid_argument("Current price is not a string"))?;
+                let price_str = current_price_prop.as_string().ok_or_else(|| {
+                    WasmSdkError::invalid_argument("Current price is not a string")
+                })?;
 
                 let price_per_token = price_str.parse::<u64>().map_err(|e| {
                     WasmSdkError::invalid_argument(format!("Invalid current price format: {}", e))
@@ -981,10 +1004,12 @@ impl WasmSdk {
             platform_version,
             None, // state_transition_creation_options
         )
-        .map_err(|e| WasmSdkError::generic(format!(
-            "Failed to create direct purchase transition: {}",
-            e
-        )))?;
+        .map_err(|e| {
+            WasmSdkError::generic(format!(
+                "Failed to create direct purchase transition: {}",
+                e
+            ))
+        })?;
 
         // Broadcast the transition
         let proof_result = state_transition
@@ -1146,16 +1171,18 @@ impl WasmSdk {
             "conventions" => {
                 // Parse JSON for conventions
                 let convention: TokenConfigurationConvention = serde_json::from_str(&config_value)
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid conventions JSON: {}", e)))?;
+                    .map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid conventions JSON: {}", e))
+                    })?;
                 TokenConfigurationChangeItem::Conventions(convention)
             }
             "max_supply" => {
                 if config_value.is_empty() || config_value == "null" {
                     TokenConfigurationChangeItem::MaxSupply(None)
                 } else {
-                    let max_supply: TokenAmount = config_value
-                        .parse()
-                        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid max supply: {}", e)))?;
+                    let max_supply: TokenAmount = config_value.parse().map_err(|e| {
+                        WasmSdkError::invalid_argument(format!("Invalid max supply: {}", e))
+                    })?;
                     TokenConfigurationChangeItem::MaxSupply(Some(max_supply))
                 }
             }
@@ -1180,7 +1207,10 @@ impl WasmSdk {
                 } else {
                     let dest_id = Identifier::from_string(&config_value, Encoding::Base58)
                         .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!("Invalid destination identity ID: {}", e))
+                            WasmSdkError::invalid_argument(format!(
+                                "Invalid destination identity ID: {}",
+                                e
+                            ))
                         })?;
                     TokenConfigurationChangeItem::NewTokensDestinationIdentity(Some(dest_id))
                 }
@@ -1207,7 +1237,12 @@ impl WasmSdk {
             | "manual_burning_admin_group" => {
                 // Parse AuthorizedActionTakers from JSON
                 let action_takers: AuthorizedActionTakers = serde_json::from_str(&config_value)
-                    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid authorized action takers JSON: {}", e)))?;
+                    .map_err(|e| {
+                        WasmSdkError::invalid_argument(format!(
+                            "Invalid authorized action takers JSON: {}",
+                            e
+                        ))
+                    })?;
 
                 match config_item_type.as_str() {
                     "manual_minting" => TokenConfigurationChangeItem::ManualMinting(action_takers),

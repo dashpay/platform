@@ -372,17 +372,20 @@ impl WasmSdk {
             },
         };
 
-        serde_wasm_bindgen::to_value(&status)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&status).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getCurrentQuorumsInfo")]
     pub async fn get_current_quorums_info(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::FetchUnproved;
-        use drive_proof_verifier::types::{CurrentQuorumsInfo as SdkCurrentQuorumsInfo, NoParamQuery};
+        use drive_proof_verifier::types::{
+            CurrentQuorumsInfo as SdkCurrentQuorumsInfo, NoParamQuery,
+        };
 
-        let quorums_result = SdkCurrentQuorumsInfo::fetch_unproved(self.as_ref(), NoParamQuery {})
-            .await?;
+        let quorums_result =
+            SdkCurrentQuorumsInfo::fetch_unproved(self.as_ref(), NoParamQuery {}).await?;
 
         // The result is Option<CurrentQuorumsInfo>
         if let Some(quorum_info) = quorums_result {
@@ -408,8 +411,12 @@ impl WasmSdk {
                         // TODO: Get actual quorum type from the platform when available
                         let (quorum_type, threshold) = match member_count {
                             50..=70 => ("LLMQ_60_75".to_string(), (member_count * 75 / 100).max(1)),
-                            90..=110 => ("LLMQ_100_67".to_string(), (member_count * 67 / 100).max(1)),
-                            350..=450 => ("LLMQ_400_60".to_string(), (member_count * 60 / 100).max(1)),
+                            90..=110 => {
+                                ("LLMQ_100_67".to_string(), (member_count * 67 / 100).max(1))
+                            }
+                            350..=450 => {
+                                ("LLMQ_400_60".to_string(), (member_count * 60 / 100).max(1))
+                            }
                             _ => (
                                 "LLMQ_TYPE_UNKNOWN".to_string(),
                                 (member_count * 2 / 3).max(1),
@@ -443,8 +450,9 @@ impl WasmSdk {
                 height: quorum_info.last_platform_block_height,
             };
 
-            serde_wasm_bindgen::to_value(&info)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            serde_wasm_bindgen::to_value(&info).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         } else {
             // No quorum info available
             let info = CurrentQuorumsInfo {
@@ -452,18 +460,20 @@ impl WasmSdk {
                 height: 0,
             };
 
-            serde_wasm_bindgen::to_value(&info)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            serde_wasm_bindgen::to_value(&info).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         }
     }
 
     #[wasm_bindgen(js_name = "getTotalCreditsInPlatform")]
     pub async fn get_total_credits_in_platform(&self) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::platform::Fetch;
-        use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery};
+        use drive_proof_verifier::types::{
+            NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery,
+        };
 
-        let total_credits_result =
-            TotalCreditsQuery::fetch(self.as_ref(), NoParamQuery {}).await?;
+        let total_credits_result = TotalCreditsQuery::fetch(self.as_ref(), NoParamQuery {}).await?;
 
         // TotalCreditsInPlatform is likely a newtype wrapper around u64
         let credits_value = if let Some(credits) = total_credits_result {
@@ -480,9 +490,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
@@ -498,7 +508,7 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -511,9 +521,9 @@ impl WasmSdk {
 
             // Use json_compatible serializer
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            response.serialize(&serializer).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         } else {
             // Return zero balance if not found
             let response = PrefundedSpecializedBalance {
@@ -523,9 +533,9 @@ impl WasmSdk {
 
             // Use json_compatible serializer
             let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response
-                .serialize(&serializer)
-                .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+            response.serialize(&serializer).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+            })
         }
     }
 
@@ -543,8 +553,9 @@ impl WasmSdk {
         use rs_dapi_client::DapiRequestExecutor;
 
         // Parse the hash from hex string to bytes
-        let hash_bytes = hex::decode(state_transition_hash)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid state transition hash: {}", e)))?;
+        let hash_bytes = hex::decode(state_transition_hash).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid state transition hash: {}", e))
+        })?;
 
         // Create the gRPC request
         let request = WaitForStateTransitionResultRequest {
@@ -559,10 +570,9 @@ impl WasmSdk {
             .as_ref()
             .execute(request, RequestSettings::default())
             .await
-            .map_err(|e| WasmSdkError::generic(format!(
-                "Failed to wait for state transition result: {}",
-                e
-            )))?;
+            .map_err(|e| {
+                WasmSdkError::generic(format!("Failed to wait for state transition result: {}", e))
+            })?;
 
         // Parse the response
         use dapi_grpc::platform::v0::wait_for_state_transition_result_response::{
@@ -597,8 +607,9 @@ impl WasmSdk {
             error,
         };
 
-        serde_wasm_bindgen::to_value(&result)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&result).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getPathElements")]
@@ -661,8 +672,9 @@ impl WasmSdk {
             })
             .collect();
 
-        serde_wasm_bindgen::to_value(&elements)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        serde_wasm_bindgen::to_value(&elements).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     // Proof versions for system queries
@@ -673,7 +685,9 @@ impl WasmSdk {
     ) -> Result<JsValue, WasmSdkError> {
         use crate::queries::ProofMetadataResponse;
         use dash_sdk::platform::Fetch;
-        use drive_proof_verifier::types::{NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery};
+        use drive_proof_verifier::types::{
+            NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery,
+        };
 
         let (total_credits_result, metadata, proof) =
             TotalCreditsQuery::fetch_with_metadata_and_proof(self.as_ref(), NoParamQuery {}, None)
@@ -695,9 +709,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
@@ -714,12 +728,15 @@ impl WasmSdk {
             identity_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         // Fetch prefunded specialized balance with proof
-        let (balance_result, metadata, proof) =
-            PrefundedBalance::fetch_with_metadata_and_proof(self.as_ref(), identity_identifier, None)
-                .await?;
+        let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(
+            self.as_ref(),
+            identity_identifier,
+            None,
+        )
+        .await?;
 
         let data = PrefundedSpecializedBalance {
             identity_id: identity_id.to_string(),
@@ -734,9 +751,9 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 
     #[wasm_bindgen(js_name = "getPathElementsWithProofInfo")]
@@ -776,8 +793,7 @@ impl WasmSdk {
 
         // Fetch path elements with proof
         let (path_elements_result, metadata, proof) =
-            Element::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
-                .await?;
+            Element::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         // Convert the result to our response format
         let elements: Vec<PathElement> = keys
@@ -808,8 +824,8 @@ impl WasmSdk {
 
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response
-            .serialize(&serializer)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize response: {}", e)))
+        response.serialize(&serializer).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        })
     }
 }
