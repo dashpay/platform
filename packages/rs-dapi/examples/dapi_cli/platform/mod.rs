@@ -10,6 +10,8 @@ pub enum PlatformCommand {
     /// Platform state transition helpers
     #[command(subcommand)]
     StateTransition(state_transition::StateTransitionCommand),
+    /// Fetch general platform status
+    GetStatus,
     /// Fetch protocol version upgrade state summary
     ProtocolUpgradeState(protocol::UpgradeStateCommand),
     /// Fetch protocol version upgrade vote status details
@@ -25,5 +27,6 @@ pub async fn run(url: &str, command: PlatformCommand) -> CliResult<()> {
         PlatformCommand::ProtocolUpgradeVoteStatus(command) => {
             protocol::run_upgrade_vote_status(url, command).await
         }
+        PlatformCommand::GetStatus => protocol::run_get_status(url).await,
     }
 }
