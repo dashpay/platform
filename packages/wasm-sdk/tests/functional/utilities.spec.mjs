@@ -17,6 +17,5 @@ describe('Utilities', function describeUtilities() {
       expect(res).to.be.an('object');
     }
     client.free();
-    builder.free();
   });
 });
