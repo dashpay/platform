@@ -44,6 +44,9 @@ Legend:
 - [x] Implement historical streaming for `subscribeToBlockHeadersWithChainLocks`
   - Files: `src/services/streaming_service/block_header_stream.rs`
   - Notes: For `count > 0`, stream historical headers (80-byte headers) from Core RPC in chunks and close stream. For `count = 0`, forward live ZMQ Core blocks/chainlocks.
+- [x] Implement historical queries for `subscribeToTransactionsWithProofs`
+  - Files: `src/services/streaming_service/transaction_stream.rs`
+  - Notes: For `count > 0`, fetch blocks from given height/hash, filter transactions via bloom, stream `RawTransactions` plus a block boundary (`RawMerkleBlock` placeholder using raw block), then close. For `count = 0`, optionally backfill to tip then subscribe to live ZMQ.
 - [ ] Implement basic bloom filter matching + transaction parsing
   - Files: `src/services/streaming_service/transaction_filter.rs`
 - [ ] Provide initial masternode list diff on subscription

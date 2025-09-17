@@ -71,7 +71,41 @@ impl StreamingServiceImpl {
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // Add subscription to manager
+        // If historical-only requested (count > 0), send historical data and close the stream
+        if count > 0 {
+            let tx_hist = tx.clone();
+            let from_block = req.from_block.ok_or_else(|| {
+                Status::invalid_argument("Must specify from_block when count > 0")
+            })?;
+
+            match from_block {
+                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(hash) => {
+                    debug!(
+                        hash = %hex::encode(&hash),
+                        count,
+                        "transactions_with_proofs=historical_from_hash_request"
+                    );
+                    self.process_historical_transactions_from_hash(&hash, count as usize, &bloom_filter_clone, tx_hist)
+                        .await?;
+                }
+                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
+                    debug!(height, count, "transactions_with_proofs=historical_from_height_request");
+                    self.process_historical_transactions_from_height(
+                        height as usize,
+                        count as usize,
+                        &bloom_filter_clone,
+                        tx_hist,
+                    )
+                    .await?;
+                }
+            }
+
+            let stream = UnboundedReceiverStream::new(rx);
+            debug!("transactions_with_proofs=historical_stream_ready");
+            return Ok(Response::new(stream));
+        }
+
+        // Add subscription to manager for live updates (subscribe first to avoid races)
         let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
         let subscriber_id = subscription_handle.id().to_string();
         debug!(
@@ -86,6 +120,7 @@ impl StreamingServiceImpl {
 
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
+        let tx_live = tx.clone();
         tokio::spawn(async move {
             trace!(
                 subscriber_id = sub_handle.id(),
@@ -105,7 +140,7 @@ impl StreamingServiceImpl {
 
                         let response = TransactionsWithProofsResponse {
                             responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions)
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
                             ),
                         };
 
@@ -119,7 +154,7 @@ impl StreamingServiceImpl {
                         );
                         let response = TransactionsWithProofsResponse {
                             responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data)
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
                             ),
                         };
 
@@ -137,7 +172,7 @@ impl StreamingServiceImpl {
 
                         let response = TransactionsWithProofsResponse {
                             responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages)
+                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages),
                             ),
                         };
 
@@ -154,7 +189,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if tx.send(response).is_err() {
+                if tx_live.send(response).is_err() {
                     debug!(
                         subscriber_id = sub_handle.id(),
                         "transactions_with_proofs=client_disconnected"
@@ -169,23 +204,49 @@ impl StreamingServiceImpl {
             );
         });
 
-        // Handle historical data if requested
-        if count > 0 {
-            if let Some(from_block) = req.from_block {
-                match from_block {
-                    dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(hash) => {
-                        // TODO: Process historical transactions from block hash
-                        debug!(subscriber_id, ?hash, "transactions_with_proofs=historical_from_hash_request");
-                        self.process_historical_transactions_from_hash(&hash, count as usize, &bloom_filter_clone)
-                            .await?;
-                    }
-                    dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
-                        // TODO: Process historical transactions from height
-                        debug!(subscriber_id, height, "transactions_with_proofs=historical_from_height_request");
+        // After subscribing, backfill historical up to the current tip (if requested via from_block)
+        if let Some(from_block) = req.from_block.clone() {
+            let tx_hist = tx.clone();
+            let best = self
+                .core_client
+                .get_block_count()
+                .await
+                .map_err(Status::from)? as usize;
+
+            match from_block {
+                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(hash) => {
+                    use std::str::FromStr;
+                    let hash_hex = hex::encode(&hash);
+                    let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                        .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                    let hi = self
+                        .core_client
+                        .get_block_header_info(&bh)
+                        .await
+                        .map_err(Status::from)?;
+                    if hi.height > 0 {
+                        let height = hi.height as usize;
+                        let count_tip = best.saturating_sub(height).saturating_add(1);
+                        debug!(height, count_tip, "transactions_with_proofs=historical_tip_from_hash");
                         self.process_historical_transactions_from_height(
-                            height as usize,
-                            count as usize,
+                            height,
+                            count_tip,
                             &bloom_filter_clone,
+                            tx_hist,
+                        )
+                        .await?;
+                    }
+                }
+                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
+                    let height = height as usize;
+                    if height >= 1 {
+                        let count_tip = best.saturating_sub(height).saturating_add(1);
+                        debug!(height, count_tip, "transactions_with_proofs=historical_tip_from_height");
+                        self.process_historical_transactions_from_height(
+                            height,
+                            count_tip,
+                            &bloom_filter_clone,
+                            tx_hist,
                         )
                         .await?;
                     }
@@ -193,14 +254,11 @@ impl StreamingServiceImpl {
             }
         }
 
-        // Process mempool transactions if count is 0 (streaming mode)
-        if req.count == 0 {
-            // TODO: Get and filter mempool transactions
-            debug!(
-                subscriber_id,
-                "transactions_with_proofs=streaming_mempool_mode"
-            );
-        }
+        // Process mempool transactions if needed (TODO parity)
+        debug!(
+            subscriber_id,
+            "transactions_with_proofs=streaming_mempool_mode"
+        );
 
         let stream = UnboundedReceiverStream::new(rx);
         debug!(subscriber_id, "transactions_with_proofs=stream_ready");
@@ -210,34 +268,133 @@ impl StreamingServiceImpl {
     /// Process historical transactions from a specific block hash
     async fn process_historical_transactions_from_hash(
         &self,
-        _from_hash: &[u8],
-        _count: usize,
-        _bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        from_hash: &[u8],
+        count: usize,
+        bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
-        // TODO: Implement historical transaction processing from hash
-        // This should:
-        // 1. Look up the block height for the given hash
-        // 2. Fetch the requested number of blocks starting from that height
-        // 3. Filter transactions using the bloom filter
-        // 4. Send matching transactions to the subscriber
-        trace!("transactions_with_proofs=historical_from_hash_unimplemented");
-        Ok(())
+        use std::str::FromStr;
+        let hash_hex = hex::encode(from_hash);
+        let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+            .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+        let header_info = self
+            .core_client
+            .get_block_header_info(&bh)
+            .await
+            .map_err(Status::from)?;
+        let start_height = header_info.height as usize;
+        self
+            .process_historical_transactions_from_height(start_height, count, bloom_filter, tx)
+            .await
     }
 
     /// Process historical transactions from a specific block height
     async fn process_historical_transactions_from_height(
         &self,
-        _from_height: usize,
-        _count: usize,
-        _bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        from_height: usize,
+        count: usize,
+        bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
-        // TODO: Implement historical transaction processing from height
-        // This should:
-        // 1. Fetch blocks starting from the given height
-        // 2. Extract transactions from each block
-        // 3. Filter transactions using the bloom filter
-        // 4. Send matching transactions to the subscriber
-        trace!("transactions_with_proofs=historical_from_height_unimplemented");
+        use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
+        use dashcore_rpc::dashcore::{Block, Transaction as CoreTx};
+        use tokio::time::{sleep, Duration};
+
+        trace!(from_height, count, "transactions_with_proofs=historical_begin");
+
+        // Clamp to tip
+        let tip = self.core_client.get_block_count().await.map_err(Status::from)? as usize;
+        if from_height == 0 {
+            return Err(Status::invalid_argument("Minimum value for `fromBlockHeight` is 1"));
+        }
+        if from_height > tip.saturating_add(1) {
+            return Err(Status::not_found(format!(
+                "Block height {} out of range (tip={})",
+                from_height, tip
+            )));
+        }
+
+        let max_count = tip.saturating_sub(from_height).saturating_add(1);
+        let effective = count.min(max_count);
+
+        // Reconstruct bloom filter to perform matching
+        let flags = bloom_flags_from_int(bloom_filter.n_flags);
+        let mut core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
+            bloom_filter.v_data.clone(),
+            bloom_filter.n_hash_funcs,
+            bloom_filter.n_tweak,
+            flags,
+        )
+        .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
+
+        for i in 0..effective {
+            let height = (from_height + i) as u32;
+            // Resolve hash and fetch block bytes
+            let hash = match self.core_client.get_block_hash(height).await {
+                Ok(h) => h,
+                Err(e) => {
+                    trace!(height, error = ?e, "transactions_with_proofs=get_block_hash_failed");
+                    break;
+                }
+            };
+            let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
+                Ok(b) => b,
+                Err(e) => {
+                    trace!(height, error = ?e, "transactions_with_proofs=get_block_failed");
+                    break;
+                }
+            };
+
+            // Deserialize block to iterate transactions
+            let block: Block = match deserialize(&block_bytes) {
+                Ok(b) => b,
+                Err(e) => {
+                    return Err(Status::internal(format!(
+                        "Failed to parse block at height {}: {}",
+                        height, e
+                    )));
+                }
+            };
+
+            let mut matching: Vec<Vec<u8>> = Vec::new();
+            for tx in block.txdata.iter() {
+                let tx_ref: &CoreTx = tx;
+                if super::bloom::matches_transaction(&mut core_filter, tx_ref, flags) {
+                    let tx_bytes = serialize(tx_ref);
+                    matching.push(tx_bytes);
+                }
+            }
+
+            // First, send transactions (if any)
+            if !matching.is_empty() {
+                let raw_transactions = RawTransactions { transactions: matching };
+                let response = TransactionsWithProofsResponse {
+                    responses: Some(
+                        dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
+                    ),
+                };
+                if tx.send(Ok(response)).is_err() {
+                    debug!("transactions_with_proofs=historical_client_disconnected");
+                    return Ok(());
+                }
+            }
+
+            // Then, send merkle block placeholder (raw block) to indicate block boundary
+            let response = TransactionsWithProofsResponse {
+                responses: Some(
+                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(block_bytes),
+                ),
+            };
+            if tx.send(Ok(response)).is_err() {
+                debug!("transactions_with_proofs=historical_client_disconnected");
+                return Ok(());
+            }
+
+            // Pace requests slightly to avoid Core overload
+            sleep(Duration::from_millis(50)).await;
+        }
+
+        trace!(from_height, effective, "transactions_with_proofs=historical_end");
         Ok(())
     }
 }
