@@ -399,7 +399,7 @@ impl StreamingServiceImpl {
             }
 
             // Pace requests slightly to avoid Core overload
-            sleep(Duration::from_millis(50)).await;
+            // sleep(Duration::from_millis(1)).await;
         }
 
         trace!(
