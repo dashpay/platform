@@ -76,6 +76,7 @@ impl StreamingServiceImpl {
         debug!(subscriber_id, "block_headers=subscription_created");
 
         // Spawn task to convert internal messages to gRPC responses
+        let tx_live = tx.clone();
         tokio::spawn(async move {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
@@ -119,7 +120,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if tx.send(response).is_err() {
+                if tx_live.send(response).is_err() {
                     debug!(
                         subscriber_id = sub_handle.id(),
                         "block_headers=client_disconnected"
@@ -132,6 +133,48 @@ impl StreamingServiceImpl {
                 "block_headers=subscription_task_finished"
             );
         });
+
+        // After subscribing, optionally backfill historical headers to the current tip
+        if let Some(from_block) = req.from_block {
+            // Snapshot best height first to guarantee no gaps between backfill and live stream
+            let best = self
+                .core_client
+                .get_block_count()
+                .await
+                .map_err(Status::from)? as usize;
+
+            match from_block {
+                dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash) => {
+                    use std::str::FromStr;
+                    let hash_hex = hex::encode(&hash);
+                    let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                        .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                    let hi = self
+                        .core_client
+                        .get_block_header_info(&bh)
+                        .await
+                        .map_err(Status::from)?;
+                    if hi.height > 0 {
+                        let start = hi.height as usize;
+                        let count_tip = best.saturating_sub(start).saturating_add(1);
+                        debug!(start, count_tip, "block_headers=backfill_from_hash");
+                        self
+                            .process_historical_blocks_from_height(start, count_tip, tx.clone())
+                            .await?;
+                    }
+                }
+                dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height) => {
+                    let start = height as usize;
+                    if start >= 1 {
+                        let count_tip = best.saturating_sub(start).saturating_add(1);
+                        debug!(start, count_tip, "block_headers=backfill_from_height");
+                        self
+                            .process_historical_blocks_from_height(start, count_tip, tx.clone())
+                            .await?;
+                    }
+                }
+            }
+        }
 
         let stream = UnboundedReceiverStream::new(rx);
         debug!(subscriber_id, "block_headers=stream_ready");
