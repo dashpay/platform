@@ -1,4 +1,3 @@
-import * as wasm from '../wasm.js';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
@@ -45,8 +44,7 @@ export class TokensFacade {
     return w.getIdentitiesTokenBalancesWithProofInfo(identityIds, tokenId);
   }
 
-  async identityTokenInfos(identityId: string, tokenIds: string[], opts: { limit?: number; offset?: number } = {}): Promise<any> {
-    const { limit, offset } = opts;
+  async identityTokenInfos(identityId: string, tokenIds: string[], _opts: { limit?: number; offset?: number } = {}): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfos(identityId, tokenIds);
   }

@@ -1,4 +1,3 @@
-import * as wasm from '../wasm.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class EpochFacade {

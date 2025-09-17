@@ -18,7 +18,14 @@ module.exports = {
   ],
   rules: {
     'import/extensions': 'off',
+    'import/prefer-default-export': 'off',
+    'object-curly-newline': 'off',
+    'class-methods-use-this': 'off',
+    'max-len': 'off',
+    'no-restricted-exports': 'off',
     '@typescript-eslint/no-explicit-any': 'off',
+    '@typescript-eslint/lines-between-class-members': 'off',
+    '@typescript-eslint/no-unused-vars': ['error', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', ignoreRestSiblings: true }],
   },
   ignorePatterns: [
     '*.d.ts',

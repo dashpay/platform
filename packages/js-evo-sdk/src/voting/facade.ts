@@ -1,4 +1,3 @@
-import * as wasm from '../wasm.js';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 

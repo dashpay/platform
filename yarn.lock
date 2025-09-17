@@ -1698,6 +1698,8 @@ __metadata:
   resolution: "@dashevo/evo-sdk@workspace:packages/js-evo-sdk"
   dependencies:
     "@dashevo/wasm-sdk": "workspace:*"
+    "@typescript-eslint/eslint-plugin": "npm:^5.55.0"
+    "@typescript-eslint/parser": "npm:^5.55.0"
     assert: "npm:^2.0.0"
     buffer: "npm:^6.0.3"
     chai: "npm:^4.3.10"
@@ -1705,6 +1707,7 @@ __metadata:
     dirty-chai: "npm:^2.0.1"
     eslint: "npm:^8.53.0"
     eslint-config-airbnb-base: "npm:^15.0.0"
+    eslint-config-airbnb-typescript: "npm:^17.0.0"
     eslint-plugin-import: "npm:^2.29.0"
     eslint-plugin-jsdoc: "npm:^46.9.0"
     events: "npm:^3.3.0"
