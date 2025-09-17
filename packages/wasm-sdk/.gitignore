@@ -1,6 +1,2 @@
-playwright-report/
-test-results/
-test/test-report.html
-
-# Environment variables with sensitive test data
-test/ui-automation/.env
+dist
+pkg

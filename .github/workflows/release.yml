@@ -73,6 +73,10 @@ jobs:
         run: cargo binstall wasm-bindgen-cli@0.2.100
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
+      - name: Install wasm-pack
+        run: cargo binstall wasm-pack
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
       - name: Install Binaryen
         run: |
           wget https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz -P /tmp

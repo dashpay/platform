@@ -36,10 +36,9 @@ members = [
     "packages/rs-sdk-ffi",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
-    "packages/rs-platform-wallet"
+    "packages/rs-platform-wallet",
+    "packages/wasm-sdk",
 ]
-
-exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
 
 [workspace.package]
 

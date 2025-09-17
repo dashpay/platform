@@ -42,3 +42,6 @@ dash-sdk:
 
 rs-sdk-ffi:
   - packages/rs-sdk-ffi/**
+
+wasm-sdk:
+  - packages/wasm-sdk/**

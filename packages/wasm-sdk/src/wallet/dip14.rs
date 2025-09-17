@@ -8,7 +8,6 @@ use dash_sdk::dpp::dashcore::secp256k1::{self, PublicKey, Scalar, Secp256k1, Sec
 use dash_sdk::dpp::dashcore::Network;
 use dash_sdk::dpp::key_wallet;
 use dash_sdk::dpp::key_wallet::bip32::{ExtendedPrivKey, ExtendedPubKey};
-use hex;
 use hmac::{Hmac, Mac};
 use sha2::Sha512;
 use std::convert::TryInto;
@@ -140,30 +139,11 @@ impl Dip14ExtendedPrivKey {
             Dip14Error::DerivationFailed("Failed to convert IL to scalar".to_string())
         })?;
 
-        // Debug: log parent and IL values before addition
-        web_sys::console::log_1(
-            &format!(
-                "Parent key: {}",
-                hex::encode(&self.private_key.secret_bytes())
-            )
-            .into(),
-        );
-        web_sys::console::log_1(&format!("IL (tweak): {}", hex::encode(&il_scalar_bytes)).into());
-
         // Perform scalar addition: child_key = parent_key + IL (mod n)
         let child_key = self
             .private_key
             .add_tweak(&tweak)
             .map_err(|e| Dip14Error::DerivationFailed(format!("Failed to add tweak: {}", e)))?;
-
-        // Debug: log result after addition
-        web_sys::console::log_1(
-            &format!(
-                "Child key after addition: {}",
-                hex::encode(&child_key.secret_bytes())
-            )
-            .into(),
-        );
 
         // Calculate parent fingerprint (first 4 bytes of parent pubkey hash160)
         let parent_pubkey = PublicKey::from_secret_key(&secp, &self.private_key);
