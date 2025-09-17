@@ -515,6 +515,19 @@ The `waitForStateTransitionResult` endpoint follows this flow:
 3. Chain lock information included
 4. Streamed to subscribed clients
 
+#### Race-Free Historical + Live Backfill
+To avoid gaps between historical fetching and live streaming (race conditions), rs-dapi follows a subscribe-first pattern for continuous streams:
+- Subscribe to live events first and attach the forwarder to the client stream.
+- Snapshot the current best height from Core RPC.
+- If the request includes a starting point (`fromBlockHeight` or `fromBlockHash`) with `count = 0`, backfill historical data from the start to the snapshotted best height and send to the same stream.
+- Continue forwarding live events from ZMQ; duplicates are tolerated and handled client-side.
+
+This pattern is applied to:
+- `subscribeToBlockHeadersWithChainLocks` (count = 0 with `fromBlock*`): subscribe, snapshot, backfill headers to tip, then stream live block headers and chainlocks.
+- `subscribeToTransactionsWithProofs` (count = 0 with `fromBlock*`): subscribe, snapshot, backfill filtered transactions + merkle blocks to tip, then stream live transactions/locks/blocks.
+
+Rationale: If the server performs historical fetch first and subscribes later, any blocks/transactions arriving during the fetch window can be missed. Subscribing first guarantees coverage; backfill up to a captured tip ensures deterministic catch-up without gaps.
+
 ### 13. External Service Integration
 
 #### Dash Core Integration
