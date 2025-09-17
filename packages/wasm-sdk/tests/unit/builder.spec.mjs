@@ -16,11 +16,11 @@ describe('WasmSdkBuilder', () => {
 
   it('builds testnet builder and sets version', async () => {
     let builder = sdk.WasmSdkBuilder.testnet();
-    expect(builder).to.be.ok;
+    expect(builder).to.be.ok();
     // note: builder methods consume and return a new builder
     builder = builder.withVersion(1);
     const built = await builder.build();
-    expect(built).to.be.ok;
+    expect(built).to.be.ok();
     built.free();
   });
 
@@ -29,7 +29,7 @@ describe('WasmSdkBuilder', () => {
     let builder = sdk.WasmSdkBuilder.testnet();
     builder = builder.withSettings(5000, 10000, 3, true);
     const built = await builder.build();
-    expect(built).to.be.ok;
+    expect(built).to.be.ok();
     built.free();
   });
 });

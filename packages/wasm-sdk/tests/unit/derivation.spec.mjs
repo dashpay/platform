@@ -53,7 +53,7 @@ describe('Key derivation', () => {
     it('BIP44 mainnet key', () => {
       const path = "m/44'/5'/0'/0/0";
       const r = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'mainnet');
-      expect(r).to.exist;
+      expect(r).to.exist();
       expect(r.path).to.equal(path);
       expect(r.address.startsWith('X')).to.equal(true);
       expect(r.network).to.equal('mainnet');
@@ -62,7 +62,7 @@ describe('Key derivation', () => {
     it('DIP13 authentication key', () => {
       const path = "m/9'/5'/5'/0'/0'/0'/0'";
       const r = sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'mainnet');
-      expect(r).to.exist;
+      expect(r).to.exist();
       expect(r.path).to.equal(path);
       expect(r.private_key_wif).to.be.a('string');
       expect(r.address).to.be.a('string');
@@ -116,7 +116,7 @@ describe('Key derivation', () => {
       const r1 = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
       const r2 = sdk.WasmSdk.deriveDashpayContactKey(mnemonic, null, sender, receiver, 0, 0, 'testnet');
 
-      expect(r1).to.be.ok;
+      expect(r1).to.be.ok();
       expect(r1).to.have.property('path');
       expect(r1).to.have.property('xprv');
       expect(r1).to.have.property('xpub');

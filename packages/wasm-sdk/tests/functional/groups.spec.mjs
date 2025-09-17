@@ -1,20 +1,20 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Group queries', function () {
+describe('Group queries', function describeGroupQueries() {
   this.timeout(60000);
 
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
+  after(() => {
+    if (client) { client.free(); }
   });
 
   it('fetches identity groups and group members', async () => {

@@ -31,8 +31,7 @@
     "test": "yarn run test:unit && yarn run test:functional",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
     "test:functional": "mocha tests/functional/**/*.spec.mjs && karma start ./tests/karma/karma.functional.conf.cjs --single-run",
-    "lint": "eslint .",
-    "lint:fix": "eslint . --fix"
+    "lint": "eslint tests/**/*.*js"
   },
   "ultra": {
     "concurrent": [
@@ -48,6 +47,7 @@
     "eslint": "^8.53.0",
     "eslint-config-airbnb-base": "^15.0.0",
     "eslint-plugin-import": "^2.29.0",
+    "eslint-plugin-jsdoc": "^46.9.0",
     "events": "^3.3.0",
     "karma": "^6.4.3",
     "karma-chai": "^0.1.0",

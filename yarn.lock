@@ -2064,6 +2064,7 @@ __metadata:
     eslint: "npm:^8.53.0"
     eslint-config-airbnb-base: "npm:^15.0.0"
     eslint-plugin-import: "npm:^2.29.0"
+    eslint-plugin-jsdoc: "npm:^46.9.0"
     events: "npm:^3.3.0"
     karma: "npm:^6.4.3"
     karma-chai: "npm:^0.1.0"

@@ -1,25 +1,24 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Token queries', function () {
+describe('Token queries', function describeTokenQueries() {
   this.timeout(60000);
 
   const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
   const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
-  const TOKEN_CONTRACT_1 = 'Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv';
   const TOKEN_CONTRACT_2 = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
   const TOKEN_CONTRACT_3 = 'EETVvWgohFDKtbB3ejEzBcDRMNYkc9TtgXY6y8hzP3Ta';
 
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
+  after(() => {
+    if (client) { client.free(); }
   });
 
   // TODO: fix this test

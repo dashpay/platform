@@ -1,26 +1,25 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Protocol versions', function () {
+describe('Protocol versions', function describeProtocolVersions() {
   this.timeout(60000);
 
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
-
+  after(() => {
+    if (client) { client.free(); }
   });
 
   it('fetches protocol upgrade state', async () => {
     const state = await client.getProtocolVersionUpgradeState();
-    expect(state).to.be.ok;
+    expect(state).to.be.ok();
   });
 
   it('lists protocol upgrade vote statuses', async () => {

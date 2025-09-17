@@ -1,20 +1,20 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Epochs and evonode blocks', function () {
+describe('Epochs and evonode blocks', function describeEpochs() {
   this.timeout(60000);
 
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
+  after(() => {
+    if (client) { client.free(); }
   });
 
   it('gets epochs info and finalized epochs', async () => {

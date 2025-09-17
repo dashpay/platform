@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Document queries', function () {
+describe('Document queries', function describeDocumentQueries() {
   this.timeout(60000);
 
   const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
@@ -8,15 +8,15 @@ describe('Document queries', function () {
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
+  after(() => {
+    if (client) { client.free(); }
   });
 
   it('lists DPNS documents (no filters)', async () => {
@@ -25,27 +25,27 @@ describe('Document queries', function () {
   });
 
   it('queries with where clause', async () => {
-    const where = JSON.stringify([["normalizedParentDomainName", "==", "dash"]]);
+    const where = JSON.stringify([['normalizedParentDomainName', '==', 'dash']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', where, null, 5, null, null);
     expect(docs).to.be.an('array');
   });
 
   it('queries with orderBy', async () => {
-    const orderBy = JSON.stringify([["normalizedParentDomainName", "asc"]]);
+    const orderBy = JSON.stringify([['normalizedParentDomainName', 'asc']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', null, orderBy, 5, null, null);
     expect(docs).to.be.an('array');
   });
 
   it('complex where + orderBy', async () => {
-    const where = JSON.stringify([["normalizedLabel", "startsWith", "test"],["normalizedParentDomainName", "==", "dash"]]);
-    const orderBy = JSON.stringify([["normalizedParentDomainName", "asc"],["normalizedLabel", "asc"]]);
+    const where = JSON.stringify([['normalizedLabel', 'startsWith', 'test'], ['normalizedParentDomainName', '==', 'dash']]);
+    const orderBy = JSON.stringify([['normalizedParentDomainName', 'asc'], ['normalizedLabel', 'asc']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', where, orderBy, 5, null, null);
     expect(docs).to.be.an('array');
   });
 
   it('getDocument by id (should handle invalid id gracefully)', async () => {
     await expect(
-      client.getDocument(DPNS_CONTRACT, 'domain', 'invalidDocumentId')
+      client.getDocument(DPNS_CONTRACT, 'domain', 'invalidDocumentId'),
     ).to.be.rejected();
   });
 

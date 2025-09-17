@@ -1,6 +1,6 @@
 import init, * as sdk from '../../dist/sdk.js';
 
-describe('Identity queries', function () {
+describe('Identity queries', function describeBlock() {
   this.timeout(90000);
 
   const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
@@ -9,21 +9,20 @@ describe('Identity queries', function () {
   let client;
   let builder;
 
-  before(async function () {
+  before(async () => {
     await init();
     await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
     builder = sdk.WasmSdkBuilder.testnetTrusted();
     client = await builder.build();
   });
 
-  after(function () {
-    if (client) client.free();
-
+  after(() => {
+    if (client) { client.free(); }
   });
 
   it('fetches identity and basic fields', async () => {
     const r = await client.getIdentity(TEST_IDENTITY);
-    expect(r).to.be.ok;
+    expect(r).to.be.ok();
   });
 
   it('gets identity balance and nonce', async () => {
@@ -46,7 +45,7 @@ describe('Identity queries', function () {
     const balances = await client.getIdentitiesBalances([TEST_IDENTITY]);
     expect(balances).to.be.an('array');
     const br = await client.getIdentityBalanceAndRevision(TEST_IDENTITY);
-    expect(br).to.be.ok;
+    expect(br).to.be.ok();
   });
 
   it('contract keys for identity', async () => {
