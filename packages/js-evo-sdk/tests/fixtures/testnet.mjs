@@ -15,6 +15,7 @@ export const TEST_IDS = {
   publicKeyHashUnique: 'b7e904ce25ed97594e72f7af0e66f298031c1754',
   publicKeyHashNonUnique: '518038dc858461bcee90478fd994bba8057b7531',
   username: 'alice',
+  existingUsername: 'therealslimshaddy5',
   epoch: 8635,
 };
 

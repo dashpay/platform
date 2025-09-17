@@ -17,7 +17,7 @@ describe('DPNS', function dpnsSuite() {
   });
 
   it('resolveName() resolves known username', async () => {
-    const res = await sdk.dpns.resolveName(TEST_IDS.username);
+    const res = await sdk.dpns.resolveName(TEST_IDS.existingUsername);
     expect(res).to.exist();
   });
 
