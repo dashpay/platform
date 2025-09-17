@@ -87,6 +87,7 @@ impl DerivationPath {
     }
 
     /// Convert to string representation (e.g., "m/44'/5'/0'/0/0")
+    #[allow(clippy::inherent_to_string)]
     pub fn to_string(&self) -> String {
         format!(
             "m/{}'/{}'/{}'/{}/{}",

@@ -556,6 +556,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the replaced document
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = documentReplace)]
     pub async fn document_replace(
         &self,
@@ -1236,14 +1237,12 @@ impl WasmSdk {
                 ];
 
                 // If we have the updated document in the response, include basic info
-                if let Some((_, maybe_doc)) = documents.into_iter().next() {
-                    if let Some(doc) = maybe_doc {
-                        additional_fields.push(("documentUpdated", JsValue::from_bool(true)));
-                        additional_fields.push((
-                            "revision",
-                            JsValue::from_f64(doc.revision().unwrap_or(0) as f64),
-                        ));
-                    }
+                if let Some((_, Some(doc))) = documents.into_iter().next() {
+                    additional_fields.push(("documentUpdated", JsValue::from_bool(true)));
+                    additional_fields.push((
+                        "revision",
+                        JsValue::from_f64(doc.revision().unwrap_or(0) as f64),
+                    ));
                 }
 
                 Self::build_js_result_object(

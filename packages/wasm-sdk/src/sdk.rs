@@ -1,6 +1,5 @@
 use crate::context_provider::WasmContext;
 use crate::error::WasmSdkError;
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::RequestSettings;

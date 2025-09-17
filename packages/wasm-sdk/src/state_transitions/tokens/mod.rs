@@ -157,6 +157,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the state transition result
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = tokenMint)]
     pub async fn token_mint(
         &self,
@@ -322,6 +323,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the state transition result
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = tokenTransfer)]
     pub async fn token_transfer(
         &self,
@@ -697,6 +699,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the state transition result
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = tokenSetPriceForDirectPurchase)]
     pub async fn token_set_price_for_direct_purchase(
         &self,
@@ -1135,6 +1138,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the state transition result
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = tokenConfigUpdate)]
     pub async fn token_config_update(
         &self,

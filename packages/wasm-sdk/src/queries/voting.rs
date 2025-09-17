@@ -29,6 +29,7 @@ const BINCODE_CONFIG: bincode::config::Configuration = bincode::config::standard
 
 #[wasm_bindgen]
 impl WasmSdk {
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResources")]
     pub async fn get_contested_resources(
         &self,
@@ -112,6 +113,7 @@ impl WasmSdk {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentity")]
     pub async fn get_contested_resource_voters_for_identity(
         &self,
@@ -289,7 +291,7 @@ impl WasmSdk {
     }
 
     // Proof info versions for voting queries
-
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResourcesWithProofInfo")]
     pub async fn get_contested_resources_with_proof_info(
         &self,
@@ -388,6 +390,7 @@ impl WasmSdk {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
     pub async fn get_contested_resource_vote_state_with_proof_info(
         &self,
@@ -540,6 +543,7 @@ impl WasmSdk {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResourceVotersForIdentityWithProofInfo")]
     pub async fn get_contested_resource_voters_for_identity_with_proof_info(
         &self,
@@ -835,6 +839,7 @@ impl WasmSdk {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getContestedResourceVoteState")]
     pub async fn get_contested_resource_vote_state(
         &self,

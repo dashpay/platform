@@ -197,12 +197,8 @@ impl WasmSdk {
         let mut evonodes_proposed_block_counts = BTreeMap::new();
         for (identifier, count) in counts.0 {
             // Convert Identifier to ProTxHash for consistent output format
-            let bytes = identifier.to_buffer();
-            if bytes.len() == 32 {
-                let hash_array: [u8; 32] = bytes.try_into().unwrap();
-                let pro_tx_hash = ProTxHash::from_byte_array(hash_array);
-                evonodes_proposed_block_counts.insert(pro_tx_hash.to_string(), count);
-            }
+            let pro_tx_hash = ProTxHash::from_byte_array(identifier.to_buffer());
+            evonodes_proposed_block_counts.insert(pro_tx_hash.to_string(), count);
         }
 
         let response = EvonodesProposedBlocksResponse {

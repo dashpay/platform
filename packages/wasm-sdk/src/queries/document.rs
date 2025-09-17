@@ -221,6 +221,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
 
 #[wasm_bindgen]
 impl WasmSdk {
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getDocuments")]
     pub async fn get_documents(
         &self,
@@ -346,6 +347,7 @@ impl WasmSdk {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = "getDocumentsWithProofInfo")]
     pub async fn get_documents_with_proof_info(
         &self,

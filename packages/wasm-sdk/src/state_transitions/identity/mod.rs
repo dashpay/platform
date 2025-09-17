@@ -107,9 +107,8 @@ impl WasmSdk {
         // Create identity public keys and collect private keys for signing
         let mut identity_public_keys = std::collections::BTreeMap::new();
         let mut signer = SimpleSigner::default();
-        let mut key_id = 0u32;
 
-        for key_data in keys_array {
+        for (key_id, key_data) in keys_array.iter().enumerate().map(|(key, value)| (key as u32, value)) {
             let key_type_str = key_data["keyType"]
                 .as_str()
                 .ok_or_else(|| WasmSdkError::invalid_argument("keyType is required"))?;
@@ -343,7 +342,6 @@ impl WasmSdk {
             }
 
             identity_public_keys.insert(key_id, public_key);
-            key_id += 1;
         }
 
         // Create identity
@@ -1215,6 +1213,7 @@ impl WasmSdk {
     /// # Returns
     ///
     /// Returns a Promise that resolves to a JsValue containing the vote result
+    #[allow(clippy::too_many_arguments)]
     #[wasm_bindgen(js_name = masternodeVote)]
     pub async fn masternode_vote(
         &self,
