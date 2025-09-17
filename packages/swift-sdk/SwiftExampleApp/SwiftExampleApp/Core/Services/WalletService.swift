@@ -179,15 +179,21 @@ public class WalletService: ObservableObject {
                 try await clientLocal.initialize(dataDir: dataDir, masternodesEnabled: mnEnabled, startHeight: baseline)
                 SDKLogger.log("✅ SPV Client initialized successfully for \(net.rawValue) (deferred start)", minimumLevel: .medium)
 
-                // Fetch current known tip from SPV (via FFI) and show it in the Headers row
-                let tip: UInt32? = await MainActor.run { clientLocal.getTipHeight() }
-                let checkpoint: UInt32? = await MainActor.run { clientLocal.getLatestCheckpointHeight() }
+                // Read any persisted sync state from storage (heights, targets) and surface it to the UI
                 await MainActor.run {
-                    WalletService.shared.applyBaselineHeights(
+                    let snapshot = clientLocal.getSyncSnapshot()
+                    let tip = clientLocal.getTipHeight()
+                    let checkpoint = clientLocal.getLatestCheckpointHeight()
+
+                    WalletService.shared.applyInitialSyncState(
                         baseline: Int(baseline),
-                        knownTip: tip ?? checkpoint
+                        tip: tip,
+                        checkpoint: checkpoint,
+                        snapshot: snapshot
                     )
-                    if WalletService.shared.latestHeaderHeight == 0, let cp = checkpoint ?? tip {
+
+                    if WalletService.shared.latestHeaderHeight == 0,
+                       let cp = checkpoint ?? tip {
                         WalletService.shared.latestHeaderHeight = Int(cp)
                     }
                 }
@@ -473,7 +479,7 @@ public class WalletService: ObservableObject {
         transactionProgress = 0
 
         let baseline = Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
-        applyBaselineHeights(baseline: baseline, knownTip: nil)
+        applyInitialSyncState(baseline: baseline, tip: nil, checkpoint: nil, snapshot: nil)
 
         latestHeaderHeight = 0
         latestMasternodeListHeight = 0
@@ -789,11 +795,59 @@ extension WalletService {
             }
         }
 
-        let positiveHeights = perWalletHeights.filter { $0 > 0 }
-        if let minValue = positiveHeights.min() {
+        if let minValue = perWalletHeights.min() {
             return UInt32(minValue)
         }
         return UInt32(defaults[network] ?? 0)
+    }
+
+    /// Combine the persisted sync snapshot (if available) with the logical baseline so the UI reflects
+    /// the real stored progress as soon as the app launches.
+    @MainActor
+    func applyInitialSyncState(
+        baseline: Int,
+        tip: UInt32?,
+        checkpoint: UInt32?,
+        snapshot: SPVSyncSnapshot?
+    ) {
+        let sanitizedBaseline = max(0, baseline)
+        let tipCandidates: [UInt32] = [tip, checkpoint, snapshot?.headerHeight]
+            .compactMap { value in
+                guard let value, value > 0 else { return nil }
+                return value
+            }
+        let resolvedTip = tipCandidates.max()
+
+        guard let snapshot else {
+            applyBaselineHeights(baseline: sanitizedBaseline, knownTip: resolvedTip)
+            return
+        }
+
+        let headerHeight = max(Int(snapshot.headerHeight), sanitizedBaseline)
+        headerCurrentHeight = headerHeight
+
+        let snapshotFilter = max(snapshot.filterHeaderHeight, snapshot.lastSyncedFilterHeight)
+        latestFilterHeight = max(Int(snapshotFilter), sanitizedBaseline)
+
+        if let resolvedTip {
+            let resolved = Int(max(resolvedTip, UInt32(headerHeight)))
+            headerTargetHeight = resolved
+        } else if headerTargetHeight < headerHeight {
+            headerTargetHeight = headerHeight
+        }
+
+        if headerHeight > 0 {
+            latestHeaderHeight = headerHeight
+        }
+
+        if let resolvedTip, resolvedTip > UInt32(sanitizedBaseline) {
+            let denom = max(1, Int(resolvedTip) - sanitizedBaseline)
+            let headerNumerator = max(0, headerHeight - sanitizedBaseline)
+            headerProgress = min(1.0, Double(headerNumerator) / Double(denom))
+
+            let filterNumerator = max(0, latestFilterHeight - sanitizedBaseline)
+            transactionProgress = min(1.0, Double(filterNumerator) / Double(denom))
+        }
     }
 
     /// Apply baseline heights to the UI counters with an optional known tip.

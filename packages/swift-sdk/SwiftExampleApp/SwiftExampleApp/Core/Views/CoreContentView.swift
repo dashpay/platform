@@ -41,32 +41,37 @@ struct CoreContentView: View {
 
     // Display helpers
     private var headerHeightsDisplay: String? {
-        let cur = walletService.headerCurrentHeight
+        let cur = max(walletService.headerCurrentHeight, 0)
         let tot = walletService.headerTargetHeight
-        // Show "current/target" as soon as we know a target, even if current is 0
-        guard tot > 0 else { return nil }
 
         // Format current height allowing zero to render as "0" rather than "—"
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
-        let curStr = formatter.string(from: NSNumber(value: max(cur, 0))) ?? String(max(cur, 0))
+        let curStr = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        // When the chain tip is unknown (tot <= 0) fall back to the current baseline only.
+        guard tot > 0 else { return curStr }
+
         let totStr = formattedHeight(tot)
         return "\(curStr)/\(totStr)"
     }
 
     private var filterHeightsDisplay: String? {
-        let cur = walletService.latestFilterHeight
+        let cur = max(walletService.latestFilterHeight, 0)
         let tot = walletService.headerTargetHeight
-        guard tot > 0 else { return nil }
 
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
         formatter.groupingSeparator = ","
         formatter.decimalSeparator = "."
 
-        let numerator = formatter.string(from: NSNumber(value: max(cur, 0))) ?? String(max(cur, 0))
+        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        // When the chain tip is unknown (tot <= 0) show only the baseline.
+        guard tot > 0 else { return numerator }
+
         let denominator = formattedHeight(tot)
         return "\(numerator)/\(denominator)"
     }
