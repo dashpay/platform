@@ -652,7 +652,7 @@ impl WasmSdkBuilder {
         self.0
             .build()
             .map(WasmSdk)
-            .map_err(|e| WasmSdkError::from(e))
+            .map_err(WasmSdkError::from)
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]

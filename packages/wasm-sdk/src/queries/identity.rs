@@ -1059,8 +1059,8 @@ impl WasmSdk {
                     version: Some(Version::V0(GetIdentityKeysRequestV0 {
                         identity_id: id.to_vec(),
                         prove: true,
-                        limit: limit.map(|l| l),
-                        offset: offset.map(|o| o),
+                        limit,
+                        offset,
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SpecificKeys(SpecificKeys { key_ids })),
                         }),
