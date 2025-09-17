@@ -587,14 +587,20 @@ public class SPVClient: ObservableObject {
         let reportedHeader = headerHeight
         let usesAbsolute = reportedFilter >= base && reportedHeader >= base
 
-        let absoluteHeader: UInt32
-        let absoluteFilter: UInt32
+        let absoluteHeaderRaw: UInt32
+        let absoluteFilterRaw: UInt32
         if usesAbsolute {
-            absoluteHeader = reportedHeader
-            absoluteFilter = reportedFilter
+            absoluteHeaderRaw = reportedHeader
+            absoluteFilterRaw = reportedFilter
         } else {
-            absoluteHeader = base &+ reportedHeader
-            absoluteFilter = base &+ reportedFilter
+            absoluteHeaderRaw = base &+ reportedHeader
+            absoluteFilterRaw = base &+ reportedFilter
+        }
+
+        let absoluteHeader = max(base, absoluteHeaderRaw)
+        var absoluteFilter = max(base, absoluteFilterRaw)
+        if absoluteFilter > absoluteHeader {
+            absoluteFilter = absoluteHeader
         }
 
         if absoluteHeader > base {
@@ -604,35 +610,35 @@ public class SPVClient: ObservableObject {
 
             // If we already have a progress struct, update it; otherwise create a minimal one
             let updated: SPVSyncProgress
-            if let prog = self.syncProgress {
-                updated = SPVSyncProgress(
-                    stage: prog.stage,
-                    headerProgress: prog.headerProgress,
-                    masternodeProgress: prog.masternodeProgress,
-                    transactionProgress: pct,
-                    currentHeight: prog.currentHeight,
-                    targetHeight: prog.targetHeight,
-                    filterHeight: absoluteFilter,
-                    startHeight: base,
-                    rate: prog.rate,
-                    estimatedTimeRemaining: prog.estimatedTimeRemaining
-                )
-            } else {
-                updated = SPVSyncProgress(
-                    stage: .transactions,
-                    headerProgress: 0.0,
-                    masternodeProgress: 0.0,
-                    transactionProgress: pct,
-                    currentHeight: base,
-                    targetHeight: base,
-                    filterHeight: absoluteFilter,
-                    startHeight: base,
-                    rate: 0.0,
-                    estimatedTimeRemaining: nil
-                )
-            }
-            self.syncProgress = updated
-            self.delegate?.spvClient(self, didUpdateSyncProgress: updated)
+        if let prog = self.syncProgress {
+            updated = SPVSyncProgress(
+                stage: prog.stage,
+                headerProgress: prog.headerProgress,
+                masternodeProgress: prog.masternodeProgress,
+                transactionProgress: pct,
+                currentHeight: prog.currentHeight,
+                targetHeight: prog.targetHeight,
+                filterHeight: absoluteFilter,
+                startHeight: base,
+                rate: prog.rate,
+                estimatedTimeRemaining: prog.estimatedTimeRemaining
+            )
+        } else {
+            updated = SPVSyncProgress(
+                stage: .transactions,
+                headerProgress: 0.0,
+                masternodeProgress: 0.0,
+                transactionProgress: pct,
+                currentHeight: base,
+                targetHeight: base,
+                filterHeight: absoluteFilter,
+                startHeight: base,
+                rate: 0.0,
+                estimatedTimeRemaining: nil
+            )
+        }
+        self.syncProgress = updated
+        self.delegate?.spvClient(self, didUpdateSyncProgress: updated)
 
             if swiftLoggingEnabled {
                 print("[SPV][FilterHeadersProgress] header=\(absoluteHeader) filterHdr=\(absoluteFilter) base=\(base) -> \(Int(pct*100))%")

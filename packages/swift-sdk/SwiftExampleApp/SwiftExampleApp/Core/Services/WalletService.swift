@@ -680,20 +680,25 @@ extension WalletService: SPVClientDelegate {
             let absHeader = max(Int(currentHeight), baseHeight)
             let absTarget = max(Int(targetHeight), baseHeight)
             let absFilterRaw = max(Int(progress.filterHeight), baseHeight)
-            let absFilter = min(absFilterRaw, absTarget)
+            var absFilter = min(absFilterRaw, absTarget)
+
+            var filterPct = 0.0
+            if mappedStage == .downloading || mappedStage == .complete {
+                let filterNumerator = max(0.0, Double(absFilter - baseHeight))
+                let filterDenominator = max(1.0, Double(absTarget - baseHeight))
+                filterPct = min(1.0, filterNumerator / filterDenominator)
+            } else {
+                absFilter = baseHeight
+            }
 
             WalletService.shared.headerCurrentHeight = absHeader
             WalletService.shared.headerTargetHeight = absTarget
             WalletService.shared.latestFilterHeight = absFilter
-
-            let filterNumerator = max(0.0, Double(absFilter - baseHeight))
-            let filterDenominator = max(1.0, Double(absTarget - baseHeight))
-            let filterPct = min(1.0, filterNumerator / filterDenominator)
             WalletService.shared.transactionProgress = filterPct
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
-                current: UInt64(currentHeight),
-                total: UInt64(targetHeight),
+                current: UInt64(absHeader),
+                total: UInt64(absTarget),
                 rate: rate,
                 progress: headerPct,
                 stage: mappedStage
@@ -703,9 +708,6 @@ extension WalletService: SPVClientDelegate {
         }
 
         // Use event-driven transaction progress from SPVClient (no polling fallback)
-        Task { @MainActor in
-            WalletService.shared.transactionProgress = progress.transactionProgress
-        }
     }
     
     public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
