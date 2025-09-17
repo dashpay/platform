@@ -185,8 +185,7 @@ impl WasmSdk {
                     dapi: v0_response
                         .version
                         .as_ref()
-                        .map(|v| v.software.as_ref())
-                        .flatten()
+                        .and_then(|v| v.software.as_ref())
                         .map(|s| s.dapi.clone())
                         .unwrap_or_else(|| "unknown".to_string()),
                     drive: v0_response
@@ -245,7 +244,7 @@ impl WasmSdk {
                     .node
                     .as_ref()
                     .and_then(|n| n.pro_tx_hash.as_ref())
-                    .map(|hash| hex::encode(hash)),
+                    .map(hex::encode),
             },
             chain: StatusChain {
                 catching_up: v0_response
@@ -424,7 +423,7 @@ impl WasmSdk {
                         };
 
                         QuorumInfo {
-                            quorum_hash: hex::encode(&quorum_hash),
+                            quorum_hash: hex::encode(quorum_hash),
                             quorum_type,
                             member_count,
                             threshold,
@@ -435,7 +434,7 @@ impl WasmSdk {
                         // TODO: This should not happen in normal circumstances. When the SDK
                         // provides complete quorum information, this fallback can be removed.
                         QuorumInfo {
-                            quorum_hash: hex::encode(&quorum_hash),
+                            quorum_hash: hex::encode(quorum_hash),
                             quorum_type: "LLMQ_TYPE_UNKNOWN".to_string(),
                             member_count: 0,
                             threshold: 0,
@@ -693,13 +692,9 @@ impl WasmSdk {
             TotalCreditsQuery::fetch_with_metadata_and_proof(self.as_ref(), NoParamQuery {}, None)
                 .await?;
 
-        let data = if let Some(credits) = total_credits_result {
-            Some(TotalCreditsResponse {
+        let data = total_credits_result.map(|credits| TotalCreditsResponse {
                 total_credits_in_platform: credits.0.to_string(),
-            })
-        } else {
-            None
-        };
+            });
 
         let response = ProofMetadataResponse {
             data,

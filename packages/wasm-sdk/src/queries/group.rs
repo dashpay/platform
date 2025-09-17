@@ -214,7 +214,6 @@ impl WasmSdk {
                 let serializer = serde_wasm_bindgen::Serializer::json_compatible();
                 members.serialize(&serializer).map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                        .into()
                 })
             }
             None => Ok(JsValue::NULL),
@@ -289,7 +288,7 @@ impl WasmSdk {
         // Use json_compatible serializer to convert response
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         groups.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -392,8 +391,7 @@ impl WasmSdk {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid status: {}. Must be ACTIVE or CLOSED",
                     status
-                ))
-                .into())
+                )))
             }
         };
 
@@ -455,7 +453,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -489,8 +487,7 @@ impl WasmSdk {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid status: {}. Must be ACTIVE or CLOSED",
                     status
-                ))
-                .into())
+                )))
             }
         };
 
@@ -523,7 +520,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -575,7 +572,7 @@ impl WasmSdk {
         // Use json_compatible serializer to convert response
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         results.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -617,7 +614,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -690,7 +687,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -808,7 +805,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -918,7 +915,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -946,8 +943,7 @@ impl WasmSdk {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid status: {}. Must be ACTIVE or CLOSED",
                     status
-                ))
-                .into())
+                )))
             }
         };
 
@@ -1016,7 +1012,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -1050,8 +1046,7 @@ impl WasmSdk {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid status: {}. Must be ACTIVE or CLOSED",
                     status
-                ))
-                .into())
+                )))
             }
         };
 
@@ -1092,7 +1087,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 

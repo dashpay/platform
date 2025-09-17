@@ -227,7 +227,7 @@ impl WasmSdk {
                     version: Some(Version::V0(GetIdentityKeysRequestV0 {
                         identity_id: id.to_vec(),
                         prove: false,
-                        limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
+                        limit: Some(limit.unwrap_or(100)), // Always provide a limit when prove=false
                         offset: None, // Offsets not supported when prove=false
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SpecificKeys(SpecificKeys { key_ids })),
@@ -356,7 +356,7 @@ impl WasmSdk {
                     version: Some(Version::V0(GetIdentityKeysRequestV0 {
                         identity_id: id.to_vec(),
                         prove: false,
-                        limit: Some(limit.unwrap_or(100).into()), // Always provide a limit when prove=false
+                        limit: Some(limit.unwrap_or(100)), // Always provide a limit when prove=false
                         offset: None, // Offsets not supported when prove=false
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SearchKey(SearchKey { purpose_map })),
@@ -408,8 +408,7 @@ impl WasmSdk {
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid key_request_type. Use 'all', 'specific', or 'search'",
-                )
-                .into());
+                ));
             }
         };
 
@@ -434,7 +433,7 @@ impl WasmSdk {
 
             if let Some(key) = key_opt {
                 keys.push(IdentityKeyResponse {
-                    key_id: key_id,
+                    key_id,
                     key_type: format!("{:?}", key.key_type()),
                     public_key_data: hex::encode(key.data().as_slice()),
                     purpose: format!("{:?}", key.purpose()),
@@ -717,7 +716,7 @@ impl WasmSdk {
             .collect();
 
         serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -862,7 +861,7 @@ impl WasmSdk {
                     }
 
                     let key_response = IdentityKeyResponse {
-                        key_id: key_id,
+                        key_id,
                         key_type: format!("{:?}", key.key_type()),
                         public_key_data: hex::encode(key.data().as_slice()),
                         purpose: format!("{:?}", key.purpose()),
@@ -883,7 +882,7 @@ impl WasmSdk {
         }
 
         serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -1060,8 +1059,8 @@ impl WasmSdk {
                     version: Some(Version::V0(GetIdentityKeysRequestV0 {
                         identity_id: id.to_vec(),
                         prove: true,
-                        limit: limit.map(|l| l.into()),
-                        offset: offset.map(|o| o.into()),
+                        limit: limit.map(|l| l),
+                        offset: offset.map(|o| o),
                         request_type: Some(KeyRequestType {
                             request: Some(Request::SpecificKeys(SpecificKeys { key_ids })),
                         }),
@@ -1154,7 +1153,7 @@ impl WasmSdk {
 
             if let Some(key) = key_opt {
                 keys.push(IdentityKeyResponse {
-                    key_id: key_id,
+                    key_id,
                     key_type: format!("{:?}", key.key_type()),
                     public_key_data: hex::encode(key.data().as_slice()),
                     purpose: format!("{:?}", key.purpose()),
@@ -1345,8 +1344,7 @@ impl WasmSdk {
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
-            )
-            .into());
+            ));
         }
 
         let mut hash_array = [0u8; 20];
@@ -1404,8 +1402,7 @@ impl WasmSdk {
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
-            )
-            .into());
+            ));
         }
 
         let mut hash_array = [0u8; 20];
@@ -1564,7 +1561,7 @@ impl WasmSdk {
                     }
 
                     let key_response = IdentityKeyResponse {
-                        key_id: key_id,
+                        key_id,
                         key_type: format!("{:?}", key.key_type()),
                         public_key_data: hex::encode(key.data().as_slice()),
                         purpose: format!("{:?}", key.purpose()),

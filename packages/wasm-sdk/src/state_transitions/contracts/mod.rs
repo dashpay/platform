@@ -131,7 +131,7 @@ impl WasmSdk {
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
-            .map_err(|e| WasmSdkError::invalid_argument(e))?;
+            .map_err(WasmSdkError::invalid_argument)?;
 
         // Create and broadcast the contract
         let created_contract = data_contract
@@ -346,7 +346,7 @@ impl WasmSdk {
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
-            .map_err(|e| WasmSdkError::invalid_argument(e))?;
+            .map_err(WasmSdkError::invalid_argument)?;
 
         // Create the update transition
         let state_transition = DataContractUpdateTransition::new_from_data_contract(

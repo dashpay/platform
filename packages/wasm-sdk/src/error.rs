@@ -1,8 +1,6 @@
 use dash_sdk::dpp::ProtocolError;
-use dash_sdk::Error::{EpochNotFound, TotalCreditsNotFound};
 use dash_sdk::{error::StateTransitionBroadcastError, Error as SdkError};
 use rs_dapi_client::CanRetry;
-use std::fmt::Display;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 /// Structured error surfaced to JS consumers

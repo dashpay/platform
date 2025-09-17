@@ -143,7 +143,7 @@ impl WasmSdk {
                 epoch_opt.map(|epoch| {
                     use dash_sdk::dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
                     EpochInfo {
-                        index: epoch_index as u16,
+                        index: epoch_index,
                         first_core_block_height: epoch.first_core_block_height(),
                         first_block_height: epoch.first_block_height(),
                         start_time: epoch.first_block_time(),
@@ -408,7 +408,7 @@ impl WasmSdk {
                 epoch_opt.map(|epoch| {
                     use dash_sdk::dpp::block::finalized_epoch_info::v0::getters::FinalizedEpochInfoGettersV0;
                     EpochInfo {
-                        index: epoch_index as u16,
+                        index: epoch_index,
                         first_core_block_height: epoch.first_core_block_height(),
                         first_block_height: epoch.first_block_height(),
                         start_time: epoch.first_block_time(),
@@ -437,7 +437,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 

@@ -398,7 +398,7 @@ impl WasmSdk {
             .collect();
 
         serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -896,13 +896,9 @@ impl WasmSdk {
             )
             .await?;
 
-        let data = if let Some(supply) = supply_result {
-            Some(TokenTotalSupplyResponse {
+        let data = supply_result.map(|supply| TokenTotalSupplyResponse {
                 total_supply: supply.token_supply.to_string(),
-            })
-        } else {
-            None
-        };
+            });
 
         let response = ProofMetadataResponse {
             data,

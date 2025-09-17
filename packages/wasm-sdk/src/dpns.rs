@@ -70,7 +70,7 @@ impl WasmSdk {
 
         // Get the specific identity public key
         let identity_public_key = identity
-            .get_public_key_by_id(public_key_id.into())
+            .get_public_key_by_id(public_key_id)
             .ok_or_else(|| {
                 WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id))
             })?
@@ -78,7 +78,7 @@ impl WasmSdk {
 
         // Store the JS callback in a thread-local variable that we can access from the closure
         thread_local! {
-            static PREORDER_CALLBACK: std::cell::RefCell<Option<js_sys::Function>> = std::cell::RefCell::new(None);
+            static PREORDER_CALLBACK: std::cell::RefCell<Option<js_sys::Function>> = const { std::cell::RefCell::new(None) };
         }
 
         // Set the callback if provided

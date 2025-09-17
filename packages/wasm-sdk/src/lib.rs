@@ -15,8 +15,7 @@ pub mod wallet;
 pub use dpns::*;
 pub use error::{WasmSdkError, WasmSdkErrorKind};
 pub use queries::{
-    data_contract::*, document::*, dpns::*, epoch::*, group::*, identity as query_identity,
-    protocol::*, system::*, token::*, voting::*,
+    group::*, identity as query_identity,
 };
 pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use state_transitions::identity as state_transition_identity;

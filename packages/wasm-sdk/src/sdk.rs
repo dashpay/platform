@@ -1,15 +1,10 @@
 use crate::context_provider::WasmContext;
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
 use dash_sdk::dpp::version::PlatformVersion;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::RequestSettings;
-use serde_json;
-use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
-use std::str::FromStr;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -657,7 +652,7 @@ impl WasmSdkBuilder {
         self.0
             .build()
             .map(WasmSdk)
-            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+            .map_err(|e| WasmSdkError::from(e))
     }
 
     #[wasm_bindgen(js_name = "withContextProvider")]

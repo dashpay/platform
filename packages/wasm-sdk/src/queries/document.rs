@@ -775,7 +775,7 @@ impl WasmSdk {
         // Use json_compatible serializer
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e)).into()
+            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -800,9 +800,9 @@ impl WasmSdk {
                 let mut modified_result = result_obj.clone();
                 modified_result["data"] = first_username.clone();
 
-                return Ok(serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
+                return serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
                     WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })?);
+                });
             }
         }
 
@@ -810,8 +810,8 @@ impl WasmSdk {
         let mut modified_result = result_obj.clone();
         modified_result["data"] = serde_json::Value::Null;
 
-        Ok(serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
+        serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
             WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })?)
+        })
     }
 }

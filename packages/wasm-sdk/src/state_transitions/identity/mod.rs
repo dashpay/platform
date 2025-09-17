@@ -845,7 +845,7 @@ impl WasmSdk {
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
-            .map_err(|e| WasmSdkError::invalid_argument(e))?;
+            .map_err(WasmSdkError::invalid_argument)?;
 
         // Import the withdraw trait
         use dash_sdk::platform::transition::withdraw_from_identity::WithdrawFromIdentity;
@@ -1389,7 +1389,7 @@ impl WasmSdk {
 
         // Create signer
         let signer = SingleKeySigner::from_string(&voting_key_wif, self.network())
-            .map_err(|e| WasmSdkError::invalid_argument(e))?;
+            .map_err(WasmSdkError::invalid_argument)?;
 
         // Submit the vote using PutVote trait
         use dash_sdk::platform::transition::vote::PutVote;

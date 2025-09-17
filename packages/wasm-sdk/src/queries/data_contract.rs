@@ -61,7 +61,7 @@ impl WasmSdk {
                 let response = ProofMetadataResponse {
                     data: contract
                         .to_json(
-                            &dash_sdk::dpp::version::PlatformVersion::get(self.version()).unwrap(),
+                            dash_sdk::dpp::version::PlatformVersion::get(self.version()).unwrap(),
                         )
                         .map_err(|e| {
                             WasmSdkError::serialization(format!(

@@ -6,7 +6,6 @@ use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::platform::{Document, FetchMany};
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -36,8 +35,7 @@ impl WasmSdk {
         if parts.len() != 2 {
             return Err(WasmSdkError::invalid_argument(
                 "Invalid username format. Expected format: label.dash",
-            )
-            .into());
+            ));
         }
         let label = parts[0];
         let domain = parts[1];
@@ -108,8 +106,7 @@ impl WasmSdk {
         if parts.len() != 2 {
             return Err(WasmSdkError::invalid_argument(
                 "Invalid username format. Expected format: label.dash",
-            )
-            .into());
+            ));
         }
         let label = parts[0];
         let domain = parts[1];

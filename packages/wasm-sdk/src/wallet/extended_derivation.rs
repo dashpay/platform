@@ -10,7 +10,6 @@ use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use std::str::FromStr;
 use tracing::debug;
 use wasm_bindgen::prelude::*;
-use web_sys;
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -132,7 +131,7 @@ impl WasmSdk {
         address_index: u32,
         network: &str,
     ) -> Result<JsValue, WasmSdkError> {
-        use crate::error::WasmSdkError as _WasmErrHidden;
+        
         use bs58;
 
         // Convert base58 identity IDs to hex format if needed

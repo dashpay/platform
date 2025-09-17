@@ -69,8 +69,8 @@ impl WasmSdk {
 
         let key_pair = KeyPair {
             private_key_wif: private_key.to_wif(),
-            private_key_hex: hex::encode(&key_bytes),
-            public_key: hex::encode(&public_key_bytes),
+            private_key_hex: hex::encode(key_bytes),
+            public_key: hex::encode(public_key_bytes),
             address: address.to_string(),
             network: network.to_string(),
         };
@@ -126,8 +126,8 @@ impl WasmSdk {
 
         let key_pair = KeyPair {
             private_key_wif: private_key_wif.to_string(),
-            private_key_hex: hex::encode(&private_key.inner.secret_bytes()),
-            public_key: hex::encode(&public_key_bytes),
+            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+            public_key: hex::encode(public_key_bytes),
             address: address.to_string(),
             network: network.to_string(),
         };

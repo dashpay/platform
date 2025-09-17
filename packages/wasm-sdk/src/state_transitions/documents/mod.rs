@@ -28,7 +28,6 @@ use serde_json;
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use web_sys;
 
 // WasmSigner has been replaced with SingleKeySigner from simple-signer crate
 
@@ -957,7 +956,7 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to create transition: {}", e)))?;
 
         // The transition is already signed, convert to StateTransition
-        let state_transition: StateTransition = transition.into();
+        let state_transition: StateTransition = transition;
 
         // Broadcast the state transition
         state_transition
@@ -1081,7 +1080,7 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::generic(format!("Failed to create transition: {}", e)))?;
 
         // The transition is already signed, convert to StateTransition
-        let state_transition: StateTransition = transition.into();
+        let state_transition: StateTransition = transition;
 
         // Broadcast the state transition
         state_transition.broadcast(&sdk, None).await?;
@@ -1366,7 +1365,7 @@ impl WasmSdk {
             price_update_document,
             document_type_ref,
             price,
-            &matching_key,
+            matching_key,
             identity_contract_nonce,
             UserFeeIncrease::default(),
             None, // token_payment_info
@@ -1379,7 +1378,7 @@ impl WasmSdk {
         })?;
 
         // The transition is already signed, convert to StateTransition
-        let state_transition: StateTransition = transition.into();
+        let state_transition: StateTransition = transition;
 
         // Broadcast the state transition
         state_transition.broadcast(&sdk, None).await?;
