@@ -42,7 +42,6 @@ web-sys = { version = "0.3.4", features = [
     'Crypto',
 ] }
 wasm-bindgen = { version = "=0.2.100" }
-wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
 tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "registry"] }
