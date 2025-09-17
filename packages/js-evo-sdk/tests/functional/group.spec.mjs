@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { EvoSDK } from '../../dist/sdk.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
-describe('Group', function () {
+describe('Group', function groupSuite() {
   this.timeout(60000);
   let sdk;
 
@@ -18,7 +18,7 @@ describe('Group', function () {
       indexName: 'parentNameAndLabel',
       limit: 5,
     });
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 
   it('contestedResourceVotersForIdentity() returns voters (may be empty)', async () => {
@@ -30,6 +30,6 @@ describe('Group', function () {
       contestantId: TEST_IDS.identityId,
       limit: 5,
     });
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 });

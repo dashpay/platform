@@ -1,11 +1,11 @@
-import { EvoSDK } from '../../../dist/sdk.js';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
+import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('EpochFacade', () => {
   let wasmSdk;
   let client;
 
-  beforeEach(async function () {
+  beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
     wasmSdk = builder.build();
@@ -49,6 +49,7 @@ describe('EpochFacade', () => {
     expect(wasmSdk.getEvonodesProposedEpochBlocksByIds).to.be.calledOnceWithExactly(10, ['a', 'b']);
     expect(wasmSdk.getEvonodesProposedEpochBlocksByIdsWithProofInfo).to.be.calledOnceWithExactly(11, ['x']);
     expect(wasmSdk.getEvonodesProposedEpochBlocksByRange).to.be.calledOnceWithExactly(12, 2, 's', false);
-    expect(wasmSdk.getEvonodesProposedEpochBlocksByRangeWithProofInfo).to.be.calledOnceWithExactly(13, null, null, null);
+    expect(wasmSdk.getEvonodesProposedEpochBlocksByRangeWithProofInfo)
+      .to.be.calledOnceWithExactly(13, null, null, null);
   });
 });

@@ -9,7 +9,7 @@ describe('EvoSDK', () => {
     expect(EvoSDK.mainnetTrusted).to.be.a('function');
   });
 
-  it('connects and sets isConnected', async function () {
+  it('connects and sets isConnected', async function connectsAndSetsIsConnected() {
     this.timeout(90000);
 
     const sdk = new EvoSDK();
@@ -18,4 +18,3 @@ describe('EvoSDK', () => {
     expect(sdk.isConnected).to.equal(true);
   });
 });
-

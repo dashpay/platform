@@ -1,11 +1,11 @@
-import { EvoSDK } from '../../../dist/sdk.js';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
+import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('DPNSFacade', () => {
   let wasmSdk;
   let client;
 
-  beforeEach(async function () {
+  beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
     wasmSdk = builder.build();
@@ -34,7 +34,9 @@ describe('DPNSFacade', () => {
   it('name resolution and registration forward correctly', async () => {
     await client.dpns.isNameAvailable('label');
     await client.dpns.resolveName('name');
-    await client.dpns.registerName({ label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w' });
+    await client.dpns.registerName({
+      label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w',
+    });
     await client.dpns.usernames('i', { limit: 2 });
     await client.dpns.username('i');
     await client.dpns.usernamesWithProof('i', { limit: 3 });

@@ -1,11 +1,11 @@
-import { EvoSDK } from '../../../dist/sdk.js';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
+import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('SystemFacade', () => {
   let wasmSdk;
   let client;
 
-  beforeEach(async function () {
+  beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
     wasmSdk = builder.build();

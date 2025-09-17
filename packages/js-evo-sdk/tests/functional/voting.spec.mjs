@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { EvoSDK } from '../../dist/sdk.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
-describe('Voting', function () {
+describe('Voting', function votingSuite() {
   this.timeout(60000);
   let sdk;
 
@@ -19,11 +19,11 @@ describe('Voting', function () {
       indexValues: ['dash', TEST_IDS.username],
       resultType: 'documents',
     });
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 
   it('contestedResourceIdentityVotes() returns votes for identity (may be empty)', async () => {
     const res = await sdk.voting.contestedResourceIdentityVotes(TEST_IDS.identityId, { limit: 5 });
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 });

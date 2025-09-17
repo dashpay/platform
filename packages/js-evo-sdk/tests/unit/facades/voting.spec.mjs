@@ -1,11 +1,11 @@
-import { EvoSDK } from '../../../dist/sdk.js';
 import init, * as wasmSDKPackage from '@dashevo/wasm-sdk';
+import { EvoSDK } from '../../../dist/sdk.js';
 
 describe('VotingFacade', () => {
   let wasmSdk;
   let client;
 
-  beforeEach(async function () {
+  beforeEach(async function setup() {
     await init();
     const builder = wasmSDKPackage.WasmSdkBuilder.testnetTrusted();
     wasmSdk = builder.build();
@@ -21,12 +21,20 @@ describe('VotingFacade', () => {
   });
 
   it('contestedResourceVoteState and related queries forward correctly', async () => {
-    await client.voting.contestedResourceVoteState({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt' });
-    await client.voting.contestedResourceVoteStateWithProof({ contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt', allowIncludeLockedAndAbstainingVoteTally: true, startAtIdentifierInfo: 's', count: 2, orderAscending: false });
+    await client.voting.contestedResourceVoteState({
+      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt',
+    });
+    await client.voting.contestedResourceVoteStateWithProof({
+      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt', allowIncludeLockedAndAbstainingVoteTally: true, startAtIdentifierInfo: 's', count: 2, orderAscending: false,
+    });
     await client.voting.contestedResourceIdentityVotes('id', { limit: 3, startAtVotePollIdInfo: 's', orderAscending: true });
     await client.voting.contestedResourceIdentityVotesWithProof('id', { limit: 4, offset: 1, orderAscending: false });
-    await client.voting.votePollsByEndDate({ startTimeInfo: 'a', endTimeInfo: 'b', limit: 2, orderAscending: true });
-    await client.voting.votePollsByEndDateWithProof({ startTimeMs: 10, endTimeMs: 20, limit: 1, offset: 0, orderAscending: false });
+    await client.voting.votePollsByEndDate({
+      startTimeInfo: 'a', endTimeInfo: 'b', limit: 2, orderAscending: true,
+    });
+    await client.voting.votePollsByEndDateWithProof({
+      startTimeMs: 10, endTimeMs: 20, limit: 1, offset: 0, orderAscending: false,
+    });
     expect(wasmSdk.getContestedResourceVoteState).to.be.calledOnce();
     expect(wasmSdk.getContestedResourceVoteStateWithProofInfo).to.be.calledOnce();
     expect(wasmSdk.getContestedResourceIdentityVotes).to.be.calledOnce();
@@ -36,8 +44,10 @@ describe('VotingFacade', () => {
   });
 
   it('masternodeVote() stringifies array indexValues and forwards', async () => {
-    await client.voting.masternodeVote({ masternodeProTxHash: 'h', contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['x', 'y'], voteChoice: 'yes', votingKeyWif: 'w' });
-    const args = wasmSdk.masternodeVote.firstCall.args;
+    await client.voting.masternodeVote({
+      masternodeProTxHash: 'h', contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['x', 'y'], voteChoice: 'yes', votingKeyWif: 'w',
+    });
+    const { args } = wasmSdk.masternodeVote.firstCall;
     expect(args).to.deep.equal(['h', 'c', 'dt', 'i', JSON.stringify(['x', 'y']), 'yes', 'w']);
   });
 });

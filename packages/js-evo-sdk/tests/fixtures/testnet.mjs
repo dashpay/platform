@@ -24,4 +24,3 @@ export const TEST_SECRETS = {
   privateKeyWif: process.env.EVO_PRIVATE_WIF,
   keyId: process.env.EVO_KEY_ID ? Number(process.env.EVO_KEY_ID) : undefined,
 };
-

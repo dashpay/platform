@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import { EvoSDK } from '../../dist/sdk.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
-describe('Documents', function () {
+describe('Documents', function documentsSuite() {
   this.timeout(90000);
   let sdk;
 
@@ -18,7 +18,7 @@ describe('Documents', function () {
       limit: 5,
       orderBy: [['normalizedLabel', 'desc']],
     });
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 
   it('get() returns a single document by id', async () => {
@@ -27,6 +27,6 @@ describe('Documents', function () {
       TEST_IDS.documentType,
       TEST_IDS.documentId,
     );
-    expect(res).to.exist;
+    expect(res).to.exist();
   });
 });

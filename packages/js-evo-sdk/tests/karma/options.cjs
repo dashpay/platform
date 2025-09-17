@@ -1,5 +1,4 @@
 /* eslint-disable import/no-extraneous-dependencies */
-const path = require('path');
 const webpack = require('webpack');
 const karmaMocha = require('karma-mocha');
 const karmaMochaReporter = require('karma-mocha-reporter');
