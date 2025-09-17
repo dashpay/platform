@@ -45,3 +45,9 @@ dashmate:
 
 '@dashevo/platform-test-suite':
   - packages/platform-test-suite/**
+
+'@dashevo/wasm-sdk':
+  - packages/wasm-sdk/**
+
+'@dashevo/evo-sdk':
+  - packages/js-evo-sdk/**
