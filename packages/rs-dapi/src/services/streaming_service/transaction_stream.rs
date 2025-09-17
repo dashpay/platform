@@ -283,8 +283,7 @@ impl StreamingServiceImpl {
             .await
             .map_err(Status::from)?;
         let start_height = header_info.height as usize;
-        self
-            .process_historical_transactions_from_height(start_height, count, bloom_filter, tx)
+        self.process_historical_transactions_from_height(start_height, count, bloom_filter, tx)
             .await
     }
 
@@ -298,14 +297,23 @@ impl StreamingServiceImpl {
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
         use dashcore_rpc::dashcore::{Block, Transaction as CoreTx};
-        use tokio::time::{sleep, Duration};
+        use tokio::time::{Duration, sleep};
 
-        trace!(from_height, count, "transactions_with_proofs=historical_begin");
+        trace!(
+            from_height,
+            count, "transactions_with_proofs=historical_begin"
+        );
 
         // Clamp to tip
-        let tip = self.core_client.get_block_count().await.map_err(Status::from)? as usize;
+        let tip = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
         if from_height == 0 {
-            return Err(Status::invalid_argument("Minimum value for `fromBlockHeight` is 1"));
+            return Err(Status::invalid_argument(
+                "Minimum value for `fromBlockHeight` is 1",
+            ));
         }
         if from_height > tip.saturating_add(1) {
             return Err(Status::not_found(format!(
@@ -349,10 +357,8 @@ impl StreamingServiceImpl {
             let block: Block = match deserialize(&block_bytes) {
                 Ok(b) => b,
                 Err(e) => {
-                    return Err(Status::internal(format!(
-                        "Failed to parse block at height {}: {}",
-                        height, e
-                    )));
+                    tracing::warn!(height, error = %e, "Failed to deserialize core block, skipping");
+                    continue;
                 }
             };
 
@@ -367,7 +373,9 @@ impl StreamingServiceImpl {
 
             // First, send transactions (if any)
             if !matching.is_empty() {
-                let raw_transactions = RawTransactions { transactions: matching };
+                let raw_transactions = RawTransactions {
+                    transactions: matching,
+                };
                 let response = TransactionsWithProofsResponse {
                     responses: Some(
                         dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
@@ -394,7 +402,10 @@ impl StreamingServiceImpl {
             sleep(Duration::from_millis(50)).await;
         }
 
-        trace!(from_height, effective, "transactions_with_proofs=historical_end");
+        trace!(
+            from_height,
+            effective, "transactions_with_proofs=historical_end"
+        );
         Ok(())
     }
 }

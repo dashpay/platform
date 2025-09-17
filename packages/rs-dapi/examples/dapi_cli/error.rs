@@ -34,4 +34,10 @@ pub enum CliError {
     Io(#[from] io::Error),
     #[error("received empty response from {0}")]
     EmptyResponse(&'static str),
+
+    #[error(transparent)]
+    DashCoreEncoding(#[from] dashcore_rpc::dashcore::consensus::encode::Error),
+
+    #[error(transparent)]
+    SerdeJson(#[from] serde_json::Error),
 }

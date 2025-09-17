@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Weak};
 use tokio::sync::{Mutex, RwLock, mpsc};
@@ -180,11 +180,10 @@ impl<T> SubscriptionHandle<T> {
                     msg_opt = this.recv() => {
                         match msg_opt {
                             Some(msg) => {
-                                if let Some(mapped) = f(msg) {
-                                    if tx.send(mapped).is_err() {
+                                if let Some(mapped) = f(msg)
+                                    && tx.send(mapped).is_err() {
                                         break;
                                     }
-                                }
                             }
                             None => break,
                         }
@@ -254,10 +253,13 @@ impl SubscriberManager {
                     Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
                     Err(_) => false,
                 },
-                Err(_) => match f_lock.read() {
-                    Ok(guard) => guard.contains(raw_tx),
-                    Err(_) => false,
-                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "Failed to deserialize core transaction for bloom filter matching, falling back to contains()");
+                    match f_lock.read() {
+                        Ok(guard) => guard.contains(raw_tx),
+                        Err(_) => false,
+                    }
+                }
             },
             _ => false,
         }
