@@ -39,8 +39,9 @@ pub enum WasmSdkErrorKind {
 }
 
 /// Structured error surfaced to JS consumers
-#[wasm_bindgen(extends = Error)]
+#[wasm_bindgen(extends = js_sys::Error)]
 #[derive(thiserror::Error, Debug, Clone)]
+#[error("{message}")]
 pub struct WasmSdkError {
     kind: WasmSdkErrorKind,
     message: String,
