@@ -17,7 +17,7 @@
         # HTTP2 support multiple streams (requests) per connection.
         # For HTTP1 it applies for single request.
         # This param is overwritten in specific routes.
-        max_stream_duration: 15s
+        max_stream_duration: 60s
         # Reject malformed requests with headers containing underscores.
         headers_with_underscores_action: REJECT_REQUEST
       # HTTP2 specific settings
@@ -162,7 +162,7 @@
                 route:
                   cluster: {{= useDeprecated ? 'dapi_api' : 'rs_dapi' }}
                   # Upstream response timeout
-                  timeout: 10s
+                  timeout: 60s
               
               {{? !useDeprecated }}
               # Deprecated DAPI routes (moved under /deprecated prefix)
