@@ -120,6 +120,8 @@ impl CoreClient {
             .get_or_try_insert::<_, _, _, DapiError>(key, || {
                 let client = self.client.clone();
                 async move {
+                    // We use get_block_hex to workaround dashcore serialize/deserialize issues
+                    // (eg. UnsupportedSegwitFlag(0), UnknownSpecialTransactionType(58385))
                     let block_hex =
                         tokio::task::spawn_blocking(move || client.get_block_hex(&hash))
                             .await
