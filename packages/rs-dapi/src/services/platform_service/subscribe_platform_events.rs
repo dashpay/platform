@@ -1,35 +1,88 @@
 use dapi_grpc::platform::v0::{PlatformEventsCommand, PlatformEventsResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
-use rs_dash_notify::UnboundedSenderSink;
-use rs_dash_notify::event_mux::EventsResponseResult;
+use futures::StreamExt;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-
-use crate::metrics;
 
 use super::PlatformServiceImpl;
 
 impl PlatformServiceImpl {
-    /// Proxy implementation of Platform::subscribePlatformEvents with upstream muxing.
+    /// Proxy implementation of Platform::subscribePlatformEvents.
+    ///
+    /// Forwards commands from the caller (downlink) upstream to Drive
+    /// and forwards responses back to the caller.
     pub async fn subscribe_platform_events_impl(
         &self,
         request: Request<dapi_grpc::tonic::Streaming<PlatformEventsCommand>>,
     ) -> Result<Response<UnboundedReceiverStream<Result<PlatformEventsResponse, Status>>>, Status>
     {
-        // Use shared upstream mux from PlatformServiceImpl
-        let mux = self.platform_events_mux.clone();
+        // Inbound commands from the caller (downlink)
+        let downlink_req_rx = request.into_inner();
 
-        let (resp_tx, resp_rx) = mpsc::unbounded_channel::<EventsResponseResult>();
-        let subscriber = mux.add_subscriber().await;
-        metrics::platform_events_active_sessions_inc();
+        // Channel to feed commands upstream to Drive
+        let (uplink_req_tx, uplink_req_rx) = mpsc::unbounded_channel::<PlatformEventsCommand>();
 
-        // Link inbound stream to mux command channel
-        let inbound = request.into_inner();
-        let resp_sink = UnboundedSenderSink::from(resp_tx.clone());
+        // Spawn a task to forward downlink commands -> uplink channel
+        {
+            let mut downlink = downlink_req_rx;
+            let workers = self.workers.clone();
+            let mut workers = workers.lock().await;
+            workers.spawn(async move {
+                while let Some(cmd) = downlink.next().await {
+                    match cmd {
+                        Ok(msg) => {
+                            if uplink_req_tx.send(msg).is_err() {
+                                tracing::warn!(
+                                    "Platform events uplink command channel closed; stopping forward"
+                                );
+                                break;
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                error = %e,
+                                "Error receiving platform event command from downlink"
+                            );
+                            break;
+                        }
+                    }
+                }
+                tracing::debug!("Platform events downlink stream closed");
+            });
+        }
 
-        let mut workers = self.workers.lock().await;
-        workers.spawn(subscriber.forward(inbound, resp_sink));
+        // Call upstream with our command stream
+        let mut client = self.drive_client.get_client();
+        let uplink_resp = client
+            .subscribe_platform_events(tokio_stream::wrappers::UnboundedReceiverStream::new(
+                uplink_req_rx,
+            ))
+            .await?;
+        let mut uplink_resp_rx = uplink_resp.into_inner();
 
-        Ok(Response::new(UnboundedReceiverStream::new(resp_rx)))
+        // Channel to forward responses back to caller (downlink)
+        let (downlink_resp_tx, downlink_resp_rx) =
+            mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
+
+        // Spawn a task to forward uplink responses -> downlink
+        {
+            let workers = self.workers.clone();
+            let mut workers = workers.lock().await;
+            workers.spawn(async move {
+                while let Some(msg) = uplink_resp_rx.next().await {
+                    if downlink_resp_tx.send(msg).is_err() {
+                        tracing::warn!(
+                            "Platform events downlink response channel closed; stopping forward"
+                        );
+                        break;
+                    }
+                }
+                tracing::debug!("Platform events uplink response stream closed");
+            });
+        }
+
+        Ok(Response::new(UnboundedReceiverStream::new(
+            downlink_resp_rx,
+        )))
     }
 }
