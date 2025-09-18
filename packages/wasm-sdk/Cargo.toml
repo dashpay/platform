@@ -9,7 +9,14 @@ rust-version.workspace = true
 crate-type = ["cdylib"]
 
 [features]
-default = ["dpns-contract", "dashpay-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
+default = [
+    "dpns-contract",
+    "dashpay-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract",
+    "mocks",
+]
 
 mocks = ["dash-sdk/mocks"]
 

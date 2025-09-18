@@ -169,6 +169,9 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            SubscriptionError(e) => {
+                Self::new(WasmSdkErrorKind::Generic, e.to_string(), None, retriable)
+            }
         }
     }
 }
