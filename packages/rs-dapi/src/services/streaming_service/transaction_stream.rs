@@ -364,6 +364,12 @@ impl StreamingServiceImpl {
                 }
             };
 
+            trace!(
+                height,
+                n_txs = txs_bytes.len(),
+                "transactions_with_proofs=block_fetched"
+            );
+
             let mut matching: Vec<Vec<u8>> = Vec::new();
             for tx_bytes in txs_bytes.iter() {
                 // Try to parse each transaction individually; skip if parsing fails
@@ -371,6 +377,7 @@ impl StreamingServiceImpl {
                     Ok(tx) => {
                         if super::bloom::matches_transaction(&mut core_filter, &tx, flags) {
                             // If matched, forward original bytes
+                            trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
                             matching.push(tx_bytes.clone());
                         }
                     }
