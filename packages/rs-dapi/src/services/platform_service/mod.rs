@@ -47,6 +47,7 @@ macro_rules! drive_method {
         {
             use crate::cache::make_cache_key;
             use crate::metrics;
+            use tokio::time::timeout;
             let mut client = self.drive_client.get_client();
             let cache = self.platform_cache.clone();
             let method = stringify!($method_name);
@@ -60,8 +61,24 @@ macro_rules! drive_method {
                     return Ok(Response::new(decoded));
                 }
 
-                // Fetch from Drive
-                let resp = client.$method_name(request).await?;
+                // Determine request deadline from inbound metadata (grpc-timeout header)
+                let budget = parse_inbound_grpc_timeout(request.metadata())
+                    .and_then(|d| d.checked_sub(Duration::from_millis(50))); // safety margin
+
+                // Fetch from Drive with optional timeout budget
+                let drive_call = client.$method_name(request);
+                let resp = if let Some(budget) = budget {
+                    match timeout(budget, drive_call).await {
+                        Ok(Ok(r)) => r,
+                        Ok(Err(status)) => return Err(status),
+                        Err(_) => {
+                            tracing::warn!("{} call timed out after {:?}", method, budget);
+                            return Err(Status::deadline_exceeded("Deadline exceeded"));
+                        }
+                    }
+                } else {
+                    drive_call.await?
+                };
                 metrics::cache_miss(method);
 
                 // Store in cache using inner message
@@ -145,6 +162,26 @@ impl PlatformServiceImpl {
             platform_events_mux: event_mux,
             workers: Arc::new(Mutex::new(workers)),
         }
+    }
+}
+
+/// Parse inbound grpc-timeout metadata into Duration (RFC 8681 style units)
+fn parse_inbound_grpc_timeout(meta: &dapi_grpc::tonic::metadata::MetadataMap) -> Option<Duration> {
+    let v = meta.get("grpc-timeout")?;
+    let s = v.to_str().ok()?;
+    if s.is_empty() {
+        return None;
+    }
+    let (num_part, unit_part) = s.split_at(s.len().saturating_sub(1));
+    let n: u64 = num_part.parse().ok()?;
+    match unit_part {
+        "H" => Some(Duration::from_secs(n.saturating_mul(60 * 60))),
+        "M" => Some(Duration::from_secs(n.saturating_mul(60))),
+        "S" => Some(Duration::from_secs(n)),
+        "m" => Some(Duration::from_millis(n)),
+        "u" => Some(Duration::from_micros(n)),
+        "n" => Some(Duration::from_nanos(n)),
+        _ => None,
     }
 }
 
