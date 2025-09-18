@@ -39,9 +39,8 @@ members = [
     "packages/rs-dapi",
     "packages/rs-dash-notify",
     "packages/rs-platform-wallet",
+    "packages/wasm-sdk",
 ]
-
-exclude = ["packages/wasm-sdk"] # This one is experimental and not ready for use
 
 [workspace.package]
 

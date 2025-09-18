@@ -3,7 +3,7 @@ use dash_sdk::dpp::platform_value::ReplacementType;
 use dash_sdk::dpp::serialization::PlatformDeserializable;
 use dash_sdk::dpp::serialization::ValueConvertible;
 
-use crate::error::to_js_error;
+use crate::WasmSdkError;
 use dash_sdk::dpp::dashcore::hashes::serde::Serialize;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -11,7 +11,6 @@ use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::platform::{DataContract, Identity};
 use platform_value::string_encoding::Encoding;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsValue;
 use web_sys::js_sys;
 
 #[wasm_bindgen]
@@ -38,12 +37,16 @@ impl From<Identity> for IdentityWasm {
 #[wasm_bindgen]
 impl IdentityWasm {
     #[wasm_bindgen(constructor)]
-    pub fn new(platform_version: u32) -> Result<IdentityWasm, JsError> {
-        let platform_version = &PlatformVersion::get(platform_version).map_err(to_js_error)?;
+    pub fn new(platform_version: u32) -> Result<IdentityWasm, WasmSdkError> {
+        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| {
+            WasmSdkError::invalid_argument(format!(
+                "unknown platform version {platform_version}: {e}"
+            ))
+        })?;
 
-        Identity::default_versioned(platform_version)
-            .map(Into::into)
-            .map_err(to_js_error)
+        let identity = Identity::default_versioned(platform_version)?;
+
+        Ok(identity.into())
     }
     //
     // #[wasm_bindgen(js_name=getId)]
@@ -57,9 +60,9 @@ impl IdentityWasm {
     // }
 
     #[wasm_bindgen(js_name=setPublicKeys)]
-    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, JsValue> {
+    pub fn set_public_keys(&mut self, public_keys: js_sys::Array) -> Result<usize, WasmSdkError> {
         if public_keys.length() == 0 {
-            return Err(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string()).into());
+            return Err(WasmSdkError::invalid_argument(format!("Setting public keys failed. The input ('{}') is invalid. You must use array of PublicKeys", public_keys.to_string())));
         }
 
         // let public_keys = public_keys
@@ -158,35 +161,38 @@ impl IdentityWasm {
     // }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
-        let mut value = self.inner.to_object().map_err(to_js_error)?;
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        let mut value = self.inner.to_object().map_err(|e| {
+            WasmSdkError::serialization(format!("failed to convert identity to Object: {e}"))
+        })?;
 
         value
             .replace_at_paths(
                 dash_sdk::dpp::identity::IDENTIFIER_FIELDS_RAW_OBJECT,
                 ReplacementType::TextBase58,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| WasmSdkError::serialization(e.to_string()))?;
 
         // Monkey patch public keys data to be deserializable
         let public_keys = value
             .get_array_mut_ref(dash_sdk::dpp::identity::property_names::PUBLIC_KEYS)
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| WasmSdkError::serialization(e.to_string()))?;
 
         for key in public_keys.iter_mut() {
             key.replace_at_paths(
                 dash_sdk::dpp::identity::identity_public_key::BINARY_DATA_FIELDS,
                 ReplacementType::TextBase64,
             )
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| WasmSdkError::serialization(e.to_string()))?;
         }
 
         let json = value
             .try_into_validating_json()
-            .map_err(|e| e.to_string())?
+            .map_err(|e| WasmSdkError::serialization(e.to_string()))?
             .to_string();
 
         js_sys::JSON::parse(&json)
+            .map_err(|e| WasmSdkError::serialization(format!("failed to parse JSON: {:?}", e)))
     }
     //
     // #[wasm_bindgen(js_name=toObject)]
@@ -222,9 +228,11 @@ impl IdentityWasm {
     //     Ok(Buffer::from_bytes(&bytes))
     // }
 
-    #[wasm_bindgen]
-    pub fn hash(&self) -> Result<Vec<u8>, JsError> {
-        self.inner.hash().map_err(to_js_error)
+    #[wasm_bindgen(js_name = "hash")]
+    pub fn hash(&self) -> Result<Vec<u8>, WasmSdkError> {
+        let hash_bytes = self.inner.hash()?;
+
+        Ok(hash_bytes)
     }
 
     // #[wasm_bindgen(js_name=addPublicKey)]
@@ -259,9 +267,13 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name=fromBuffer)]
-    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, JsError> {
+    pub fn from_buffer(buffer: Vec<u8>) -> Result<IdentityWasm, WasmSdkError> {
         let identity: Identity = PlatformDeserializable::deserialize_from_bytes(buffer.as_slice())
-            .map_err(to_js_error)?;
+            .map_err(|e| {
+                WasmSdkError::serialization(format!(
+                    "failed to deserialize identity from bytes: {e}"
+                ))
+            })?;
         Ok(identity.into())
     }
 }
@@ -298,11 +310,17 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=toJSON)]
-    pub fn to_json(&self) -> Result<JsValue, JsError> {
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
         let platform_version = PlatformVersion::first();
 
-        let json = self.0.to_json(platform_version)?;
+        let json = self.0.to_json(platform_version).map_err(|e| {
+            WasmSdkError::serialization(format!(
+                "failed to convert data contract convert to json: {}",
+                e
+            ))
+        })?;
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        json.serialize(&serializer).map_err(to_js_error)
+        json.serialize(&serializer)
+            .map_err(|e| WasmSdkError::serialization(format!("can't serialize to json: {}", e)))
     }
 }
