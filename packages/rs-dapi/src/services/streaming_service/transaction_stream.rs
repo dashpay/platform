@@ -372,19 +372,20 @@ impl StreamingServiceImpl {
 
             let mut matching: Vec<Vec<u8>> = Vec::new();
             for tx_bytes in txs_bytes.iter() {
-                // Try to parse each transaction individually; skip if parsing fails
-                match deserialize::<CoreTx>(tx_bytes.as_slice()) {
+                // Try to parse each transaction individually; fallback to contains() if parsing fails
+                let matches = match deserialize::<CoreTx>(tx_bytes.as_slice()) {
                     Ok(tx) => {
-                        if super::bloom::matches_transaction(&mut core_filter, &tx, flags) {
-                            // If matched, forward original bytes
-                            trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
-                            matching.push(tx_bytes.clone());
-                        }
+                        trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
+                        super::bloom::matches_transaction(&mut core_filter, &tx, flags)
                     }
                     Err(e) => {
-                        tracing::debug!(height, error = %e, "Failed to deserialize transaction; skipping for bloom match");
-                        continue;
+                        warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
+                        trace!(height, "transactions_with_proofs=bloom_contains");
+                        core_filter.contains(tx_bytes)
                     }
+                };
+                if matches {
+                    matching.push(tx_bytes.clone());
                 }
             }
 
