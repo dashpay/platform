@@ -43,7 +43,7 @@ derive_more = { version = "1.0", features = ["from"] }
 lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
-uuid = { version = "1.10", features = ["v4"] }
+
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
