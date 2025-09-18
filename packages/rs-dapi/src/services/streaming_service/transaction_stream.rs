@@ -297,7 +297,6 @@ impl StreamingServiceImpl {
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
         use dashcore_rpc::dashcore::{Block, Transaction as CoreTx};
-        use tokio::time::{Duration, sleep};
 
         trace!(
             from_height,

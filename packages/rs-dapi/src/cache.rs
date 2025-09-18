@@ -1,5 +1,6 @@
 use dapi_grpc::Message;
 use lru::LruCache;
+use std::fmt::Debug;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -15,6 +16,21 @@ pub struct LruResponseCache {
     #[allow(dead_code)]
     workers: Arc<JoinSet<()>>,
 }
+impl Debug for LruResponseCache {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let lock = self.inner.try_lock();
+        if let Ok(guard) = lock {
+            write!(
+                f,
+                "LruResponseCache {{ size: {}, capacity: {} }}",
+                guard.len(),
+                guard.cap()
+            )
+        } else {
+            write!(f, "LruResponseCache {{ <locked> }}")
+        }
+    }
+}
 
 #[derive(Clone)]
 struct CachedValue {
@@ -23,6 +39,16 @@ struct CachedValue {
 }
 
 impl LruResponseCache {
+    /// Create a cache with a fixed capacity and without any external invalidation.
+    /// Use this when caching immutable responses (e.g., blocks by hash).
+    pub fn with_capacity(capacity: usize) -> Self {
+        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
+        let inner = Arc::new(Mutex::new(LruCache::new(cap)));
+        Self {
+            inner,
+            workers: Arc::new(tokio::task::join_set::JoinSet::new()),
+        }
+    }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
     pub fn new<T: Send + 'static>(capacity: usize, receiver: SubscriptionHandle<T>) -> Self {
@@ -86,6 +112,23 @@ impl LruResponseCache {
             };
             self.inner.lock().await.put(key, cv);
         }
+    }
+
+    /// Get a cached value or compute it using `producer` and insert into cache.
+    /// The `producer` is executed only on cache miss.
+    pub async fn get_or_try_insert<T, F, Fut, E>(&self, key: [u8; 32], producer: F) -> Result<T, E>
+    where
+        T: Message + Default,
+        F: FnOnce() -> Fut,
+        Fut: std::future::Future<Output = Result<T, E>>,
+    {
+        if let Some(value) = self.get::<T>(&key).await {
+            return Ok(value);
+        }
+
+        let value = producer().await?;
+        self.put(key, &value).await;
+        Ok(value)
     }
 }
 

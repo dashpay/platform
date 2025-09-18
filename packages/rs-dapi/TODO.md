@@ -22,6 +22,9 @@ Legend:
   - [x] `get_estimated_transaction_fee`
 - [x] Map and standardize error handling to match JS behavior
   - Files: `src/services/core_service.rs`, `src/error.rs`
+- [x] Cache immutable Core responses with LRU (invalidate on new block)
+  - Files: `src/clients/core_client.rs`, `src/cache.rs`, `src/services/streaming_service/mod.rs`, `src/server.rs`
+  - Methods cached inside CoreClient: `get_block_bytes_by_hash(_hex)`; invalidated on ZMQ `hashblock`
 
 ## P0 — Platform gRPC (Layer 2) Essentials
 
