@@ -851,6 +851,7 @@ COPY --parents \
     packages/rs-platform-wallet \
     packages/check-features \
     packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
     /platform/
 
 RUN mkdir /artifacts
