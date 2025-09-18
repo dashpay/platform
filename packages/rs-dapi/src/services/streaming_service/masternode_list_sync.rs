@@ -90,12 +90,7 @@ impl MasternodeListSync {
     }
 
     pub async fn current_full_diff(&self) -> Option<Vec<u8>> {
-        self.state
-            .read()
-            .await
-            .full_diff
-            .as_ref()
-            .map(|diff| diff.clone())
+        self.state.read().await.full_diff.clone()
     }
 
     pub async fn handle_chain_lock_notification(&self) {
@@ -147,12 +142,12 @@ impl MasternodeListSync {
         }
 
         let previous_state = self.state.read().await;
-        let previous_hash = previous_state.block_hash.clone();
+        let previous_hash = previous_state.block_hash;
         drop(previous_state);
 
         let full_diff = self.fetch_diff(None, &block_hash).await?;
 
-        let diff_bytes = if let Some(prev) = previous_hash.clone() {
+        let diff_bytes = if let Some(prev) = previous_hash {
             if prev == block_hash {
                 None
             } else {

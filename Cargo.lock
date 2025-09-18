@@ -5142,7 +5142,6 @@ dependencies = [
  "axum 0.8.4",
  "base64 0.22.1",
  "bincode 2.0.0-rc.3",
- "blake3",
  "chrono",
  "ciborium",
  "clap",
@@ -5153,12 +5152,10 @@ dependencies = [
  "futures",
  "hex",
  "lru 0.16.1",
- "murmur3",
  "once_cell",
  "prometheus",
  "reqwest",
  "reqwest-middleware",
- "rs-dapi-client",
  "rs-dash-notify",
  "serde",
  "serde_json",
@@ -5178,6 +5175,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "url",
+ "xxhash-rust",
  "zeroize",
  "zeromq",
 ]
@@ -7792,6 +7790,12 @@ checksum = "05f360fc0b24296329c78fda852a1e9ae82de9cf7b27dae4b7f62f118f77b9ed"
 dependencies = [
  "tap",
 ]
+
+[[package]]
+name = "xxhash-rust"
+version = "0.8.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fdd20c5420375476fbd4394763288da7eb0cc0b8c11deed431a91562af7335d3"
 
 [[package]]
 name = "yansi"

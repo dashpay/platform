@@ -11,7 +11,7 @@ use crate::services::streaming_service::SubscriptionHandle;
 
 #[derive(Clone)]
 pub struct LruResponseCache {
-    inner: Arc<Mutex<LruCache<[u8; 32], CachedValue>>>,
+    inner: Arc<Mutex<LruCache<CacheKey, CachedValue>>>,
     /// Background workers for cache management; will be aborted when last reference is dropped
     #[allow(dead_code)]
     workers: Arc<JoinSet<()>>,
@@ -33,6 +33,7 @@ impl Debug for LruResponseCache {
     }
 }
 
+pub type CacheKey = u128;
 #[derive(Clone)]
 struct CachedValue {
     inserted_at: Instant,
@@ -75,25 +76,25 @@ impl LruResponseCache {
     }
 
     #[inline(always)]
-    pub async fn get<T>(&self, key: &[u8; 32]) -> Option<T>
+    pub async fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let mut lock = self.inner.lock().await;
         lock.get(key)
             .map(|cv| cv.bytes.clone())
-            .and_then(|b| serde_json::from_slice::<T>(&b).ok())
+            .and_then(|b| deserialize::<T>(&b))
     }
 
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
-    pub async fn get_with_ttl<T>(&self, key: &[u8; 32], ttl: Duration) -> Option<T>
+    pub async fn get_with_ttl<T>(&self, key: &CacheKey, ttl: Duration) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let mut lock = self.inner.lock().await;
         if let Some(cv) = lock.get(key).cloned() {
             if cv.inserted_at.elapsed() <= ttl {
-                return serde_json::from_slice::<T>(&cv.bytes).ok();
+                return deserialize::<T>(&cv.bytes);
             }
             // expired, drop it
             lock.pop(key);
@@ -101,11 +102,11 @@ impl LruResponseCache {
         None
     }
 
-    pub async fn put<T>(&self, key: [u8; 32], value: &T)
+    pub async fn put<T>(&self, key: CacheKey, value: &T)
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        if let Ok(buf) = serde_json::to_vec(value) {
+        if let Some(buf) = serialize(value) {
             let cv = CachedValue {
                 inserted_at: Instant::now(),
                 bytes: Bytes::from(buf),
@@ -116,7 +117,7 @@ impl LruResponseCache {
 
     /// Get a cached value or compute it using `producer` and insert into cache.
     /// The `producer` is executed only on cache miss.
-    pub async fn get_or_try_insert<T, F, Fut, E>(&self, key: [u8; 32], producer: F) -> Result<T, E>
+    pub async fn get_or_try_insert<T, F, Fut, E>(&self, key: CacheKey, producer: F) -> Result<T, E>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
         F: FnOnce() -> Fut,
@@ -133,27 +134,29 @@ impl LruResponseCache {
 }
 
 #[inline(always)]
-pub fn make_cache_key<M: serde::Serialize + serde::de::DeserializeOwned>(
-    method: &str,
-    key: &M,
-) -> [u8; 32] {
-    use blake3::Hasher;
-    let mut hasher = Hasher::new();
-    hasher.update(method.as_bytes());
-    hasher.update(&[0]);
-    let serialized_request = serde_json::to_vec(key).expect("Key must be serializable");
-    hasher.update(&serialized_request);
-    hasher.finalize().into()
+pub fn make_cache_key<M: serde::Serialize>(method: &str, key: &M) -> CacheKey {
+    let mut prefix = method.as_bytes().to_vec();
+    let mut serialized_request = serialize(key).expect("Key must be serializable");
+
+    let mut data = Vec::with_capacity(prefix.len() + 1 + serialized_request.len());
+    data.append(&mut prefix);
+    data.push(0);
+    data.append(&mut serialized_request);
+
+    xxhash_rust::xxh3::xxh3_128(&data)
 }
 
 const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability
 
 fn serialize<T: serde::Serialize>(value: &T) -> Option<Vec<u8>> {
-    bincode::serde::encode_to_vec(&value, BINCODE_CFG).ok() // deterministic
+    bincode::serde::encode_to_vec(value, BINCODE_CFG)
+        .inspect_err(|e| tracing::warn!("Failed to serialize cache value: {}", e))
+        .ok() // deterministic
 }
 
 fn deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Option<T> {
     bincode::serde::decode_from_slice(bytes, BINCODE_CFG)
+        .inspect_err(|e| tracing::warn!("Failed to deserialize cache value: {}", e))
         .ok()
         .map(|(v, _)| v) // deterministic
 }

@@ -1,5 +1,5 @@
 use crate::cache::{LruResponseCache, make_cache_key};
-use crate::error::{DapiResult, MapToDapiResult};
+use crate::error::MapToDapiResult;
 use crate::{DAPIResult, DapiError};
 use dashcore_rpc::{Auth, Client, RpcApi, dashcore, jsonrpc};
 use std::sync::Arc;
@@ -59,18 +59,16 @@ impl CoreClient {
         Ok(txid.to_string())
     }
 
+    /// Fetches a block hash by its height.
+    /// Uses caching to avoid repeated calls for the same height.
     pub async fn get_block_hash(
         &self,
         height: u32,
     ) -> DAPIResult<dashcore_rpc::dashcore::BlockHash> {
-        use dapi_grpc::core::v0::{GetBlockRequest, get_block_request};
         use std::str::FromStr;
         trace!("Core RPC: get_block_hash");
 
-        let req = GetBlockRequest {
-            block: Some(get_block_request::Block::Height(height)),
-        };
-        let key = make_cache_key("get_block_hash", &req);
+        let key = make_cache_key("get_block_hash", &height);
 
         let bytes = self
             .cache
@@ -92,39 +90,51 @@ impl CoreClient {
         Ok(hash)
     }
 
+    /// Fetches and decodes a block by its hash.
+    /// Wrapper around `get_block_bytes_by_hash` that also decodes the block.
     pub async fn get_block_by_hash(
         &self,
         hash: dashcore_rpc::dashcore::BlockHash,
     ) -> DAPIResult<dashcore::Block> {
         trace!("Core RPC: get_block (bytes)");
+        let block_bytes = self.get_block_bytes_by_hash(hash).await?;
 
-        // Use cache-or-populate with immutable key by hash
-        let key = make_cache_key("get_block", &hash);
-
-        let block: DapiResult<dashcore::block::Block> = self
-            .cache
-            .get_or_try_insert::<_, _, _, DapiError>(key, || {
-                let client = self.client.clone();
-                async move {
-                    tokio::task::spawn_blocking(move || client.get_block(&hash))
-                        .await
-                        .to_dapi_result()
-                }
-            })
-            .await;
-
-        block
+        dashcore::consensus::encode::deserialize(&block_bytes).map_err(|e| {
+            DapiError::InvalidData(format!("Failed to decode block data from core: {e}"))
+        })
     }
 
+    /// Fetches a block's raw bytes by its hash.
+    /// Uses caching to avoid repeated calls for the same hash.
     pub async fn get_block_bytes_by_hash(
         &self,
         hash: dashcore_rpc::dashcore::BlockHash,
     ) -> DAPIResult<Vec<u8>> {
-        use dashcore_rpc::dashcore::consensus::encode::serialize;
-        trace!("Core RPC: get_block_bytes_by_hash");
+        trace!("Core RPC: get_block (bytes)");
 
-        let block = self.get_block_by_hash(hash).await.to_dapi_result()?;
-        Ok(serialize(&block))
+        // Use cache-or-populate with immutable key by hash
+        let key = make_cache_key("get_block_bytes_by_hash", &hash);
+
+        let block = self
+            .cache
+            .get_or_try_insert::<_, _, _, DapiError>(key, || {
+                let client = self.client.clone();
+                async move {
+                    let block_hex =
+                        tokio::task::spawn_blocking(move || client.get_block_hex(&hash))
+                            .await
+                            .to_dapi_result()?;
+
+                    hex::decode(&block_hex).map_err(|e| {
+                        DapiError::InvalidData(format!(
+                            "Failed to decode hex block data from core: {e}"
+                        ))
+                    })
+                }
+            })
+            .await?;
+
+        Ok(block)
     }
 
     pub async fn get_block_bytes_by_hash_hex(&self, hash_hex: &str) -> DAPIResult<Vec<u8>> {
@@ -140,59 +150,70 @@ impl CoreClient {
         hash: dashcore_rpc::dashcore::BlockHash,
     ) -> DAPIResult<Vec<Vec<u8>>> {
         trace!("Core RPC: get_block (verbosity=2) -> tx hex list");
-        let client = self.client.clone();
-        let hash_hex = hash.to_string();
-        let value: serde_json::Value = tokio::task::spawn_blocking(move || {
-            let params = [
-                serde_json::Value::String(hash_hex),
-                serde_json::Value::Number(serde_json::Number::from(2)),
-            ];
-            client.call("getblock", &params)
-        })
-        .await
-        .to_dapi_result()?;
 
-        let obj = value.as_object().ok_or_else(|| {
-            DapiError::invalid_data("getblock verbosity 2 did not return an object")
-        })?;
-        let txs_val = obj
-            .get("tx")
-            .ok_or_else(|| DapiError::invalid_data("getblock verbosity 2 missing 'tx' field"))?;
-        let arr = txs_val
-            .as_array()
-            .ok_or_else(|| DapiError::invalid_data("getblock 'tx' is not an array"))?;
+        // Use cache-or-populate with immutable key by hash
+        let key = make_cache_key("get_block_transactions_bytes_by_hash", &hash);
 
-        let mut out: Vec<Vec<u8>> = Vec::with_capacity(arr.len());
-        for txv in arr.iter() {
-            if let Some(tx_obj) = txv.as_object()
-                && let Some(h) = tx_obj.get("hex").and_then(|v| v.as_str())
-            {
-                let raw = hex::decode(h)
-                    .map_err(|e| DapiError::invalid_data(format!("invalid tx hex: {}", e)))?;
-                out.push(raw);
-                continue;
-            }
-            return Err(DapiError::invalid_data(
-                "getblock verbosity 2 'tx' entries missing 'hex'",
-            ));
-        }
+        let transactions = self
+            .cache
+            .get_or_try_insert::<_, _, _, DapiError>(key, || {
+                let client = self.client.clone();
+                let hash_hex = hash.to_string();
+                async move {
+                    let value: serde_json::Value = tokio::task::spawn_blocking(move || {
+                        let params = [
+                            serde_json::Value::String(hash_hex),
+                            serde_json::Value::Number(serde_json::Number::from(2)),
+                        ];
+                        client.call("getblock", &params)
+                    })
+                    .await
+                    .to_dapi_result()?;
 
-        Ok(out)
+                    let obj = value.as_object().ok_or_else(|| {
+                        DapiError::invalid_data("getblock verbosity 2 did not return an object")
+                    })?;
+                    let txs_val = obj.get("tx").ok_or_else(|| {
+                        DapiError::invalid_data("getblock verbosity 2 missing 'tx' field")
+                    })?;
+                    let arr = txs_val
+                        .as_array()
+                        .ok_or_else(|| DapiError::invalid_data("getblock 'tx' is not an array"))?;
+
+                    let mut out: Vec<Vec<u8>> = Vec::with_capacity(arr.len());
+                    for txv in arr.iter() {
+                        if let Some(tx_obj) = txv.as_object()
+                            && let Some(h) = tx_obj.get("hex").and_then(|v| v.as_str())
+                        {
+                            let raw = hex::decode(h).map_err(|e| {
+                                DapiError::invalid_data(format!("invalid tx hex: {}", e))
+                            })?;
+                            out.push(raw);
+                            continue;
+                        }
+                        return Err(DapiError::invalid_data(
+                            "getblock verbosity 2 'tx' entries missing 'hex'",
+                        ));
+                    }
+                    Ok(out)
+                }
+            })
+            .await?;
+
+        Ok(transactions)
     }
 
+    /// Fetches block header information by its hash.
+    /// Uses caching to avoid repeated calls for the same hash.
     pub async fn get_block_header_info(
         &self,
         hash: &dashcore_rpc::dashcore::BlockHash,
     ) -> DAPIResult<dashcore_rpc::json::GetBlockHeaderResult> {
-        use dapi_grpc::core::v0::{GetBlockRequest, get_block_request};
         trace!("Core RPC: get_block_header_info");
 
-        let req = GetBlockRequest {
-            block: Some(get_block_request::Block::Hash(hash.to_string())),
-        };
-        let key = make_cache_key("get_block_header_info", &req);
+        let key = make_cache_key("get_block_header_info", hash);
 
-        let bytes = self
+        let info = self
             .cache
             .get_or_try_insert::<_, _, _, DapiError>(key, || {
                 let client = self.client.clone();
@@ -204,14 +225,15 @@ impl CoreClient {
                             .to_dapi_result()?;
                     let v = serde_json::to_vec(&header)
                         .map_err(|e| DapiError::client(format!("serialize header: {}", e)))?;
-                    Ok(v)
+                    let parsed: dashcore_rpc::json::GetBlockHeaderResult =
+                        serde_json::from_slice(&v)
+                            .map_err(|e| DapiError::client(format!("deserialize header: {}", e)))?;
+                    Ok(parsed)
                 }
             })
             .await?;
 
-        let parsed: dashcore_rpc::json::GetBlockHeaderResult = serde_json::from_slice(&bytes)
-            .map_err(|e| DapiError::client(format!("deserialize header: {}", e)))?;
-        Ok(parsed)
+        Ok(info)
     }
 
     pub async fn get_best_chain_lock(
