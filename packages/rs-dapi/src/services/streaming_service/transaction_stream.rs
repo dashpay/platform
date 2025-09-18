@@ -3,6 +3,7 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dashcore_rpc::dashcore::Block;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, info, trace, warn};
@@ -345,7 +346,7 @@ impl StreamingServiceImpl {
                 }
             };
             // Fetch raw block bytes and transaction bytes list (without parsing whole block)
-            let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
+            let block = match self.core_client.get_block_by_hash(hash).await {
                 Ok(b) => b,
                 Err(e) => {
                     trace!(height, error = ?e, "transactions_with_proofs=get_block_raw_with_txs_failed");
@@ -370,7 +371,9 @@ impl StreamingServiceImpl {
                 "transactions_with_proofs=block_fetched"
             );
 
+            // Track matching transactions and positions to build a merkle block
             let mut matching: Vec<Vec<u8>> = Vec::new();
+            let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
             for tx_bytes in txs_bytes.iter() {
                 // Try to parse each transaction individually; fallback to contains() if parsing fails
                 let matches = match deserialize::<CoreTx>(tx_bytes.as_slice()) {
@@ -384,6 +387,7 @@ impl StreamingServiceImpl {
                         core_filter.contains(tx_bytes)
                     }
                 };
+                match_flags.push(matches);
                 if matches {
                     matching.push(tx_bytes.clone());
                 }
@@ -405,10 +409,16 @@ impl StreamingServiceImpl {
                 }
             }
 
-            // Then, send merkle block placeholder (raw block) to indicate block boundary
+            // Then, send a proper merkle block for this height (header + partial merkle tree)
+            let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags)
+                .unwrap_or_else(|e| {
+                    warn!(height, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
+                    dashcore_rpc::dashcore::consensus::encode::serialize(&block)
+                });
+
             let response = TransactionsWithProofsResponse {
                 responses: Some(
-                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(block_bytes),
+                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(merkle_block_bytes),
                 ),
             };
             if tx.send(Ok(response)).is_err() {
@@ -426,4 +436,26 @@ impl StreamingServiceImpl {
         );
         Ok(())
     }
+}
+
+/// Build a serialized MerkleBlock (header + PartialMerkleTree) from full block bytes and
+/// a boolean match flag per transaction indicating which txids should be included.
+fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u8>, String> {
+    use core::consensus::encode::serialize;
+    use dashcore_rpc::dashcore as core;
+
+    let header = block.header;
+    let txids: Vec<core::Txid> = block.txdata.iter().map(|t| t.txid()).collect();
+    if txids.len() != match_flags.len() {
+        return Err(format!(
+            "flags len {} != tx count {}",
+            match_flags.len(),
+            txids.len()
+        ));
+    }
+
+    let pmt =
+        dashcore_rpc::dashcore::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
+    let mb = dashcore_rpc::dashcore::MerkleBlock { header, txn: pmt };
+    Ok(serialize(&mb))
 }
