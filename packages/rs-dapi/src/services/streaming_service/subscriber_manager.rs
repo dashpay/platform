@@ -16,6 +16,8 @@ pub type SubscriptionId = String;
 pub enum FilterType {
     /// Bloom filter for transaction matching with update flags; filter is persisted/mutable
     CoreBloomFilter(Arc<std::sync::RwLock<CoreBloomFilter>>, BloomFlags),
+    /// All Core transactions (no filtering)
+    CoreAllTxs,
     /// All platform transactions (Tenderdash)
     PlatformAllTxs,
     /// All Tenderdash platform blocks

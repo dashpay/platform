@@ -22,52 +22,20 @@ impl StreamingServiceImpl {
     > {
         trace!("transactions_with_proofs=subscribe_begin");
         let req = request.into_inner();
-
-        // Extract bloom filter parameters
-        let bloom_filter = req
-            .bloom_filter
-            .ok_or_else(|| Status::invalid_argument("bloom_filter is required"))?;
-
-        trace!(
-            n_hash_funcs = bloom_filter.n_hash_funcs,
-            n_tweak = bloom_filter.n_tweak,
-            v_data_len = bloom_filter.v_data.len(),
-            count = req.count,
-            has_from_block = req.from_block.is_some(),
-            "transactions_with_proofs=request_parsed"
-        );
-
-        // Validate bloom filter parameters
-        if bloom_filter.v_data.is_empty() {
-            warn!("transactions_with_proofs=bloom_filter_empty");
-            return Err(Status::invalid_argument(
-                "bloom filter data cannot be empty",
-            ));
-        }
-
-        if bloom_filter.n_hash_funcs == 0 {
-            warn!("transactions_with_proofs=bloom_filter_no_hash_funcs");
-            return Err(Status::invalid_argument(
-                "number of hash functions must be greater than 0",
-            ));
-        }
-
-        // Create filter from bloom filter parameters
-        let bloom_filter_clone = bloom_filter.clone();
         let count = req.count;
-        let flags = bloom_flags_from_int(bloom_filter_clone.n_flags);
-        let core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
-            bloom_filter_clone.v_data.clone(),
-            bloom_filter_clone.n_hash_funcs,
-            bloom_filter_clone.n_tweak,
-            flags,
-        )
-        .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
 
-        let filter = FilterType::CoreBloomFilter(
-            std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
-            flags,
-        );
+        let filter = match req.bloom_filter {
+            Some(bloom_filter) => {
+                let core_filter = parse_bloom_filter(&bloom_filter)?;
+                let flags = core_filter.flags();
+
+                FilterType::CoreBloomFilter(
+                    std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
+                    flags,
+                )
+            }
+            None => FilterType::CoreAllTxs,
+        };
 
         // Create channel for streaming responses
         let (tx, rx) = mpsc::unbounded_channel();
@@ -86,7 +54,7 @@ impl StreamingServiceImpl {
                         count,
                         "transactions_with_proofs=historical_from_hash_request"
                     );
-                    self.process_historical_transactions_from_hash(&hash, count as usize, &bloom_filter_clone, tx_hist)
+                    self.process_historical_transactions_from_hash(&hash, count as usize, &filter, tx_hist)
                         .await?;
                 }
                 dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
@@ -94,7 +62,7 @@ impl StreamingServiceImpl {
                     self.process_historical_transactions_from_height(
                         height as usize,
                         count as usize,
-                        &bloom_filter_clone,
+                        &filter,
                         tx_hist,
                     )
                     .await?;
@@ -107,7 +75,10 @@ impl StreamingServiceImpl {
         }
 
         // Add subscription to manager for live updates (subscribe first to avoid races)
-        let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
+        let subscription_handle = self
+            .subscriber_manager
+            .add_subscription(filter.clone())
+            .await;
         let subscriber_id = subscription_handle.id().to_string();
         debug!(
             subscriber_id,
@@ -232,7 +203,7 @@ impl StreamingServiceImpl {
                         self.process_historical_transactions_from_height(
                             height,
                             count_tip,
-                            &bloom_filter_clone,
+                            &filter,
                             tx_hist,
                         )
                         .await?;
@@ -246,7 +217,7 @@ impl StreamingServiceImpl {
                         self.process_historical_transactions_from_height(
                             height,
                             count_tip,
-                            &bloom_filter_clone,
+                            &filter,
                             tx_hist,
                         )
                         .await?;
@@ -271,7 +242,7 @@ impl StreamingServiceImpl {
         &self,
         from_hash: &[u8],
         count: usize,
-        bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        filter: &FilterType,
         tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
         use std::str::FromStr;
@@ -284,7 +255,7 @@ impl StreamingServiceImpl {
             .await
             .map_err(Status::from)?;
         let start_height = header_info.height as usize;
-        self.process_historical_transactions_from_height(start_height, count, bloom_filter, tx)
+        self.process_historical_transactions_from_height(start_height, count, filter, tx)
             .await
     }
 
@@ -293,7 +264,7 @@ impl StreamingServiceImpl {
         &self,
         from_height: usize,
         count: usize,
-        bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+        filter: &FilterType,
         tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
@@ -324,16 +295,6 @@ impl StreamingServiceImpl {
 
         let max_count = tip.saturating_sub(from_height).saturating_add(1);
         let effective = count.min(max_count);
-
-        // Reconstruct bloom filter to perform matching
-        let flags = bloom_flags_from_int(bloom_filter.n_flags);
-        let mut core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
-            bloom_filter.v_data.clone(),
-            bloom_filter.n_hash_funcs,
-            bloom_filter.n_tweak,
-            flags,
-        )
-        .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
 
         for i in 0..effective {
             let height = (from_height + i) as u32;
@@ -376,16 +337,24 @@ impl StreamingServiceImpl {
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
             for tx_bytes in txs_bytes.iter() {
                 // Try to parse each transaction individually; fallback to contains() if parsing fails
-                let matches = match deserialize::<CoreTx>(tx_bytes.as_slice()) {
-                    Ok(tx) => {
-                        trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
-                        super::bloom::matches_transaction(&mut core_filter, &tx, flags)
+                let matches = match &filter {
+                    FilterType::CoreAllTxs => true,
+                    FilterType::CoreBloomFilter(bloom, flags) => {
+                        match deserialize::<CoreTx>(tx_bytes.as_slice()) {
+                            Ok(tx) => {
+                                trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
+                                let mut core_filter = bloom.write().unwrap();
+                                super::bloom::matches_transaction(&mut core_filter, &tx, *flags)
+                            }
+                            Err(e) => {
+                                warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
+                                trace!(height, "transactions_with_proofs=bloom_contains");
+                                let core_filter = bloom.read().unwrap();
+                                core_filter.contains(tx_bytes)
+                            }
+                        }
                     }
-                    Err(e) => {
-                        warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
-                        trace!(height, "transactions_with_proofs=bloom_contains");
-                        core_filter.contains(tx_bytes)
-                    }
+                    _ => false,
                 };
                 match_flags.push(matches);
                 if matches {
@@ -458,4 +427,43 @@ fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u
         dashcore_rpc::dashcore::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
     let mb = dashcore_rpc::dashcore::MerkleBlock { header, txn: pmt };
     Ok(serialize(&mb))
+}
+fn parse_bloom_filter(
+    bloom_filter: &dapi_grpc::core::v0::BloomFilter,
+) -> Result<dashcore_rpc::dashcore::bloom::BloomFilter, Status> {
+    trace!(
+        n_hash_funcs = bloom_filter.n_hash_funcs,
+        n_tweak = bloom_filter.n_tweak,
+        v_data_len = bloom_filter.v_data.len(),
+        v_data = hex::encode(&bloom_filter.v_data),
+        "transactions_with_proofs=request_bloom_filter_parsed"
+    );
+
+    // Validate bloom filter parameters
+    if bloom_filter.v_data.is_empty() {
+        warn!("transactions_with_proofs=bloom_filter_empty");
+        return Err(Status::invalid_argument(
+            "bloom filter data cannot be empty",
+        ));
+    }
+
+    if bloom_filter.n_hash_funcs == 0 {
+        warn!("transactions_with_proofs=bloom_filter_no_hash_funcs");
+        return Err(Status::invalid_argument(
+            "number of hash functions must be greater than 0",
+        ));
+    }
+
+    // Create filter from bloom filter parameters
+    let bloom_filter_clone = bloom_filter.clone();
+    let flags = bloom_flags_from_int(bloom_filter_clone.n_flags);
+    let core_filter = dashcore_rpc::dashcore::bloom::BloomFilter::from_bytes(
+        bloom_filter_clone.v_data.clone(),
+        bloom_filter_clone.n_hash_funcs,
+        bloom_filter_clone.n_tweak,
+        flags,
+    )
+    .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
+
+    Ok(core_filter)
 }
