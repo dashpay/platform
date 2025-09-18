@@ -37,10 +37,20 @@ esac
 done
 
 # if target version is provided but release type is not, infer release type from version
-if [ -n "$TARGET_VERSION" ] && [ -z "$RELEASE_TYPE" ]; then
-  RELEASE_TYPE=$(node -e "const semver=require('semver');const v='$TARGET_VERSION';const pr=semver.prerelease(v);console.log(pr ? pr[0] : 'release');")
+if [ -n "$TARGET_VERSION" ]; then
+  if ! node -e "require.resolve('semver')" >/dev/null 2>&1; then
+    echo "Error: 'semver' package not found. Run 'yarn add -D semver' in the repo root." >&2
+    exit 1
+  fi
+  # validate target version
+  if ! node -e "const semver=require('semver');process.exit(semver.valid('$TARGET_VERSION')?0:1)"; then
+    echo "Error: TARGET_VERSION '$TARGET_VERSION' is not a valid semver." >&2
+    exit 1
+  fi
+  if [ -z "$RELEASE_TYPE" ]; then
+    RELEASE_TYPE=$(node -e "const semver=require('semver');const pr=semver.prerelease('$TARGET_VERSION');console.log(pr ? pr[0] : 'release');")
+  fi
 fi
-
 # if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
