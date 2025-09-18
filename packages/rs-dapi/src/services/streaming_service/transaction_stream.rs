@@ -295,8 +295,8 @@ impl StreamingServiceImpl {
         bloom_filter: &dapi_grpc::core::v0::BloomFilter,
         tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
-        use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
-        use dashcore_rpc::dashcore::{Block, Transaction as CoreTx};
+        use dashcore_rpc::dashcore::Transaction as CoreTx;
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
 
         trace!(
             from_height,
@@ -344,29 +344,40 @@ impl StreamingServiceImpl {
                     break;
                 }
             };
+            // Fetch raw block bytes and transaction bytes list (without parsing whole block)
             let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
                 Ok(b) => b,
                 Err(e) => {
-                    trace!(height, error = ?e, "transactions_with_proofs=get_block_failed");
+                    trace!(height, error = ?e, "transactions_with_proofs=get_block_raw_with_txs_failed");
                     break;
                 }
             };
-
-            // Deserialize block to iterate transactions
-            let block: Block = match deserialize(&block_bytes) {
-                Ok(b) => b,
+            let txs_bytes = match self
+                .core_client
+                .get_block_transactions_bytes_by_hash(hash)
+                .await
+            {
+                Ok(t) => t,
                 Err(e) => {
-                    tracing::warn!(height, error = %e, "Failed to deserialize core block, skipping");
+                    warn!(height, error = ?e, "transactions_with_proofs=get_block_txs_failed, skipping block");
                     continue;
                 }
             };
 
             let mut matching: Vec<Vec<u8>> = Vec::new();
-            for tx in block.txdata.iter() {
-                let tx_ref: &CoreTx = tx;
-                if super::bloom::matches_transaction(&mut core_filter, tx_ref, flags) {
-                    let tx_bytes = serialize(tx_ref);
-                    matching.push(tx_bytes);
+            for tx_bytes in txs_bytes.iter() {
+                // Try to parse each transaction individually; skip if parsing fails
+                match deserialize::<CoreTx>(tx_bytes.as_slice()) {
+                    Ok(tx) => {
+                        if super::bloom::matches_transaction(&mut core_filter, &tx, flags) {
+                            // If matched, forward original bytes
+                            matching.push(tx_bytes.clone());
+                        }
+                    }
+                    Err(e) => {
+                        tracing::debug!(height, error = %e, "Failed to deserialize transaction; skipping for bloom match");
+                        continue;
+                    }
                 }
             }
 

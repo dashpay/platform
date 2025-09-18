@@ -16,7 +16,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::hashes::Hash;
 use std::sync::Arc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, error, trace};
+use tracing::{error, trace};
 
 /// Core service implementation that handles blockchain and streaming operations
 #[derive(Clone)]

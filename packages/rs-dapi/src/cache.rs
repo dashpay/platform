@@ -77,7 +77,7 @@ impl LruResponseCache {
     #[inline(always)]
     pub async fn get<T>(&self, key: &[u8; 32]) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned + Default,
+        T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let mut lock = self.inner.lock().await;
         lock.get(key)
@@ -88,7 +88,7 @@ impl LruResponseCache {
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
     pub async fn get_with_ttl<T>(&self, key: &[u8; 32], ttl: Duration) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned + Default,
+        T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let mut lock = self.inner.lock().await;
         if let Some(cv) = lock.get(key).cloned() {
@@ -118,7 +118,7 @@ impl LruResponseCache {
     /// The `producer` is executed only on cache miss.
     pub async fn get_or_try_insert<T, F, Fut, E>(&self, key: [u8; 32], producer: F) -> Result<T, E>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned + Default,
+        T: serde::Serialize + serde::de::DeserializeOwned,
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
     {
