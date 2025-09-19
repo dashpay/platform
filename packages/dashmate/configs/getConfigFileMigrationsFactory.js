@@ -1103,6 +1103,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (!options.core.zmq) {
               options.core.zmq = base.get('core.zmq');
             }
+
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
           });
         return configFile;
       }

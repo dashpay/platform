@@ -1,6 +1,6 @@
 [package]
 name = "wasm-drive-verify"
-version = "1.8.1-1"
+version = "2.1.0-dev.4"
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"
 rust-version = "1.89"
@@ -10,7 +10,9 @@ license = "MIT"
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
     "data-contracts",
@@ -21,15 +23,22 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "document-json-conversion",
     "state-transition-serde-conversion",
     "vote-serde-conversion",
-    "platform-value-json"
+    "platform-value-json",
 ] }
 
 wasm-bindgen = { version = "0.2.89" }
-serde = { version = "1.0.193", default-features = false, features = ["alloc", "derive"] }
+serde = { version = "1.0.193", default-features = false, features = [
+    "alloc",
+    "derive",
+] }
 serde_json = { version = "1.0", default-features = false, features = ["alloc"] }
 serde-wasm-bindgen = { version = "0.6.0" }
 js-sys = { version = "0.3.64" }
-web-sys = { version = "0.3.64", features = ["console", "Window", "Performance"] }
+web-sys = { version = "0.3.64", features = [
+    "console",
+    "Window",
+    "Performance",
+] }
 console_error_panic_hook = { version = "0.1.7", optional = true }
 ciborium = { version = "0.2.1" }
 base64 = { version = "0.22.0" }
@@ -54,7 +63,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "document-json-conversion",
     "state-transition-serde-conversion",
     "vote-serde-conversion",
-    "platform-value-json"
+    "platform-value-json",
 ] }
 js-sys = "0.3.64"
 web-sys = "0.3.64"
@@ -66,7 +75,14 @@ serde_json = "1.0"
 
 [features]
 default = ["console_error_panic_hook", "full"]
-full = ["identity", "document", "contract", "tokens", "governance", "transitions"]
+full = [
+    "identity",
+    "document",
+    "contract",
+    "tokens",
+    "governance",
+    "transitions",
+]
 identity = []
 document = []
 contract = []
@@ -79,4 +95,3 @@ debug_logs = []
 name = "simple_benchmarks"
 harness = false
 required-features = ["full"]
-
