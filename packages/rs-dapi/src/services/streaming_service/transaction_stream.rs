@@ -1,3 +1,4 @@
+use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
 use dapi_grpc::core::v0::{
     InstantSendLockMessages, RawTransactions, TransactionsWithProofsRequest,
     TransactionsWithProofsResponse,
@@ -128,10 +129,8 @@ impl StreamingServiceImpl {
                             };
 
                             let response = TransactionsWithProofsResponse {
-                            responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
-                            ),
-                        };
+                                responses: Some(Responses::RawTransactions(raw_transactions)),
+                            };
 
                             Ok(response)
                         }
@@ -143,60 +142,61 @@ impl StreamingServiceImpl {
                             );
                             // Build merkle block using subscriber's filter
                             let resp = match &live_filter {
-                            FilterType::CoreAllTxs => {
-                                // All transactions match: construct match flags accordingly
-                                if let Ok(block) = dashcore_rpc::dashcore::consensus::encode::deserialize::<dashcore_rpc::dashcore::Block>(&data) {
-                                    let match_flags = vec![true; block.txdata.len()];
-                                    let mb = build_merkle_block_bytes(&block, &match_flags)
+                                FilterType::CoreAllTxs => {
+                                    // All transactions match: construct match flags accordingly
+                                    if let Ok(block) =
+                                        dashcore_rpc::dashcore::consensus::encode::deserialize::<
+                                            dashcore_rpc::dashcore::Block,
+                                        >(&data)
+                                    {
+                                        let match_flags = vec![true; block.txdata.len()];
+                                        let mb = build_merkle_block_bytes(&block, &match_flags)
                                         .unwrap_or_else(|e| {
                                             warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
                                             dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                                         });
-                                    TransactionsWithProofsResponse {
-                                        responses: Some(
-                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(mb),
-                                        ),
-                                    }
-                                } else {
-                                    TransactionsWithProofsResponse {
-                                        responses: Some(
-                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
-                                        ),
+                                        TransactionsWithProofsResponse {
+                                            responses: Some(Responses::RawMerkleBlock(mb)),
+                                        }
+                                    } else {
+                                        TransactionsWithProofsResponse {
+                                            responses: Some(Responses::RawMerkleBlock(data)),
+                                        }
                                     }
                                 }
-                            }
-                            FilterType::CoreBloomFilter(bloom, flags) => {
-                                if let Ok(block) = dashcore_rpc::dashcore::consensus::encode::deserialize::<dashcore_rpc::dashcore::Block>(&data) {
-                                    let mut match_flags = Vec::with_capacity(block.txdata.len());
-                                    for tx in block.txdata.iter() {
-                                        let mut guard = bloom.write().unwrap();
-                                        let m = super::bloom::matches_transaction(&mut guard, tx, *flags);
-                                        match_flags.push(m);
-                                    }
-                                    let mb = build_merkle_block_bytes(&block, &match_flags)
+                                FilterType::CoreBloomFilter(bloom, flags) => {
+                                    if let Ok(block) =
+                                        dashcore_rpc::dashcore::consensus::encode::deserialize::<
+                                            dashcore_rpc::dashcore::Block,
+                                        >(&data)
+                                    {
+                                        let mut match_flags =
+                                            Vec::with_capacity(block.txdata.len());
+                                        for tx in block.txdata.iter() {
+                                            let mut guard = bloom.write().unwrap();
+                                            let m = super::bloom::matches_transaction(
+                                                &mut guard, tx, *flags,
+                                            );
+                                            match_flags.push(m);
+                                        }
+                                        let mb = build_merkle_block_bytes(&block, &match_flags)
                                         .unwrap_or_else(|e| {
                                             warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
                                             dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                                         });
-                                    TransactionsWithProofsResponse {
-                                        responses: Some(
-                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(mb),
-                                        ),
-                                    }
-                                } else {
-                                    TransactionsWithProofsResponse {
-                                        responses: Some(
-                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
-                                        ),
+                                        TransactionsWithProofsResponse {
+                                            responses: Some(Responses::RawMerkleBlock(mb)),
+                                        }
+                                    } else {
+                                        TransactionsWithProofsResponse {
+                                            responses: Some(Responses::RawMerkleBlock(data)),
+                                        }
                                     }
                                 }
-                            }
-                            _ => TransactionsWithProofsResponse {
-                                responses: Some(
-                                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
-                                ),
-                            },
-                        };
+                                _ => TransactionsWithProofsResponse {
+                                    responses: Some(Responses::RawMerkleBlock(data)),
+                                },
+                            };
 
                             Ok(resp)
                         }
@@ -211,10 +211,24 @@ impl StreamingServiceImpl {
                             };
 
                             let response = TransactionsWithProofsResponse {
-                            responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages),
-                            ),
-                        };
+                                responses: Some(Responses::InstantSendLockMessages(
+                                    instant_lock_messages,
+                                )),
+                            };
+
+                            Ok(response)
+                        }
+                        StreamingEvent::CoreChainLock { data } => {
+                            // Let's also forward chain locks if we get them
+                            trace!(
+                                subscriber_id = sub_id,
+                                "transactions_with_proofs=forward_chain_lock"
+                            );
+                            let response = TransactionsWithProofsResponse {
+                                responses: Some(Responses::RawTransactions(RawTransactions {
+                                    transactions: vec![data],
+                                })),
+                            };
 
                             Ok(response)
                         }
@@ -434,9 +448,7 @@ impl StreamingServiceImpl {
                     transactions: matching,
                 };
                 let response = TransactionsWithProofsResponse {
-                    responses: Some(
-                        dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
-                    ),
+                    responses: Some(Responses::RawTransactions(raw_transactions)),
                 };
                 if tx.send(Ok(response)).is_err() {
                     debug!("transactions_with_proofs=historical_client_disconnected");
@@ -452,9 +464,7 @@ impl StreamingServiceImpl {
                 });
 
             let response = TransactionsWithProofsResponse {
-                responses: Some(
-                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(merkle_block_bytes),
-                ),
+                responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
             };
             if tx.send(Ok(response)).is_err() {
                 debug!("transactions_with_proofs=historical_client_disconnected");
