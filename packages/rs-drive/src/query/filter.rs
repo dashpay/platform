@@ -894,11 +894,11 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_requires_at_least_one_clause_for_optional_actions() {
+    fn test_validate_optional_actions_allow_empty_clauses() {
         let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
         let contract = fixture.data_contract_owned();
 
-        // Replace with none/none -> invalid
+        // Replace with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
@@ -907,7 +907,7 @@ mod tests {
                 new_document_clauses: InternalClauses::default(),
             },
         };
-        assert!(filter.validate().is_err());
+        assert!(filter.validate().is_valid());
 
         // Replace with final only -> valid (non-empty final clauses)
         let filter = DriveDocumentQueryFilter {
@@ -927,7 +927,7 @@ mod tests {
         };
         assert!(filter.validate().is_valid());
 
-        // Transfer with none/none -> invalid
+        // Transfer with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
@@ -936,7 +936,7 @@ mod tests {
                 owner_clause: None,
             },
         };
-        assert!(filter.validate().is_err());
+        assert!(filter.validate().is_valid());
 
         // Transfer with owner only -> valid
         let filter = DriveDocumentQueryFilter {
@@ -952,7 +952,7 @@ mod tests {
         };
         assert!(filter.validate().is_valid());
 
-        // UpdatePrice with none/none -> invalid
+        // UpdatePrice with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
@@ -961,7 +961,7 @@ mod tests {
                 price_clause: None,
             },
         };
-        assert!(filter.validate().is_err());
+        assert!(filter.validate().is_valid());
 
         // UpdatePrice with price only -> valid
         let filter = DriveDocumentQueryFilter {
@@ -977,7 +977,7 @@ mod tests {
         };
         assert!(filter.validate().is_valid());
 
-        // Purchase with none/none -> invalid
+        // Purchase with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
             contract: &contract,
             document_type_name: "niceDocument".to_string(),
@@ -986,7 +986,7 @@ mod tests {
                 owner_clause: None,
             },
         };
-        assert!(filter.validate().is_err());
+        assert!(filter.validate().is_valid());
 
         // Purchase with owner only -> valid
         let filter = DriveDocumentQueryFilter {

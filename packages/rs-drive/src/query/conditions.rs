@@ -1706,6 +1706,7 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use crate::error::query::QuerySyntaxError;
     use crate::query::conditions::WhereClause;
     use crate::query::conditions::{
         Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals,
@@ -1854,11 +1855,10 @@ mod tests {
             value: Value::Identifier([1u8; 32]),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1879,11 +1879,10 @@ mod tests {
             ]),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1906,11 +1905,10 @@ mod tests {
         });
 
         let res = clauses.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1928,11 +1926,10 @@ mod tests {
             value: Value::Float(1.23),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
