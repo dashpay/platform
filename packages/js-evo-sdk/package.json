@@ -29,8 +29,7 @@
     "lint": "eslint \"src/**/*.ts\" \"tests/**/*.*js\"",
     "test": "yarn run test:unit && yarn run test:functional",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
-    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000  && karma start ./tests/karma/karma.functional.conf.cjs --single-run",
-    "prepack": "yarn build"
+    "test:functional": "mocha tests/functional/**/*.spec.mjs --exit --timeout 90000  && karma start ./tests/karma/karma.functional.conf.cjs --single-run"
   },
   "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^5.55.0",
