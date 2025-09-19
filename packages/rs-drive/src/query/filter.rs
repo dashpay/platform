@@ -515,7 +515,7 @@ impl DriveDocumentQueryFilter<'_> {
                         | WhereOperator::GreaterThanOrEquals
                         | WhereOperator::LessThan
                         | WhereOperator::LessThanOrEquals => {
-                            price.value.is_integer_can_fit_64_bytes()
+                            price.value.is_integer_can_fit_in_64_bits()
                         }
                         WhereOperator::Between
                         | WhereOperator::BetweenExcludeBounds
@@ -523,14 +523,14 @@ impl DriveDocumentQueryFilter<'_> {
                         | WhereOperator::BetweenExcludeRight => match &price.value {
                             Value::Array(arr) => {
                                 arr.len() == 2
-                                    && arr.iter().all(|v| v.is_integer_can_fit_64_bytes())
+                                    && arr.iter().all(|v| v.is_integer_can_fit_in_64_bits())
                                     && arr[0] < arr[1]
                             }
                             _ => false,
                         },
                         WhereOperator::In => match &price.value {
                             Value::Array(arr) => {
-                                arr.iter().all(|v| v.is_integer_can_fit_64_bytes())
+                                arr.iter().all(|v| v.is_integer_can_fit_in_64_bits())
                             }
                             _ => false,
                         },

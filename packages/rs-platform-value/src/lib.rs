@@ -156,9 +156,9 @@ impl Value {
     /// #
     /// let value = Value::U128(17);
     ///
-    /// assert!(value.is_integer_can_fit_64_bytes());
+    /// assert!(value.is_integer_can_fit_in_64_bits());
     /// ```
-    pub fn is_integer_can_fit_64_bytes(&self) -> bool {
+    pub fn is_integer_can_fit_in_64_bits(&self) -> bool {
         match self {
             // Already ≤ 64-bit widths
             Value::U64(_)
