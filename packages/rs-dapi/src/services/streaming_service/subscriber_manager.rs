@@ -286,12 +286,17 @@ impl SubscriberManager {
             }
             (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
             (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreChainLock { .. }) => true,
             (FilterType::CoreBloomFilter(_, _), _) => false,
             (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
             (FilterType::CoreAllMasternodes, _) => false,
             (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
             (FilterType::CoreChainLocks, _) => false,
             (FilterType::CoreAllTxs, CoreRawTransaction { .. }) => true,
+            // Include InstantSend locks for transaction subscriptions without a bloom filter
+            (FilterType::CoreAllTxs, CoreInstantLock { .. }) => true,
+            // Include ChainLocks for transaction subscriptions without a bloom filter
+            (FilterType::CoreAllTxs, CoreChainLock { .. }) => true,
             (FilterType::CoreAllTxs, _) => false,
             // no default by purpose to fail build on new variants
         };
