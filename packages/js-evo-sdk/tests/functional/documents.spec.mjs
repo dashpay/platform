@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { EvoSDK } from '../../dist/sdk.js';
+import { EvoSDK } from '../../dist/evo-sdk.module.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
 describe('Documents', function documentsSuite() {
