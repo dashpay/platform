@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-sdk",
-  "version": "2.1.0-dev.4",
+  "version": "2.1.0-dev.5",
   "type": "module",
   "main": "./dist/sdk.js",
   "types": "./dist/sdk.d.ts",
