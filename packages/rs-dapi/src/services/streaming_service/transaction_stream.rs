@@ -26,8 +26,7 @@ impl StreamingServiceImpl {
 
         let filter = match req.bloom_filter {
             Some(bloom_filter) => {
-                let core_filter = parse_bloom_filter(&bloom_filter)?;
-                let flags = core_filter.flags();
+                let (core_filter, flags) = parse_bloom_filter(&bloom_filter)?;
 
                 FilterType::CoreBloomFilter(
                     std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
@@ -92,6 +91,7 @@ impl StreamingServiceImpl {
 
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
+        let live_filter = filter.clone();
         let tx_live = tx.clone();
         tokio::spawn(async move {
             trace!(
@@ -124,13 +124,64 @@ impl StreamingServiceImpl {
                             payload_size = data.len(),
                             "transactions_with_proofs=forward_merkle_block"
                         );
-                        let response = TransactionsWithProofsResponse {
-                            responses: Some(
-                                dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
-                            ),
+                        // Build merkle block using subscriber's filter
+                        let resp = match &live_filter {
+                            FilterType::CoreAllTxs => {
+                                // All transactions match: construct match flags accordingly
+                                if let Ok(block) = dashcore_rpc::dashcore::consensus::encode::deserialize::<dashcore_rpc::dashcore::Block>(&data) {
+                                    let match_flags = vec![true; block.txdata.len()];
+                                    let mb = build_merkle_block_bytes(&block, &match_flags)
+                                        .unwrap_or_else(|e| {
+                                            warn!(subscriber_id = sub_handle.id(), error = %e, "live_merkle_build_failed_fallback_raw_block");
+                                            dashcore_rpc::dashcore::consensus::encode::serialize(&block)
+                                        });
+                                    TransactionsWithProofsResponse {
+                                        responses: Some(
+                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(mb),
+                                        ),
+                                    }
+                                } else {
+                                    TransactionsWithProofsResponse {
+                                        responses: Some(
+                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
+                                        ),
+                                    }
+                                }
+                            }
+                            FilterType::CoreBloomFilter(bloom, flags) => {
+                                if let Ok(block) = dashcore_rpc::dashcore::consensus::encode::deserialize::<dashcore_rpc::dashcore::Block>(&data) {
+                                    let mut match_flags = Vec::with_capacity(block.txdata.len());
+                                    for tx in block.txdata.iter() {
+                                        let mut guard = bloom.write().unwrap();
+                                        let m = super::bloom::matches_transaction(&mut guard, tx, *flags);
+                                        match_flags.push(m);
+                                    }
+                                    let mb = build_merkle_block_bytes(&block, &match_flags)
+                                        .unwrap_or_else(|e| {
+                                            warn!(subscriber_id = sub_handle.id(), error = %e, "live_merkle_build_failed_fallback_raw_block");
+                                            dashcore_rpc::dashcore::consensus::encode::serialize(&block)
+                                        });
+                                    TransactionsWithProofsResponse {
+                                        responses: Some(
+                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(mb),
+                                        ),
+                                    }
+                                } else {
+                                    TransactionsWithProofsResponse {
+                                        responses: Some(
+                                            dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
+                                        ),
+                                    }
+                                }
+                            }
+                            _ => TransactionsWithProofsResponse {
+                                responses: Some(
+                                    dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawMerkleBlock(data),
+                                ),
+                            },
                         };
 
-                        Ok(response)
+                        Ok(resp)
                     }
                     StreamingEvent::CoreInstantLock { data } => {
                         trace!(
@@ -423,14 +474,19 @@ fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u
         ));
     }
 
-    let pmt =
-        dashcore_rpc::dashcore::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
-    let mb = dashcore_rpc::dashcore::MerkleBlock { header, txn: pmt };
+    let pmt = core::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
+    let mb = core::merkle_tree::MerkleBlock { header, txn: pmt };
     Ok(serialize(&mb))
 }
 fn parse_bloom_filter(
     bloom_filter: &dapi_grpc::core::v0::BloomFilter,
-) -> Result<dashcore_rpc::dashcore::bloom::BloomFilter, Status> {
+) -> Result<
+    (
+        dashcore_rpc::dashcore::bloom::BloomFilter,
+        dashcore_rpc::dashcore::bloom::BloomFlags,
+    ),
+    Status,
+> {
     trace!(
         n_hash_funcs = bloom_filter.n_hash_funcs,
         n_tweak = bloom_filter.n_tweak,
@@ -465,5 +521,5 @@ fn parse_bloom_filter(
     )
     .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
 
-    Ok(core_filter)
+    Ok((core_filter, flags))
 }
