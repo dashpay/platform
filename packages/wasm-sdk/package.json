@@ -24,10 +24,8 @@
     "node": ">=18.18"
   },
   "scripts": {
-    "build:dev": "./scripts/build.sh && node ./scripts/bundle.cjs",
+    "build": "./scripts/build.sh && node ./scripts/bundle.cjs",
     "build:release": "./scripts/build-optimized.sh && node ./scripts/bundle.cjs",
-    "build": "yarn build:dev",
-    "prepack": "yarn build:release",
     "test": "yarn run test:unit && yarn run test:functional",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
     "test:functional": "mocha tests/functional/**/*.spec.mjs && karma start ./tests/karma/karma.functional.conf.cjs --single-run",
