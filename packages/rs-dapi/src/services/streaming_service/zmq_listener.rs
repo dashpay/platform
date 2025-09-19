@@ -248,19 +248,17 @@ pub struct ZmqListener {
     zmq_uri: String,
     topics: ZmqTopics,
     event_sender: broadcast::Sender<ZmqEvent>,
-    _event_receiver: broadcast::Receiver<ZmqEvent>,
     cancel: CancellationToken,
 }
 
 impl ZmqListener {
     pub fn new(zmq_uri: &str) -> DAPIResult<Self> {
-        let (event_sender, event_receiver) = broadcast::channel(1000);
+        let (event_sender, _event_receiver) = broadcast::channel(1000);
 
         let mut instance = Self {
             zmq_uri: zmq_uri.to_string(),
             topics: ZmqTopics::default(),
             event_sender,
-            _event_receiver: event_receiver,
             cancel: CancellationToken::new(),
         };
         instance.connect()?;
@@ -305,12 +303,6 @@ impl ZmqListener {
             // We don't want to cancel parent task by mistake
             let cancel = cancel_parent.child_token();
 
-            if sender.receiver_count() == 0 {
-                warn!("No receivers for ZMQ events, stopping listener");
-                return Err(DapiError::ClientGone(
-                    "No receivers for ZMQ events".to_string(),
-                ));
-            }
             // Try to establish connection
             match ZmqConnection::new(&zmq_uri, &topics, Duration::from_secs(5), cancel).await {
                 Ok(mut connection) => {
@@ -369,7 +361,7 @@ impl ZmqListener {
                     if let Some(event) = Self::parse_zmq_message(frames) {
                         tracing::trace!(?event, "Received ZMQ event");
                         if let Err(e) = sender.send(event) {
-                            warn!("Failed to send ZMQ event: {}", e);
+                            tracing::trace!("Cannot send ZMQ event, dropping: {}", e);
                         }
                     }
                 }

@@ -269,21 +269,31 @@ impl SubscriberManager {
 
     fn event_matches_filter(filter: &FilterType, event: &StreamingEvent) -> bool {
         use StreamingEvent::*;
+
         let matched = match (filter, event) {
             (FilterType::PlatformAllTxs, PlatformTx { .. }) => true,
+            (FilterType::PlatformAllTxs, _) => false,
             (FilterType::PlatformTxId(id), PlatformTx { event }) => &event.hash == id,
+            (FilterType::PlatformTxId(_), _) => false,
             (FilterType::PlatformAllBlocks, PlatformBlock { .. }) => true,
+            (FilterType::PlatformAllBlocks, _) => false,
             (FilterType::CoreNewBlockHash, CoreNewBlockHash { .. }) => true,
+            (FilterType::CoreNewBlockHash, _) => false,
             (FilterType::CoreAllBlocks, CoreRawBlock { .. }) => true,
-            (FilterType::CoreAllBlocks, CoreChainLock { .. }) => true,
+            (FilterType::CoreAllBlocks, _) => false,
             (FilterType::CoreBloomFilter(_, _), CoreRawTransaction { data }) => {
                 Self::core_tx_matches_filter(filter, data)
             }
             (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
             (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), _) => false,
             (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
+            (FilterType::CoreAllMasternodes, _) => false,
             (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
-            _ => false,
+            (FilterType::CoreChainLocks, _) => false,
+            (FilterType::CoreAllTxs, CoreRawTransaction { .. }) => true,
+            (FilterType::CoreAllTxs, _) => false,
+            // no default by purpose to fail build on new variants
         };
         trace!(filter = ?filter, event = ?event, matched, "subscription_manager=filter_evaluated");
         matched
