@@ -6,7 +6,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace, warn};
 
 use crate::services::streaming_service::StreamingServiceImpl;
 use crate::services::streaming_service::bloom::bloom_flags_from_int;
@@ -103,14 +103,16 @@ impl StreamingServiceImpl {
         let tx_live = tx.clone();
         tokio::spawn(async move {
             trace!(
-                subscriber_id = tx_subscription_handle.id(),
+                tx_subscriber_id = tx_subscription_handle.id(),
+                merkle_block_subscriber_id = merkle_block_subscription_handle.id(),
                 "transactions_with_proofs=worker_started"
             );
             loop {
+                // receive in order, as we want merkle blocks first
                 let (received, sub_id) = tokio::select! {
                     biased;
+                    msg = merkle_block_subscription_handle.recv() => (msg, merkle_block_subscription_handle.id()),
                     msg = tx_subscription_handle.recv() => (msg, tx_subscription_handle.id()),
-                    msg  = merkle_block_subscription_handle.recv() => (msg, merkle_block_subscription_handle.id()),
                 };
 
                 if let Some(message) = received {
