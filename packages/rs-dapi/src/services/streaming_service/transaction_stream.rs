@@ -74,65 +74,80 @@ impl StreamingServiceImpl {
         }
 
         // Add subscription to manager for live updates (subscribe first to avoid races)
-        let subscription_handle = self
+        let tx_subscription_handle = self
             .subscriber_manager
             .add_subscription(filter.clone())
             .await;
-        let subscriber_id = subscription_handle.id().to_string();
+        let subscriber_id = tx_subscription_handle.id().to_string();
         debug!(
             subscriber_id,
             "transactions_with_proofs=subscription_created"
         );
-
-        info!(
+        debug!(
             "Started transaction subscription: {}",
-            subscription_handle.id()
+            tx_subscription_handle.id()
+        );
+
+        let merkle_block_subscription_handle = self
+            .subscriber_manager
+            .add_subscription(FilterType::CoreAllBlocks)
+            .await;
+
+        debug!(
+            subscriber_id = merkle_block_subscription_handle.id(),
+            "transactions_with_proofs=merkle_subscription_created"
         );
 
         // Spawn task to convert internal messages to gRPC responses
-        let sub_handle = subscription_handle.clone();
         let live_filter = filter.clone();
         let tx_live = tx.clone();
         tokio::spawn(async move {
             trace!(
-                subscriber_id = sub_handle.id(),
+                subscriber_id = tx_subscription_handle.id(),
                 "transactions_with_proofs=worker_started"
             );
-            while let Some(message) = sub_handle.recv().await {
-                let response = match message {
-                    StreamingEvent::CoreRawTransaction { data: tx_data } => {
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            payload_size = tx_data.len(),
-                            "transactions_with_proofs=forward_raw_transaction"
-                        );
-                        let raw_transactions = RawTransactions {
-                            transactions: vec![tx_data],
-                        };
+            loop {
+                let (received, sub_id) = tokio::select! {
+                    biased;
+                    msg = tx_subscription_handle.recv() => (msg, tx_subscription_handle.id()),
+                    msg  = merkle_block_subscription_handle.recv() => (msg, merkle_block_subscription_handle.id()),
+                };
 
-                        let response = TransactionsWithProofsResponse {
+                if let Some(message) = received {
+                    let response = match message {
+                        StreamingEvent::CoreRawTransaction { data: tx_data } => {
+                            trace!(
+                                subscriber_id = sub_id,
+                                payload_size = tx_data.len(),
+                                "transactions_with_proofs=forward_raw_transaction"
+                            );
+                            let raw_transactions = RawTransactions {
+                                transactions: vec![tx_data],
+                            };
+
+                            let response = TransactionsWithProofsResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::transactions_with_proofs_response::Responses::RawTransactions(raw_transactions),
                             ),
                         };
 
-                        Ok(response)
-                    }
-                    StreamingEvent::CoreRawBlock { data } => {
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            payload_size = data.len(),
-                            "transactions_with_proofs=forward_merkle_block"
-                        );
-                        // Build merkle block using subscriber's filter
-                        let resp = match &live_filter {
+                            Ok(response)
+                        }
+                        StreamingEvent::CoreRawBlock { data } => {
+                            trace!(
+                                subscriber_id = sub_id,
+                                payload_size = data.len(),
+                                "transactions_with_proofs=forward_merkle_block"
+                            );
+                            // Build merkle block using subscriber's filter
+                            let resp = match &live_filter {
                             FilterType::CoreAllTxs => {
                                 // All transactions match: construct match flags accordingly
                                 if let Ok(block) = dashcore_rpc::dashcore::consensus::encode::deserialize::<dashcore_rpc::dashcore::Block>(&data) {
                                     let match_flags = vec![true; block.txdata.len()];
                                     let mb = build_merkle_block_bytes(&block, &match_flags)
                                         .unwrap_or_else(|e| {
-                                            warn!(subscriber_id = sub_handle.id(), error = %e, "live_merkle_build_failed_fallback_raw_block");
+                                            warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
                                             dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                                         });
                                     TransactionsWithProofsResponse {
@@ -158,7 +173,7 @@ impl StreamingServiceImpl {
                                     }
                                     let mb = build_merkle_block_bytes(&block, &match_flags)
                                         .unwrap_or_else(|e| {
-                                            warn!(subscriber_id = sub_handle.id(), error = %e, "live_merkle_build_failed_fallback_raw_block");
+                                            warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
                                             dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                                         });
                                     TransactionsWithProofsResponse {
@@ -181,50 +196,48 @@ impl StreamingServiceImpl {
                             },
                         };
 
-                        Ok(resp)
-                    }
-                    StreamingEvent::CoreInstantLock { data } => {
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            payload_size = data.len(),
-                            "transactions_with_proofs=forward_instant_lock"
-                        );
-                        let instant_lock_messages = InstantSendLockMessages {
-                            messages: vec![data],
-                        };
+                            Ok(resp)
+                        }
+                        StreamingEvent::CoreInstantLock { data } => {
+                            trace!(
+                                subscriber_id = sub_id,
+                                payload_size = data.len(),
+                                "transactions_with_proofs=forward_instant_lock"
+                            );
+                            let instant_lock_messages = InstantSendLockMessages {
+                                messages: vec![data],
+                            };
 
-                        let response = TransactionsWithProofsResponse {
+                            let response = TransactionsWithProofsResponse {
                             responses: Some(
                                 dapi_grpc::core::v0::transactions_with_proofs_response::Responses::InstantSendLockMessages(instant_lock_messages),
                             ),
                         };
 
-                        Ok(response)
-                    }
-                    _ => {
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            event = ?message,
-                            "transactions_with_proofs=ignore_event"
-                        );
-                        // Ignore other message types for this subscription
-                        continue;
-                    }
-                };
+                            Ok(response)
+                        }
+                        _ => {
+                            trace!(
+                                subscriber_id = sub_id,
+                                event = ?message,
+                                "transactions_with_proofs=ignore_event"
+                            );
+                            // Ignore other message types for this subscription
+                            continue;
+                        }
+                    };
 
-                if tx_live.send(response).is_err() {
-                    debug!(
-                        subscriber_id = sub_handle.id(),
-                        "transactions_with_proofs=client_disconnected"
-                    );
-                    break;
+                    if tx_live.send(response).is_err() {
+                        debug!(
+                            subscriber_id = sub_id,
+                            "transactions_with_proofs=client_disconnected"
+                        );
+                        break;
+                    }
                 }
             }
             // Drop of the handle will remove the subscription automatically
-            info!(
-                subscriber_id = sub_handle.id(),
-                "transactions_with_proofs=worker_finished"
-            );
+            debug!("transactions_with_proofs=worker_finished");
         });
 
         // After subscribing, backfill historical up to the current tip (if requested via from_block)
