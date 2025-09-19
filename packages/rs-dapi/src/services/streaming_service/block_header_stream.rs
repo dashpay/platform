@@ -75,10 +75,22 @@ impl StreamingServiceImpl {
         let subscriber_id = sub_handle.id().to_string();
         debug!(subscriber_id, "block_headers=subscription_created");
 
+        let chainlock_handle = self
+            .subscriber_manager
+            .add_subscription(FilterType::CoreChainLocks)
+            .await;
+        debug!(
+            subscriber_id = chainlock_handle.id(),
+            "block_headers=chainlock_subscription_created"
+        );
+
         // Spawn task to convert internal messages to gRPC responses
         let tx_live = tx.clone();
         tokio::spawn(async move {
-            while let Some(message) = sub_handle.recv().await {
+            while let Some(message) = tokio::select! {
+                m = sub_handle.recv() => m,
+                m = chainlock_handle.recv() => m,
+            } {
                 let response = match message {
                     StreamingEvent::CoreRawBlock { data } => {
                         trace!(
