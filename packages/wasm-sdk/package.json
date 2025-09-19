@@ -9,6 +9,10 @@
       "types": "./dist/sdk.d.ts",
       "import": "./dist/sdk.js"
     },
+    "./compressed": {
+      "types": "./dist/sdk.d.ts",
+      "import": "./dist/sdk.compressed.js"
+    },
     "./raw": {
       "types": "./dist/raw/wasm_sdk.d.ts",
       "import": "./dist/raw/wasm_sdk.js"

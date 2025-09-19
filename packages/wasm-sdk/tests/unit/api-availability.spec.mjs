@@ -1,4 +1,4 @@
-import init, * as sdk from '../../dist/sdk.js';
+import init, * as sdk from '../../dist/sdk.compressed.js';
 
 describe('API availability (exports and methods)', () => {
   before(async () => {

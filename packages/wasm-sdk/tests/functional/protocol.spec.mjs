@@ -1,4 +1,4 @@
-import init, * as sdk from '../../dist/sdk.js';
+import init, * as sdk from '../../dist/sdk.compressed.js';
 
 describe('Protocol versions', function describeProtocolVersions() {
   this.timeout(60000);

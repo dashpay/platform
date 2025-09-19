@@ -1,4 +1,4 @@
-import init, * as sdk from '../../dist/sdk.js';
+import init, * as sdk from '../../dist/sdk.compressed.js';
 
 describe('Identity queries', function describeBlock() {
   this.timeout(90000);

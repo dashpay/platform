@@ -12,6 +12,7 @@
     "resolveJsonModule": true,
     "baseUrl": ".",
     "paths": {
+      "@dashevo/wasm-sdk/compressed": ["../wasm-sdk/dist/sdk.d.ts"],
       "@dashevo/wasm-sdk": ["../wasm-sdk/dist/sdk.d.ts"],
       "@dashevo/wasm-sdk/*": ["../wasm-sdk/dist/*"]
     }

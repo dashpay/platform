@@ -29,7 +29,7 @@ const esm = {
   experiments: { outputModule: true },
   output: {
     path: path.resolve(__dirname, 'dist'),
-    filename: 'sdk.js',
+    filename: 'evo-sdk.module.js',
     library: { type: 'module' },
     module: true,
   },
