@@ -1,7 +1,10 @@
 [package]
 name = "wasm-sdk"
+version = "2.0.0"
 edition = "2021"
 publish = false
+rust-version.workspace = true
+
 [lib]
 crate-type = ["cdylib"]
 
@@ -42,6 +45,7 @@ wasm-bindgen = { version = "=0.2.100" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
+tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "registry"] }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
@@ -71,3 +75,5 @@ lto = "fat"
 [package.metadata.wasm-pack]
 wasm-opt = false
 
+[package.metadata.cargo-machete]
+ignored = ["wasm-bindgen-futures"]

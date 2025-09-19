@@ -12,6 +12,5 @@ pub mod extended_derivation;
 pub mod key_derivation;
 pub mod key_generation;
 
-pub use extended_derivation::*;
 pub use key_derivation::*;
 pub use key_generation::*;

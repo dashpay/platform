@@ -1,30 +1,22 @@
 use crate::context_provider::WasmContext;
-use dash_sdk::dpp::block::extended_epoch_info::ExtendedEpochInfo;
-use dash_sdk::dpp::dashcore::{Network, PrivateKey};
-use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dash_sdk::dpp::data_contract::DataContractFactory;
-use dash_sdk::dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
-use dash_sdk::dpp::identity::signer::Signer;
-use dash_sdk::dpp::identity::IdentityV0;
-use dash_sdk::dpp::prelude::AssetLockProof;
-use dash_sdk::dpp::serialization::PlatformSerializableWithPlatformVersion;
+use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
-use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
-use dash_sdk::platform::transition::put_identity::PutIdentity;
-use dash_sdk::platform::{DataContract, Document, DocumentQuery, Fetch, Identifier, Identity};
-use dash_sdk::sdk::AddressList;
 use dash_sdk::{Sdk, SdkBuilder};
-use platform_value::platform_value;
 use rs_dapi_client::RequestSettings;
-use serde_json;
-use std::collections::BTreeMap;
-use std::fmt::Debug;
 use std::ops::{Deref, DerefMut};
-use std::str::FromStr;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
-use web_sys::{console, js_sys};
+
+// Store shared trusted contexts
+use once_cell::sync::Lazy;
+use std::sync::Mutex;
+
+pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
+    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
+> = Lazy::new(|| Mutex::new(None));
+pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
+    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
+> = Lazy::new(|| Mutex::new(None));
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -63,63 +55,51 @@ impl WasmSdk {
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
     }
-
-    /// Test serialization of different object types
-    #[wasm_bindgen(js_name = testSerialization)]
-    pub fn test_serialization(&self, test_type: &str) -> Result<JsValue, JsValue> {
-        use serde_wasm_bindgen::to_value;
-
-        match test_type {
-            "simple" => {
-                let simple = serde_json::json!({
-                    "type": "simple",
-                    "value": "test"
-                });
-                to_value(&simple)
-                    .map_err(|e| JsValue::from_str(&format!("Simple serialization failed: {}", e)))
-            }
-            "complex" => {
-                let complex = serde_json::json!({
-                    "type": "complex",
-                    "nested": {
-                        "id": "123",
-                        "number": 42,
-                        "array": [1, 2, 3],
-                        "null_value": null,
-                        "bool_value": true
-                    }
-                });
-                to_value(&complex)
-                    .map_err(|e| JsValue::from_str(&format!("Complex serialization failed: {}", e)))
-            }
-            "document" => {
-                // Simulate the exact structure we're trying to return
-                let doc = serde_json::json!({
-                    "type": "DocumentCreated",
-                    "documentId": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
-                    "document": {
-                        "id": "8kGVyLBpghr4jBG7nJepKzyo3gyhPLitePxNSSGtbTwj",
-                        "ownerId": "5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk",
-                        "dataContractId": "9nzpvjVSStUrhkEs3eNHw2JYpcNoLh1MjmqW45QiyjSa",
-                        "documentType": "post",
-                        "revision": 1,
-                        "createdAt": 1736300191752i64,
-                        "updatedAt": 1736300191752i64,
-                    }
-                });
-                to_value(&doc).map_err(|e| {
-                    JsValue::from_str(&format!("Document serialization failed: {}", e))
-                })
-            }
-            _ => Err(JsValue::from_str("Unknown test type")),
-        }
-    }
 }
 
 impl WasmSdk {
     /// Clone the inner Sdk (not exposed to WASM)
     pub(crate) fn inner_clone(&self) -> Sdk {
         self.0.clone()
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
+    pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let trusted_context = WasmTrustedContext::new_mainnet()
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        trusted_context
+            .prefetch_quorums()
+            .await
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        // Store the context for later use
+        *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
+    pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let trusted_context = WasmTrustedContext::new_testnet()
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        trusted_context
+            .prefetch_quorums()
+            .await
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        // Store the context for later use
+        *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+
+        Ok(())
     }
 }
 
@@ -146,6 +126,8 @@ impl WasmSdkBuilder {
     pub fn get_latest_version_number() -> u32 {
         PlatformVersion::latest().protocol_version
     }
+
+    #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
         // Mainnet addresses from mnowatch.org
         let mainnet_addresses = vec![
@@ -369,7 +351,8 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    pub fn new_mainnet_trusted() -> Result<Self, JsError> {
+    #[wasm_bindgen(js_name = "mainnetTrusted")]
+    pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
         // Use the cached context if available, otherwise create a new one
@@ -379,9 +362,8 @@ impl WasmSdkBuilder {
         }
         .map(Ok)
         .unwrap_or_else(|| {
-            WasmTrustedContext::new_mainnet().map_err(|e| {
-                JsError::new(&format!("Failed to create mainnet trusted context: {}", e))
-            })
+            WasmTrustedContext::new_mainnet()
+                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
 
         // Mainnet addresses from mnowatch.org
@@ -606,6 +588,7 @@ impl WasmSdkBuilder {
         Ok(Self(sdk_builder))
     }
 
+    #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
         // Using HTTPS endpoints for ENABLED nodes with successful version checks
@@ -628,7 +611,8 @@ impl WasmSdkBuilder {
         Self(sdk_builder)
     }
 
-    pub fn new_testnet_trusted() -> Result<Self, JsError> {
+    #[wasm_bindgen(js_name = "testnetTrusted")]
+    pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
 
         // Use the cached context if available, otherwise create a new one
@@ -638,9 +622,8 @@ impl WasmSdkBuilder {
         }
         .map(Ok)
         .unwrap_or_else(|| {
-            WasmTrustedContext::new_testnet().map_err(|e| {
-                JsError::new(&format!("Failed to create testnet trusted context: {}", e))
-            })
+            WasmTrustedContext::new_testnet()
+                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
 
         // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
@@ -664,10 +647,11 @@ impl WasmSdkBuilder {
         Ok(Self(sdk_builder))
     }
 
-    pub fn build(self) -> Result<WasmSdk, JsError> {
-        Ok(WasmSdk(self.0.build()?))
+    pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
+        self.0.build().map(WasmSdk).map_err(WasmSdkError::from)
     }
 
+    #[wasm_bindgen(js_name = "withContextProvider")]
     pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
@@ -680,9 +664,10 @@ impl WasmSdkBuilder {
     /// - ... up to latest version
     ///
     /// Defaults to latest version if not specified.
-    pub fn with_version(self, version_number: u32) -> Result<Self, JsError> {
+    #[wasm_bindgen(js_name = "withVersion")]
+    pub fn with_version(self, version_number: u32) -> Result<Self, WasmSdkError> {
         let version = PlatformVersion::get(version_number).map_err(|e| {
-            JsError::new(&format!(
+            WasmSdkError::invalid_argument(format!(
                 "Invalid platform version {}: {}",
                 version_number, e
             ))
@@ -698,6 +683,7 @@ impl WasmSdkBuilder {
     /// - timeout_ms: Timeout for single request (in milliseconds)
     /// - retries: Number of retries in case of failed requests
     /// - ban_failed_address: Whether to ban DAPI address if node not responded or responded with error
+    #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
         connect_timeout_ms: Option<u32>,
@@ -726,153 +712,31 @@ impl WasmSdkBuilder {
         WasmSdkBuilder(self.0.with_settings(settings))
     }
 
-    // TODO: Add with_proofs method when it's available in the SDK builder
-    // pub fn with_proofs(self, enable_proofs: bool) -> Self {
-    //     WasmSdkBuilder(self.0.with_proofs(enable_proofs))
-    // }
-}
-
-// Store shared trusted contexts
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-
-pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
-    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
-> = Lazy::new(|| Mutex::new(None));
-pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
-    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
-> = Lazy::new(|| Mutex::new(None));
-
-#[wasm_bindgen]
-pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), JsError> {
-    use crate::context_provider::WasmTrustedContext;
-
-    let trusted_context = WasmTrustedContext::new_mainnet()
-        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
-
-    trusted_context
-        .prefetch_quorums()
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
-
-    // Store the context for later use
-    *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-    Ok(())
-}
-
-#[wasm_bindgen]
-pub async fn prefetch_trusted_quorums_testnet() -> Result<(), JsError> {
-    use crate::context_provider::WasmTrustedContext;
-
-    let trusted_context = WasmTrustedContext::new_testnet()
-        .map_err(|e| JsError::new(&format!("Failed to create trusted context: {}", e)))?;
-
-    trusted_context
-        .prefetch_quorums()
-        .await
-        .map_err(|e| JsError::new(&format!("Failed to prefetch quorums: {}", e)))?;
-
-    // Store the context for later use
-    *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
-    Ok(())
-}
-
-// Query functions have been moved to src/queries/ modules
-
-#[wasm_bindgen]
-pub async fn identity_put(sdk: &WasmSdk) {
-    // This is just a mock implementation to show how to use the SDK and ensure proper linking
-    // of all required dependencies. This function is not supposed to work.
-    let id = Identifier::from_bytes(&[0; 32]).expect("create identifier");
-
-    let identity = Identity::V0(IdentityV0 {
-        id,
-        public_keys: BTreeMap::new(),
-        balance: 0,
-        revision: 0,
-    });
-
-    let asset_lock_proof = AssetLockProof::default();
-    let asset_lock_proof_private_key =
-        PrivateKey::from_byte_array(&[0; 32], Network::Testnet).expect("create private key");
-
-    let signer = MockSigner;
-    let _pushed: Identity = identity
-        .put_to_platform(
-            sdk,
-            asset_lock_proof,
-            &asset_lock_proof_private_key,
-            &signer,
-            None,
-        )
-        .await
-        .expect("put identity")
-        .broadcast_and_wait(sdk, None)
-        .await
-        .unwrap();
-}
-
-#[wasm_bindgen]
-pub async fn epoch_testing() {
-    let sdk = SdkBuilder::new(AddressList::new())
-        .build()
-        .expect("build sdk");
-
-    let _ei = ExtendedEpochInfo::fetch(&sdk, 0)
-        .await
-        .expect("fetch extended epoch info")
-        .expect("extended epoch info not found");
-}
-
-#[wasm_bindgen]
-pub async fn docs_testing(sdk: &WasmSdk) {
-    let id = Identifier::random();
-
-    let factory = DataContractFactory::new(1).expect("create data contract factory");
-    factory
-        .create(id, 1, platform_value!({}), None, None)
-        .expect("create data contract");
-
-    let dc = DataContract::fetch(sdk, id)
-        .await
-        .expect("fetch data contract")
-        .expect("data contract not found");
-
-    let dcs = dc
-        .serialize_to_bytes_with_platform_version(sdk.0.version())
-        .expect("serialize data contract");
-
-    let query = DocumentQuery::new(dc.clone(), "asd").expect("create query");
-    let doc = Document::fetch(sdk, query)
-        .await
-        .expect("fetch document")
-        .expect("document not found");
-
-    let document_type = dc
-        .document_type_for_name("aaa")
-        .expect("document type for name");
-    let doc_serialized = doc
-        .serialize(document_type, &dc, sdk.0.version())
-        .expect("serialize document");
-
-    let msg = js_sys::JsString::from_str(&format!("{:?} {:?} ", dcs, doc_serialized))
-        .expect("create js string");
-    console::log_1(&msg);
-}
-
-#[derive(Clone, Debug)]
-struct MockSigner;
-impl Signer for MockSigner {
-    fn can_sign_with(&self, _identity_public_key: &dash_sdk::platform::IdentityPublicKey) -> bool {
-        true
+    #[wasm_bindgen(js_name = "withProofs")]
+    pub fn with_proofs(self, enable_proofs: bool) -> Self {
+        WasmSdkBuilder(self.0.with_proofs(enable_proofs))
     }
-    fn sign(
-        &self,
-        _identity_public_key: &dash_sdk::platform::IdentityPublicKey,
-        _data: &[u8],
-    ) -> Result<dash_sdk::dpp::platform_value::BinaryData, dash_sdk::dpp::ProtocolError> {
-        todo!("signature creation is not implemented due to lack of dash platform wallet support in wasm")
+}
+
+#[wasm_bindgen]
+impl WasmSdk {
+    /// Configure tracing/logging level or filter (static, global)
+    ///
+    /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
+    /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
+    #[wasm_bindgen(js_name = "setLogLevel")]
+    pub fn set_log_level(level_or_filter: &str) -> Result<(), WasmSdkError> {
+        crate::logging::set_log_level(level_or_filter)
+    }
+}
+
+#[wasm_bindgen]
+impl WasmSdkBuilder {
+    /// Configure tracing/logging via the builder
+    /// Returns a new builder with logging configured
+    #[wasm_bindgen(js_name = "withLogs")]
+    pub fn with_logs(self, level_or_filter: &str) -> Result<Self, WasmSdkError> {
+        crate::logging::set_log_level(level_or_filter)?;
+        Ok(self)
     }
 }

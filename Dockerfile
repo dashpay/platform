@@ -397,6 +397,7 @@ COPY --parents \
     packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -485,6 +486,7 @@ COPY --parents \
     packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
     /platform/
 
 RUN mkdir /artifacts
