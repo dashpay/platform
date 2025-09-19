@@ -42,8 +42,8 @@ use dpp::state_transition::batch_transition::document_base_transition::v0::v0_me
 use dpp::state_transition::batch_transition::document_replace_transition::v0::v0_methods::DocumentReplaceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_transfer_transition::v0::v0_methods::DocumentTransferTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
-use crate::query::{InternalClauses, ValueClause, WhereOperator};
-use crate::error::{query::QuerySyntaxError, Error};
+use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
+use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
 
 /// Filter used to match document transitions for subscriptions.
@@ -432,55 +432,49 @@ impl DriveDocumentQueryFilter<'_> {
     ///
     /// In addition to these validations, the subscription host should check the contract's existence.
     #[cfg(any(feature = "server", feature = "verify"))]
-    pub fn validate(&self) -> Result<(), crate::error::Error> {
+    pub fn validate(&self) -> QuerySyntaxSimpleValidationResult {
         // Ensure the document type exists
-        let document_type = self
+        let Some(document_type) = self
             .contract
-            .document_type_for_name(&self.document_type_name)
-            .map_err(|_| {
-                Error::Query(QuerySyntaxError::DocumentTypeNotFound(
-                    "unknown document type",
-                ))
-            })?;
+            .document_type_optional_for_name(&self.document_type_name)
+        else {
+            return QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::DocumentTypeNotFound("unknown document type"),
+            );
+        };
 
         match &self.action_clauses {
             DocumentActionMatchClauses::Create {
                 new_document_clauses,
-            } => new_document_clauses.validate_against_schema(document_type)?,
+            } => new_document_clauses.validate_against_schema(document_type),
             DocumentActionMatchClauses::Replace {
                 original_document_clauses,
                 new_document_clauses,
             } => {
-                if original_document_clauses.is_empty() && new_document_clauses.is_empty() {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "replace requires at least one of original/new clauses",
-                        ),
-                    ));
-                }
                 if !original_document_clauses.is_empty() {
-                    original_document_clauses.validate_against_schema(document_type)?;
+                    let result = original_document_clauses.validate_against_schema(document_type);
+                    if result.is_err() {
+                        return result;
+                    }
                 }
                 if !new_document_clauses.is_empty() {
-                    new_document_clauses.validate_against_schema(document_type)?;
+                    new_document_clauses.validate_against_schema(document_type)
+                } else {
+                    QuerySyntaxSimpleValidationResult::new()
                 }
             }
             DocumentActionMatchClauses::Delete {
                 original_document_clauses,
-            } => original_document_clauses.validate_against_schema(document_type)?,
+            } => original_document_clauses.validate_against_schema(document_type),
             DocumentActionMatchClauses::Transfer {
                 original_document_clauses,
                 owner_clause,
             } => {
-                if original_document_clauses.is_empty() && owner_clause.is_none() {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "transfer requires original clauses or owner clause",
-                        ),
-                    ));
-                }
                 if !original_document_clauses.is_empty() {
-                    original_document_clauses.validate_against_schema(document_type)?;
+                    let result = original_document_clauses.validate_against_schema(document_type);
+                    if result.is_err() {
+                        return result;
+                    }
                 }
                 if let Some(owner) = owner_clause {
                     let ok = match owner.operator {
@@ -493,26 +487,26 @@ impl DriveDocumentQueryFilter<'_> {
                         },
                         _ => false,
                     };
-                    if !ok {
-                        return Err(Error::Query(
+                    if ok {
+                        QuerySyntaxSimpleValidationResult::new()
+                    } else {
+                        QuerySyntaxSimpleValidationResult::new_with_error(
                             QuerySyntaxError::InvalidWhereClauseComponents("invalid owner clause"),
-                        ));
+                        )
                     }
+                } else {
+                    QuerySyntaxSimpleValidationResult::new()
                 }
             }
             DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses,
                 price_clause,
             } => {
-                if original_document_clauses.is_empty() && price_clause.is_none() {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "updatePrice requires original clauses or price clause",
-                        ),
-                    ));
-                }
                 if !original_document_clauses.is_empty() {
-                    original_document_clauses.validate_against_schema(document_type)?;
+                    let result = original_document_clauses.validate_against_schema(document_type);
+                    if result.is_err() {
+                        return result;
+                    }
                 }
                 if let Some(price) = price_clause {
                     let ok = match price.operator {
@@ -520,78 +514,48 @@ impl DriveDocumentQueryFilter<'_> {
                         | WhereOperator::GreaterThan
                         | WhereOperator::GreaterThanOrEquals
                         | WhereOperator::LessThan
-                        | WhereOperator::LessThanOrEquals => matches!(
-                            price.value,
-                            Value::U64(_)
-                                | Value::I64(_)
-                                | Value::U32(_)
-                                | Value::I32(_)
-                                | Value::U16(_)
-                                | Value::I16(_)
-                                | Value::U8(_)
-                                | Value::I8(_)
-                        ),
+                        | WhereOperator::LessThanOrEquals => {
+                            price.value.is_integer_can_fit_64_bytes()
+                        }
                         WhereOperator::Between
                         | WhereOperator::BetweenExcludeBounds
                         | WhereOperator::BetweenExcludeLeft
                         | WhereOperator::BetweenExcludeRight => match &price.value {
                             Value::Array(arr) => {
                                 arr.len() == 2
-                                    && arr.iter().all(|v| {
-                                        matches!(
-                                            v,
-                                            Value::U64(_)
-                                                | Value::I64(_)
-                                                | Value::U32(_)
-                                                | Value::I32(_)
-                                                | Value::U16(_)
-                                                | Value::I16(_)
-                                                | Value::U8(_)
-                                                | Value::I8(_)
-                                        )
-                                    })
-                                    && arr[0] <= arr[1]
+                                    && arr.iter().all(|v| v.is_integer_can_fit_64_bytes())
+                                    && arr[0] < arr[1]
                             }
                             _ => false,
                         },
                         WhereOperator::In => match &price.value {
-                            Value::Array(arr) => arr.iter().all(|v| {
-                                matches!(
-                                    v,
-                                    Value::U64(_)
-                                        | Value::I64(_)
-                                        | Value::U32(_)
-                                        | Value::I32(_)
-                                        | Value::U16(_)
-                                        | Value::I16(_)
-                                        | Value::U8(_)
-                                        | Value::I8(_)
-                                )
-                            }),
+                            Value::Array(arr) => {
+                                arr.iter().all(|v| v.is_integer_can_fit_64_bytes())
+                            }
                             _ => false,
                         },
                         WhereOperator::StartsWith => false,
                     };
-                    if !ok {
-                        return Err(Error::Query(
+                    if ok {
+                        QuerySyntaxSimpleValidationResult::new()
+                    } else {
+                        QuerySyntaxSimpleValidationResult::new_with_error(
                             QuerySyntaxError::InvalidWhereClauseComponents("invalid price clause"),
-                        ));
+                        )
                     }
+                } else {
+                    QuerySyntaxSimpleValidationResult::new()
                 }
             }
             DocumentActionMatchClauses::Purchase {
                 original_document_clauses,
                 owner_clause,
             } => {
-                if original_document_clauses.is_empty() && owner_clause.is_none() {
-                    return Err(Error::Query(
-                        QuerySyntaxError::InvalidWhereClauseComponents(
-                            "purchase requires original clauses or owner clause",
-                        ),
-                    ));
-                }
                 if !original_document_clauses.is_empty() {
-                    original_document_clauses.validate_against_schema(document_type)?;
+                    let result = original_document_clauses.validate_against_schema(document_type);
+                    if result.is_err() {
+                        return result;
+                    }
                 }
                 if let Some(owner) = owner_clause {
                     let ok = match owner.operator {
@@ -604,15 +568,18 @@ impl DriveDocumentQueryFilter<'_> {
                         },
                         _ => false,
                     };
-                    if !ok {
-                        return Err(Error::Query(
+                    if ok {
+                        QuerySyntaxSimpleValidationResult::new()
+                    } else {
+                        QuerySyntaxSimpleValidationResult::new_with_error(
                             QuerySyntaxError::InvalidWhereClauseComponents("invalid owner clause"),
-                        ));
+                        )
                     }
+                } else {
+                    QuerySyntaxSimpleValidationResult::new()
                 }
             }
         }
-        Ok(())
     }
 }
 
@@ -958,7 +925,7 @@ mod tests {
                 },
             },
         };
-        assert!(filter.validate().is_ok());
+        assert!(filter.validate().is_valid());
 
         // Transfer with none/none -> invalid
         let filter = DriveDocumentQueryFilter {
@@ -983,7 +950,7 @@ mod tests {
                 }),
             },
         };
-        assert!(filter.validate().is_ok());
+        assert!(filter.validate().is_valid());
 
         // UpdatePrice with none/none -> invalid
         let filter = DriveDocumentQueryFilter {
@@ -1008,7 +975,7 @@ mod tests {
                 }),
             },
         };
-        assert!(filter.validate().is_ok());
+        assert!(filter.validate().is_valid());
 
         // Purchase with none/none -> invalid
         let filter = DriveDocumentQueryFilter {
@@ -1033,7 +1000,7 @@ mod tests {
                 }),
             },
         };
-        assert!(filter.validate().is_ok());
+        assert!(filter.validate().is_valid());
     }
 
     #[test]
@@ -1530,7 +1497,7 @@ mod tests {
         };
 
         assert!(
-            valid_filter.validate().is_ok(),
+            valid_filter.validate().is_valid(),
             "Filter with indexed field should be valid"
         );
 
@@ -1557,7 +1524,7 @@ mod tests {
         };
 
         assert!(
-            invalid_filter.validate().is_ok(),
+            invalid_filter.validate().is_valid(),
             "Structural validate should ignore indexes"
         );
         // Index-aware validation removed; structural validation suffices for subscriptions.
@@ -1579,7 +1546,7 @@ mod tests {
         };
 
         assert!(
-            primary_key_filter.validate().is_ok(),
+            primary_key_filter.validate().is_valid(),
             "Filter with only primary key should be valid"
         );
     }

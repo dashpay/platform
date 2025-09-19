@@ -148,6 +148,37 @@ impl Value {
         )
     }
 
+    /// Returns true if the `Value` is an integer that fits in 64 bits (u64/i64).
+    /// Returns false otherwise.
+    ///
+    /// ```
+    /// # use platform_value::Value;
+    /// #
+    /// let value = Value::U128(17);
+    ///
+    /// assert!(value.is_integer_can_fit_64_bytes());
+    /// ```
+    pub fn is_integer_can_fit_64_bytes(&self) -> bool {
+        match self {
+            // Already ≤ 64-bit widths
+            Value::U64(_)
+            | Value::I64(_)
+            | Value::U32(_)
+            | Value::I32(_)
+            | Value::U16(_)
+            | Value::I16(_)
+            | Value::U8(_)
+            | Value::I8(_) => true,
+
+            // 128-bit -> check if within 64-bit range
+            Value::U128(v) => *v <= u64::MAX as u128,
+            Value::I128(v) => (*v >= i64::MIN as i128) && (*v <= i64::MAX as i128),
+
+            // Non-integer variants
+            _ => false,
+        }
+    }
+
     /// If the `Value` is a `Integer`, returns a reference to the associated `Integer` data.
     /// Returns None otherwise.
     ///
