@@ -10,6 +10,12 @@ set -euo pipefail
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# If building with release profile, use the optimized build script
+if [ "${CARGO_BUILD_PROFILE:-}" = "release" ]; then
+    # exec replaces the current shell process; the script will not continue after this.
+    exec "$SCRIPT_DIR/build-optimized.sh"
+fi
+
 # Determine optimization level based on environment
 OPT_LEVEL="full"
 if [ "${CARGO_BUILD_PROFILE:-}" = "dev" ] || [ "${CI:-}" != "true" ]; then
