@@ -218,20 +218,6 @@ impl StreamingServiceImpl {
 
                             Ok(response)
                         }
-                        StreamingEvent::CoreChainLock { data } => {
-                            // Let's also forward chain locks if we get them
-                            trace!(
-                                subscriber_id = sub_id,
-                                "transactions_with_proofs=forward_chain_lock"
-                            );
-                            let response = TransactionsWithProofsResponse {
-                                responses: Some(Responses::RawTransactions(RawTransactions {
-                                    transactions: vec![data],
-                                })),
-                            };
-
-                            Ok(response)
-                        }
                         _ => {
                             trace!(
                                 subscriber_id = sub_id,
