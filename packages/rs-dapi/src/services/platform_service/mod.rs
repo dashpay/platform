@@ -83,7 +83,9 @@ macro_rules! drive_method {
                 metrics::cache_miss(method);
 
                 // Store in cache using inner message
+                tracing::trace!(method, "Caching response");
                 cache.put(key, resp.get_ref()).await;
+                tracing::trace!(method, "Response cached");
 
                 Ok(resp)
             }
