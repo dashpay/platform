@@ -66,6 +66,7 @@ macro_rules! drive_method {
                     .and_then(|d| d.checked_sub(Duration::from_millis(50))); // safety margin
 
                 // Fetch from Drive with optional timeout budget
+                tracing::trace!(method, ?budget, ?request, "Calling Drive method");
                 let drive_call = client.$method_name(request);
                 let resp = if let Some(budget) = budget {
                     match timeout(budget, drive_call).await {
