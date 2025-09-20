@@ -193,7 +193,7 @@ impl WhereOperator {
             Between => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
+                        Some(Ordering::Less) => {
                             left_value >= &bounds[0] && left_value <= &bounds[1]
                         }
                         _ => false,
@@ -204,9 +204,7 @@ impl WhereOperator {
             BetweenExcludeBounds => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            left_value > &bounds[0] && left_value < &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value > &bounds[0] && left_value < &bounds[1],
                         _ => false,
                     }
                 }
@@ -215,9 +213,7 @@ impl WhereOperator {
             BetweenExcludeLeft => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            left_value > &bounds[0] && left_value <= &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value > &bounds[0] && left_value <= &bounds[1],
                         _ => false,
                     }
                 }
@@ -226,9 +222,7 @@ impl WhereOperator {
             BetweenExcludeRight => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            left_value >= &bounds[0] && left_value < &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value >= &bounds[0] && left_value < &bounds[1],
                         _ => false,
                     }
                 }
@@ -1462,11 +1456,11 @@ impl<'a> WhereClause {
                 if let Value::Array(bounds) = &self.value {
                     if bounds.len() == 2 {
                         match bounds[0].partial_cmp(&bounds[1]) {
-                            Some(Ordering::Less) | Some(Ordering::Equal) => {}
+                            Some(Ordering::Less) => {}
                             _ => {
                                 return QuerySyntaxSimpleValidationResult::new_with_error(
                                     QuerySyntaxError::InvalidBetweenClause(
-                                        "when using between operator bounds must be ascending",
+                                        "when using between operator bounds must be strictly ascending",
                                     ),
                                 );
                             }
@@ -1709,7 +1703,8 @@ mod tests {
     use crate::error::query::QuerySyntaxError;
     use crate::query::conditions::WhereClause;
     use crate::query::conditions::{
-        Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals,
+        Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
+        GreaterThanOrEquals, In, LessThan, LessThanOrEquals, ValueClause,
     };
     use crate::query::InternalClauses;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -1986,6 +1981,61 @@ mod tests {
         };
         let res = clause.validate_against_schema(doc_type);
         assert!(res.is_valid());
+    }
+
+    #[test]
+    fn validate_rejects_between_variants_with_equal_bounds() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("uniqueDates")
+            .expect("doc type exists");
+
+        for operator in [
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
+        ] {
+            let clause = WhereClause {
+                field: "$createdAt".to_string(),
+                operator,
+                value: Value::Array(vec![Value::U64(1000), Value::U64(1000)]),
+            };
+
+            let res = clause.validate_against_schema(doc_type);
+            assert!(
+                res.is_err(),
+                "{operator:?} should reject equal bounds during validation"
+            );
+            assert!(matches!(
+                res.first_error(),
+                Some(QuerySyntaxError::InvalidBetweenClause(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn value_clause_between_variants_do_not_match_equal_bounds() {
+        let equal_bounds = Value::Array(vec![Value::U64(1000), Value::U64(1000)]);
+        let value_to_test = Value::U64(1000);
+
+        for operator in [
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
+        ] {
+            let clause = ValueClause {
+                operator,
+                value: equal_bounds.clone(),
+            };
+
+            assert!(
+                !clause.matches_value(&value_to_test),
+                "{operator:?} should not match when bounds are equal"
+            );
+        }
     }
 
     #[test]

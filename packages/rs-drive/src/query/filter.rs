@@ -1642,6 +1642,30 @@ mod tests {
             },
         };
         assert!(filter.validate().is_err());
+
+        // Price Between variants must reject equal bounds
+        for operator in [
+            WhereOperator::Between,
+            WhereOperator::BetweenExcludeBounds,
+            WhereOperator::BetweenExcludeLeft,
+            WhereOperator::BetweenExcludeRight,
+        ] {
+            let filter = DriveDocumentQueryFilter {
+                contract: &contract,
+                document_type_name: "niceDocument".to_string(),
+                action_clauses: DocumentActionMatchClauses::UpdatePrice {
+                    original_document_clauses: InternalClauses::default(),
+                    price_clause: Some(ValueClause {
+                        operator,
+                        value: Value::Array(vec![Value::U64(10), Value::U64(10)]),
+                    }),
+                },
+            };
+            assert!(
+                filter.validate().is_err(),
+                "{operator:?} should reject equal price bounds"
+            );
+        }
     }
 
     #[test]
