@@ -3,6 +3,7 @@
 
 use crate::error::query::QuerySyntaxError;
 use crate::error::Error;
+use crate::query::{QuerySyntaxSimpleValidationResult, QuerySyntaxValidationResult};
 #[cfg(any(feature = "server", feature = "verify"))]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
@@ -164,76 +165,70 @@ impl WhereOperator {
     /// Matches the where operator as a SQL operator and returns it as a proper `WhereOperator`
     pub(crate) fn from_sql_operator(sql_operator: ast::BinaryOperator) -> Option<Self> {
         match sql_operator {
-            ast::BinaryOperator::Eq => Some(WhereOperator::Equal),
-            ast::BinaryOperator::Gt => Some(WhereOperator::GreaterThan),
-            ast::BinaryOperator::GtEq => Some(WhereOperator::GreaterThanOrEquals),
-            ast::BinaryOperator::Lt => Some(WhereOperator::LessThan),
-            ast::BinaryOperator::LtEq => Some(WhereOperator::LessThanOrEquals),
+            ast::BinaryOperator::Eq => Some(Equal),
+            ast::BinaryOperator::Gt => Some(GreaterThan),
+            ast::BinaryOperator::GtEq => Some(GreaterThanOrEquals),
+            ast::BinaryOperator::Lt => Some(LessThan),
+            ast::BinaryOperator::LtEq => Some(LessThanOrEquals),
             _ => None,
         }
     }
 
     /// Shared operator evaluator for both WhereClause and ValueClause
-    pub fn eval(&self, probe: &Value, clause_value: &Value) -> bool {
+    pub fn eval(&self, left_value: &Value, right_value: &Value) -> bool {
         match self {
-            WhereOperator::Equal => probe == clause_value,
-            WhereOperator::GreaterThan => probe > clause_value,
-            WhereOperator::GreaterThanOrEquals => probe >= clause_value,
-            WhereOperator::LessThan => probe < clause_value,
-            WhereOperator::LessThanOrEquals => probe <= clause_value,
-            WhereOperator::In => match clause_value {
-                Value::Array(array) => array.contains(probe),
-                Value::Bytes(bytes) => match probe {
+            Equal => left_value == right_value,
+            GreaterThan => left_value > right_value,
+            GreaterThanOrEquals => left_value >= right_value,
+            LessThan => left_value < right_value,
+            LessThanOrEquals => left_value <= right_value,
+            In => match right_value {
+                Value::Array(array) => array.contains(left_value),
+                Value::Bytes(bytes) => match left_value {
                     Value::U8(b) => bytes.contains(b),
                     _ => false,
                 },
                 _ => false,
             },
-            WhereOperator::Between => match clause_value {
+            Between => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            probe >= &bounds[0] && probe <= &bounds[1]
+                        Some(Ordering::Less) => {
+                            left_value >= &bounds[0] && left_value <= &bounds[1]
                         }
                         _ => false,
                     }
                 }
                 _ => false,
             },
-            WhereOperator::BetweenExcludeBounds => match clause_value {
+            BetweenExcludeBounds => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            probe > &bounds[0] && probe < &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value > &bounds[0] && left_value < &bounds[1],
                         _ => false,
                     }
                 }
                 _ => false,
             },
-            WhereOperator::BetweenExcludeLeft => match clause_value {
+            BetweenExcludeLeft => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            probe > &bounds[0] && probe <= &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value > &bounds[0] && left_value <= &bounds[1],
                         _ => false,
                     }
                 }
                 _ => false,
             },
-            WhereOperator::BetweenExcludeRight => match clause_value {
+            BetweenExcludeRight => match right_value {
                 Value::Array(bounds) if bounds.len() == 2 => {
                     match bounds[0].partial_cmp(&bounds[1]) {
-                        Some(Ordering::Less) | Some(Ordering::Equal) => {
-                            probe >= &bounds[0] && probe < &bounds[1]
-                        }
+                        Some(Ordering::Less) => left_value >= &bounds[0] && left_value < &bounds[1],
                         _ => false,
                     }
                 }
                 _ => false,
             },
-            WhereOperator::StartsWith => match (probe, clause_value) {
+            StartsWith => match (left_value, right_value) {
                 (Value::Text(text), Value::Text(prefix)) => text.starts_with(prefix.as_str()),
                 _ => false,
             },
@@ -244,35 +239,31 @@ impl WhereOperator {
     #[cfg(any(feature = "server", feature = "verify"))]
     pub fn value_shape_ok(&self, value: &Value, property_type: &DocumentPropertyType) -> bool {
         match self {
-            WhereOperator::Equal => true,
-            WhereOperator::In => matches!(value, Value::Array(_) | Value::Bytes(_)),
-            WhereOperator::StartsWith => matches!(value, Value::Text(_)),
-            WhereOperator::GreaterThan
-            | WhereOperator::GreaterThanOrEquals
-            | WhereOperator::LessThan
-            | WhereOperator::LessThanOrEquals => match property_type {
-                DocumentPropertyType::F64 => is_numeric_value(value),
-                DocumentPropertyType::String(_) => {
-                    matches!(value, Value::Text(_))
+            Equal => true,
+            In => matches!(value, Value::Array(_) | Value::Bytes(_)),
+            StartsWith => matches!(value, Value::Text(_)),
+            GreaterThan | GreaterThanOrEquals | LessThan | LessThanOrEquals => {
+                match property_type {
+                    DocumentPropertyType::F64 => is_numeric_value(value),
+                    DocumentPropertyType::String(_) => {
+                        matches!(value, Value::Text(_))
+                    }
+                    _ => matches!(
+                        value,
+                        Value::U128(_)
+                            | Value::I128(_)
+                            | Value::U64(_)
+                            | Value::I64(_)
+                            | Value::U32(_)
+                            | Value::I32(_)
+                            | Value::U16(_)
+                            | Value::I16(_)
+                            | Value::U8(_)
+                            | Value::I8(_)
+                    ),
                 }
-                _ => matches!(
-                    value,
-                    Value::U128(_)
-                        | Value::I128(_)
-                        | Value::U64(_)
-                        | Value::I64(_)
-                        | Value::U32(_)
-                        | Value::I32(_)
-                        | Value::U16(_)
-                        | Value::I16(_)
-                        | Value::U8(_)
-                        | Value::I8(_)
-                ),
-            },
-            WhereOperator::Between
-            | WhereOperator::BetweenExcludeBounds
-            | WhereOperator::BetweenExcludeLeft
-            | WhereOperator::BetweenExcludeRight => {
+            }
+            Between | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight => {
                 if let Value::Array(arr) = value {
                     arr.len() == 2
                         && arr.iter().all(|x| match property_type {
@@ -305,17 +296,17 @@ impl WhereOperator {
 impl Display for WhereOperator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let s = match self {
-            Self::Equal => "=",
-            Self::GreaterThan => ">",
-            Self::GreaterThanOrEquals => ">=",
-            Self::LessThan => "<",
-            Self::LessThanOrEquals => "<=",
-            Self::Between => "Between",
-            Self::BetweenExcludeBounds => "BetweenExcludeBounds",
-            Self::BetweenExcludeLeft => "BetweenExcludeLeft",
-            Self::BetweenExcludeRight => "BetweenExcludeRight",
-            Self::In => "In",
-            Self::StartsWith => "StartsWith",
+            Equal => "=",
+            GreaterThan => ">",
+            GreaterThanOrEquals => ">=",
+            LessThan => "<",
+            LessThanOrEquals => "<=",
+            Between => "Between",
+            BetweenExcludeBounds => "BetweenExcludeBounds",
+            BetweenExcludeLeft => "BetweenExcludeLeft",
+            BetweenExcludeRight => "BetweenExcludeRight",
+            In => "In",
+            StartsWith => "StartsWith",
         };
 
         write!(f, "{}", s)
@@ -347,37 +338,39 @@ impl<'a> WhereClause {
     }
 
     /// Returns the where clause `in` values if they are an array of values, else an error
-    pub fn in_values(&self) -> Result<Cow<'_, Vec<Value>>, Error> {
+    pub fn in_values(&self) -> QuerySyntaxValidationResult<Cow<'_, Vec<Value>>> {
         let in_values = match &self.value {
-            Value::Array(array) => Ok(Cow::Borrowed(array)),
-            Value::Bytes(bytes) => Ok(Cow::Owned(
-                bytes.iter().map(|int| Value::U8(*int)).collect(),
-            )),
-            _ => Err(Error::Query(QuerySyntaxError::InvalidInClause(
-                "when using in operator you must provide an array of values".to_string(),
-            ))),
-        }?;
+            Value::Array(array) => Cow::Borrowed(array),
+            Value::Bytes(bytes) => Cow::Owned(bytes.iter().map(|int| Value::U8(*int)).collect()),
+            _ => {
+                return QuerySyntaxValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidInClause(
+                        "when using in operator you must provide an array of values".to_string(),
+                    ),
+                )
+            }
+        };
 
         let len = in_values.len();
         if len == 0 {
-            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
+            return QuerySyntaxValidationResult::new_with_error(QuerySyntaxError::InvalidInClause(
                 "in clause must have at least 1 value".to_string(),
-            )));
+            ));
         }
 
         if len > 100 {
-            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
+            return QuerySyntaxValidationResult::new_with_error(QuerySyntaxError::InvalidInClause(
                 "in clause must have at most 100 values".to_string(),
-            )));
+            ));
         }
 
         // Throw an error if there are duplicates
         if (1..in_values.len()).any(|i| in_values[i..].contains(&in_values[i - 1])) {
-            return Err(Error::Query(QuerySyntaxError::InvalidInClause(
+            return QuerySyntaxValidationResult::new_with_error(QuerySyntaxError::InvalidInClause(
                 "there should be no duplicates values for In query".to_string(),
-            )));
+            ));
         }
-        Ok(in_values)
+        QuerySyntaxValidationResult::new_with_data(in_values)
     }
 
     /// Returns true if the less than where clause is true
@@ -600,7 +593,7 @@ impl<'a> WhereClause {
         let in_clauses_array = where_clauses
             .iter()
             .filter_map(|where_clause| match where_clause.operator {
-                WhereOperator::In => match where_clause.is_identifier() {
+                In => match where_clause.is_identifier() {
                     true => None,
                     false => Some(where_clause.clone()),
                 },
@@ -856,7 +849,7 @@ impl<'a> WhereClause {
                 }
             }
             In => {
-                let in_values = self.in_values()?;
+                let in_values = self.in_values().into_data_with_error()??;
 
                 match starts_at_key_option {
                     None => {
@@ -1244,7 +1237,7 @@ impl<'a> WhereClause {
 
                 where_clauses.push(WhereClause {
                     field: field_name,
-                    operator: WhereOperator::In,
+                    operator: In,
                     value: Value::Array(in_values),
                 });
 
@@ -1256,7 +1249,7 @@ impl<'a> WhereClause {
                 pattern,
                 escape_char: _,
             } => {
-                let where_operator = WhereOperator::StartsWith;
+                let where_operator = StartsWith;
                 if *negated {
                     return Err(Error::Query(QuerySyntaxError::Unsupported(
                         "Negated Like not supported".to_string(),
@@ -1276,7 +1269,7 @@ impl<'a> WhereClause {
                         ))
                     })?;
 
-                    // make sure the value is of the right format i.e prefix%
+                    // make sure the value is of the right format i.e. prefix%
                     let inner_text = platform_value.as_text().ok_or({
                         Error::Query(QuerySyntaxError::InvalidStartsWithClause(
                             "Invalid query: startsWith takes text",
@@ -1394,81 +1387,82 @@ impl<'a> WhereClause {
     pub fn validate_against_schema(
         &self,
         document_type: DocumentTypeRef,
-    ) -> Result<(), crate::error::Error> {
+    ) -> QuerySyntaxSimpleValidationResult {
         // First determine the property type of self.field
         let property_type_cow = if let Some(meta_ty) = meta_field_property_type(&self.field) {
             Cow::Owned(meta_ty)
         } else {
             // Check that the field exists in the schema
-            let property = document_type
-                .flattened_properties()
-                .get(&self.field)
-                .ok_or_else(|| {
-                    Error::Query(QuerySyntaxError::InvalidWhereClauseComponents(
-                        "unknown field in where clause",
-                    ))
-                })?;
+            let Some(property) = document_type.flattened_properties().get(&self.field) else {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents("unknown field in where clause"),
+                );
+            };
             Cow::Borrowed(&property.property_type)
         };
 
         // Check operator is allowed for field type
         let property_type = property_type_cow.as_ref();
         if !allowed_ops_for_type(property_type).contains(&self.operator) {
-            return Err(Error::Query(
+            return QuerySyntaxSimpleValidationResult::new_with_error(
                 QuerySyntaxError::InvalidWhereClauseComponents(
                     "operator not allowed for field type",
                 ),
-            ));
+            );
         }
 
         // Check starts_with value is not empty
-        if self.operator == WhereOperator::StartsWith {
+        if self.operator == StartsWith {
             if let Value::Text(s) = &self.value {
                 if s.is_empty() {
-                    return Err(Error::Query(QuerySyntaxError::StartsWithIllegalString(
-                        "starts_with can not start with an empty string",
-                    )));
+                    return QuerySyntaxSimpleValidationResult::new_with_error(
+                        QuerySyntaxError::StartsWithIllegalString(
+                            "starts_with can not start with an empty string",
+                        ),
+                    );
                 }
             }
         }
 
         // Check in clause values
-        if self.operator == WhereOperator::In {
+        if self.operator == In {
             // Ensure array value, length bounds and no duplicates
-            self.in_values()?;
+            let result = self.in_values();
+            if !result.is_valid() {
+                return QuerySyntaxSimpleValidationResult::new_with_errors(result.errors);
+            }
             // If value provided as Bytes, only allow for U8 numeric fields
             if matches!(self.value, Value::Bytes(_))
                 && !matches!(property_type, DocumentPropertyType::U8)
             {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "IN Bytes only allowed for U8 fields",
                     ),
-                ));
+                );
             }
         }
 
         // Check value shape is correct for operator and field type
         if !self.operator.value_shape_ok(&self.value, property_type) {
-            return Err(Error::Query(
+            return QuerySyntaxSimpleValidationResult::new_with_error(
                 QuerySyntaxError::InvalidWhereClauseComponents("invalid value shape for operator"),
-            ));
+            );
         }
 
         // For Between variants, ensure bounds are in ascending order to avoid surprising matches
         match self.operator {
-            WhereOperator::Between
-            | WhereOperator::BetweenExcludeBounds
-            | WhereOperator::BetweenExcludeLeft
-            | WhereOperator::BetweenExcludeRight => {
+            Between | BetweenExcludeBounds | BetweenExcludeLeft | BetweenExcludeRight => {
                 if let Value::Array(bounds) = &self.value {
                     if bounds.len() == 2 {
                         match bounds[0].partial_cmp(&bounds[1]) {
-                            Some(Ordering::Less) | Some(Ordering::Equal) => {}
+                            Some(Ordering::Less) => {}
                             _ => {
-                                return Err(Error::Query(QuerySyntaxError::InvalidBetweenClause(
-                                    "when using between operator bounds must be ascending",
-                                )));
+                                return QuerySyntaxSimpleValidationResult::new_with_error(
+                                    QuerySyntaxError::InvalidBetweenClause(
+                                        "when using between operator bounds must be strictly ascending",
+                                    ),
+                                );
                             }
                         }
                     }
@@ -1512,7 +1506,7 @@ impl<'a> WhereClause {
 
         // For equality, allow some type coercion (e.g. integer types)
         match self.operator {
-            WhereOperator::Equal => {
+            Equal => {
                 use DocumentPropertyType as T;
                 let ok = match property_type {
                     // Accept any integer-like value for integer fields (signed/unsigned), reject floats
@@ -1560,28 +1554,28 @@ impl<'a> WhereClause {
                     T::Object(_) | T::Array(_) | T::VariableTypeArray(_) => false,
                 };
                 if !ok {
-                    return Err(Error::Query(
+                    return QuerySyntaxSimpleValidationResult::new_with_error(
                         QuerySyntaxError::InvalidWhereClauseComponents(
                             "invalid value type for equality",
                         ),
-                    ));
+                    );
                 }
             }
-            WhereOperator::In => {
+            In => {
                 if let Value::Array(arr) = &self.value {
                     if !arr.iter().all(|v| value_type_matches(property_type, v)) {
-                        return Err(Error::Query(
+                        return QuerySyntaxSimpleValidationResult::new_with_error(
                             QuerySyntaxError::InvalidWhereClauseComponents(
                                 "invalid value type in IN clause",
                             ),
-                        ));
+                        );
                     }
                 }
             }
             _ => {}
         }
 
-        Ok(())
+        QuerySyntaxSimpleValidationResult::new()
     }
 }
 
@@ -1624,33 +1618,33 @@ pub fn allowed_ops_for_type(property_type: &DocumentPropertyType) -> &'static [W
         | DocumentPropertyType::I128
         | DocumentPropertyType::F64
         | DocumentPropertyType::Date => &[
-            WhereOperator::Equal,
-            WhereOperator::In,
-            WhereOperator::GreaterThan,
-            WhereOperator::GreaterThanOrEquals,
-            WhereOperator::LessThan,
-            WhereOperator::LessThanOrEquals,
-            WhereOperator::Between,
-            WhereOperator::BetweenExcludeBounds,
-            WhereOperator::BetweenExcludeLeft,
-            WhereOperator::BetweenExcludeRight,
+            Equal,
+            In,
+            GreaterThan,
+            GreaterThanOrEquals,
+            LessThan,
+            LessThanOrEquals,
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
         ],
         DocumentPropertyType::String(_) => &[
-            WhereOperator::Equal,
-            WhereOperator::In,
-            WhereOperator::StartsWith,
-            WhereOperator::GreaterThan,
-            WhereOperator::GreaterThanOrEquals,
-            WhereOperator::LessThan,
-            WhereOperator::LessThanOrEquals,
-            WhereOperator::Between,
-            WhereOperator::BetweenExcludeBounds,
-            WhereOperator::BetweenExcludeLeft,
-            WhereOperator::BetweenExcludeRight,
+            Equal,
+            In,
+            StartsWith,
+            GreaterThan,
+            GreaterThanOrEquals,
+            LessThan,
+            LessThanOrEquals,
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
         ],
-        DocumentPropertyType::Identifier => &[WhereOperator::Equal, WhereOperator::In],
-        DocumentPropertyType::ByteArray(_) => &[WhereOperator::Equal, WhereOperator::In],
-        DocumentPropertyType::Boolean => &[WhereOperator::Equal],
+        DocumentPropertyType::Identifier => &[Equal, In],
+        DocumentPropertyType::ByteArray(_) => &[Equal, In],
+        DocumentPropertyType::Boolean => &[Equal],
         DocumentPropertyType::Object(_)
         | DocumentPropertyType::Array(_)
         | DocumentPropertyType::VariableTypeArray(_) => &[],
@@ -1684,12 +1678,12 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
         // Dates (millis since epoch)
         "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
         // Block heights and core block heights
-        "$createdAtBlockHeight"
-        | "$updatedAtBlockHeight"
-        | "$transferredAtBlockHeight"
-        | "$createdAtCoreBlockHeight"
+        "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
+            Some(DocumentPropertyType::U64)
+        }
+        "$createdAtCoreBlockHeight"
         | "$updatedAtCoreBlockHeight"
-        | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U64),
+        | "$transferredAtCoreBlockHeight" => Some(DocumentPropertyType::U32),
         // Revision and protocol version are integers
         "$revision" | "$protocolVersion" => Some(DocumentPropertyType::U64),
         // Type name is a string
@@ -1706,9 +1700,11 @@ fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
 #[cfg(feature = "server")]
 #[cfg(test)]
 mod tests {
+    use crate::error::query::QuerySyntaxError;
     use crate::query::conditions::WhereClause;
-    use crate::query::conditions::WhereOperator::{
-        Equal, GreaterThan, GreaterThanOrEquals, In, LessThan, LessThanOrEquals,
+    use crate::query::conditions::{
+        Between, BetweenExcludeBounds, BetweenExcludeLeft, BetweenExcludeRight, Equal, GreaterThan,
+        GreaterThanOrEquals, In, LessThan, LessThanOrEquals, ValueClause,
     };
     use crate::query::InternalClauses;
     use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -1854,11 +1850,10 @@ mod tests {
             value: Value::Identifier([1u8; 32]),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1879,11 +1874,10 @@ mod tests {
             ]),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1906,11 +1900,10 @@ mod tests {
         });
 
         let res = clauses.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1928,11 +1921,10 @@ mod tests {
             value: Value::Float(1.23),
         };
         let res = clause.validate_against_schema(doc_type);
+        assert!(res.is_err());
         assert!(matches!(
-            res,
-            Err(crate::error::Error::Query(
-                crate::error::query::QuerySyntaxError::InvalidWhereClauseComponents(_)
-            ))
+            res.first_error(),
+            Some(QuerySyntaxError::InvalidWhereClauseComponents(_))
         ));
     }
 
@@ -1971,7 +1963,7 @@ mod tests {
             ]),
         };
         let res = clause.validate_against_schema(doc_type);
-        assert!(res.is_ok());
+        assert!(res.is_valid());
     }
 
     #[test]
@@ -1984,11 +1976,66 @@ mod tests {
 
         let clause = WhereClause {
             field: "$createdAt".to_string(),
-            operator: crate::query::conditions::WhereOperator::Between,
+            operator: crate::query::conditions::Between,
             value: Value::Array(vec![Value::U64(1000), Value::U64(2000)]),
         };
         let res = clause.validate_against_schema(doc_type);
-        assert!(res.is_ok());
+        assert!(res.is_valid());
+    }
+
+    #[test]
+    fn validate_rejects_between_variants_with_equal_bounds() {
+        let fixture = get_data_contract_fixture(None, 0, LATEST_PLATFORM_VERSION.protocol_version);
+        let contract = fixture.data_contract_owned();
+        let doc_type = contract
+            .document_type_for_name("uniqueDates")
+            .expect("doc type exists");
+
+        for operator in [
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
+        ] {
+            let clause = WhereClause {
+                field: "$createdAt".to_string(),
+                operator,
+                value: Value::Array(vec![Value::U64(1000), Value::U64(1000)]),
+            };
+
+            let res = clause.validate_against_schema(doc_type);
+            assert!(
+                res.is_err(),
+                "{operator:?} should reject equal bounds during validation"
+            );
+            assert!(matches!(
+                res.first_error(),
+                Some(QuerySyntaxError::InvalidBetweenClause(_))
+            ));
+        }
+    }
+
+    #[test]
+    fn value_clause_between_variants_do_not_match_equal_bounds() {
+        let equal_bounds = Value::Array(vec![Value::U64(1000), Value::U64(1000)]);
+        let value_to_test = Value::U64(1000);
+
+        for operator in [
+            Between,
+            BetweenExcludeBounds,
+            BetweenExcludeLeft,
+            BetweenExcludeRight,
+        ] {
+            let clause = ValueClause {
+                operator,
+                value: equal_bounds.clone(),
+            };
+
+            assert!(
+                !clause.matches_value(&value_to_test),
+                "{operator:?} should not match when bounds are equal"
+            );
+        }
     }
 
     #[test]
@@ -2022,7 +2069,7 @@ mod tests {
             value: Value::U64(100),
         };
         let res = clause.validate_against_schema(doc_type);
-        assert!(res.is_ok());
+        assert!(res.is_valid());
     }
 
     #[test]
@@ -2039,6 +2086,6 @@ mod tests {
             value: Value::Identifier([3u8; 32]),
         };
         let res = clause.validate_against_schema(doc_type);
-        assert!(res.is_ok());
+        assert!(res.is_valid());
     }
 }
