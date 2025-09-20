@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/masternode-reward-shares-contract",
-  "version": "2.0.0",
+  "version": "2.1.0-dev.5",
   "description": "A contract and helper scripts for reward sharing",
   "scripts": {
     "lint": "eslint .",

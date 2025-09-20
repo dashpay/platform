@@ -1,6 +1,6 @@
 [package]
 name = "rs-sdk-ffi"
-version = "2.0.0-rc.14"
+version = "2.1.0-dev.5"
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"
 license = "MIT"

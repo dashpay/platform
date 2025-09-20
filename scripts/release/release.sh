@@ -12,6 +12,7 @@ cmd_usage="Usage: yarn release [options]
 
   Options:
   -t          --type                                        - release, dev or alpha
+  -v          --version                                     - explicitly set target version
   -c          --changelog-from                              - tag to build changelog from
   -h          --help                                        - show help
 "
@@ -26,12 +27,30 @@ case ${i} in
     -t=*|--type=*)
       RELEASE_TYPE="${i#*=}"
     ;;
+    -v=*|--version=*)
+      TARGET_VERSION="${i#*=}"
+    ;;
     -c=*|--changelog-from=*)
       LATEST_TAG="${i#*=}"
     ;;
 esac
 done
 
+# if target version is provided but release type is not, infer release type from version
+if [ -n "$TARGET_VERSION" ]; then
+  if ! node -e "require.resolve('semver')" >/dev/null 2>&1; then
+    echo "Error: 'semver' package not found. Run 'yarn add -D semver' in the repo root." >&2
+    exit 1
+  fi
+  # validate target version
+  if ! node -e "const semver=require('semver');process.exit(semver.valid('$TARGET_VERSION')?0:1)"; then
+    echo "Error: TARGET_VERSION '$TARGET_VERSION' is not a valid semver." >&2
+    exit 1
+  fi
+  if [ -z "$RELEASE_TYPE" ]; then
+    RELEASE_TYPE=$(node -e "const semver=require('semver');const pr=semver.prerelease('$TARGET_VERSION');console.log(pr ? pr[0] : 'release');")
+  fi
+fi
 # if parameter is empty, get release type from current version
 if [ -z "$RELEASE_TYPE" ]
 then
@@ -56,9 +75,13 @@ if ! gh auth status&> /dev/null; then
 fi
 
 # bump version
-yarn node $DIR/bump_version.js "$RELEASE_TYPE"
+if [ -n "$TARGET_VERSION" ]; then
+  yarn node $DIR/bump_version.js "$RELEASE_TYPE" --target-version="$TARGET_VERSION"
+else
+  yarn node $DIR/bump_version.js "$RELEASE_TYPE"
+fi
 
-cargo metadata > /dev/null
+cargo metadata --format-version 1 > /dev/null
 
 NEW_PACKAGE_VERSION=$(cat $DIR/../../package.json|grep version|head -1|awk -F: '{ print $2 }'|sed 's/[", ]//g')
 
