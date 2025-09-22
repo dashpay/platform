@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{mpsc, Mutex, RwLock};
 
 const DEFAULT_SUBSCRIPTION_CAPACITY: usize = 256;
@@ -139,23 +140,24 @@ where
             return;
         }
 
-        let mut maybe_event = Some(event);
-        let len = targets.len();
         let mut dead = Vec::new();
 
-        for (idx, (id, sender)) in targets.into_iter().enumerate() {
-            let should_take = idx + 1 == len;
-            let payload = if should_take {
-                maybe_event.take().unwrap()
-            } else {
-                maybe_event.as_ref().unwrap().clone()
-            };
+        for (id, sender) in targets.into_iter() {
+            let payload = event.clone();
 
-            match sender.send(payload).await {
+            match sender.try_send(payload) {
                 Ok(()) => {
                     metrics_events_delivered_inc();
                 }
-                Err(_) => {
+                Err(TrySendError::Full(_value)) => {
+                    metrics_events_dropped_inc();
+                    tracing::warn!(
+                        subscription_id = id,
+                        "event_bus: subscriber queue full, dropping event"
+                    );
+                    // Drop the event for this subscriber and continue delivering to others
+                }
+                Err(TrySendError::Closed(_value)) => {
                     metrics_events_dropped_inc();
                     dead.push(id);
                 }
@@ -403,8 +405,6 @@ fn metrics_events_dropped_inc() {}
 
 #[cfg(test)]
 mod tests {
-    use std::process::id;
-
     use super::*;
     use tokio::time::{timeout, Duration};
 
