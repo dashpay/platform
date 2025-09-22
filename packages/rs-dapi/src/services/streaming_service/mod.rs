@@ -48,6 +48,16 @@ impl StreamingServiceImpl {
             .map(|tx| tx.txid().to_string())
     }
 
+    pub(crate) fn txid_bytes_from_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
+        use dashcore_rpc::dashcore::Transaction as CoreTx;
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
+        use dashcore_rpc::dashcore::hashes::Hash as DashHash;
+
+        deserialize::<CoreTx>(bytes)
+            .ok()
+            .map(|tx| tx.txid().to_byte_array().to_vec())
+    }
+
     pub(crate) fn block_hash_hex_from_block_bytes(bytes: &[u8]) -> Option<String> {
         use dashcore_rpc::dashcore::Block as CoreBlock;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -193,11 +203,7 @@ impl StreamingServiceImpl {
         let zmq_listener_clone = zmq_listener.clone();
         let subscriber_manager_clone = subscriber_manager.clone();
         workers.spawn(async move {
-            Self::core_zmq_subscription_worker(
-                zmq_listener_clone,
-                subscriber_manager_clone,
-            )
-            .await;
+            Self::core_zmq_subscription_worker(zmq_listener_clone, subscriber_manager_clone).await;
             Ok::<(), ()>(())
         });
 

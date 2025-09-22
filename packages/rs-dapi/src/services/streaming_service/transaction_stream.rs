@@ -33,6 +33,65 @@ type DeliveredInstantLockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
 type DeliveryGate = Arc<AtomicBool>;
 type DeliveryNotify = Arc<Notify>;
 
+#[derive(Clone)]
+struct TransactionStreamState {
+    delivered_txs: DeliveredTxSet,
+    delivered_blocks: DeliveredBlockSet,
+    delivered_instant_locks: DeliveredInstantLockSet,
+    delivery_gate: DeliveryGate,
+    delivery_notify: DeliveryNotify,
+}
+
+impl TransactionStreamState {
+    fn new() -> Self {
+        Self {
+            delivered_txs: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivered_blocks: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivered_instant_locks: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivery_gate: Arc::new(AtomicBool::new(false)),
+            delivery_notify: Arc::new(Notify::new()),
+        }
+    }
+
+    fn is_gate_open(&self) -> bool {
+        self.delivery_gate.load(Ordering::Acquire)
+    }
+
+    fn open_gate(&self) {
+        self.delivery_gate.store(true, Ordering::Release);
+        self.delivery_notify.notify_waiters();
+    }
+
+    async fn wait_for_gate_open(&self) {
+        self.delivery_notify.notified().await;
+    }
+
+    async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
+        let mut guard = self.delivered_txs.lock().await;
+        guard.insert(txid.to_vec())
+    }
+
+    async fn mark_transactions_delivered<I>(&self, txids: I)
+    where
+        I: IntoIterator<Item = Vec<u8>>,
+    {
+        let mut guard = self.delivered_txs.lock().await;
+        for txid in txids {
+            guard.insert(txid);
+        }
+    }
+
+    async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
+        let mut guard = self.delivered_blocks.lock().await;
+        guard.insert(block_hash.to_vec())
+    }
+
+    async fn mark_instant_lock_delivered(&self, instant_lock: &[u8]) -> bool {
+        let mut guard = self.delivered_instant_locks.lock().await;
+        guard.insert(instant_lock.to_vec())
+    }
+}
+
 impl StreamingServiceImpl {
     pub async fn subscribe_to_transactions_with_proofs_impl(
         &self,
@@ -71,31 +130,26 @@ impl StreamingServiceImpl {
         block_handle: SubscriptionHandle,
         tx: TxResponseSender,
         filter: FilterType,
-        delivered_txs: DeliveredTxSet,
-        delivered_blocks: DeliveredBlockSet,
-        delivered_instant_locks: DeliveredInstantLockSet,
-        delivery_gate: DeliveryGate,
-        delivery_notify: DeliveryNotify,
+        state: TransactionStreamState,
     ) {
         let subscriber_id = tx_handle.id().to_string();
         let tx_handle_id = tx_handle.id().to_string();
         let block_handle_id = block_handle.id().to_string();
 
         let mut pending: Vec<(StreamingEvent, String)> = Vec::new();
-        let mut gated = !delivery_gate.load(Ordering::Acquire);
+        // Gate stays closed until historical replay finishes; queue live events until it opens.
+        let mut gated = !state.is_gate_open();
 
         loop {
             tokio::select! {
-                _ = delivery_notify.notified(), if gated => {
-                    gated = !delivery_gate.load(Ordering::Acquire);
+                _ = state.wait_for_gate_open(), if gated => {
+                    gated = !state.is_gate_open();
                     if !gated {
                         if !Self::flush_transaction_pending(
                             &filter,
                             &subscriber_id,
                             &tx,
-                            &delivered_txs,
-                            &delivered_blocks,
-                            &delivered_instant_locks,
+                            &state,
                             &mut pending,
                         ).await {
                             break;
@@ -115,9 +169,7 @@ impl StreamingServiceImpl {
                                 &filter,
                                 &subscriber_id,
                                 &tx,
-                                &delivered_txs,
-                                &delivered_blocks,
-                                &delivered_instant_locks,
+                                &state,
                             ).await {
                                 break;
                             }
@@ -138,9 +190,7 @@ impl StreamingServiceImpl {
                                 &filter,
                                 &subscriber_id,
                                 &tx,
-                                &delivered_txs,
-                                &delivered_blocks,
-                                &delivered_instant_locks,
+                                &state,
                             ).await {
                                 break;
                             }
@@ -158,9 +208,7 @@ impl StreamingServiceImpl {
         filter: &FilterType,
         subscriber_id: &str,
         tx_sender: &TxResponseSender,
-        delivered_txs: &DeliveredTxSet,
-        delivered_blocks: &DeliveredBlockSet,
-        delivered_instant_locks: &DeliveredInstantLockSet,
+        state: &TransactionStreamState,
         pending: &mut Vec<(StreamingEvent, String)>,
     ) -> bool {
         if pending.is_empty() {
@@ -175,9 +223,7 @@ impl StreamingServiceImpl {
                 filter,
                 subscriber_id,
                 tx_sender,
-                delivered_txs,
-                delivered_blocks,
-                delivered_instant_locks,
+                state,
             )
             .await
             {
@@ -193,29 +239,27 @@ impl StreamingServiceImpl {
         filter: &FilterType,
         subscriber_id: &str,
         tx_sender: &TxResponseSender,
-        delivered_txs: &DeliveredTxSet,
-        delivered_blocks: &DeliveredBlockSet,
-        delivered_instant_locks: &DeliveredInstantLockSet,
+        state: &TransactionStreamState,
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
-                let txid_hex = super::StreamingServiceImpl::txid_hex_from_bytes(&data);
-                if let Some(ref hex_str) = txid_hex {
-                    if let Ok(hash_bytes) = hex::decode(hex_str) {
-                        let mut guard = delivered_txs.lock().await;
-                        if !guard.insert(hash_bytes) {
-                            trace!(
-                                subscriber_id,
-                                handle_id,
-                                txid = %hex_str,
-                                "transactions_with_proofs=skip_duplicate_transaction"
-                            );
-                            return true;
-                        }
+                let txid_bytes = super::StreamingServiceImpl::txid_bytes_from_bytes(&data);
+                if let Some(ref txid_bytes) = txid_bytes {
+                    if !state.mark_transaction_delivered(txid_bytes).await {
+                        trace!(
+                            subscriber_id,
+                            handle_id,
+                            txid = %hex::encode(txid_bytes),
+                            "transactions_with_proofs=skip_duplicate_transaction"
+                        );
+                        return true;
                     }
                 }
 
-                let txid_display = txid_hex.unwrap_or_else(|| "n/a".to_string());
+                let txid_display = txid_bytes
+                    .as_ref()
+                    .map(|bytes| hex::encode(bytes))
+                    .unwrap_or_else(|| "n/a".to_string());
                 trace!(
                     subscriber_id,
                     handle_id,
@@ -237,8 +281,7 @@ impl StreamingServiceImpl {
 
                 if block_hash != "n/a" {
                     if let Ok(hash_bytes) = hex::decode(&block_hash) {
-                        let mut guard = delivered_blocks.lock().await;
-                        if !guard.insert(hash_bytes) {
+                        if !state.mark_block_delivered(&hash_bytes).await {
                             trace!(
                                 subscriber_id,
                                 handle_id,
@@ -264,8 +307,7 @@ impl StreamingServiceImpl {
                 }
             }
             StreamingEvent::CoreInstantLock { data } => {
-                let mut guard = delivered_instant_locks.lock().await;
-                if !guard.insert(data.clone()) {
+                if !state.mark_instant_lock_delivered(&data).await {
                     trace!(
                         subscriber_id,
                         handle_id, "transactions_with_proofs=skip_duplicate_instant_lock"
@@ -370,11 +412,7 @@ impl StreamingServiceImpl {
         &self,
         filter: FilterType,
         tx: TxResponseSender,
-        delivered_txs: DeliveredTxSet,
-        delivered_blocks: DeliveredBlockSet,
-        delivered_instant_locks: DeliveredInstantLockSet,
-        delivery_gate: DeliveryGate,
-        delivery_notify: DeliveryNotify,
+        state: TransactionStreamState,
     ) -> String {
         let tx_subscription_handle = self
             .subscriber_manager
@@ -403,11 +441,7 @@ impl StreamingServiceImpl {
                 merkle_block_subscription_handle,
                 tx,
                 filter,
-                delivered_txs,
-                delivered_blocks,
-                delivered_instant_locks,
-                delivery_gate,
-                delivery_notify,
+                state,
             )
             .await;
             Ok::<(), ()>(())
@@ -428,8 +462,6 @@ impl StreamingServiceImpl {
             Some(count as usize),
             filter,
             None,
-            None,
-            None,
             tx.clone(),
         )
         .await?;
@@ -444,38 +476,22 @@ impl StreamingServiceImpl {
         filter: FilterType,
     ) -> Result<TxResponse, Status> {
         let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
-        let delivered_txs: DeliveredTxSet = Arc::new(AsyncMutex::new(HashSet::new()));
-        let delivered_blocks: DeliveredBlockSet = Arc::new(AsyncMutex::new(HashSet::new()));
-        let delivered_instant_locks: DeliveredInstantLockSet =
-            Arc::new(AsyncMutex::new(HashSet::new()));
-        let delivery_gate: DeliveryGate = Arc::new(AtomicBool::new(false));
-        let delivery_notify = Arc::new(Notify::new());
+        let state = TransactionStreamState::new();
 
         let subscriber_id = self
-            .start_live_transaction_stream(
-                filter.clone(),
-                tx.clone(),
-                delivered_txs.clone(),
-                delivered_blocks.clone(),
-                delivered_instant_locks.clone(),
-                delivery_gate.clone(),
-                delivery_notify.clone(),
-            )
+            .start_live_transaction_stream(filter.clone(), tx.clone(), state.clone())
             .await;
 
         self.fetch_transactions_history(
             Some(from_block),
             None,
             filter.clone(),
-            Some(delivered_txs.clone()),
-            Some(delivered_blocks.clone()),
-            Some(delivered_instant_locks.clone()),
+            Some(state.clone()),
             tx.clone(),
         )
         .await?;
 
-        delivery_gate.store(true, Ordering::Release);
-        delivery_notify.notify_waiters();
+        state.open_gate();
 
         debug!(subscriber_id, "transactions_with_proofs=stream_ready");
         Ok(Response::new(ReceiverStream::new(rx)))
@@ -486,9 +502,7 @@ impl StreamingServiceImpl {
         from_block: Option<dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock>,
         limit: Option<usize>,
         filter: FilterType,
-        delivered_txs: Option<DeliveredTxSet>,
-        delivered_blocks: Option<DeliveredBlockSet>,
-        delivered_instant_locks: Option<DeliveredInstantLockSet>,
+        state: Option<TransactionStreamState>,
         tx: TxResponseSender,
     ) -> Result<(), Status> {
         use std::str::FromStr;
@@ -551,16 +565,8 @@ impl StreamingServiceImpl {
             return Ok(());
         }
 
-        self.process_transactions_from_height(
-            start_height,
-            count_target,
-            filter,
-            delivered_txs,
-            delivered_blocks,
-            delivered_instant_locks,
-            tx,
-        )
-        .await
+        self.process_transactions_from_height(start_height, count_target, filter, state, tx)
+            .await
     }
 
     async fn process_transactions_from_height(
@@ -568,9 +574,7 @@ impl StreamingServiceImpl {
         start_height: usize,
         count: usize,
         filter: FilterType,
-        delivered_txs: Option<DeliveredTxSet>,
-        delivered_blocks: Option<DeliveredBlockSet>,
-        delivered_instant_locks: Option<DeliveredInstantLockSet>,
+        state: Option<TransactionStreamState>,
         tx: TxResponseSender,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
@@ -580,8 +584,6 @@ impl StreamingServiceImpl {
             start_height,
             count, "transactions_with_proofs=historical_begin"
         );
-
-        let _ = delivered_instant_locks;
 
         for i in 0..count {
             let height = (start_height + i) as u32;
@@ -641,23 +643,18 @@ impl StreamingServiceImpl {
                 };
                 match_flags.push(matches);
                 if matches {
-                    if let Some(txid_hex) =
-                        super::StreamingServiceImpl::txid_hex_from_bytes(tx_bytes)
+                    if let Some(hash_bytes) =
+                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
                     {
-                        if let Ok(bytes) = hex::decode(txid_hex) {
-                            matching_hashes.push(bytes);
-                        }
+                        matching_hashes.push(hash_bytes);
                     }
                     matching.push(tx_bytes.clone());
                 }
             }
 
             if !matching.is_empty() {
-                if let Some(shared) = delivered_txs.as_ref() {
-                    let mut guard = shared.lock().await;
-                    for hash_bytes in matching_hashes.iter() {
-                        guard.insert(hash_bytes.clone());
-                    }
+                if let Some(state) = state.as_ref() {
+                    state.mark_transactions_delivered(matching_hashes).await;
                 }
 
                 let raw_transactions = RawTransactions {
@@ -672,9 +669,8 @@ impl StreamingServiceImpl {
                 }
             }
 
-            if let Some(shared) = delivered_blocks.as_ref() {
-                let mut guard = shared.lock().await;
-                guard.insert(block_hash_bytes.clone());
+            if let Some(state) = state.as_ref() {
+                state.mark_block_delivered(&block_hash_bytes).await;
             }
 
             let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
