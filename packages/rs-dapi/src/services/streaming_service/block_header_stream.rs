@@ -1,3 +1,5 @@
+use std::time::Duration;
+
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
     BlockHeaders, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
@@ -13,6 +15,7 @@ use crate::services::streaming_service::{
 };
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
+const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(50);
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
@@ -362,6 +365,9 @@ impl StreamingServiceImpl {
                 }
                 sent += CHUNK_SIZE;
             }
+
+            // Preserve legacy behavior: pace historical fetches to avoid overloading Core.
+            tokio::time::sleep(HISTORICAL_CORE_QUERY_DELAY).await;
         }
 
         // Flush remaining headers
