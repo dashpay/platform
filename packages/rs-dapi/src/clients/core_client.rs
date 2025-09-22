@@ -205,6 +205,25 @@ impl CoreClient {
         Ok(transactions)
     }
 
+    pub async fn get_mempool_txids(&self) -> DAPIResult<Vec<dashcore_rpc::dashcore::Txid>> {
+        trace!("Core RPC: get_raw_mempool");
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || client.get_raw_mempool())
+            .await
+            .to_dapi_result()
+    }
+
+    pub async fn get_raw_transaction(
+        &self,
+        txid: dashcore_rpc::dashcore::Txid,
+    ) -> DAPIResult<dashcore::Transaction> {
+        trace!("Core RPC: get_raw_transaction");
+        let client = self.client.clone();
+        tokio::task::spawn_blocking(move || client.get_raw_transaction(&txid, None))
+            .await
+            .to_dapi_result()
+    }
+
     /// Fetches block header information by its hash.
     /// Uses caching to avoid repeated calls for the same hash.
     pub async fn get_block_header_info(

@@ -10,6 +10,7 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
+use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
 use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
@@ -491,6 +492,9 @@ impl StreamingServiceImpl {
         )
         .await?;
 
+        self.fetch_mempool_transactions(filter.clone(), state.clone(), tx.clone())
+            .await?;
+
         state.open_gate();
 
         debug!(subscriber_id, "transactions_with_proofs=stream_ready");
@@ -567,6 +571,89 @@ impl StreamingServiceImpl {
 
         self.process_transactions_from_height(start_height, count_target, filter, state, tx)
             .await
+    }
+
+    async fn fetch_mempool_transactions(
+        &self,
+        filter: FilterType,
+        state: TransactionStreamState,
+        tx: TxResponseSender,
+    ) -> Result<(), Status> {
+        use dashcore_rpc::dashcore::consensus::encode::serialize;
+
+        let txids = self
+            .core_client
+            .get_mempool_txids()
+            .await
+            .map_err(Status::from)?;
+
+        if txids.is_empty() {
+            trace!("transactions_with_proofs=mempool_empty");
+            return Ok(());
+        }
+
+        let mut matching: Vec<Vec<u8>> = Vec::new();
+
+        for txid in txids {
+            let tx = match self.core_client.get_raw_transaction(txid).await {
+                Ok(tx) => tx,
+                Err(err) => {
+                    warn!(error = %err, "transactions_with_proofs=mempool_tx_fetch_failed");
+                    continue;
+                }
+            };
+
+            let matches = match &filter {
+                FilterType::CoreAllTxs => true,
+                FilterType::CoreBloomFilter(bloom, flags) => {
+                    let mut guard = bloom.write().unwrap();
+                    super::bloom::matches_transaction(&mut guard, &tx, *flags)
+                }
+                _ => false,
+            };
+
+            if !matches {
+                continue;
+            }
+
+            let tx_bytes = serialize(&tx);
+            let txid_bytes = tx.txid().to_byte_array();
+
+            if !state.mark_transaction_delivered(&txid_bytes).await {
+                trace!(
+                    txid = %tx.txid(),
+                    "transactions_with_proofs=skip_duplicate_mempool_transaction"
+                );
+                continue;
+            }
+
+            matching.push(tx_bytes);
+        }
+
+        if matching.is_empty() {
+            trace!("transactions_with_proofs=mempool_no_matches");
+            return Ok(());
+        }
+
+        trace!(
+            matches = matching.len(),
+            "transactions_with_proofs=forward_mempool_transactions"
+        );
+
+        let raw_transactions = RawTransactions {
+            transactions: matching,
+        };
+        if tx
+            .send(Ok(TransactionsWithProofsResponse {
+                responses: Some(Responses::RawTransactions(raw_transactions)),
+            }))
+            .await
+            .is_err()
+        {
+            debug!("transactions_with_proofs=mempool_client_disconnected");
+        }
+
+        Ok(())
     }
 
     async fn process_transactions_from_height(
@@ -667,24 +754,24 @@ impl StreamingServiceImpl {
                     debug!("transactions_with_proofs=historical_client_disconnected");
                     return Ok(());
                 }
-            }
 
-            if let Some(state) = state.as_ref() {
-                state.mark_block_delivered(&block_hash_bytes).await;
-            }
+                if let Some(state) = state.as_ref() {
+                    state.mark_block_delivered(&block_hash_bytes).await;
+                }
 
-            let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
-                let bh = block.block_hash();
-                warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
-                dashcore_rpc::dashcore::consensus::encode::serialize(&block)
-            });
+                let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
+                    let bh = block.block_hash();
+                    warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
+                    dashcore_rpc::dashcore::consensus::encode::serialize(&block)
+                });
 
-            let response = TransactionsWithProofsResponse {
-                responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
-            };
-            if tx.send(Ok(response)).await.is_err() {
-                debug!("transactions_with_proofs=historical_client_disconnected");
-                return Ok(());
+                let response = TransactionsWithProofsResponse {
+                    responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
+                };
+                if tx.send(Ok(response)).await.is_err() {
+                    debug!("transactions_with_proofs=historical_client_disconnected");
+                    return Ok(());
+                }
             }
 
             sleep(HISTORICAL_CORE_QUERY_DELAY).await;
