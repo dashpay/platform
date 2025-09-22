@@ -3,6 +3,7 @@ use dapi_grpc::core::v0::{
     BlockHeaders, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dashcore_rpc::dashcore::consensus::encode::serialize as serialize_consensus;
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
@@ -94,6 +95,7 @@ impl StreamingServiceImpl {
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let subscriber_id = self.start_live_stream(tx.clone()).await;
+        self.send_initial_chainlock(tx.clone()).await?;
         self.backfill_to_tip(from_block, tx).await?;
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
@@ -124,6 +126,28 @@ impl StreamingServiceImpl {
         Self::spawn_block_header_worker(block_handle, chainlock_handle, tx);
 
         subscriber_id
+    }
+
+    async fn send_initial_chainlock(&self, tx: BlockHeaderResponseSender) -> Result<(), Status> {
+        if let Some(chain_lock) = self
+            .core_client
+            .get_best_chain_lock()
+            .await
+            .map_err(Status::from)?
+        {
+            trace!(?chain_lock, "block_headers=initial_chain_lock");
+            let chain_lock_bytes = serialize_consensus(&chain_lock);
+            let response = BlockHeadersWithChainLocksResponse {
+                responses: Some(
+                    dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(
+                        chain_lock_bytes,
+                    ),
+                ),
+            };
+            // Failure means client is already gone; treat as success.
+            let _ = tx.send(Ok(response)).await;
+        }
+        Ok(())
     }
 
     fn spawn_block_header_worker(
