@@ -355,7 +355,7 @@ impl StreamingServiceImpl {
     ) -> Result<(), Status> {
         use std::str::FromStr;
 
-        let (start_height, count_target) = match from_block {
+        let (start_height, mut count_target) = match from_block {
             FromBlock::FromBlockHash(hash) => {
                 let hash_hex = hex::encode(&hash);
                 let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
@@ -400,13 +400,35 @@ impl StreamingServiceImpl {
             return Ok(());
         }
 
-        self.process_historical_blocks_from_height(
-            start_height,
-            count_target,
-            delivered_hashes,
-            tx,
-        )
-        .await
+        // Align with historical JS behaviour: count cannot exceed tip.
+        let best_height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+        if start_height >= best_height.saturating_add(1) {
+            warn!(start_height, best_height, "block_headers=start_beyond_tip");
+            return Err(Status::not_found(format!(
+                "Block {} not found",
+                start_height
+            )));
+        }
+        let max_available = best_height.saturating_sub(start_height).saturating_add(1);
+        if count_target > max_available {
+            warn!(start_height, requested = count_target, max_available, "block_headers=count_exceeds_tip");
+            return Err(Status::invalid_argument(
+                "count exceeds chain tip",
+            ));
+        }
+
+        self
+            .process_historical_blocks_from_height(
+                start_height,
+                count_target,
+                delivered_hashes,
+                tx,
+            )
+            .await
     }
 
     /// Process historical blocks from a specific block height
