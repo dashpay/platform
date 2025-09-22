@@ -2,9 +2,9 @@ use clap::Subcommand;
 
 use crate::error::CliResult;
 
+pub mod identity;
 pub mod protocol;
 pub mod state_transition;
-pub mod identity;
 
 #[derive(Subcommand, Debug)]
 pub enum PlatformCommand {

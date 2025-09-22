@@ -53,7 +53,7 @@ impl LruResponseCache {
     }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
-    pub fn new<T: Send + 'static>(capacity: usize, receiver: SubscriptionHandle<T>) -> Self {
+    pub fn new(capacity: usize, receiver: SubscriptionHandle) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
         let inner = Arc::new(Mutex::new(LruCache::new(cap)));
         let inner_clone = inner.clone();

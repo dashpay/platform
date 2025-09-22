@@ -41,14 +41,16 @@ pub struct StreamingServiceImpl {
 impl StreamingServiceImpl {
     // --- Small helpers for concise logging across submodules ---
     pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
-        use dashcore_rpc::dashcore::consensus::encode::deserialize;
         use dashcore_rpc::dashcore::Transaction as CoreTx;
-        deserialize::<CoreTx>(bytes).ok().map(|tx| tx.txid().to_string())
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
+        deserialize::<CoreTx>(bytes)
+            .ok()
+            .map(|tx| tx.txid().to_string())
     }
 
     pub(crate) fn block_hash_hex_from_block_bytes(bytes: &[u8]) -> Option<String> {
-        use dashcore_rpc::dashcore::consensus::encode::deserialize;
         use dashcore_rpc::dashcore::Block as CoreBlock;
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
         deserialize::<CoreBlock>(bytes)
             .ok()
             .map(|b| b.block_hash().to_string())
@@ -58,7 +60,7 @@ impl StreamingServiceImpl {
         let len = bytes.len().min(take);
         let mut s = hex::encode(&bytes[..len]);
         if bytes.len() > take {
-            s.push_str("…");
+            s.push('…');
         }
         s
     }
@@ -350,7 +352,8 @@ impl StreamingServiceImpl {
             processed_events = processed_events.saturating_add(1);
             match event {
                 ZmqEvent::RawTransaction { data } => {
-                    let txid = Self::txid_hex_from_bytes(&data).unwrap_or_else(|| "n/a".to_string());
+                    let txid =
+                        Self::txid_hex_from_bytes(&data).unwrap_or_else(|| "n/a".to_string());
                     trace!(
                         txid = %txid,
                         size = data.len(),
@@ -362,7 +365,8 @@ impl StreamingServiceImpl {
                         .await;
                 }
                 ZmqEvent::RawBlock { data } => {
-                    let block_hash = Self::block_hash_hex_from_block_bytes(&data).unwrap_or_else(|| "n/a".to_string());
+                    let block_hash = Self::block_hash_hex_from_block_bytes(&data)
+                        .unwrap_or_else(|| "n/a".to_string());
                     trace!(
                         block_hash = %block_hash,
                         size = data.len(),

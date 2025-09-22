@@ -3,7 +3,7 @@ use dapi_grpc::platform::v0::get_status_response::GetStatusResponseV0;
 use dapi_grpc::platform::v0::{
     GetProtocolVersionUpgradeStateRequest,
     GetProtocolVersionUpgradeVoteStatusRequest,
-    GetStatusRequest,    
+    GetStatusRequest,
     platform_client::PlatformClient,
     get_protocol_version_upgrade_state_request,
     get_protocol_version_upgrade_state_request::GetProtocolVersionUpgradeStateRequestV0,

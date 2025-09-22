@@ -1,12 +1,12 @@
 use clap::{Args, Subcommand};
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_request::GetIdentityByPublicKeyHashRequestV0;
 use dapi_grpc::platform::v0::get_identity_by_public_key_hash_response::{
-    self as get_identity_by_public_key_hash_response, get_identity_by_public_key_hash_response_v0::Result as ByKeyResult,
+    self as get_identity_by_public_key_hash_response,
+    get_identity_by_public_key_hash_response_v0::Result as ByKeyResult,
 };
 use dapi_grpc::platform::v0::{
+    GetIdentityByPublicKeyHashRequest, get_identity_by_public_key_hash_request,
     platform_client::PlatformClient,
-    get_identity_by_public_key_hash_request,
-    GetIdentityByPublicKeyHashRequest,
 };
 use dapi_grpc::tonic::{Request, transport::Channel};
 
@@ -21,7 +21,7 @@ pub enum IdentityCommand {
 #[derive(Args, Debug)]
 pub struct ByKeyCommand {
     /// Public key hash (20-byte hex string)
-    #[arg(value_name = "HEX")] 
+    #[arg(value_name = "HEX")]
     pub public_key_hash: String,
     /// Request cryptographic proof alongside the identity
     #[arg(long, default_value_t = false)]
@@ -48,7 +48,10 @@ async fn by_key(url: &str, cmd: ByKeyCommand) -> CliResult<()> {
 
     let request = GetIdentityByPublicKeyHashRequest {
         version: Some(get_identity_by_public_key_hash_request::Version::V0(
-            GetIdentityByPublicKeyHashRequestV0 { public_key_hash: pk_hash, prove: cmd.prove },
+            GetIdentityByPublicKeyHashRequestV0 {
+                public_key_hash: pk_hash,
+                prove: cmd.prove,
+            },
         )),
     };
 
@@ -88,7 +91,10 @@ fn print_metadata(metadata: Option<&dapi_grpc::platform::v0::ResponseMetadata>) 
     if let Some(meta) = metadata {
         println!("ℹ️  Metadata:");
         println!("    height: {}", meta.height);
-        println!("    core_chain_locked_height: {}", meta.core_chain_locked_height);
+        println!(
+            "    core_chain_locked_height: {}",
+            meta.core_chain_locked_height
+        );
         println!("    epoch: {}", meta.epoch);
         println!("    protocol_version: {}", meta.protocol_version);
         println!("    chain_id: {}", meta.chain_id);
@@ -103,4 +109,3 @@ fn print_proof(proof: &dapi_grpc::platform::v0::Proof) {
     println!("    grovedb_proof bytes: {}", proof.grovedb_proof.len());
     println!("    round: {}", proof.round);
 }
-

@@ -138,8 +138,9 @@ impl StreamingServiceImpl {
                             Ok(response)
                         }
                         StreamingEvent::CoreRawBlock { data } => {
-                            let block_hash = super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
-                                .unwrap_or_else(|| "n/a".to_string());
+                            let block_hash =
+                                super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
+                                    .unwrap_or_else(|| "n/a".to_string());
                             trace!(
                                 subscriber_id = sub_id,
                                 block_hash = %block_hash,
@@ -225,7 +226,8 @@ impl StreamingServiceImpl {
                             Ok(response)
                         }
                         _ => {
-                            let summary = super::StreamingServiceImpl::summarize_streaming_event(&message);
+                            let summary =
+                                super::StreamingServiceImpl::summarize_streaming_event(&message);
                             trace!(
                                 subscriber_id = sub_id,
                                 event = %summary,
