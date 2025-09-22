@@ -1,3 +1,4 @@
+use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
     BlockHeaders, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
 };
@@ -6,74 +7,116 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tracing::{debug, trace, warn};
 
-use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
+use crate::services::streaming_service::{
+    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
+};
+
+type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
+type BlockHeaderResponseSender = mpsc::UnboundedSender<BlockHeaderResponseResult>;
+type BlockHeaderResponseStream = UnboundedReceiverStream<BlockHeaderResponseResult>;
+type BlockHeaderResponse = Response<BlockHeaderResponseStream>;
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
         &self,
         request: Request<BlockHeadersWithChainLocksRequest>,
-    ) -> Result<
-        Response<UnboundedReceiverStream<Result<BlockHeadersWithChainLocksResponse, Status>>>,
-        Status,
-    > {
+    ) -> Result<BlockHeaderResponse, Status> {
         trace!("subscribe_to_block_headers_with_chain_locks_impl=begin");
         let req = request.into_inner();
 
         // Validate parameters
         let count = req.count;
-        let from_block = req.from_block.clone();
+        let from_block = req.from_block;
+        let has_from_block = from_block.is_some();
 
-        trace!(
-            count,
-            has_from_block = from_block.is_some(),
-            "block_headers=request_parsed"
-        );
+        trace!(count, has_from_block, "block_headers=request_parsed");
 
         // Validate that we have from_block when count > 0
-        if from_block.is_none() && count > 0 {
+        if !has_from_block && count > 0 {
             warn!("block_headers=missing_from_block count>0");
             return Err(Status::invalid_argument(
                 "Must specify from_block when count > 0",
             ));
         }
 
-        // Create channel for streaming responses
+        let response = match (count, from_block) {
+            (requested, Some(from_block)) if requested > 0 => {
+                self.handle_historical_mode(from_block, requested).await?
+            }
+            (0, None) => self.handle_streaming_mode().await?,
+            (0, Some(from_block)) => self.handle_combined_mode(from_block).await?,
+            _ => unreachable!(),
+        };
+
+        Ok(response)
+    }
+
+    async fn handle_historical_mode(
+        &self,
+        from_block: FromBlock,
+        count: u32,
+    ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::unbounded_channel();
 
-        // If count > 0, this is a historical-only stream.
-        // We must send the requested headers and then end the stream (no live updates).
-        if count > 0 {
-            match from_block {
-                Some(dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash)) => {
-                    debug!(
-                        hash = %hex::encode(&hash),
-                        count,
-                        "block_headers=historical_from_hash_request"
-                    );
-                    self.process_historical_blocks_from_hash(&hash, count as usize, tx)
-                        .await?;
-                }
-                Some(dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height)) => {
-                    debug!(height, count, "block_headers=historical_from_height_request");
-                    self.process_historical_blocks_from_height(height as usize, count as usize, tx)
-                        .await?;
-                }
-                None => unreachable!(),
+        match from_block {
+            FromBlock::FromBlockHash(hash) => {
+                debug!(
+                    hash = %hex::encode(&hash),
+                    count,
+                    "block_headers=historical_from_hash_request"
+                );
+                self.process_historical_blocks_from_hash(&hash, count as usize, tx)
+                    .await?;
             }
-
-            let stream = UnboundedReceiverStream::new(rx);
-            debug!("block_headers=historical_stream_ready");
-            return Ok(Response::new(stream));
+            FromBlock::FromBlockHeight(height) => {
+                debug!(
+                    height,
+                    count, "block_headers=historical_from_height_request"
+                );
+                self.process_historical_blocks_from_height(height as usize, count as usize, tx)
+                    .await?;
+            }
         }
 
-        // Otherwise (count == 0), subscribe for continuous updates.
-        // Create filter (no filtering needed for block headers - all blocks)
-        let filter = FilterType::CoreAllBlocks;
+        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        debug!("block_headers=historical_stream_ready");
+        Ok(Response::new(stream))
+    }
 
-        // Add subscription to manager
-        let sub_handle = self.subscriber_manager.add_subscription(filter).await;
-        let subscriber_id = sub_handle.id().to_string();
-        debug!(subscriber_id, "block_headers=subscription_created");
+    async fn handle_streaming_mode(&self) -> Result<BlockHeaderResponse, Status> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let subscriber_id = self.start_live_stream(tx).await;
+        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        debug!(
+            subscriber_id = subscriber_id.as_str(),
+            "block_headers=stream_ready"
+        );
+        Ok(Response::new(stream))
+    }
+
+    async fn handle_combined_mode(
+        &self,
+        from_block: FromBlock,
+    ) -> Result<BlockHeaderResponse, Status> {
+        let (tx, rx) = mpsc::unbounded_channel();
+        let subscriber_id = self.start_live_stream(tx.clone()).await;
+        self.backfill_to_tip(from_block, tx).await?;
+        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        debug!(
+            subscriber_id = subscriber_id.as_str(),
+            "block_headers=stream_ready"
+        );
+        Ok(Response::new(stream))
+    }
+
+    async fn start_live_stream(&self, tx: BlockHeaderResponseSender) -> String {
+        let filter = FilterType::CoreAllBlocks;
+        let block_handle = self.subscriber_manager.add_subscription(filter).await;
+        let subscriber_id = block_handle.id().to_string();
+        debug!(
+            subscriber_id = subscriber_id.as_str(),
+            "block_headers=subscription_created"
+        );
 
         let chainlock_handle = self
             .subscriber_manager
@@ -84,119 +127,134 @@ impl StreamingServiceImpl {
             "block_headers=chainlock_subscription_created"
         );
 
-        // Spawn task to convert internal messages to gRPC responses
-        let tx_live = tx.clone();
-        tokio::spawn(async move {
-            while let Some(message) = tokio::select! {
-                m = sub_handle.recv() => m,
-                m = chainlock_handle.recv() => m,
-            } {
-                let response = match message {
-                    StreamingEvent::CoreRawBlock { data } => {
-                        let block_hash =
-                            super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
-                                .unwrap_or_else(|| "n/a".to_string());
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            block_hash = %block_hash,
-                            payload_size = data.len(),
-                            "block_headers=forward_block"
-                        );
-                        let block_headers = BlockHeaders {
-                            headers: vec![data],
-                        };
-                        let response = BlockHeadersWithChainLocksResponse {
-                            responses: Some(
-                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers),
-                            ),
-                        };
-                        Ok(response)
-                    }
-                    StreamingEvent::CoreChainLock { data } => {
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            payload_size = data.len(),
-                            "block_headers=forward_chain_lock"
-                        );
-                        let response = BlockHeadersWithChainLocksResponse {
-                            responses: Some(
-                                dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data),
-                            ),
-                        };
-                        Ok(response)
-                    }
-                    _ => {
-                        let summary =
-                            super::StreamingServiceImpl::summarize_streaming_event(&message);
-                        trace!(
-                            subscriber_id = sub_handle.id(),
-                            event = %summary,
-                            "block_headers=ignore_event"
-                        );
-                        // Ignore other message types for this subscription
-                        continue;
-                    }
-                };
+        Self::spawn_block_header_worker(block_handle, chainlock_handle, tx);
 
-                if tx_live.send(response).is_err() {
-                    debug!(
-                        subscriber_id = sub_handle.id(),
-                        "block_headers=client_disconnected"
+        subscriber_id
+    }
+
+    fn spawn_block_header_worker(
+        block_handle: SubscriptionHandle,
+        chainlock_handle: SubscriptionHandle,
+        tx: BlockHeaderResponseSender,
+    ) {
+        tokio::spawn(async move {
+            Self::block_header_worker(block_handle, chainlock_handle, tx).await;
+        });
+    }
+
+    async fn block_header_worker(
+        mut block_handle: SubscriptionHandle,
+        mut chainlock_handle: SubscriptionHandle,
+        tx: BlockHeaderResponseSender,
+    ) {
+        let subscriber_id = block_handle.id().to_string();
+
+        while let Some(message) = tokio::select! {
+            m = block_handle.recv() => m,
+            m = chainlock_handle.recv() => m,
+        } {
+            let response = match message {
+                StreamingEvent::CoreRawBlock { data } => {
+                    let block_hash = Self::block_hash_hex_from_block_bytes(&data)
+                        .unwrap_or_else(|| "n/a".to_string());
+                    trace!(
+                        subscriber_id = subscriber_id.as_str(),
+                        block_hash = %block_hash,
+                        payload_size = data.len(),
+                        "block_headers=forward_block"
                     );
-                    break;
+                    let block_headers = BlockHeaders {
+                        headers: vec![data],
+                    };
+                    let response = BlockHeadersWithChainLocksResponse {
+                        responses: Some(
+                            dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(block_headers),
+                        ),
+                    };
+                    Ok(response)
+                }
+                StreamingEvent::CoreChainLock { data } => {
+                    trace!(
+                        subscriber_id = subscriber_id.as_str(),
+                        payload_size = data.len(),
+                        "block_headers=forward_chain_lock"
+                    );
+                    let response = BlockHeadersWithChainLocksResponse {
+                        responses: Some(
+                            dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data),
+                        ),
+                    };
+                    Ok(response)
+                }
+                other => {
+                    let summary = Self::summarize_streaming_event(&other);
+                    trace!(
+                        subscriber_id = subscriber_id.as_str(),
+                        event = %summary,
+                        "block_headers=ignore_event"
+                    );
+                    continue;
+                }
+            };
+
+            if tx.send(response).is_err() {
+                debug!(
+                    subscriber_id = subscriber_id.as_str(),
+                    "block_headers=client_disconnected"
+                );
+                break;
+            }
+        }
+
+        debug!(
+            subscriber_id = subscriber_id.as_str(),
+            "block_headers=subscription_task_finished"
+        );
+    }
+
+    async fn backfill_to_tip(
+        &self,
+        from_block: FromBlock,
+        tx: BlockHeaderResponseSender,
+    ) -> Result<(), Status> {
+        // Snapshot best height first to guarantee no gaps between backfill and live stream
+        let best = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+
+        match from_block {
+            FromBlock::FromBlockHash(hash) => {
+                use std::str::FromStr;
+                let hash_hex = hex::encode(&hash);
+                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                let header = self
+                    .core_client
+                    .get_block_header_info(&block_hash)
+                    .await
+                    .map_err(Status::from)?;
+                if header.height > 0 {
+                    let start = header.height as usize;
+                    let count_tip = best.saturating_sub(start).saturating_add(1);
+                    debug!(start, count_tip, "block_headers=backfill_from_hash");
+                    self.process_historical_blocks_from_height(start, count_tip, tx.clone())
+                        .await?;
                 }
             }
-            debug!(
-                subscriber_id = sub_handle.id(),
-                "block_headers=subscription_task_finished"
-            );
-        });
-
-        // After subscribing, optionally backfill historical headers to the current tip
-        if let Some(from_block) = req.from_block {
-            // Snapshot best height first to guarantee no gaps between backfill and live stream
-            let best = self
-                .core_client
-                .get_block_count()
-                .await
-                .map_err(Status::from)? as usize;
-
-            match from_block {
-                dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHash(hash) => {
-                    use std::str::FromStr;
-                    let hash_hex = hex::encode(&hash);
-                    let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
-                        .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
-                    let hi = self
-                        .core_client
-                        .get_block_header_info(&bh)
-                        .await
-                        .map_err(Status::from)?;
-                    if hi.height > 0 {
-                        let start = hi.height as usize;
-                        let count_tip = best.saturating_sub(start).saturating_add(1);
-                        debug!(start, count_tip, "block_headers=backfill_from_hash");
-                        self
-                            .process_historical_blocks_from_height(start, count_tip, tx.clone())
-                            .await?;
-                    }
-                }
-                dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock::FromBlockHeight(height) => {
-                    let start = height as usize;
-                    if start >= 1 {
-                        let count_tip = best.saturating_sub(start).saturating_add(1);
-                        debug!(start, count_tip, "block_headers=backfill_from_height");
-                        self
-                            .process_historical_blocks_from_height(start, count_tip, tx.clone())
-                            .await?;
-                    }
+            FromBlock::FromBlockHeight(height) => {
+                let start = height as usize;
+                if start >= 1 {
+                    let count_tip = best.saturating_sub(start).saturating_add(1);
+                    debug!(start, count_tip, "block_headers=backfill_from_height");
+                    self.process_historical_blocks_from_height(start, count_tip, tx.clone())
+                        .await?;
                 }
             }
         }
 
-        let stream = UnboundedReceiverStream::new(rx);
-        debug!(subscriber_id, "block_headers=stream_ready");
-        Ok(Response::new(stream))
+        Ok(())
     }
 
     /// Process historical blocks from a specific block hash
@@ -204,7 +262,7 @@ impl StreamingServiceImpl {
         &self,
         from_hash: &[u8],
         count: usize,
-        tx: mpsc::UnboundedSender<Result<BlockHeadersWithChainLocksResponse, Status>>,
+        tx: BlockHeaderResponseSender,
     ) -> Result<(), Status> {
         use std::str::FromStr;
         // Derive starting height from hash, then delegate to height-based fetch
@@ -228,7 +286,7 @@ impl StreamingServiceImpl {
         &self,
         from_height: usize,
         count: usize,
-        tx: mpsc::UnboundedSender<Result<BlockHeadersWithChainLocksResponse, Status>>,
+        tx: BlockHeaderResponseSender,
     ) -> Result<(), Status> {
         // Fetch blocks sequentially and send only block headers (80 bytes each)
         // Chunk responses to avoid huge gRPC messages.

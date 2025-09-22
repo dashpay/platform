@@ -889,7 +889,7 @@ impl PlatformService for QueryService {
         // TODO: two issues are to be resolved:
         // 1) restart of client with the same subscription id shows that old subscription is not removed
         // 2) connection drops after some time
-        return Err(Status::unimplemented("the endpoint is not supported yet"));
+        // return Err(Status::unimplemented("the endpoint is not supported yet"));
         let inbound = request.into_inner();
         let (downstream_tx, rx) =
             mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
