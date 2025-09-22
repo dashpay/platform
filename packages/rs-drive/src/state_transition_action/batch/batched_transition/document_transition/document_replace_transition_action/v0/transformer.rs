@@ -1,11 +1,10 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::document::property_names;
+use dpp::document::{property_names, Document, DocumentV0Getters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identity::TimestampMillis;
-use dpp::prelude::{BlockHeight, ConsensusValidationResult, CoreBlockHeight, UserFeeIncrease};
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_replace_transition::DocumentReplaceTransitionV0;
 use crate::drive::contract::DataContractFetchInfo;
@@ -22,12 +21,7 @@ impl DocumentReplaceTransitionActionV0 {
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransitionV0,
         owner_id: Identifier,
-        originally_created_at: Option<TimestampMillis>,
-        originally_created_at_block_height: Option<BlockHeight>,
-        originally_created_at_core_block_height: Option<CoreBlockHeight>,
-        originally_transferred_at: Option<TimestampMillis>,
-        originally_transferred_at_block_height: Option<BlockHeight>,
-        originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
+        original_document: &Document,
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -94,20 +88,38 @@ impl DocumentReplaceTransitionActionV0 {
             None
         };
 
+        // There is a case where we updated a just deleted document
+        // In this case we don't care about the created at
+        let original_document_created_at = original_document.created_at();
+
+        let original_document_created_at_block_height = original_document.created_at_block_height();
+
+        let original_document_created_at_core_block_height =
+            original_document.created_at_core_block_height();
+
+        let original_document_transferred_at = original_document.transferred_at();
+
+        let original_document_transferred_at_block_height =
+            original_document.transferred_at_block_height();
+
+        let original_document_transferred_at_core_block_height =
+            original_document.transferred_at_core_block_height();
+
         Ok((
             BatchedTransitionAction::DocumentAction(DocumentTransitionAction::ReplaceAction(
                 DocumentReplaceTransitionActionV0 {
                     base,
                     revision: *revision,
-                    created_at: originally_created_at,
+                    created_at: original_document_created_at,
                     updated_at,
-                    transferred_at: originally_transferred_at,
-                    created_at_block_height: originally_created_at_block_height,
+                    transferred_at: original_document_transferred_at,
+                    created_at_block_height: original_document_created_at_block_height,
                     updated_at_block_height,
-                    transferred_at_block_height: originally_transferred_at_block_height,
-                    created_at_core_block_height: originally_created_at_core_block_height,
+                    transferred_at_block_height: original_document_transferred_at_block_height,
+                    created_at_core_block_height: original_document_created_at_core_block_height,
                     updated_at_core_block_height,
-                    transferred_at_core_block_height: originally_transferred_at_core_block_height,
+                    transferred_at_core_block_height:
+                        original_document_transferred_at_core_block_height,
                     data: data.clone(),
                 }
                 .into(),

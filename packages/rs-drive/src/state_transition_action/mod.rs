@@ -9,6 +9,8 @@ pub mod system;
 pub mod action_convert_to_operations;
 /// documents_batch
 pub mod batch;
+/// transform_to_state_transition_action_result
+pub mod transform_to_state_transition_action_result;
 
 use crate::state_transition_action::batch::BatchTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;

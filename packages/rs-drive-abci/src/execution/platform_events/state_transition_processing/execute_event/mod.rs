@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::platform::Platform;
 
@@ -39,7 +39,7 @@ where
     /// an internal error occurs.
     pub(in crate::execution) fn execute_event(
         &self,
-        event: ExecutionEvent,
+        event: ExecutionEventInfo,
         consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,

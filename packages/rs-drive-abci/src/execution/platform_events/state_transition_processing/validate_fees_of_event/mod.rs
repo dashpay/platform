@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::platform_types::platform::Platform;
 
 use crate::rpc::core::CoreRPCLike;
@@ -38,7 +38,7 @@ where
     /// * This function may return an `Error::Drive` if there's an issue with applying drive operations.
     pub(in crate::execution) fn validate_fees_of_event(
         &self,
-        event: &ExecutionEvent,
+        event: &ExecutionEventInfo,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

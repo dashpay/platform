@@ -8,6 +8,7 @@ use dpp::dashcore::Network;
 use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
@@ -85,13 +86,16 @@ impl StateTransitionBasicStructureValidationV0 for IdentityUpdateTransition {
 }
 
 impl StateTransitionStateValidationV0 for IdentityUpdateTransition {
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;

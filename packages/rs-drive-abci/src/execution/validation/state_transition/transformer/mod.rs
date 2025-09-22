@@ -9,8 +9,9 @@ use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
-use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 
 /// A trait for validating state transitions within a blockchain.
 pub trait StateTransitionActionTransformerV0 {
@@ -30,25 +31,33 @@ pub trait StateTransitionActionTransformerV0 {
     ///
     /// # Returns
     /// A `Result` containing either a `ConsensusValidationResult<StateTransitionAction>` or an `Error`.
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl StateTransitionActionTransformerV0 for StateTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         match self {
             StateTransition::DataContractCreate(st) => st.transform_into_action(
                 platform,

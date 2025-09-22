@@ -36,47 +36,60 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::ValidationMode;
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::{DriveSubscriptionFilter, HitFiltersType};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use drive::state_transition_action::system::bump_identity_nonce_action::BumpIdentityNonceAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::common::validate_non_masternode_identity_exists::validate_non_masternode_identity_exists;
 
 pub(in crate::execution::validation::state_transition::state_transitions::data_contract_create) trait DataContractCreateStateTransitionStateValidationV0 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0<'a, C: CoreRPCLike>(
         &self,
+        platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
+        tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTransition {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let action = self.transform_into_action_v0::<C>(
             block_info,
+            platform,
             validation_mode,
+            tx,
             execution_context,
+            passing_filters_for_transition,
             platform_version,
         )?;
 
@@ -98,7 +111,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     )?;
 
                     if !identity_exists {
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                             StateTransitionAction::BumpIdentityNonceAction(
                                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                             ),
@@ -137,7 +150,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                         )?;
 
                         if !identity_exists {
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                                 StateTransitionAction::BumpIdentityNonceAction(
                                     BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                                 ),
@@ -174,7 +187,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     )?;
 
                     if !identity_exists {
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                             StateTransitionAction::BumpIdentityNonceAction(
                                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(
                                     self,
@@ -210,7 +223,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                         )?;
 
                         if !identity_exists {
-                            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                            return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                                 StateTransitionAction::BumpIdentityNonceAction(
                                     BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(
                                         self,
@@ -236,7 +249,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             if let Some(distribution) = config.distribution_rules().pre_programmed_distribution() {
                 if let Some((timestamp, _)) = distribution.distributions().iter().next() {
                     if timestamp < &block_info.time_ms {
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                             StateTransitionAction::BumpIdentityNonceAction(
                                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                             ),
@@ -259,7 +272,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                             )?;
 
                             if !identity_exists {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                                     StateTransitionAction::BumpIdentityNonceAction(
                                         BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(
                                             self,
@@ -307,7 +320,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                 BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
             );
 
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
+            return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                 bump_action,
                 vec![StateError::DataContractAlreadyPresentError(
                     DataContractAlreadyPresentError::new(self.data_contract().id().to_owned()),
@@ -351,7 +364,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                         let contract_tokens = fetch_info.contract.tokens();
                         for token_position in &token_positions {
                             if !contract_tokens.contains_key(token_position) {
-                                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                                return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                                     StateTransitionAction::BumpIdentityNonceAction(
                                         BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                                     ),
@@ -372,7 +385,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                             ),
                         );
 
-                        return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                             bump_action,
                             vec![StateError::DataContractNotFoundError(
                                 DataContractNotFoundError::new(contract_id),
@@ -387,13 +400,17 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
         Ok(action)
     }
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0<'a, C: CoreRPCLike>(
         &self,
+        platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
+        tx: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
+        // For data contract create we can only have passing filters, as we would never need the original
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let mut validation_operations = vec![];
 
         // The transformation of the state transition into the state transition action will transform
@@ -416,7 +433,7 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
                     BumpIdentityNonceAction::from_borrowed_data_contract_create_transition(self),
                 );
 
-                Ok(ConsensusValidationResult::new_with_data_and_errors(
+                Ok(ConsensusValidationResult::new_with_data_into_and_errors(
                     bump_action,
                     vec![*consensus_error],
                 ))
@@ -424,7 +441,27 @@ impl DataContractCreateStateTransitionStateValidationV0 for DataContractCreateTr
             Err(protocol_error) => Err(protocol_error.into()),
             Ok(create_action) => {
                 let action: StateTransitionAction = create_action.into();
-                Ok(action.into())
+                if !passing_filters_for_transition.is_empty() {
+                    // We have filters on this data contract create, we should get the grovedb proof that
+                    // nothing existed before
+                    if let Ok(original_grovedb_proof) = platform.drive.prove_contract(
+                        self.data_contract().id().to_buffer(),
+                        tx,
+                        platform_version,
+                    ) {
+                        let action_result = TransformToStateTransitionActionResult {
+                            action,
+                            filters_hit: HitFiltersType::DidHitFilters {
+                                original_grovedb_proof,
+                                filters_hit: passing_filters_for_transition.to_vec(),
+                            },
+                        };
+                        return Ok(action_result.into());
+                    }
+                    // if the contract proving fails just say we didn't get any action results
+                }
+                let action_result: TransformToStateTransitionActionResult = action.into();
+                Ok(action_result.into())
             }
         }
     }
@@ -524,6 +561,7 @@ mod tests {
                     ValidationMode::Validator,
                     None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -617,6 +655,7 @@ mod tests {
                     ValidationMode::Validator,
                     None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -700,6 +739,7 @@ mod tests {
                     ValidationMode::Validator,
                     None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -767,6 +807,7 @@ mod tests {
                     ValidationMode::Validator,
                     None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -797,6 +838,10 @@ mod tests {
 
             let identity_id = data_contract.owner_id();
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
             let mut data_contract_for_serialization = data_contract
                 .try_into_platform_versioned(platform_version)
                 .expect("failed to convert data contract");
@@ -825,11 +870,21 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
+                    None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -857,6 +912,10 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let identity_nonce = IdentityNonce::default();
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
             let data_contract =
                 get_data_contract_fixture(None, identity_nonce, platform_version.protocol_version)
                     .data_contract_owned();
@@ -880,11 +939,21 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
                 .transform_into_action_v0::<MockCoreRPCLike>(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
+                    None,
                     &mut execution_context,
+                    &vec![],
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");

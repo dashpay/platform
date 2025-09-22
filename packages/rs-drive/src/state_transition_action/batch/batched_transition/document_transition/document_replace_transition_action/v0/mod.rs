@@ -135,6 +135,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             data,
+            ..
         } = value;
 
         let id = base.id();
@@ -186,6 +187,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             updated_at_core_block_height,
             transferred_at_core_block_height,
             data,
+            ..
         } = value;
 
         let id = base.id();

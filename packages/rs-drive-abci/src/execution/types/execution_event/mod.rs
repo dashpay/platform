@@ -10,6 +10,7 @@ use dpp::identity::PartialIdentity;
 use dpp::prelude::UserFeeIncrease;
 
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::{DriveSubscriptionFilter, HitFiltersType};
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::execution::types::execution_operation::ValidationOperation;
@@ -20,9 +21,24 @@ use drive::state_transition_action::action_convert_to_operations::DriveHighLevel
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 use drive::util::batch::DriveOperation;
 
-/// An execution event
-#[derive(Clone)]
-pub(in crate::execution) enum ExecutionEvent<'a> {
+#[derive(Debug, Clone)]
+pub(in crate::execution) struct ExecutionEvent<'a, 'b> {
+    pub event_info: ExecutionEventInfo<'a>,
+    pub filters_hit: HitFiltersType<'b>,
+}
+
+impl<'a> From<ExecutionEventInfo<'a>> for ExecutionEvent<'a, '_> {
+    fn from(value: ExecutionEventInfo) -> Self {
+        Self {
+            event_info: value,
+            filters_hit: HitFiltersType::NoFilterHit,
+        }
+    }
+}
+
+/// An execution event type
+#[derive(Debug, Clone)]
+pub(in crate::execution) enum ExecutionEventInfo<'a> {
     /// A drive event that is paid by an identity
     Paid {
         /// The identity requesting the event
@@ -73,7 +89,7 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
 }
 
-impl ExecutionEvent<'_> {
+impl ExecutionEventInfo<'_> {
     pub(crate) fn create_from_state_transition_action(
         action: StateTransitionAction,
         identity: Option<PartialIdentity>,
@@ -87,7 +103,7 @@ impl ExecutionEvent<'_> {
                 let identity = identity_create_action.into();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
-                Ok(ExecutionEvent::PaidFromAssetLock {
+                Ok(ExecutionEventInfo::PaidFromAssetLock {
                     identity,
                     added_balance: 0,
                     operations,
@@ -103,7 +119,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::PaidFromAssetLock {
+                    Ok(ExecutionEventInfo::PaidFromAssetLock {
                         identity,
                         added_balance,
                         operations,
@@ -121,7 +137,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 // We mark it as a free operation because the event itself is paying for itself
-                Ok(ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+                Ok(ExecutionEventInfo::PaidFromAssetLockWithoutIdentity {
                     processing_fees: used_credits,
                     operations,
                 })
@@ -132,7 +148,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
                         operations,
@@ -152,7 +168,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance: Some(removed_balance),
                         operations,
@@ -172,7 +188,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance,
                         operations,
@@ -190,7 +206,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
 
-                Ok(ExecutionEvent::PaidFixedCost {
+                Ok(ExecutionEventInfo::PaidFixedCost {
                     operations,
                     fees_to_add_to_pool: platform_version
                         .fee_version
@@ -206,7 +222,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance: None,
                         operations,
@@ -230,7 +246,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance: None,
                         operations,
@@ -249,7 +265,7 @@ impl ExecutionEvent<'_> {
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 if let Some(identity) = identity {
-                    Ok(ExecutionEvent::Paid {
+                    Ok(ExecutionEventInfo::Paid {
                         identity,
                         removed_balance: None,
                         operations,

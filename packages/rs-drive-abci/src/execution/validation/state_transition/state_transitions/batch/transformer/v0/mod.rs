@@ -422,7 +422,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
         //
         // execution_context.add_operations(tmp_execution_context.operations_slice());
 
-        let dry_run = false; //maybe reenable
+        let dry_run = false; //maybe re-enable
 
         let data_contract = &data_contract_fetch_info.contract;
 
@@ -688,24 +688,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let original_document = validation_result.into_data()?;
 
-                // There is a case where we updated a just deleted document
-                // In this case we don't care about the created at
-                let original_document_created_at = original_document.created_at();
-
-                let original_document_created_at_block_height =
-                    original_document.created_at_block_height();
-
-                let original_document_created_at_core_block_height =
-                    original_document.created_at_core_block_height();
-
-                let original_document_transferred_at = original_document.transferred_at();
-
-                let original_document_transferred_at_block_height =
-                    original_document.transferred_at_block_height();
-
-                let original_document_transferred_at_core_block_height =
-                    original_document.transferred_at_core_block_height();
-
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition.base().id(),
                     original_document,
@@ -719,7 +701,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
-                    // for example when we already applied the state transition action
+                    // for example when we already applied the state transition action,
                     // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_replace_transition.revision(),
@@ -737,12 +719,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         owner_id,
-                        original_document_created_at,
-                        original_document_created_at_block_height,
-                        original_document_created_at_core_block_height,
-                        original_document_transferred_at,
-                        original_document_transferred_at_block_height,
-                        original_document_transferred_at_core_block_height,
+                        original_document,
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
@@ -793,7 +770,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
-                    // for example when we already applied the state transition action
+                    // for example when we already applied the state transition action,
                     // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_transfer_transition.revision(),
@@ -852,7 +829,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
-                    // for example when we already applied the state transition action
+                    // for example when we already applied the state transition action,
                     // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_update_price_transition.revision(),
@@ -921,7 +898,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 if validate_against_state {
                     //there are situations where we don't want to validate this against the state
-                    // for example when we already applied the state transition action
+                    // for example when we already applied the state transition action,
                     // and we are just validating it happened
                     let validation_result = Self::check_revision_is_bumped_by_one_during_replace_v0(
                         document_purchase_transition.revision(),

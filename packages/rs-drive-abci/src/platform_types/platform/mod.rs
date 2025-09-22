@@ -14,6 +14,7 @@ use arc_swap::ArcSwap;
 use dpp::version::ProtocolVersion;
 use dpp::version::INITIAL_PROTOCOL_VERSION;
 use dpp::version::{PlatformVersion, PlatformVersionCurrentVersion};
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use std::path::Path;
 use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
@@ -36,6 +37,8 @@ pub struct Platform<C> {
     pub config: PlatformConfig,
     /// Core RPC Client
     pub core_rpc: C,
+    /// Subscriptions
+    pub state_transition_subscriptions: Vec<DriveSubscriptionFilter>,
 }
 
 // @append_only
@@ -204,6 +207,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            state_transition_subscriptions: vec![],
         };
 
         Ok(platform)
@@ -236,6 +240,7 @@ impl<C> Platform<C> {
             committed_block_height_guard: AtomicU64::from(height),
             config,
             core_rpc,
+            state_transition_subscriptions: vec![],
         })
     }
 }

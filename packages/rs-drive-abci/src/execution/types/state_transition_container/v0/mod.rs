@@ -48,6 +48,17 @@ impl<'a> StateTransitionContainerV0<'a> {
     pub fn new(state_transitions: Vec<DecodedStateTransition<'a>>) -> Self {
         Self { state_transitions }
     }
+
+    /// Returns references to every successfully decoded state transition in insertion order.
+    pub fn successfully_decoded_state_transitions(&self) -> Vec<&StateTransition> {
+        self.state_transitions
+            .iter()
+            .filter_map(|decoded| match decoded {
+                DecodedStateTransition::SuccessfullyDecoded(success) => Some(&success.decoded),
+                _ => None,
+            })
+            .collect()
+    }
 }
 
 impl<'a> IntoIterator for &'a StateTransitionContainerV0<'a> {

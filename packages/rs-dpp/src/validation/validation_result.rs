@@ -101,6 +101,16 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         }
     }
 
+    pub fn new_with_data_into_and_errors<TDataFrom>(data: TDataFrom, errors: Vec<E>) -> Self
+    where
+        TDataFrom: Into<TData>,
+    {
+        Self {
+            errors,
+            data: Some(data.into()),
+        }
+    }
+
     pub fn new_with_error(error: E) -> Self {
         Self {
             errors: vec![error],
@@ -129,6 +139,20 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         Ok(ValidationResult {
             errors: self.errors,
             data: self.data.map(f).transpose()?,
+        })
+    }
+
+    pub fn map_result_into<F, V: Clone, U: Clone, G>(
+        self,
+        f: F,
+    ) -> Result<ValidationResult<V, E>, G>
+    where
+        F: FnOnce(TData) -> Result<U, G>,
+        V: From<U>,
+    {
+        Ok(ValidationResult {
+            errors: self.errors,
+            data: self.data.map(f).transpose()?.map(V::from),
         })
     }
 

@@ -2,8 +2,6 @@ use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
-use std::collections::BTreeSet;
-
 use dpp::consensus::basic::document::DataContractNotPresentError;
 use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::data_contract::data_contract_not_found_error::DataContractNotFoundError;
@@ -24,6 +22,9 @@ use dpp::data_contract::change_control_rules::authorized_action_takers::Authoriz
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dpp::data_contract::validate_update::DataContractUpdateValidationMethodsV0;
+use dpp::data_contract::DataContract;
+use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use crate::error::execution::ExecutionError;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -32,6 +33,8 @@ use dpp::state_transition::data_contract_update_transition::accessors::DataContr
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use drive::drive::contract::DataContractFetchInfo;
+use drive::drive::subscriptions::{DriveSubscriptionFilter, HitFiltersType};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
@@ -41,6 +44,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::execution::validation::state_transition::common::validate_identity_exists::validate_identity_exists;
 use crate::execution::validation::state_transition::common::validate_non_masternode_identity_exists::validate_non_masternode_identity_exists;
 
@@ -55,6 +59,19 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
+    fn validate_state_v1<'a, C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
+
     fn transform_into_action_v0(
         &self,
         block_info: &BlockInfo,
@@ -62,6 +79,19 @@ pub(in crate::execution::validation::state_transition::state_transitions::data_c
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    fn transform_into_action_v1<'a, C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<(Option<Arc<DataContractFetchInfo>>, TransformToStateTransitionActionResult<'a>)>, Error>;
 }
 
 impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTransition {
@@ -458,6 +488,362 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
         Ok(action)
     }
 
+    fn validate_state_v1<'a, C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
+        let action = self.transform_into_action_v1(
+            platform,
+            block_info,
+            validation_mode,
+            execution_context,
+            passing_filters_for_transition,
+            requiring_original_filters_for_transition,
+            tx,
+            platform_version,
+        )?;
+
+        if !action.is_valid() {
+            return Ok(action.into());
+        }
+
+        let state_transition_action = action.data.as_mut().ok_or(Error::Execution(
+            ExecutionError::CorruptedCodeExecution(
+                "we should always have an action at this point in data contract update",
+            ),
+        ))?;
+
+        let new_data_contract = match state_transition_action {
+            StateTransitionAction::DataContractUpdateAction(action) => {
+                Some(action.data_contract_mut())
+            }
+            _ => None,
+        }
+        .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+            "we should always have a data contract at this point in data contract update",
+        )))?;
+
+        // Here we do validations that consider the old data contract
+        let validation_result =
+            old_data_contract.validate_update(new_data_contract, block_info, platform_version)?;
+
+        if !validation_result.is_valid() {
+            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                    self,
+                ),
+            );
+
+            return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                bump_action,
+                validation_result.errors,
+            ));
+        }
+
+        new_data_contract.set_created_at(old_data_contract.created_at());
+        new_data_contract.set_created_at_block_height(old_data_contract.created_at_block_height());
+        new_data_contract.set_created_at_epoch(old_data_contract.created_at_epoch());
+
+        let mut validated_identities = BTreeSet::new();
+
+        for (position, group) in self.data_contract().groups() {
+            for member_identity_id in group.members().keys() {
+                if !validated_identities.contains(member_identity_id) {
+                    let identity_exists = validate_non_masternode_identity_exists(
+                        platform.drive,
+                        member_identity_id,
+                        execution_context,
+                        tx,
+                        platform_version,
+                    )?;
+
+                    if !identity_exists {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                self,
+                            ),
+                        );
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                            bump_action,
+                            vec![StateError::IdentityMemberOfGroupNotFoundError(
+                                IdentityMemberOfGroupNotFoundError::new(
+                                    self.data_contract().id(),
+                                    *position,
+                                    *member_identity_id,
+                                ),
+                            )
+                            .into()],
+                        ));
+                    } else {
+                        validated_identities.insert(*member_identity_id);
+                    }
+                }
+            }
+        }
+
+        // Validate any newly added tokens
+        for (token_contract_position, token_configuration) in new_data_contract.tokens() {
+            if !old_data_contract
+                .tokens()
+                .contains_key(token_contract_position)
+            {
+                for (name, change_control_rules) in token_configuration.all_change_control_rules() {
+                    if let AuthorizedActionTakers::Identity(identity_id) =
+                        change_control_rules.authorized_to_make_change_action_takers()
+                    {
+                        // we need to make sure this identity exists
+                        if !validated_identities.contains(identity_id) {
+                            let identity_exists = validate_non_masternode_identity_exists(
+                                platform.drive,
+                                identity_id,
+                                execution_context,
+                                tx,
+                                platform_version,
+                            )?;
+
+                            if !identity_exists {
+                                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                        self,
+                                    ),
+                                );
+
+                                return Ok(
+                                    ConsensusValidationResult::new_with_data_into_and_errors(
+                                        bump_action,
+                                        vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                        IdentityInTokenConfigurationNotFoundError::new(
+                                            old_data_contract.id(),
+                                            *token_contract_position,
+                                            TokenConfigurationIdentityContext::ChangeControlRule(
+                                                name.to_string(),
+                                            ),
+                                            *identity_id,
+                                        ),
+                                    )
+                                        .into()],
+                                    ),
+                                );
+                            } else {
+                                validated_identities.insert(*identity_id);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(distribution) = token_configuration
+                    .distribution_rules()
+                    .perpetual_distribution()
+                {
+                    if let TokenDistributionRecipient::Identity(identifier) =
+                        distribution.distribution_recipient()
+                    {
+                        if !validated_identities.contains(&identifier) {
+                            let identity_exists = validate_identity_exists(
+                                platform.drive,
+                                &identifier,
+                                execution_context,
+                                tx,
+                                platform_version,
+                            )?;
+
+                            if !identity_exists {
+                                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                        self,
+                                    ),
+                                );
+                                return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                                    bump_action,
+                                    vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                        IdentityInTokenConfigurationNotFoundError::new(
+                                            old_data_contract.id(),
+                                            *token_contract_position,
+                                            TokenConfigurationIdentityContext::PerpetualDistributionRecipient,
+                                            identifier,
+                                        ),
+                                    )
+                                        .into()],
+                                ));
+                            } else {
+                                validated_identities.insert(identifier);
+                            }
+                        }
+                    }
+                }
+
+                if let Some(distributions) = token_configuration
+                    .distribution_rules()
+                    .pre_programmed_distribution()
+                {
+                    for distribution in distributions.distributions().values() {
+                        for identifier in distribution.keys() {
+                            if !validated_identities.contains(identifier) {
+                                let identity_exists = validate_identity_exists(
+                                    platform.drive,
+                                    identifier,
+                                    execution_context,
+                                    tx,
+                                    platform_version,
+                                )?;
+
+                                if !identity_exists {
+                                    let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                        BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                            self,
+                                        ),
+                                    );
+                                    return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                                        bump_action,
+                                        vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                            IdentityInTokenConfigurationNotFoundError::new(
+                                                old_data_contract.id(),
+                                                *token_contract_position,
+                                                TokenConfigurationIdentityContext::PreProgrammedDistributionRecipient,
+                                                *identifier,
+                                            ),
+                                        )
+                                            .into()],
+                                    ));
+                                } else {
+                                    validated_identities.insert(*identifier);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // We validate that if we set a minting distribution that this identity exists
+                // It can be an evonode, so we just use the balance as a check
+
+                if let Some(minting_recipient) = token_configuration
+                    .distribution_rules()
+                    .new_tokens_destination_identity()
+                {
+                    if !validated_identities.contains(minting_recipient) {
+                        let identity_exists = validate_identity_exists(
+                            platform.drive,
+                            minting_recipient,
+                            execution_context,
+                            tx,
+                            platform_version,
+                        )?;
+
+                        if !identity_exists {
+                            let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                    self,
+                                ),
+                            );
+
+                            return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                                bump_action,
+                                vec![StateError::IdentityInTokenConfigurationNotFoundError(
+                                    IdentityInTokenConfigurationNotFoundError::new(
+                                        old_data_contract.id(),
+                                        *token_contract_position,
+                                        TokenConfigurationIdentityContext::DefaultMintingRecipient,
+                                        *minting_recipient,
+                                    ),
+                                )
+                                .into()],
+                            ));
+                        } else {
+                            validated_identities.insert(*minting_recipient);
+                        }
+                    }
+                }
+            }
+        }
+
+        // now we need to validate that all documents with token costs using external tokens
+        // point to tokens that actually exist
+        if let StateTransitionAction::DataContractUpdateAction(update_action) =
+            action.data_as_borrowed()?
+        {
+            // this should always be the case, except if we already have a bump action,
+            // in which case we don't need to validate anymore
+            for document_type in update_action.data_contract_ref().document_types().values() {
+                for (contract_id, token_positions) in
+                    document_type.all_external_token_costs_contract_tokens()
+                {
+                    let contract_fetch_info = platform.drive.get_contract_with_fetch_info_and_fee(
+                        contract_id.to_buffer(),
+                        Some(&block_info.epoch),
+                        false,
+                        tx,
+                        platform_version,
+                    )?;
+
+                    let fee =
+                        contract_fetch_info
+                            .0
+                            .ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                            "fee must exist in validate state for data contract update transition",
+                        )))?;
+
+                    // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
+                    execution_context
+                        .add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+                    // Data contract should exist
+                    if let Some(fetch_info) = contract_fetch_info.1 {
+                        let contract_tokens = fetch_info.contract.tokens();
+                        for token_position in &token_positions {
+                            if !contract_tokens.contains_key(token_position) {
+                                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                        self,
+                                    ),
+                                );
+                                return Ok(
+                                    ConsensusValidationResult::new_with_data_into_and_errors(
+                                        bump_action,
+                                        vec![StateError::InvalidTokenPositionStateError(
+                                            InvalidTokenPositionStateError::new(
+                                                contract_tokens.last_key_value().map(
+                                                    |(token_contract_position, _)| {
+                                                        *token_contract_position
+                                                    },
+                                                ),
+                                                *token_position,
+                                            ),
+                                        )
+                                        .into()],
+                                    ),
+                                );
+                            }
+                        }
+                    } else {
+                        let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                            BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                                self,
+                            ),
+                        );
+
+                        return Ok(ConsensusValidationResult::new_with_data_into_and_errors(
+                            bump_action,
+                            vec![StateError::DataContractNotFoundError(
+                                DataContractNotFoundError::new(contract_id),
+                            )
+                            .into()],
+                        ));
+                    }
+                }
+            }
+        }
+
+        Ok(action)
+    }
+
     fn transform_into_action_v0(
         &self,
         block_info: &BlockInfo,
@@ -469,6 +855,7 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
 
         let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
             self,
+            None,
             block_info,
             validation_mode.should_fully_validate_contract_on_transform_into_action(),
             &mut validation_operations,
@@ -494,6 +881,139 @@ impl DataContractUpdateStateTransitionStateValidationV0 for DataContractUpdateTr
             Ok(create_action) => {
                 let action: StateTransitionAction = create_action.into();
                 Ok(action.into())
+            }
+        }
+    }
+
+    fn transform_into_action_v1<'a, C: CoreRPCLike>(
+        &self,
+        platform: &PlatformRef<C>,
+        block_info: &BlockInfo,
+        validation_mode: ValidationMode,
+        execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<
+        ConsensusValidationResult<(
+            Option<Arc<DataContractFetchInfo>>,
+            TransformToStateTransitionActionResult<'a>,
+        )>,
+        Error,
+    > {
+        let mut validation_operations = vec![];
+
+        let drive = platform.drive;
+
+        let known_old_data_contract = if validation_mode == ValidationMode::Validator {
+            // Check previous data contract already exists in the state
+            // Failure (contract does not exist): Keep ST and transform it to a nonce bump action.
+            // How: A user pushed an update for a data contract that didn’t exist.
+            // Note: Existing in the state can also mean that it exists in the current block state, meaning that the contract was inserted in the same block with a previous transition.
+
+            // Data contract should exist
+            let add_to_cache_if_pulled = validation_mode.can_alter_cache();
+
+            let data_contract_fetch_info = drive.get_contract_with_fetch_info_and_fee(
+                self.data_contract().id().to_buffer(),
+                Some(&block_info.epoch),
+                add_to_cache_if_pulled,
+                tx,
+                platform_version,
+            )?;
+
+            let fee = data_contract_fetch_info.0.ok_or(Error::Execution(
+                ExecutionError::CorruptedCodeExecution(
+                    "fee must exist in validate state for data contract update transition",
+                ),
+            ))?;
+
+            // We add the cost for fetching the contract even if the contract doesn't exist or was in cache
+            execution_context.add_operation(ValidationOperation::PrecalculatedOperation(fee));
+
+            // Data contract should exist
+            let Some(contract_fetch_info) = data_contract_fetch_info.1 else {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(
+                        self,
+                    ),
+                );
+
+                return Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    (None, bump_action.into()),
+                    vec![BasicError::DataContractNotPresentError(
+                        DataContractNotPresentError::new(self.data_contract().id()),
+                    )
+                    .into()],
+                ));
+            };
+
+            Some(contract_fetch_info)
+        } else {
+            None
+        };
+
+        let result = DataContractUpdateTransitionAction::try_from_borrowed_transition(
+            self,
+            known_old_data_contract
+                .as_ref()
+                .map(|fetch_info| &fetch_info.contract),
+            block_info,
+            validation_mode.should_fully_validate_contract_on_transform_into_action(),
+            &mut validation_operations,
+            platform_version,
+        );
+
+        execution_context.add_dpp_operations(validation_operations);
+
+        // Return validation result if any consensus errors happened
+        // during data contract validation
+        match result {
+            Err(ProtocolError::ConsensusError(consensus_error)) => {
+                let bump_action = StateTransitionAction::BumpIdentityDataContractNonceAction(
+                    BumpIdentityDataContractNonceAction::from_borrowed_data_contract_update_transition(self),
+                );
+
+                Ok(ConsensusValidationResult::new_with_data_and_errors(
+                    (known_old_data_contract, bump_action.into()),
+                    vec![*consensus_error],
+                ))
+            }
+            Err(protocol_error) => Err(protocol_error.into()),
+            Ok(update_action) => {
+                let action: StateTransitionAction = update_action.into();
+
+                if validation_mode == ValidationMode::Validator {
+                    // Only check filters if we are a validator
+                    let mut total_filters = passing_filters_for_transition.to_vec();
+                    // let's see if any of the filters that need the original are passing
+                    for filter in requiring_original_filters_for_transition {
+                        filter.matches_document_transition()
+                    }
+                    if !total_filters.is_empty() {
+                        // We have filters on this data contract update, we should get the grovedb proof that
+                        // nothing existed before
+                        if let Ok(original_grovedb_proof) = platform.drive.prove_contract(
+                            self.data_contract().id().to_buffer(),
+                            tx,
+                            platform_version,
+                        ) {
+                            let action_result = TransformToStateTransitionActionResult {
+                                action,
+                                filters_hit: HitFiltersType::DidHitFilters {
+                                    original_grovedb_proof,
+                                    filters_hit: total_filters,
+                                },
+                            };
+                            return Ok(action_result.into());
+                        }
+                        // if the contract proving fails just say we didn't get any action results
+                    }
+                }
+                let action_result: TransformToStateTransitionActionResult = action.into();
+                Ok(action_result.into())
             }
         }
     }
@@ -582,6 +1102,8 @@ mod tests {
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                     platform_version,
                 )
@@ -657,6 +1179,8 @@ mod tests {
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                     platform_version,
                 )
@@ -742,6 +1266,8 @@ mod tests {
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                     platform_version,
                 )
@@ -828,6 +1354,8 @@ mod tests {
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                     platform_version,
                 )
@@ -861,6 +1389,10 @@ mod tests {
             )
             .data_contract_owned();
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
             let identity_id = data_contract.owner_id();
             let data_contract_id = data_contract.id();
 
@@ -892,11 +1424,24 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
                 .transform_into_action_v0(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
+                    None,
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");
@@ -925,6 +1470,10 @@ mod tests {
             let platform_version = PlatformVersion::latest();
             let identity_contract_nonce = IdentityNonce::default();
 
+            let platform = TestPlatformBuilder::new()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
             let data_contract = get_data_contract_fixture(
                 None,
                 identity_contract_nonce,
@@ -951,11 +1500,24 @@ mod tests {
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("failed to create execution context");
 
+            let state = platform.state.load_full();
+
+            let platform_ref = PlatformRef {
+                drive: &platform.drive,
+                state: &state,
+                config: &platform.config,
+                core_rpc: &platform.core_rpc,
+            };
+
             let result = transition
                 .transform_into_action_v0(
+                    &platform_ref,
                     &BlockInfo::default(),
                     ValidationMode::Validator,
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
+                    None,
                     platform_version,
                 )
                 .expect("failed to validate advanced structure");

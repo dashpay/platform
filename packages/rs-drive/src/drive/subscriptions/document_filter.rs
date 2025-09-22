@@ -2,7 +2,7 @@
 //!
 //! This module provides primitives to express and evaluate subscription filters for
 //! document state transitions. The main entry point is `DriveDocumentQueryFilter`, which
-//! holds a contract reference, a document type name, and action-specific match clauses
+//! holds data contract metadata, a document type name, and action-specific match clauses
 //! (`DocumentActionMatchClauses`).
 //!
 //! Filtering in brief:
@@ -32,7 +32,6 @@
 
 use std::collections::BTreeMap;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
-use dpp::data_contract::DataContract;
 use dpp::platform_value::Value;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransitionV0Methods;
 use dpp::document::{Document, DocumentV0Getters};
@@ -45,6 +44,8 @@ use dpp::state_transition::batch_transition::batched_transition::document_update
 use crate::query::{InternalClauses, QuerySyntaxSimpleValidationResult, ValueClause, WhereOperator};
 use crate::error::query::QuerySyntaxError;
 use dpp::platform_value::ValueMapHelper;
+use crate::drive::subscriptions::TransitionCheckResult;
+use crate::util::object_size_info::DataContractOwnedResolvedInfo;
 
 /// Filter used to match document transitions for subscriptions.
 ///
@@ -54,25 +55,13 @@ use dpp::platform_value::ValueMapHelper;
 /// `validate()` performs structural checks (document type exists, clause composition rules).
 #[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Debug, PartialEq, Clone)]
-pub struct DriveDocumentQueryFilter<'a> {
-    /// DataContract
-    pub contract: &'a DataContract,
+pub struct DriveDocumentQueryFilter {
+    /// DataContract information
+    pub contract: DataContractOwnedResolvedInfo,
     /// Document type name
     pub document_type_name: String,
     /// Action-specific clauses
     pub action_clauses: DocumentActionMatchClauses,
-}
-
-/// Result of evaluating constraints for a transition before potentially fetching the original document.
-#[cfg(any(feature = "server", feature = "verify"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TransitionCheckResult {
-    /// All applicable transition-level checks pass and no original is required.
-    Pass,
-    /// Some transition-level check fails; do not fetch original.
-    Fail,
-    /// Transition-level checks pass, original clauses are non-empty and must be evaluated.
-    NeedsOriginal,
 }
 
 /// Action-specific filter clauses for matching document transitions.
@@ -128,7 +117,7 @@ pub enum DocumentActionMatchClauses {
     },
 }
 
-impl DriveDocumentQueryFilter<'_> {
+impl DriveDocumentQueryFilter {
     /// Check a transition using only transition-level constraints.
     ///
     /// When to run:
@@ -436,6 +425,7 @@ impl DriveDocumentQueryFilter<'_> {
         // Ensure the document type exists
         let Some(document_type) = self
             .contract
+            .as_ref()
             .document_type_optional_for_name(&self.document_type_name)
         else {
             return QuerySyntaxSimpleValidationResult::new_with_error(
@@ -630,7 +620,7 @@ mod tests {
         // Create a filter with no clauses (should match if contract and type match)
         let internal_clauses = InternalClauses::default();
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -668,7 +658,7 @@ mod tests {
         });
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -722,7 +712,7 @@ mod tests {
         internal_clauses.equal_clauses = equal_clauses;
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -773,7 +763,7 @@ mod tests {
         });
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -814,7 +804,7 @@ mod tests {
         });
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -866,7 +856,7 @@ mod tests {
         internal_clauses.equal_clauses = equal_clauses;
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -900,7 +890,7 @@ mod tests {
 
         // Replace with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: InternalClauses::default(),
@@ -911,7 +901,7 @@ mod tests {
 
         // Replace with final only -> valid (non-empty final clauses)
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: InternalClauses::default(),
@@ -929,7 +919,7 @@ mod tests {
 
         // Transfer with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
@@ -940,7 +930,7 @@ mod tests {
 
         // Transfer with owner only -> valid
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
@@ -954,7 +944,7 @@ mod tests {
 
         // UpdatePrice with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -965,7 +955,7 @@ mod tests {
 
         // UpdatePrice with price only -> valid
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -979,7 +969,7 @@ mod tests {
 
         // Purchase with none/none -> allowed
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
@@ -990,7 +980,7 @@ mod tests {
 
         // Purchase with owner only -> valid
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
@@ -1015,7 +1005,7 @@ mod tests {
 
         // Filter checks only new owner
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
@@ -1076,7 +1066,7 @@ mod tests {
 
         // Filter checks batch owner (purchaser)
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Purchase {
                 original_document_clauses: InternalClauses::default(),
@@ -1132,7 +1122,7 @@ mod tests {
             },
         );
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses {
@@ -1174,7 +1164,7 @@ mod tests {
             },
         );
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Delete {
                 original_document_clauses: InternalClauses {
@@ -1236,7 +1226,7 @@ mod tests {
         let update = DocumentTransition::UpdatePrice(DocumentUpdatePriceTransition::V0(update_v0));
 
         let filter_price_only = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -1253,7 +1243,7 @@ mod tests {
         );
 
         let filter_price_only_fail = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -1279,7 +1269,7 @@ mod tests {
             },
         );
         let filter_with_orig = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses {
@@ -1356,7 +1346,7 @@ mod tests {
         };
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Replace {
                 original_document_clauses: original_clauses,
@@ -1428,7 +1418,7 @@ mod tests {
         });
 
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),
@@ -1489,7 +1479,7 @@ mod tests {
         internal_clauses.equal_clauses = equal_clauses;
 
         let valid_filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "indexedDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
@@ -1516,7 +1506,7 @@ mod tests {
         internal_clauses.equal_clauses = equal_clauses;
 
         let invalid_filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
@@ -1538,7 +1528,7 @@ mod tests {
         });
 
         let primary_key_filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "indexedDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses,
@@ -1567,7 +1557,7 @@ mod tests {
             },
         );
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
@@ -1580,7 +1570,7 @@ mod tests {
 
         // $id in range clause should be rejected
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
@@ -1603,7 +1593,7 @@ mod tests {
 
         // Owner clause must be Identifier
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Transfer {
                 original_document_clauses: InternalClauses::default(),
@@ -1617,7 +1607,7 @@ mod tests {
 
         // Price clause must be integer-like, not float
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -1631,7 +1621,7 @@ mod tests {
 
         // Price Between must be 2 integer-like values
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::UpdatePrice {
                 original_document_clauses: InternalClauses::default(),
@@ -1651,7 +1641,7 @@ mod tests {
             WhereOperator::BetweenExcludeRight,
         ] {
             let filter = DriveDocumentQueryFilter {
-                contract: &contract,
+                contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
                 document_type_name: "niceDocument".to_string(),
                 action_clauses: DocumentActionMatchClauses::UpdatePrice {
                     original_document_clauses: InternalClauses::default(),
@@ -1675,7 +1665,7 @@ mod tests {
 
         // numeric field 'score' with StartsWith should be rejected
         let filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: InternalClauses {
@@ -1704,7 +1694,7 @@ mod tests {
         });
 
         let original_filter = DriveDocumentQueryFilter {
-            contract: &contract,
+            contract: DataContractOwnedResolvedInfo::OwnedDataContract(contract.clone()),
             document_type_name: "niceDocument".to_string(),
             action_clauses: DocumentActionMatchClauses::Create {
                 new_document_clauses: internal_clauses.clone(),

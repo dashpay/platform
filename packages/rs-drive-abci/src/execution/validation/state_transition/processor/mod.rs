@@ -2,14 +2,14 @@ pub(crate) mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::platform_types::platform::PlatformRef;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
-
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 
 /// There are multiple stages in a state transition processing:
@@ -29,12 +29,14 @@ use drive::grovedb::TransactionArg;
 /// Validate state verifies that there are no state based conflicts, for example that a document
 /// with a unique index isn't already taken.
 ///
-pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
+pub(in crate::execution) fn process_state_transition<'a, 'b, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
     state_transition: StateTransition,
+    passing_filters_for_transition: &[&'b DriveSubscriptionFilter],
+    requiring_original_filters_for_transition: &[&'b DriveSubscriptionFilter],
     transaction: TransactionArg,
-) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+) -> Result<ConsensusValidationResult<ExecutionEventInfo<'a>>, Error> {
     let platform_version = platform.state.current_platform_version()?;
     match platform_version
         .drive_abci
@@ -45,6 +47,8 @@ pub(in crate::execution) fn process_state_transition<'a, C: CoreRPCLike>(
             platform,
             block_info,
             state_transition,
+            passing_filters_for_transition,
+            requiring_original_filters_for_transition,
             transaction,
             platform_version,
         ),

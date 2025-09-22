@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::event_execution_result::EventExecutionResult;
 use crate::platform_types::event_execution_result::EventExecutionResult::{
@@ -118,7 +118,7 @@ where
     #[inline(always)]
     pub(super) fn execute_event_v0(
         &self,
-        event: ExecutionEvent,
+        event: ExecutionEventInfo,
         consensus_errors: Vec<ConsensusError>,
         block_info: &BlockInfo,
         transaction: &Transaction,
@@ -126,7 +126,7 @@ where
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
-            ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
+            ExecutionEventInfo::PaidFromAssetLock { .. } | ExecutionEventInfo::Paid { .. } => {
                 Some(self.validate_fees_of_event(
                     &event,
                     block_info,
@@ -135,13 +135,13 @@ where
                     previous_fee_versions,
                 )?)
             }
-            ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
-            | ExecutionEvent::PaidFixedCost { .. }
-            | ExecutionEvent::Free { .. } => None,
+            ExecutionEventInfo::PaidFromAssetLockWithoutIdentity { .. }
+            | ExecutionEventInfo::PaidFixedCost { .. }
+            | ExecutionEventInfo::Free { .. } => None,
         };
 
         match event {
-            ExecutionEvent::PaidFromAssetLock {
+            ExecutionEventInfo::PaidFromAssetLock {
                 identity,
                 operations,
                 execution_operations,
@@ -164,7 +164,7 @@ where
                     previous_fee_versions,
                 )
             }
-            ExecutionEvent::Paid {
+            ExecutionEventInfo::Paid {
                 identity,
                 operations,
                 execution_operations,
@@ -190,7 +190,7 @@ where
             }
             // This is for Partially used Asset Locks
             // NOT used for identity create or identity top up
-            ExecutionEvent::PaidFromAssetLockWithoutIdentity {
+            ExecutionEventInfo::PaidFromAssetLockWithoutIdentity {
                 processing_fees,
                 operations,
             } => {
@@ -218,7 +218,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidFixedCost {
+            ExecutionEventInfo::PaidFixedCost {
                 operations,
                 fees_to_add_to_pool,
             } => {
@@ -242,7 +242,7 @@ where
                     Ok(UnpaidConsensusExecutionError(consensus_errors))
                 }
             }
-            ExecutionEvent::Free { operations } => {
+            ExecutionEventInfo::Free { operations } => {
                 self.drive
                     .apply_drive_operations(
                         operations,

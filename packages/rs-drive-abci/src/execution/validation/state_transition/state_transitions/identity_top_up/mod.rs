@@ -6,7 +6,7 @@ use dpp::dashcore::Network;
 use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
-
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
@@ -27,23 +27,25 @@ use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 /// A trait to transform into a top up action
 pub trait StateTransitionIdentityTopUpTransitionActionTransformer {
     /// Transform into a top up action
-    fn transform_into_action_for_identity_top_up_transition<C: CoreRPCLike>(
+    fn transform_into_action_for_identity_top_up_transition<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTransition {
-    fn transform_into_action_for_identity_top_up_transition<C: CoreRPCLike>(
+    fn transform_into_action_for_identity_top_up_transition<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;

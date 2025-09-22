@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
@@ -38,14 +38,14 @@ where
     /// * This function may return an `Error::Drive` if there's an issue with applying drive operations.
     pub(super) fn validate_fees_of_event_v0(
         &self,
-        event: &ExecutionEvent,
+        event: &ExecutionEventInfo,
         block_info: &BlockInfo,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<ConsensusValidationResult<FeeResult>, Error> {
         match event {
-            ExecutionEvent::PaidFromAssetLock {
+            ExecutionEventInfo::PaidFromAssetLock {
                 identity,
                 added_balance,
                 operations,
@@ -96,7 +96,7 @@ where
                     ))
                 }
             }
-            ExecutionEvent::Paid {
+            ExecutionEventInfo::Paid {
                 identity,
                 removed_balance,
                 operations,
@@ -156,9 +156,9 @@ where
                     ))
                 }
             }
-            ExecutionEvent::PaidFixedCost { .. }
-            | ExecutionEvent::Free { .. }
-            | ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. } => Ok(
+            ExecutionEventInfo::PaidFixedCost { .. }
+            | ExecutionEventInfo::Free { .. }
+            | ExecutionEventInfo::PaidFromAssetLockWithoutIdentity { .. } => Ok(
                 ConsensusValidationResult::new_with_data(FeeResult::default()),
             ),
         }

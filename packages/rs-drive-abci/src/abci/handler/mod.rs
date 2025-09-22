@@ -35,6 +35,7 @@
 //! can only make changes that are backwards compatible. Otherwise new calls must be made instead.
 //!
 
+mod add_state_transition_subscription;
 mod check_tx;
 mod echo;
 pub mod error;
@@ -46,6 +47,8 @@ mod prepare_proposal;
 mod process_proposal;
 mod verify_vote_extension;
 
+#[allow(unused_imports)]
+pub use add_state_transition_subscription::add_state_transition_subscription;
 pub use check_tx::check_tx;
 pub use echo::echo;
 pub use extend_vote::extend_vote;

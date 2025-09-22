@@ -6,11 +6,12 @@ use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
 use dpp::fee::fee_result::FeeResult;
 
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::execution::types::state_transition_container::v0::{
     DecodedStateTransition, InvalidStateTransition, InvalidWithProtocolErrorStateTransition,
     SuccessfullyDecodedStateTransition,
 };
+use crate::execution::types::state_transition_container::FilterUsage;
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::{state_transition_execution_histogram, HistogramTiming};
 use crate::platform_types::event_execution_result::EventExecutionResult;
@@ -80,9 +81,16 @@ where
         let state_transition_container =
             self.decode_raw_state_transitions(raw_state_transitions, platform_version)?;
 
+        let FilterUsage {
+            passing: passing_filters_map,
+            requiring_original_to_know: requiring_original_to_know_filters_map,
+        } = state_transition_container.find_used_filters(&self.state_transition_subscriptions);
+
         let mut processing_result = StateTransitionsProcessingResult::default();
 
-        for decoded_state_transition in state_transition_container.into_iter() {
+        for (transition_index, decoded_state_transition) in
+            state_transition_container.into_iter().enumerate()
+        {
             // If we propose state transitions, we need to check if we have a time limit for processing
             // set and if we have exceeded it.
             let execution_result = if proposing_state_transitions
@@ -119,11 +127,23 @@ where
                             );
                         }
 
+                        let passing_filters_for_transition = passing_filters_map
+                            .get(&transition_index)
+                            .map(Vec::as_slice)
+                            .unwrap_or_default();
+                        let requiring_original_filters_for_transition =
+                            requiring_original_to_know_filters_map
+                                .get(&transition_index)
+                                .map(Vec::as_slice)
+                                .unwrap_or_default();
+
                         // Validate state transition and produce an execution event
                         let execution_result = process_state_transition(
                             &platform_ref,
                             block_info,
                             state_transition,
+                            passing_filters_for_transition,
+                            requiring_original_filters_for_transition,
                             Some(transaction),
                         )
                         .map(|validation_result| {
@@ -222,7 +242,7 @@ where
         &self,
         raw_state_transition: &'a [u8], //used for errors
         state_transition_name: &str,
-        mut validation_result: ConsensusValidationResult<ExecutionEvent>,
+        mut validation_result: ConsensusValidationResult<ExecutionEventInfo>,
         block_info: &BlockInfo,
         transaction: &Transaction,
         platform_version: &PlatformVersion,

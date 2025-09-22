@@ -3,6 +3,9 @@ mod basic_structure;
 mod identity_nonce;
 mod state;
 
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use advanced_structure::v1::DataContractCreatedStateTransitionAdvancedStructureValidationV1;
 use basic_structure::v0::DataContractCreateStateTransitionBasicStructureValidationV0;
 use dpp::block::block_info::BlockInfo;
@@ -12,13 +15,10 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
-
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use drive::state_transition_action::StateTransitionAction;
-
-use crate::error::execution::ExecutionError;
-use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 
 use crate::execution::validation::state_transition::data_contract_create::advanced_structure::v0::DataContractCreatedStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::data_contract_create::state::v0::DataContractCreateStateTransitionStateValidationV0;
@@ -46,14 +46,18 @@ impl ValidationMode {
 }
 
 impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
@@ -64,9 +68,12 @@ impl StateTransitionActionTransformerV0 for DataContractCreateTransition {
             .transform_into_action
         {
             0 => self.transform_into_action_v0::<C>(
+                platform,
                 block_info,
                 validation_mode,
+                tx,
                 execution_context,
+                passing_filters_for_transition,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
@@ -139,15 +146,19 @@ impl StateTransitionAdvancedStructureValidationV0 for DataContractCreateTransiti
 }
 
 impl StateTransitionStateValidationV0 for DataContractCreateTransition {
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
         _action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
@@ -163,6 +174,7 @@ impl StateTransitionStateValidationV0 for DataContractCreateTransition {
                 validation_mode,
                 tx,
                 execution_context,
+                passing_filters_for_transition,
                 platform_version,
             ),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {

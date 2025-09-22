@@ -61,6 +61,9 @@ mod shared;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod tokens;
 
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod subscriptions;
+
 #[cfg(feature = "server")]
 use crate::cache::DriveCache;
 use crate::error::drive::DriveError;

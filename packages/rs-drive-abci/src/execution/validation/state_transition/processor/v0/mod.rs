@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::{ExecutionEvent, ExecutionEventInfo};
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::{PlatformRef, PlatformStateRef};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -20,7 +20,9 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
-
+use drive::drive::subscriptions::DriveSubscriptionFilter;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
+use crate::execution::types::execution_event;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
@@ -30,13 +32,17 @@ use crate::execution::validation::state_transition::state_transitions::identity_
 use crate::execution::validation::state_transition::state_transitions::identity_top_up::identity_retrieval::v0::IdentityTopUpStateTransitionIdentityRetrievalV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal::signature_purpose_matches_requirements::IdentityCreditWithdrawalStateTransitionSignaturePurposeMatchesRequirementsValidation;
-pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
+pub(super) fn process_state_transition_v0<'a, 'b, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
     state_transition: StateTransition,
+    // These are the filters that have already shown that this transition is a match
+    passing_filters_for_transition: &[&'b DriveSubscriptionFilter],
+    // These are the filters that might still pass, if the original passes
+    requiring_original_filters_for_transition: &[&'b DriveSubscriptionFilter],
     transaction: TransactionArg,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<ExecutionEvent<'a>>, Error> {
+) -> Result<ConsensusValidationResult<ExecutionEvent<'a, 'b>>, Error> {
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
@@ -179,8 +185,12 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         )?;
 
         if !consensus_result.is_valid() {
-            return consensus_result.map_result(|action| {
-                ExecutionEvent::create_from_state_transition_action(
+            return consensus_result.map_result_into(|action| {
+                // This will map to an Execution Event
+                // We might want to later give back proofs of state transition failure
+                // If we were to do that the <Into> here would need to be removed as that
+                // gives back an ExecutionEvent that has no hit filters
+                ExecutionEventInfo::create_from_state_transition_action(
                     action,
                     maybe_identity,
                     platform.state.last_committed_block_epoch_ref(),
@@ -202,8 +212,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             transaction,
         )?;
         if !state_transition_action_result.is_valid_with_data() {
-            return state_transition_action_result.map_result(|action| {
-                ExecutionEvent::create_from_state_transition_action(
+            return state_transition_action_result.map_result_into(|action| {
+                ExecutionEventInfo::create_from_state_transition_action(
                     action,
                     maybe_identity,
                     platform.state.last_committed_block_epoch_ref(),
@@ -224,8 +234,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             platform_version,
         )?;
         if !result.is_valid() {
-            return result.map_result(|action| {
-                ExecutionEvent::create_from_state_transition_action(
+            return result.map_result_into(|action| {
+                ExecutionEventInfo::create_from_state_transition_action(
                     action,
                     maybe_identity,
                     platform.state.last_committed_block_epoch_ref(),
@@ -252,7 +262,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     )?;
 
     result.map_result(|action| {
-        ExecutionEvent::create_from_state_transition_action(
+        ExecutionEventInfo::create_from_state_transition_action(
             action,
             maybe_identity,
             platform.state.last_committed_block_epoch_ref(),
@@ -500,16 +510,20 @@ pub(crate) trait StateTransitionStateValidationV0:
     ///
     /// # Returns
     ///
-    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
-    fn validate_state<C: CoreRPCLike>(
+    /// * `Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl StateTransitionBasicStructureValidationV0 for StateTransition {
@@ -1012,15 +1026,19 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
 }
 
 impl StateTransitionStateValidationV0 for StateTransition {
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         validation_mode: ValidationMode,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         match self {
             // The replay attack is prevented by checking if a data contract exists with this id first
             StateTransition::DataContractCreate(st) => st.validate_state(
@@ -1029,6 +1047,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             // The replay attack is prevented by identity data contract nonce
@@ -1038,6 +1058,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityCreate(st) => {
@@ -1054,6 +1076,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                     action,
                     platform,
                     execution_context,
+                    passing_filters_for_transition,
+                    requiring_original_filters_for_transition,
                     tx,
                 )
             }
@@ -1063,6 +1087,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityTopUp(st) => {
@@ -1076,6 +1102,7 @@ impl StateTransitionStateValidationV0 for StateTransition {
                         signable_bytes,
                         validation_mode,
                         execution_context,
+                        passing_filters_for_transition,
                         tx,
                     )
                 }
@@ -1086,6 +1113,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             // The replay attack is prevented by identity data contract nonce
@@ -1095,6 +1124,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityCreditTransfer(st) => st.validate_state(
@@ -1103,6 +1134,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::MasternodeVote(st) => st.validate_state(
@@ -1111,6 +1144,8 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 validation_mode,
                 block_info,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
         }

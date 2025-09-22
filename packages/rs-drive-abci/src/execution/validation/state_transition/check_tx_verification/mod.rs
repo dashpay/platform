@@ -2,7 +2,7 @@ pub(crate) mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
@@ -27,7 +27,7 @@ pub(in crate::execution) fn state_transition_to_execution_event_for_check_tx<'a,
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
+) -> Result<ConsensusValidationResult<Option<ExecutionEventInfo<'a>>>, Error> {
     match platform_version
         .drive_abci
         .validation_and_processing

@@ -1,5 +1,5 @@
 use crate::error::Error;
-use crate::execution::types::execution_event::ExecutionEvent;
+use crate::execution::types::execution_event::ExecutionEventInfo;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -23,7 +23,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     state_transition: StateTransition,
     check_tx_level: CheckTxLevel,
     platform_version: &PlatformVersion,
-) -> Result<ConsensusValidationResult<Option<ExecutionEvent<'a>>>, Error> {
+) -> Result<ConsensusValidationResult<Option<ExecutionEventInfo<'a>>>, Error> {
     // we need to validate the structure, the fees, and the signature
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
@@ -37,7 +37,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -56,7 +56,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -71,7 +71,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -105,7 +105,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     // Proposers should remove such transactions from the block
                     // Other validators should reject blocks with such transactions
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -127,7 +127,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             state_transition_action_result.errors,
                         ),
                     );
@@ -146,7 +146,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -175,7 +175,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !result.is_valid() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             result.errors,
                         ),
                     );
@@ -194,7 +194,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             state_transition_action_result.errors,
                         ),
                     );
@@ -202,7 +202,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 state_transition_action_result.into_data()?
             };
 
-            let execution_event = ExecutionEvent::create_from_state_transition_action(
+            let execution_event = ExecutionEventInfo::create_from_state_transition_action(
                 action,
                 maybe_identity,
                 platform.state.last_committed_block_epoch_ref(),
@@ -211,7 +211,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             )?;
 
             Ok(
-                ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
+                ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_data(Some(
                     execution_event,
                 )),
             )
@@ -232,10 +232,14 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )?;
 
                 if validation_result.is_valid() {
-                    Ok(ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(None))
+                    Ok(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_data(
+                            None,
+                        ),
+                    )
                 } else {
                     Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             validation_result.errors,
                         ),
                     )
@@ -252,7 +256,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                     if !result.is_valid() {
                         return Ok(
-                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                                 result.errors,
                             ),
                         );
@@ -269,7 +273,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
 
                 if !state_transition_action_result.is_valid_with_data() {
                     return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                        ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_errors(
                             state_transition_action_result.errors,
                         ),
                     );
@@ -282,7 +286,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     platform_version,
                 )?;
 
-                let execution_event = ExecutionEvent::create_from_state_transition_action(
+                let execution_event = ExecutionEventInfo::create_from_state_transition_action(
                     action,
                     maybe_identity,
                     platform.state.last_committed_block_epoch_ref(),
@@ -291,7 +295,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 )?;
 
                 Ok(
-                    ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_data(Some(
+                    ConsensusValidationResult::<Option<ExecutionEventInfo>>::new_with_data(Some(
                         execution_event,
                     )),
                 )

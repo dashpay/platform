@@ -18,13 +18,13 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 
-use dpp::validation::SimpleConsensusValidationResult;
-use dpp::version::PlatformVersion;
-
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::advanced_structure::v0::IdentityCreateStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
@@ -159,11 +159,14 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0
 /// A trait for state validation for the identity create transition
 pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
     /// Validate state
-    fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
+    fn validate_state_for_identity_create_transition<'a, C: CoreRPCLike>(
         &self,
         action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
@@ -174,6 +177,9 @@ impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCre
         action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;

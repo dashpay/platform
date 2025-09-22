@@ -1,6 +1,7 @@
 use crate::state_transition_action::contract::data_contract_update::v0::DataContractUpdateTransitionActionV0;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use dpp::block::block_info::BlockInfo;
+use dpp::prelude::DataContract;
 use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::ProtocolError;
@@ -12,22 +13,24 @@ impl DataContractUpdateTransitionAction {
     /// if validation is false, the data contract base structure is created regardless of if it is valid
     pub fn try_from_transition(
         value: DataContractUpdateTransition,
+        original_contract: Option<&DataContract>,
         block_info: &BlockInfo,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         match value {
-            DataContractUpdateTransition::V0(v0) => {
-                Ok(DataContractUpdateTransitionActionV0::try_from_transition(
+            DataContractUpdateTransition::V0(v0) => Ok(
+                DataContractUpdateTransitionActionV0::try_from_transition_v0(
                     v0,
+                    original_contract,
                     block_info,
                     full_validation,
                     validation_operations,
                     platform_version,
                 )?
-                .into())
-            }
+                .into(),
+            ),
         }
     }
 
@@ -36,6 +39,7 @@ impl DataContractUpdateTransitionAction {
     /// if validation is false, the data contract base structure is created regardless of if it is valid
     pub fn try_from_borrowed_transition(
         value: &DataContractUpdateTransition,
+        original_contract: Option<&DataContract>,
         block_info: &BlockInfo,
         full_validation: bool,
         validation_operations: &mut Vec<ProtocolValidationOperation>,
@@ -43,8 +47,9 @@ impl DataContractUpdateTransitionAction {
     ) -> Result<Self, ProtocolError> {
         match value {
             DataContractUpdateTransition::V0(v0) => Ok(
-                DataContractUpdateTransitionActionV0::try_from_borrowed_transition(
+                DataContractUpdateTransitionActionV0::try_from_borrowed_transition_v0(
                     v0,
+                    original_contract,
                     block_info,
                     full_validation,
                     validation_operations,
