@@ -51,6 +51,7 @@ pub use grovedb::{
 
 use dpp::document;
 use dpp::prelude::Identifier;
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, fees::op::LowLevelDriveOperation},
@@ -102,8 +103,8 @@ pub mod vote_polls_by_document_type_query;
 /// It should be implemented by the caller in order to provide data
 /// contract required for operations like proof verification.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
-    + 'a;
+pub type ContractLookupFn<'a> =
+    dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error> + 'a;
 
 /// Creates a [ContractLookupFn] function that returns provided data contract when requested.
 ///
@@ -119,13 +120,12 @@ pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<O
 pub fn contract_lookup_fn_for_contract<'a>(
     data_contract: Arc<DataContract>,
 ) -> Box<ContractLookupFn<'a>> {
-    let func = move
-        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
-            if data_contract.id().ne(id) {
-                return Ok(None);
-            }
-            Ok(Some(Arc::clone(&data_contract)))
-        };
+    let func = move |id: &Identifier| -> Result<Option<Arc<DataContract>>, Error> {
+        if data_contract.id().ne(id) {
+            return Ok(None);
+        }
+        Ok(Some(Arc::clone(&data_contract)))
+    };
     Box::new(func)
 }
 
@@ -153,6 +153,12 @@ pub mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
+
+/// A Query Syntax Validation Result that contains data
+pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;
+
+/// A Query Syntax Validation Result
+pub type QuerySyntaxSimpleValidationResult = SimpleValidationResult<QuerySyntaxError>;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Represents a starting point for a query based on a specific document.
@@ -305,53 +311,62 @@ impl InternalClauses {
     pub fn validate_against_schema(
         &self,
         document_type: DocumentTypeRef,
-    ) -> Result<(), crate::error::Error> {
+    ) -> QuerySyntaxSimpleValidationResult {
         // Basic composition
         if !self.verify() {
-            return Err(Error::Query(
+            return QuerySyntaxSimpleValidationResult::new_with_error(
                 QuerySyntaxError::InvalidWhereClauseComponents(
                     "invalid composition of where clauses",
                 ),
-            ));
+            );
         }
 
         // Validate in_clause against schema
         if let Some(in_clause) = &self.in_clause {
             // Forbid $id in non-primary-key clauses
             if in_clause.field == "$id" {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "use primary_key_* clauses for $id",
                     ),
-                ));
+                );
             }
-            in_clause.validate_against_schema(document_type)?;
+            let result = in_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
         }
 
         // Validate range_clause against schema
         if let Some(range_clause) = &self.range_clause {
             // Forbid $id in non-primary-key clauses
             if range_clause.field == "$id" {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "use primary_key_* clauses for $id",
                     ),
-                ));
+                );
             }
-            range_clause.validate_against_schema(document_type)?;
+            let result = range_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
         }
 
         // Validate equal_clauses against schema
         for (field, eq_clause) in &self.equal_clauses {
             // Forbid $id in non-primary-key clauses
             if field.as_str() == "$id" {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "use primary_key_* clauses for $id",
                     ),
-                ));
+                );
             }
-            eq_clause.validate_against_schema(document_type)?;
+            let result = eq_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
         }
 
         // Validate primary key clauses typing
@@ -359,41 +374,44 @@ impl InternalClauses {
             if pk_eq.operator != WhereOperator::Equal
                 || !matches!(pk_eq.value, Value::Identifier(_))
             {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "primary key equality must compare an identifier",
                     ),
-                ));
+                );
             }
         }
         if let Some(pk_in) = &self.primary_key_in_clause {
             if pk_in.operator != WhereOperator::In {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "primary key IN must use IN operator",
                     ),
-                ));
+                );
             }
             // enforce array shape and no duplicates/size
-            pk_in.in_values()?;
+            let result = pk_in.in_values();
+            if !result.is_valid() {
+                return QuerySyntaxSimpleValidationResult::new_with_errors(result.errors);
+            }
             if let Value::Array(arr) = &pk_in.value {
                 if !arr.iter().all(|v| matches!(v, Value::Identifier(_))) {
-                    return Err(Error::Query(
+                    return QuerySyntaxSimpleValidationResult::new_with_error(
                         QuerySyntaxError::InvalidWhereClauseComponents(
                             "primary key IN must contain identifiers",
                         ),
-                    ));
+                    );
                 }
             } else {
-                return Err(Error::Query(
+                return QuerySyntaxSimpleValidationResult::new_with_error(
                     QuerySyntaxError::InvalidWhereClauseComponents(
                         "primary key IN must contain an array of identifiers",
                     ),
-                ));
+                );
             }
         }
 
-        Ok(())
+        QuerySyntaxSimpleValidationResult::default()
     }
 }
 
@@ -1215,7 +1233,7 @@ impl<'a> DriveDocumentQuery<'a> {
             };
 
             if let Some(primary_key_in_clause) = &self.internal_clauses.primary_key_in_clause {
-                let in_values = primary_key_in_clause.in_values()?;
+                let in_values = primary_key_in_clause.in_values().into_data_with_error()??;
 
                 match starts_at_key_option {
                     None => {

@@ -1,3 +1,15 @@
+## [2.1.0-dev.5](https://github.com/dashpay/platform/compare/v2.1.0-dev.4...v2.1.0-dev.5) (2025-09-19)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 1 ([#2761](https://github.com/dashpay/platform/issues/2761))
+
+
+### Build System
+
+* fix sdk npm packaging ([#2780](https://github.com/dashpay/platform/issues/2780))
+
 ## [2.1.0-dev.4](https://github.com/dashpay/platform/compare/v2.0.0...v2.1.0-dev.4) (2025-09-18)
 
 
