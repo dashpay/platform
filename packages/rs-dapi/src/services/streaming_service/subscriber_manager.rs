@@ -1,15 +1,12 @@
-use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Weak};
-use tokio::sync::{Mutex, RwLock, mpsc};
-use tracing::{debug, trace, warn};
+use std::sync::Arc;
+use tracing::{trace, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::{Transaction as CoreTx, consensus::encode::deserialize};
-
-/// Unique identifier for a subscription
-pub type SubscriptionId = String;
+use rs_dash_notify::event_bus::{
+    EventBus, Filter as EventBusFilter, SubscriptionHandle as EventBusSubscriptionHandle,
+};
 
 /// Types of filters supported by the streaming service
 #[derive(Debug, Clone)]
@@ -34,41 +31,68 @@ pub enum FilterType {
     CoreNewBlockHash,
 }
 
-/// Subscription information for a streaming client
-#[derive(Debug)]
-pub struct Subscription {
-    pub id: SubscriptionId,
-    pub filter: FilterType,
-    pub sender: mpsc::UnboundedSender<StreamingEvent>,
-}
+impl FilterType {
+    fn matches_core_transaction(&self, raw_tx: &[u8]) -> bool {
+        match self {
+            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(raw_tx) {
+                Ok(tx) => match f_lock.write() {
+                    Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
+                    Err(_) => false,
+                },
+                Err(e) => {
+                    warn!(
+                        error = %e,
+                        "Failed to deserialize core transaction for bloom filter matching, falling back to contains()"
+                    );
+                    match f_lock.read() {
+                        Ok(guard) => guard.contains(raw_tx),
+                        Err(_) => false,
+                    }
+                }
+            },
+            _ => false,
+        }
+    }
 
-/// RAII handle: dropping the last clone removes the subscription.
-#[derive(Clone)]
-pub struct SubscriptionHandle<T>(Arc<SubscriptionHandleInner<T>>);
+    fn matches_event(&self, event: &StreamingEvent) -> bool {
+        use StreamingEvent::*;
 
-impl<T> SubscriptionHandle<T> {
-    pub fn id(&self) -> &str {
-        &self.0.id
+        let matched = match (self, event) {
+            (FilterType::PlatformAllTxs, PlatformTx { .. }) => true,
+            (FilterType::PlatformAllTxs, _) => false,
+            (FilterType::PlatformTxId(id), PlatformTx { event }) => &event.hash == id,
+            (FilterType::PlatformTxId(_), _) => false,
+            (FilterType::PlatformAllBlocks, PlatformBlock { .. }) => true,
+            (FilterType::PlatformAllBlocks, _) => false,
+            (FilterType::CoreNewBlockHash, CoreNewBlockHash { .. }) => true,
+            (FilterType::CoreNewBlockHash, _) => false,
+            (FilterType::CoreAllBlocks, CoreRawBlock { .. }) => true,
+            (FilterType::CoreAllBlocks, _) => false,
+            (FilterType::CoreBloomFilter(_, _), CoreRawTransaction { data }) => {
+                self.matches_core_transaction(data)
+            }
+            (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreChainLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), _) => false,
+            (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
+            (FilterType::CoreAllMasternodes, _) => false,
+            (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
+            (FilterType::CoreChainLocks, _) => false,
+            (FilterType::CoreAllTxs, CoreRawTransaction { .. }) => true,
+            (FilterType::CoreAllTxs, CoreInstantLock { .. }) => true,
+            (FilterType::CoreAllTxs, CoreChainLock { .. }) => true,
+            (FilterType::CoreAllTxs, _) => false,
+        };
+        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(event);
+        trace!(filter = ?self, event = %event_summary, matched, "subscription_manager=filter_evaluated");
+        matched
     }
 }
 
-struct SubscriptionHandleInner<T> {
-    subs: Weak<RwLock<BTreeMap<SubscriptionId, Subscription>>>,
-    id: SubscriptionId,
-    rx: Mutex<mpsc::UnboundedReceiver<T>>, // guarded receiver
-}
-
-impl<T> Drop for SubscriptionHandleInner<T> {
-    fn drop(&mut self) {
-        if let Some(subs) = self.subs.upgrade() {
-            let id = self.id.clone();
-            tokio::spawn(async move {
-                let mut map = subs.write().await;
-                if map.remove(&id).is_some() {
-                    debug!(left = map.len(), "Removed subscription (Drop): {}", id);
-                }
-            });
-        }
+impl EventBusFilter<StreamingEvent> for FilterType {
+    fn matches(&self, event: &StreamingEvent) -> bool {
+        self.matches_event(event)
     }
 }
 
@@ -94,224 +118,9 @@ pub enum StreamingEvent {
 }
 
 /// Manages all active streaming subscriptions
-#[derive(Debug)]
-pub struct SubscriberManager {
-    subscriptions: Arc<RwLock<BTreeMap<SubscriptionId, Subscription>>>,
-    subscription_counter: AtomicU64,
-}
+pub type SubscriberManager = EventBus<StreamingEvent, FilterType>;
 
-impl SubscriberManager {
-    pub fn new() -> Self {
-        Self {
-            subscriptions: Arc::new(RwLock::new(BTreeMap::new())),
-            subscription_counter: AtomicU64::new(0),
-        }
-    }
-
-    /// Add a new subscription and return a handle that can receive messages
-    pub async fn add_subscription(&self, filter: FilterType) -> SubscriptionHandle<StreamingEvent> {
-        let (sender, receiver) = mpsc::unbounded_channel::<StreamingEvent>();
-        let id = self.generate_subscription_id();
-        let filter_debug = filter.clone();
-        let subscription = Subscription {
-            id: id.clone(),
-            filter,
-            sender,
-        };
-
-        self.subscriptions
-            .write()
-            .await
-            .insert(id.clone(), subscription);
-        debug!("Added subscription: {}", id);
-        trace!(subscription_id = %id, filter = ?filter_debug, "subscription_manager=added");
-
-        SubscriptionHandle(Arc::new(SubscriptionHandleInner::<StreamingEvent> {
-            subs: Arc::downgrade(&self.subscriptions),
-            id,
-            rx: Mutex::new(receiver),
-        }))
-    }
-
-    /// Remove a subscription
-    pub async fn remove_subscription(&self, id: &str) {
-        let mut guard = self.subscriptions.write().await;
-        if guard.remove(id).is_some() {
-            debug!("Removed subscription: {}", id);
-            trace!(subscription_id = %id, count_left = guard.len(), "subscription_manager=removed");
-        }
-    }
-}
-
-impl<T> SubscriptionHandle<T> {
-    /// Receive the next streaming message for this subscription
-    pub async fn recv(&self) -> Option<T> {
-        let mut rx = self.0.rx.lock().await;
-        rx.recv().await
-    }
-
-    /// Map this handle into a new handle of another type by applying `f` to each message.
-    /// Consumes the original handle.
-    pub fn map<U, F>(self, f: F) -> SubscriptionHandle<U>
-    where
-        T: Send + 'static,
-        U: Send + 'static,
-        F: Fn(T) -> U + Send + 'static,
-    {
-        self.filter_map(move |v| Some(f(v)))
-    }
-
-    /// Filter-map: only mapped Some values are forwarded to the new handle. Consumes `self`.
-    pub fn filter_map<U, F>(self, f: F) -> SubscriptionHandle<U>
-    where
-        T: Send + 'static,
-        U: Send + 'static,
-        F: Fn(T) -> Option<U> + Send + 'static,
-    {
-        let (tx, rx) = mpsc::unbounded_channel::<U>();
-        // Keep original handle alive in the background pump task
-        tokio::spawn(async move {
-            let this = self;
-
-            loop {
-                tokio::select! {
-                    biased;
-                    _ = tx.closed() => {
-                        break;
-                    }
-                    msg_opt = this.recv() => {
-                        match msg_opt {
-                            Some(msg) => {
-                                if let Some(mapped) = f(msg)
-                                    && tx.send(mapped).is_err() {
-                                        break;
-                                    }
-                            }
-                            None => break,
-                        }
-                    }
-                }
-            }
-            // dropping `this` will remove the subscription
-        });
-
-        SubscriptionHandle(Arc::new(SubscriptionHandleInner::<U> {
-            subs: Weak::new(), // mapped handle doesn't own subscription removal
-            id: String::from("mapped"),
-            rx: Mutex::new(rx),
-        }))
-    }
-}
-
-impl SubscriberManager {
-    /// Get the number of active subscriptions
-    pub async fn subscription_count(&self) -> usize {
-        self.subscriptions.read().await.len()
-    }
-
-    /// Unified notify entrypoint routing events to subscribers based on the filter
-    pub async fn notify(&self, event: StreamingEvent) {
-        let subscriptions = self.subscriptions.read().await;
-
-        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(&event);
-        trace!(
-            active_subscriptions = subscriptions.len(),
-            event = %event_summary,
-            "subscription_manager=notify_start"
-        );
-
-        let mut dead_subs = vec![];
-        for (id, subscription) in subscriptions.iter() {
-            if Self::event_matches_filter(&subscription.filter, &event) {
-                if let Err(e) = subscription.sender.send(event.clone()) {
-                    dead_subs.push(id.clone());
-                    warn!(
-                        "Failed to send event to subscription {}: {}; removing subscription",
-                        subscription.id, e
-                    );
-                }
-            } else {
-                trace!(subscription_id = %id, "subscription_manager=filter_no_match");
-            }
-        }
-        drop(subscriptions); // release read lock before acquiring write lock
-
-        // Clean up dead subscriptions
-        for sub in dead_subs.iter() {
-            self.remove_subscription(sub).await;
-        }
-    }
-
-    /// Generate a unique subscription ID
-    fn generate_subscription_id(&self) -> SubscriptionId {
-        let counter = self.subscription_counter.fetch_add(1, Ordering::SeqCst);
-        format!("sub_{}", counter)
-    }
-
-    /// Check if data matches the subscription filter
-    fn core_tx_matches_filter(filter: &FilterType, raw_tx: &[u8]) -> bool {
-        match filter {
-            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(raw_tx) {
-                Ok(tx) => match f_lock.write() {
-                    Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
-                    Err(_) => false,
-                },
-                Err(e) => {
-                    tracing::warn!(error = %e, "Failed to deserialize core transaction for bloom filter matching, falling back to contains()");
-                    match f_lock.read() {
-                        Ok(guard) => guard.contains(raw_tx),
-                        Err(_) => false,
-                    }
-                }
-            },
-            _ => false,
-        }
-    }
-
-    fn event_matches_filter(filter: &FilterType, event: &StreamingEvent) -> bool {
-        use StreamingEvent::*;
-
-        let matched = match (filter, event) {
-            (FilterType::PlatformAllTxs, PlatformTx { .. }) => true,
-            (FilterType::PlatformAllTxs, _) => false,
-            (FilterType::PlatformTxId(id), PlatformTx { event }) => &event.hash == id,
-            (FilterType::PlatformTxId(_), _) => false,
-            (FilterType::PlatformAllBlocks, PlatformBlock { .. }) => true,
-            (FilterType::PlatformAllBlocks, _) => false,
-            (FilterType::CoreNewBlockHash, CoreNewBlockHash { .. }) => true,
-            (FilterType::CoreNewBlockHash, _) => false,
-            (FilterType::CoreAllBlocks, CoreRawBlock { .. }) => true,
-            (FilterType::CoreAllBlocks, _) => false,
-            (FilterType::CoreBloomFilter(_, _), CoreRawTransaction { data }) => {
-                Self::core_tx_matches_filter(filter, data)
-            }
-            (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
-            (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
-            (FilterType::CoreBloomFilter(_, _), CoreChainLock { .. }) => true,
-            (FilterType::CoreBloomFilter(_, _), _) => false,
-            (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
-            (FilterType::CoreAllMasternodes, _) => false,
-            (FilterType::CoreChainLocks, CoreChainLock { .. }) => true,
-            (FilterType::CoreChainLocks, _) => false,
-            (FilterType::CoreAllTxs, CoreRawTransaction { .. }) => true,
-            // Include InstantSend locks for transaction subscriptions without a bloom filter
-            (FilterType::CoreAllTxs, CoreInstantLock { .. }) => true,
-            // Include ChainLocks for transaction subscriptions without a bloom filter
-            (FilterType::CoreAllTxs, CoreChainLock { .. }) => true,
-            (FilterType::CoreAllTxs, _) => false,
-            // no default by purpose to fail build on new variants
-        };
-        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(event);
-        trace!(filter = ?filter, event = %event_summary, matched, "subscription_manager=filter_evaluated");
-        matched
-    }
-}
-
-impl Default for SubscriberManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
+pub type SubscriptionHandle = EventBusSubscriptionHandle<StreamingEvent, FilterType>;
 
 #[cfg(test)]
 mod tests {
@@ -332,17 +141,6 @@ mod tests {
 
         manager.remove_subscription(handle.id()).await;
         assert_eq!(manager.subscription_count().await, 0);
-    }
-
-    #[test]
-    fn test_subscription_id_generation() {
-        let manager = SubscriberManager::new();
-        let id1 = manager.generate_subscription_id();
-        let id2 = manager.generate_subscription_id();
-
-        assert_ne!(id1, id2);
-        assert!(id1.starts_with("sub_"));
-        assert!(id2.starts_with("sub_"));
     }
 
     #[tokio::test]
