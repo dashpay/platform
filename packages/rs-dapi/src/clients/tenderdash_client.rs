@@ -27,6 +27,7 @@ pub struct TenderdashClient {
     client: ClientWithMiddleware,
     base_url: String,
     websocket_client: Option<Arc<TenderdashWebSocketClient>>,
+    workers: crate::sync::Workers,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -181,6 +182,7 @@ impl TenderdashClient {
             client,
             base_url: uri.to_string(),
             websocket_client: None,
+            workers: Default::default(),
         };
 
         tenderdash_client.validate_connection().await?;
@@ -237,7 +239,9 @@ impl TenderdashClient {
         };
 
         // we are good to go, we can start listening to WebSocket events
-        tokio::spawn(async move { websocket_client.connect_and_listen().await });
+        tenderdash_client
+            .workers
+            .spawn(async move { websocket_client.connect_and_listen().await });
 
         Ok(tenderdash_client)
     }

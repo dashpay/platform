@@ -15,6 +15,9 @@ pub trait Filter<E>: Send + Sync {
     fn matches(&self, event: &E) -> bool;
 }
 
+/// Internal subscription structure.
+///
+/// Note: no Clone impl, so that dropping the sender closes the channel.
 struct Subscription<E, F> {
     filter: F,
     sender: mpsc::Sender<E>,
@@ -153,9 +156,10 @@ where
                     metrics_events_dropped_inc();
                     tracing::warn!(
                         subscription_id = id,
-                        "event_bus: subscriber queue full, dropping event"
+                        "event_bus: subscriber queue full, removing laggy subscriber to protect others"
                     );
-                    // Drop the event for this subscriber and continue delivering to others
+                    // Drop the event for this subscriber and remove subscription
+                    dead.push(id);
                 }
                 Err(TrySendError::Closed(_value)) => {
                     metrics_events_dropped_inc();

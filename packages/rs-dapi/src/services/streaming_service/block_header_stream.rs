@@ -135,14 +135,18 @@ impl StreamingServiceImpl {
             "block_headers=chainlock_subscription_created"
         );
 
-        Self::spawn_block_header_worker(
-            block_handle,
-            chainlock_handle,
-            tx,
-            delivered_hashes,
-            delivery_gate,
-            delivery_notify,
-        );
+        self.workers.spawn(async move {
+            Self::block_header_worker(
+                block_handle,
+                chainlock_handle,
+                tx,
+                delivered_hashes,
+                delivery_gate,
+                delivery_notify,
+            )
+            .await;
+            Ok::<(), ()>(())
+        });
 
         subscriber_id
     }
@@ -167,27 +171,6 @@ impl StreamingServiceImpl {
             let _ = tx.send(Ok(response)).await;
         }
         Ok(())
-    }
-
-    fn spawn_block_header_worker(
-        block_handle: SubscriptionHandle,
-        chainlock_handle: SubscriptionHandle,
-        tx: BlockHeaderResponseSender,
-        delivered_hashes: DeliveredHashSet,
-        delivery_gate: DeliveryGate,
-        delivery_notify: DeliveryNotify,
-    ) {
-        tokio::spawn(async move {
-            Self::block_header_worker(
-                block_handle,
-                chainlock_handle,
-                tx,
-                delivered_hashes,
-                delivery_gate,
-                delivery_notify,
-            )
-            .await;
-        });
     }
 
     async fn block_header_worker(
@@ -391,7 +374,10 @@ impl StreamingServiceImpl {
                         .map_err(Status::from)? as usize;
                     best.saturating_sub(start).saturating_add(1)
                 };
-                debug!(start, desired, "block_headers=historical_from_height_request");
+                debug!(
+                    start,
+                    desired, "block_headers=historical_from_height_request"
+                );
                 (start, desired)
             }
         };
@@ -415,19 +401,16 @@ impl StreamingServiceImpl {
         }
         let max_available = best_height.saturating_sub(start_height).saturating_add(1);
         if count_target > max_available {
-            warn!(start_height, requested = count_target, max_available, "block_headers=count_exceeds_tip");
-            return Err(Status::invalid_argument(
-                "count exceeds chain tip",
-            ));
+            warn!(
+                start_height,
+                requested = count_target,
+                max_available,
+                "block_headers=count_exceeds_tip"
+            );
+            return Err(Status::invalid_argument("count exceeds chain tip"));
         }
 
-        self
-            .process_historical_blocks_from_height(
-                start_height,
-                count_target,
-                delivered_hashes,
-                tx,
-            )
+        self.process_historical_blocks_from_height(start_height, count_target, delivered_hashes, tx)
             .await
     }
 

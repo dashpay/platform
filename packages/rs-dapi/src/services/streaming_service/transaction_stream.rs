@@ -1,3 +1,8 @@
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
+
 use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
 use dapi_grpc::core::v0::{
     InstantSendLockMessages, RawTransactions, TransactionsWithProofsRequest,
@@ -5,30 +10,40 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
-use tokio::sync::mpsc;
+use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
+use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
-use crate::services::streaming_service::StreamingServiceImpl;
-use crate::services::streaming_service::bloom::bloom_flags_from_int;
-use crate::services::streaming_service::subscriber_manager::{FilterType, StreamingEvent};
+use crate::services::streaming_service::{
+    FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
+    bloom::bloom_flags_from_int,
+};
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
+const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(50);
+
+type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
+type TxResponseSender = mpsc::Sender<TxResponseResult>;
+type TxResponseStream = ReceiverStream<TxResponseResult>;
+type TxResponse = Response<TxResponseStream>;
+type DeliveredTxSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredBlockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveredInstantLockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
+type DeliveryGate = Arc<AtomicBool>;
+type DeliveryNotify = Arc<Notify>;
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_transactions_with_proofs_impl(
         &self,
         request: Request<TransactionsWithProofsRequest>,
-    ) -> Result<Response<ReceiverStream<Result<TransactionsWithProofsResponse, Status>>>, Status>
-    {
+    ) -> Result<TxResponse, Status> {
         trace!("transactions_with_proofs=subscribe_begin");
         let req = request.into_inner();
         let count = req.count;
-
         let filter = match req.bloom_filter {
             Some(bloom_filter) => {
                 let (core_filter, flags) = parse_bloom_filter(&bloom_filter)?;
-
                 FilterType::CoreBloomFilter(
                     std::sync::Arc::new(std::sync::RwLock::new(core_filter)),
                     flags,
@@ -37,44 +52,330 @@ impl StreamingServiceImpl {
             None => FilterType::CoreAllTxs,
         };
 
-        // Create channel for streaming responses
-        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
+        let from_block = req
+            .from_block
+            .ok_or_else(|| Status::invalid_argument("Must specify from_block"))?;
 
-        // If historical-only requested (count > 0), send historical data and close the stream
         if count > 0 {
-            let tx_hist = tx.clone();
-            let from_block = req.from_block.ok_or_else(|| {
-                Status::invalid_argument("Must specify from_block when count > 0")
-            })?;
-
-            match from_block {
-                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(hash) => {
-                    debug!(
-                        hash = %hex::encode(&hash),
-                        count,
-                        "transactions_with_proofs=historical_from_hash_request"
-                    );
-                    self.process_historical_transactions_from_hash(&hash, count as usize, &filter, tx_hist)
-                        .await?;
-                }
-                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
-                    debug!(height, count, "transactions_with_proofs=historical_from_height_request");
-                    self.process_historical_transactions_from_height(
-                        height as usize,
-                        count as usize,
-                        &filter,
-                        tx_hist,
-                    )
-                    .await?;
-                }
-            }
-
-            let stream = ReceiverStream::new(rx);
-            debug!("transactions_with_proofs=historical_stream_ready");
-            return Ok(Response::new(stream));
+            return self
+                .handle_transactions_historical_mode(from_block, count, filter)
+                .await;
         }
 
-        // Add subscription to manager for live updates (subscribe first to avoid races)
+        self.handle_transactions_combined_mode(from_block, filter)
+            .await
+    }
+
+    async fn transaction_worker(
+        tx_handle: SubscriptionHandle,
+        block_handle: SubscriptionHandle,
+        tx: TxResponseSender,
+        filter: FilterType,
+        delivered_txs: DeliveredTxSet,
+        delivered_blocks: DeliveredBlockSet,
+        delivered_instant_locks: DeliveredInstantLockSet,
+        delivery_gate: DeliveryGate,
+        delivery_notify: DeliveryNotify,
+    ) {
+        let subscriber_id = tx_handle.id().to_string();
+        let tx_handle_id = tx_handle.id().to_string();
+        let block_handle_id = block_handle.id().to_string();
+
+        let mut pending: Vec<(StreamingEvent, String)> = Vec::new();
+        let mut gated = !delivery_gate.load(Ordering::Acquire);
+
+        loop {
+            tokio::select! {
+                _ = delivery_notify.notified(), if gated => {
+                    gated = !delivery_gate.load(Ordering::Acquire);
+                    if !gated {
+                        if !Self::flush_transaction_pending(
+                            &filter,
+                            &subscriber_id,
+                            &tx,
+                            &delivered_txs,
+                            &delivered_blocks,
+                            &delivered_instant_locks,
+                            &mut pending,
+                        ).await {
+                            break;
+                        }
+                    }
+                }
+                message = block_handle.recv() => {
+                    match message {
+                        Some(event) => {
+                            if gated {
+                                pending.push((event, block_handle_id.clone()));
+                                continue;
+                            }
+                            if !Self::forward_transaction_event(
+                                event,
+                                &block_handle_id,
+                                &filter,
+                                &subscriber_id,
+                                &tx,
+                                &delivered_txs,
+                                &delivered_blocks,
+                                &delivered_instant_locks,
+                            ).await {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+                message = tx_handle.recv() => {
+                    match message {
+                        Some(event) => {
+                            if gated {
+                                pending.push((event, tx_handle_id.clone()));
+                                continue;
+                            }
+                            if !Self::forward_transaction_event(
+                                event,
+                                &tx_handle_id,
+                                &filter,
+                                &subscriber_id,
+                                &tx,
+                                &delivered_txs,
+                                &delivered_blocks,
+                                &delivered_instant_locks,
+                            ).await {
+                                break;
+                            }
+                        }
+                        None => break,
+                    }
+                }
+            }
+        }
+
+        debug!(subscriber_id, "transactions_with_proofs=worker_finished");
+    }
+
+    async fn flush_transaction_pending(
+        filter: &FilterType,
+        subscriber_id: &str,
+        tx_sender: &TxResponseSender,
+        delivered_txs: &DeliveredTxSet,
+        delivered_blocks: &DeliveredBlockSet,
+        delivered_instant_locks: &DeliveredInstantLockSet,
+        pending: &mut Vec<(StreamingEvent, String)>,
+    ) -> bool {
+        if pending.is_empty() {
+            return true;
+        }
+
+        let queued: Vec<(StreamingEvent, String)> = pending.drain(..).collect();
+        for (event, handle_id) in queued {
+            if !Self::forward_transaction_event(
+                event,
+                &handle_id,
+                filter,
+                subscriber_id,
+                tx_sender,
+                delivered_txs,
+                delivered_blocks,
+                delivered_instant_locks,
+            )
+            .await
+            {
+                return false;
+            }
+        }
+        true
+    }
+
+    async fn forward_transaction_event(
+        event: StreamingEvent,
+        handle_id: &str,
+        filter: &FilterType,
+        subscriber_id: &str,
+        tx_sender: &TxResponseSender,
+        delivered_txs: &DeliveredTxSet,
+        delivered_blocks: &DeliveredBlockSet,
+        delivered_instant_locks: &DeliveredInstantLockSet,
+    ) -> bool {
+        let maybe_response = match event {
+            StreamingEvent::CoreRawTransaction { data } => {
+                let txid_hex = super::StreamingServiceImpl::txid_hex_from_bytes(&data);
+                if let Some(ref hex_str) = txid_hex {
+                    if let Ok(hash_bytes) = hex::decode(hex_str) {
+                        let mut guard = delivered_txs.lock().await;
+                        if !guard.insert(hash_bytes) {
+                            trace!(
+                                subscriber_id,
+                                handle_id,
+                                txid = %hex_str,
+                                "transactions_with_proofs=skip_duplicate_transaction"
+                            );
+                            return true;
+                        }
+                    }
+                }
+
+                let txid_display = txid_hex.unwrap_or_else(|| "n/a".to_string());
+                trace!(
+                    subscriber_id,
+                    handle_id,
+                    txid = %txid_display,
+                    payload_size = data.len(),
+                    "transactions_with_proofs=forward_raw_transaction"
+                );
+                let raw_transactions = RawTransactions {
+                    transactions: vec![data],
+                };
+                Some(Ok(TransactionsWithProofsResponse {
+                    responses: Some(Responses::RawTransactions(raw_transactions)),
+                }))
+            }
+            StreamingEvent::CoreRawBlock { data } => {
+                let block_hash =
+                    super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
+                        .unwrap_or_else(|| "n/a".to_string());
+
+                if block_hash != "n/a" {
+                    if let Ok(hash_bytes) = hex::decode(&block_hash) {
+                        let mut guard = delivered_blocks.lock().await;
+                        if !guard.insert(hash_bytes) {
+                            trace!(
+                                subscriber_id,
+                                handle_id,
+                                block_hash = %block_hash,
+                                "transactions_with_proofs=skip_duplicate_merkle_block"
+                            );
+                            return true;
+                        }
+                    }
+                }
+
+                trace!(
+                    subscriber_id,
+                    handle_id,
+                    block_hash = %block_hash,
+                    payload_size = data.len(),
+                    "transactions_with_proofs=forward_merkle_block"
+                );
+
+                match Self::build_transaction_merkle_response(filter, &data, handle_id) {
+                    Ok(resp) => Some(Ok(resp)),
+                    Err(e) => Some(Err(e)),
+                }
+            }
+            StreamingEvent::CoreInstantLock { data } => {
+                let mut guard = delivered_instant_locks.lock().await;
+                if !guard.insert(data.clone()) {
+                    trace!(
+                        subscriber_id,
+                        handle_id, "transactions_with_proofs=skip_duplicate_instant_lock"
+                    );
+                    return true;
+                }
+
+                trace!(
+                    subscriber_id,
+                    handle_id,
+                    payload_size = data.len(),
+                    "transactions_with_proofs=forward_instant_lock"
+                );
+                let instant_lock_messages = InstantSendLockMessages {
+                    messages: vec![data],
+                };
+                Some(Ok(TransactionsWithProofsResponse {
+                    responses: Some(Responses::InstantSendLockMessages(instant_lock_messages)),
+                }))
+            }
+            other => {
+                let summary = super::StreamingServiceImpl::summarize_streaming_event(&other);
+                trace!(subscriber_id, handle_id, event = %summary, "transactions_with_proofs=ignore_event");
+                None
+            }
+        };
+
+        if let Some(response) = maybe_response {
+            match response {
+                Ok(resp) => {
+                    if tx_sender.send(Ok(resp)).await.is_err() {
+                        debug!(
+                            subscriber_id,
+                            "transactions_with_proofs=client_disconnected"
+                        );
+                        return false;
+                    }
+                }
+                Err(status) => {
+                    let _ = tx_sender.send(Err(status.clone())).await;
+                    return false;
+                }
+            }
+        }
+
+        true
+    }
+
+    fn build_transaction_merkle_response(
+        filter: &FilterType,
+        raw_block: &[u8],
+        handle_id: &str,
+    ) -> Result<TransactionsWithProofsResponse, Status> {
+        use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
+
+        let response = match filter {
+            FilterType::CoreAllTxs => {
+                if let Ok(block) = deserialize::<Block>(raw_block) {
+                    let match_flags = vec![true; block.txdata.len()];
+                    let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
+                        warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
+                        serialize(&block)
+                    });
+                    TransactionsWithProofsResponse {
+                        responses: Some(Responses::RawMerkleBlock(bytes)),
+                    }
+                } else {
+                    TransactionsWithProofsResponse {
+                        responses: Some(Responses::RawMerkleBlock(raw_block.to_vec())),
+                    }
+                }
+            }
+            FilterType::CoreBloomFilter(bloom, flags) => {
+                if let Ok(block) = deserialize::<Block>(raw_block) {
+                    let mut match_flags = Vec::with_capacity(block.txdata.len());
+                    for tx in block.txdata.iter() {
+                        let mut guard = bloom.write().unwrap();
+                        match_flags.push(super::bloom::matches_transaction(&mut guard, tx, *flags));
+                    }
+                    let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
+                        warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
+                        serialize(&block)
+                    });
+                    TransactionsWithProofsResponse {
+                        responses: Some(Responses::RawMerkleBlock(bytes)),
+                    }
+                } else {
+                    TransactionsWithProofsResponse {
+                        responses: Some(Responses::RawMerkleBlock(raw_block.to_vec())),
+                    }
+                }
+            }
+            _ => TransactionsWithProofsResponse {
+                responses: Some(Responses::RawMerkleBlock(raw_block.to_vec())),
+            },
+        };
+
+        Ok(response)
+    }
+
+    async fn start_live_transaction_stream(
+        &self,
+        filter: FilterType,
+        tx: TxResponseSender,
+        delivered_txs: DeliveredTxSet,
+        delivered_blocks: DeliveredBlockSet,
+        delivered_instant_locks: DeliveredInstantLockSet,
+        delivery_gate: DeliveryGate,
+        delivery_notify: DeliveryNotify,
+    ) -> String {
         let tx_subscription_handle = self
             .subscriber_manager
             .add_subscription(filter.clone())
@@ -83,10 +384,6 @@ impl StreamingServiceImpl {
         debug!(
             subscriber_id,
             "transactions_with_proofs=subscription_created"
-        );
-        debug!(
-            "Started transaction subscription: {}",
-            tx_subscription_handle.id()
         );
 
         let merkle_block_subscription_handle = self
@@ -99,281 +396,195 @@ impl StreamingServiceImpl {
             "transactions_with_proofs=merkle_subscription_created"
         );
 
-        // Spawn task to convert internal messages to gRPC responses
-        let live_filter = filter.clone();
-        let tx_live = tx.clone();
-        tokio::spawn(async move {
-            trace!(
-                tx_subscriber_id = tx_subscription_handle.id(),
-                merkle_block_subscriber_id = merkle_block_subscription_handle.id(),
-                "transactions_with_proofs=worker_started"
-            );
-            loop {
-                // receive in order, as we want merkle blocks first
-                let (received, sub_id) = tokio::select! {
-                    biased;
-                    msg = merkle_block_subscription_handle.recv() => (msg, merkle_block_subscription_handle.id()),
-                    msg = tx_subscription_handle.recv() => (msg, tx_subscription_handle.id()),
-                };
-
-                if let Some(message) = received {
-                    let response = match message {
-                        StreamingEvent::CoreRawTransaction { data: tx_data } => {
-                            let txid = super::StreamingServiceImpl::txid_hex_from_bytes(&tx_data)
-                                .unwrap_or_else(|| "n/a".to_string());
-                            trace!(
-                                subscriber_id = sub_id,
-                                txid = %txid,
-                                payload_size = tx_data.len(),
-                                "transactions_with_proofs=forward_raw_transaction"
-                            );
-                            let raw_transactions = RawTransactions {
-                                transactions: vec![tx_data],
-                            };
-
-                            let response = TransactionsWithProofsResponse {
-                                responses: Some(Responses::RawTransactions(raw_transactions)),
-                            };
-
-                            Ok(response)
-                        }
-                        StreamingEvent::CoreRawBlock { data } => {
-                            let block_hash =
-                                super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
-                                    .unwrap_or_else(|| "n/a".to_string());
-                            trace!(
-                                subscriber_id = sub_id,
-                                block_hash = %block_hash,
-                                payload_size = data.len(),
-                                "transactions_with_proofs=forward_merkle_block"
-                            );
-                            // Build merkle block using subscriber's filter
-                            let resp = match &live_filter {
-                                FilterType::CoreAllTxs => {
-                                    // All transactions match: construct match flags accordingly
-                                    if let Ok(block) =
-                                        dashcore_rpc::dashcore::consensus::encode::deserialize::<
-                                            dashcore_rpc::dashcore::Block,
-                                        >(&data)
-                                    {
-                                        let match_flags = vec![true; block.txdata.len()];
-                                        let mb = build_merkle_block_bytes(&block, &match_flags)
-                                        .unwrap_or_else(|e| {
-                                            warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
-                                            dashcore_rpc::dashcore::consensus::encode::serialize(&block)
-                                        });
-                                        TransactionsWithProofsResponse {
-                                            responses: Some(Responses::RawMerkleBlock(mb)),
-                                        }
-                                    } else {
-                                        TransactionsWithProofsResponse {
-                                            responses: Some(Responses::RawMerkleBlock(data)),
-                                        }
-                                    }
-                                }
-                                FilterType::CoreBloomFilter(bloom, flags) => {
-                                    if let Ok(block) =
-                                        dashcore_rpc::dashcore::consensus::encode::deserialize::<
-                                            dashcore_rpc::dashcore::Block,
-                                        >(&data)
-                                    {
-                                        let mut match_flags =
-                                            Vec::with_capacity(block.txdata.len());
-                                        for tx in block.txdata.iter() {
-                                            let mut guard = bloom.write().unwrap();
-                                            let m = super::bloom::matches_transaction(
-                                                &mut guard, tx, *flags,
-                                            );
-                                            match_flags.push(m);
-                                        }
-                                        let mb = build_merkle_block_bytes(&block, &match_flags)
-                                        .unwrap_or_else(|e| {
-                                            warn!(subscriber_id = sub_id, error = %e, "live_merkle_build_failed_fallback_raw_block");
-                                            dashcore_rpc::dashcore::consensus::encode::serialize(&block)
-                                        });
-                                        TransactionsWithProofsResponse {
-                                            responses: Some(Responses::RawMerkleBlock(mb)),
-                                        }
-                                    } else {
-                                        TransactionsWithProofsResponse {
-                                            responses: Some(Responses::RawMerkleBlock(data)),
-                                        }
-                                    }
-                                }
-                                _ => TransactionsWithProofsResponse {
-                                    responses: Some(Responses::RawMerkleBlock(data)),
-                                },
-                            };
-
-                            Ok(resp)
-                        }
-                        StreamingEvent::CoreInstantLock { data } => {
-                            trace!(
-                                subscriber_id = sub_id,
-                                payload_size = data.len(),
-                                "transactions_with_proofs=forward_instant_lock"
-                            );
-                            let instant_lock_messages = InstantSendLockMessages {
-                                messages: vec![data],
-                            };
-
-                            let response = TransactionsWithProofsResponse {
-                                responses: Some(Responses::InstantSendLockMessages(
-                                    instant_lock_messages,
-                                )),
-                            };
-
-                            Ok(response)
-                        }
-                        _ => {
-                            let summary =
-                                super::StreamingServiceImpl::summarize_streaming_event(&message);
-                            trace!(
-                                subscriber_id = sub_id,
-                                event = %summary,
-                                "transactions_with_proofs=ignore_event"
-                            );
-                            // Ignore other message types for this subscription
-                            continue;
-                        }
-                    };
-
-                    if tx_live.send(response).await.is_err() {
-                        debug!(
-                            subscriber_id = sub_id,
-                            "transactions_with_proofs=client_disconnected"
-                        );
-                        break;
-                    }
-                }
-            }
-            // Drop of the handle will remove the subscription automatically
-            debug!("transactions_with_proofs=worker_finished");
+        let workers = self.workers.clone();
+        workers.spawn(async move {
+            Self::transaction_worker(
+                tx_subscription_handle,
+                merkle_block_subscription_handle,
+                tx,
+                filter,
+                delivered_txs,
+                delivered_blocks,
+                delivered_instant_locks,
+                delivery_gate,
+                delivery_notify,
+            )
+            .await;
+            Ok::<(), ()>(())
         });
 
-        // After subscribing, backfill historical up to the current tip (if requested via from_block)
-        if let Some(from_block) = req.from_block.clone() {
-            let tx_hist = tx.clone();
-            let best = self
-                .core_client
-                .get_block_count()
-                .await
-                .map_err(Status::from)? as usize;
-
-            match from_block {
-                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(hash) => {
-                    use std::str::FromStr;
-                    let hash_hex = hex::encode(&hash);
-                    let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
-                        .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
-                    let hi = self
-                        .core_client
-                        .get_block_header_info(&bh)
-                        .await
-                        .map_err(Status::from)?;
-                    if hi.height > 0 {
-                        let height = hi.height as usize;
-                        let count_tip = best.saturating_sub(height).saturating_add(1);
-                        debug!(height, count_tip, "transactions_with_proofs=historical_tip_from_hash");
-                        self.process_historical_transactions_from_height(
-                            height,
-                            count_tip,
-                            &filter,
-                            tx_hist,
-                        )
-                        .await?;
-                    }
-                }
-                dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(height) => {
-                    let height = height as usize;
-                    if height >= 1 {
-                        let count_tip = best.saturating_sub(height).saturating_add(1);
-                        debug!(height, count_tip, "transactions_with_proofs=historical_tip_from_height");
-                        self.process_historical_transactions_from_height(
-                            height,
-                            count_tip,
-                            &filter,
-                            tx_hist,
-                        )
-                        .await?;
-                    }
-                }
-            }
-        }
-
-        // Process mempool transactions if needed (TODO parity)
-        debug!(
-            subscriber_id,
-            "transactions_with_proofs=streaming_mempool_mode"
-        );
-
-        let stream = ReceiverStream::new(rx);
-        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
-        Ok(Response::new(stream))
+        subscriber_id
     }
 
-    /// Process historical transactions from a specific block hash
-    async fn process_historical_transactions_from_hash(
+    async fn handle_transactions_historical_mode(
         &self,
-        from_hash: &[u8],
-        count: usize,
-        filter: &FilterType,
-        tx: mpsc::Sender<Result<TransactionsWithProofsResponse, Status>>,
+        from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
+        count: u32,
+        filter: FilterType,
+    ) -> Result<TxResponse, Status> {
+        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
+        self.fetch_transactions_history(
+            Some(from_block),
+            Some(count as usize),
+            filter,
+            None,
+            None,
+            None,
+            tx.clone(),
+        )
+        .await?;
+
+        debug!("transactions_with_proofs=historical_stream_ready");
+        Ok(Response::new(ReceiverStream::new(rx)))
+    }
+
+    async fn handle_transactions_combined_mode(
+        &self,
+        from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
+        filter: FilterType,
+    ) -> Result<TxResponse, Status> {
+        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
+        let delivered_txs: DeliveredTxSet = Arc::new(AsyncMutex::new(HashSet::new()));
+        let delivered_blocks: DeliveredBlockSet = Arc::new(AsyncMutex::new(HashSet::new()));
+        let delivered_instant_locks: DeliveredInstantLockSet =
+            Arc::new(AsyncMutex::new(HashSet::new()));
+        let delivery_gate: DeliveryGate = Arc::new(AtomicBool::new(false));
+        let delivery_notify = Arc::new(Notify::new());
+
+        let subscriber_id = self
+            .start_live_transaction_stream(
+                filter.clone(),
+                tx.clone(),
+                delivered_txs.clone(),
+                delivered_blocks.clone(),
+                delivered_instant_locks.clone(),
+                delivery_gate.clone(),
+                delivery_notify.clone(),
+            )
+            .await;
+
+        self.fetch_transactions_history(
+            Some(from_block),
+            None,
+            filter.clone(),
+            Some(delivered_txs.clone()),
+            Some(delivered_blocks.clone()),
+            Some(delivered_instant_locks.clone()),
+            tx.clone(),
+        )
+        .await?;
+
+        delivery_gate.store(true, Ordering::Release);
+        delivery_notify.notify_waiters();
+
+        debug!(subscriber_id, "transactions_with_proofs=stream_ready");
+        Ok(Response::new(ReceiverStream::new(rx)))
+    }
+
+    async fn fetch_transactions_history(
+        &self,
+        from_block: Option<dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock>,
+        limit: Option<usize>,
+        filter: FilterType,
+        delivered_txs: Option<DeliveredTxSet>,
+        delivered_blocks: Option<DeliveredBlockSet>,
+        delivered_instant_locks: Option<DeliveredInstantLockSet>,
+        tx: TxResponseSender,
     ) -> Result<(), Status> {
         use std::str::FromStr;
-        let hash_hex = hex::encode(from_hash);
-        let bh = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
-            .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
-        let header_info = self
+
+        let from_block = match from_block {
+            Some(block) => block,
+            None => return Ok(()),
+        };
+
+        let best_height = self
             .core_client
-            .get_block_header_info(&bh)
+            .get_block_count()
             .await
-            .map_err(Status::from)?;
-        let start_height = header_info.height as usize;
-        self.process_historical_transactions_from_height(start_height, count, filter, tx)
-            .await
+            .map_err(Status::from)? as usize;
+
+        let (start_height, count_target) = match from_block {
+            dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHash(
+                hash,
+            ) => {
+                let hash_hex = hex::encode(&hash);
+                let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
+                    .map_err(|e| Status::invalid_argument(format!("Invalid block hash: {}", e)))?;
+                let header = self
+                    .core_client
+                    .get_block_header_info(&block_hash)
+                    .await
+                    .map_err(Status::from)?;
+                let start = header.height as usize;
+                let available = best_height.saturating_sub(start).saturating_add(1);
+                let desired = limit.map_or(available, |limit| limit.min(available));
+                debug!(
+                    start,
+                    desired, "transactions_with_proofs=historical_from_hash_request"
+                );
+                (start, desired)
+            }
+            dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock::FromBlockHeight(
+                height,
+            ) => {
+                let start = height as usize;
+                if start == 0 {
+                    return Err(Status::invalid_argument(
+                        "Minimum value for `fromBlockHeight` is 1",
+                    ));
+                }
+                if start > best_height.saturating_add(1) {
+                    return Err(Status::not_found(format!("Block {} not found", start)));
+                }
+                let available = best_height.saturating_sub(start).saturating_add(1);
+                let desired = limit.map_or(available, |limit| limit.min(available));
+                debug!(
+                    start,
+                    desired, "transactions_with_proofs=historical_from_height_request"
+                );
+                (start, desired)
+            }
+        };
+
+        if count_target == 0 {
+            return Ok(());
+        }
+
+        self.process_transactions_from_height(
+            start_height,
+            count_target,
+            filter,
+            delivered_txs,
+            delivered_blocks,
+            delivered_instant_locks,
+            tx,
+        )
+        .await
     }
 
-    /// Process historical transactions from a specific block height
-    async fn process_historical_transactions_from_height(
+    async fn process_transactions_from_height(
         &self,
-        from_height: usize,
+        start_height: usize,
         count: usize,
-        filter: &FilterType,
-        tx: mpsc::Sender<Result<TransactionsWithProofsResponse, Status>>,
+        filter: FilterType,
+        delivered_txs: Option<DeliveredTxSet>,
+        delivered_blocks: Option<DeliveredBlockSet>,
+        delivered_instant_locks: Option<DeliveredInstantLockSet>,
+        tx: TxResponseSender,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
 
         trace!(
-            from_height,
+            start_height,
             count, "transactions_with_proofs=historical_begin"
         );
 
-        // Clamp to tip
-        let tip = self
-            .core_client
-            .get_block_count()
-            .await
-            .map_err(Status::from)? as usize;
-        if from_height == 0 {
-            return Err(Status::invalid_argument(
-                "Minimum value for `fromBlockHeight` is 1",
-            ));
-        }
-        if from_height > tip.saturating_add(1) {
-            return Err(Status::not_found(format!(
-                "Block height {} out of range (tip={})",
-                from_height, tip
-            )));
-        }
+        let _ = delivered_instant_locks;
 
-        let max_count = tip.saturating_sub(from_height).saturating_add(1);
-        let effective = count.min(max_count);
-
-        for i in 0..effective {
-            let height = (from_height + i) as u32;
-            // Resolve hash and fetch block bytes
+        for i in 0..count {
+            let height = (start_height + i) as u32;
             let hash = match self.core_client.get_block_hash(height).await {
                 Ok(h) => h,
                 Err(e) => {
@@ -381,7 +592,7 @@ impl StreamingServiceImpl {
                     break;
                 }
             };
-            // Fetch raw block bytes and transaction bytes list (without parsing whole block)
+
             let block = match self.core_client.get_block_by_hash(hash).await {
                 Ok(b) => b,
                 Err(e) => {
@@ -389,6 +600,7 @@ impl StreamingServiceImpl {
                     break;
                 }
             };
+
             let txs_bytes = match self
                 .core_client
                 .get_block_transactions_bytes_by_hash(hash)
@@ -401,33 +613,27 @@ impl StreamingServiceImpl {
                 }
             };
 
-            let bh = block.block_hash();
-            trace!(
-                height,
-                block_hash = %bh,
-                n_txs = txs_bytes.len(),
-                "transactions_with_proofs=block_fetched"
-            );
+            let block_hash_bytes =
+                <dashcore_rpc::dashcore::BlockHash as AsRef<[u8]>>::as_ref(&hash).to_vec();
 
-            // Track matching transactions and positions to build a merkle block
             let mut matching: Vec<Vec<u8>> = Vec::new();
+            let mut matching_hashes: Vec<Vec<u8>> = Vec::new();
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
+
             for tx_bytes in txs_bytes.iter() {
-                // Try to parse each transaction individually; fallback to contains() if parsing fails
                 let matches = match &filter {
                     FilterType::CoreAllTxs => true,
                     FilterType::CoreBloomFilter(bloom, flags) => {
                         match deserialize::<CoreTx>(tx_bytes.as_slice()) {
                             Ok(tx) => {
                                 trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
-                                let mut core_filter = bloom.write().unwrap();
-                                super::bloom::matches_transaction(&mut core_filter, &tx, *flags)
+                                let mut guard = bloom.write().unwrap();
+                                super::bloom::matches_transaction(&mut guard, &tx, *flags)
                             }
                             Err(e) => {
                                 warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
-                                trace!(height, "transactions_with_proofs=bloom_contains");
-                                let core_filter = bloom.read().unwrap();
-                                core_filter.contains(tx_bytes)
+                                let guard = bloom.read().unwrap();
+                                guard.contains(tx_bytes)
                             }
                         }
                     }
@@ -435,12 +641,25 @@ impl StreamingServiceImpl {
                 };
                 match_flags.push(matches);
                 if matches {
+                    if let Some(txid_hex) =
+                        super::StreamingServiceImpl::txid_hex_from_bytes(tx_bytes)
+                    {
+                        if let Ok(bytes) = hex::decode(txid_hex) {
+                            matching_hashes.push(bytes);
+                        }
+                    }
                     matching.push(tx_bytes.clone());
                 }
             }
 
-            // First, send transactions (if any)
             if !matching.is_empty() {
+                if let Some(shared) = delivered_txs.as_ref() {
+                    let mut guard = shared.lock().await;
+                    for hash_bytes in matching_hashes.iter() {
+                        guard.insert(hash_bytes.clone());
+                    }
+                }
+
                 let raw_transactions = RawTransactions {
                     transactions: matching,
                 };
@@ -453,13 +672,16 @@ impl StreamingServiceImpl {
                 }
             }
 
-            // Then, send a proper merkle block for this height (header + partial merkle tree)
-            let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags)
-                .unwrap_or_else(|e| {
-                    let bh = block.block_hash();
-                    warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
-                    dashcore_rpc::dashcore::consensus::encode::serialize(&block)
-                });
+            if let Some(shared) = delivered_blocks.as_ref() {
+                let mut guard = shared.lock().await;
+                guard.insert(block_hash_bytes.clone());
+            }
+
+            let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
+                let bh = block.block_hash();
+                warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
+                dashcore_rpc::dashcore::consensus::encode::serialize(&block)
+            });
 
             let response = TransactionsWithProofsResponse {
                 responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
@@ -469,13 +691,12 @@ impl StreamingServiceImpl {
                 return Ok(());
             }
 
-            // Pace requests slightly to avoid Core overload
-            // sleep(Duration::from_millis(1)).await;
+            sleep(HISTORICAL_CORE_QUERY_DELAY).await;
         }
 
         trace!(
-            from_height,
-            effective, "transactions_with_proofs=historical_end"
+            start_height,
+            count, "transactions_with_proofs=historical_end"
         );
         Ok(())
     }

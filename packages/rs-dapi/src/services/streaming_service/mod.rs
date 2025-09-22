@@ -12,9 +12,9 @@ mod zmq_listener;
 use crate::clients::CoreClient;
 use crate::clients::traits::TenderdashClientTrait;
 use crate::config::Config;
+use crate::sync::Workers;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tokio::task::JoinSet;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, trace, warn};
 
@@ -35,7 +35,7 @@ pub struct StreamingServiceImpl {
     pub subscriber_manager: Arc<SubscriberManager>,
     pub masternode_list_sync: Arc<MasternodeListSync>,
     /// Background workers; aborted when the last reference is dropped
-    pub workers: Arc<JoinSet<()>>,
+    pub workers: Workers,
 }
 
 impl StreamingServiceImpl {
@@ -187,25 +187,33 @@ impl StreamingServiceImpl {
         masternode_list_sync.start_chain_lock_listener(subscriber_manager.clone());
 
         // Prepare background workers set
-        let mut workers = JoinSet::new();
+        let workers = Workers::new();
 
         // Spawn Core ZMQ subscribe + process loop
-        workers.spawn(Self::core_zmq_subscription_worker(
-            zmq_listener.clone(),
-            subscriber_manager.clone(),
-        ));
+        let zmq_listener_clone = zmq_listener.clone();
+        let subscriber_manager_clone = subscriber_manager.clone();
+        workers.spawn(async move {
+            Self::core_zmq_subscription_worker(
+                zmq_listener_clone,
+                subscriber_manager_clone,
+            )
+            .await;
+            Ok::<(), ()>(())
+        });
 
         // Spawn Tenderdash transaction forwarder worker
         let td_client = tenderdash_client.clone();
         let sub_mgr = subscriber_manager.clone();
-        workers.spawn(Self::tenderdash_transactions_subscription_worker(
-            td_client, sub_mgr,
-        ));
+        workers.spawn(async move {
+            Self::tenderdash_transactions_subscription_worker(td_client, sub_mgr).await;
+            Ok::<(), ()>(())
+        });
         let td_client = tenderdash_client.clone();
         let sub_mgr = subscriber_manager.clone();
-        workers.spawn(Self::tenderdash_block_subscription_worker(
-            td_client, sub_mgr,
-        ));
+        workers.spawn(async move {
+            Self::tenderdash_block_subscription_worker(td_client, sub_mgr).await;
+            Ok::<(), ()>(())
+        });
 
         info!(
             zmq_url = %config.dapi.core.zmq_url,
@@ -223,7 +231,7 @@ impl StreamingServiceImpl {
             zmq_listener,
             subscriber_manager,
             masternode_list_sync,
-            workers: Arc::new(workers),
+            workers,
         })
     }
 
