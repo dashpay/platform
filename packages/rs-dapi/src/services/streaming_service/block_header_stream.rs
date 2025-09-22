@@ -28,26 +28,29 @@ impl StreamingServiceImpl {
 
         // Validate parameters
         let count = req.count;
-        let from_block = req.from_block;
-        let has_from_block = from_block.is_some();
+        let from_block = match req.from_block {
+            Some(from_block) => from_block,
+            None => {
+                warn!("block_headers=missing_from_block");
+                return Err(Status::invalid_argument("Must specify from_block"));
+            }
+        };
 
-        trace!(count, has_from_block, "block_headers=request_parsed");
+        trace!(count, "block_headers=request_parsed");
 
-        // Validate that we have from_block when count > 0
-        if !has_from_block && count > 0 {
-            warn!("block_headers=missing_from_block count>0");
-            return Err(Status::invalid_argument(
-                "Must specify from_block when count > 0",
-            ));
+        if let FromBlock::FromBlockHeight(height) = &from_block {
+            if *height == 0 {
+                warn!(height, "block_headers=invalid_starting_height");
+                return Err(Status::invalid_argument(
+                    "Minimum value for from_block_height is 1",
+                ));
+            }
         }
 
-        let response = match (count, from_block) {
-            (requested, Some(from_block)) if requested > 0 => {
-                self.handle_historical_mode(from_block, requested).await?
-            }
-            (0, None) => self.handle_streaming_mode().await?,
-            (0, Some(from_block)) => self.handle_combined_mode(from_block).await?,
-            _ => unreachable!(),
+        let response = if count > 0 {
+            self.handle_historical_mode(from_block, count).await?
+        } else {
+            self.handle_combined_mode(from_block).await?
         };
 
         Ok(response)
@@ -82,17 +85,6 @@ impl StreamingServiceImpl {
 
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!("block_headers=historical_stream_ready");
-        Ok(Response::new(stream))
-    }
-
-    async fn handle_streaming_mode(&self) -> Result<BlockHeaderResponse, Status> {
-        let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
-        let subscriber_id = self.start_live_stream(tx).await;
-        let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
-        debug!(
-            subscriber_id = subscriber_id.as_str(),
-            "block_headers=stream_ready"
-        );
         Ok(Response::new(stream))
     }
 
