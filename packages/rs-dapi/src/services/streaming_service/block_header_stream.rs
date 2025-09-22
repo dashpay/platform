@@ -4,16 +4,18 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
 use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
 };
 
+const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
+
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
-type BlockHeaderResponseSender = mpsc::UnboundedSender<BlockHeaderResponseResult>;
-type BlockHeaderResponseStream = UnboundedReceiverStream<BlockHeaderResponseResult>;
+type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
+type BlockHeaderResponseStream = ReceiverStream<BlockHeaderResponseResult>;
 type BlockHeaderResponse = Response<BlockHeaderResponseStream>;
 
 impl StreamingServiceImpl {
@@ -56,7 +58,7 @@ impl StreamingServiceImpl {
         from_block: FromBlock,
         count: u32,
     ) -> Result<BlockHeaderResponse, Status> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
 
         match from_block {
             FromBlock::FromBlockHash(hash) => {
@@ -78,15 +80,15 @@ impl StreamingServiceImpl {
             }
         }
 
-        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!("block_headers=historical_stream_ready");
         Ok(Response::new(stream))
     }
 
     async fn handle_streaming_mode(&self) -> Result<BlockHeaderResponse, Status> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let subscriber_id = self.start_live_stream(tx).await;
-        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
             "block_headers=stream_ready"
@@ -98,10 +100,10 @@ impl StreamingServiceImpl {
         &self,
         from_block: FromBlock,
     ) -> Result<BlockHeaderResponse, Status> {
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let subscriber_id = self.start_live_stream(tx.clone()).await;
         self.backfill_to_tip(from_block, tx).await?;
-        let stream: BlockHeaderResponseStream = UnboundedReceiverStream::new(rx);
+        let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
             "block_headers=stream_ready"
@@ -143,8 +145,8 @@ impl StreamingServiceImpl {
     }
 
     async fn block_header_worker(
-        mut block_handle: SubscriptionHandle,
-        mut chainlock_handle: SubscriptionHandle,
+        block_handle: SubscriptionHandle,
+        chainlock_handle: SubscriptionHandle,
         tx: BlockHeaderResponseSender,
     ) {
         let subscriber_id = block_handle.id().to_string();
@@ -197,7 +199,7 @@ impl StreamingServiceImpl {
                 }
             };
 
-            if tx.send(response).is_err() {
+            if tx.send(response).await.is_err() {
                 debug!(
                     subscriber_id = subscriber_id.as_str(),
                     "block_headers=client_disconnected"
@@ -338,7 +340,7 @@ impl StreamingServiceImpl {
                         dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
                     ),
                 };
-                if tx.send(Ok(response)).is_err() {
+                if tx.send(Ok(response)).await.is_err() {
                     debug!("block_headers=historical_client_disconnected");
                     return Ok(());
                 }
@@ -354,7 +356,10 @@ impl StreamingServiceImpl {
                     dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
                 ),
             };
-            let _ = tx.send(Ok(response));
+            if tx.send(Ok(response)).await.is_err() {
+                debug!("block_headers=historical_client_disconnected");
+                return Ok(());
+            }
             sent += 1; // mark as sent (approximate)
         }
 

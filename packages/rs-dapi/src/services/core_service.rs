@@ -15,7 +15,7 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::hashes::Hash;
 use std::sync::Arc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, trace};
 
 /// Core service implementation that handles blockchain and streaming operations
@@ -43,11 +43,10 @@ impl CoreServiceImpl {
 #[dapi_grpc::tonic::async_trait]
 impl Core for CoreServiceImpl {
     type subscribeToBlockHeadersWithChainLocksStream =
-        UnboundedReceiverStream<Result<BlockHeadersWithChainLocksResponse, Status>>;
+        ReceiverStream<Result<BlockHeadersWithChainLocksResponse, Status>>;
     type subscribeToTransactionsWithProofsStream =
-        UnboundedReceiverStream<Result<TransactionsWithProofsResponse, Status>>;
-    type subscribeToMasternodeListStream =
-        UnboundedReceiverStream<Result<MasternodeListResponse, Status>>;
+        ReceiverStream<Result<TransactionsWithProofsResponse, Status>>;
+    type subscribeToMasternodeListStream = ReceiverStream<Result<MasternodeListResponse, Status>>;
 
     async fn get_block(
         &self,

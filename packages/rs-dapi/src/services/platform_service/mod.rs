@@ -511,7 +511,7 @@ impl Platform for PlatformServiceImpl {
     );
 
     // Streaming: multiplexed platform events
-    type subscribePlatformEventsStream = tokio_stream::wrappers::UnboundedReceiverStream<
+    type subscribePlatformEventsStream = tokio_stream::wrappers::ReceiverStream<
         Result<dapi_grpc::platform::v0::PlatformEventsResponse, dapi_grpc::tonic::Status>,
     >;
 

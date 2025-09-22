@@ -6,21 +6,21 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
 use crate::services::streaming_service::StreamingServiceImpl;
 use crate::services::streaming_service::bloom::bloom_flags_from_int;
 use crate::services::streaming_service::subscriber_manager::{FilterType, StreamingEvent};
 
+const TRANSACTION_STREAM_BUFFER: usize = 512;
+
 impl StreamingServiceImpl {
     pub async fn subscribe_to_transactions_with_proofs_impl(
         &self,
         request: Request<TransactionsWithProofsRequest>,
-    ) -> Result<
-        Response<UnboundedReceiverStream<Result<TransactionsWithProofsResponse, Status>>>,
-        Status,
-    > {
+    ) -> Result<Response<ReceiverStream<Result<TransactionsWithProofsResponse, Status>>>, Status>
+    {
         trace!("transactions_with_proofs=subscribe_begin");
         let req = request.into_inner();
         let count = req.count;
@@ -38,7 +38,7 @@ impl StreamingServiceImpl {
         };
 
         // Create channel for streaming responses
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
 
         // If historical-only requested (count > 0), send historical data and close the stream
         if count > 0 {
@@ -69,7 +69,7 @@ impl StreamingServiceImpl {
                 }
             }
 
-            let stream = UnboundedReceiverStream::new(rx);
+            let stream = ReceiverStream::new(rx);
             debug!("transactions_with_proofs=historical_stream_ready");
             return Ok(Response::new(stream));
         }
@@ -238,7 +238,7 @@ impl StreamingServiceImpl {
                         }
                     };
 
-                    if tx_live.send(response).is_err() {
+                    if tx_live.send(response).await.is_err() {
                         debug!(
                             subscriber_id = sub_id,
                             "transactions_with_proofs=client_disconnected"
@@ -307,7 +307,7 @@ impl StreamingServiceImpl {
             "transactions_with_proofs=streaming_mempool_mode"
         );
 
-        let stream = UnboundedReceiverStream::new(rx);
+        let stream = ReceiverStream::new(rx);
         debug!(subscriber_id, "transactions_with_proofs=stream_ready");
         Ok(Response::new(stream))
     }
@@ -318,7 +318,7 @@ impl StreamingServiceImpl {
         from_hash: &[u8],
         count: usize,
         filter: &FilterType,
-        tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
+        tx: mpsc::Sender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
         use std::str::FromStr;
         let hash_hex = hex::encode(from_hash);
@@ -340,7 +340,7 @@ impl StreamingServiceImpl {
         from_height: usize,
         count: usize,
         filter: &FilterType,
-        tx: mpsc::UnboundedSender<Result<TransactionsWithProofsResponse, Status>>,
+        tx: mpsc::Sender<Result<TransactionsWithProofsResponse, Status>>,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -447,7 +447,7 @@ impl StreamingServiceImpl {
                 let response = TransactionsWithProofsResponse {
                     responses: Some(Responses::RawTransactions(raw_transactions)),
                 };
-                if tx.send(Ok(response)).is_err() {
+                if tx.send(Ok(response)).await.is_err() {
                     debug!("transactions_with_proofs=historical_client_disconnected");
                     return Ok(());
                 }
@@ -464,7 +464,7 @@ impl StreamingServiceImpl {
             let response = TransactionsWithProofsResponse {
                 responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
             };
-            if tx.send(Ok(response)).is_err() {
+            if tx.send(Ok(response)).await.is_err() {
                 debug!("transactions_with_proofs=historical_client_disconnected");
                 return Ok(());
             }

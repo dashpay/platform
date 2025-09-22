@@ -3,10 +3,11 @@ use dapi_grpc::platform::v0::PlatformEventsCommand;
 use dapi_grpc::tonic::Status;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 
-use crate::event_mux::unbounded_sender_sink;
-use crate::event_mux::EventMux;
+use crate::event_mux::{result_sender_sink, EventMux};
+
+const UPSTREAM_COMMAND_BUFFER: usize = 128;
 
 /// A reusable gRPC producer that bridges a Platform gRPC client with an [`EventMux`].
 ///
@@ -33,12 +34,12 @@ impl GrpcPlatformEventsProducer {
         <C::ResponseBody as dapi_grpc::tonic::codegen::Body>::Error:
             Into<dapi_grpc::tonic::codegen::StdError> + Send,
     {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<PlatformEventsCommand>();
+        let (cmd_tx, cmd_rx) = mpsc::channel::<PlatformEventsCommand>(UPSTREAM_COMMAND_BUFFER);
         tracing::debug!("connecting gRPC producer to upstream");
         let resp_stream = client
-            .subscribe_platform_events(UnboundedReceiverStream::new(cmd_rx))
+            .subscribe_platform_events(ReceiverStream::new(cmd_rx))
             .await?;
-        let cmd_sink = unbounded_sender_sink(cmd_tx);
+        let cmd_sink = result_sender_sink(cmd_tx);
         let resp_rx = resp_stream.into_inner();
 
         tracing::debug!("registering gRPC producer with mux");

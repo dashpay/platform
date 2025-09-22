@@ -1,22 +1,23 @@
 use dapi_grpc::core::v0::{MasternodeListRequest, MasternodeListResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
+
+const MASTERNODE_STREAM_BUFFER: usize = 512;
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_masternode_list_impl(
         &self,
         _request: Request<MasternodeListRequest>,
-    ) -> Result<Response<UnboundedReceiverStream<Result<MasternodeListResponse, Status>>>, Status>
-    {
+    ) -> Result<Response<ReceiverStream<Result<MasternodeListResponse, Status>>>, Status> {
         // Create filter (no filtering needed for masternode list - all updates)
         let filter = FilterType::CoreAllMasternodes;
 
         // Create channel for streaming responses
-        let (tx, rx) = mpsc::unbounded_channel();
+        let (tx, rx) = mpsc::channel(MASTERNODE_STREAM_BUFFER);
 
         // Add subscription to manager
         let subscription_handle = self.subscriber_manager.add_subscription(filter).await;
@@ -49,7 +50,7 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if tx_stream.send(response).is_err() {
+                if tx_stream.send(response).await.is_err() {
                     debug!(
                         "Client disconnected from masternode list subscription: {}",
                         sub_handle.id()
@@ -78,6 +79,7 @@ impl StreamingServiceImpl {
                 .send(Ok(MasternodeListResponse {
                     masternode_list_diff: diff,
                 }))
+                .await
                 .is_err()
             {
                 debug!(
@@ -89,7 +91,7 @@ impl StreamingServiceImpl {
             debug!(subscriber_id, "masternode_list_stream=no_initial_diff");
         }
 
-        let stream = UnboundedReceiverStream::new(rx);
+        let stream = ReceiverStream::new(rx);
         debug!(subscriber_id, "masternode_list_stream=stream_ready");
         Ok(Response::new(stream))
     }

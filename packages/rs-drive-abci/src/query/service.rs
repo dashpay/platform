@@ -55,15 +55,17 @@ use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use rs_dash_notify::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
-use rs_dash_notify::{EventMux, UnboundedSenderSink};
+use rs_dash_notify::{sender_sink, EventMux};
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
+
+const PLATFORM_EVENTS_STREAM_BUFFER: usize = 128;
 
 /// Service to handle platform queries
 pub struct QueryService {
@@ -878,8 +880,7 @@ impl PlatformService for QueryService {
         .await
     }
 
-    type subscribePlatformEventsStream =
-        UnboundedReceiverStream<Result<PlatformEventsResponse, Status>>;
+    type subscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
 
     /// Uses EventMux: forward inbound commands to mux subscriber and return its response stream
     async fn subscribe_platform_events(
@@ -892,16 +893,16 @@ impl PlatformService for QueryService {
         // return Err(Status::unimplemented("the endpoint is not supported yet"));
         let inbound = request.into_inner();
         let (downstream_tx, rx) =
-            mpsc::unbounded_channel::<Result<PlatformEventsResponse, Status>>();
+            mpsc::channel::<Result<PlatformEventsResponse, Status>>(PLATFORM_EVENTS_STREAM_BUFFER);
         let subscriber = self.platform_events_mux.add_subscriber().await;
 
         let mut workers = self.workers.lock().unwrap();
         workers.spawn(async move {
-            let resp_sink = UnboundedSenderSink::from(downstream_tx);
+            let resp_sink = sender_sink(downstream_tx);
             subscriber.forward(inbound, resp_sink).await;
         });
 
-        Ok(Response::new(UnboundedReceiverStream::new(rx)))
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 }
 

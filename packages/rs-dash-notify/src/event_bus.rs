@@ -6,6 +6,8 @@ use std::sync::Arc;
 
 use tokio::sync::{mpsc, Mutex, RwLock};
 
+const DEFAULT_SUBSCRIPTION_CAPACITY: usize = 256;
+
 /// Filter trait for event matching on a specific event type.
 pub trait Filter<E>: Send + Sync {
     /// Return true if the event matches the filter.
@@ -14,14 +16,15 @@ pub trait Filter<E>: Send + Sync {
 
 struct Subscription<E, F> {
     filter: F,
-    sender: mpsc::UnboundedSender<E>,
+    sender: mpsc::Sender<E>,
 }
 
-/// Generic, clonable in‑process event bus with pluggable filtering.
+/// Generic, clonable in-process event bus with pluggable filtering.
 pub struct EventBus<E, F> {
     subs: Arc<RwLock<BTreeMap<u64, Subscription<E, F>>>>,
     counter: Arc<AtomicU64>,
     tasks: Arc<Mutex<tokio::task::JoinSet<()>>>, // tasks spawned for this subscription, cancelled on drop
+    channel_capacity: usize,
 }
 
 impl<E, F> Clone for EventBus<E, F> {
@@ -30,6 +33,7 @@ impl<E, F> Clone for EventBus<E, F> {
             subs: Arc::clone(&self.subs),
             counter: Arc::clone(&self.counter),
             tasks: Arc::clone(&self.tasks),
+            channel_capacity: self.channel_capacity,
         }
     }
 }
@@ -65,11 +69,17 @@ where
 {
     /// Create a new, empty event bus.
     pub fn new() -> Self {
+        Self::with_capacity(DEFAULT_SUBSCRIPTION_CAPACITY)
+    }
+
+    /// Create a new event bus with a custom per-subscription channel capacity.
+    pub fn with_capacity(capacity: usize) -> Self {
         metrics_register_once();
         Self {
             subs: Arc::new(RwLock::new(BTreeMap::new())),
             counter: Arc::new(AtomicU64::new(0)),
             tasks: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
+            channel_capacity: capacity.max(1),
         }
     }
 
@@ -77,7 +87,7 @@ where
     pub async fn add_subscription(&self, filter: F) -> SubscriptionHandle<E, F> {
         tracing::debug!("event_bus: adding subscription");
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
-        let (tx, rx) = mpsc::unbounded_channel::<E>();
+        let (tx, rx) = mpsc::channel::<E>(self.channel_capacity);
 
         let sub = Subscription { filter, sender: tx };
 
@@ -115,22 +125,44 @@ where
     pub async fn notify(&self, event: E) {
         metrics_events_published_inc();
 
-        let subs_guard = self.subs.read().await;
-        let mut dead = Vec::new();
-
-        for (id, sub) in subs_guard.iter() {
-            if sub.filter.matches(&event) {
-                if sub.sender.send(event.clone()).is_ok() {
-                    metrics_events_delivered_inc();
-                } else {
-                    dead.push(*id);
+        let mut targets = Vec::new();
+        {
+            let subs_guard = self.subs.read().await;
+            for (id, sub) in subs_guard.iter() {
+                if sub.filter.matches(&event) {
+                    targets.push((*id, sub.sender.clone()));
                 }
             }
         }
-        drop(subs_guard);
+
+        if targets.is_empty() {
+            return;
+        }
+
+        let mut maybe_event = Some(event);
+        let len = targets.len();
+        let mut dead = Vec::new();
+
+        for (idx, (id, sender)) in targets.into_iter().enumerate() {
+            let should_take = idx + 1 == len;
+            let payload = if should_take {
+                maybe_event.take().unwrap()
+            } else {
+                maybe_event.as_ref().unwrap().clone()
+            };
+
+            match sender.send(payload).await {
+                Ok(()) => {
+                    metrics_events_delivered_inc();
+                }
+                Err(_) => {
+                    metrics_events_dropped_inc();
+                    dead.push(id);
+                }
+            }
+        }
 
         for id in dead {
-            metrics_events_dropped_inc();
             tracing::debug!(
                 subscription_id = id,
                 "event_bus: removing dead subscription"
@@ -163,7 +195,7 @@ where
     F: Send + Sync + 'static,
 {
     id: u64,
-    rx: Arc<Mutex<mpsc::UnboundedReceiver<E>>>,
+    rx: Arc<Mutex<mpsc::Receiver<E>>>,
     event_bus: EventBus<E, F>,
     drop: bool, // true only for primary handles
 }

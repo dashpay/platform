@@ -11,7 +11,6 @@ use dapi_grpc::platform::v0::platform_events_response::{
 use dapi_grpc::platform::v0::{
     PlatformEventMessageV0, PlatformEventV0, PlatformEventsResponse, PlatformFilterV0,
 };
-use dapi_grpc::tonic::Status;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -50,7 +49,9 @@ pub async fn run_local_platform_events_producer<F>(
                                 )),
                             })),
                         };
-                        let _ = resp_tx.send(Ok(err));
+                        if resp_tx.send(Ok(err)).await.is_err() {
+                            tracing::warn!("local producer failed to send missing version error");
+                        }
                         continue;
                     }
                 };
@@ -79,7 +80,9 @@ pub async fn run_local_platform_events_producer<F>(
                                 })),
                             })),
                         };
-                        let _ = resp_tx.send(Ok(ack));
+                        if resp_tx.send(Ok(ack)).await.is_err() {
+                            tracing::warn!("local producer failed to send add ack");
+                        }
                     }
                     Some(Cmd::Remove(rem)) => {
                         let id = rem.client_subscription_id;
@@ -92,7 +95,9 @@ pub async fn run_local_platform_events_producer<F>(
                                     })),
                                 })),
                             };
-                            let _ = resp_tx.send(Ok(ack));
+                            if resp_tx.send(Ok(ack)).await.is_err() {
+                                tracing::warn!("local producer failed to send remove ack");
+                            }
                         }
                     }
                     Some(Cmd::Ping(p)) => {
@@ -104,7 +109,9 @@ pub async fn run_local_platform_events_producer<F>(
                                 })),
                             })),
                         };
-                        let _ = resp_tx.send(Ok(ack));
+                        if resp_tx.send(Ok(ack)).await.is_err() {
+                            tracing::warn!("local producer failed to send ping ack");
+                        }
                     }
                     None => {
                         let err = PlatformEventsResponse {
@@ -118,7 +125,9 @@ pub async fn run_local_platform_events_producer<F>(
                                 )),
                             })),
                         };
-                        let _ = resp_tx.send(Ok(err));
+                        if resp_tx.send(Ok(err)).await.is_err() {
+                            tracing::warn!("local producer failed to send missing command error");
+                        }
                     }
                 }
             }
@@ -133,7 +142,9 @@ pub async fn run_local_platform_events_producer<F>(
                         })),
                     })),
                 };
-                let _ = resp_tx.send(Ok(err));
+                if resp_tx.send(Ok(err)).await.is_err() {
+                    tracing::warn!("local producer failed to send upstream error");
+                }
             }
         }
     }
@@ -142,7 +153,7 @@ pub async fn run_local_platform_events_producer<F>(
 async fn forward_local_events<F>(
     subscription: SubscriptionHandle<PlatformEventV0, F>,
     client_subscription_id: &str,
-    forward_tx: tokio::sync::mpsc::UnboundedSender<Result<PlatformEventsResponse, Status>>,
+    forward_tx: crate::event_mux::ResponseSender,
 ) where
     F: crate::event_bus::Filter<PlatformEventV0> + Send + Sync + 'static,
 {
@@ -155,7 +166,7 @@ async fn forward_local_events<F>(
                 })),
             })),
         };
-        if forward_tx.send(Ok(resp)).is_err() {
+        if forward_tx.send(Ok(resp)).await.is_err() {
             tracing::warn!("client disconnected, stopping local event forwarding");
             break;
         }

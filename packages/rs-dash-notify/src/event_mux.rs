@@ -18,10 +18,9 @@ use dapi_grpc::platform::v0::platform_events_response::platform_events_response_
 use dapi_grpc::platform::v0::PlatformEventsCommand;
 use dapi_grpc::tonic::Status;
 use futures::SinkExt;
-use sender_sink::wrappers::{SinkError, UnboundedSenderSink};
 use tokio::join;
-use tokio::sync::mpsc::{UnboundedReceiver, UnboundedSender};
 use tokio::sync::{mpsc, Mutex};
+use tokio_util::sync::PollSender;
 
 use crate::event_bus::{EventBus, Filter as EventFilter, SubscriptionHandle};
 use dapi_grpc::platform::v0::PlatformEventsResponse;
@@ -30,11 +29,14 @@ use dapi_grpc::platform::v0::PlatformFilterV0;
 pub type EventsCommandResult = Result<PlatformEventsCommand, Status>;
 pub type EventsResponseResult = Result<PlatformEventsResponse, Status>;
 
-pub type CommandSender = UnboundedSender<EventsCommandResult>;
-pub type CommandReceiver = UnboundedReceiver<EventsCommandResult>;
+const COMMAND_CHANNEL_CAPACITY: usize = 128;
+const RESPONSE_CHANNEL_CAPACITY: usize = 512;
 
-pub type ResponseSender = UnboundedSender<EventsResponseResult>;
-pub type ResponseReceiver = UnboundedReceiver<EventsResponseResult>;
+pub type CommandSender = mpsc::Sender<EventsCommandResult>;
+pub type CommandReceiver = mpsc::Receiver<EventsCommandResult>;
+
+pub type ResponseSender = mpsc::Sender<EventsResponseResult>;
+pub type ResponseReceiver = mpsc::Receiver<EventsResponseResult>;
 
 /// EventMux: manages subscribers and producers, routes commands and responses.
 pub struct EventMux {
@@ -73,8 +75,8 @@ impl EventMux {
     /// - `cmd_rx`: producer receives commands from the mux
     /// - `resp_tx`: producer sends generated responses into the mux
     pub async fn add_producer(&self) -> EventProducer {
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<EventsCommandResult>();
-        let (resp_tx, resp_rx) = mpsc::unbounded_channel::<EventsResponseResult>();
+        let (cmd_tx, cmd_rx) = mpsc::channel::<EventsCommandResult>(COMMAND_CHANNEL_CAPACITY);
+        let (resp_tx, resp_rx) = mpsc::channel::<EventsResponseResult>(RESPONSE_CHANNEL_CAPACITY);
 
         // Store command sender so mux can forward commands via round-robin
         {
@@ -117,8 +119,10 @@ impl EventMux {
     ///
     /// Subscriber is automatically cleaned up when channels are closed.
     pub async fn add_subscriber(&self) -> EventSubscriber {
-        let (sub_cmd_tx, sub_cmd_rx) = mpsc::unbounded_channel::<EventsCommandResult>();
-        let (sub_resp_tx, sub_resp_rx) = mpsc::unbounded_channel::<EventsResponseResult>();
+        let (sub_cmd_tx, sub_cmd_rx) =
+            mpsc::channel::<EventsCommandResult>(COMMAND_CHANNEL_CAPACITY);
+        let (sub_resp_tx, sub_resp_rx) =
+            mpsc::channel::<EventsResponseResult>(RESPONSE_CHANNEL_CAPACITY);
 
         let mux = self.clone();
         let subscriber_id = self.next_subscriber_id.fetch_add(1, Ordering::Relaxed) as u64;
@@ -201,7 +205,12 @@ impl EventMux {
                                                 },
                                             )),
                                         };
-                                        let _ = tx.send(Ok(remove_cmd));
+                                        if tx.send(Ok(remove_cmd)).await.is_err() {
+                                            tracing::debug!(
+                                                subscription_id = %id,
+                                                "event_mux: failed to send duplicate Remove to producer"
+                                            );
+                                        }
                                     }
                                 }
                                 // Drop previous mapping entry (it will be replaced below)
@@ -242,7 +251,7 @@ impl EventMux {
                             .assign_producer_for_subscription(subscriber_id, &id)
                             .await
                         {
-                            if prod_tx.send(Ok(cmd)).is_err() {
+                            if prod_tx.send(Ok(cmd)).await.is_err() {
                                 tracing::debug!(subscription_id = %id, "event_mux: failed to send Add to producer - channel closed");
                             }
                         } else {
@@ -260,7 +269,7 @@ impl EventMux {
                             loop {
                                 match h.recv().await {
                                     Some(resp) => {
-                                        if tx.send(Ok(resp)).is_err() {
+                                        if tx.send(Ok(resp)).await.is_err() {
                                             tracing::debug!(subscription_id = %id, "event_mux: failed to send response - subscriber channel closed");
                                             mux.handle_subscriber_disconnect(sub_id).await;
                                             break;
@@ -295,7 +304,7 @@ impl EventMux {
 
                         if let Some(idx) = assigned {
                             if let Some(tx) = self.get_producer_tx(idx).await {
-                                if tx.send(Ok(cmd)).is_err() {
+                                if tx.send(Ok(cmd)).await.is_err() {
                                     tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
                                     self.handle_subscriber_disconnect(subscriber_id).await;
                                 }
@@ -362,7 +371,7 @@ impl EventMux {
                             },
                         )),
                     };
-                    if tx.send(Ok(cmd)).is_err() {
+                    if tx.send(Ok(cmd)).await.is_err() {
                         tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
                     } else {
                         tracing::debug!(subscription_id = %id, "event_mux: sent Remove command to producer");
@@ -378,7 +387,7 @@ impl EventMux {
         &self,
         subscriber_id: u64,
         subscription_id: &str,
-    ) -> Option<(usize, mpsc::UnboundedSender<EventsCommandResult>)> {
+    ) -> Option<(usize, CommandSender)> {
         let prods_guard = self.producers.lock().await;
         if prods_guard.is_empty() {
             return None;
@@ -431,10 +440,7 @@ impl EventMux {
         }
     }
 
-    async fn get_producer_tx(
-        &self,
-        idx: usize,
-    ) -> Option<mpsc::UnboundedSender<EventsCommandResult>> {
+    async fn get_producer_tx(&self, idx: usize) -> Option<CommandSender> {
         let prods = self.producers.lock().await;
         prods.get(idx).and_then(|o| o.as_ref().cloned())
     }
@@ -533,7 +539,12 @@ impl EventMux {
                     },
                 )),
             };
-            let _ = tx.send(Ok(cmd));
+            if tx.send(Ok(cmd)).await.is_err() {
+                tracing::debug!(
+                    subscription_id = %id,
+                    "event_mux: failed to send Add to assigned producer"
+                );
+            }
 
             Ok((id, handle))
         } else {
@@ -579,7 +590,7 @@ impl EventProducer {
         let resp_worker = tokio::spawn(async move {
             let mut rx = resp_rx;
             while let Some(resp) = rx.next().await {
-                if resp_tx.send(resp).is_err() {
+                if resp_tx.send(resp).await.is_err() {
                     tracing::warn!("event_mux: failed to forward response to mux");
                     break;
                 }
@@ -614,7 +625,7 @@ impl EventSubscriber {
         let cmd_worker = tokio::spawn(async move {
             let mut rx = cmd_rx;
             while let Some(cmd) = rx.next().await {
-                if cmd_tx.send(cmd).is_err() {
+                if cmd_tx.send(cmd).await.is_err() {
                     tracing::warn!("event_mux: failed to forward command from subscriber");
                     break;
                 }
@@ -679,34 +690,39 @@ struct SubscriptionKey {
 /// Public alias for platform events subscription handle used by SDK and DAPI.
 pub type PlatformEventsSubscriptionHandle = SubscriptionHandle<PlatformEventsResponse, IdFilter>;
 
-/// Create a Sink from an UnboundedSender that maps errors to tonic::Status
-pub fn unbounded_sender_sink<T>(
-    sender: UnboundedSender<T>,
-) -> impl futures::Sink<Result<T, Status>, Error = Status> {
-    let cmd_sink = Box::pin(
-        UnboundedSenderSink::from(sender)
-            .sink_map_err(|e: SinkError| {
-                Status::internal(format!(
-                    "Failed to send command to PlatformEventsMux: {:?}",
-                    e
-                ))
-            })
-            .with(|v| async { v }),
-    );
+/// Create a bounded Sink from an mpsc Sender that maps errors to tonic::Status
+pub fn sender_sink<T: Send + 'static>(
+    sender: mpsc::Sender<T>,
+) -> impl futures::Sink<T, Error = Status> {
+    Box::pin(
+        PollSender::new(sender)
+            .sink_map_err(|_| Status::internal("Failed to send command to PlatformEventsMux")),
+    )
+}
 
-    cmd_sink
+/// Create a bounded Sink that accepts `Result<T, Status>` and forwards `Ok(T)` through the sender
+/// while propagating errors.
+pub fn result_sender_sink<T: Send + 'static>(
+    sender: mpsc::Sender<T>,
+) -> impl futures::Sink<Result<T, Status>, Error = Status> {
+    Box::pin(
+        PollSender::new(sender)
+            .sink_map_err(|_| Status::internal("Failed to send command to PlatformEventsMux"))
+            .with(|value| async move { value }),
+    )
 }
 
 #[cfg(test)]
 mod tests {
+    use super::sender_sink;
     use super::*;
     use dapi_grpc::platform::v0::platform_event_v0 as pe;
     use dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0;
     use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
     use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
-    use sender_sink::wrappers::UnboundedSenderSink;
     use std::collections::HashMap;
     use tokio::time::{timeout, Duration};
+    use tokio_stream::wrappers::ReceiverStream;
 
     fn make_add_cmd(id: &str) -> PlatformEventsCommand {
         PlatformEventsCommand {
@@ -770,9 +786,11 @@ mod tests {
 
         sub1_cmd_tx
             .send(Ok(make_add_cmd(sub_id)))
+            .await
             .expect("send add for subscriber 1");
         sub2_cmd_tx
             .send(Ok(make_add_cmd(sub_id)))
+            .await
             .expect("send add for subscriber 2");
 
         // Ensure producer receives both Add commands
@@ -793,6 +811,7 @@ mod tests {
         // Emit a single event targeting the shared subscription id
         resp_tx
             .send(Ok(make_event_resp(sub_id)))
+            .await
             .expect("failed to send event into mux");
 
         let extract_id = |resp: PlatformEventsResponse| -> String {
@@ -854,7 +873,7 @@ mod tests {
 
     #[tokio::test]
     async fn mux_chain_three_layers_delivers_once_per_subscriber() {
-        use tokio_stream::wrappers::UnboundedReceiverStream;
+        use tokio_stream::wrappers::ReceiverStream;
 
         // Build three muxes
         let mux1 = EventMux::new();
@@ -866,21 +885,21 @@ mod tests {
         let prod1a = mux1.add_producer().await;
         let sub2a = mux2.add_subscriber().await;
         // Use a sink that accepts EventsCommandResult directly (no extra Result nesting)
-        let sub2a_cmd_sink = UnboundedSenderSink::from(sub2a.cmd_tx.clone());
-        let sub2a_resp_stream = UnboundedReceiverStream::new(sub2a.resp_rx);
+        let sub2a_cmd_sink = sender_sink(sub2a.cmd_tx.clone());
+        let sub2a_resp_stream = ReceiverStream::new(sub2a.resp_rx);
         tokio::spawn(async move { prod1a.forward(sub2a_cmd_sink, sub2a_resp_stream).await });
 
         let prod1b = mux1.add_producer().await;
         let sub2b = mux2.add_subscriber().await;
-        let sub2b_cmd_sink = UnboundedSenderSink::from(sub2b.cmd_tx.clone());
-        let sub2b_resp_stream = UnboundedReceiverStream::new(sub2b.resp_rx);
+        let sub2b_cmd_sink = sender_sink(sub2b.cmd_tx.clone());
+        let sub2b_resp_stream = ReceiverStream::new(sub2b.resp_rx);
         tokio::spawn(async move { prod1b.forward(sub2b_cmd_sink, sub2b_resp_stream).await });
 
         // Bridge: Mux2 -> Producer2 -> Subscriber3 -> Mux3
         let prod2 = mux2.add_producer().await;
         let sub3 = mux3.add_subscriber().await;
-        let sub3_cmd_sink = UnboundedSenderSink::from(sub3.cmd_tx.clone());
-        let sub3_resp_stream = UnboundedReceiverStream::new(sub3.resp_rx);
+        let sub3_cmd_sink = sender_sink(sub3.cmd_tx.clone());
+        let sub3_resp_stream = ReceiverStream::new(sub3.resp_rx);
         tokio::spawn(async move { prod2.forward(sub3_cmd_sink, sub3_resp_stream).await });
 
         // Deepest producers where we will capture commands and inject events
@@ -903,14 +922,17 @@ mod tests {
         sub1a
             .cmd_tx
             .send(Ok(make_add_cmd(id_a)))
+            .await
             .expect("send add a");
         sub1b
             .cmd_tx
             .send(Ok(make_add_cmd(id_b)))
+            .await
             .expect("send add b");
         sub1c
             .cmd_tx
             .send(Ok(make_add_cmd(id_c)))
+            .await
             .expect("send add c");
 
         // Ensure deepest producers receive each Add exactly once and not on both
@@ -954,27 +976,33 @@ mod tests {
         match assigned.get(id_a) {
             Some(0) => p3a_resp_tx
                 .send(Ok(make_event_resp(id_a)))
+                .await
                 .expect("emit event a"),
             Some(1) => p3b_resp_tx
                 .send(Ok(make_event_resp(id_a)))
+                .await
                 .expect("emit event a"),
             _ => panic!("missing assignment for id_a"),
         }
         match assigned.get(id_b) {
             Some(0) => p3a_resp_tx
                 .send(Ok(make_event_resp(id_b)))
+                .await
                 .expect("emit event b"),
             Some(1) => p3b_resp_tx
                 .send(Ok(make_event_resp(id_b)))
+                .await
                 .expect("emit event b"),
             _ => panic!("missing assignment for id_b"),
         }
         match assigned.get(id_c) {
             Some(0) => p3a_resp_tx
                 .send(Ok(make_event_resp(id_c)))
+                .await
                 .expect("emit event c"),
             Some(1) => p3b_resp_tx
                 .send(Ok(make_event_resp(id_c)))
+                .await
                 .expect("emit event c"),
             _ => panic!("missing assignment for id_c"),
         }
