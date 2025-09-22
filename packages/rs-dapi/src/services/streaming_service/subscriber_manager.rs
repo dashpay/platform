@@ -213,9 +213,10 @@ impl SubscriberManager {
     pub async fn notify(&self, event: StreamingEvent) {
         let subscriptions = self.subscriptions.read().await;
 
+        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(&event);
         trace!(
             active_subscriptions = subscriptions.len(),
-            event = ?event,
+            event = %event_summary,
             "subscription_manager=notify_start"
         );
 
@@ -300,7 +301,8 @@ impl SubscriberManager {
             (FilterType::CoreAllTxs, _) => false,
             // no default by purpose to fail build on new variants
         };
-        trace!(filter = ?filter, event = ?event, matched, "subscription_manager=filter_evaluated");
+        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(event);
+        trace!(filter = ?filter, event = %event_summary, matched, "subscription_manager=filter_evaluated");
         matched
     }
 }

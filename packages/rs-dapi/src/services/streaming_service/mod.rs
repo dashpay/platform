@@ -39,6 +39,109 @@ pub struct StreamingServiceImpl {
 }
 
 impl StreamingServiceImpl {
+    // --- Small helpers for concise logging across submodules ---
+    pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
+        use dashcore_rpc::dashcore::Transaction as CoreTx;
+        deserialize::<CoreTx>(bytes).ok().map(|tx| tx.txid().to_string())
+    }
+
+    pub(crate) fn block_hash_hex_from_block_bytes(bytes: &[u8]) -> Option<String> {
+        use dashcore_rpc::dashcore::consensus::encode::deserialize;
+        use dashcore_rpc::dashcore::Block as CoreBlock;
+        deserialize::<CoreBlock>(bytes)
+            .ok()
+            .map(|b| b.block_hash().to_string())
+    }
+
+    pub(crate) fn short_hex(bytes: &[u8], take: usize) -> String {
+        let len = bytes.len().min(take);
+        let mut s = hex::encode(&bytes[..len]);
+        if bytes.len() > take {
+            s.push_str("…");
+        }
+        s
+    }
+
+    pub(crate) fn summarize_streaming_event(event: &StreamingEvent) -> String {
+        match event {
+            StreamingEvent::CoreRawTransaction { data } => {
+                if let Some(txid) = Self::txid_hex_from_bytes(data) {
+                    format!("CoreRawTransaction txid={} size={}", txid, data.len())
+                } else {
+                    format!(
+                        "CoreRawTransaction size={} bytes prefix={}",
+                        data.len(),
+                        Self::short_hex(data, 12)
+                    )
+                }
+            }
+            StreamingEvent::CoreRawBlock { data } => {
+                if let Some(hash) = Self::block_hash_hex_from_block_bytes(data) {
+                    format!("CoreRawBlock hash={} size={}", hash, data.len())
+                } else {
+                    format!(
+                        "CoreRawBlock size={} bytes prefix={}",
+                        data.len(),
+                        Self::short_hex(data, 12)
+                    )
+                }
+            }
+            StreamingEvent::CoreInstantLock { data } => {
+                format!("CoreInstantLock size={} bytes", data.len())
+            }
+            StreamingEvent::CoreChainLock { data } => {
+                format!("CoreChainLock size={} bytes", data.len())
+            }
+            StreamingEvent::CoreNewBlockHash { hash } => {
+                format!("CoreNewBlockHash {}", Self::short_hex(hash, 12))
+            }
+            StreamingEvent::PlatformTx { event } => {
+                // `hash` is already a string on TD events
+                format!("PlatformTx hash={} height={}", event.hash, event.height)
+            }
+            StreamingEvent::PlatformBlock { .. } => "PlatformBlock".to_string(),
+            StreamingEvent::CoreMasternodeListDiff { data } => {
+                format!("CoreMasternodeListDiff size={} bytes", data.len())
+            }
+        }
+    }
+
+    pub(crate) fn summarize_zmq_event(event: &ZmqEvent) -> String {
+        match event {
+            ZmqEvent::RawTransaction { data } => {
+                if let Some(txid) = Self::txid_hex_from_bytes(data) {
+                    format!("RawTransaction txid={} size={}", txid, data.len())
+                } else {
+                    format!(
+                        "RawTransaction size={} bytes prefix={}",
+                        data.len(),
+                        Self::short_hex(data, 12)
+                    )
+                }
+            }
+            ZmqEvent::RawBlock { data } => {
+                if let Some(hash) = Self::block_hash_hex_from_block_bytes(data) {
+                    format!("RawBlock hash={} size={}", hash, data.len())
+                } else {
+                    format!(
+                        "RawBlock size={} bytes prefix={}",
+                        data.len(),
+                        Self::short_hex(data, 12)
+                    )
+                }
+            }
+            ZmqEvent::RawTransactionLock { data } => {
+                format!("RawTransactionLock size={} bytes", data.len())
+            }
+            ZmqEvent::RawChainLock { data } => {
+                format!("RawChainLock size={} bytes", data.len())
+            }
+            ZmqEvent::HashBlock { hash } => {
+                format!("HashBlock {}", Self::short_hex(hash, 12))
+            }
+        }
+    }
     pub fn new(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<dyn TenderdashClientTrait>,
@@ -247,7 +350,9 @@ impl StreamingServiceImpl {
             processed_events = processed_events.saturating_add(1);
             match event {
                 ZmqEvent::RawTransaction { data } => {
+                    let txid = Self::txid_hex_from_bytes(&data).unwrap_or_else(|| "n/a".to_string());
                     trace!(
+                        txid = %txid,
                         size = data.len(),
                         processed = processed_events,
                         "Processing raw transaction event"
@@ -257,7 +362,9 @@ impl StreamingServiceImpl {
                         .await;
                 }
                 ZmqEvent::RawBlock { data } => {
+                    let block_hash = Self::block_hash_hex_from_block_bytes(&data).unwrap_or_else(|| "n/a".to_string());
                     trace!(
+                        block_hash = %block_hash,
                         size = data.len(),
                         processed = processed_events,
                         "Processing raw block event"

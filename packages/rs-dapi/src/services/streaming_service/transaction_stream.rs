@@ -119,8 +119,11 @@ impl StreamingServiceImpl {
                 if let Some(message) = received {
                     let response = match message {
                         StreamingEvent::CoreRawTransaction { data: tx_data } => {
+                            let txid = super::StreamingServiceImpl::txid_hex_from_bytes(&tx_data)
+                                .unwrap_or_else(|| "n/a".to_string());
                             trace!(
                                 subscriber_id = sub_id,
+                                txid = %txid,
                                 payload_size = tx_data.len(),
                                 "transactions_with_proofs=forward_raw_transaction"
                             );
@@ -135,8 +138,11 @@ impl StreamingServiceImpl {
                             Ok(response)
                         }
                         StreamingEvent::CoreRawBlock { data } => {
+                            let block_hash = super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
+                                .unwrap_or_else(|| "n/a".to_string());
                             trace!(
                                 subscriber_id = sub_id,
+                                block_hash = %block_hash,
                                 payload_size = data.len(),
                                 "transactions_with_proofs=forward_merkle_block"
                             );
@@ -219,9 +225,10 @@ impl StreamingServiceImpl {
                             Ok(response)
                         }
                         _ => {
+                            let summary = super::StreamingServiceImpl::summarize_streaming_event(&message);
                             trace!(
                                 subscriber_id = sub_id,
-                                event = ?message,
+                                event = %summary,
                                 "transactions_with_proofs=ignore_event"
                             );
                             // Ignore other message types for this subscription
@@ -392,8 +399,10 @@ impl StreamingServiceImpl {
                 }
             };
 
+            let bh = block.block_hash();
             trace!(
                 height,
+                block_hash = %bh,
                 n_txs = txs_bytes.len(),
                 "transactions_with_proofs=block_fetched"
             );
@@ -445,7 +454,8 @@ impl StreamingServiceImpl {
             // Then, send a proper merkle block for this height (header + partial merkle tree)
             let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags)
                 .unwrap_or_else(|e| {
-                    warn!(height, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
+                    let bh = block.block_hash();
+                    warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
                     dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                 });
 
@@ -502,7 +512,7 @@ fn parse_bloom_filter(
         n_hash_funcs = bloom_filter.n_hash_funcs,
         n_tweak = bloom_filter.n_tweak,
         v_data_len = bloom_filter.v_data.len(),
-        v_data = hex::encode(&bloom_filter.v_data),
+        v_data_prefix = %super::StreamingServiceImpl::short_hex(&bloom_filter.v_data, 16),
         "transactions_with_proofs=request_bloom_filter_parsed"
     );
 
