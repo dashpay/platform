@@ -2049,7 +2049,7 @@ mod tests {
         let clause = WhereClause {
             field: "$revision".to_string(),
             operator: Equal,
-            value: Value::Float(3.14),
+            value: Value::Float(3.15),
         };
         let res = clause.validate_against_schema(doc_type);
         assert!(res.is_err());
