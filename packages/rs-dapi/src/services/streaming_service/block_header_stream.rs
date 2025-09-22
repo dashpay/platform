@@ -73,6 +73,8 @@ impl StreamingServiceImpl {
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
 
+        self.send_initial_chainlock(tx.clone()).await?;
+
         self.fetch_historical_blocks(from_block, Some(count as usize), None, tx)
             .await?;
 
