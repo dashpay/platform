@@ -1,4 +1,4 @@
-import { EvoSDK } from '../../dist/sdk.js';
+import { EvoSDK } from '../../dist/evo-sdk.module.js';
 
 describe('EvoSDK', () => {
   it('exposes constructor and factories', () => {

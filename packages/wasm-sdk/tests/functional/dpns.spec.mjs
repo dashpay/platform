@@ -1,4 +1,4 @@
-import init, * as sdk from '../../dist/sdk.js';
+import init, * as sdk from '../../dist/sdk.compressed.js';
 
 describe('Document queries', function describeDocumentQueries() {
   this.timeout(60000);

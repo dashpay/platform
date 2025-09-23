@@ -2,15 +2,15 @@
   "name": "@dashevo/evo-sdk",
   "version": "2.1.0-dev.5",
   "type": "module",
-  "main": "./dist/sdk.js",
+  "main": "./dist/evo-sdk.module.js",
   "types": "./dist/sdk.d.ts",
   "exports": {
     ".": {
       "types": "./dist/sdk.d.ts",
-      "import": "./dist/sdk.js"
+      "import": "./dist/evo-sdk.module.js"
     },
     "./module": {
-      "import": "./dist/sdk.js"
+      "import": "./dist/evo-sdk.module.js"
     }
   },
   "sideEffects": false,
