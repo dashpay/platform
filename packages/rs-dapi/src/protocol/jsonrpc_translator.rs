@@ -148,21 +148,35 @@ fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
             if a.is_empty() {
                 return Err("missing required parameter".to_string());
             }
-            match &a[0] {
-                Value::Number(n) => n
-                    .as_u64()
-                    .ok_or_else(|| "height must be a positive integer".to_string())
-                    .and_then(|v| {
-                        if v <= u32::MAX as u64 {
-                            Ok(v as u32)
-                        } else {
-                            Err("height out of range".to_string())
-                        }
-                    }),
-                _ => Err("height must be a number".to_string()),
-            }
+            parse_u32_from_value(&a[0])
         }
-        _ => Err("params must be an array".to_string()),
+        Some(Value::Object(map)) => {
+            let mut last_error = Some("object must contain a numeric value".to_string());
+            for value in map.values() {
+                match parse_u32_from_value(value) {
+                    Ok(v) => return Ok(v),
+                    Err(e) => last_error = Some(e),
+                }
+            }
+            Err(last_error.expect("object must contain a numeric value"))
+        }
+        _ => Err("params must be an array or object".to_string()),
+    }
+}
+
+fn parse_u32_from_value(value: &Value) -> Result<u32, String> {
+    match value {
+        Value::Number(n) => n
+            .as_u64()
+            .ok_or_else(|| "value must be a non-negative integer".to_string())
+            .and_then(|v| {
+                if v <= u32::MAX as u64 {
+                    Ok(v as u32)
+                } else {
+                    Err("value out of range".to_string())
+                }
+            }),
+        _ => Err("value must be a number".to_string()),
     }
 }
 
@@ -281,10 +295,15 @@ mod tests {
                 .contains("range")
         );
         // Not an array
+        assert_eq!(
+            parse_first_u32_param(Some(json!({"height": 1}))).unwrap(),
+            1
+        );
+        assert_eq!(parse_first_u32_param(Some(json!({"count": 2}))).unwrap(), 2);
         assert!(
-            parse_first_u32_param(Some(json!({"height": 1})))
+            parse_first_u32_param(Some(json!({})))
                 .unwrap_err()
-                .contains("array")
+                .contains("numeric value")
         );
     }
 
