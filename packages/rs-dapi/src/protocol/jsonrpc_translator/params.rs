@@ -1,24 +1,34 @@
 use serde_json::Value;
 
 pub fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
-    match params {
-        Some(Value::Array(a)) => {
-            if a.is_empty() {
-                return Err("missing required parameter".to_string());
-            }
-            parse_u32_from_value(&a[0])
-        }
-        Some(Value::Object(map)) => {
-            let mut last_error = Some("object must contain a numeric value".to_string());
-            for value in map.values() {
-                match parse_u32_from_value(value) {
-                    Ok(v) => return Ok(v),
-                    Err(e) => last_error = Some(e),
+    let map = match params {
+        Some(Value::Object(map)) => map,
+        _ => return Err("params must be object".to_string()),
+    };
+
+    let value = map
+        .get("height")
+        .ok_or_else(|| "must have required property 'height'".to_string())?;
+    match value {
+        Value::Number(num) => {
+            if let Some(raw) = num.as_i64() {
+                if raw < 0 {
+                    return Err("params/height must be >= 0".to_string());
                 }
+                if raw > i64::from(u32::MAX) {
+                    return Err("params/height must be <= 4294967295".to_string());
+                }
+                Ok(raw as u32)
+            } else if let Some(raw) = num.as_u64() {
+                if raw > u32::MAX as u64 {
+                    return Err("params/height must be <= 4294967295".to_string());
+                }
+                Ok(raw as u32)
+            } else {
+                Err("params/height must be integer".to_string())
             }
-            Err(last_error.expect("object must contain a numeric value"))
         }
-        _ => Err("params must be an array or object".to_string()),
+        _ => Err("params/height must be integer".to_string()),
     }
 }
 
@@ -44,21 +54,5 @@ pub fn parse_send_raw_tx_params(params: Option<Value>) -> Result<(Vec<u8>, bool,
             Ok((tx, false, false))
         }
         _ => Err("params must be an array or hex string".to_string()),
-    }
-}
-
-fn parse_u32_from_value(value: &Value) -> Result<u32, String> {
-    match value {
-        Value::Number(n) => n
-            .as_u64()
-            .ok_or_else(|| "value must be a non-negative integer".to_string())
-            .and_then(|v| {
-                if v <= u32::MAX as u64 {
-                    Ok(v as u32)
-                } else {
-                    Err("value out of range".to_string())
-                }
-            }),
-        _ => Err("value must be a number".to_string()),
     }
 }

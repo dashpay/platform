@@ -106,6 +106,9 @@ pub enum DapiError {
 
     #[error("No valid proof found for tx: {0}")]
     NoValidTxProof(String),
+
+    #[error("{0}")]
+    MethodNotFound(String),
 }
 
 /// Result type alias for DAPI operations
@@ -146,6 +149,7 @@ impl DapiError {
                 tonic::Status::unavailable(msg.clone())
             }
             DapiError::FailedPrecondition(msg) => tonic::Status::failed_precondition(msg.clone()),
+            DapiError::MethodNotFound(msg) => tonic::Status::unimplemented(msg.clone()),
             _ => tonic::Status::internal(self.to_string()),
         }
     }

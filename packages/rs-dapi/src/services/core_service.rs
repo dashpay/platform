@@ -1,5 +1,6 @@
 // Core service implementation
 
+use crate::DapiError;
 use crate::clients::CoreClient;
 use crate::config::Config;
 use crate::services::streaming_service::StreamingServiceImpl;
@@ -13,6 +14,7 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsRequest, TransactionsWithProofsResponse, core_server::Core,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
+use dashcore_rpc::dashcore::consensus::encode::deserialize as deserialize_tx;
 use dashcore_rpc::dashcore::hashes::Hash;
 use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
@@ -57,25 +59,34 @@ impl Core for CoreServiceImpl {
 
         let block_bytes = match req.block {
             Some(dapi_grpc::core::v0::get_block_request::Block::Height(height)) => {
-                let hash = self
-                    .core_client
-                    .get_block_hash(height)
-                    .await
-                    .map_err(tonic::Status::from)?;
+                let hash =
+                    self.core_client
+                        .get_block_hash(height)
+                        .await
+                        .map_err(|err| match err {
+                            DapiError::NotFound(_) => Status::not_found("Invalid block height"),
+                            DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
+                            other => other.to_status(),
+                        })?;
                 self.core_client
                     .get_block_bytes_by_hash(hash)
                     .await
-                    .map_err(tonic::Status::from)?
+                    .map_err(|err| match err {
+                        DapiError::NotFound(_) => Status::not_found("Block not found"),
+                        other => other.to_status(),
+                    })?
             }
             Some(dapi_grpc::core::v0::get_block_request::Block::Hash(hash_hex)) => self
                 .core_client
                 .get_block_bytes_by_hash_hex(&hash_hex)
                 .await
-                .map_err(tonic::Status::from)?,
+                .map_err(|err| match err {
+                    DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
+                    DapiError::NotFound(_) => Status::not_found("Block not found"),
+                    other => other.to_status(),
+                })?,
             None => {
-                return Err(Status::invalid_argument(
-                    "either height or hash must be provided",
-                ));
+                return Err(Status::invalid_argument("hash or height is not specified"));
             }
         };
 
@@ -89,11 +100,20 @@ impl Core for CoreServiceImpl {
         trace!("Received get_transaction request");
         let txid = request.into_inner().id;
 
+        if txid.trim().is_empty() {
+            return Err(Status::invalid_argument("id is not specified"));
+        }
+
         let info = self
             .core_client
             .get_transaction_info(&txid)
             .await
-            .map_err(tonic::Status::from)?;
+            .map_err(|err| match err {
+                DapiError::NotFound(_) => Status::not_found("Transaction not found"),
+                DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
+                DapiError::Client(msg) => Status::invalid_argument(msg),
+                other => other.to_status(),
+            })?;
 
         let transaction = info.hex.clone();
         let block_hash = info
@@ -142,13 +162,36 @@ impl Core for CoreServiceImpl {
         let _allow_high_fees = req.allow_high_fees;
         let _bypass_limits = req.bypass_limits;
 
+        if req.transaction.is_empty() {
+            return Err(Status::invalid_argument("transaction is not specified"));
+        }
+
+        if let Err(err) = deserialize_tx::<dashcore_rpc::dashcore::Transaction>(&req.transaction) {
+            return Err(Status::invalid_argument(format!(
+                "invalid transaction: {}",
+                err
+            )));
+        }
+
         // NOTE: dashcore-rpc Client does not expose options for allowhighfees/bypasslimits.
         // We broadcast as-is. Future: add support if library exposes those options.
         let txid = self
             .core_client
             .send_raw_transaction(&req.transaction)
             .await
-            .map_err(tonic::Status::from)?;
+            .map_err(|err| match err {
+                DapiError::InvalidArgument(msg) => {
+                    Status::invalid_argument(format!("invalid transaction: {}", msg))
+                }
+                DapiError::FailedPrecondition(msg) => {
+                    Status::failed_precondition(format!("Transaction is rejected: {}", msg))
+                }
+                DapiError::AlreadyExists(msg) => {
+                    Status::already_exists(format!("Transaction already in chain: {}", msg))
+                }
+                DapiError::Client(msg) => Status::invalid_argument(msg),
+                other => other.to_status(),
+            })?;
 
         Ok(Response::new(BroadcastTransactionResponse {
             transaction_id: txid,

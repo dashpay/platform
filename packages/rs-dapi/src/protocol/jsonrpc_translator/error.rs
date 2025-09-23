@@ -16,6 +16,7 @@ pub fn map_error(error: &DapiError) -> (i32, String, Option<Value>) {
         DapiError::ServiceUnavailable(msg)
         | DapiError::Unavailable(msg)
         | DapiError::Timeout(msg) => (-32003, msg.clone(), None),
+        DapiError::MethodNotFound(msg) => (-32601, msg.clone(), None),
         DapiError::Status(status) => map_status(status),
         _ => (
             -32603,

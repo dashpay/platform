@@ -1,7 +1,7 @@
 use crate::cache::{LruResponseCache, make_cache_key};
 use crate::error::MapToDapiResult;
 use crate::{DAPIResult, DapiError};
-use dashcore_rpc::{Auth, Client, RpcApi, dashcore, jsonrpc};
+use dashcore_rpc::{self, Auth, Client, RpcApi, dashcore, jsonrpc};
 use std::sync::Arc;
 use tracing::trace;
 use zeroize::Zeroizing;
@@ -39,13 +39,26 @@ impl CoreClient {
     ) -> DAPIResult<dashcore_rpc::json::GetRawTransactionResult> {
         use std::str::FromStr;
         trace!("Core RPC: get_raw_transaction_info");
+
+        if txid_hex.trim().is_empty() {
+            return Err(DapiError::InvalidArgument(
+                "id is not specified".to_string(),
+            ));
+        }
+
         let txid = dashcore_rpc::dashcore::Txid::from_str(txid_hex)
-            .map_err(|e| DapiError::client(format!("Invalid txid: {}", e)))?;
+            .map_err(|e| DapiError::InvalidArgument(format!("invalid txid: {}", e)))?;
         let client = self.client.clone();
         let info =
             tokio::task::spawn_blocking(move || client.get_raw_transaction_info(&txid, None))
                 .await
-                .to_dapi_result()?;
+                .to_dapi_result()
+                .map_err(|err| match err {
+                    DapiError::NotFound(_) => {
+                        DapiError::NotFound("Transaction not found".to_string())
+                    }
+                    other => other,
+                })?;
         Ok(info)
     }
 
@@ -77,7 +90,14 @@ impl CoreClient {
                 async move {
                     let hash = tokio::task::spawn_blocking(move || client.get_block_hash(height))
                         .await
-                        .to_dapi_result()?;
+                        .to_dapi_result()
+                        .map_err(|err| match err {
+                            DapiError::NotFound(_) => {
+                                DapiError::NotFound("Invalid block height".to_string())
+                            }
+                            DapiError::InvalidArgument(msg) => DapiError::InvalidArgument(msg),
+                            other => other,
+                        })?;
                     Ok(hash.to_string().into_bytes())
                 }
             })
@@ -125,7 +145,13 @@ impl CoreClient {
                     let block_hex =
                         tokio::task::spawn_blocking(move || client.get_block_hex(&hash))
                             .await
-                            .to_dapi_result()?;
+                            .to_dapi_result()
+                            .map_err(|err| match err {
+                                DapiError::NotFound(_) => {
+                                    DapiError::NotFound("Block not found".to_string())
+                                }
+                                other => other,
+                            })?;
 
                     hex::decode(&block_hex).map_err(|e| {
                         DapiError::InvalidData(format!(
@@ -141,8 +167,14 @@ impl CoreClient {
 
     pub async fn get_block_bytes_by_hash_hex(&self, hash_hex: &str) -> DAPIResult<Vec<u8>> {
         use std::str::FromStr;
+        if hash_hex.trim().is_empty() {
+            return Err(DapiError::InvalidArgument(
+                "hash is not specified".to_string(),
+            ));
+        }
+
         let hash = dashcore_rpc::dashcore::BlockHash::from_str(hash_hex)
-            .map_err(|e| DapiError::client(format!("Invalid block hash: {}", e)))?;
+            .map_err(|e| DapiError::InvalidArgument(format!("invalid block hash: {}", e)))?;
         self.get_block_bytes_by_hash(hash).await
     }
 
@@ -170,7 +202,13 @@ impl CoreClient {
                         client.call("getblock", &params)
                     })
                     .await
-                    .to_dapi_result()?;
+                    .to_dapi_result()
+                    .map_err(|err| match err {
+                        DapiError::NotFound(_) => {
+                            DapiError::NotFound("Block not found".to_string())
+                        }
+                        other => other,
+                    })?;
 
                     let obj = value.as_object().ok_or_else(|| {
                         DapiError::invalid_data("getblock verbosity 2 did not return an object")

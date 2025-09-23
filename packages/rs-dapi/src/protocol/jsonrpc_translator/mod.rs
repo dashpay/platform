@@ -50,10 +50,7 @@ impl JsonRpcTranslator {
                 };
                 Ok((JsonRpcCall::CoreBroadcastTransaction(req), json_rpc.id))
             }
-            _ => Err(DapiError::InvalidArgument(format!(
-                "Unknown method: {}",
-                json_rpc.method
-            ))),
+            _ => Err(DapiError::MethodNotFound("Method not found".to_string())),
         }
     }
 
@@ -134,7 +131,7 @@ mod tests {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getBlockHash".to_string(),
-            params: Some(json!([12345])),
+            params: Some(json!({"height": 12345})),
             id: Some(json!(3)),
         };
         let (call, id) = t.translate_request(req).await.expect("translate ok");
@@ -151,12 +148,12 @@ mod tests {
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getBlockHash".to_string(),
-            params: Some(json!([])),
+            params: Some(json!({})),
             id: Some(json!(4)),
         };
         let err = t.translate_request(req).await.unwrap_err();
         match err {
-            DapiError::InvalidArgument(msg) => assert!(msg.contains("missing required")),
+            DapiError::InvalidArgument(msg) => assert!(msg.contains("required property")),
             _ => panic!("expected InvalidArgument"),
         }
     }
@@ -165,27 +162,34 @@ mod tests {
     fn parse_first_param_validates_types() {
         use super::params::parse_first_u32_param;
 
-        assert_eq!(parse_first_u32_param(Some(json!([0]))).unwrap(), 0);
-        assert!(
-            parse_first_u32_param(Some(json!(["x"])))
-                .unwrap_err()
-                .contains("number")
-        );
-        let big = (u64::from(u32::MAX)) + 1;
-        assert!(
-            parse_first_u32_param(Some(json!([big])))
-                .unwrap_err()
-                .contains("range")
-        );
         assert_eq!(
-            parse_first_u32_param(Some(json!({"height": 1}))).unwrap(),
-            1
+            parse_first_u32_param(Some(json!({"height": 0}))).unwrap(),
+            0
         );
-        assert_eq!(parse_first_u32_param(Some(json!({"count": 2}))).unwrap(), 2);
+        assert!(
+            parse_first_u32_param(Some(json!(null)))
+                .unwrap_err()
+                .contains("params must be object")
+        );
         assert!(
             parse_first_u32_param(Some(json!({})))
                 .unwrap_err()
-                .contains("numeric value")
+                .contains("required property")
+        );
+        assert!(
+            parse_first_u32_param(Some(json!({"height": -1})))
+                .unwrap_err()
+                .contains(">= 0")
+        );
+        assert!(
+            parse_first_u32_param(Some(json!({"height": 0.5})))
+                .unwrap_err()
+                .contains("integer")
+        );
+        assert!(
+            parse_first_u32_param(Some(json!({"height": (u32::MAX as u64) + 1})))
+                .unwrap_err()
+                .contains("<= 4294967295")
         );
     }
 
