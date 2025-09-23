@@ -43,7 +43,7 @@ impl PlatformServiceImpl {
         );
 
         // Check if WebSocket is connected
-        if !self.tenderdash_client.is_websocket_connected() {
+        if !self.websocket_client.is_connected() {
             return Err(Status::unavailable("Tenderdash is not available"));
         }
 
