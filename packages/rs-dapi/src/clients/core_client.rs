@@ -40,25 +40,13 @@ impl CoreClient {
         use std::str::FromStr;
         trace!("Core RPC: get_raw_transaction_info");
 
-        if txid_hex.trim().is_empty() {
-            return Err(DapiError::InvalidArgument(
-                "id is not specified".to_string(),
-            ));
-        }
-
         let txid = dashcore_rpc::dashcore::Txid::from_str(txid_hex)
             .map_err(|e| DapiError::InvalidArgument(format!("invalid txid: {}", e)))?;
         let client = self.client.clone();
         let info =
             tokio::task::spawn_blocking(move || client.get_raw_transaction_info(&txid, None))
                 .await
-                .to_dapi_result()
-                .map_err(|err| match err {
-                    DapiError::NotFound(_) => {
-                        DapiError::NotFound("Transaction not found".to_string())
-                    }
-                    other => other,
-                })?;
+                .to_dapi_result()?;
         Ok(info)
     }
 
@@ -90,14 +78,7 @@ impl CoreClient {
                 async move {
                     let hash = tokio::task::spawn_blocking(move || client.get_block_hash(height))
                         .await
-                        .to_dapi_result()
-                        .map_err(|err| match err {
-                            DapiError::NotFound(_) => {
-                                DapiError::NotFound("Invalid block height".to_string())
-                            }
-                            DapiError::InvalidArgument(msg) => DapiError::InvalidArgument(msg),
-                            other => other,
-                        })?;
+                        .to_dapi_result()?;
                     Ok(hash.to_string().into_bytes())
                 }
             })
@@ -145,13 +126,7 @@ impl CoreClient {
                     let block_hex =
                         tokio::task::spawn_blocking(move || client.get_block_hex(&hash))
                             .await
-                            .to_dapi_result()
-                            .map_err(|err| match err {
-                                DapiError::NotFound(_) => {
-                                    DapiError::NotFound("Block not found".to_string())
-                                }
-                                other => other,
-                            })?;
+                            .to_dapi_result()?;
 
                     hex::decode(&block_hex).map_err(|e| {
                         DapiError::InvalidData(format!(
@@ -202,13 +177,7 @@ impl CoreClient {
                         client.call("getblock", &params)
                     })
                     .await
-                    .to_dapi_result()
-                    .map_err(|err| match err {
-                        DapiError::NotFound(_) => {
-                            DapiError::NotFound("Block not found".to_string())
-                        }
-                        other => other,
-                    })?;
+                    .to_dapi_result()?;
 
                     let obj = value.as_object().ok_or_else(|| {
                         DapiError::invalid_data("getblock verbosity 2 did not return an object")

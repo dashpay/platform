@@ -64,27 +64,43 @@ impl Core for CoreServiceImpl {
                         .get_block_hash(height)
                         .await
                         .map_err(|err| match err {
-                            DapiError::NotFound(_) => Status::not_found("Invalid block height"),
-                            DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
+                            DapiError::NotFound(_) => {
+                                DapiError::InvalidArgument("Invalid block height".to_string())
+                                    .into_legacy_status()
+                            }
+                            DapiError::InvalidArgument(msg) => {
+                                DapiError::InvalidArgument(msg).into_legacy_status()
+                            }
                             other => other.to_status(),
                         })?;
                 self.core_client
                     .get_block_bytes_by_hash(hash)
                     .await
                     .map_err(|err| match err {
-                        DapiError::NotFound(_) => Status::not_found("Block not found"),
+                        DapiError::NotFound(_) => {
+                            DapiError::NotFound("Block not found".to_string()).into_legacy_status()
+                        }
                         other => other.to_status(),
                     })?
             }
-            Some(dapi_grpc::core::v0::get_block_request::Block::Hash(hash_hex)) => self
-                .core_client
-                .get_block_bytes_by_hash_hex(&hash_hex)
-                .await
-                .map_err(|err| match err {
-                    DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
-                    DapiError::NotFound(_) => Status::not_found("Block not found"),
-                    other => other.to_status(),
-                })?,
+            Some(dapi_grpc::core::v0::get_block_request::Block::Hash(hash_hex)) => {
+                if hash_hex.trim().is_empty() {
+                    return Err(Status::invalid_argument("hash or height is not specified"));
+                }
+
+                self.core_client
+                    .get_block_bytes_by_hash_hex(&hash_hex)
+                    .await
+                    .map_err(|err| match err {
+                        DapiError::InvalidArgument(msg) => {
+                            DapiError::InvalidArgument(msg).into_legacy_status()
+                        }
+                        DapiError::NotFound(_) => {
+                            DapiError::NotFound("Block not found".to_string()).into_legacy_status()
+                        }
+                        other => other.to_status(),
+                    })?
+            }
             None => {
                 return Err(Status::invalid_argument("hash or height is not specified"));
             }
@@ -109,9 +125,13 @@ impl Core for CoreServiceImpl {
             .get_transaction_info(&txid)
             .await
             .map_err(|err| match err {
-                DapiError::NotFound(_) => Status::not_found("Transaction not found"),
-                DapiError::InvalidArgument(msg) => Status::invalid_argument(msg),
-                DapiError::Client(msg) => Status::invalid_argument(msg),
+                DapiError::NotFound(_) => {
+                    DapiError::NotFound("Transaction not found".to_string()).into_legacy_status()
+                }
+                DapiError::InvalidArgument(msg) => {
+                    DapiError::InvalidArgument(msg).into_legacy_status()
+                }
+                DapiError::Client(msg) => DapiError::Client(msg).into_legacy_status(),
                 other => other.to_status(),
             })?;
 
@@ -181,15 +201,18 @@ impl Core for CoreServiceImpl {
             .await
             .map_err(|err| match err {
                 DapiError::InvalidArgument(msg) => {
-                    Status::invalid_argument(format!("invalid transaction: {}", msg))
+                    DapiError::InvalidArgument(format!("invalid transaction: {}", msg))
+                        .into_legacy_status()
                 }
                 DapiError::FailedPrecondition(msg) => {
-                    Status::failed_precondition(format!("Transaction is rejected: {}", msg))
+                    DapiError::FailedPrecondition(format!("Transaction is rejected: {}", msg))
+                        .into_legacy_status()
                 }
                 DapiError::AlreadyExists(msg) => {
-                    Status::already_exists(format!("Transaction already in chain: {}", msg))
+                    DapiError::AlreadyExists(format!("Transaction already in chain: {}", msg))
+                        .into_legacy_status()
                 }
-                DapiError::Client(msg) => Status::invalid_argument(msg),
+                DapiError::Client(msg) => DapiError::Client(msg).into_legacy_status(),
                 other => other.to_status(),
             })?;
 

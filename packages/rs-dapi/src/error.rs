@@ -181,6 +181,31 @@ impl DapiError {
         Self::Client(msg.into())
     }
 
+    /// Convert this error into a tonic::Status while preserving legacy codes/messages when available.
+    pub fn into_legacy_status(self) -> tonic::Status {
+        match self {
+            DapiError::NotFound(msg) => tonic::Status::new(tonic::Code::NotFound, msg),
+            DapiError::AlreadyExists(msg) => tonic::Status::new(tonic::Code::AlreadyExists, msg),
+            DapiError::InvalidArgument(msg) => {
+                tonic::Status::new(tonic::Code::InvalidArgument, msg)
+            }
+            DapiError::ResourceExhausted(msg) => {
+                tonic::Status::new(tonic::Code::ResourceExhausted, msg)
+            }
+            DapiError::FailedPrecondition(msg) => {
+                tonic::Status::new(tonic::Code::FailedPrecondition, msg)
+            }
+            DapiError::Client(msg) => tonic::Status::new(tonic::Code::InvalidArgument, msg),
+            DapiError::ServiceUnavailable(msg) | DapiError::Unavailable(msg) => {
+                tonic::Status::new(tonic::Code::Unavailable, msg)
+            }
+            DapiError::MethodNotFound(msg) => tonic::Status::new(tonic::Code::Unimplemented, msg),
+            DapiError::Timeout(msg) => tonic::Status::new(tonic::Code::DeadlineExceeded, msg),
+            DapiError::Aborted(msg) => tonic::Status::new(tonic::Code::Aborted, msg),
+            other => other.to_status(),
+        }
+    }
+
     /// Create a connection validation error
     pub fn server_unavailable<U: ToString, S: ToString>(uri: U, msg: S) -> Self {
         Self::ServerUnavailable(uri.to_string(), msg.to_string())
