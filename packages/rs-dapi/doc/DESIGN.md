@@ -259,7 +259,7 @@ rs-dapi exposes REST and JSON-RPC gateways alongside gRPC. Axum powers REST/JSON
   - `/v1/core/transaction/:id` → gRPC `Core::get_transaction`
 
 - JSON-RPC translator: `src/protocol/jsonrpc_translator.rs`
-  - Supported: `getStatus`, `getBestBlockHash`, `getBlockHash(height)`
+  - Supported: `getStatus`, `getBestBlockHash`, `getBlockHash(height)`, `sendRawTransaction`
   - Translator converts JSON-RPC requests to internal calls and back; error mapping aligns with JSON-RPC codes
   - Unit tests cover translation and error paths
 
@@ -267,8 +267,8 @@ Operational notes:
 - Compression: disabled at rs-dapi; Envoy handles edge compression
 - Access logging: HTTP/REST/JSON-RPC go through an access logging layer when provided; gRPC access logging interceptor is a planned improvement
 
-- Unimplemented endpoints (proxy to Drive ABCI)
- - `subscribePlatformEvents` - Server-streaming proxy for Platform events
+- Platform event streaming is handled via a direct upstream proxy:
+ - `subscribePlatformEvents` simply forwards every inbound command stream to a single Drive connection and relays responses back without multiplexing
 
 #### Key Features
 - **Modular Organization**: Complex methods separated into dedicated modules for maintainability
@@ -284,32 +284,18 @@ Operational notes:
 
 ##### Platform Events Subscription Proxy
 
-rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint to external clients and proxies it upstream to rs-drive-abci. The proxying and multiplexing are provided by the shared crate `rs-dash-notify`, enabling multiple public subscriptions to share a small number of upstream connections.
+rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint and currently performs a straightforward pass-through to rs-drive-abci.
 
 - Public interface:
-  - Server-streaming RPC: `subscribePlatformEvents(request stream PlatformEventsCommand) -> (response stream PlatformEventsResponse)`.
-  - Commands: `Add`, `Remove`, `Ping` wrapped in versioned envelopes (`V0`).
-  - Responses: `Event`, `Ack`, `Error` wrapped in versioned envelopes (`V0`).
+  - Bi-directional gRPC stream: `subscribePlatformEvents(request stream PlatformEventsCommand) -> (response stream PlatformEventsResponse)`.
+  - Commands (`Add`, `Remove`, `Ping`) and responses (`Event`, `Ack`, `Error`) stay in their protobuf `V0` envelopes end-to-end.
 
-- Upstream mux (shared crate):
-  - `rs_dash_notify::platform_mux::PlatformEventsMux` manages a pool of upstream bi-di gRPC connections to Drive ABCI’s `subscribePlatformEvents`.
-  - Constructed with `rs_dapi_client::AddressList` (round-robin/health-aware selection) plus settings for pool size, backoff, and timeouts.
-  - For each client stream, a session binds to one upstream, applies an ID prefix, and rewrites `client_subscription_id`s to upstream-safe IDs.
-  - Routes upstream events/acks/errors back to the original public `client_subscription_id`.
-  - Handles local `Ping` and cleans up routes on remove/stream drop.
-  - Uses protobuf-generated types from `dapi-grpc` end-to-end; no custom wrappers.
-
-- Drive ABCI server (shared bus):
-  - Uses `rs_dash_notify::event_bus::EventBus<PlatformEvent, PlatformFilterAdapter>` to attach per-connection subscriptions based on incoming `PlatformFilterV0`.
-  - Maintains a connection-local map `client_subscription_id -> SubscriptionHandle`, forwards matched events, and responds with `Ack`/`Error` frames.
-
-- Filter semantics (example):
-  - `All(true)` matches all events; `All(false)` matches none.
-  - `TxHash(h)` matches state transition result events with `tx_hash == h`.
+- Upstream behavior:
+  - Each client stream obtains its own upstream Drive connection; tokio channels forward commands upstream and pipe responses back downstream without pooling.
+  - The `EventMux` from `rs-dash-notify` is retained for future multiplexing work but does not alter traffic today.
 
 - Observability:
-  - Logging via `tracing` throughout mux and bus.
-  - Optional metrics via the `metrics` feature in `rs-dash-notify` (Prometheus-compatible); rs-dapi continues to serve `/metrics`.
+  - Standard `tracing` logging wraps the forwarders, and the proxy participates in the existing `/metrics` exporter via shared counters.
 
 ### 6. Streams Service
 
@@ -319,7 +305,7 @@ Implements real-time streaming gRPC endpoints (protocol-agnostic via translation
 - `subscribeToBlockHeadersWithChainLocks` - Block header streaming
 - `subscribeToTransactionsWithProofs` - Transaction filtering with bloom filters
 - `subscribeToMasternodeList` - Masternode list updates
- - Note: Platform event streaming is handled by `PlatformService::subscribePlatformEvents` and proxied to Drive ABCI using an upstream multiplexer (see Platform Service section).
+ - Note: Platform event streaming is handled by `PlatformService::subscribePlatformEvents` and proxied directly to Drive as described in the Platform Service section.
 
 #### Key Features
 - ZMQ event processing for real-time data
