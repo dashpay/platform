@@ -1,0 +1,62 @@
+use axum::{Router, response::Json, routing::get};
+use serde_json::Value;
+use tokio::net::TcpListener;
+use tracing::info;
+
+use crate::error::DAPIResult;
+use crate::logging::middleware::AccessLogLayer;
+
+use super::DapiServer;
+
+impl DapiServer {
+    pub(super) async fn start_health_server(&self) -> DAPIResult<()> {
+        let addr = self.config.health_check_addr();
+        info!("Starting health check server on {}", addr);
+
+        let mut app = Router::new()
+            .route("/health", get(handle_health))
+            .route("/health/ready", get(handle_ready))
+            .route("/health/live", get(handle_live))
+            .route("/metrics", get(handle_metrics));
+
+        if let Some(ref access_logger) = self.access_logger {
+            app = app.layer(AccessLogLayer::new(access_logger.clone()));
+        }
+
+        let listener = TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
+
+        Ok(())
+    }
+}
+
+async fn handle_health() -> Json<Value> {
+    Json(serde_json::json!({
+        "status": "ok",
+        "timestamp": chrono::Utc::now().timestamp(),
+        "version": env!("CARGO_PKG_VERSION"),
+    }))
+}
+
+async fn handle_ready() -> Json<Value> {
+    Json(serde_json::json!({
+        "status": "ready",
+        "timestamp": chrono::Utc::now().timestamp(),
+    }))
+}
+
+async fn handle_live() -> Json<Value> {
+    Json(serde_json::json!({
+        "status": "alive",
+        "timestamp": chrono::Utc::now().timestamp(),
+    }))
+}
+
+async fn handle_metrics() -> axum::response::Response {
+    let (body, content_type) = crate::metrics::gather_prometheus();
+    axum::response::Response::builder()
+        .status(200)
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::from("")))
+}
