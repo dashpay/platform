@@ -43,13 +43,13 @@ console_error_panic_hook = { version = "0.1.7", optional = true }
 ciborium = { version = "0.2.1" }
 base64 = { version = "0.22.0" }
 bs58 = { version = "0.5.1" }
-indexmap = { version = "2.0.0" }
+indexmap = { version = "2.11.4" }
 nohash-hasher = { version = "0.2.0" }
 bincode = { version = "2.0.0-rc.3" }
 
 [dev-dependencies]
-wasm-bindgen-test = "0.3.39"
-criterion = { version = "0.5", default-features = false, features = [] }
+wasm-bindgen-test = "0.3.53"
+criterion = { version = "0.7", default-features = false, features = [] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transitions",
     "random-public-keys",

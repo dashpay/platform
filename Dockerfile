@@ -343,7 +343,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.100 cargo-chef@0.1.72 \
+    cargo binstall wasm-bindgen-cli@0.2.103 cargo-chef@0.1.72 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
