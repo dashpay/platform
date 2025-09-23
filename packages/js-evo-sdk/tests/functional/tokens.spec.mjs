@@ -1,4 +1,3 @@
-import { expect } from 'chai';
 import { EvoSDK } from '../../dist/evo-sdk.module.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
@@ -9,6 +8,11 @@ describe('Tokens', function tokensSuite() {
   before(async () => {
     sdk = EvoSDK.testnetTrusted();
     await sdk.connect();
+  });
+
+  it('calculateId() derives token ID from contract', () => {
+    const id = sdk.tokens.calculateId(TEST_IDS.tokenContractId, 0);
+    expect(id).to.equal(TEST_IDS.tokenId);
   });
 
   it('totalSupply() returns supply for token', async () => {
@@ -23,6 +27,11 @@ describe('Tokens', function tokensSuite() {
 
   it('directPurchasePrices() returns prices for token(s)', async () => {
     const res = await sdk.tokens.directPurchasePrices([TEST_IDS.tokenId]);
+    expect(res).to.exist();
+  });
+
+  it('identityBalances() returns balance list for identity', async () => {
+    const res = await sdk.tokens.identityBalances(TEST_IDS.identityId, [TEST_IDS.tokenId]);
     expect(res).to.exist();
   });
 

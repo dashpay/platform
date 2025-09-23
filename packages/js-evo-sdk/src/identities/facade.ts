@@ -38,6 +38,114 @@ export class IdentitiesFacade {
     );
   }
 
+  async getKeysWithProof(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; limit?: number; offset?: number }): Promise<any> {
+    const { identityId, keyRequestType, specificKeyIds, limit, offset } = args;
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityKeysWithProofInfo(
+      identityId,
+      keyRequestType,
+      specificKeyIds ? Uint32Array.from(specificKeyIds) : null,
+      limit ?? null,
+      offset ?? null,
+    );
+  }
+
+  async nonce(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityNonce(identityId);
+  }
+
+  async nonceWithProof(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityNonceWithProofInfo(identityId);
+  }
+
+  async contractNonce(identityId: string, contractId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityContractNonce(identityId, contractId);
+  }
+
+  async contractNonceWithProof(identityId: string, contractId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityContractNonceWithProofInfo(identityId, contractId);
+  }
+
+  async balance(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityBalance(identityId);
+  }
+
+  async balanceWithProof(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityBalanceWithProofInfo(identityId);
+  }
+
+  async balances(identityIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentitiesBalances(identityIds);
+  }
+
+  async balancesWithProof(identityIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentitiesBalancesWithProofInfo(identityIds);
+  }
+
+  async balanceAndRevision(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityBalanceAndRevision(identityId);
+  }
+
+  async balanceAndRevisionWithProof(identityId: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityBalanceAndRevisionWithProofInfo(identityId);
+  }
+
+  async byPublicKeyHash(publicKeyHash: string): Promise<wasm.IdentityWasm> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityByPublicKeyHash(publicKeyHash);
+  }
+
+  async byPublicKeyHashWithProof(publicKeyHash: string): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityByPublicKeyHashWithProofInfo(publicKeyHash);
+  }
+
+  async byNonUniquePublicKeyHash(publicKeyHash: string, opts: { startAfter?: string } = {}): Promise<any> {
+    const { startAfter } = opts;
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityByNonUniquePublicKeyHash(publicKeyHash, startAfter ?? null);
+  }
+
+  async byNonUniquePublicKeyHashWithProof(publicKeyHash: string, opts: { startAfter?: string } = {}): Promise<any> {
+    const { startAfter } = opts;
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityByNonUniquePublicKeyHashWithProofInfo(publicKeyHash, startAfter ?? null);
+  }
+
+  async contractKeys(args: { identityIds: string[]; contractId: string; purposes?: number[] }): Promise<any> {
+    const { identityIds, contractId, purposes } = args;
+    const purposesArray = purposes && purposes.length > 0 ? Uint32Array.from(purposes) : null;
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentitiesContractKeys(identityIds, contractId, purposesArray);
+  }
+
+  async contractKeysWithProof(args: { identityIds: string[]; contractId: string; purposes?: number[] }): Promise<any> {
+    const { identityIds, contractId, purposes } = args;
+    const purposesArray = purposes && purposes.length > 0 ? Uint32Array.from(purposes) : null;
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentitiesContractKeysWithProofInfo(identityIds, contractId, purposesArray);
+  }
+
+  async tokenBalances(identityId: string, tokenIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityTokenBalances(identityId, tokenIds);
+  }
+
+  async tokenBalancesWithProof(identityId: string, tokenIds: string[]): Promise<any> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
+  }
+
   async create(args: { assetLockProof: unknown; assetLockPrivateKeyWif: string; publicKeys: unknown[] }): Promise<any> {
     const { assetLockProof, assetLockPrivateKeyWif, publicKeys } = args;
     const w = await this.sdk.getWasmSdkConnected();
