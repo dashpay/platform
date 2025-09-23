@@ -34,8 +34,12 @@ impl PlatformServiceImpl {
             ));
         }
 
-        // Convert to hex string for Tenderdash queries
+        // Convert hash to commonly used representations
         let hash_string = hex::encode(&state_transition_hash).to_uppercase();
+        let hash_base64 = base64::prelude::Engine::encode(
+            &base64::prelude::BASE64_STANDARD,
+            &state_transition_hash,
+        );
 
         info!(
             "waitForStateTransitionResult called for hash: {}",
@@ -59,7 +63,12 @@ impl PlatformServiceImpl {
 
         // Check if transaction already exists (after subscription is active)
         trace!("Checking existing transaction for hash: {}", hash_string);
-        match self.tenderdash_client.tx(hash_string.clone()).await {
+        match self
+            .tenderdash_client
+            .tx(hash_base64.clone())
+            .await
+            .or_else(|_| self.tenderdash_client.tx(hash_string.clone()))
+        {
             Ok(existing_tx) => {
                 info!("Found existing transaction for hash: {}", hash_string);
                 return self

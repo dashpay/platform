@@ -402,7 +402,7 @@ impl TenderdashWebSocketClient {
                 tx: tx.clone(),
             };
 
-            debug!("Broadcasting transaction event for hash: {}", hash);
+            debug!(hash = %hash, "Broadcasting transaction event for hash");
 
             // Broadcast the event (ignore if no subscribers)
             let _ = event_sender.send(transaction_event);
@@ -431,7 +431,7 @@ impl TenderdashWebSocketClient {
                                     attr.get("value").and_then(|v| v.as_str()),
                                 ) {
                                     if key == "hash" {
-                                        hashes.push(value.to_string());
+                                        hashes.push(normalize_event_hash(value));
                                     }
                                 }
                             }
@@ -445,7 +445,7 @@ impl TenderdashWebSocketClient {
         if let Some(events) = inner_events {
             for event in events {
                 if event.key == "hash" {
-                    hashes.push(event.value.clone());
+                    hashes.push(normalize_event_hash(&event.value));
                 }
             }
         }
@@ -458,6 +458,20 @@ impl TenderdashWebSocketClient {
             .collect();
 
         Ok(unique_hashes)
+    }
+}
+
+fn normalize_event_hash(value: &str) -> String {
+    let trimmed = value.trim();
+    let without_prefix = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+        .unwrap_or(trimmed);
+
+    if without_prefix.chars().all(|c| c.is_ascii_hexdigit()) {
+        without_prefix.to_uppercase()
+    } else {
+        without_prefix.to_string()
     }
 }
 
