@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
@@ -18,7 +17,6 @@ use crate::services::streaming_service::{
 };
 
 const BLOCK_HEADER_STREAM_BUFFER: usize = 512;
-const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(5);
 
 type BlockHeaderResponseResult = Result<BlockHeadersWithChainLocksResponse, Status>;
 type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
@@ -48,13 +46,13 @@ impl StreamingServiceImpl {
 
         trace!(count, "block_headers=request_parsed");
 
-        if let FromBlock::FromBlockHeight(height) = &from_block {
-            if *height == 0 {
-                warn!(height, "block_headers=invalid_starting_height");
-                return Err(Status::invalid_argument(
-                    "Minimum value for from_block_height is 1",
-                ));
-            }
+        if let FromBlock::FromBlockHeight(height) = &from_block
+            && *height == 0
+        {
+            warn!(height, "block_headers=invalid_starting_height");
+            return Err(Status::invalid_argument(
+                "Minimum value for from_block_height is 1",
+            ));
         }
 
         let response = if count > 0 {
@@ -191,11 +189,10 @@ impl StreamingServiceImpl {
             tokio::select! {
                 _ = delivery_notify.notified(), if gated => {
                     gated = !delivery_gate.load(Ordering::Acquire);
-                    if !gated {
-                        if !Self::flush_pending(&subscriber_id, &tx, &delivered_hashes, &mut pending).await {
+                    if !gated
+                        && !Self::flush_pending(&subscriber_id, &tx, &delivered_hashes, &mut pending).await {
                             break;
                         }
-                    }
                 }
                 message = block_handle.recv() => {
                     match message {
@@ -244,7 +241,7 @@ impl StreamingServiceImpl {
             return true;
         }
 
-        let queued: Vec<StreamingEvent> = pending.drain(..).collect();
+        let queued: Vec<StreamingEvent> = std::mem::take(pending);
         for event in queued {
             if !Self::forward_event(event, subscriber_id, tx, delivered_hashes).await {
                 return false;
@@ -264,19 +261,19 @@ impl StreamingServiceImpl {
                 let block_hash_hex = Self::block_hash_hex_from_block_bytes(&data)
                     .unwrap_or_else(|| "n/a".to_string());
                 let mut allow_forward = true;
-                if block_hash_hex != "n/a" {
-                    if let Ok(hash_bytes) = hex::decode(&block_hash_hex) {
-                        let mut hashes = delivered_hashes.lock().await;
-                        if hashes.remove(&hash_bytes) {
-                            trace!(
-                                subscriber_id,
-                                block_hash = %block_hash_hex,
-                                "block_headers=skip_duplicate_block"
-                            );
-                            allow_forward = false;
-                        } else {
-                            hashes.insert(hash_bytes);
-                        }
+                if block_hash_hex != "n/a"
+                    && let Ok(hash_bytes) = hex::decode(&block_hash_hex)
+                {
+                    let mut hashes = delivered_hashes.lock().await;
+                    if hashes.remove(&hash_bytes) {
+                        trace!(
+                            subscriber_id,
+                            block_hash = %block_hash_hex,
+                            "block_headers=skip_duplicate_block"
+                        );
+                        allow_forward = false;
+                    } else {
+                        hashes.insert(hash_bytes);
                     }
                 }
 
@@ -322,11 +319,11 @@ impl StreamingServiceImpl {
             }
         };
 
-        if let Some(response) = maybe_response {
-            if tx.send(response).await.is_err() {
-                debug!(subscriber_id, "block_headers=client_disconnected");
-                return false;
-            }
+        if let Some(response) = maybe_response
+            && tx.send(response).await.is_err()
+        {
+            debug!(subscriber_id, "block_headers=client_disconnected");
+            return false;
         }
         true
     }
@@ -340,7 +337,7 @@ impl StreamingServiceImpl {
     ) -> Result<(), Status> {
         use std::str::FromStr;
 
-        let (start_height, mut count_target) = match from_block {
+        let (start_height, count_target) = match from_block {
             FromBlock::FromBlockHash(hash) => {
                 let hash_hex = hex::encode(&hash);
                 let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
@@ -489,8 +486,7 @@ impl StreamingServiceImpl {
                 sent += CHUNK_SIZE;
             }
 
-            // Preserve legacy behavior: pace historical fetches to avoid overloading Core.
-            tokio::time::sleep(HISTORICAL_CORE_QUERY_DELAY).await;
+            // CoreClient handles RPC flow control, so no additional pacing is required here.
         }
 
         // Flush remaining headers

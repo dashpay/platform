@@ -1,7 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
 
 use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
 use dapi_grpc::core::v0::{
@@ -12,7 +11,6 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
-use tokio::time::sleep;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
@@ -22,7 +20,6 @@ use crate::services::streaming_service::{
 };
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
-const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(5);
 
 type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
 type TxResponseSender = mpsc::Sender<TxResponseResult>;
@@ -773,8 +770,6 @@ impl StreamingServiceImpl {
                     return Ok(());
                 }
             }
-
-            sleep(HISTORICAL_CORE_QUERY_DELAY).await;
         }
 
         trace!(

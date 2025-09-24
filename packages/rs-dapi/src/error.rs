@@ -158,7 +158,10 @@ impl DapiError {
             DapiError::TenderdashRestError(value) => {
                 // Attempt to extract code and message from the JSON value
                 if let Some(code) = value.get("code").and_then(|c| c.as_i64()) {
-                    let info = value.get("info").and_then(|d| d.as_str());
+                    let info = value
+                        .get("info")
+                        .and_then(|d| d.as_str())
+                        .or(value.get("data").and_then(|d| d.as_str()));
                     map_drive_code_to_status(code, info)
                 } else {
                     // Fallback if we cannot extract code/message
