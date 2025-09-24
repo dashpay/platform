@@ -63,12 +63,18 @@ impl PlatformServiceImpl {
 
         // Check if transaction already exists (after subscription is active)
         trace!("Checking existing transaction for hash: {}", hash_string);
-        match self
-            .tenderdash_client
-            .tx(hash_base64.clone())
-            .await
-            .or_else(|_| self.tenderdash_client.tx(hash_string.clone()))
-        {
+        let existing_tx = match self.tenderdash_client.tx(hash_base64.clone()).await {
+            Ok(tx) => Ok(tx),
+            Err(error) => {
+                debug!(
+                    "Base64 lookup failed for {}; retrying with hex: {}",
+                    hash_string, error
+                );
+                self.tenderdash_client.tx(hash_string.clone()).await
+            }
+        };
+
+        match existing_tx {
             Ok(existing_tx) => {
                 info!("Found existing transaction for hash: {}", hash_string);
                 return self

@@ -1,6 +1,6 @@
 [package]
 name = "rs-dapi"
-version = "2.0.1-1"
+version = "2.1.0-dev.5"
 edition = "2024"
 
 [[bin]]
