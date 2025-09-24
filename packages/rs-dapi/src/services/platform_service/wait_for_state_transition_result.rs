@@ -2,6 +2,7 @@ use super::error_mapping::build_state_transition_error;
 use crate::error::DapiError;
 use crate::services::platform_service::PlatformServiceImpl;
 use crate::services::streaming_service::FilterType;
+use base64::Engine;
 use dapi_grpc::platform::v0::{
     Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
     WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
@@ -38,6 +39,7 @@ impl PlatformServiceImpl {
 
         // Convert hash to commonly used representations
         let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
+        let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
         info!("waitForStateTransitionResult called for hash: {}", hash_hex);
 
@@ -60,7 +62,7 @@ impl PlatformServiceImpl {
 
         // Check if transaction already exists (after subscription is active)
         trace!("Checking existing transaction for hash: {}", hash_hex);
-        match self.tenderdash_client.tx(format!("0x{hash_hex}")).await {
+        match self.tenderdash_client.tx(hash_base64).await {
             Ok(tx) => {
                 debug!(tx = hash_hex, "Transaction already exists, returning it");
                 return self.build_response_from_existing_tx(tx, v0.prove).await;
