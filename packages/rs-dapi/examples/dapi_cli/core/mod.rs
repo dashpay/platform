@@ -5,6 +5,7 @@ use crate::error::CliResult;
 pub mod block_hash;
 pub mod chainlocks;
 pub mod masternode;
+pub mod masternode_status;
 pub mod transactions;
 
 #[derive(Subcommand, Debug)]
@@ -15,6 +16,8 @@ pub enum CoreCommand {
     Transactions(transactions::TransactionsCommand),
     /// Stream masternode list diffs
     Masternode(masternode::MasternodeCommand),
+    /// Get masternode status summary
+    MasternodeStatus(masternode_status::MasternodeStatusCommand),
     /// Stream chain locks and corresponding block headers
     ChainLocks(chainlocks::ChainLocksCommand),
 }
@@ -24,6 +27,7 @@ pub async fn run(url: &str, command: CoreCommand) -> CliResult<()> {
         CoreCommand::BlockHash(cmd) => block_hash::run(url, cmd).await,
         CoreCommand::Transactions(cmd) => transactions::run(url, cmd).await,
         CoreCommand::Masternode(cmd) => masternode::run(url, cmd).await,
+        CoreCommand::MasternodeStatus(cmd) => masternode_status::run(url, cmd).await,
         CoreCommand::ChainLocks(cmd) => chainlocks::run(url, cmd).await,
     }
 }
