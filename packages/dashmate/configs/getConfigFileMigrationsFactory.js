@@ -1106,6 +1106,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             options.platform.drive.abci.docker.image = 'dashpay/drive:2-dev';
             options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1-dev';
           });
         return configFile;
       },
