@@ -45,7 +45,3 @@ members = [
 [workspace.package]
 
 rust-version = "1.89"
-
-[patch."https://github.com/dashpay/rs-tenderdash-abci"]
-tenderdash-proto = { path = "packages/vendor/rs-tenderdash-abci/proto" }
-tenderdash-proto-compiler = { path = "packages/vendor/rs-tenderdash-abci/proto-compiler" }
