@@ -157,10 +157,7 @@ impl TenderdashClient {
 
         if let Some(error) = response.error {
             debug!("Tenderdash RPC returned error: {}", error);
-            return Err(DapiError::Client(format!(
-                "Tenderdash RPC error: {}",
-                error
-            )));
+            return Err(DapiError::TenderdashRestError(error));
         }
 
         response.result.ok_or_else(|| {

@@ -272,7 +272,10 @@ mod tests {
             .to_bytes()
             .expect("decode consensus error metadata");
 
-        assert_eq!(consensus_error_bytes.as_ref(), serialized_error_bytes.as_slice());
+        assert_eq!(
+            consensus_error_bytes.as_ref(),
+            serialized_error_bytes.as_slice()
+        );
 
         let code_value = metadata.get("code").expect("code metadata");
         assert_eq!(code_value, "10246");
@@ -293,12 +296,10 @@ mod tests {
             ),
             (
                 Value::Text("data".to_string()),
-                Value::Map(vec![
-                    (
-                        Value::Text("serialized_error".to_string()),
-                        Value::Text(serialized_error_base64),
-                    ),
-                ]),
+                Value::Map(vec![(
+                    Value::Text("serialized_error".to_string()),
+                    Value::Text(serialized_error_base64),
+                )]),
             ),
         ]);
 
@@ -316,7 +317,10 @@ mod tests {
         let consensus_error_bytes = consensus_error
             .to_bytes()
             .expect("decode consensus error metadata for snake case key");
-        assert_eq!(consensus_error_bytes.as_ref(), serialized_error_bytes.as_slice());
+        assert_eq!(
+            consensus_error_bytes.as_ref(),
+            serialized_error_bytes.as_slice()
+        );
 
         let code_value = metadata.get("code").expect("code metadata");
         assert_eq!(code_value, "10212");

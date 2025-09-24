@@ -234,7 +234,21 @@ impl Platform for PlatformServiceImpl {
             ?request,
             "Received wait_for_state_transition_result request"
         );
-        self.wait_for_state_transition_result_impl(request).await
+        match self.wait_for_state_transition_result_impl(request).await {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                tracing::warn!(
+                    error = %error,
+                    "wait_for_state_transition_result failed; returning broadcast error response"
+                );
+                let response =
+                    wait_for_state_transition_result::build_wait_for_state_transition_error_response(
+                        &error,
+                    );
+
+                Ok(Response::new(response))
+            }
+        }
     }
 
     // Identity-related methods

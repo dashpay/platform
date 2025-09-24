@@ -1,5 +1,6 @@
 // Custom error types for rs-dapi using thiserror
 
+use serde_json::Value;
 use sha2::Digest;
 use thiserror::Error;
 // For converting dashcore-rpc errors into DapiError
@@ -109,6 +110,9 @@ pub enum DapiError {
 
     #[error("{0}")]
     MethodNotFound(String),
+
+    #[error("Tenderdash request error: {0}")]
+    TenderdashRestError(Value),
 }
 
 /// Result type alias for DAPI operations
