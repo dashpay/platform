@@ -642,7 +642,25 @@ public class SPVClient: ObservableObject {
 
         // Pull the latest persisted sync snapshot so we can surface the actual filter download height.
         let snapshotFiltersRaw = self.getSyncSnapshot()?.lastSyncedFilterHeight ?? base
-        var absoluteFilters = max(base, snapshotFiltersRaw)
+        let stats = self.getStats()
+
+        var statsFiltersRaw = base
+        if let filterHeight = stats?.filterHeight, filterHeight > 0 {
+            let safeHeight = max(Int(base), min(filterHeight, Int(UInt32.max)))
+            statsFiltersRaw = UInt32(safeHeight)
+        }
+
+        let downloadedFiltersRaw: UInt32
+        if let downloaded = stats?.filtersDownloaded, downloaded > 0 {
+            let candidate = UInt64(base) + downloaded
+            downloadedFiltersRaw = candidate >= UInt64(UInt32.max) ? UInt32.max : UInt32(candidate)
+        } else {
+            downloadedFiltersRaw = base
+        }
+
+
+        var absoluteFilters = max(base, max(snapshotFiltersRaw, statsFiltersRaw))
+        absoluteFilters = max(absoluteFilters, downloadedFiltersRaw)
         if absoluteFilters > absoluteHeader {
             absoluteFilters = absoluteHeader
         }
@@ -742,31 +760,65 @@ public class SPVClient: ObservableObject {
         // Update sync progress if we're syncing
         if isSyncing, let progress = syncProgress {
             // Update height tracking for rate calculation
+            var updatedRate: Double = progress.rate
             if lastBlockHeight > 0 {
                 // Use signed math and clamp to avoid underflow on reorgs or height resets
                 let blocksDiffSigned = Int64(height) - Int64(lastBlockHeight)
                 let blocksDiff = blocksDiffSigned > 0 ? blocksDiffSigned : 0
 
                 let timeDiff = Date().timeIntervalSince(syncStartTime ?? Date())
-                let rate = timeDiff > 0 ? Double(blocksDiff) / timeDiff : 0
-
-                let updatedProgress = SPVSyncProgress(
-                    stage: progress.stage,
-                    headerProgress: progress.headerProgress,
-                    masternodeProgress: progress.masternodeProgress,
-                    transactionProgress: progress.transactionProgress,
-                    currentHeight: height,
-                    targetHeight: progress.targetHeight,
-                    filterHeaderHeight: progress.filterHeaderHeight,
-                    filterHeight: progress.filterHeight,
-                    startHeight: self.startFromHeight,
-                    rate: rate,
-                    estimatedTimeRemaining: progress.estimatedTimeRemaining
-                )
-
-                syncProgress = updatedProgress
-                delegate?.spvClient(self, didUpdateSyncProgress: updatedProgress)
+                updatedRate = timeDiff > 0 ? Double(blocksDiff) / timeDiff : 0
             }
+
+            let baseHeight = startFromHeight
+
+            let snapshotFilterHeightRaw = self.getSyncSnapshot()?.lastSyncedFilterHeight ?? baseHeight
+            let statsFilterHeightRaw = self.getStats()?.filterHeight ?? Int(baseHeight)
+            let statsFilterHeight = statsFilterHeightRaw < Int(baseHeight) ? Int(baseHeight) : statsFilterHeightRaw
+            let snapshotFilterHeight = max(Int(baseHeight), Int(snapshotFilterHeightRaw))
+
+            let bestObservedFilterHeight = max(Int(progress.filterHeight), max(snapshotFilterHeight, statsFilterHeight))
+            let clampedFilterHeight = min(bestObservedFilterHeight, Int(UInt32.max))
+            let newFilterHeight = UInt32(clampedFilterHeight)
+
+            let candidateTarget = max(progress.targetHeight, max(progress.filterHeaderHeight, newFilterHeight))
+            let denominator = max(1.0, Double(candidateTarget) - Double(baseHeight))
+            let filterNumerator = max(0.0, Double(newFilterHeight) - Double(baseHeight))
+            let computedTransactionProgress = min(1.0, filterNumerator / denominator)
+
+            let filterHeadersDone = progress.filterHeaderHeight >= progress.targetHeight || progress.masternodeProgress >= 0.999
+            let stageAllowsFilters = progress.stage == .transactions || progress.stage == .complete
+            let filtersStageReady = stageAllowsFilters || filterHeadersDone
+            let nextFilterHeight = filtersStageReady ? newFilterHeight : progress.filterHeight
+            let nextTransactionProgress = filtersStageReady
+                ? max(progress.transactionProgress, computedTransactionProgress)
+                : progress.transactionProgress
+
+            let nextStage: SPVSyncStage
+            if progress.stage == .complete {
+                nextStage = .complete
+            } else if filtersStageReady && nextTransactionProgress > progress.transactionProgress {
+                nextStage = .transactions
+            } else {
+                nextStage = progress.stage
+            }
+
+            let updatedProgress = SPVSyncProgress(
+                stage: nextStage,
+                headerProgress: progress.headerProgress,
+                masternodeProgress: progress.masternodeProgress,
+                transactionProgress: nextTransactionProgress,
+                currentHeight: height,
+                targetHeight: candidateTarget,
+                filterHeaderHeight: progress.filterHeaderHeight,
+                filterHeight: nextFilterHeight,
+                startHeight: baseHeight,
+                rate: updatedRate,
+                estimatedTimeRemaining: progress.estimatedTimeRemaining
+            )
+
+            syncProgress = updatedProgress
+            delegate?.spvClient(self, didUpdateSyncProgress: updatedProgress)
 
             // Always record the latest observed height (even across reorgs)
             lastBlockHeight = height
@@ -814,6 +866,9 @@ public class SPVClient: ObservableObject {
             connectedPeers: Int(statsPtr.pointee.connected_peers),
             headerHeight: Int(statsPtr.pointee.header_height),
             filterHeight: Int(statsPtr.pointee.filter_height),
+            filtersDownloaded: UInt64(statsPtr.pointee.filters_downloaded),
+            filterHeadersDownloaded: UInt64(statsPtr.pointee.filter_headers_downloaded),
+            blocksProcessed: UInt64(statsPtr.pointee.blocks_processed),
             mempoolSize: 0 // mempool_size not available in current FFI
         )
         
@@ -1058,6 +1113,9 @@ public struct SPVStats: Sendable {
     public let connectedPeers: Int
     public let headerHeight: Int
     public let filterHeight: Int
+    public let filtersDownloaded: UInt64
+    public let filterHeadersDownloaded: UInt64
+    public let blocksProcessed: UInt64
     public let mempoolSize: Int
 }
 

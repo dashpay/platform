@@ -767,21 +767,30 @@ extension WalletService: SPVClientDelegate {
                 absFilter = baseHeight
             }
 
-            WalletService.shared.headerCurrentHeight = absHeader
             let displayBaseline = max(baseHeight, WalletService.shared.currentDisplayBaseline())
             let normalizedCandidate = WalletService.shared.normalizedChainTip(absTarget, baseline: displayBaseline)
-            let adjustedTarget: Int
-            if normalizedCandidate - absHeader > 400_000 {
-                adjustedTarget = absHeader
-            } else {
-                adjustedTarget = normalizedCandidate
-            }
+            let storedHeaderHeight = WalletService.shared.latestHeaderHeight
+
+            let adjustedTarget = max(absHeader, normalizedCandidate)
             absTarget = adjustedTarget
             WalletService.shared.headerTargetHeight = adjustedTarget
 
+            var headerHeightForDisplay: Int
+            if mappedStage == .headers {
+                headerHeightForDisplay = max(storedHeaderHeight, absHeader)
+            } else {
+                headerHeightForDisplay = max(storedHeaderHeight, adjustedTarget)
+            }
+
+            WalletService.shared.latestHeaderHeight = headerHeightForDisplay
+            WalletService.shared.headerCurrentHeight = headerHeightForDisplay
+
+            absFilterHeader = min(absFilterHeader, adjustedTarget)
+            absFilter = min(absFilter, adjustedTarget)
+
             let headerDenominatorFinal = max(1.0, Double(adjustedTarget - baseHeight))
-            let headerNumeratorFinal = max(0.0, Double(absHeader - baseHeight))
-            if adjustedTarget <= absHeader {
+            let headerNumeratorFinal = max(0.0, Double(headerHeightForDisplay - baseHeight))
+            if adjustedTarget <= headerHeightForDisplay {
                 headerPct = 1.0
             } else {
                 headerPct = min(1.0, headerNumeratorFinal / headerDenominatorFinal)
@@ -790,7 +799,7 @@ extension WalletService: SPVClientDelegate {
                 headerPct = 1.0
             }
 
-            let headerSpan = max(1.0, Double(max(absHeader, adjustedTarget) - baseHeight))
+            let headerSpan = max(1.0, Double(max(headerHeightForDisplay, adjustedTarget) - baseHeight))
             let filterHeaderNumerator = max(0.0, Double(absFilterHeader - baseHeight))
             let filterNumerator = max(0.0, Double(absFilter - baseHeight))
 
@@ -799,10 +808,11 @@ extension WalletService: SPVClientDelegate {
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
-            WalletService.shared.latestFilterHeaderHeight = absFilterHeader
-            WalletService.shared.latestFilterHeight = absFilter
+            WalletService.shared.latestFilterHeaderHeight = max(WalletService.shared.latestFilterHeaderHeight, absFilterHeader)
+            WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, absFilter)
             WalletService.shared.filterHeaderProgress = filterHeaderPct
-            WalletService.shared.transactionProgress = filterPct
+            let previousTxProgress = WalletService.shared.transactionProgress
+            WalletService.shared.transactionProgress = max(previousTxProgress, filterPct)
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(absHeader),
@@ -834,6 +844,53 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
         blocksHit = count
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+
+            let baseline = max(Int(client.baseSyncHeight), self.currentDisplayBaseline())
+            let snapshot = client.getSyncSnapshot()
+            let stats = client.getStats()
+
+            let snapshotFilter = snapshot.map { max(Int($0.lastSyncedFilterHeight), baseline) } ?? baseline
+            let snapshotFilterCountHeight: Int
+            if let filtersDownloaded = snapshot?.filtersDownloaded, filtersDownloaded > 0 {
+                let candidate = UInt64(baseline) + UInt64(filtersDownloaded)
+                snapshotFilterCountHeight = candidate >= UInt64(UInt32.max) ? Int(UInt32.max) : Int(candidate)
+            } else {
+                snapshotFilterCountHeight = baseline
+            }
+            let statsFilterHeight = stats.map { max(Int($0.filterHeight), baseline) } ?? baseline
+
+            let downloadedFilters = stats?.filtersDownloaded ?? 0
+            let downloadedFilterHeight: Int
+            if downloadedFilters > 0 {
+                let candidate = UInt64(baseline) + downloadedFilters
+                downloadedFilterHeight = candidate >= UInt64(UInt32.max) ? Int(UInt32.max) : Int(candidate)
+            } else {
+                downloadedFilterHeight = baseline
+            }
+
+            let targetCandidate = max(self.headerTargetHeight, self.headerCurrentHeight)
+            let estimatedFromBlocks = min(max(baseline, baseline + count), targetCandidate)
+
+            let bestFilterHeight = max(self.latestFilterHeight, snapshotFilter, snapshotFilterCountHeight, statsFilterHeight, downloadedFilterHeight, estimatedFromBlocks)
+
+            guard bestFilterHeight >= baseline else { return }
+
+            self.latestFilterHeight = bestFilterHeight
+
+            let target = max(targetCandidate, bestFilterHeight)
+            guard target > baseline else { return }
+
+            let numerator = max(0, bestFilterHeight - baseline)
+            let denominator = max(1, target - baseline)
+            let progress = min(1.0, Double(numerator) / Double(denominator))
+
+            if progress > self.transactionProgress {
+                self.transactionProgress = progress
+            }
+        }
     }
     
     public func spvClient(_ client: SPVClient, didCompleteSync success: Bool, error: String?) {
