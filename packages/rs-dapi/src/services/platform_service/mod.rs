@@ -22,6 +22,7 @@ use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
+use tracing::debug;
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
@@ -220,11 +221,17 @@ impl Platform for PlatformServiceImpl {
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
         tracing::trace!(?request, "Received broadcast_state_transition request");
         match self.broadcast_state_transition_impl(request).await {
-            Ok(response) => Ok(response),
-            Err(error) => {
-                tracing::warn!(error = %error, "broadcast_state_transition failed");
-                Err(error.into())
-            }
+            Ok(response) => Ok(response).inspect(|r| {
+                debug!(response=?r, "broadcast_state_transition succeeded");
+            }),
+            Err(error) => Err(error.into()).inspect_err(|e: &Status| {
+                let metadata = e.metadata();
+                tracing::warn!(
+                    error = %e,
+                    ?metadata,
+                    "broadcast_state_transition failed; returning broadcast error response"
+                );
+            }),
         }
     }
 
