@@ -9,10 +9,11 @@
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};
-use tonic::{Request, Response, Status};
+use tonic::{Request, Response};
 use tracing::{debug, error, info, warn};
 
 use super::error_mapping::map_drive_code_to_status;
+use crate::error::DapiError;
 use crate::services::PlatformServiceImpl;
 
 impl PlatformServiceImpl {
@@ -27,14 +28,14 @@ impl PlatformServiceImpl {
     pub async fn broadcast_state_transition_impl(
         &self,
         request: Request<BroadcastStateTransitionRequest>,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+    ) -> Result<Response<BroadcastStateTransitionResponse>, DapiError> {
         let st_bytes_vec = request.get_ref().state_transition.clone();
 
         // Validate that state transition is provided
         if st_bytes_vec.is_empty() {
             error!("State transition is empty");
-            return Err(Status::invalid_argument(
-                "State Transition is not specified",
+            return Err(DapiError::InvalidArgument(
+                "State Transition is not specified".to_string(),
             ));
         }
 
@@ -47,22 +48,39 @@ impl PlatformServiceImpl {
         // Attempt to broadcast the transaction
         let broadcast_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
             Ok(response) => response,
-            Err(e) => {
-                let error_msg = e.to_string();
+            Err(DapiError::Client(message)) => {
                 error!(
-                    error = %error_msg,
+                    error = %message,
                     st_hash = %st_hash,
-                    "Failed to broadcast state transition to Tenderdash - technical failure"
+                    "Failed to broadcast state transition to Tenderdash"
                 );
 
-                if error_msg.contains("ECONNRESET") || error_msg.contains("socket hang up") {
-                    return Err(Status::unavailable("Tenderdash is not available"));
+                if message.contains("ECONNRESET") || message.contains("socket hang up") {
+                    return Err(DapiError::Unavailable(
+                        "Tenderdash is not available".to_string(),
+                    ));
                 }
 
-                return Err(Status::internal(format!(
+                return Err(DapiError::Internal(format!(
                     "Failed broadcasting state transition: {}",
-                    error_msg
+                    message
                 )));
+            }
+            Err(DapiError::TenderdashRestError(value)) => {
+                error!(
+                    error = ?value,
+                    st_hash = %st_hash,
+                    "Tenderdash REST error while broadcasting state transition"
+                );
+                return Err(DapiError::TenderdashRestError(value));
+            }
+            Err(other) => {
+                error!(
+                    error = %other,
+                    st_hash = %st_hash,
+                    "Failed to broadcast state transition to Tenderdash"
+                );
+                return Err(other);
             }
         };
 
@@ -76,15 +94,16 @@ impl PlatformServiceImpl {
             );
 
             // Handle specific error cases
-            if let Some(data) = &broadcast_result.data {
-                return self
+            if let Some(data) = broadcast_result.data.as_deref() {
+                return Err(self
                     .handle_broadcast_error(data, st_bytes, &tx_base64)
-                    .await;
+                    .await);
             }
 
-            // Convert Drive error response
-            let status = map_drive_code_to_status(broadcast_result.code, broadcast_result.info);
-            return Err(status);
+            return Err(DapiError::from(map_drive_code_to_status(
+                broadcast_result.code,
+                broadcast_result.info.as_deref(),
+            )));
         }
 
         info!(st_hash = %st_hash, "State transition broadcasted successfully");
@@ -97,38 +116,38 @@ impl PlatformServiceImpl {
         error_data: &str,
         st_bytes: &[u8],
         tx_base64: &str,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+    ) -> DapiError {
         if error_data == "tx already exists in cache" {
             return self.handle_duplicate_transaction(st_bytes, tx_base64).await;
         }
 
         if error_data.starts_with("Tx too large.") {
             let message = error_data.replace("Tx too large. ", "");
-            return Err(Status::invalid_argument(format!(
+            return DapiError::InvalidArgument(format!(
                 "state transition is too large. {}",
                 message
-            )));
+            ));
         }
 
         if error_data.starts_with("mempool is full") {
-            return Err(Status::resource_exhausted(error_data));
+            return DapiError::ResourceExhausted(error_data.to_string());
         }
 
         if error_data.contains("context deadline exceeded") {
-            return Err(Status::resource_exhausted(
-                "broadcasting state transition is timed out",
-            ));
+            return DapiError::ResourceExhausted(
+                "broadcasting state transition is timed out".to_string(),
+            );
         }
 
         if error_data.contains("too_many_resets") {
-            return Err(Status::resource_exhausted(
-                "tenderdash is not responding: too many requests",
-            ));
+            return DapiError::ResourceExhausted(
+                "tenderdash is not responding: too many requests".to_string(),
+            );
         }
 
         if error_data.starts_with("broadcast confirmation not received:") {
             error!("Failed broadcasting state transition: {}", error_data);
-            return Err(Status::unavailable(error_data));
+            return DapiError::Unavailable(error_data.to_string());
         }
 
         // Unknown error
@@ -136,23 +155,17 @@ impl PlatformServiceImpl {
             "Unexpected error during broadcasting state transition: {}",
             error_data
         );
-        Err(Status::internal(format!(
-            "Unexpected error: {}",
-            error_data
-        )))
+        DapiError::Internal(format!("Unexpected error: {}", error_data))
     }
 
     /// Handle duplicate transaction scenarios
-    async fn handle_duplicate_transaction(
-        &self,
-        st_bytes: &[u8],
-        tx_base64: &str,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+    async fn handle_duplicate_transaction(&self, st_bytes: &[u8], tx_base64: &str) -> DapiError {
         // Compute state transition hash
         let mut hasher = Sha256::new();
         hasher.update(st_bytes);
         let st_hash = hasher.finalize();
         let st_hash_base64 = BASE64_STANDARD.encode(st_hash);
+        let tx_base64_owned = tx_base64.to_string();
 
         debug!(
             "Checking duplicate state transition with hash: {}",
@@ -163,10 +176,10 @@ impl PlatformServiceImpl {
         match self.tenderdash_client.unconfirmed_txs(Some(100)).await {
             Ok(unconfirmed_response) => {
                 if let Some(txs) = &unconfirmed_response.txs {
-                    if txs.contains(&tx_base64.to_string()) {
-                        return Err(Status::already_exists(
-                            "state transition already in mempool",
-                        ));
+                    if txs.contains(&tx_base64_owned) {
+                        return DapiError::AlreadyExists(
+                            "state transition already in mempool".to_string(),
+                        );
                     }
                 }
             }
@@ -182,7 +195,9 @@ impl PlatformServiceImpl {
         match self.tenderdash_client.tx(st_hash_base64).await {
             Ok(tx_response) => {
                 if tx_response.tx_result.is_some() {
-                    return Err(Status::already_exists("state transition already in chain"));
+                    return DapiError::AlreadyExists(
+                        "state transition already in chain".to_string(),
+                    );
                 }
             }
             Err(e) => {
@@ -194,27 +209,28 @@ impl PlatformServiceImpl {
         }
 
         // If not in mempool and not in chain, re-validate with CheckTx
-        match self.tenderdash_client.check_tx(tx_base64.to_string()).await {
+        match self.tenderdash_client.check_tx(tx_base64_owned).await {
             Ok(check_response) => {
                 if check_response.code != 0 {
-                    // Return validation error
-                    let status = map_drive_code_to_status(check_response.code, check_response.info);
-                    Err(status)
-                } else {
-                    // CheckTx passes but ST was removed from block - this is a bug
-                    warn!(
-                        "State transition {} is passing CheckTx but removed from the block by proposer",
-                        hex::encode(st_hash)
-                    );
-
-                    Err(Status::internal(
-                        "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.",
-                    ))
+                    return DapiError::from(map_drive_code_to_status(
+                        check_response.code,
+                        check_response.info.as_deref(),
+                    ));
                 }
+
+                // CheckTx passes but ST was removed from block - this is a bug
+                warn!(
+                    "State transition {} is passing CheckTx but removed from the block by proposer",
+                    hex::encode(st_hash)
+                );
+
+                DapiError::Internal(
+                    "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.".to_string(),
+                )
             }
             Err(e) => {
                 error!("Failed to check transaction validation: {}", e);
-                Err(Status::internal("Failed to validate state transition"))
+                DapiError::Internal("Failed to validate state transition".to_string())
             }
         }
     }

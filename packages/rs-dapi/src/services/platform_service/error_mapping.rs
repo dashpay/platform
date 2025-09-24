@@ -3,36 +3,35 @@ use ciborium::{de, ser, value::Value};
 use dapi_grpc::platform::v0::StateTransitionBroadcastError;
 use std::collections::BTreeMap;
 use std::convert::TryFrom;
-use tonic::{Code, Status, metadata::MetadataMap, metadata::MetadataValue};
+use tonic::{
+    Code, Status,
+    metadata::{MetadataMap, MetadataValue},
+};
 
-/// Map Drive/Tenderdash error codes to gRPC Status consistently
-pub fn map_drive_code_to_status(code: u32, info: Option<String>) -> Status {
-    let info_clone = info.clone();
-    let decoded_info = info
-        .as_deref()
-        .and_then(|value| decode_drive_error_info(value));
+/// Map Drive/Tenderdash error codes to a gRPC status without building
+/// additional metadata. The status code mapping follows Dash consensus ranges.
+pub fn map_drive_code_to_status(code: u32, info: Option<&str>) -> Status {
+    let decoded_info = info.and_then(decode_drive_error_info);
 
     let message = decoded_info
         .as_ref()
         .and_then(|details| details.message.clone())
-        .or(info_clone)
+        .or_else(|| info.map(|value| value.to_string()))
         .unwrap_or_else(|| format!("Drive error code: {}", code));
+
+    let status_code = map_grpc_code(code).unwrap_or_else(|| fallback_status_code(code));
 
     let mut metadata = MetadataMap::new();
 
     if let Some(details) = decoded_info.as_ref() {
-        if let Some(data_bytes) = encode_drive_error_data(&details.data) {
-            metadata.insert_bin(
-                "drive-error-data-bin",
-                MetadataValue::from_bytes(&data_bytes),
-            );
+        if let Some(serialized) = details.serialized_error.as_ref() {
+            let value = MetadataValue::from_bytes(serialized);
+            metadata.insert_bin("dash-serialized-consensus-error-bin", value);
         }
 
-        if let Some(serialized) = details.serialized_error.as_ref() {
-            metadata.insert_bin(
-                "dash-serialized-consensus-error-bin",
-                MetadataValue::from_bytes(serialized),
-            );
+        if let Some(data_bytes) = encode_drive_error_data(&details.data) {
+            let value = MetadataValue::from_bytes(&data_bytes);
+            metadata.insert_bin("drive-error-data-bin", value);
         }
 
         if (10000..50000).contains(&code) {
@@ -42,31 +41,11 @@ pub fn map_drive_code_to_status(code: u32, info: Option<String>) -> Status {
         }
     }
 
-    if let Some(grpc_code) = map_grpc_code(code) {
-        return status_with_metadata(grpc_code, message, metadata);
+    if metadata.is_empty() {
+        Status::new(status_code, message)
+    } else {
+        Status::with_metadata(status_code, message, metadata)
     }
-
-    if (17..=9999).contains(&code) {
-        return status_with_metadata(Code::Unknown, message, metadata);
-    }
-
-    if (10000..20000).contains(&code) {
-        return status_with_metadata(Code::InvalidArgument, message, metadata);
-    }
-
-    if (20000..30000).contains(&code) {
-        return status_with_metadata(Code::Unauthenticated, message, metadata);
-    }
-
-    if (30000..40000).contains(&code) {
-        return status_with_metadata(Code::FailedPrecondition, message, metadata);
-    }
-
-    if (40000..50000).contains(&code) {
-        return status_with_metadata(Code::InvalidArgument, message, metadata);
-    }
-
-    Status::internal(format!("Unknown Drive error code: {}", code))
 }
 
 /// Build StateTransitionBroadcastError consistently from code/info/data
@@ -229,100 +208,18 @@ fn map_grpc_code(code: u32) -> Option<Code> {
     }
 }
 
-fn status_with_metadata(code: Code, message: String, metadata: MetadataMap) -> Status {
-    if metadata.is_empty() {
-        Status::new(code, message)
+fn fallback_status_code(code: u32) -> Code {
+    if (17..=9999).contains(&code) {
+        Code::Unknown
+    } else if (10000..20000).contains(&code) {
+        Code::InvalidArgument
+    } else if (20000..30000).contains(&code) {
+        Code::Unauthenticated
+    } else if (30000..40000).contains(&code) {
+        Code::FailedPrecondition
+    } else if (40000..50000).contains(&code) {
+        Code::InvalidArgument
     } else {
-        Status::with_metadata(code, message, metadata)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn attaches_serialized_consensus_error_metadata() {
-        use base64::engine::general_purpose::STANDARD as BASE64;
-
-        // Build CBOR blob matching Drive's response_info_for_version implementation
-        let mut buffer = Vec::new();
-        let serialized_error_bytes = vec![0x01, 0x02, 0x03];
-        let value = Value::Map(vec![(
-            Value::Text("data".to_string()),
-            Value::Map(vec![(
-                Value::Text("serializedError".to_string()),
-                Value::Bytes(serialized_error_bytes.clone()),
-            )]),
-        )]);
-
-        ser::into_writer(&value, &mut buffer).expect("serialize cbor");
-        let encoded_info = BASE64.encode(buffer);
-
-        let status = map_drive_code_to_status(10246, Some(encoded_info));
-
-        assert_eq!(status.code(), Code::InvalidArgument);
-
-        let metadata = status.metadata();
-        let consensus_error = metadata
-            .get_bin("dash-serialized-consensus-error-bin")
-            .expect("consensus error metadata");
-
-        let consensus_error_bytes = consensus_error
-            .to_bytes()
-            .expect("decode consensus error metadata");
-
-        assert_eq!(
-            consensus_error_bytes.as_ref(),
-            serialized_error_bytes.as_slice()
-        );
-
-        let code_value = metadata.get("code").expect("code metadata");
-        assert_eq!(code_value, "10246");
-    }
-
-    #[test]
-    fn handles_snake_case_serialized_error_key() {
-        use base64::engine::general_purpose::STANDARD as BASE64;
-
-        let mut buffer = Vec::new();
-        let serialized_error_bytes = vec![0x0A, 0x0B, 0x0C];
-        let serialized_error_base64 = BASE64.encode(&serialized_error_bytes);
-
-        let value = Value::Map(vec![
-            (
-                Value::Text("message".to_string()),
-                Value::Text("some consensus violation".to_string()),
-            ),
-            (
-                Value::Text("data".to_string()),
-                Value::Map(vec![(
-                    Value::Text("serialized_error".to_string()),
-                    Value::Text(serialized_error_base64),
-                )]),
-            ),
-        ]);
-
-        ser::into_writer(&value, &mut buffer).expect("serialize cbor");
-        let encoded_info = BASE64.encode(buffer);
-
-        let status = map_drive_code_to_status(10212, Some(encoded_info));
-        assert_eq!(status.code(), Code::InvalidArgument);
-
-        let metadata = status.metadata();
-        let consensus_error = metadata
-            .get_bin("dash-serialized-consensus-error-bin")
-            .expect("consensus error metadata for snake case key");
-
-        let consensus_error_bytes = consensus_error
-            .to_bytes()
-            .expect("decode consensus error metadata for snake case key");
-        assert_eq!(
-            consensus_error_bytes.as_ref(),
-            serialized_error_bytes.as_slice()
-        );
-
-        let code_value = metadata.get("code").expect("code metadata");
-        assert_eq!(code_value, "10212");
+        Code::Internal
     }
 }

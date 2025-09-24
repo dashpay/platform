@@ -8,7 +8,7 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
-use dapi_grpc::tonic::{Request, Response};
+use dapi_grpc::tonic::{Request, Response, metadata::MetadataValue};
 use serde_json::Value as JsonValue;
 use std::time::Duration;
 use tokio::time::timeout;
@@ -156,8 +156,8 @@ impl PlatformServiceImpl {
             match self.fetch_proof_for_state_transition(tx_data).await {
                 Ok((proof, metadata)) => {
                     response_v0.result = Some(
-                                wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof)
-                            );
+                        wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                    );
                     response_v0.metadata = Some(metadata);
                 }
                 Err(e) => {
@@ -167,13 +167,13 @@ impl PlatformServiceImpl {
             }
         }
 
-        let response = WaitForStateTransitionResultResponse {
+        let body = WaitForStateTransitionResultResponse {
             version: Some(wait_for_state_transition_result_response::Version::V0(
                 response_v0,
             )),
         };
 
-        Ok(Response::new(response))
+        Ok(response_with_consensus_metadata(body))
     }
 
     async fn build_response_from_event(
@@ -195,8 +195,8 @@ impl PlatformServiceImpl {
                     match self.fetch_proof_for_state_transition(tx_bytes).await {
                         Ok((proof, metadata)) => {
                             response_v0.result = Some(
-                                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof)
-                                );
+                        wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                    );
                             response_v0.metadata = Some(metadata);
                         }
                         Err(e) => {
@@ -215,13 +215,13 @@ impl PlatformServiceImpl {
             }
         }
 
-        let response = WaitForStateTransitionResultResponse {
+        let body = WaitForStateTransitionResultResponse {
             version: Some(wait_for_state_transition_result_response::Version::V0(
                 response_v0,
             )),
         };
 
-        Ok(Response::new(response))
+        Ok(response_with_consensus_metadata(body))
     }
 
     async fn fetch_proof_for_state_transition(
@@ -278,7 +278,7 @@ fn map_dapi_error_to_state_transition_broadcast_error(
 
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
-) -> WaitForStateTransitionResultResponse {
+) -> Response<WaitForStateTransitionResultResponse> {
     use wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitForResult;
 
     let response_v0 =
@@ -289,11 +289,13 @@ pub(super) fn build_wait_for_state_transition_error_response(
             metadata: None,
         };
 
-    WaitForStateTransitionResultResponse {
+    let body = WaitForStateTransitionResultResponse {
         version: Some(wait_for_state_transition_result_response::Version::V0(
             response_v0,
         )),
-    }
+    };
+
+    response_with_consensus_metadata(body)
 }
 
 fn map_tenderdash_rest_error(
@@ -360,4 +362,34 @@ fn extract_number(value: Option<&JsonValue>) -> Option<i64> {
         JsonValue::String(text) => text.parse::<i64>().ok(),
         _ => None,
     }
+}
+
+fn response_with_consensus_metadata(
+    body: WaitForStateTransitionResultResponse,
+) -> Response<WaitForStateTransitionResultResponse> {
+    use wait_for_state_transition_result_response::Version;
+    use wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitForResult;
+
+    let mut response = Response::new(body);
+
+    let consensus_bytes = response
+        .get_ref()
+        .version
+        .as_ref()
+        .and_then(|version| match version {
+            Version::V0(v0) => v0.result.as_ref().and_then(|result| match result {
+                WaitForResult::Error(error) => (!error.data.is_empty()).then_some(&error.data),
+                _ => None,
+            }),
+        })
+        .cloned();
+
+    if let Some(bytes) = consensus_bytes {
+        let value = MetadataValue::from_bytes(bytes.as_slice());
+        response
+            .metadata_mut()
+            .insert_bin("dash-serialized-consensus-error-bin", value);
+    }
+
+    response
 }

@@ -219,7 +219,13 @@ impl Platform for PlatformServiceImpl {
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
         tracing::trace!(?request, "Received broadcast_state_transition request");
-        self.broadcast_state_transition_impl(request).await
+        match self.broadcast_state_transition_impl(request).await {
+            Ok(response) => Ok(response),
+            Err(error) => {
+                tracing::warn!(error = %error, "broadcast_state_transition failed");
+                Err(error.into())
+            }
+        }
     }
 
     /// Implementation of waitForStateTransitionResult
@@ -246,7 +252,7 @@ impl Platform for PlatformServiceImpl {
                         &error,
                     );
 
-                Ok(Response::new(response))
+                Ok(response)
             }
         }
     }
