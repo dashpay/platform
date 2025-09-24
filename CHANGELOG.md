@@ -6,6 +6,10 @@
 * **drive:** document filter for state transition subscriptions part 2 ([#2781](https://github.com/dashpay/platform/issues/2781))
 * **sdk:** add more SDK methods ([#2784](https://github.com/dashpay/platform/issues/2784))
 
+### Bug Fixes
+
+* **dashmate:** incompatible tenderdash version ([#2786](https://github.com/dashpay/platform/issues/2786))
+
 
 ### Performance Improvements
 
