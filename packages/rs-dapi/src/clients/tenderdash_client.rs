@@ -92,7 +92,7 @@ pub struct NetInfoResponse {
 // New response types for broadcast_state_transition
 #[derive(Debug, Serialize, Deserialize)]
 pub struct BroadcastTxResponse {
-    pub code: u32,
+    pub code: i64,
     pub data: Option<String>,
     pub info: Option<String>,
     pub hash: Option<String>,
@@ -100,7 +100,7 @@ pub struct BroadcastTxResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CheckTxResponse {
-    pub code: u32,
+    pub code: i64,
     pub info: Option<String>,
     pub data: Option<String>,
 }
@@ -119,7 +119,7 @@ pub struct TxResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TxResult {
-    pub code: u32,
+    pub code: i64,
     pub data: Option<String>,
     pub info: Option<String>,
     pub log: Option<String>,

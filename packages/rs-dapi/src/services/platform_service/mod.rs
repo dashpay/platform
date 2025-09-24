@@ -24,6 +24,8 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tracing::debug;
 
+pub(crate) use error_mapping::map_drive_code_to_status;
+
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
 /// Usage: `drive_method!(method_name, RequestType, ResponseType);`

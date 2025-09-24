@@ -10,7 +10,7 @@ use tonic::{
 
 /// Map Drive/Tenderdash error codes to a gRPC status without building
 /// additional metadata. The status code mapping follows Dash consensus ranges.
-pub fn map_drive_code_to_status(code: u32, info: Option<&str>) -> Status {
+pub fn map_drive_code_to_status(code: i64, info: Option<&str>) -> Status {
     let decoded_info = info.and_then(decode_drive_error_info);
 
     let message = decoded_info
@@ -34,10 +34,10 @@ pub fn map_drive_code_to_status(code: u32, info: Option<&str>) -> Status {
             metadata.insert_bin("drive-error-data-bin", value);
         }
 
-        if (10000..50000).contains(&code) {
-            if let Ok(value) = MetadataValue::try_from(code.to_string()) {
-                metadata.insert("code", value);
-            }
+        if (10000..50000).contains(&code)
+            && let Ok(value) = MetadataValue::try_from(code.to_string())
+        {
+            metadata.insert("code", value);
         }
     }
 
@@ -73,12 +73,11 @@ pub fn build_state_transition_error(
         }
     }
 
-    if error.data.is_empty() {
-        if let Some(data_str) = data {
-            if let Ok(data_bytes) = BASE64_STANDARD.decode(data_str) {
-                error.data = data_bytes;
-            }
-        }
+    if error.data.is_empty()
+        && let Some(data_str) = data
+        && let Ok(data_bytes) = BASE64_STANDARD.decode(data_str)
+    {
+        error.data = data_bytes;
     }
 
     error
@@ -125,10 +124,10 @@ fn decode_drive_error_info(info: &str) -> Option<DriveErrorInfo> {
                         data_key_str.as_str(),
                         "serializedError" | "serialized_error"
                     ) {
-                        if details.serialized_error.is_none() {
-                            if let Some(bytes) = extract_serialized_error_bytes(data_value) {
-                                details.serialized_error = Some(bytes);
-                            }
+                        if details.serialized_error.is_none()
+                            && let Some(bytes) = extract_serialized_error_bytes(data_value)
+                        {
+                            details.serialized_error = Some(bytes);
                         }
                     } else {
                         details.data.insert(data_key_str, data_value);
@@ -151,10 +150,10 @@ fn extract_serialized_error_bytes(value: Value) -> Option<Vec<u8>> {
             .or_else(|| hex::decode(&text).ok()),
         Value::Map(entries) => {
             for (key, nested_value) in entries {
-                if let Value::Text(key_str) = key {
-                    if matches!(key_str.as_str(), "serializedError" | "serialized_error") {
-                        return extract_serialized_error_bytes(nested_value);
-                    }
+                if let Value::Text(key_str) = key
+                    && matches!(key_str.as_str(), "serializedError" | "serialized_error")
+                {
+                    return extract_serialized_error_bytes(nested_value);
                 }
             }
             None
@@ -185,7 +184,7 @@ fn encode_drive_error_data(data: &BTreeMap<String, Value>) -> Option<Vec<u8>> {
     }
 }
 
-fn map_grpc_code(code: u32) -> Option<Code> {
+fn map_grpc_code(code: i64) -> Option<Code> {
     match code {
         0 => Some(Code::Ok),
         1 => Some(Code::Cancelled),
@@ -208,7 +207,7 @@ fn map_grpc_code(code: u32) -> Option<Code> {
     }
 }
 
-fn fallback_status_code(code: u32) -> Code {
+fn fallback_status_code(code: i64) -> Code {
     if (17..=9999).contains(&code) {
         Code::Unknown
     } else if (10000..20000).contains(&code) {

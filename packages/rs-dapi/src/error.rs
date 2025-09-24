@@ -4,6 +4,7 @@ use serde_json::Value;
 use sha2::Digest;
 use thiserror::Error;
 // For converting dashcore-rpc errors into DapiError
+use crate::services::platform_service::map_drive_code_to_status;
 use dashcore_rpc::{self, jsonrpc};
 use tokio::task::JoinError;
 
@@ -154,6 +155,16 @@ impl DapiError {
             }
             DapiError::FailedPrecondition(msg) => tonic::Status::failed_precondition(msg.clone()),
             DapiError::MethodNotFound(msg) => tonic::Status::unimplemented(msg.clone()),
+            DapiError::TenderdashRestError(value) => {
+                // Attempt to extract code and message from the JSON value
+                if let Some(code) = value.get("code").and_then(|c| c.as_i64()) {
+                    let info = value.get("info").and_then(|d| d.as_str());
+                    map_drive_code_to_status(code, info)
+                } else {
+                    // Fallback if we cannot extract code/message
+                    tonic::Status::internal(self.to_string())
+                }
+            }
             _ => tonic::Status::internal(self.to_string()),
         }
     }

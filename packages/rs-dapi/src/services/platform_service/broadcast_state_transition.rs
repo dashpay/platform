@@ -175,12 +175,12 @@ impl PlatformServiceImpl {
         // Check if the ST is in the mempool
         match self.tenderdash_client.unconfirmed_txs(Some(100)).await {
             Ok(unconfirmed_response) => {
-                if let Some(txs) = &unconfirmed_response.txs {
-                    if txs.contains(&tx_base64_owned) {
-                        return DapiError::AlreadyExists(
-                            "state transition already in mempool".to_string(),
-                        );
-                    }
+                if let Some(txs) = &unconfirmed_response.txs
+                    && txs.contains(&tx_base64_owned)
+                {
+                    return DapiError::AlreadyExists(
+                        "state transition already in mempool".to_string(),
+                    );
                 }
             }
             Err(e) => {
