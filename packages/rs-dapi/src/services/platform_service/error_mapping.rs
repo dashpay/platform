@@ -134,22 +134,25 @@ fn decode_drive_error_info(info: &str) -> Option<DriveErrorInfo> {
             }
             (Value::Text(key), Value::Map(data_entries)) if key == "data" => {
                 for (data_key, data_value) in data_entries {
-                    if let Value::Text(data_key_str) = data_key {
-                        if data_key_str == "serializedError" {
-                            match data_value {
-                                Value::Bytes(bytes) => {
-                                    details.serialized_error = Some(bytes);
-                                }
-                                Value::Text(text) => {
-                                    if let Ok(bytes) = BASE64_STANDARD.decode(text.as_bytes()) {
-                                        details.serialized_error = Some(bytes);
-                                    }
-                                }
-                                _ => {}
+                    let Value::Text(data_key_str) = data_key else {
+                        tracing::debug!(
+                            ?data_key,
+                            "Skipping non-string data key in Drive error info"
+                        );
+                        continue;
+                    };
+
+                    if matches!(
+                        data_key_str.as_str(),
+                        "serializedError" | "serialized_error"
+                    ) {
+                        if details.serialized_error.is_none() {
+                            if let Some(bytes) = extract_serialized_error_bytes(data_value) {
+                                details.serialized_error = Some(bytes);
                             }
-                        } else {
-                            details.data.insert(data_key_str, data_value);
                         }
+                    } else {
+                        details.data.insert(data_key_str, data_value);
                     }
                 }
             }
@@ -158,6 +161,31 @@ fn decode_drive_error_info(info: &str) -> Option<DriveErrorInfo> {
     }
 
     Some(details)
+}
+
+fn extract_serialized_error_bytes(value: Value) -> Option<Vec<u8>> {
+    match value {
+        Value::Bytes(bytes) => Some(bytes),
+        Value::Text(text) => BASE64_STANDARD
+            .decode(text.as_bytes())
+            .ok()
+            .or_else(|| hex::decode(&text).ok()),
+        Value::Map(entries) => {
+            for (key, nested_value) in entries {
+                if let Value::Text(key_str) = key {
+                    if matches!(key_str.as_str(), "serializedError" | "serialized_error") {
+                        return extract_serialized_error_bytes(nested_value);
+                    }
+                }
+            }
+            None
+        }
+        Value::Array(values) => values
+            .into_iter()
+            .filter_map(extract_serialized_error_bytes)
+            .next(),
+        _ => None,
+    }
 }
 
 fn encode_drive_error_data(data: &BTreeMap<String, Value>) -> Option<Vec<u8>> {
@@ -206,5 +234,91 @@ fn status_with_metadata(code: Code, message: String, metadata: MetadataMap) -> S
         Status::new(code, message)
     } else {
         Status::with_metadata(code, message, metadata)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn attaches_serialized_consensus_error_metadata() {
+        use base64::engine::general_purpose::STANDARD as BASE64;
+
+        // Build CBOR blob matching Drive's response_info_for_version implementation
+        let mut buffer = Vec::new();
+        let serialized_error_bytes = vec![0x01, 0x02, 0x03];
+        let value = Value::Map(vec![(
+            Value::Text("data".to_string()),
+            Value::Map(vec![(
+                Value::Text("serializedError".to_string()),
+                Value::Bytes(serialized_error_bytes.clone()),
+            )]),
+        )]);
+
+        ser::into_writer(&value, &mut buffer).expect("serialize cbor");
+        let encoded_info = BASE64.encode(buffer);
+
+        let status = map_drive_code_to_status(10246, Some(encoded_info));
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+
+        let metadata = status.metadata();
+        let consensus_error = metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("consensus error metadata");
+
+        let consensus_error_bytes = consensus_error
+            .to_bytes()
+            .expect("decode consensus error metadata");
+
+        assert_eq!(consensus_error_bytes.as_ref(), serialized_error_bytes.as_slice());
+
+        let code_value = metadata.get("code").expect("code metadata");
+        assert_eq!(code_value, "10246");
+    }
+
+    #[test]
+    fn handles_snake_case_serialized_error_key() {
+        use base64::engine::general_purpose::STANDARD as BASE64;
+
+        let mut buffer = Vec::new();
+        let serialized_error_bytes = vec![0x0A, 0x0B, 0x0C];
+        let serialized_error_base64 = BASE64.encode(&serialized_error_bytes);
+
+        let value = Value::Map(vec![
+            (
+                Value::Text("message".to_string()),
+                Value::Text("some consensus violation".to_string()),
+            ),
+            (
+                Value::Text("data".to_string()),
+                Value::Map(vec![
+                    (
+                        Value::Text("serialized_error".to_string()),
+                        Value::Text(serialized_error_base64),
+                    ),
+                ]),
+            ),
+        ]);
+
+        ser::into_writer(&value, &mut buffer).expect("serialize cbor");
+        let encoded_info = BASE64.encode(buffer);
+
+        let status = map_drive_code_to_status(10212, Some(encoded_info));
+        assert_eq!(status.code(), Code::InvalidArgument);
+
+        let metadata = status.metadata();
+        let consensus_error = metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("consensus error metadata for snake case key");
+
+        let consensus_error_bytes = consensus_error
+            .to_bytes()
+            .expect("decode consensus error metadata for snake case key");
+        assert_eq!(consensus_error_bytes.as_ref(), serialized_error_bytes.as_slice());
+
+        let code_value = metadata.get("code").expect("code metadata");
+        assert_eq!(code_value, "10212");
     }
 }

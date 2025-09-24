@@ -258,10 +258,7 @@ fn test_config_socket_addresses() {
     assert_eq!(config.grpc_server_addr().to_string(), "127.0.0.1:3005");
     assert_eq!(config.json_rpc_addr().to_string(), "127.0.0.1:3004");
     assert_eq!(config.rest_gateway_addr().to_string(), "127.0.0.1:8080");
-    assert_eq!(
-        config.metrics_addr().unwrap().to_string(),
-        "127.0.0.1:9090"
-    );
+    assert_eq!(config.metrics_addr().unwrap().to_string(), "127.0.0.1:9090");
 }
 
 #[test]

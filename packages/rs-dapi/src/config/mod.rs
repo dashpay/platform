@@ -37,10 +37,7 @@ pub struct ServerConfig {
     )]
     pub rest_gateway_port: u16,
     /// Port for metrics and health endpoints
-    #[serde(
-        rename = "dapi_metrics_port",
-        deserialize_with = "from_str_or_number"
-    )]
+    #[serde(rename = "dapi_metrics_port", deserialize_with = "from_str_or_number")]
     pub metrics_port: u16,
     /// IP address to bind all servers to
     #[serde(rename = "dapi_bind_address")]
@@ -281,12 +278,9 @@ impl Config {
         }
 
         Some(
-            format!(
-                "{}:{}",
-                self.server.bind_address, self.server.metrics_port
-            )
-            .parse()
-            .expect("Invalid metrics address"),
+            format!("{}:{}", self.server.bind_address, self.server.metrics_port)
+                .parse()
+                .expect("Invalid metrics address"),
         )
     }
 }
