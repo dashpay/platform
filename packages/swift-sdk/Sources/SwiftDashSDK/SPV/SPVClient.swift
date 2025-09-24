@@ -59,10 +59,15 @@ private func spvCompletionCallback(
 public struct SPVSyncProgress {
     public let stage: SPVSyncStage
     public let headerProgress: Double
+    /// Represents filter header progress until a dedicated masternode stage is exposed.
     public let masternodeProgress: Double
+    /// Represents compact filter download progress ("Filters" stage).
     public let transactionProgress: Double
     public let currentHeight: UInt32
     public let targetHeight: UInt32
+    /// Absolute blockchain height reached for filter headers.
+    public let filterHeaderHeight: UInt32
+    /// Absolute blockchain height reached for compact filters.
     public let filterHeight: UInt32
     // Checkpoint height we started from (0 if none)
     public let startHeight: UInt32
@@ -364,12 +369,7 @@ public class SPVClient: ObservableObject {
     }
     
     public func stop() {
-        guard let client = client else { return }
-        
-        dash_spv_ffi_client_stop(client)
-        self.isConnected = false
-        self.isSyncing = false
-        self.syncProgress = nil
+        stopSync(preserveProgress: false)
     }
 
     /// Clear all persisted SPV storage (headers, filters, metadata, sync state).
@@ -447,6 +447,7 @@ public class SPVClient: ObservableObject {
             transactionProgress: 0.0,
             currentHeight: self.startFromHeight,
             targetHeight: 0,
+            filterHeaderHeight: self.startFromHeight,
             filterHeight: self.startFromHeight,
             startHeight: self.startFromHeight,
             rate: 0.0,
@@ -462,37 +463,73 @@ public class SPVClient: ObservableObject {
             self.callbackContext = context
         }
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
-        
+
+        guard let clientPtr = self.client else {
+            throw SPVError.notInitialized
+        }
+
         // Start sync in the background to avoid blocking the main thread
-        let workItem = DispatchWorkItem { [weak self] in
-            guard let self = self, let client = self.client else { return }
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             let result = dash_spv_ffi_client_sync_to_tip_with_progress(
-                client,
+                clientPtr,
                 spvProgressCallback,
                 spvCompletionCallback,
                 contextPtr
             )
 
-            if result != 0 {
-                let error = self.lastError ?? "Unknown error"
-                Task { @MainActor in
-                    self.isSyncing = false
-                    self.lastError = error
+            guard result != 0 else { return }
+
+            let errorMessage: String = {
+                if let raw = dash_spv_ffi_get_last_error() {
+                    return String(cString: raw)
                 }
+                return "Unknown error"
+            }()
+
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                self.isSyncing = false
+                self.lastError = errorMessage
             }
         }
-        DispatchQueue.global(qos: .userInitiated).async(execute: workItem)
         // Filter progress now updates via FFI event callback; no polling needed
     }
     
     public func cancelSync() {
         guard let client = client, isSyncing else { return }
-        
+
         syncCancelled = true
-        dash_spv_ffi_client_cancel_sync(client)
+
+        let cancelResult = dash_spv_ffi_client_cancel_sync(client)
+        if cancelResult != 0, let err = dash_spv_ffi_get_last_error() {
+            let message = String(cString: err)
+            if swiftLoggingEnabled {
+                print("[SPV][Cancel] cancel_sync failed: \(message)")
+            }
+            lastError = message
+        }
         isSyncing = false
-        syncProgress = nil
-        // No-op (event-driven)
+    }
+
+    public func stopSync(preserveProgress: Bool = true) {
+        guard let client = client else { return }
+
+        let stopResult = dash_spv_ffi_client_stop(client)
+        if stopResult != 0, let err = dash_spv_ffi_get_last_error() {
+            let message = String(cString: err)
+            if swiftLoggingEnabled {
+                print("[SPV][Stop] stop failed: \(message)")
+            }
+            lastError = message
+        } else {
+            isConnected = false
+        }
+
+        isSyncing = false
+
+        if !preserveProgress {
+            syncProgress = nil
+        }
     }
     
     // MARK: - Event Callbacks
@@ -598,40 +635,80 @@ public class SPVClient: ObservableObject {
         }
 
         let absoluteHeader = max(base, absoluteHeaderRaw)
-        var absoluteFilter = max(base, absoluteFilterRaw)
-        if absoluteFilter > absoluteHeader {
-            absoluteFilter = absoluteHeader
+        var absoluteFilterHeader = max(base, absoluteFilterRaw)
+        if absoluteFilterHeader > absoluteHeader {
+            absoluteFilterHeader = absoluteHeader
         }
 
-        if absoluteHeader > base {
-            let denom = max(1, Int(absoluteHeader &- base))
-            let num = max(0, Int(absoluteFilter &- base))
-            let pct = min(1.0, max(0.0, Double(num) / Double(denom)))
+        // Pull the latest persisted sync snapshot so we can surface the actual filter download height.
+        let snapshotFiltersRaw = self.getSyncSnapshot()?.lastSyncedFilterHeight ?? base
+        var absoluteFilters = max(base, snapshotFiltersRaw)
+        if absoluteFilters > absoluteHeader {
+            absoluteFilters = absoluteHeader
+        }
 
-            // If we already have a progress struct, update it; otherwise create a minimal one
-            let updated: SPVSyncProgress
+        guard absoluteHeader > base else { return }
+
+        let target = max(self.syncProgress?.targetHeight ?? absoluteHeader, absoluteHeader)
+        let denominator = max(1.0, Double(target) - Double(base))
+
+        let headerNumerator = max(0.0, Double(absoluteHeader) - Double(base))
+        let headerPct = min(1.0, headerNumerator / denominator)
+
+        let filterHeaderNumerator = max(0.0, Double(absoluteFilterHeader) - Double(base))
+        let filterHeaderPct = min(1.0, filterHeaderNumerator / denominator)
+
+        let filterNumerator = max(0.0, Double(absoluteFilters) - Double(base))
+        let filterPct = min(1.0, filterNumerator / denominator)
+
+        let currentHeaderProgress = self.syncProgress?.headerProgress ?? headerPct
+        let headerComplete = currentHeaderProgress >= 0.999
+        guard headerComplete else { return }
+
+        let previousMasternode = self.syncProgress?.masternodeProgress ?? 0.0
+        let previousTransaction = self.syncProgress?.transactionProgress ?? 0.0
+
+        let nextMasternodeProgress = max(previousMasternode, filterHeaderPct)
+        let nextTransactionProgress = max(previousTransaction, filterPct)
+
+        let eventStage: SPVSyncStage
+        if nextTransactionProgress > previousTransaction {
+            eventStage = .transactions
+        } else if nextMasternodeProgress > previousMasternode {
+            eventStage = .masternodes
+        } else {
+            eventStage = self.syncProgress?.stage ?? .masternodes
+        }
+
+        // If we already have a progress struct, update it; otherwise create a minimal one.
+        let updated: SPVSyncProgress
         if let prog = self.syncProgress {
             updated = SPVSyncProgress(
-                stage: prog.stage,
+                stage: eventStage,
                 headerProgress: prog.headerProgress,
-                masternodeProgress: prog.masternodeProgress,
-                transactionProgress: pct,
+                masternodeProgress: nextMasternodeProgress,
+                transactionProgress: nextTransactionProgress,
                 currentHeight: prog.currentHeight,
-                targetHeight: prog.targetHeight,
-                filterHeight: absoluteFilter,
+                targetHeight: max(prog.targetHeight, target),
+                filterHeaderHeight: absoluteFilterHeader,
+                filterHeight: absoluteFilters,
                 startHeight: base,
                 rate: prog.rate,
                 estimatedTimeRemaining: prog.estimatedTimeRemaining
             )
         } else {
+            let initialStage: SPVSyncStage = (filterHeaderPct < 1.0) ? .masternodes : .transactions
+            let initialMasternodeProgress = (initialStage == .masternodes) ? filterHeaderPct : 0.0
+            let initialTransactionProgress = (initialStage == .transactions) ? filterPct : 0.0
             updated = SPVSyncProgress(
-                stage: .transactions,
-                headerProgress: 0.0,
-                masternodeProgress: 0.0,
-                transactionProgress: pct,
-                currentHeight: base,
-                targetHeight: base,
-                filterHeight: absoluteFilter,
+                stage: initialStage,
+                headerProgress: 1.0,
+                masternodeProgress: initialMasternodeProgress,
+                transactionProgress: initialTransactionProgress,
+                currentHeight: absoluteHeader,
+                targetHeight: target,
+                filterHeaderHeight: absoluteFilterHeader,
+                filterHeight: absoluteFilters,
                 startHeight: base,
                 rate: 0.0,
                 estimatedTimeRemaining: nil
@@ -640,9 +717,10 @@ public class SPVClient: ObservableObject {
         self.syncProgress = updated
         self.delegate?.spvClient(self, didUpdateSyncProgress: updated)
 
-            if swiftLoggingEnabled {
-                print("[SPV][FilterHeadersProgress] header=\(absoluteHeader) filterHdr=\(absoluteFilter) base=\(base) -> \(Int(pct*100))%")
-            }
+        if swiftLoggingEnabled {
+            print(
+                "[SPV][FilterHeadersProgress] header=\(absoluteHeader) filterHdr=\(absoluteFilterHeader) filters=\(absoluteFilters) base=\(base) hdrPct=\(Int(filterHeaderPct*100))% filtPct=\(Int(filterPct*100))%"
+            )
         }
     }
     
@@ -679,6 +757,7 @@ public class SPVClient: ObservableObject {
                     transactionProgress: progress.transactionProgress,
                     currentHeight: height,
                     targetHeight: progress.targetHeight,
+                    filterHeaderHeight: progress.filterHeaderHeight,
                     filterHeight: progress.filterHeight,
                     startHeight: self.startFromHeight,
                     rate: rate,
@@ -904,14 +983,16 @@ private class CallbackContext {
         let headerPct = min(max(ffiProgress.percentage / 100.0, 0.0), 1.0) // normalize 0..1
         let currentTxPct = client.syncProgress?.transactionProgress ?? 0.0 // keep event-driven value
 
+        let previous = client.syncProgress
         let progress = SPVSyncProgress(
             stage: stage,
             headerProgress: headerPct,
-            masternodeProgress: 0.0, // no dedicated event yet
+            masternodeProgress: previous?.masternodeProgress ?? 0.0,
             transactionProgress: currentTxPct,
             currentHeight: absoluteCurrent,
             targetHeight: absoluteTotal,
-            filterHeight: client.syncProgress?.filterHeight ?? safeBase,
+            filterHeaderHeight: previous?.filterHeaderHeight ?? safeBase,
+            filterHeight: previous?.filterHeight ?? safeBase,
             startHeight: safeBase,
             rate: ffiProgress.headers_per_second,
             estimatedTimeRemaining: estimatedTime
@@ -948,19 +1029,20 @@ private class CallbackContext {
             client.isSyncing = false
             client.lastError = error
             
-            if success {
-                client.syncProgress = SPVSyncProgress(
-                    stage: .complete,
-                    headerProgress: 1.0,
-                    masternodeProgress: 1.0,
-                    transactionProgress: 1.0,
-                    currentHeight: client.syncProgress?.targetHeight ?? 0,
-                    targetHeight: client.syncProgress?.targetHeight ?? 0,
-                    filterHeight: client.syncProgress?.filterHeight ?? (client.syncProgress?.targetHeight ?? 0),
-                    startHeight: client.startFromHeight,
-                    rate: 0,
-                    estimatedTimeRemaining: nil
-                )
+                if success {
+                    client.syncProgress = SPVSyncProgress(
+                        stage: .complete,
+                        headerProgress: 1.0,
+                        masternodeProgress: 1.0,
+                        transactionProgress: 1.0,
+                        currentHeight: client.syncProgress?.targetHeight ?? 0,
+                        targetHeight: client.syncProgress?.targetHeight ?? 0,
+                        filterHeaderHeight: client.syncProgress?.filterHeaderHeight ?? (client.syncProgress?.targetHeight ?? 0),
+                        filterHeight: client.syncProgress?.filterHeight ?? (client.syncProgress?.targetHeight ?? 0),
+                        startHeight: client.startFromHeight,
+                        rate: 0,
+                        estimatedTimeRemaining: nil
+                    )
             } else {
                 client.syncProgress = nil
             }

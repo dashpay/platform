@@ -102,7 +102,11 @@ public class WalletService: ObservableObject {
     @Published public var syncProgress: Double?
     @Published public var detailedSyncProgress: Any? // Use SPVClient.SyncProgress
     @Published public var headerProgress: Double = 0
+    /// Represents BIP157 filter header progress.
+    @Published public var filterHeaderProgress: Double = 0
+    /// Reserved for future masternode list progress once exposed via FFI.
     @Published public var masternodeProgress: Double = 0
+    /// Represents compact filter download progress.
     @Published public var transactionProgress: Double = 0
     // Absolute heights for header sync display (current/target)
     @Published public var headerCurrentHeight: Int = 0
@@ -129,6 +133,7 @@ public class WalletService: ObservableObject {
     private var sdk: Any?
     // Latest sync stats (for UI)
     @Published var latestHeaderHeight: Int = 0
+    @Published var latestFilterHeaderHeight: Int = 0
     @Published var latestFilterHeight: Int = 0
     @Published var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
     // Control whether to sync masternode list (default false; enable only in non-trusted mode)
@@ -136,6 +141,46 @@ public class WalletService: ObservableObject {
 
     // Expose base sync height to UI in a safe way
     public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
+
+    /// Returns the expected chain tip for the current network based on wall-clock time.
+    private func expectedChainTipHeight() -> Int? {
+        switch currentNetwork {
+        case .testnet:
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? calendar.timeZone
+            guard let anchor = calendar.date(from: DateComponents(year: 2025, month: 9, day: 24)) else { return nil }
+            let today = Date()
+            let days = max(0, calendar.dateComponents([.day], from: anchor, to: today).day ?? 0)
+            return 1_332_564 + (576 * days)
+        default:
+            return nil
+        }
+    }
+
+    /// Normalizes raw tip heights reported by the SPV client so the UI presents realistic hints.
+    /// When the RPC returns absolute heights inflated by the checkpoint baseline, we fold them back
+    /// towards the expected tip to avoid showing impossible denominators.
+    fileprivate func normalizedChainTip(_ rawTip: Int, baseline: Int) -> Int {
+        guard baseline > 0, let expected = expectedChainTipHeight() else { return rawTip }
+
+        if abs(rawTip - expected) <= 100_000 {
+            return rawTip
+        }
+
+        let candidate = rawTip - baseline
+        if candidate > 0, abs(candidate - expected) <= 100_000 {
+            return candidate
+        }
+
+        return rawTip
+    }
+
+    @MainActor
+    private func currentDisplayBaseline() -> Int {
+        let stored = Int(baseSyncHeightUI)
+        if stored > 0 { return stored }
+        return Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+    }
 
     private init() {}
     
@@ -184,12 +229,14 @@ public class WalletService: ObservableObject {
                     let snapshot = clientLocal.getSyncSnapshot()
                     let tip = clientLocal.getTipHeight()
                     let checkpoint = clientLocal.getLatestCheckpointHeight()
+                    let stats = clientLocal.getStats()
 
                     WalletService.shared.applyInitialSyncState(
                         baseline: Int(baseline),
                         tip: tip,
                         checkpoint: checkpoint,
-                        snapshot: snapshot
+                        snapshot: snapshot,
+                        stats: stats
                     )
 
                     if WalletService.shared.latestHeaderHeight == 0,
@@ -424,9 +471,30 @@ public class WalletService: ObservableObject {
     }
     
     public func stopSync() {
+        guard isSyncing else { return }
+
         syncTask?.cancel()
         syncTask = nil
-        spvClient?.cancelSync()
+
+        if let client = spvClient {
+            let snapshotBefore = client.getSyncSnapshot()
+            let statsBefore = client.getStats()
+            let tip = client.getTipHeight()
+
+            client.stopSync()
+
+            let baseline = Int(computeNetworkBaselineSyncFromHeight(for: currentNetwork))
+            let checkpoint = client.getLatestCheckpointHeight()
+            let statsAfter = client.getStats() ?? statsBefore
+            applyInitialSyncState(
+                baseline: baseline,
+                tip: tip,
+                checkpoint: checkpoint,
+                snapshot: snapshotBefore,
+                stats: statsAfter
+            )
+        }
+
         isSyncing = false
         syncProgress = nil
         detailedSyncProgress = nil
@@ -475,6 +543,7 @@ public class WalletService: ObservableObject {
 
     private func resetAfterClearingStorage(fullReset: Bool) {
         headerProgress = 0
+        filterHeaderProgress = 0
         masternodeProgress = 0
         transactionProgress = 0
 
@@ -674,37 +743,70 @@ extension WalletService: SPVClientDelegate {
         let mappedStage = WalletService.mapSyncStage(stage)
 
         Task { @MainActor in
-            let base = Double(startHeight)
-            let numer = max(0.0, Double(currentHeight) - base)
-            let denom = max(1.0, Double(targetHeight) - base)
-            let headerPct = min(1.0, max(0.0, numer / denom))
-
-            WalletService.shared.syncProgress = headerPct
-            WalletService.shared.headerProgress = headerPct
-
             let baseHeight = Int(startHeight)
             let absHeader = max(Int(currentHeight), baseHeight)
-            let absTarget = max(Int(targetHeight), baseHeight)
+            var absTarget = max(Int(targetHeight), baseHeight)
+
+            let headerNumeratorRaw = max(0.0, Double(absHeader - baseHeight))
+            let headerDenominatorRaw = max(1.0, Double(absTarget - baseHeight))
+            var headerPct = min(1.0, max(0.0, headerNumeratorRaw / headerDenominatorRaw))
+
+
+            let absFilterHeaderRaw = max(Int(progress.filterHeaderHeight), baseHeight)
+            var absFilterHeader = min(absFilterHeaderRaw, absTarget)
+
             let absFilterRaw = max(Int(progress.filterHeight), baseHeight)
             var absFilter = min(absFilterRaw, absTarget)
 
-            var filterPct = 0.0
-            if mappedStage == .downloading || mappedStage == .complete {
-                let filterNumerator = max(0.0, Double(absFilter - baseHeight))
-                let filterDenominator = max(1.0, Double(absTarget - baseHeight))
-                filterPct = min(1.0, filterNumerator / filterDenominator)
-            } else {
+            if mappedStage == .headers {
+                // While headers are still syncing, clamp downstream stages to the base height.
+                absFilterHeader = baseHeight
+                absFilter = baseHeight
+            } else if mappedStage == .filterHeaders {
+                // Do not surface compact filter progress until that stage is active.
                 absFilter = baseHeight
             }
 
             WalletService.shared.headerCurrentHeight = absHeader
-            WalletService.shared.headerTargetHeight = absTarget
+            let displayBaseline = max(baseHeight, WalletService.shared.currentDisplayBaseline())
+            let normalizedCandidate = WalletService.shared.normalizedChainTip(absTarget, baseline: displayBaseline)
+            let adjustedTarget: Int
+            if normalizedCandidate - absHeader > 400_000 {
+                adjustedTarget = absHeader
+            } else {
+                adjustedTarget = normalizedCandidate
+            }
+            absTarget = adjustedTarget
+            WalletService.shared.headerTargetHeight = adjustedTarget
+
+            let headerDenominatorFinal = max(1.0, Double(adjustedTarget - baseHeight))
+            let headerNumeratorFinal = max(0.0, Double(absHeader - baseHeight))
+            if adjustedTarget <= absHeader {
+                headerPct = 1.0
+            } else {
+                headerPct = min(1.0, headerNumeratorFinal / headerDenominatorFinal)
+            }
+            if mappedStage != .headers {
+                headerPct = 1.0
+            }
+
+            let headerSpan = max(1.0, Double(max(absHeader, adjustedTarget) - baseHeight))
+            let filterHeaderNumerator = max(0.0, Double(absFilterHeader - baseHeight))
+            let filterNumerator = max(0.0, Double(absFilter - baseHeight))
+
+            let filterHeaderPct = min(1.0, filterHeaderNumerator / headerSpan)
+            let filterPct = min(1.0, filterNumerator / headerSpan)
+
+            WalletService.shared.syncProgress = headerPct
+            WalletService.shared.headerProgress = headerPct
+            WalletService.shared.latestFilterHeaderHeight = absFilterHeader
             WalletService.shared.latestFilterHeight = absFilter
+            WalletService.shared.filterHeaderProgress = filterHeaderPct
             WalletService.shared.transactionProgress = filterPct
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(absHeader),
-                total: UInt64(absTarget),
+                total: UInt64(adjustedTarget),
                 rate: rate,
                 progress: headerPct,
                 stage: mappedStage
@@ -758,9 +860,9 @@ extension WalletService: SPVClientDelegate {
         case .headers:
             return .headers
         case .masternodes:
-            return .filters
+            return .filterHeaders
         case .transactions:
-            return .downloading
+            return .filters
         case .complete:
             return .complete
         }
@@ -808,45 +910,57 @@ extension WalletService {
         baseline: Int,
         tip: UInt32?,
         checkpoint: UInt32?,
-        snapshot: SPVSyncSnapshot?
+        snapshot: SPVSyncSnapshot?,
+        stats: SPVStats? = nil
     ) {
         let sanitizedBaseline = max(0, baseline)
-        let tipCandidates: [UInt32] = [tip, checkpoint, snapshot?.headerHeight]
+        let previousHeaderProgress = headerProgress
+        let previousFilterHeaderProgress = filterHeaderProgress
+        let previousTransactionProgress = transactionProgress
+
+        let snapshotHeader = snapshot.map { max(Int($0.headerHeight), sanitizedBaseline) }
+        let statsHeader = stats.map { max(sanitizedBaseline, $0.headerHeight) }
+        let headerHeight = max(sanitizedBaseline, max(snapshotHeader ?? sanitizedBaseline, statsHeader ?? sanitizedBaseline))
+        headerCurrentHeight = headerHeight
+        latestHeaderHeight = max(latestHeaderHeight, headerHeight)
+
+        let snapshotFilterHeader = snapshot.map { max(Int($0.filterHeaderHeight), sanitizedBaseline) }
+        let filterHeaderHeight = max(sanitizedBaseline, snapshotFilterHeader ?? sanitizedBaseline)
+        latestFilterHeaderHeight = filterHeaderHeight
+
+        let snapshotFilterRaw = snapshot.map { max(Int($0.lastSyncedFilterHeight), sanitizedBaseline) }
+        let statsFilter = stats.map { max(sanitizedBaseline, $0.filterHeight) }
+        let filterHeight = max(sanitizedBaseline, max(snapshotFilterRaw ?? sanitizedBaseline, statsFilter ?? sanitizedBaseline))
+        latestFilterHeight = filterHeight
+
+        let tipCandidates: [UInt32] = [tip, checkpoint, snapshot?.headerHeight, stats.map { UInt32(max(0, $0.headerHeight)) }]
             .compactMap { value in
                 guard let value, value > 0 else { return nil }
                 return value
             }
         let resolvedTip = tipCandidates.max()
 
-        guard let snapshot else {
-            applyBaselineHeights(baseline: sanitizedBaseline, knownTip: resolvedTip)
-            return
-        }
-
-        let headerHeight = max(Int(snapshot.headerHeight), sanitizedBaseline)
-        headerCurrentHeight = headerHeight
-
-        let snapshotFilter = max(snapshot.filterHeaderHeight, snapshot.lastSyncedFilterHeight)
-        latestFilterHeight = max(Int(snapshotFilter), sanitizedBaseline)
-
         if let resolvedTip {
-            let resolved = Int(max(resolvedTip, UInt32(headerHeight)))
-            headerTargetHeight = resolved
+            let resolvedTarget = Int(max(resolvedTip, UInt32(headerHeight)))
+            headerTargetHeight = normalizedChainTip(resolvedTarget, baseline: sanitizedBaseline)
         } else if headerTargetHeight < headerHeight {
             headerTargetHeight = headerHeight
         }
 
-        if headerHeight > 0 {
-            latestHeaderHeight = headerHeight
-        }
-
         if let resolvedTip, resolvedTip > UInt32(sanitizedBaseline) {
-            let denom = max(1, Int(resolvedTip) - sanitizedBaseline)
+            let denominator = max(1, Int(resolvedTip) - sanitizedBaseline)
             let headerNumerator = max(0, headerHeight - sanitizedBaseline)
-            headerProgress = min(1.0, Double(headerNumerator) / Double(denom))
+            headerProgress = min(1.0, Double(headerNumerator) / Double(denominator))
 
-            let filterNumerator = max(0, latestFilterHeight - sanitizedBaseline)
-            transactionProgress = min(1.0, Double(filterNumerator) / Double(denom))
+            let filterHeaderNumerator = max(0, filterHeaderHeight - sanitizedBaseline)
+            filterHeaderProgress = min(1.0, Double(filterHeaderNumerator) / Double(denominator))
+
+            let filterNumerator = max(0, filterHeight - sanitizedBaseline)
+            transactionProgress = min(1.0, Double(filterNumerator) / Double(denominator))
+        } else {
+            headerProgress = previousHeaderProgress
+            filterHeaderProgress = previousFilterHeaderProgress
+            transactionProgress = previousTransactionProgress
         }
     }
 
@@ -854,10 +968,12 @@ extension WalletService {
     @MainActor
     private func applyBaselineHeights(baseline: Int, knownTip: UInt32?) {
         headerCurrentHeight = baseline
+        latestFilterHeaderHeight = baseline
         latestFilterHeight = baseline
+        filterHeaderProgress = 0
 
         if let tip = knownTip, tip > 0 {
-            headerTargetHeight = Int(tip)
+            headerTargetHeight = normalizedChainTip(Int(tip), baseline: baseline)
         } else if headerTargetHeight < baseline {
             headerTargetHeight = baseline
         }
@@ -899,8 +1015,8 @@ public enum SyncStage: Sendable {
     case idle
     case connecting
     case headers
+    case filterHeaders
     case filters
-    case downloading
     case complete
 }
 

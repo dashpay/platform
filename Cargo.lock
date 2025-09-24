@@ -1484,6 +1484,7 @@ dependencies = [
  "dash-spv",
  "dashcore",
  "env_logger 0.10.2",
+ "futures",
  "hex",
  "key-wallet",
  "key-wallet-ffi",
@@ -3374,6 +3375,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tracing",
  "zeroize",
 ]
 

@@ -33,7 +33,7 @@ struct CoreContentView: View {
     
     // Computed properties to ensure progress values are always valid
     private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
-    private var safeMasternodeProgress: Double { min(max(walletService.masternodeProgress, 0.0), 1.0) }
+    private var safeFilterHeaderProgress: Double { min(max(walletService.filterHeaderProgress, 0.0), 1.0) }
     private var safeTransactionProgress: Double {
         // Use only the event-driven value to avoid misleading jumps
         min(max(walletService.transactionProgress, 0.0), 1.0)
@@ -56,6 +56,23 @@ struct CoreContentView: View {
 
         let totStr = formattedHeight(tot)
         return "\(curStr)/\(totStr)"
+    }
+
+    private var filterHeaderHeightsDisplay: String? {
+        let cur = max(walletService.latestFilterHeaderHeight, 0)
+        let tot = walletService.headerTargetHeight
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+
+        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        guard tot > 0 else { return numerator }
+
+        let denominator = formattedHeight(tot)
+        return "\(numerator)/\(denominator)"
     }
 
     private var filterHeightsDisplay: String? {
@@ -121,24 +138,35 @@ var body: some View {
                         trailingValue: headerHeightsDisplay,
                         onRestart: restartHeaderSync
                     )
+
+                    // Filter header sync progress (BIP157 stage 2)
+                    SyncProgressRow(
+                        title: "Filter Headers",
+                        progress: safeFilterHeaderProgress,
+                        detail: "\(Int(safeFilterHeaderProgress * 100))% complete",
+                        icon: "line.3.horizontal.decrease.circle",
+                        trailingValue: filterHeaderHeightsDisplay,
+                        onRestart: restartFilterHeaderSync
+                    )
                     
                     if walletService.shouldSyncMasternodes {
                         // Masternode list sync progress
+                        // TODO: Populate with real masternode sync metrics when exposed via FFI.
                         SyncProgressRow(
                             title: "Masternode List",
-                            progress: safeMasternodeProgress,
-                            detail: "\(Int(safeMasternodeProgress * 100))% complete",
+                            progress: walletService.masternodeProgress,
+                            detail: "\(Int(walletService.masternodeProgress * 100))% complete",
                             icon: "server.rack",
                             trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
                             onRestart: restartMasternodeSync
                         )
                     }
 
-                    // Transactions sync progress (filters/blocks)
+                    // Compact filters download progress (BIP157 stage 3)
                     SyncProgressRow(
-                        title: "Transactions",
+                        title: "Filters",
                         progress: safeTransactionProgress,
-                        detail: "Filters & Blocks: \(Int(safeTransactionProgress * 100))%",
+                        detail: "Compact Filters: \(Int(safeTransactionProgress * 100))%",
                         icon: "arrow.left.arrow.right",
                         trailingValue: filterHeightsDisplay,
                         onRestart: restartTransactionSync
@@ -245,14 +273,21 @@ var body: some View {
             print("Restarting header sync...")
         }
     }
-    
+
+    private func restartFilterHeaderSync() {
+        if walletService.isSyncing {
+            // TODO: Call walletService.restartFilterHeaderSync() when implemented
+            print("Restarting filter header sync...")
+        }
+    }
+
     private func restartMasternodeSync() {
         if walletService.isSyncing {
             // TODO: Call walletService.restartMasternodeSync() when implemented
             print("Restarting masternode sync...")
         }
     }
-    
+
     private func restartTransactionSync() {
         if walletService.isSyncing {
             // TODO: Call walletService.restartTransactionSync() when implemented
