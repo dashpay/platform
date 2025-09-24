@@ -22,7 +22,7 @@ use crate::services::streaming_service::{
 };
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
-const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(50);
+const HISTORICAL_CORE_QUERY_DELAY: Duration = Duration::from_millis(5);
 
 type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
 type TxResponseSender = mpsc::Sender<TxResponseResult>;
