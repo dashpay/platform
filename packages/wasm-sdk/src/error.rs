@@ -169,6 +169,12 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
+            DapiMocksError(e) => Self::new(
+                WasmSdkErrorKind::DapiMocksError,
+                e.to_string(),
+                None,
+                retriable,
+            ),
         }
     }
 }
