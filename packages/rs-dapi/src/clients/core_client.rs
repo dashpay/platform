@@ -40,8 +40,9 @@ impl CoreClient {
         let permit = self.access_guard.acquire().await;
         let client = self.client.clone();
         tokio::task::spawn_blocking(move || {
-            let _permit = permit;
-            op(client)
+            let result = op(client);
+            drop(permit);
+            result
         })
         .await
     }

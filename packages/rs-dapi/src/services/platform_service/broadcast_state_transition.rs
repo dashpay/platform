@@ -94,7 +94,9 @@ impl PlatformServiceImpl {
             );
 
             // Handle specific error cases
-            if let Some(data) = broadcast_result.data.as_deref() {
+            if let Some(data) = broadcast_result.data.as_deref()
+                && !data.is_empty()
+            {
                 return Err(self
                     .handle_broadcast_error(data, st_bytes, &tx_base64)
                     .await);
