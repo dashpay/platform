@@ -136,7 +136,7 @@ impl PlatformServiceImpl {
         {
             // Transaction had an error
             let error = build_state_transition_error(
-                tx_result.code,
+                tx_result.code as u32,
                 tx_result.info.as_deref().unwrap_or(""),
                 tx_result.data.as_deref(),
             );
