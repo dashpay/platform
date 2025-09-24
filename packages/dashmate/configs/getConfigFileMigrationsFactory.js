@@ -1124,6 +1124,39 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.1.0-dev.6': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              return;
+            }
+
+            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+
+            if (options.platform.dapi.rsDapi.healthCheck) {
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(options.platform.dapi.rsDapi.healthCheck);
+              delete options.platform.dapi.rsDapi.healthCheck;
+            }
+
+            if (!options.platform.dapi.rsDapi.metrics) {
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
+              return;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.metrics.host === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.host = defaultMetrics.host;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
+            }
+          });
+
+        return configFile;
+      },
       '2.0.2-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {

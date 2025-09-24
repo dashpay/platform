@@ -36,12 +36,12 @@ pub struct ServerConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub rest_gateway_port: u16,
-    /// Port for health check endpoints
+    /// Port for metrics and health endpoints
     #[serde(
-        rename = "dapi_health_check_port",
+        rename = "dapi_metrics_port",
         deserialize_with = "from_str_or_number"
     )]
-    pub health_check_port: u16,
+    pub metrics_port: u16,
     /// IP address to bind all servers to
     #[serde(rename = "dapi_bind_address")]
     pub bind_address: String,
@@ -53,7 +53,7 @@ impl Default for ServerConfig {
             grpc_server_port: 3005,
             json_rpc_port: 3004,
             rest_gateway_port: 8080,
-            health_check_port: 9090,
+            metrics_port: 9090,
             bind_address: "127.0.0.1".to_string(),
         }
     }
@@ -267,13 +267,27 @@ impl Config {
         .expect("Invalid REST gateway address")
     }
 
-    pub fn health_check_addr(&self) -> SocketAddr {
-        format!(
-            "{}:{}",
-            self.server.bind_address, self.server.health_check_port
+    pub fn metrics_port(&self) -> u16 {
+        self.server.metrics_port
+    }
+
+    pub fn metrics_enabled(&self) -> bool {
+        self.server.metrics_port != 0
+    }
+
+    pub fn metrics_addr(&self) -> Option<SocketAddr> {
+        if !self.metrics_enabled() {
+            return None;
+        }
+
+        Some(
+            format!(
+                "{}:{}",
+                self.server.bind_address, self.server.metrics_port
+            )
+            .parse()
+            .expect("Invalid metrics address"),
         )
-        .parse()
-        .expect("Invalid health check address")
     }
 }
 

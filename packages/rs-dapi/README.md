@@ -12,7 +12,7 @@ Server Configuration:
   DAPI_GRPC_STREAMS_PORT      - gRPC streams server port (default: 3006)  
   DAPI_JSON_RPC_PORT          - JSON-RPC server port (default: 3004)
   DAPI_REST_GATEWAY_PORT      - REST API server port (default: 8080)
-  DAPI_HEALTH_CHECK_PORT      - Health check port (default: 9090)
+  DAPI_METRICS_PORT           - Metrics server port (health + Prometheus, default: 9090, set to 0 to disable)
   DAPI_BIND_ADDRESS           - IP address to bind to (default: 127.0.0.1)
 
 Service Configuration:

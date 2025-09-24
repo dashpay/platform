@@ -1,9 +1,10 @@
 mod grpc;
-mod health;
 mod jsonrpc;
+mod metrics;
 mod rest;
 mod state;
 
+use futures::FutureExt;
 use std::sync::Arc;
 use tracing::{error, info, warn};
 
@@ -165,8 +166,14 @@ impl DapiServer {
         let grpc_server = self.start_unified_grpc_server();
         let rest_server = self.start_rest_server();
         let jsonrpc_server = self.start_jsonrpc_server();
-        let health_server = self.start_health_server();
 
+        let metrics_server = if self.config.metrics_enabled() {
+            self.start_metrics_server().boxed()
+        } else {
+            futures::future::pending().map(|_: ()| Ok(())).boxed() // Never completes
+        };
+
+        // when any of the servers stop, log and return its result
         tokio::select! {
             result = grpc_server => {
                 error!("gRPC server stopped: {:?}", result);
@@ -180,8 +187,8 @@ impl DapiServer {
                 error!("JSON-RPC server stopped: {:?}", result);
                 result
             },
-            result = health_server => {
-                error!("Health check server stopped: {:?}", result);
+            result = metrics_server => {
+                error!("Metrics server stopped: {:?}", result);
                 result
             },
         }

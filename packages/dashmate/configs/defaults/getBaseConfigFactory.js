@@ -265,6 +265,10 @@ export default function getBaseConfigFactory() {
                 target: 'rs-dapi',
               },
             },
+            metrics: {
+              host: '127.0.0.1',
+              port: 9091,
+            },
           },
         },
         drive: {

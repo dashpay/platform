@@ -92,10 +92,12 @@ packages/rs-dapi/
 │   │   │   ├── get_status.rs      # Complex get_status implementation with status building
 │   │   │   └── subscribe_platform_events.rs  # Proxy for multiplexed Platform events
 │   │   └── streams_service.rs     # Streaming endpoints
-│   ├── health/                    # Health and monitoring endpoints
+│   ├── server/                    # Network servers and monitoring endpoints
 │   │   ├── mod.rs
-│   │   ├── status.rs             # Service status reporting
-│   │   └── metrics.rs            # Prometheus metrics
+│   │   ├── grpc.rs                # Unified gRPC server
+│   │   ├── jsonrpc.rs             # JSON-RPC server bridge
+│   │   ├── rest.rs                # REST gateway
+│   │   └── metrics.rs             # Metrics + health HTTP endpoints (/health, /metrics)
 │   ├── clients/                   # External API clients
 │   │   ├── mod.rs
 │   │   ├── dashcore.rs           # Dash Core RPC + ZMQ

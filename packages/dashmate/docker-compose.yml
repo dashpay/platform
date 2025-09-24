@@ -208,7 +208,7 @@ services:
       - DAPI_GRPC_SERVER_PORT=3010
       - DAPI_JSON_RPC_PORT=3009
       - DAPI_REST_GATEWAY_PORT=8080
-      - DAPI_HEALTH_CHECK_PORT=9091
+      - DAPI_METRICS_PORT=${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
       - DAPI_BIND_ADDRESS=0.0.0.0
       - DAPI_ENABLE_REST=false
       - DAPI_DRIVE_URI=http://drive_abci:26670
@@ -223,7 +223,9 @@ services:
     expose:
       - 3009  # JSON-RPC
       - 3010  # gRPC (different from current DAPI to avoid conflict)
-      - 9091  # Health
+      - ${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}  # Metrics
+    ports:
+      - ${PLATFORM_DAPI_RS_DAPI_METRICS_HOST:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
     profiles:
       - platform-dapi-rs
 

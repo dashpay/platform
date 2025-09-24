@@ -9,9 +9,13 @@ use crate::logging::middleware::AccessLogLayer;
 use super::DapiServer;
 
 impl DapiServer {
-    pub(super) async fn start_health_server(&self) -> DAPIResult<()> {
-        let addr = self.config.health_check_addr();
-        info!("Starting health check server on {}", addr);
+    pub(super) async fn start_metrics_server(&self) -> DAPIResult<()> {
+        let Some(addr) = self.config.metrics_addr() else {
+            info!("Metrics server disabled; skipping startup");
+            return Ok(());
+        };
+
+        info!("Starting metrics server (health + Prometheus) on {}", addr);
 
         let mut app = Router::new()
             .route("/health", get(handle_health))
