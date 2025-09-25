@@ -7,21 +7,19 @@ use tonic::{
     Code, Status,
     metadata::{MetadataMap, MetadataValue},
 };
+use tracing::warn;
 
 /// Map Drive/Tenderdash error codes to a gRPC status without building
 /// additional metadata. The status code mapping follows Dash consensus ranges.
 pub fn map_drive_code_to_status(code: i64, info: Option<&str>) -> Status {
     let decoded_info = info.and_then(decode_drive_error_info);
+    let mut metadata = MetadataMap::new();
 
     let message = decoded_info
         .as_ref()
         .and_then(|details| details.message.clone())
         .or_else(|| info.map(|value| value.to_string()))
         .unwrap_or_else(|| format!("Drive error code: {}", code));
-
-    let status_code = map_grpc_code(code).unwrap_or_else(|| fallback_status_code(code));
-
-    let mut metadata = MetadataMap::new();
 
     if let Some(details) = decoded_info.as_ref() {
         if let Some(serialized) = details.serialized_error.as_ref() {
@@ -33,13 +31,43 @@ pub fn map_drive_code_to_status(code: i64, info: Option<&str>) -> Status {
             let value = MetadataValue::from_bytes(&data_bytes);
             metadata.insert_bin("drive-error-data-bin", value);
         }
+    }
 
-        if (10000..50000).contains(&code)
-            && let Ok(value) = MetadataValue::try_from(code.to_string())
-        {
+    let is_consensus_error = (10000..50000).contains(&code);
+
+    if is_consensus_error
+        && info.is_some()
+        && metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .is_none()
+    {
+        if let Some(info_str) = info {
+            if !info_str.is_empty() {
+                match BASE64_STANDARD.decode(info_str.as_bytes()) {
+                    Ok(info_bytes) => {
+                        if !info_bytes.is_empty() {
+                            let value = MetadataValue::from_bytes(&info_bytes);
+                            metadata.insert_bin("dash-serialized-consensus-error-bin", value);
+                        }
+                    }
+                    Err(error) => {
+                        warn!(
+                            "failed to decode consensus error info from base64: {}",
+                            error
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    if is_consensus_error {
+        if let Ok(value) = MetadataValue::try_from(code.to_string()) {
             metadata.insert("code", value);
         }
     }
+
+    let status_code = map_grpc_code(code).unwrap_or_else(|| fallback_status_code(code));
 
     if metadata.is_empty() {
         Status::new(status_code, message)

@@ -239,3 +239,68 @@ impl PlatformServiceImpl {
 
     // mapping moved to error_mapping.rs for consistency
 }
+
+#[cfg(test)]
+mod tests {
+    use base64::prelude::*;
+    use ciborium::{ser, value::Value};
+    use tonic::Code;
+
+    use crate::clients::tenderdash_client::BroadcastTxResponse;
+    use crate::error::DapiError;
+    use crate::services::platform_service::error_mapping::map_drive_code_to_status;
+
+    fn make_consensus_info(serialized_error: &[u8]) -> String {
+        let info_value = Value::Map(vec![(
+            Value::Text("data".to_string()),
+            Value::Map(vec![(
+                Value::Text("serializedError".to_string()),
+                Value::Bytes(serialized_error.to_vec()),
+            )]),
+        )]);
+
+        let mut buffer = Vec::new();
+        ser::into_writer(&info_value, &mut buffer).expect("expected to encode consensus info");
+        BASE64_STANDARD.encode(buffer)
+    }
+
+    #[test]
+    fn consensus_info_populates_consensus_metadata() {
+        let serialized_error = vec![1_u8, 2, 3, 4, 5];
+        let info = make_consensus_info(&serialized_error);
+        let response = BroadcastTxResponse {
+            code: 10010,
+            data: Some(String::new()),
+            info: Some(info),
+            hash: None,
+        };
+
+        let status = map_drive_code_to_status(response.code, response.info.as_deref());
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+
+        let metadata = status.metadata();
+        let encoded = metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("consensus metadata should be present");
+        let encoded_bytes = encoded
+            .to_bytes()
+            .expect("consensus metadata must contain valid bytes");
+        assert_eq!(encoded_bytes.as_ref(), serialized_error.as_slice());
+
+        let code_metadata = metadata
+            .get("code")
+            .expect("consensus code metadata should be present");
+        assert_eq!(code_metadata.to_str().unwrap(), "10010");
+
+        let propagated_status: tonic::Status = DapiError::from(status).into();
+        let propagated = propagated_status
+            .metadata()
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("consensus metadata should propagate through DapiError");
+        let propagated_bytes = propagated
+            .to_bytes()
+            .expect("consensus metadata must contain valid bytes");
+        assert_eq!(propagated_bytes.as_ref(), serialized_error.as_slice());
+    }
+}
