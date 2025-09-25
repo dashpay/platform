@@ -7,12 +7,13 @@
  */
 
 use base64::prelude::*;
-use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
+use ciborium::{ser, value::Value};
+use dapi_grpc::platform::v0::BroadcastStateTransitionRequest;
 use sha2::{Digest, Sha256};
-use tonic::{Request, Response};
+use tonic::{Code, Request};
 use tracing::{debug, error, info, warn};
 
-use super::error_mapping::map_drive_code_to_status;
+use crate::clients::tenderdash_client::BroadcastTxResponse;
 use crate::error::DapiError;
 use crate::services::PlatformServiceImpl;
 
@@ -28,15 +29,13 @@ impl PlatformServiceImpl {
     pub async fn broadcast_state_transition_impl(
         &self,
         request: Request<BroadcastStateTransitionRequest>,
-    ) -> Result<Response<BroadcastStateTransitionResponse>, DapiError> {
+    ) -> BroadcastTxResponse {
         let st_bytes_vec = request.get_ref().state_transition.clone();
 
         // Validate that state transition is provided
         if st_bytes_vec.is_empty() {
             error!("State transition is empty");
-            return Err(DapiError::InvalidArgument(
-                "State Transition is not specified".to_string(),
-            ));
+            return grpc_error_response(Code::InvalidArgument, "State Transition is not specified");
         }
 
         let st_bytes = st_bytes_vec.as_slice();
@@ -48,39 +47,10 @@ impl PlatformServiceImpl {
         // Attempt to broadcast the transaction
         let broadcast_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
             Ok(response) => response,
-            Err(DapiError::Client(message)) => {
-                error!(
-                    error = %message,
-                    st_hash = %st_hash,
-                    "Failed to broadcast state transition to Tenderdash"
-                );
-
-                if message.contains("ECONNRESET") || message.contains("socket hang up") {
-                    return Err(DapiError::Unavailable(
-                        "Tenderdash is not available".to_string(),
-                    ));
-                }
-
-                return Err(DapiError::Internal(format!(
-                    "Failed broadcasting state transition: {}",
-                    message
-                )));
-            }
-            Err(DapiError::TenderdashRestError(value)) => {
-                error!(
-                    error = ?value,
-                    st_hash = %st_hash,
-                    "Tenderdash REST error while broadcasting state transition"
-                );
-                return Err(DapiError::TenderdashRestError(value));
-            }
-            Err(other) => {
-                error!(
-                    error = %other,
-                    st_hash = %st_hash,
-                    "Failed to broadcast state transition to Tenderdash"
-                );
-                return Err(other);
+            Err(error) => {
+                return self
+                    .map_broadcast_error(error, st_bytes, &tx_base64, &st_hash)
+                    .await;
             }
         };
 
@@ -97,19 +67,16 @@ impl PlatformServiceImpl {
             if let Some(data) = broadcast_result.data.as_deref()
                 && !data.is_empty()
             {
-                return Err(self
-                    .handle_broadcast_error(data, st_bytes, &tx_base64)
-                    .await);
+                return self
+                    .handle_broadcast_error(data, st_bytes, &tx_base64, &st_hash)
+                    .await;
             }
 
-            return Err(DapiError::from(map_drive_code_to_status(
-                broadcast_result.code,
-                broadcast_result.info.as_deref(),
-            )));
+            return broadcast_result;
         }
 
         info!(st_hash = %st_hash, "State transition broadcasted successfully");
-        Ok(Response::new(BroadcastStateTransitionResponse {}))
+        broadcast_result
     }
 
     /// Handle specific broadcast error cases
@@ -118,50 +85,35 @@ impl PlatformServiceImpl {
         error_data: &str,
         st_bytes: &[u8],
         tx_base64: &str,
-    ) -> DapiError {
-        if error_data == "tx already exists in cache" {
-            return self.handle_duplicate_transaction(st_bytes, tx_base64).await;
+        st_hash_hex: &str,
+    ) -> BroadcastTxResponse {
+        match classify_broadcast_error(error_data) {
+            BroadcastErrorHandling::Duplicate => {
+                self.handle_duplicate_transaction(st_bytes, tx_base64).await
+            }
+            BroadcastErrorHandling::Response(response) => {
+                if error_data.starts_with("broadcast confirmation not received:") {
+                    error!("Failed broadcasting state transition: {}", error_data);
+                }
+                response
+            }
+            BroadcastErrorHandling::Unknown => {
+                error!(
+                    st_hash = %st_hash_hex,
+                    "Unexpected error during broadcasting state transition: {}",
+                    error_data
+                );
+                grpc_error_response(Code::Internal, format!("Unexpected error: {}", error_data))
+            }
         }
-
-        if error_data.starts_with("Tx too large.") {
-            let message = error_data.replace("Tx too large. ", "");
-            return DapiError::InvalidArgument(format!(
-                "state transition is too large. {}",
-                message
-            ));
-        }
-
-        if error_data.starts_with("mempool is full") {
-            return DapiError::ResourceExhausted(error_data.to_string());
-        }
-
-        if error_data.contains("context deadline exceeded") {
-            return DapiError::ResourceExhausted(
-                "broadcasting state transition is timed out".to_string(),
-            );
-        }
-
-        if error_data.contains("too_many_resets") {
-            return DapiError::ResourceExhausted(
-                "tenderdash is not responding: too many requests".to_string(),
-            );
-        }
-
-        if error_data.starts_with("broadcast confirmation not received:") {
-            error!("Failed broadcasting state transition: {}", error_data);
-            return DapiError::Unavailable(error_data.to_string());
-        }
-
-        // Unknown error
-        error!(
-            "Unexpected error during broadcasting state transition: {}",
-            error_data
-        );
-        DapiError::Internal(format!("Unexpected error: {}", error_data))
     }
 
     /// Handle duplicate transaction scenarios
-    async fn handle_duplicate_transaction(&self, st_bytes: &[u8], tx_base64: &str) -> DapiError {
+    async fn handle_duplicate_transaction(
+        &self,
+        st_bytes: &[u8],
+        tx_base64: &str,
+    ) -> BroadcastTxResponse {
         // Compute state transition hash
         let mut hasher = Sha256::new();
         hasher.update(st_bytes);
@@ -180,8 +132,9 @@ impl PlatformServiceImpl {
                 if let Some(txs) = &unconfirmed_response.txs
                     && txs.contains(&tx_base64_owned)
                 {
-                    return DapiError::AlreadyExists(
-                        "state transition already in mempool".to_string(),
+                    return grpc_error_response(
+                        Code::AlreadyExists,
+                        "state transition already in mempool",
                     );
                 }
             }
@@ -197,8 +150,9 @@ impl PlatformServiceImpl {
         match self.tenderdash_client.tx(st_hash_base64).await {
             Ok(tx_response) => {
                 if tx_response.tx_result.is_some() {
-                    return DapiError::AlreadyExists(
-                        "state transition already in chain".to_string(),
+                    return grpc_error_response(
+                        Code::AlreadyExists,
+                        "state transition already in chain",
                     );
                 }
             }
@@ -214,10 +168,12 @@ impl PlatformServiceImpl {
         match self.tenderdash_client.check_tx(tx_base64_owned).await {
             Ok(check_response) => {
                 if check_response.code != 0 {
-                    return DapiError::from(map_drive_code_to_status(
-                        check_response.code,
-                        check_response.info.as_deref(),
-                    ));
+                    return BroadcastTxResponse {
+                        code: check_response.code,
+                        data: check_response.data,
+                        info: check_response.info,
+                        hash: None,
+                    };
                 }
 
                 // CheckTx passes but ST was removed from block - this is a bug
@@ -226,18 +182,211 @@ impl PlatformServiceImpl {
                     hex::encode(st_hash)
                 );
 
-                DapiError::Internal(
-                    "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.".to_string(),
+                grpc_error_response(
+                    Code::Internal,
+                    "State Transition processing error. Please report faulty state transition and try to create a new state transition with different hash as a workaround.",
                 )
             }
             Err(e) => {
                 error!("Failed to check transaction validation: {}", e);
-                DapiError::Internal("Failed to validate state transition".to_string())
+                match e {
+                    DapiError::Client(message) => {
+                        if message.contains("ECONNRESET") || message.contains("socket hang up") {
+                            grpc_error_response(Code::Unavailable, "Tenderdash is not available")
+                        } else {
+                            grpc_error_response(
+                                Code::Internal,
+                                format!("Failed broadcasting state transition: {}", message),
+                            )
+                        }
+                    }
+                    DapiError::TenderdashRestError(rpc_error) => {
+                        if let Some(code) = rpc_error.code
+                            && (10000..50000).contains(&code)
+                            && let Some(info) = rpc_error.data_as_str()
+                        {
+                            return BroadcastTxResponse {
+                                code,
+                                data: None,
+                                info: Some(info.to_string()),
+                                hash: None,
+                            };
+                        }
+
+                        if let Some(data) = rpc_error.data_as_str() {
+                            if let BroadcastErrorHandling::Response(response) =
+                                classify_broadcast_error(data)
+                            {
+                                if data.starts_with("broadcast confirmation not received:") {
+                                    error!("Failed broadcasting state transition: {}", data);
+                                }
+                                return response;
+                            }
+                        }
+
+                        let message = rpc_error
+                            .message
+                            .clone()
+                            .unwrap_or_else(|| "Tenderdash error".to_string());
+
+                        grpc_error_response(Code::Internal, message)
+                    }
+                    other => grpc_error_response(Code::Internal, other.to_string()),
+                }
             }
         }
     }
 
-    // mapping moved to error_mapping.rs for consistency
+    async fn map_broadcast_error(
+        &self,
+        error: DapiError,
+        st_bytes: &[u8],
+        tx_base64: &str,
+        st_hash_hex: &str,
+    ) -> BroadcastTxResponse {
+        match error {
+            DapiError::Client(message) => {
+                error!(
+                    error = %message,
+                    st_hash = %st_hash_hex,
+                    "Failed to broadcast state transition to Tenderdash"
+                );
+
+                if message.contains("ECONNRESET") || message.contains("socket hang up") {
+                    grpc_error_response(Code::Unavailable, "Tenderdash is not available")
+                } else {
+                    grpc_error_response(
+                        Code::Internal,
+                        format!("Failed broadcasting state transition: {}", message),
+                    )
+                }
+            }
+            DapiError::TenderdashRestError(rpc_error) => {
+                error!(
+                    error = %rpc_error,
+                    st_hash = %st_hash_hex,
+                    "Tenderdash REST error while broadcasting state transition"
+                );
+
+                if let Some(code) = rpc_error.code
+                    && (10000..50000).contains(&code)
+                    && let Some(info) = rpc_error.data_as_str()
+                {
+                    return BroadcastTxResponse {
+                        code,
+                        data: None,
+                        info: Some(info.to_string()),
+                        hash: None,
+                    };
+                }
+
+                if let Some(data) = rpc_error.data_as_str() {
+                    match classify_broadcast_error(data) {
+                        BroadcastErrorHandling::Duplicate => {
+                            return self.handle_duplicate_transaction(st_bytes, tx_base64).await;
+                        }
+                        BroadcastErrorHandling::Response(response) => {
+                            if data.starts_with("broadcast confirmation not received:") {
+                                error!("Failed broadcasting state transition: {}", data);
+                            }
+                            return response;
+                        }
+                        BroadcastErrorHandling::Unknown => {
+                            // fall through to generic handling below
+                        }
+                    }
+                }
+
+                let message = rpc_error
+                    .message
+                    .clone()
+                    .unwrap_or_else(|| "Tenderdash error".to_string());
+
+                grpc_error_response(Code::Internal, message)
+            }
+            other => {
+                error!(
+                    error = %other,
+                    st_hash = %st_hash_hex,
+                    "Failed to broadcast state transition to Tenderdash"
+                );
+                grpc_error_response(Code::Internal, other.to_string())
+            }
+        }
+    }
+}
+
+fn grpc_error_response(code: Code, message: impl AsRef<str>) -> BroadcastTxResponse {
+    BroadcastTxResponse {
+        code: code as i32 as i64,
+        data: None,
+        info: encode_message_to_info(message.as_ref()),
+        hash: None,
+    }
+}
+
+enum BroadcastErrorHandling {
+    Duplicate,
+    Response(BroadcastTxResponse),
+    Unknown,
+}
+
+fn classify_broadcast_error(error_data: &str) -> BroadcastErrorHandling {
+    if error_data == "tx already exists in cache" {
+        return BroadcastErrorHandling::Duplicate;
+    }
+
+    if error_data.starts_with("Tx too large.") {
+        let message = error_data.replace("Tx too large. ", "");
+        return BroadcastErrorHandling::Response(grpc_error_response(
+            Code::InvalidArgument,
+            format!("state transition is too large. {}", message),
+        ));
+    }
+
+    if error_data.starts_with("mempool is full") {
+        return BroadcastErrorHandling::Response(grpc_error_response(
+            Code::ResourceExhausted,
+            error_data,
+        ));
+    }
+
+    if error_data.contains("context deadline exceeded") {
+        return BroadcastErrorHandling::Response(grpc_error_response(
+            Code::ResourceExhausted,
+            "broadcasting state transition is timed out",
+        ));
+    }
+
+    if error_data.contains("too_many_resets") {
+        return BroadcastErrorHandling::Response(grpc_error_response(
+            Code::ResourceExhausted,
+            "tenderdash is not responding: too many requests",
+        ));
+    }
+
+    if error_data.starts_with("broadcast confirmation not received:") {
+        return BroadcastErrorHandling::Response(grpc_error_response(
+            Code::Unavailable,
+            error_data,
+        ));
+    }
+
+    BroadcastErrorHandling::Unknown
+}
+
+fn encode_message_to_info(message: &str) -> Option<String> {
+    let map_entries = vec![(
+        Value::Text("message".to_string()),
+        Value::Text(message.to_string()),
+    )];
+
+    let mut buffer = Vec::new();
+    if ser::into_writer(&Value::Map(map_entries), &mut buffer).is_ok() {
+        Some(BASE64_STANDARD.encode(buffer))
+    } else {
+        None
+    }
 }
 
 #[cfg(test)]
@@ -247,8 +396,8 @@ mod tests {
     use tonic::Code;
 
     use crate::clients::tenderdash_client::BroadcastTxResponse;
-    use crate::error::DapiError;
     use crate::services::platform_service::error_mapping::map_drive_code_to_status;
+    use crate::services::platform_service::map_broadcast_tx_response;
 
     fn make_consensus_info(serialized_error: &[u8]) -> String {
         let info_value = Value::Map(vec![(
@@ -293,14 +442,14 @@ mod tests {
             .expect("consensus code metadata should be present");
         assert_eq!(code_metadata.to_str().unwrap(), "10010");
 
-        let propagated_status: tonic::Status = DapiError::from(status).into();
-        let propagated = propagated_status
-            .metadata()
+        let mapped = map_broadcast_tx_response(response).expect_err("should map to status");
+        let mapped_metadata = mapped.metadata();
+        let mapped_bytes = mapped_metadata
             .get_bin("dash-serialized-consensus-error-bin")
-            .expect("consensus metadata should propagate through DapiError");
-        let propagated_bytes = propagated
+            .expect("consensus metadata should be preserved");
+        let mapped_value = mapped_bytes
             .to_bytes()
             .expect("consensus metadata must contain valid bytes");
-        assert_eq!(propagated_bytes.as_ref(), serialized_error.as_slice());
+        assert_eq!(mapped_value.as_ref(), serialized_error.as_slice());
     }
 }

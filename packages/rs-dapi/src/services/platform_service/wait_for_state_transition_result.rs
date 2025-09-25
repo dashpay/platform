@@ -299,54 +299,48 @@ pub(super) fn build_wait_for_state_transition_error_response(
 }
 
 fn map_tenderdash_rest_error(
-    value: &JsonValue,
+    error: &crate::error::TenderdashRpcError,
 ) -> dapi_grpc::platform::v0::StateTransitionBroadcastError {
     use dapi_grpc::platform::v0::StateTransitionBroadcastError;
 
     let mut code = 0u32;
-    let mut message = String::new();
+    let mut message = error.message.clone().unwrap_or_default();
     let mut data = Vec::new();
 
-    if let JsonValue::Object(object) = value {
-        if let Some(code_value) = extract_number(object.get("code"))
-            && code_value >= 0
-        {
-            code = code_value as u32;
-        }
+    if let Some(code_value) = error.code.filter(|c| *c >= 0) {
+        code = code_value as u32;
+    }
 
-        if let Some(msg) = object.get("message").and_then(JsonValue::as_str) {
-            message = msg.to_string();
-        }
-
-        if let Some(data_value) = object.get("data") {
-            if let JsonValue::Object(data_object) = data_value {
-                if code == 0
-                    && let Some(inner_code) = extract_number(data_object.get("code"))
-                    && inner_code >= 0
-                {
-                    code = inner_code as u32;
-                }
-
-                if message.is_empty() {
-                    if let Some(info) = data_object.get("info").and_then(JsonValue::as_str) {
-                        message = info.to_string();
-                    } else if let Some(log) = data_object.get("log").and_then(JsonValue::as_str) {
-                        message = log.to_string();
-                    }
-                }
+    if let Some(data_value) = error.data.as_ref() {
+        if let JsonValue::Object(data_object) = data_value {
+            if code == 0
+                && let Some(inner_code) = extract_number(data_object.get("code"))
+                && inner_code >= 0
+            {
+                code = inner_code as u32;
             }
 
-            data = match data_value {
-                JsonValue::String(data_string) => data_string.as_bytes().to_vec(),
-                other => serde_json::to_vec(other).unwrap_or_default(),
-            };
+            if message.is_empty() {
+                if let Some(info) = data_object.get("info").and_then(JsonValue::as_str) {
+                    message = info.to_string();
+                } else if let Some(log) = data_object.get("log").and_then(JsonValue::as_str) {
+                    message = log.to_string();
+                }
+            }
         }
-    } else {
-        message = value.to_string();
+
+        data = match data_value {
+            JsonValue::String(data_string) => data_string.as_bytes().to_vec(),
+            other => serde_json::to_vec(other).unwrap_or_default(),
+        };
     }
 
     if message.is_empty() {
-        message = value.to_string();
+        if let Some(str_data) = error.data_as_str() {
+            message = str_data.to_string();
+        } else {
+            message = error.to_string();
+        }
     }
 
     StateTransitionBroadcastError {

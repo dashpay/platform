@@ -2,6 +2,7 @@
 
 use serde_json::Value;
 use sha2::Digest;
+use std::fmt;
 use thiserror::Error;
 // For converting dashcore-rpc errors into DapiError
 use crate::services::platform_service::map_drive_code_to_status;
@@ -113,7 +114,7 @@ pub enum DapiError {
     MethodNotFound(String),
 
     #[error("Tenderdash request error: {0}")]
-    TenderdashRestError(Value),
+    TenderdashRestError(TenderdashRpcError),
 }
 
 /// Result type alias for DAPI operations
@@ -155,18 +156,13 @@ impl DapiError {
             }
             DapiError::FailedPrecondition(msg) => tonic::Status::failed_precondition(msg.clone()),
             DapiError::MethodNotFound(msg) => tonic::Status::unimplemented(msg.clone()),
-            DapiError::TenderdashRestError(value) => {
-                // Attempt to extract code and message from the JSON value
-                if let Some(code) = value.get("code").and_then(|c| c.as_i64()) {
-                    let info = value.get("info").and_then(|d| d.as_str());
-                    map_drive_code_to_status(code, info)
-                } else {
-                    // Fallback if we cannot extract code/message
-                    tonic::Status::internal(self.to_string())
-                }
-            }
+            DapiError::TenderdashRestError(error) => error.to_status(),
             _ => tonic::Status::internal(self.to_string()),
         }
+    }
+
+    pub fn from_tenderdash_error(value: Value) -> Self {
+        DapiError::TenderdashRestError(TenderdashRpcError::from(value))
     }
 
     /// Create a no proof error for a transaction
@@ -259,6 +255,72 @@ impl DapiError {
             Ok(Ok(inner)) => Ok(inner),
             Ok(Err(e)) => Err(e.into()),
             Err(join_err) => Err(DapiError::TaskJoin(join_err)),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct TenderdashRpcError {
+    pub code: Option<i64>,
+    pub message: Option<String>,
+    pub data: Option<Value>,
+}
+
+impl TenderdashRpcError {
+    pub fn data_as_str(&self) -> Option<&str> {
+        self.data.as_ref()?.as_str()
+    }
+
+    pub fn to_status(&self) -> tonic::Status {
+        if let Some(code) = self.code {
+            let info = self.data_as_str();
+            return map_drive_code_to_status(code, info);
+        }
+
+        let message = self
+            .message
+            .clone()
+            .or_else(|| self.data_as_str().map(str::to_owned))
+            .unwrap_or_else(|| "Unknown Tenderdash error".to_string());
+
+        tonic::Status::internal(message)
+    }
+}
+
+impl fmt::Display for TenderdashRpcError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (&self.code, &self.message, &self.data) {
+            (Some(code), Some(message), _) => write!(f, "code {code}: {message}"),
+            (Some(code), None, Some(data)) => write!(f, "code {code}: {data}"),
+            (Some(code), None, None) => write!(f, "code {code}"),
+            (None, Some(message), _) => f.write_str(message),
+            (_, _, Some(data)) => write!(f, "{data}"),
+            _ => f.write_str("unknown"),
+        }
+    }
+}
+
+impl From<Value> for TenderdashRpcError {
+    fn from(value: Value) -> Self {
+        if let Some(object) = value.as_object() {
+            let code = object.get("code").and_then(|c| c.as_i64());
+            let message = object
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(|s| s.to_string());
+            let data = object.get("data").cloned();
+
+            Self {
+                code,
+                message,
+                data,
+            }
+        } else {
+            Self {
+                code: None,
+                message: None,
+                data: Some(value),
+            }
         }
     }
 }

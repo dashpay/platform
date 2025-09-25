@@ -97,6 +97,7 @@ macro_rules! drive_method {
     };
 }
 
+use crate::clients::tenderdash_client::BroadcastTxResponse;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
@@ -222,19 +223,23 @@ impl Platform for PlatformServiceImpl {
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
         tracing::trace!(?request, "Received broadcast_state_transition request");
-        match self.broadcast_state_transition_impl(request).await {
-            Ok(response) => Ok(response).inspect(|r| {
-                debug!(response=?r, "broadcast_state_transition succeeded");
-            }),
-            Err(error) => Err(error.into()).inspect_err(|e: &Status| {
-                let metadata = e.metadata();
+        let result = map_broadcast_tx_response(self.broadcast_state_transition_impl(request).await);
+
+        match &result {
+            Ok(response) => {
+                debug!(response=?response, "broadcast_state_transition succeeded");
+            }
+            Err(status) => {
+                let metadata = status.metadata();
                 tracing::warn!(
-                    error = %e,
+                    error = %status,
                     ?metadata,
                     "broadcast_state_transition failed; returning broadcast error response"
                 );
-            }),
+            }
         }
+
+        result
     }
 
     /// Implementation of waitForStateTransitionResult
@@ -554,5 +559,18 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::tonic::Status,
     > {
         self.subscribe_platform_events_impl(request).await
+    }
+}
+
+pub(crate) fn map_broadcast_tx_response(
+    response: BroadcastTxResponse,
+) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
+    if response.code == 0 {
+        Ok(Response::new(BroadcastStateTransitionResponse {}))
+    } else {
+        Err(map_drive_code_to_status(
+            response.code,
+            response.info.as_deref(),
+        ))
     }
 }
