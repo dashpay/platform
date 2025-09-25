@@ -45,9 +45,27 @@ pub fn map_drive_code_to_status(code: i64, info: Option<&str>) -> Status {
             if !info_str.is_empty() {
                 match BASE64_STANDARD.decode(info_str.as_bytes()) {
                     Ok(info_bytes) => {
-                        if !info_bytes.is_empty() {
-                            let value = MetadataValue::from_bytes(&info_bytes);
-                            metadata.insert_bin("dash-serialized-consensus-error-bin", value);
+                        let parsed: Result<Value, _> = de::from_reader(info_bytes.as_slice());
+                        match parsed {
+                            Ok(value) => {
+                                if let Some(bytes) = extract_serialized_error_bytes(&value, false) {
+                                    let metadata_value =
+                                        MetadataValue::from_bytes(bytes.as_slice());
+                                    metadata.insert_bin(
+                                        "dash-serialized-consensus-error-bin",
+                                        metadata_value,
+                                    );
+                                }
+                            }
+                            Err(_) => {
+                                if !info_bytes.is_empty() {
+                                    let metadata_value = MetadataValue::from_bytes(&info_bytes);
+                                    metadata.insert_bin(
+                                        "dash-serialized-consensus-error-bin",
+                                        metadata_value,
+                                    );
+                                }
+                            }
                         }
                     }
                     Err(error) => {
@@ -153,13 +171,14 @@ fn decode_drive_error_info(info: &str) -> Option<DriveErrorInfo> {
                         "serializedError" | "serialized_error"
                     ) {
                         if details.serialized_error.is_none()
-                            && let Some(bytes) = extract_serialized_error_bytes(data_value)
+                            && let Some(bytes) = extract_serialized_error_bytes(&data_value, true)
                         {
                             details.serialized_error = Some(bytes);
+                            continue;
                         }
-                    } else {
-                        details.data.insert(data_key_str, data_value);
                     }
+
+                    details.data.insert(data_key_str, data_value);
                 }
             }
             _ => {}
@@ -169,27 +188,42 @@ fn decode_drive_error_info(info: &str) -> Option<DriveErrorInfo> {
     Some(details)
 }
 
-fn extract_serialized_error_bytes(value: Value) -> Option<Vec<u8>> {
+fn extract_serialized_error_bytes(value: &Value, allow_direct: bool) -> Option<Vec<u8>> {
     match value {
-        Value::Bytes(bytes) => Some(bytes),
-        Value::Text(text) => BASE64_STANDARD
-            .decode(text.as_bytes())
-            .ok()
-            .or_else(|| hex::decode(&text).ok()),
+        Value::Bytes(bytes) => allow_direct.then(|| bytes.clone()),
+        Value::Text(text) => {
+            if allow_direct {
+                BASE64_STANDARD
+                    .decode(text.as_bytes())
+                    .ok()
+                    .or_else(|| hex::decode(text).ok())
+            } else {
+                None
+            }
+        }
         Value::Map(entries) => {
             for (key, nested_value) in entries {
-                if let Value::Text(key_str) = key
-                    && matches!(key_str.as_str(), "serializedError" | "serialized_error")
-                {
-                    return extract_serialized_error_bytes(nested_value);
+                let nested_allow = allow_direct
+                    || matches!(key, Value::Text(key_str)
+                    if matches!(
+                        key_str.as_str(),
+                        "serializedError" | "serialized_error"
+                    ));
+
+                if let Some(bytes) = extract_serialized_error_bytes(nested_value, nested_allow) {
+                    return Some(bytes);
                 }
             }
             None
         }
-        Value::Array(values) => values
-            .into_iter()
-            .filter_map(extract_serialized_error_bytes)
-            .next(),
+        Value::Array(values) => {
+            for nested_value in values {
+                if let Some(bytes) = extract_serialized_error_bytes(nested_value, allow_direct) {
+                    return Some(bytes);
+                }
+            }
+            None
+        }
         _ => None,
     }
 }
@@ -248,5 +282,99 @@ fn fallback_status_code(code: i64) -> Code {
         Code::InvalidArgument
     } else {
         Code::Internal
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use ciborium::{ser, value::Value};
+    use tonic::Code;
+
+    #[test]
+    fn consensus_error_with_serialized_bytes_populates_metadata() {
+        let info = encode_consensus_info(&[1_u8, 2, 3, 4]);
+        let status = map_drive_code_to_status(20010, Some(&info));
+
+        assert_eq!(status.code(), Code::Unauthenticated);
+
+        let metadata = status.metadata();
+
+        let consensus_metadata = metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("serialized consensus error metadata should be present")
+            .to_bytes()
+            .expect("consensus metadata must contain valid bytes");
+
+        assert_eq!(consensus_metadata.as_ref(), &[1_u8, 2, 3, 4]);
+
+        let code_metadata = metadata
+            .get("code")
+            .expect("consensus code metadata should be present");
+        assert_eq!(code_metadata.to_str().unwrap(), "20010");
+    }
+
+    #[test]
+    fn consensus_error_without_serialized_bytes_keeps_metadata_empty() {
+        let info = "oWRkYXRhoW9zZXJpYWxpemVkRXJyb3KYMwEYOBggGN4YyxiDGM4YwxizBRj2GMgYixMYRBhwGPUYvBioBhQMGCAYeRiDGIMYaxhCGNcYthiBGKoLFBjZABj8AAMBGIgY/AADARiIGPwAAw0YQA";
+        let status = map_drive_code_to_status(20000, Some(info));
+
+        assert_eq!(status.code(), Code::Unauthenticated);
+
+        let metadata = status.metadata();
+
+        assert!(
+            metadata
+                .get_bin("dash-serialized-consensus-error-bin")
+                .is_none(),
+            "metadata must stay empty when no serialized error is present"
+        );
+
+        let code_metadata = metadata
+            .get("code")
+            .expect("consensus code metadata should be present");
+        assert_eq!(code_metadata.to_str().unwrap(), "20000");
+    }
+
+    #[test]
+    fn consensus_metadata_omits_non_binary_serialized_error() {
+        let consensus_info = Value::Map(vec![(
+            Value::Text("data".to_string()),
+            Value::Map(vec![(
+                Value::Text("serializedError".to_string()),
+                Value::Text("ConsensusError".to_string()),
+            )]),
+        )]);
+
+        let mut buffer = Vec::new();
+        ser::into_writer(&consensus_info, &mut buffer).expect("consensus info encoding");
+        let info = BASE64_STANDARD.encode(buffer);
+
+        let status = map_drive_code_to_status(10010, Some(&info));
+
+        let metadata = status.metadata();
+
+        assert!(
+            metadata
+                .get_bin("dash-serialized-consensus-error-bin")
+                .is_none(),
+            "non-binary serialized error data must not populate consensus metadata"
+        );
+
+        assert_eq!(status.code(), Code::InvalidArgument);
+    }
+
+    fn encode_consensus_info(serialized_error: &[u8]) -> String {
+        let info_value = Value::Map(vec![(
+            Value::Text("data".to_string()),
+            Value::Map(vec![(
+                Value::Text("serializedError".to_string()),
+                Value::Bytes(serialized_error.to_vec()),
+            )]),
+        )]);
+
+        let mut buffer = Vec::new();
+        ser::into_writer(&info_value, &mut buffer).expect("consensus info encoding");
+        BASE64_STANDARD.encode(buffer)
     }
 }

@@ -213,15 +213,14 @@ impl PlatformServiceImpl {
                             };
                         }
 
-                        if let Some(data) = rpc_error.data_as_str() {
-                            if let BroadcastErrorHandling::Response(response) =
+                        if let Some(data) = rpc_error.data_as_str()
+                            && let BroadcastErrorHandling::Response(response) =
                                 classify_broadcast_error(data)
-                            {
-                                if data.starts_with("broadcast confirmation not received:") {
-                                    error!("Failed broadcasting state transition: {}", data);
-                                }
-                                return response;
+                        {
+                            if data.starts_with("broadcast confirmation not received:") {
+                                error!("Failed broadcasting state transition: {}", data);
                             }
+                            return response;
                         }
 
                         let message = rpc_error
