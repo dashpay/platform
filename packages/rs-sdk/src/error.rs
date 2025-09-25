@@ -38,10 +38,9 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
-    #[cfg(feature = "mocks")]
     /// DAPI mocks error
     #[error("Dapi mocks error: {0}")]
-    DapiMocksError(#[from] rs_dapi_client::mock::MockError),
+    DapiMocksError(String),
     /// Dash core error
     #[error("Dash core error: {0}")]
     CoreError(#[from] dpp::dashcore::Error),
@@ -163,6 +162,13 @@ impl From<DapiClientError> for Error {
 
         // Preserve the original DAPI client error for structured inspection
         Self::DapiClientError(value)
+    }
+}
+
+#[cfg(feature = "mocks")]
+impl From<rs_dapi_client::mock::MockError> for Error {
+    fn from(value: rs_dapi_client::mock::MockError) -> Self {
+        Self::DapiMocksError(value.to_string())
     }
 }
 

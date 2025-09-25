@@ -111,13 +111,9 @@ impl From<SdkError> for WasmSdkError {
                 None,
                 retriable,
             ),
-            #[cfg(feature = "mocks")]
-            DapiMocksError(e) => Self::new(
-                WasmSdkErrorKind::DapiMocksError,
-                e.to_string(),
-                None,
-                retriable,
-            ),
+            DapiMocksError(msg) => {
+                Self::new(WasmSdkErrorKind::DapiMocksError, msg, None, retriable)
+            }
             CoreError(e) => Self::new(WasmSdkErrorKind::CoreError, e.to_string(), None, retriable),
             MerkleBlockError(e) => Self::new(
                 WasmSdkErrorKind::MerkleBlockError,
@@ -169,12 +165,6 @@ impl From<SdkError> for WasmSdkError {
             Cancelled(msg) => Self::new(WasmSdkErrorKind::Cancelled, msg, None, retriable),
             StaleNode(e) => Self::new(WasmSdkErrorKind::StaleNode, e.to_string(), None, retriable),
             StateTransitionBroadcastError(e) => WasmSdkError::from(e),
-            DapiMocksError(e) => Self::new(
-                WasmSdkErrorKind::DapiMocksError,
-                e.to_string(),
-                None,
-                retriable,
-            ),
         }
     }
 }
