@@ -11,6 +11,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, metadata::MetadataValue};
 use std::time::Duration;
+use tokio::select;
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
 
@@ -85,15 +86,15 @@ impl PlatformServiceImpl {
         );
 
         // Filter events to find our specific transaction
-        loop {
-            match timeout(timeout_duration, sub_handle.recv()).await {
-                Ok(Some(crate::services::streaming_service::StreamingEvent::PlatformTx {
-                    event,
-                })) => {
-                    debug!(tx = hash_hex, "Received matching transaction event");
+        timeout(timeout_duration, async {
+            loop {
+                let result = sub_handle.recv().await;
+                match result {
+                    Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
+                        debug!(tx = hash_hex, "Received matching transaction event");
                     return self.build_response_from_event(event, v0.prove).await;
                 }
-                Ok(Some(message)) => {
+                Some(message) => {
                     // Ignore other message types
                     warn!(
                         ?message,
@@ -101,21 +102,21 @@ impl PlatformServiceImpl {
                     );
                     continue;
                 }
-                Ok(None) => {
+                None => {
                     warn!("Platform tx subscription channel closed unexpectedly");
                     return Err(DapiError::Unavailable(
                         "Platform tx subscription channel closed unexpectedly".to_string(),
                     ));
                 }
-                Err(_) => {
-                    // Timeout occurred
-                    return Err(DapiError::Timeout(format!(
-                        "Waiting period for state transition {} exceeded",
-                        hash_hex
-                    )));
-                }
             }
         }
+    }).await.map_err(|msg|DapiError::Timeout(msg.to_string()))
+    .inspect_err(|e| {
+            tracing::warn!(
+                error = %e,
+                tx = %hash_hex,
+                "wait_for_state_transition_result: timed out")
+    })?
     }
 
     async fn build_response_from_existing_tx(
