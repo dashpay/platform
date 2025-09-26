@@ -1,13 +1,15 @@
 // Custom error types for rs-dapi using thiserror
 
+use base64::{Engine, engine};
+use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+use dashcore_rpc::{self, jsonrpc};
+use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 use serde_json::Value;
 use sha2::Digest;
-use std::fmt;
+use std::{fmt, os::linux::raw};
 use thiserror::Error;
-// For converting dashcore-rpc errors into DapiError
-use crate::services::platform_service::map_drive_code_to_status;
-use dashcore_rpc::{self, jsonrpc};
 use tokio::task::JoinError;
+use tonic::{Code, metadata::MetadataValue};
 
 /// Result type alias for DAPI operations
 pub type DapiResult<T> = std::result::Result<T, DapiError>;
@@ -113,8 +115,8 @@ pub enum DapiError {
     #[error("{0}")]
     MethodNotFound(String),
 
-    #[error("Tenderdash request error: {0}")]
-    TenderdashRestError(TenderdashRpcError),
+    #[error("Tenderdash request error: {0:?}")]
+    TenderdashClientError(TenderdashBroadcastError),
 }
 
 /// Result type alias for DAPI operations
@@ -156,13 +158,13 @@ impl DapiError {
             }
             DapiError::FailedPrecondition(msg) => tonic::Status::failed_precondition(msg.clone()),
             DapiError::MethodNotFound(msg) => tonic::Status::unimplemented(msg.clone()),
-            DapiError::TenderdashRestError(error) => error.to_status(),
+            DapiError::TenderdashClientError(error) => error.to_status(),
             _ => tonic::Status::internal(self.to_string()),
         }
     }
 
     pub fn from_tenderdash_error(value: Value) -> Self {
-        DapiError::TenderdashRestError(TenderdashRpcError::from(value))
+        DapiError::TenderdashClientError(TenderdashBroadcastError::from(value))
     }
 
     /// Create a no proof error for a transaction
@@ -259,67 +261,212 @@ impl DapiError {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct TenderdashRpcError {
-    pub code: Option<i64>,
+#[derive(Clone)]
+pub struct TenderdashBroadcastError {
+    pub code: i64,
+    // human-readable error message; will be put into `data` field
     pub message: Option<String>,
-    pub data: Option<Value>,
+    // CBOR-encoded dpp ConsensusError
+    pub consensus_error: Option<Vec<u8>>,
 }
 
-impl TenderdashRpcError {
-    pub fn data_as_str(&self) -> Option<&str> {
-        self.data.as_ref()?.as_str()
-    }
-
+impl TenderdashBroadcastError {
     pub fn to_status(&self) -> tonic::Status {
-        if let Some(code) = self.code {
-            let info = self.data_as_str();
-            return map_drive_code_to_status(code, info);
+        let status_code = self.grpc_code();
+        let status_message = self.grpc_message();
+
+        let mut status: tonic::Status = tonic::Status::new(status_code, status_message);
+
+        if let Some(consensus_error) = &self.consensus_error {
+            // Add consensus error metadata
+            status.metadata_mut().insert_bin(
+                "dash-serialized-consensus-error-bin",
+                MetadataValue::from_bytes(consensus_error),
+            );
+        }
+        status
+    }
+
+    fn grpc_message(&self) -> String {
+        if let Some(message) = &self.message {
+            return message.clone();
         }
 
-        let message = self
-            .message
-            .clone()
-            .or_else(|| self.data_as_str().map(str::to_owned))
-            .unwrap_or_else(|| "Unknown Tenderdash error".to_string());
+        if let Some(consensus_error_bytes) = &self.consensus_error
+            && let Ok(consensus_error) =
+                ConsensusError::deserialize_from_bytes(&consensus_error_bytes).inspect_err(|e| {
+                    tracing::warn!("Failed to deserialize consensus error: {}", e);
+                })
+        {
+            return consensus_error.to_string();
+        }
 
-        tonic::Status::internal(message)
+        return format!("Unknown error with code {}", self.code);
+    }
+
+    /// map gRPC code from Tenderdash to tonic::Code.
+    ///
+    /// See packages/rs-dpp/src/errors/consensus/codes.rs for possible codes.
+    fn grpc_code(&self) -> Code {
+        match self.code {
+            0 => Code::Ok,
+            1 => Code::Cancelled,
+            2 => Code::Unknown,
+            3 => Code::InvalidArgument,
+            4 => Code::DeadlineExceeded,
+            5 => Code::NotFound,
+            6 => Code::AlreadyExists,
+            7 => Code::PermissionDenied,
+            8 => Code::ResourceExhausted,
+            9 => Code::FailedPrecondition,
+            10 => Code::Aborted,
+            11 => Code::OutOfRange,
+            12 => Code::Unimplemented,
+            13 => Code::Internal,
+            14 => Code::Unavailable,
+            15 => Code::DataLoss,
+            16 => Code::Unauthenticated,
+            code => {
+                if (17..=9999).contains(&code) {
+                    Code::Unknown
+                } else if (10000..20000).contains(&code) {
+                    Code::InvalidArgument
+                } else if (20000..30000).contains(&code) {
+                    Code::Unauthenticated
+                } else if (30000..40000).contains(&code) {
+                    Code::FailedPrecondition
+                } else if (40000..50000).contains(&code) {
+                    Code::InvalidArgument
+                } else {
+                    Code::Internal
+                }
+            }
+        }
     }
 }
 
-impl fmt::Display for TenderdashRpcError {
+impl From<TenderdashBroadcastError> for StateTransitionBroadcastError {
+    fn from(err: TenderdashBroadcastError) -> Self {
+        StateTransitionBroadcastError {
+            code: err.code.min(u32::MAX as i64) as u32,
+            message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
+            data: err.consensus_error.unwrap_or_default(),
+        }
+    }
+}
+
+impl fmt::Debug for TenderdashBroadcastError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match (&self.code, &self.message, &self.data) {
-            (Some(code), Some(message), _) => write!(f, "code {code}: {message}"),
-            (Some(code), None, Some(data)) => write!(f, "code {code}: {data}"),
-            (Some(code), None, None) => write!(f, "code {code}"),
-            (None, Some(message), _) => f.write_str(message),
-            (_, _, Some(data)) => write!(f, "{data}"),
-            _ => f.write_str("unknown"),
-        }
+        f.debug_struct("TenderdashBroadcastError")
+            .field("code", &self.code)
+            .field("message", &self.message)
+            .field(
+                "consensus_error",
+                &self
+                    .consensus_error
+                    .as_ref()
+                    .map(|e| hex::encode(e))
+                    .unwrap_or_else(|| "None".to_string()),
+            )
+            .finish()
     }
 }
 
-impl From<Value> for TenderdashRpcError {
+pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    static BASE64: engine::GeneralPurpose = {
+        let b64_config = engine::GeneralPurposeConfig::new()
+            .with_decode_allow_trailing_bits(true)
+            .with_encode_padding(false)
+            .with_decode_padding_mode(engine::DecodePaddingMode::Indifferent);
+
+        engine::GeneralPurpose::new(&base64::alphabet::STANDARD, b64_config)
+    };
+    BASE64
+        .decode(input)
+        .inspect_err(|e| {
+            tracing::warn!("Failed to decode base64: {}", e);
+        })
+        .ok()
+}
+
+fn decode_drive_error_info(info_base64: String) -> Option<Vec<u8>> {
+    let decoded_bytes = base64_decode(&info_base64)?;
+    // CBOR-decode decoded_bytes
+    let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
+        .inspect_err(|e| {
+            tracing::warn!("Failed to decode drive error info from CBOR: {}", e);
+        })
+        .ok()?;
+
+    let data_map = raw_value
+        .get("data")
+        .and_then(|d| d.as_object())
+        .or_else(|| {
+            tracing::trace!("Drive error info missing 'data' field");
+            None
+        })?;
+
+    let serialized_error = data_map
+        .get("serializedError")
+        .or_else(|| data_map.get("serialized_error"))
+        .and_then(|se| se.as_array())
+        .or_else(|| {
+            tracing::trace!("Drive error info missing 'serializedError' field");
+            None
+        })?;
+
+    // convert serialized_error from array of numbers to Vec<u8>
+    let serialized_error: Vec<u8> = serialized_error
+        .iter()
+        .filter_map(|v| {
+            v.as_u64()
+                .and_then(|n| if n <= 255 { Some(n as u8) } else { None })
+                .or_else(|| {
+                    tracing::warn!(
+                        "Drive error info 'serializedError' contains non-u8 value: {:?}",
+                        v
+                    );
+                    None
+                })
+        })
+        .collect();
+
+    Some(serialized_error)
+}
+
+impl From<Value> for TenderdashBroadcastError {
+    // Convert from a JSON error object returned by Tenderdash RPC, typically in the `error` field of a JSON-RPC response.
     fn from(value: Value) -> Self {
         if let Some(object) = value.as_object() {
-            let code = object.get("code").and_then(|c| c.as_i64());
+            let code = object
+                .get("code")
+                .and_then(|c| c.as_i64())
+                .unwrap_or_else(|| {
+                    tracing::debug!("Tenderdash error missing 'code' field, defaulting to 0");
+                    0
+                });
             let message = object
                 .get("message")
                 .and_then(|m| m.as_str())
                 .map(|s| s.to_string());
-            let data = object.get("data").cloned();
+
+            // info contains additional error details, possibly including consensus error
+            let consensus_error = object
+                .get("info")
+                .and_then(|v| v.as_str().map(|s| s.to_string()))
+                .and_then(decode_drive_error_info);
 
             Self {
                 code,
                 message,
-                data,
+                consensus_error,
             }
         } else {
+            tracing::warn!("Tenderdash error is not an object: {:?}", value);
             Self {
-                code: None,
-                message: None,
-                data: Some(value),
+                code: u32::MAX as i64,
+                message: Some("Invalid error object from Tenderdash".to_string()),
+                consensus_error: None,
             }
         }
     }

@@ -3,13 +3,13 @@ use crate::error::DapiError;
 use crate::services::platform_service::PlatformServiceImpl;
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
+use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
 use dapi_grpc::platform::v0::{
     Proof, ResponseMetadata, WaitForStateTransitionResultRequest,
     WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
 use dapi_grpc::tonic::{Request, Response, metadata::MetadataValue};
-use serde_json::Value as JsonValue;
 use std::time::Duration;
 use tokio::time::timeout;
 use tracing::{debug, info, trace, warn};
@@ -41,6 +41,9 @@ impl PlatformServiceImpl {
         let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
+        let span = tracing::span!(tracing::Level::INFO, "wait_for_state_transition_result", tx = %hash_hex);
+        let _enter = span.enter();
+
         info!("waitForStateTransitionResult called for hash: {}", hash_hex);
 
         // Check if WebSocket is connected
@@ -68,11 +71,7 @@ impl PlatformServiceImpl {
                 return self.build_response_from_existing_tx(tx, v0.prove).await;
             }
             Err(error) => {
-                debug!(
-                    tx = hash_hex,
-                    ?error,
-                    "Transaction not found, will wait for future events"
-                );
+                debug!(?error, "Transaction not found, will wait for future events");
             }
         };
 
@@ -141,9 +140,9 @@ impl PlatformServiceImpl {
                 tx_result.data.as_deref(),
             );
 
-            response_v0.result = Some(
-                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error)
-                );
+            response_v0.result = Some(wait_for_state_transition_result_response_v0::Result::Error(
+                error,
+            ));
         }
 
         // Generate proof if requested and no error
@@ -156,7 +155,7 @@ impl PlatformServiceImpl {
             match self.fetch_proof_for_state_transition(tx_data).await {
                 Ok((proof, metadata)) => {
                     response_v0.result = Some(
-                        wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
                     );
                     response_v0.metadata = Some(metadata);
                 }
@@ -264,7 +263,7 @@ fn map_dapi_error_to_state_transition_broadcast_error(
     error: &DapiError,
 ) -> dapi_grpc::platform::v0::StateTransitionBroadcastError {
     match error {
-        DapiError::TenderdashRestError(value) => map_tenderdash_rest_error(value),
+        DapiError::TenderdashClientError(value) => value.clone().into(),
         other => {
             let status = other.to_status();
             dapi_grpc::platform::v0::StateTransitionBroadcastError {
@@ -298,66 +297,7 @@ pub(super) fn build_wait_for_state_transition_error_response(
     response_with_consensus_metadata(body)
 }
 
-fn map_tenderdash_rest_error(
-    error: &crate::error::TenderdashRpcError,
-) -> dapi_grpc::platform::v0::StateTransitionBroadcastError {
-    use dapi_grpc::platform::v0::StateTransitionBroadcastError;
-
-    let mut code = 0u32;
-    let mut message = error.message.clone().unwrap_or_default();
-    let mut data = Vec::new();
-
-    if let Some(code_value) = error.code.filter(|c| *c >= 0) {
-        code = code_value as u32;
-    }
-
-    if let Some(data_value) = error.data.as_ref() {
-        if let JsonValue::Object(data_object) = data_value {
-            if code == 0
-                && let Some(inner_code) = extract_number(data_object.get("code"))
-                && inner_code >= 0
-            {
-                code = inner_code as u32;
-            }
-
-            if message.is_empty() {
-                if let Some(info) = data_object.get("info").and_then(JsonValue::as_str) {
-                    message = info.to_string();
-                } else if let Some(log) = data_object.get("log").and_then(JsonValue::as_str) {
-                    message = log.to_string();
-                }
-            }
-        }
-
-        data = match data_value {
-            JsonValue::String(data_string) => data_string.as_bytes().to_vec(),
-            other => serde_json::to_vec(other).unwrap_or_default(),
-        };
-    }
-
-    if message.is_empty() {
-        if let Some(str_data) = error.data_as_str() {
-            message = str_data.to_string();
-        } else {
-            message = error.to_string();
-        }
-    }
-
-    StateTransitionBroadcastError {
-        code,
-        message,
-        data,
-    }
-}
-
-fn extract_number(value: Option<&JsonValue>) -> Option<i64> {
-    match value? {
-        JsonValue::Number(num) => num.as_i64(),
-        JsonValue::String(text) => text.parse::<i64>().ok(),
-        _ => None,
-    }
-}
-
+/// Add consensus result metadata to the response if present
 fn response_with_consensus_metadata(
     body: WaitForStateTransitionResultResponse,
 ) -> Response<WaitForStateTransitionResultResponse> {

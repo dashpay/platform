@@ -81,6 +81,7 @@ zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "b0787de310befaedd1f762e
 
 xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
 # Dash Platform dependencies (using workspace versions)
+dpp = { path = "../rs-dpp", default-features = false }
 dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
 lru = "0.16"
 prometheus = "0.14"

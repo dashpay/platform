@@ -24,8 +24,6 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tracing::debug;
 
-pub(crate) use error_mapping::map_drive_code_to_status;
-
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
 /// Usage: `drive_method!(method_name, RequestType, ResponseType);`
@@ -223,23 +221,24 @@ impl Platform for PlatformServiceImpl {
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
         tracing::trace!(?request, "Received broadcast_state_transition request");
-        let result = map_broadcast_tx_response(self.broadcast_state_transition_impl(request).await);
+        let result = self.broadcast_state_transition_impl(request).await;
 
-        match &result {
+        match result {
             Ok(response) => {
                 debug!(response=?response, "broadcast_state_transition succeeded");
+                Ok(response.into())
             }
-            Err(status) => {
+            Err(e) => {
+                let status = e.to_status();
                 let metadata = status.metadata();
                 tracing::warn!(
                     error = %status,
                     ?metadata,
                     "broadcast_state_transition failed; returning broadcast error response"
                 );
+                Err(status)
             }
         }
-
-        result
     }
 
     /// Implementation of waitForStateTransitionResult
@@ -559,18 +558,5 @@ impl Platform for PlatformServiceImpl {
         dapi_grpc::tonic::Status,
     > {
         self.subscribe_platform_events_impl(request).await
-    }
-}
-
-pub(crate) fn map_broadcast_tx_response(
-    response: BroadcastTxResponse,
-) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
-    if response.code == 0 {
-        Ok(Response::new(BroadcastStateTransitionResponse {}))
-    } else {
-        Err(map_drive_code_to_status(
-            response.code,
-            response.info.as_deref(),
-        ))
     }
 }

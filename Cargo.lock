@@ -5177,6 +5177,7 @@ dependencies = [
  "dapi-grpc",
  "dashcore-rpc",
  "dotenvy",
+ "dpp",
  "envy",
  "futures",
  "hex",

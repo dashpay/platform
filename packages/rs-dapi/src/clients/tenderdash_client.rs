@@ -7,6 +7,7 @@ use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};
@@ -129,8 +130,9 @@ impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     async fn post<T>(&self, request_body: serde_json::Value) -> DAPIResult<T>
     where
-        T: serde::de::DeserializeOwned,
+        T: serde::de::DeserializeOwned + Debug,
     {
+        let start = tokio::time::Instant::now();
         let response: TenderdashResponse<T> = self
             .client
             .post(&self.base_url)
@@ -154,6 +156,12 @@ impl TenderdashClient {
                 error!("Failed to parse Tenderdash response: {}", e);
                 DapiError::Client(format!("Failed to parse response: {}", e))
             })?;
+
+        tracing::trace!(
+            elapsed = ?start.elapsed(),
+            request = ?request_body,
+            response = ?response,
+            "tenderdash_client request executed");
 
         if let Some(error) = response.error {
             debug!("Tenderdash RPC returned error: {}", error);
