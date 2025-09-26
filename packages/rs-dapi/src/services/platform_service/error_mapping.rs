@@ -4,21 +4,16 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 
-use std::fmt::Debug;
+use std::{fmt::Debug, str::FromStr};
 use tonic::{Code, metadata::MetadataValue};
 
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize)]
 pub struct TenderdashStatus {
     pub code: i64,
     // human-readable error message; will be put into `data` field
     pub message: Option<String>,
     // CBOR-encoded dpp ConsensusError
     pub consensus_error: Option<Vec<u8>>,
-}
-/// Data put into grpc metdata 'drive-error-data-bin'
-#[derive(serde::Serialize)]
-struct DriveErrorDataBin {
-    code: i64,
 }
 
 impl TenderdashStatus {
@@ -42,10 +37,9 @@ impl TenderdashStatus {
     }
 
     fn write_grpc_metadata(&self, metadata: &mut tonic::metadata::MetadataMap) {
-        // drive-error-data-bin
-        let mut serialized_drive_error_data: Vec<u8> = Vec::new();
-        let drive_error_data = DriveErrorDataBin { code: self.code };
-        ciborium::ser::into_writer(&drive_error_data, &mut serialized_drive_error_data)
+        // drive-error-data-bin contains serialized DriveErrorDataBin structure
+        let mut serialized_drive_error_data = Vec::new();
+        ciborium::ser::into_writer(&self, &mut serialized_drive_error_data)
             .inspect_err(|e| {
                 tracing::warn!("Failed to serialize drive error data bin: {}", e);
             })
@@ -54,6 +48,13 @@ impl TenderdashStatus {
         metadata.insert_bin(
             "drive-error-data-bin",
             MetadataValue::from_bytes(&serialized_drive_error_data),
+        );
+
+        // expose the consensus error code directly for clients
+        metadata.insert(
+            "code",
+            MetadataValue::from_str(&self.code.to_string())
+                .unwrap_or_else(|_| MetadataValue::from_static("0")),
         );
 
         if let Some(consensus_error) = &self.consensus_error {
@@ -279,12 +280,53 @@ impl From<serde_json::Value> for TenderdashStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde::Deserialize;
 
     fn setup_tracing() {
         let _ = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
             .with_test_writer()
             .try_init();
+    }
+
+    #[derive(Deserialize)]
+    struct DriveErrorDataBinMetadata {
+        code: i64,
+    }
+
+    #[test]
+    fn to_status_sets_expected_metadata() {
+        setup_tracing();
+
+        let consensus_error = vec![0x01, 0x02, 0x03];
+        let status = TenderdashStatus::new(
+            42,
+            Some("metadata test".to_string()),
+            Some(consensus_error.clone()),
+        )
+        .to_status();
+
+        let metadata = status.metadata();
+
+        let drive_error_bytes = metadata
+            .get_bin("drive-error-data-bin")
+            .inspect(|v| {
+                tracing::debug!(?v, "drive-error-data-bin metadata");
+            })
+            .expect("missing drive-error-data-bin metadata")
+            .to_bytes()
+            .expect("drive-error-data-bin should be valid bytes");
+        let drive_error: DriveErrorDataBinMetadata =
+            ciborium::de::from_reader(drive_error_bytes.as_ref())
+                .expect("drive-error-data-bin should deserialize");
+        assert_eq!(drive_error.code, 42);
+
+        let consensus_error_bytes = metadata
+            .get_bin("dash-serialized-consensus-error-bin")
+            .expect("missing consensus error metadata")
+            .to_bytes()
+            .expect("consensus error metadata should be valid bytes");
+        assert_eq!(consensus_error_bytes.as_ref(), consensus_error.as_slice());
     }
     #[test_case::test_case(
         "oWRkYXRhoW9zZXJpYWxpemVkRXJyb3KYIgMAGCwYHRgeGIoYwhh+GHwYvRhmGJ0UGNUYuhjlARjgGN0YmBhkERinGB0YPRh5GDIMGBkWGLcYfhMYzg=="; "info_fixture_1"
