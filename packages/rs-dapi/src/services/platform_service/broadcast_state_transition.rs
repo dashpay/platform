@@ -6,6 +6,8 @@
  * duplicate detection, following the JavaScript DAPI implementation.
  */
 use crate::services::PlatformServiceImpl;
+use crate::services::platform_service::TenderdashStatus;
+use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::{error::DapiError, services::platform_service::error_mapping::base64_decode};
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
@@ -80,7 +82,11 @@ impl PlatformServiceImpl {
             let error_message = broadcast_result.data.clone().unwrap_or_default();
 
             let response: Result<BroadcastStateTransitionResponse, DapiError> =
-                match map_broadcast_error(broadcast_result.code, &error_message) {
+                match map_broadcast_error(
+                    broadcast_result.code,
+                    &error_message,
+                    broadcast_result.info.as_deref(),
+                ) {
                     DapiError::AlreadyExists(_) => {
                         self.handle_duplicate_transaction(&tx, &txid).await
                     }
@@ -186,7 +192,7 @@ impl PlatformServiceImpl {
     }
 }
 
-fn map_broadcast_error(_code: i64, error_message: &str) -> DapiError {
+fn map_broadcast_error(code: i64, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
     tracing::trace!(
         "broadcast_state_transition: Classifying broadcast error: {}",
@@ -220,26 +226,11 @@ fn map_broadcast_error(_code: i64, error_message: &str) -> DapiError {
     if error_message.starts_with("broadcast confirmation not received:") {
         return DapiError::Timeout(error_message.to_string());
     }
-
-    DapiError::Internal(error_message.to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use base64::prelude::*;
-    use ciborium::{ser, value::Value};
-
-    fn make_consensus_info(serialized_error: &[u8]) -> String {
-        let info_value = Value::Map(vec![(
-            Value::Text("data".to_string()),
-            Value::Map(vec![(
-                Value::Text("serializedError".to_string()),
-                Value::Bytes(serialized_error.to_vec()),
-            )]),
-        )]);
-
-        let mut buffer = Vec::new();
-        ser::into_writer(&info_value, &mut buffer).expect("expected to encode consensus info");
-        BASE64_STANDARD.encode(buffer)
-    }
+    let consensus_error = info.and_then(|x| decode_consensus_error(x.to_string()));
+    let message = if error_message.is_empty() {
+        None
+    } else {
+        Some(error_message.to_string())
+    };
+    DapiError::TenderdashClientError(TenderdashStatus::new(code, message, consensus_error))
 }
