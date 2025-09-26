@@ -1481,6 +1481,7 @@ name = "dash-spv-ffi"
 version = "0.40.0"
 dependencies = [
  "cbindgen 0.29.0",
+ "clap",
  "dash-spv",
  "dashcore",
  "env_logger 0.10.2",

@@ -243,6 +243,10 @@ public class WalletService: ObservableObject {
                        let cp = checkpoint ?? tip {
                         WalletService.shared.latestHeaderHeight = Int(cp)
                     }
+
+                    if let processed = stats?.blocksProcessed, processed > 0 {
+                        WalletService.shared.blocksHit = Int(min(processed, UInt64(Int.max)))
+                    }
                 }
 
                 // Create SDK wallet manager (unified, not tied to SPV pointer for now)
@@ -971,54 +975,101 @@ extension WalletService {
         stats: SPVStats? = nil
     ) {
         let sanitizedBaseline = max(0, baseline)
-        let previousHeaderProgress = headerProgress
-        let previousFilterHeaderProgress = filterHeaderProgress
-        let previousTransactionProgress = transactionProgress
+        let absoluteHeight: (Int) -> Int = { raw in
+            if raw == 0 { return sanitizedBaseline }
+            if raw >= sanitizedBaseline { return raw }
+            return sanitizedBaseline + raw
+        }
 
-        let snapshotHeader = snapshot.map { max(Int($0.headerHeight), sanitizedBaseline) }
-        let statsHeader = stats.map { max(sanitizedBaseline, $0.headerHeight) }
-        let headerHeight = max(sanitizedBaseline, max(snapshotHeader ?? sanitizedBaseline, statsHeader ?? sanitizedBaseline))
+        let snapshotHeader = snapshot.map { absoluteHeight(Int($0.headerHeight)) }
+        let statsHeader = stats.map { absoluteHeight($0.headerHeight) }
+        let headerHeight = max(
+            sanitizedBaseline,
+            max(snapshotHeader ?? sanitizedBaseline, statsHeader ?? sanitizedBaseline)
+        )
         headerCurrentHeight = headerHeight
-        latestHeaderHeight = max(latestHeaderHeight, headerHeight)
+        if snapshot != nil || stats != nil {
+            latestHeaderHeight = max(latestHeaderHeight, headerHeight)
+        } else {
+            latestHeaderHeight = headerHeight
+        }
 
-        let snapshotFilterHeader = snapshot.map { max(Int($0.filterHeaderHeight), sanitizedBaseline) }
-        let filterHeaderHeight = max(sanitizedBaseline, snapshotFilterHeader ?? sanitizedBaseline)
-        latestFilterHeaderHeight = filterHeaderHeight
+        let filterHeaderHeightRaw = snapshot.map { absoluteHeight(Int($0.filterHeaderHeight)) }
+        let filterHeaderHeight = max(sanitizedBaseline, filterHeaderHeightRaw ?? sanitizedBaseline)
+        if snapshot != nil || stats != nil {
+            latestFilterHeaderHeight = max(latestFilterHeaderHeight, filterHeaderHeight)
+        } else {
+            latestFilterHeaderHeight = filterHeaderHeight
+        }
 
-        let snapshotFilterRaw = snapshot.map { max(Int($0.lastSyncedFilterHeight), sanitizedBaseline) }
-        let statsFilter = stats.map { max(sanitizedBaseline, $0.filterHeight) }
-        let filterHeight = max(sanitizedBaseline, max(snapshotFilterRaw ?? sanitizedBaseline, statsFilter ?? sanitizedBaseline))
-        latestFilterHeight = filterHeight
+        let snapshotFilterRaw = snapshot.map { absoluteHeight(Int($0.lastSyncedFilterHeight)) }
+        let statsFilter = stats.map { absoluteHeight($0.filterHeight) }
+        let filterHeight = max(
+            sanitizedBaseline,
+            max(snapshotFilterRaw ?? sanitizedBaseline, statsFilter ?? sanitizedBaseline)
+        )
+        if snapshot != nil || stats != nil {
+            latestFilterHeight = max(latestFilterHeight, filterHeight)
+        } else {
+            latestFilterHeight = filterHeight
+        }
 
-        let tipCandidates: [UInt32] = [tip, checkpoint, snapshot?.headerHeight, stats.map { UInt32(max(0, $0.headerHeight)) }]
-            .compactMap { value in
-                guard let value, value > 0 else { return nil }
-                return value
-            }
+        func absoluteTip(from raw: UInt32?) -> UInt32? {
+            guard let raw else { return nil }
+            let resolved = absoluteHeight(Int(raw))
+            return resolved > 0 ? UInt32(clamping: resolved) : nil
+        }
+
+        func absoluteTip(from raw: Int?) -> UInt32? {
+            guard let raw else { return nil }
+            let resolved = absoluteHeight(raw)
+            return resolved > 0 ? UInt32(clamping: resolved) : nil
+        }
+
+        let tipCandidates: [UInt32] = [
+            absoluteTip(from: tip),
+            absoluteTip(from: checkpoint),
+            absoluteTip(from: snapshot?.headerHeight),
+            absoluteTip(from: stats?.headerHeight)
+        ].compactMap { $0 }
+
         let resolvedTip = tipCandidates.max()
 
-        if let resolvedTip {
-            let resolvedTarget = Int(max(resolvedTip, UInt32(headerHeight)))
-            headerTargetHeight = normalizedChainTip(resolvedTarget, baseline: sanitizedBaseline)
-        } else if headerTargetHeight < headerHeight {
+        let resolvedTarget: Int = {
+            let tipMax = resolvedTip.map { Int($0) } ?? headerHeight
+            let base = max(tipMax, headerHeight)
+            if let expected = expectedChainTipHeight() {
+                return max(base, expected)
+            }
+            return base
+        }()
+
+        SDKLogger.log(
+            "[SPV][Snapshot] baseline=\(sanitizedBaseline) header=\(headerHeight) filterHeader=\(filterHeaderHeight) filters=\(filterHeight) " +
+            "resolvedTip=\(resolvedTip.map(String.init) ?? "nil") target=\(resolvedTarget)",
+            minimumLevel: .high
+        )
+
+        let normalizedTarget = normalizedChainTip(resolvedTarget, baseline: sanitizedBaseline)
+        if normalizedTarget > headerTargetHeight {
+            headerTargetHeight = normalizedTarget
+        }
+        if headerTargetHeight < headerHeight {
             headerTargetHeight = headerHeight
         }
 
-        if let resolvedTip, resolvedTip > UInt32(sanitizedBaseline) {
-            let denominator = max(1, Int(resolvedTip) - sanitizedBaseline)
-            let headerNumerator = max(0, headerHeight - sanitizedBaseline)
-            headerProgress = min(1.0, Double(headerNumerator) / Double(denominator))
+        let clampedFilterHeader = min(filterHeaderHeight, headerTargetHeight)
+        let clampedFilterHeight = min(filterHeight, headerTargetHeight)
 
-            let filterHeaderNumerator = max(0, filterHeaderHeight - sanitizedBaseline)
-            filterHeaderProgress = min(1.0, Double(filterHeaderNumerator) / Double(denominator))
+        let denominator = max(1, headerTargetHeight - sanitizedBaseline)
+        let headerNumerator = max(0, headerHeight - sanitizedBaseline)
+        headerProgress = min(1.0, Double(headerNumerator) / Double(denominator))
 
-            let filterNumerator = max(0, filterHeight - sanitizedBaseline)
-            transactionProgress = min(1.0, Double(filterNumerator) / Double(denominator))
-        } else {
-            headerProgress = previousHeaderProgress
-            filterHeaderProgress = previousFilterHeaderProgress
-            transactionProgress = previousTransactionProgress
-        }
+        let filterHeaderNumerator = max(0, clampedFilterHeader - sanitizedBaseline)
+        filterHeaderProgress = min(1.0, Double(filterHeaderNumerator) / Double(denominator))
+
+        let filterNumerator = max(0, clampedFilterHeight - sanitizedBaseline)
+        transactionProgress = min(1.0, Double(filterNumerator) / Double(denominator))
     }
 
     /// Apply baseline heights to the UI counters with an optional known tip.
