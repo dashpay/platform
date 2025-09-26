@@ -96,7 +96,6 @@ macro_rules! drive_method {
         }
     };
 }
-
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
@@ -229,13 +228,15 @@ impl Platform for PlatformServiceImpl {
                 debug!(response=?response, "broadcast_state_transition succeeded");
                 Ok(response.into())
             }
+
             Err(e) => {
                 let status = e.to_status();
                 let metadata = status.metadata();
                 tracing::warn!(
-                    error = %status,
+                    error = %e,
+                    %status,
                     ?metadata,
-                    "broadcast_state_transition failed; returning broadcast error response"
+                    "broadcast_state_transition failed; returning error"
                 );
                 Err(status)
             }

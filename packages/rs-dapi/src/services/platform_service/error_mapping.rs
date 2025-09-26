@@ -1,5 +1,7 @@
 use base64::{engine, prelude::Engine as _};
-use dapi_grpc::platform::v0::StateTransitionBroadcastError;
+use dapi_grpc::platform::v0::{
+    StateTransitionBroadcastError, WaitForStateTransitionResultResponse,
+};
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 
 use std::fmt::Debug;
@@ -60,40 +62,46 @@ impl TenderdashStatus {
     ///
     /// See packages/rs-dpp/src/errors/consensus/codes.rs for possible codes.
     fn grpc_code(&self) -> Code {
-        match self.code {
-            0 => Code::Ok,
-            1 => Code::Cancelled,
-            2 => Code::Unknown,
-            3 => Code::InvalidArgument,
-            4 => Code::DeadlineExceeded,
-            5 => Code::NotFound,
-            6 => Code::AlreadyExists,
-            7 => Code::PermissionDenied,
-            8 => Code::ResourceExhausted,
-            9 => Code::FailedPrecondition,
-            10 => Code::Aborted,
-            11 => Code::OutOfRange,
-            12 => Code::Unimplemented,
-            13 => Code::Internal,
-            14 => Code::Unavailable,
-            15 => Code::DataLoss,
-            16 => Code::Unauthenticated,
-            code => {
-                if (17..=9999).contains(&code) {
-                    Code::Unknown
-                } else if (10000..20000).contains(&code) {
-                    Code::InvalidArgument
-                } else if (20000..30000).contains(&code) {
-                    Code::Unauthenticated
-                } else if (30000..40000).contains(&code) {
-                    Code::FailedPrecondition
-                } else if (40000..50000).contains(&code) {
-                    Code::InvalidArgument
-                } else {
-                    Code::Internal
-                }
-            }
+        let code = Code::from_i32(self.code as i32);
+        if code != Code::Unknown {
+            return code;
         }
+
+        match self.code {
+            17..10000 => Code::Unknown,
+            10000..20000 => Code::InvalidArgument,
+            20000..30000 => Code::Unauthenticated,
+            30000..40000 => Code::FailedPrecondition,
+            40000..50000 => Code::InvalidArgument,
+            _ => Code::Internal,
+        }
+    }
+}
+
+impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResponse> {
+    fn from(err: TenderdashStatus) -> Self {
+        use dapi_grpc::platform::v0::wait_for_state_transition_result_response::*;
+        let st_error = StateTransitionBroadcastError::from(err.clone());
+
+        let message = WaitForStateTransitionResultResponse {
+            version: Some(Version::V0(WaitForStateTransitionResultResponseV0 {
+                metadata: None,
+                result: Some(wait_for_state_transition_result_response_v0::Result::Error(
+                    st_error,
+                )),
+            })),
+        };
+
+        let mut response = Self::new(message);
+
+        if let Some(consensus_error) = &err.consensus_error {
+            // Add consensus error metadata
+            response.metadata_mut().insert_bin(
+                "dash-serialized-consensus-error-bin",
+                MetadataValue::from_bytes(consensus_error),
+            );
+        }
+        response
     }
 }
 
@@ -102,7 +110,7 @@ impl From<TenderdashStatus> for StateTransitionBroadcastError {
         StateTransitionBroadcastError {
             code: err.code.min(u32::MAX as i64) as u32,
             message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
-            data: err.consensus_error.unwrap_or_default(),
+            data: err.consensus_error.clone().unwrap_or_default(),
         }
     }
 }

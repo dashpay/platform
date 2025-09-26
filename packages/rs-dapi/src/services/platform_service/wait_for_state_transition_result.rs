@@ -185,15 +185,14 @@ impl PlatformServiceImpl {
         transaction_event: crate::clients::TransactionEvent,
         prove: bool,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, DapiError> {
-        let mut response_v0 =
-            wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
-                result: None,
-                metadata: None,
-            };
-
         // Check transaction result
         match transaction_event.result {
             crate::clients::TransactionResult::Success => {
+                let mut response_v0 =
+                    wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
+                        result: None,
+                        metadata: None,
+                };
                 // Success case - generate proof if requested
                 if prove && let Some(tx_bytes) = transaction_event.tx {
                     match self.fetch_proof_for_state_transition(tx_bytes).await {
@@ -209,24 +208,29 @@ impl PlatformServiceImpl {
                         }
                     }
                 }
+
+                let body = WaitForStateTransitionResultResponse {
+                    version: Some(wait_for_state_transition_result_response::Version::V0(
+                        response_v0,
+                    )),
+                };
+
+                Ok(body.into())
             }
             crate::clients::TransactionResult::Error { code, info, data } => {
                 // Error case - create error response
-                let error = TenderdashStatus::new(code as i64, data, base64_decode(&info));
-
-                response_v0.result = Some(
-                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error.into())
+                tracing::debug!(
+                    code,
+                    info = ?info,
+                    data = ?data,
+                    "Transaction event indicates error"
                 );
+                let error = TenderdashStatus::new(code as i64, data, base64_decode(&info));
+                let result: Response<WaitForStateTransitionResultResponse> = error.into();
+
+                Ok(result)
             }
         }
-
-        let body = WaitForStateTransitionResultResponse {
-            version: Some(wait_for_state_transition_result_response::Version::V0(
-                response_v0,
-            )),
-        };
-
-        Ok(response_with_consensus_metadata(body))
     }
 
     async fn fetch_proof_for_state_transition(

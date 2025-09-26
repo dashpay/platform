@@ -301,8 +301,6 @@ impl TenderdashWebSocketClient {
         message: &str,
         event_sender: &broadcast::Sender<TransactionEvent>,
     ) -> DAPIResult<()> {
-        trace!("Received WebSocket message: {}", message);
-
         let ws_message: TenderdashWsMessage = serde_json::from_str(message).inspect_err(|e| {
             debug!(
                 "Failed to parse WebSocket message as TenderdashWsMessage: {}",

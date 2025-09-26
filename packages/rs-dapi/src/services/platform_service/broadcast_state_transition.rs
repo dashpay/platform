@@ -5,6 +5,7 @@
  * to the Tenderdash network, including validation, error handling, and
  * duplicate detection, following the JavaScript DAPI implementation.
  */
+
 use crate::services::PlatformServiceImpl;
 use crate::services::platform_service::TenderdashStatus;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
@@ -55,9 +56,34 @@ impl PlatformServiceImpl {
         // Convert to base64 for Tenderdash RPC
         let tx_base64 = BASE64_STANDARD.encode(&tx);
 
-        // Attempt to broadcast the transaction
-        let broadcast_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
-            Ok(response) => response,
+        // Attempt to broadcast the transaction; note that both Ok and Err can contain
+        // information about the broadcast result, so we need to handle both.
+        let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
+            Ok(broadcast_result) => {
+                if broadcast_result.code == 0 {
+                    info!(st_hash = %txid_hex, "broadcast_state_transition: State transition broadcasted successfully");
+                    // we are good, no need to return anything specific
+                    return Ok(BroadcastStateTransitionResponse {});
+                } else {
+                    debug!(
+                        code = broadcast_result.code,
+                        info = ?broadcast_result.info,
+                        data = ?broadcast_result.data,
+                        tx = %txid_hex,
+                        "broadcast_state_transition: State transition broadcast failed - service error"
+                    );
+
+                    // TODO: review to get real error message
+                    let error_message = broadcast_result.data.clone().unwrap_or_default();
+
+                    map_broadcast_error(
+                        broadcast_result.code,
+                        &error_message,
+                        broadcast_result.info.as_deref(),
+                    )
+                }
+            }
+            Err(DapiError::TenderdashClientError(e)) => DapiError::TenderdashClientError(e),
             Err(error) => {
                 tracing::debug!(
                     error = %error,
@@ -68,41 +94,17 @@ impl PlatformServiceImpl {
             }
         };
 
-        // Check broadcast result
-        if broadcast_result.code != 0 {
-            debug!(
-                code = broadcast_result.code,
-                info = ?broadcast_result.info,
-                data = ?broadcast_result.data,
-                tx = %txid_hex,
-                "broadcast_state_transition: State transition broadcast failed - service error"
-            );
-
-            // TODO: review to get real error message
-            let error_message = broadcast_result.data.clone().unwrap_or_default();
-
-            let response: Result<BroadcastStateTransitionResponse, DapiError> =
-                match map_broadcast_error(
-                    broadcast_result.code,
-                    &error_message,
-                    broadcast_result.info.as_deref(),
-                ) {
-                    DapiError::AlreadyExists(_) => {
-                        self.handle_duplicate_transaction(&tx, &txid).await
-                    }
-                    e => Err(e),
-                };
-            return response.inspect_err(|e| {
-                error!(
-                    error = %e,
-                    st_hash = %txid_hex,
-                    "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
-                );
-            });
+        let response: Result<BroadcastStateTransitionResponse, DapiError> = match error_result {
+            DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(&tx, &txid).await,
+            e => Err(e),
         };
-
-        info!(st_hash = %txid_hex, "broadcast_state_transition: State transition broadcasted successfully");
-        Ok(BroadcastStateTransitionResponse {})
+        response.inspect_err(|e| {
+            error!(
+                error = %e,
+                st_hash = %txid_hex,
+                "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
+            );
+        })
     }
 
     /// Handle duplicate transaction scenarios
@@ -195,7 +197,8 @@ impl PlatformServiceImpl {
 fn map_broadcast_error(code: i64, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
     tracing::trace!(
-        "broadcast_state_transition: Classifying broadcast error: {}",
+        "broadcast_state_transition: Classifying broadcast error {}: {}",
+        code,
         error_message
     );
     if error_message == "tx already exists in cache" {
