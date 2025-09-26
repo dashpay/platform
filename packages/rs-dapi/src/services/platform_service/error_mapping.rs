@@ -1,11 +1,8 @@
-use base64::{
-    engine,
-    prelude::{BASE64_STANDARD, Engine as _},
-};
+use base64::{engine, prelude::Engine as _};
 use dapi_grpc::platform::v0::StateTransitionBroadcastError;
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 
-use std::{collections::BTreeMap, fmt::Debug};
+use std::fmt::Debug;
 use tonic::{Code, metadata::MetadataValue};
 
 #[derive(Clone)]
@@ -49,14 +46,14 @@ impl TenderdashStatus {
 
         if let Some(consensus_error_bytes) = &self.consensus_error
             && let Ok(consensus_error) =
-                ConsensusError::deserialize_from_bytes(&consensus_error_bytes).inspect_err(|e| {
+                ConsensusError::deserialize_from_bytes(consensus_error_bytes).inspect_err(|e| {
                     tracing::warn!("Failed to deserialize consensus error: {}", e);
                 })
         {
             return consensus_error.to_string();
         }
 
-        return format!("Unknown error with code {}", self.code);
+        format!("Unknown error with code {}", self.code)
     }
 
     /// map gRPC code from Tenderdash to tonic::Code.
@@ -120,7 +117,7 @@ impl Debug for TenderdashStatus {
                 &self
                     .consensus_error
                     .as_ref()
-                    .map(|e| hex::encode(e))
+                    .map(hex::encode)
                     .unwrap_or_else(|| "None".to_string()),
             )
             .finish()
@@ -172,7 +169,7 @@ fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a
     None
 }
 
-fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
+pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
     let decoded_bytes = base64_decode(&info_base64)?;
     // CBOR-decode decoded_bytes
@@ -255,7 +252,6 @@ impl From<serde_json::Value> for TenderdashStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ciborium::{ser, value::Value};
 
     fn setup_tracing() {
         let _ = tracing_subscriber::fmt()
