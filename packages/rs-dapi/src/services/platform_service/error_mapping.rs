@@ -9,7 +9,7 @@ use std::{collections::BTreeMap, fmt::Debug};
 use tonic::{Code, metadata::MetadataValue};
 
 #[derive(Clone)]
-pub struct TenderdashBroadcastError {
+pub struct TenderdashStatus {
     pub code: i64,
     // human-readable error message; will be put into `data` field
     pub message: Option<String>,
@@ -17,7 +17,7 @@ pub struct TenderdashBroadcastError {
     pub consensus_error: Option<Vec<u8>>,
 }
 
-impl TenderdashBroadcastError {
+impl TenderdashStatus {
     pub fn new(code: i64, message: Option<String>, consensus_error: Option<Vec<u8>>) -> Self {
         Self {
             code,
@@ -100,8 +100,8 @@ impl TenderdashBroadcastError {
     }
 }
 
-impl From<TenderdashBroadcastError> for StateTransitionBroadcastError {
-    fn from(err: TenderdashBroadcastError) -> Self {
+impl From<TenderdashStatus> for StateTransitionBroadcastError {
+    fn from(err: TenderdashStatus) -> Self {
         StateTransitionBroadcastError {
             code: err.code.min(u32::MAX as i64) as u32,
             message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
@@ -110,7 +110,7 @@ impl From<TenderdashBroadcastError> for StateTransitionBroadcastError {
     }
 }
 
-impl Debug for TenderdashBroadcastError {
+impl Debug for TenderdashStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TenderdashBroadcastError")
             .field("code", &self.code)
@@ -144,6 +144,34 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
+// Iteratively parses `data` as a map, checks if it contains the sequence of keys in `keys`
+fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a ciborium::Value> {
+    if keys.is_empty() {
+        tracing::trace!(?data, "found value, returning");
+        return Some(data);
+    }
+
+    let current_key = keys[0];
+    let rest_keys = &keys[1..];
+
+    let map = data.as_map().or_else(|| {
+        tracing::trace!(?data, "Not a CBOR map, cannot walk for key: {:?}", keys);
+        None
+    })?;
+
+    for (k, v) in map {
+        if let ciborium::Value::Text(key_str) = k
+            && key_str == current_key
+        {
+            let found = walk_cbor_for_key(v, rest_keys);
+            return found;
+        }
+    }
+
+    tracing::trace!(?keys, "Key not found in CBOR map: {:?}", keys);
+    None
+}
+
 fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
     let decoded_bytes = base64_decode(&info_base64)?;
@@ -154,47 +182,25 @@ fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
         })
         .ok()?;
 
-    let main_map = raw_value
-        .into_map()
-        .inspect_err(|e| {
-            tracing::warn!("Drive error info is not a CBOR map: {:?}", e);
-        })
-        .ok()?;
+    tracing::trace!("Drive error info CBOR value: {:?}", raw_value);
 
-    let data_map = main_map
-        .into_iter()
-        .find_map(|(k, v)| {
-            if let Value::Text(key) = k
-                && key == "data"
-            {
-                Some(v.into_map())
-            } else {
-                None
-            }
-        })?
-        .inspect_err(|e| {
-            tracing::warn!("Drive error info 'data' field is not a CBOR map: {:?}", e);
+    let serialized_error = walk_cbor_for_key(&raw_value, &["data", "serializedError"])?
+        .as_array()?
+        .iter()
+        .map(|v| {
+            v.as_integer().and_then(|n| {
+                u8::try_from(n)
+                    .inspect_err(|e| {
+                        tracing::warn!("Non-u8 value in serializedError array: {}", e);
+                    })
+                    .ok()
+            })
         })
-        .ok()?;
-
-    let serialized_error = data_map
-        .into_iter()
-        .find_map(|(k, v)| {
-            if let Value::Text(key) = k
-                && (key == "serialized_error" || key == "serializedError")
-            {
-                Some(v.into_bytes())
-            } else {
-                None
-            }
-        })?
-        .inspect_err(|e| {
-            tracing::warn!(
-                "Drive error info 'serializedError' field is not a CBOR map: {:?}",
-                e
-            );
-        })
-        .ok()?;
+        .collect::<Option<Vec<u8>>>()
+        .or_else(|| {
+            tracing::warn!("serializedError is not an array of integers");
+            None
+        })?;
 
     // sanity check: serialized error must deserialize to ConsensusError
     if ConsensusError::deserialize_from_bytes(&serialized_error).is_err() {
@@ -208,7 +214,7 @@ fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     Some(serialized_error)
 }
 
-impl From<serde_json::Value> for TenderdashBroadcastError {
+impl From<serde_json::Value> for TenderdashStatus {
     // Convert from a JSON error object returned by Tenderdash RPC, typically in the `error` field of a JSON-RPC response.
     fn from(value: serde_json::Value) -> Self {
         if let Some(object) = value.as_object() {
@@ -251,17 +257,18 @@ mod tests {
     use super::*;
     use ciborium::{ser, value::Value};
 
-    fn encode_consensus_info(serialized_error: &[u8]) -> String {
-        let info_value = Value::Map(vec![(
-            Value::Text("data".to_string()),
-            Value::Map(vec![(
-                Value::Text("serializedError".to_string()),
-                Value::Bytes(serialized_error.to_vec()),
-            )]),
-        )]);
-
-        let mut buffer = Vec::new();
-        ser::into_writer(&info_value, &mut buffer).expect("consensus info encoding");
-        BASE64_STANDARD.encode(buffer)
+    fn setup_tracing() {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
+    }
+    #[test_case::test_case(
+        "oWRkYXRhoW9zZXJpYWxpemVkRXJyb3KYIgMAGCwYHRgeGIoYwhh+GHwYvRhmGJ0UGNUYuhjlARjgGN0YmBhkERinGB0YPRh5GDIMGBkWGLcYfhMYzg=="; "info_fixture_1"
+    )]
+    fn test_info_fixture(info_base64: &str) {
+        setup_tracing();
+        let decoded = decode_consensus_error(info_base64.to_string()).unwrap();
+        ConsensusError::deserialize_from_bytes(&decoded).expect("should deserialize");
     }
 }

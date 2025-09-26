@@ -24,7 +24,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tracing::debug;
 
-pub use error_mapping::TenderdashBroadcastError;
+pub use error_mapping::TenderdashStatus;
 
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///

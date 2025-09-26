@@ -1,6 +1,6 @@
 use crate::error::DapiError;
 use crate::services::platform_service::error_mapping::base64_decode;
-use crate::services::platform_service::{PlatformServiceImpl, TenderdashBroadcastError};
+use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
@@ -139,7 +139,7 @@ impl PlatformServiceImpl {
                 .as_ref()
                 .and_then(|info_base64| base64_decode(info_base64));
 
-            let error = TenderdashBroadcastError::new(
+            let error = TenderdashStatus::new(
                 tx_result.code,
                 tx_result.data.clone(),
                 consensus_error_serialized,
@@ -212,7 +212,7 @@ impl PlatformServiceImpl {
             }
             crate::clients::TransactionResult::Error { code, info, data } => {
                 // Error case - create error response
-                let error = TenderdashBroadcastError::new(code as i64, data, base64_decode(&info));
+                let error = TenderdashStatus::new(code as i64, data, base64_decode(&info));
 
                 response_v0.result = Some(
                     wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error.into())

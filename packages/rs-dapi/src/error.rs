@@ -6,7 +6,7 @@ use sha2::Digest;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::services::platform_service::TenderdashBroadcastError;
+use crate::services::platform_service::TenderdashStatus;
 
 /// Result type alias for DAPI operations
 pub type DapiResult<T> = std::result::Result<T, DapiError>;
@@ -113,7 +113,7 @@ pub enum DapiError {
     MethodNotFound(String),
 
     #[error("Tenderdash request error: {0:?}")]
-    TenderdashClientError(TenderdashBroadcastError),
+    TenderdashClientError(TenderdashStatus),
 }
 
 /// Result type alias for DAPI operations
@@ -161,7 +161,7 @@ impl DapiError {
     }
 
     pub fn from_tenderdash_error(value: Value) -> Self {
-        DapiError::TenderdashClientError(TenderdashBroadcastError::from(value))
+        DapiError::TenderdashClientError(TenderdashStatus::from(value))
     }
 
     /// Create a no proof error for a transaction
