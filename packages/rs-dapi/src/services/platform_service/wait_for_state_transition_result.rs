@@ -144,15 +144,11 @@ impl PlatformServiceImpl {
                 tx_result.data.clone(),
                 consensus_error_serialized,
             );
-
-            response_v0.result = Some(wait_for_state_transition_result_response_v0::Result::Error(
-                error.into(),
-            ));
+            return Ok(error.into());
         }
 
-        // Generate proof if requested and no error
+        // No error; generate proof if requested
         if prove
-            && response_v0.result.is_none()
             && let Some(tx_bytes) = &tx_response.tx
             && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, tx_bytes)
@@ -177,7 +173,7 @@ impl PlatformServiceImpl {
             )),
         };
 
-        Ok(response_with_consensus_metadata(body))
+        Ok(body.into())
     }
 
     async fn build_response_from_event(
@@ -269,71 +265,27 @@ impl PlatformServiceImpl {
     }
 }
 
-fn map_dapi_error_to_state_transition_broadcast_error(
-    error: &DapiError,
-) -> dapi_grpc::platform::v0::StateTransitionBroadcastError {
-    match error {
-        DapiError::TenderdashClientError(value) => value.clone().into(),
-        other => {
-            let status = other.to_status();
-            dapi_grpc::platform::v0::StateTransitionBroadcastError {
-                code: status.code() as u32,
-                message: status.message().to_string(),
-                data: Vec::new(),
-            }
-        }
-    }
-}
-
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
 ) -> Response<WaitForStateTransitionResultResponse> {
-    use wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitForResult;
-
-    let response_v0 =
-        wait_for_state_transition_result_response::WaitForStateTransitionResultResponseV0 {
-            result: Some(WaitForResult::Error(
-                map_dapi_error_to_state_transition_broadcast_error(error),
-            )),
-            metadata: None,
+    // TenderdashStatus has everything we need
+    let tenderdash_status = if let DapiError::TenderdashClientError(e) = error {
+        e.clone()
+    } else {
+        let status = error.to_status();
+        let message = if status.message().is_empty() {
+            None
+        } else {
+            Some(status.message().to_string())
         };
-
-    let body = WaitForStateTransitionResultResponse {
-        version: Some(wait_for_state_transition_result_response::Version::V0(
-            response_v0,
-        )),
+        TenderdashStatus::new(status.code() as i64, message, None)
     };
 
-    response_with_consensus_metadata(body)
-}
-
-/// Add consensus result metadata to the response if present
-fn response_with_consensus_metadata(
-    body: WaitForStateTransitionResultResponse,
-) -> Response<WaitForStateTransitionResultResponse> {
-    use wait_for_state_transition_result_response::Version;
-    use wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result as WaitForResult;
-
-    let mut response = Response::new(body);
-
-    let consensus_bytes = response
-        .get_ref()
-        .version
-        .as_ref()
-        .and_then(|version| match version {
-            Version::V0(v0) => v0.result.as_ref().and_then(|result| match result {
-                WaitForResult::Error(error) => (!error.data.is_empty()).then_some(&error.data),
-                _ => None,
-            }),
-        })
-        .cloned();
-
-    if let Some(bytes) = consensus_bytes {
-        let value = MetadataValue::from_bytes(bytes.as_slice());
-        response
-            .metadata_mut()
-            .insert_bin("dash-serialized-consensus-error-bin", value);
-    }
-
-    response
+    tracing::debug!(
+        error = %error,
+        ?tenderdash_status,
+        code = tenderdash_status.code,
+        "Mapping DapiError to WaitForStateTransitionResultResponse"
+    );
+    tenderdash_status.into()
 }

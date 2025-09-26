@@ -15,6 +15,11 @@ pub struct TenderdashStatus {
     // CBOR-encoded dpp ConsensusError
     pub consensus_error: Option<Vec<u8>>,
 }
+/// Data put into grpc metdata 'drive-error-data-bin'
+#[derive(serde::Serialize)]
+struct DriveErrorDataBin {
+    code: i64,
+}
 
 impl TenderdashStatus {
     pub fn new(code: i64, message: Option<String>, consensus_error: Option<Vec<u8>>) -> Self {
@@ -31,14 +36,33 @@ impl TenderdashStatus {
 
         let mut status: tonic::Status = tonic::Status::new(status_code, status_message);
 
+        self.write_grpc_metadata(status.metadata_mut());
+
+        status
+    }
+
+    fn write_grpc_metadata(&self, metadata: &mut tonic::metadata::MetadataMap) {
+        // drive-error-data-bin
+        let mut serialized_drive_error_data: Vec<u8> = Vec::new();
+        let drive_error_data = DriveErrorDataBin { code: self.code };
+        ciborium::ser::into_writer(&drive_error_data, &mut serialized_drive_error_data)
+            .inspect_err(|e| {
+                tracing::warn!("Failed to serialize drive error data bin: {}", e);
+            })
+            .ok();
+
+        metadata.insert_bin(
+            "drive-error-data-bin",
+            MetadataValue::from_bytes(&serialized_drive_error_data),
+        );
+
         if let Some(consensus_error) = &self.consensus_error {
             // Add consensus error metadata
-            status.metadata_mut().insert_bin(
+            metadata.insert_bin(
                 "dash-serialized-consensus-error-bin",
                 MetadataValue::from_bytes(consensus_error),
             );
         }
-        status
     }
 
     fn grpc_message(&self) -> String {
@@ -94,13 +118,8 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
 
         let mut response = Self::new(message);
 
-        if let Some(consensus_error) = &err.consensus_error {
-            // Add consensus error metadata
-            response.metadata_mut().insert_bin(
-                "dash-serialized-consensus-error-bin",
-                MetadataValue::from_bytes(consensus_error),
-            );
-        }
+        err.write_grpc_metadata(response.metadata_mut());
+
         response
     }
 }
