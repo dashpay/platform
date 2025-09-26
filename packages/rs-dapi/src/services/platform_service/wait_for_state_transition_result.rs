@@ -1,6 +1,6 @@
-use super::error_mapping::build_state_transition_error;
 use crate::error::DapiError;
-use crate::services::platform_service::PlatformServiceImpl;
+use crate::services::platform_service::error_mapping::base64_decode;
+use crate::services::platform_service::{PlatformServiceImpl, TenderdashBroadcastError};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
 use dapi_grpc::platform::v0::wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0;
@@ -134,14 +134,19 @@ impl PlatformServiceImpl {
             && tx_result.code != 0
         {
             // Transaction had an error
-            let error = build_state_transition_error(
-                tx_result.code as u32,
-                tx_result.info.as_deref().unwrap_or(""),
-                tx_result.data.as_deref(),
+            let consensus_error_serialized = tx_result
+                .info
+                .as_ref()
+                .and_then(|info_base64| base64_decode(info_base64));
+
+            let error = TenderdashBroadcastError::new(
+                tx_result.code,
+                tx_result.data.clone(),
+                consensus_error_serialized,
             );
 
             response_v0.result = Some(wait_for_state_transition_result_response_v0::Result::Error(
-                error,
+                error.into(),
             ));
         }
 
@@ -207,9 +212,10 @@ impl PlatformServiceImpl {
             }
             crate::clients::TransactionResult::Error { code, info, data } => {
                 // Error case - create error response
-                let error = build_state_transition_error(code, &info, data.as_deref());
+                let error = TenderdashBroadcastError::new(code as i64, data, base64_decode(&info));
+
                 response_v0.result = Some(
-                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error)
+                    wait_for_state_transition_result_response::wait_for_state_transition_result_response_v0::Result::Error(error.into())
                 );
             }
         }

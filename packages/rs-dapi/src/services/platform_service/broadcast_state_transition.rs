@@ -5,8 +5,8 @@
  * to the Tenderdash network, including validation, error handling, and
  * duplicate detection, following the JavaScript DAPI implementation.
  */
-use crate::error::{DapiError, base64_decode};
 use crate::services::PlatformServiceImpl;
+use crate::{error::DapiError, services::platform_service::error_mapping::base64_decode};
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};

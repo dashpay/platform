@@ -24,6 +24,8 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tracing::debug;
 
+pub use error_mapping::TenderdashBroadcastError;
+
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
 /// Usage: `drive_method!(method_name, RequestType, ResponseType);`
@@ -95,7 +97,6 @@ macro_rules! drive_method {
     };
 }
 
-use crate::clients::tenderdash_client::BroadcastTxResponse;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
