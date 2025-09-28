@@ -249,13 +249,11 @@ public class WalletService: ObservableObject {
                     }
                 }
 
-                // Create SDK wallet manager (unified, not tied to SPV pointer for now)
+                // Create the SDK wallet manager by reusing the SPV client's shared manager
                 do {
-                    let sdkWalletManager = try SwiftDashSDK.WalletManager()
-                    let wrapper: WalletManager = try await MainActor.run {
-                        try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
-                    }
-                    await MainActor.run {
+                    try await MainActor.run {
+                        let sdkWalletManager = try clientLocal.makeSharedWalletManager()
+                        let wrapper = try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
                         WalletService.shared.walletManager = wrapper
                         WalletService.shared.walletManager?.transactionService = TransactionService(
                             walletManager: wrapper,

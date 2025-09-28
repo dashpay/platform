@@ -725,8 +725,14 @@ public class SPVClient: ObservableObject {
     public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
         guard let client = client else { return nil }
         
-        let managerPtr = dash_spv_ffi_client_get_wallet_manager(client)
-        return managerPtr?.assumingMemoryBound(to: FFIWalletManager.self)
+        return dash_spv_ffi_client_get_wallet_manager(client)
+    }
+
+    /// Produce a Swift wallet manager that shares the SPV client's underlying wallet state.
+    /// Callers are responsible for retaining the returned instance for as long as needed.
+    public func makeSharedWalletManager() throws -> WalletManager {
+        guard let client = client else { throw SPVError.notInitialized }
+        return try WalletManager(fromSPVClient: client)
     }
     
     // MARK: - Statistics
