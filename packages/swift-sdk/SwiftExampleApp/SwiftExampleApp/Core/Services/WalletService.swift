@@ -745,6 +745,8 @@ extension WalletService: SPVClientDelegate {
         let overall = progress.overallProgress
         let stageRawValue = stage.rawValue
         let mappedStage = WalletService.mapSyncStage(stage)
+        let reportedFilterHeaderHeight = progress.filterHeaderHeight
+        let reportedFilterHeight = progress.filterHeight
 
         Task { @MainActor in
             let baseHeight = Int(startHeight)
@@ -756,10 +758,10 @@ extension WalletService: SPVClientDelegate {
             var headerPct = min(1.0, max(0.0, headerNumeratorRaw / headerDenominatorRaw))
 
 
-            let absFilterHeaderRaw = max(Int(progress.filterHeaderHeight), baseHeight)
+            let absFilterHeaderRaw = max(Int(reportedFilterHeaderHeight), baseHeight)
             var absFilterHeader = min(absFilterHeaderRaw, absTarget)
 
-            let absFilterRaw = max(Int(progress.filterHeight), baseHeight)
+            let absFilterRaw = max(Int(reportedFilterHeight), baseHeight)
             var absFilter = min(absFilterRaw, absTarget)
 
             if mappedStage == .headers {
@@ -812,11 +814,18 @@ extension WalletService: SPVClientDelegate {
 
             WalletService.shared.syncProgress = headerPct
             WalletService.shared.headerProgress = headerPct
-            WalletService.shared.latestFilterHeaderHeight = max(WalletService.shared.latestFilterHeaderHeight, absFilterHeader)
-            WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, absFilter)
-            WalletService.shared.filterHeaderProgress = filterHeaderPct
-            let previousTxProgress = WalletService.shared.transactionProgress
-            WalletService.shared.transactionProgress = max(previousTxProgress, filterPct)
+
+            if mappedStage == .headers {
+                WalletService.shared.filterHeaderProgress = 0
+                WalletService.shared.transactionProgress = max(0, WalletService.shared.transactionProgress)
+                WalletService.shared.latestFilterHeaderHeight = baseHeight
+                WalletService.shared.latestFilterHeight = baseHeight
+            } else {
+                WalletService.shared.latestFilterHeaderHeight = max(WalletService.shared.latestFilterHeaderHeight, absFilterHeader)
+                WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, absFilter)
+                WalletService.shared.filterHeaderProgress = filterHeaderPct
+                WalletService.shared.transactionProgress = max(WalletService.shared.transactionProgress, filterPct)
+            }
 
             WalletService.shared.detailedSyncProgress = SyncProgress(
                 current: UInt64(absHeader),
