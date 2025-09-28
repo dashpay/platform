@@ -815,6 +815,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
+                        platform_version,
                     )?;
 
                 execution_context
@@ -944,6 +945,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
+                        platform_version,
                     )?;
 
                 execution_context

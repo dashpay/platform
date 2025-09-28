@@ -6,6 +6,7 @@ use dpp::fee::fee_result::FeeResult;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::DocumentTransferTransition;
+use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
@@ -20,6 +21,7 @@ impl DocumentTransferTransitionAction {
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -36,6 +38,7 @@ impl DocumentTransferTransitionAction {
                     block_info,
                     user_fee_increase,
                     get_data_contract,
+                    platform_version,
                 )
             }
         }

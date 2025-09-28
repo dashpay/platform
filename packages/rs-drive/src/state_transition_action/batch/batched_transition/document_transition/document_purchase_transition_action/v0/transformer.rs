@@ -1,13 +1,15 @@
 use dpp::block::block_info::BlockInfo;
-use dpp::document::property_names::PRICE;
+use dpp::document::property_names::{CREATOR_ID, PRICE};
 use dpp::document::{property_names, Document, DocumentV0Getters, DocumentV0Setters};
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
 use dpp::fee::fee_result::FeeResult;
+use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
 use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
+use platform_version::version::PlatformVersion;
 use crate::drive::contract::DataContractFetchInfo;
 use crate::error::Error;
 use crate::state_transition_action::batch::batched_transition::BatchedTransitionAction;
@@ -26,6 +28,7 @@ impl DocumentPurchaseTransitionActionV0 {
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
+        platform_version: &PlatformVersion,
     ) -> Result<
         (
             ConsensusValidationResult<BatchedTransitionAction>,
@@ -66,6 +69,18 @@ impl DocumentPurchaseTransitionActionV0 {
         let original_owner_id = original_document.owner_id();
 
         let mut modified_document = original_document;
+
+        // If we don't have a creator id that means we never had sold it before
+        if modified_document
+            .properties()
+            .get_optional_identifier(CREATOR_ID)?
+            .is_none()
+            && platform_version.protocol_version >= 10
+        {
+            modified_document
+                .properties_mut()
+                .insert(CREATOR_ID.to_string(), original_owner_id.into());
+        }
 
         modified_document.bump_revision();
 

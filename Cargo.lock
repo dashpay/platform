@@ -7143,6 +7143,7 @@ dependencies = [
  "tracing-wasm",
  "wasm-bindgen",
  "wasm-bindgen-futures",
+ "wasm-sdk",
  "web-sys",
  "wee_alloc",
 ]

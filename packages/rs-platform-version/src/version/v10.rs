@@ -2,7 +2,7 @@ use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_contract_versions::v2::CONTRACT_VERSIONS_V2;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_document_versions::v2::DOCUMENT_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_identity_versions::v1::IDENTITY_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_method_versions::v2::DPP_METHOD_VERSIONS_V2;
@@ -48,7 +48,7 @@ pub const PLATFORM_V10: PlatformVersion = PlatformVersion {
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V2,
         contract_versions: CONTRACT_VERSIONS_V2,
-        document_versions: DOCUMENT_VERSIONS_V2,
+        document_versions: DOCUMENT_VERSIONS_V3, // changed to support serialization of creator id
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,
         token_versions: TOKEN_VERSIONS_V1,
