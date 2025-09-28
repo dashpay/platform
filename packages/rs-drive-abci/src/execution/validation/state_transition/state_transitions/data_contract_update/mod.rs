@@ -9,6 +9,7 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 
 use crate::error::execution::ExecutionError;
@@ -17,8 +18,7 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
 
-use drive::state_transition_action::StateTransitionAction;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::execution::validation::state_transition::data_contract_update::state::v0::DataContractUpdateStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
@@ -54,14 +54,18 @@ impl StateTransitionBasicStructureValidationV0 for DataContractUpdateTransition 
 }
 
 impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
-        _tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
@@ -71,15 +75,31 @@ impl StateTransitionActionTransformerV0 for DataContractUpdateTransition {
             .contract_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(
-                block_info,
-                validation_mode,
-                execution_context,
-                platform_version,
-            ),
+            0 => {
+                let action = self.transform_into_action_v0(
+                    block_info,
+                    validation_mode,
+                    execution_context,
+                    platform_version,
+                )?;
+                Ok(action.map(|a| a.into()))
+            },
+            1 => {
+                let action = self.transform_into_action_v1(
+                    platform,
+                    block_info,
+                    validation_mode,
+                    execution_context,
+                    passing_filters_for_transition,
+                    requiring_original_filters_for_transition,
+                    tx,
+                    platform_version,
+                )?;
+                Ok(action.map(|(_, a)| a.into()))
+            },
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: transform_into_action".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }
@@ -336,6 +356,8 @@ mod tests {
                     ValidationMode::Validator,
                     &BlockInfo::default(),
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                 )
                 .expect("state transition to be validated");
@@ -430,6 +452,8 @@ mod tests {
                     ValidationMode::Validator,
                     &BlockInfo::default(),
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                 )
                 .expect("state transition to be validated");
@@ -588,6 +612,8 @@ mod tests {
                     ValidationMode::Validator,
                     &BlockInfo::default(),
                     &mut execution_context,
+                    &vec![],
+                    &vec![],
                     None,
                 )
                 .expect("state transition to be validated");

@@ -64,6 +64,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::DataContractUpdate(st) => st.transform_into_action(
@@ -71,6 +73,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityCreate(st) => {
@@ -88,6 +92,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityTopUp(st) => {
@@ -97,6 +103,7 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                     signable_bytes,
                     validation_mode,
                     execution_context,
+                    passing_filters_for_transition,
                     tx,
                 )
             }
@@ -105,6 +112,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::Batch(st) => st.transform_into_action(
@@ -112,6 +121,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::IdentityCreditTransfer(st) => st.transform_into_action(
@@ -119,6 +130,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
             StateTransition::MasternodeVote(st) => st.transform_into_action(
@@ -126,6 +139,8 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 block_info,
                 validation_mode,
                 execution_context,
+                passing_filters_for_transition,
+                requiring_original_filters_for_transition,
                 tx,
             ),
         }

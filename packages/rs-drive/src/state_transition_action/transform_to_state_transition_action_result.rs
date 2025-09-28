@@ -8,6 +8,7 @@ use crate::state_transition_action::StateTransitionAction;
 /// This type is typically produced by higher-level logic that
 /// validates and converts documents or proofs into actionable
 /// state transitions.
+#[derive(Clone, Debug)]
 pub struct TransformToStateTransitionActionResult<'a> {
     /// The resulting state transition action derived
     /// from the input data.

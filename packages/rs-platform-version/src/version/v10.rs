@@ -18,6 +18,7 @@ use crate::version::drive_abci_versions::drive_abci_method_versions::v6::DRIVE_A
 use crate::version::drive_abci_versions::drive_abci_query_versions::v1::DRIVE_ABCI_QUERY_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIVE_ABCI_STRUCTURE_VERSIONS_V1;
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
+use crate::version::drive_abci_versions::drive_abci_validation_versions::v7::DRIVE_ABCI_VALIDATION_VERSIONS_V7;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
 use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
@@ -36,7 +37,7 @@ pub const PLATFORM_V10: PlatformVersion = PlatformVersion {
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V6,
-        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V6,
+        validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V7, //changed
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2,
         query: DRIVE_ABCI_QUERY_VERSIONS_V1,
     },

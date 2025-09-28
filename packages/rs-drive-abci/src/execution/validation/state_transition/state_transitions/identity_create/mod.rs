@@ -172,7 +172,7 @@ pub trait StateTransitionStateValidationForIdentityCreateTransitionV0 {
 }
 
 impl StateTransitionStateValidationForIdentityCreateTransitionV0 for IdentityCreateTransition {
-    fn validate_state_for_identity_create_transition<C: CoreRPCLike>(
+    fn validate_state_for_identity_create_transition<'a, C: CoreRPCLike>(
         &self,
         action: IdentityCreateTransitionAction,
         platform: &PlatformRef<C>,

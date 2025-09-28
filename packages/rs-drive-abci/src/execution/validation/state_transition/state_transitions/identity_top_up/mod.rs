@@ -9,7 +9,7 @@ use dpp::version::PlatformVersion;
 use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -47,7 +47,7 @@ impl StateTransitionIdentityTopUpTransitionActionTransformer for IdentityTopUpTr
         execution_context: &mut StateTransitionExecutionContext,
         passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version

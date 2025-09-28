@@ -18,12 +18,13 @@ use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionLike;
 
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 
 use crate::error::execution::ExecutionError;
 use drive::grovedb::TransactionArg;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::execution::types::execution_operation::{SHA256_BLOCK_SIZE, ValidationOperation};
 use crate::execution::types::execution_operation::signature_verification_operation::SignatureVerificationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
@@ -33,27 +34,29 @@ use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_top_up) trait IdentityTopUpStateTransitionStateValidationV0
 {
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl IdentityTopUpStateTransitionStateValidationV0 for IdentityTopUpTransition {
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         signable_bytes: Vec<u8>,
         validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         // Todo: we might want a lowered required balance
         let required_balance = platform_version
             .dpp

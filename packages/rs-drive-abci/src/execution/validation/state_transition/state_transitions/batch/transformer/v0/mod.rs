@@ -49,6 +49,7 @@ use dpp::state_transition::batch_transition::document_base_transition::document_
 use dpp::state_transition::batch_transition::token_base_transition::v0::v0_methods::TokenBaseTransitionV0Methods;
 use drive::drive::contract::DataContractFetchInfo;
 use drive::drive::Drive;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_purchase_transition_action::DocumentPurchaseTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_transfer_transition_action::DocumentTransferTransitionAction;
@@ -66,20 +67,25 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::batch::batched_transition::token_transition::token_unfreeze_transition_action::TokenUnfreezeTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionTransformerV0
 {
-    fn try_into_action_v0(
+    fn try_into_action_v0<'a>(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         full_validation: bool,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<ConsensusValidationResult<BatchTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 trait BatchTransitionInternalTransformerV0 {
@@ -169,14 +175,18 @@ trait BatchTransitionInternalTransformerV0 {
 }
 
 impl BatchTransitionTransformerV0 for BatchTransition {
-    fn try_into_action_v0(
+    fn try_into_action_v0<'a>(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validate_against_state: bool,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         transaction: TransactionArg,
         execution_context: &mut StateTransitionExecutionContext,
-    ) -> Result<ConsensusValidationResult<BatchTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let owner_id = self.owner_id();
         let user_fee_increase = self.user_fee_increase();
         let platform_version = platform.state.current_platform_version()?;

@@ -7,10 +7,11 @@ mod transform_into_action;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::validation::ConsensusValidationResult;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -25,14 +26,18 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
         validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        _passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
         match platform_version
             .drive_abci
@@ -43,7 +48,10 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
         {
             0 => self
                 .transform_into_action_v0(platform, validation_mode, tx, platform_version)
-                .map(|result| result.map(|action| action.into())),
+                .map(|result| result.map(|action| {
+                    let state_transition_action : StateTransitionAction = action.into();
+                    state_transition_action.into()
+                })),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: transform_into_action".to_string(),
                 known_versions: vec![0],
@@ -54,15 +62,19 @@ impl StateTransitionActionTransformerV0 for MasternodeVoteTransition {
 }
 
 impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
-    fn validate_state<C: CoreRPCLike>(
+    fn validate_state<'a, C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
         platform: &PlatformRef<C>,
         _validation_mode: ValidationMode,
         _block_info: &BlockInfo,
         _execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        _passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
         match platform_version
             .drive_abci
@@ -71,7 +83,9 @@ impl StateTransitionStateValidationV0 for MasternodeVoteTransition {
             .masternode_vote_state_transition
             .state
         {
-            0 => self.validate_state_v0(action, platform, tx, platform_version),
+            0 => {
+                self.validate_state_v0(action, platform, tx, platform_version).map(|r| r.map(|a| a.into()))
+            },
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "masternode votes state transition: validate_state".to_string(),
                 known_versions: vec![0],

@@ -9,10 +9,11 @@ use dpp::dashcore::Network;
 use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -30,14 +31,18 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for IdentityCreditWithdrawalTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version

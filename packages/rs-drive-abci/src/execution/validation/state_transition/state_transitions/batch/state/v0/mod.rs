@@ -6,12 +6,14 @@ use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::state_transition::StateTransitionLike;
 use drive::state_transition_action::StateTransitionAction;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
+use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::batch::batched_transition::BatchedTransitionAction;
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::batch::batched_transition::token_transition::TokenTransitionAction;
 use drive::state_transition_action::batch::BatchTransitionAction;
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::error::Error;
 use crate::error::execution::ExecutionError;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -44,35 +46,47 @@ pub mod fetch_documents;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait DocumentsBatchStateTransitionStateValidationV0
 {
-    fn validate_state_v0(
+    fn validate_state_v0<'a>(
         &self,
         action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<'a>(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
-    fn validate_state_v0(
+    fn validate_state_v0<'a>(
         &self,
         mut state_transition_action: BatchTransitionAction,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let mut validation_result = ConsensusValidationResult::<StateTransitionAction>::new();
 
         let state_transition_execution_context =
@@ -320,13 +334,17 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
         Ok(validation_result)
     }
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<'a>(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,
         validation_mode: ValidationMode,
+        // These are the filters that have already shown that this transition is a match
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         let mut execution_context =
@@ -336,6 +354,8 @@ impl DocumentsBatchStateTransitionStateValidationV0 for BatchTransition {
             platform,
             block_info,
             validation_mode.should_validate_batch_valid_against_state(),
+            passing_filters_for_transition,
+            requiring_original_filters_for_transition,
             tx,
             &mut execution_context,
         )?;

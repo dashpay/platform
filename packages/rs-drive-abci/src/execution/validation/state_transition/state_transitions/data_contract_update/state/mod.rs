@@ -43,18 +43,35 @@ impl StateTransitionStateValidationV0 for DataContractUpdateTransition {
                 if action.is_some() {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("data contract update is calling validate state, and the action is already known. It should not be known at this point")));
                 }
-                self.validate_state_v0(
+                let action = self.validate_state_v0(
                     platform,
                     block_info,
                     validation_mode,
                     execution_context,
                     tx,
                     platform_version,
+                )?.map(|a| a.into());
+
+                Ok(action)
+            }
+            1 => {
+                if action.is_some() {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution("data contract update is calling validate state, and the action is already known. It should not be known at this point")));
+                }
+                self.validate_state_v1(
+                    platform,
+                    block_info,
+                    validation_mode,
+                    execution_context,
+                    passing_filters_for_transition,
+                    requiring_original_filters_for_transition,
+                    tx,
+                    platform_version,
                 )
             }
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "data contract update transition: validate_state".to_string(),
-                known_versions: vec![0],
+                known_versions: vec![0, 1],
                 received: version,
             })),
         }

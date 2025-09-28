@@ -12,29 +12,37 @@ use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTr
 use drive::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
 
 use dpp::version::PlatformVersion;
+use drive::drive::subscriptions::{DriveSubscriptionFilter, HitFiltersType};
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_transfer) trait IdentityCreditTransferStateTransitionStateValidationV0 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<'a, C>(
         &self,
         platform: &PlatformRef<C>,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<'a, C>(
         &self,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+        platform: &PlatformRef<C>,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error>;
 }
 
 impl IdentityCreditTransferStateTransitionStateValidationV0 for IdentityCreditTransferTransition {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<'a, C>(
         &self,
         platform: &PlatformRef<C>,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
         tx: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let maybe_existing_identity_balance = platform.drive.fetch_identity_balance(
             self.identity_id().to_buffer(),
             tx,
@@ -70,14 +78,30 @@ impl IdentityCreditTransferStateTransitionStateValidationV0 for IdentityCreditTr
             ));
         }
 
-        self.transform_into_action_v0()
+        self.transform_into_action_v0(passing_filters_for_transition)
     }
 
-    fn transform_into_action_v0(
+    fn transform_into_action_v0<'a, C>(
         &self,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        platform: &PlatformRef<C>,
+        passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        tx: TransactionArg,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
+        let filters_hit = if passing_filters_for_transition.is_empty() {
+            HitFiltersType::NoFilterHit
+        } else {
+            platform.drive.
+            HitFiltersType::DidHitFilters {
+                original_grovedb_proof: vec![],
+                filters_hit: passing_filters_for_transition,
+            }
+        };
         Ok(ConsensusValidationResult::new_with_data(
-            IdentityCreditTransferTransitionAction::from(self).into(),
+            TransformToStateTransitionActionResult {
+                action: IdentityCreditTransferTransitionAction::from(self).into(),
+                filters_hit: HitFiltersType::NoFilterHit,
+            }
         ))
     }
 }

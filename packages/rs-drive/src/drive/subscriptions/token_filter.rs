@@ -30,7 +30,7 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::tokens::emergency_action::TokenEmergencyAction;
 
-#[cfg(any(feature = "server", feature = "verify"))]
+
 /// Filter describing constraints for token transitions.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DriveTokenQueryFilter {
@@ -46,7 +46,6 @@ pub struct DriveTokenQueryFilter {
 
 /// Clauses describing which token transition variants are acceptable and any
 /// additional scalar predicates that must hold for a match.
-#[cfg(any(feature = "server", feature = "verify"))]
 /// Action-specific clauses for token subscriptions.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenActionMatchClauses {
@@ -110,7 +109,7 @@ pub enum TokenActionMatchClauses {
     },
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
+
 impl DriveTokenQueryFilter {
     /// Evaluate a token transition against the filter.
     pub fn matches_token_transition(&self, transition: &TokenTransition) -> TransitionCheckResult {

@@ -53,7 +53,7 @@ use crate::util::object_size_info::DataContractOwnedResolvedInfo;
 /// match clauses via `DocumentActionMatchClauses`. Use `matches_document_transition()`
 /// and `matches_original_document()` to evaluate document transitions.
 /// `validate()` performs structural checks (document type exists, clause composition rules).
-#[cfg(any(feature = "server", feature = "verify"))]
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct DriveDocumentQueryFilter {
     /// DataContract information
@@ -130,7 +130,7 @@ impl DriveDocumentQueryFilter {
     /// - `Fail` if any transition-level check fails (no need to fetch original).
     /// - `NeedsOriginal` if transition-level checks pass but original clauses are non-empty
     ///   and must be evaluated with the original document.
-    #[cfg(any(feature = "server", feature = "verify"))]
+    
     pub fn matches_document_transition(
         &self,
         document_transition: &DocumentTransition,
@@ -322,7 +322,7 @@ impl DriveDocumentQueryFilter {
     ///   the original document.
     /// - This evaluates only original-dependent clauses; transition-level checks were
     ///   already applied during the first phase.
-    #[cfg(any(feature = "server", feature = "verify"))]
+    
     pub fn matches_original_document(&self, original_document: &Document) -> bool {
         // Evaluate only original-dependent clauses. Transition base was validated earlier.
         match &self.action_clauses {
@@ -357,7 +357,7 @@ impl DriveDocumentQueryFilter {
     }
 
     /// Single clause evaluator used by both transition and original-document paths.
-    #[cfg(any(feature = "server", feature = "verify"))]
+    
     fn evaluate_clauses(
         &self,
         clauses: &InternalClauses,
@@ -420,7 +420,7 @@ impl DriveDocumentQueryFilter {
     /// Validate the filter structure and clauses.
     ///
     /// In addition to these validations, the subscription host should check the contract's existence.
-    #[cfg(any(feature = "server", feature = "verify"))]
+    
     pub fn validate(&self) -> QuerySyntaxSimpleValidationResult {
         // Ensure the document type exists
         let Some(document_type) = self
@@ -579,7 +579,7 @@ impl DriveDocumentQueryFilter {
 /// using `ValueMapHelper`. Returns `None` if any segment is missing or if a
 /// non-map value is encountered before the final segment. An empty `path`
 /// returns `None`.
-#[cfg(any(feature = "server", feature = "verify"))]
+
 fn get_value_by_path<'a>(root: &'a BTreeMap<String, Value>, path: &str) -> Option<&'a Value> {
     if path.is_empty() {
         return None;

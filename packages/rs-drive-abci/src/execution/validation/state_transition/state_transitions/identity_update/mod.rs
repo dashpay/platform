@@ -12,7 +12,7 @@ use drive::drive::subscriptions::DriveSubscriptionFilter;
 use drive::state_transition_action::StateTransitionAction;
 
 use drive::grovedb::TransactionArg;
-
+use drive::state_transition_action::transform_to_state_transition_action_result::TransformToStateTransitionActionResult;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
@@ -31,14 +31,18 @@ use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
 impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
-    fn transform_into_action<C: CoreRPCLike>(
+    fn transform_into_action<'a, C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
         _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
+        // These are the filters that have already shown that this transition is a match
+        _passing_filters_for_transition: &[&'a DriveSubscriptionFilter],
+        // These are the filters that might still pass, if the original passes
+        _requiring_original_filters_for_transition: &[&'a DriveSubscriptionFilter],
         _tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+    ) -> Result<ConsensusValidationResult<TransformToStateTransitionActionResult<'a>>, Error> {
         let platform_version = platform.state.current_platform_version()?;
 
         match platform_version
@@ -48,7 +52,7 @@ impl StateTransitionActionTransformerV0 for IdentityUpdateTransition {
             .identity_update_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(),
+            0 => self.transform_into_action_v0().map(|a| a.map(|a| a.into())),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity update transition: transform_into_action".to_string(),
                 known_versions: vec![0],

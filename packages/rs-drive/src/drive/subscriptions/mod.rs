@@ -1,41 +1,40 @@
 //! Document subscription management utilities.
 
 /// Document subscription filtering
-#[cfg(any(feature = "server", feature = "verify"))]
+
 pub mod document_filter;
 /// Token subscription filtering
-#[cfg(any(feature = "server", feature = "verify"))]
+
 pub mod token_filter;
 
-#[cfg(any(feature = "server", feature = "verify"))]
+/// Contract subscription filtering
+pub mod contract_filter;
+
+
+use contract_filter::DriveContractQueryFilter;
+
 use document_filter::DriveDocumentQueryFilter;
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::state_transition_action::{
-    batch::batched_transition::BatchedTransitionAction, StateTransitionAction,
-};
-#[cfg(any(feature = "server", feature = "verify"))]
-use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
-#[cfg(any(feature = "server", feature = "verify"))]
+
 use dpp::document::Document;
-#[cfg(any(feature = "server", feature = "verify"))]
+
 use dpp::platform_value::Value;
-#[cfg(any(feature = "server", feature = "verify"))]
+
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
-#[cfg(any(feature = "server", feature = "verify"))]
+
 use dpp::state_transition::batch_transition::batched_transition::{
     document_transition::DocumentTransition, token_transition::TokenTransition,
     BatchedTransitionRef,
 };
-#[cfg(any(feature = "server", feature = "verify"))]
+
 use dpp::identifier::Identifier;
 use dpp::state_transition::StateTransition;
-#[cfg(any(feature = "server", feature = "verify"))]
+use dpp::data_contract::DataContract;
+
 use std::collections::BTreeMap;
-#[cfg(any(feature = "server", feature = "verify"))]
 use token_filter::DriveTokenQueryFilter;
 
 /// Result of evaluating constraints for a transition before potentially fetching the original document.
-#[cfg(any(feature = "server", feature = "verify"))]
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransitionCheckResult {
     /// All applicable transition-level checks pass and no original is required.
@@ -47,7 +46,7 @@ pub enum TransitionCheckResult {
 }
 
 /// Categorised matches for a subscription filter.
-#[cfg(any(feature = "server", feature = "verify"))]
+
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct TransitionMatchSet<'a> {
     /// Transitions that satisfy the filter without additional data.
@@ -57,14 +56,14 @@ pub struct TransitionMatchSet<'a> {
 }
 
 /// Lookup helper for original state fetched during transition processing.
-#[cfg(any(feature = "server", feature = "verify"))]
+
 #[derive(Debug, Default, Clone)]
 pub struct SubscriptionOriginalState<'a> {
     /// Documents keyed by their identifiers.
     pub documents: BTreeMap<Identifier, &'a Document>,
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
+
 impl<'a> SubscriptionOriginalState<'a> {
     /// Returns the original document for the provided identifier when available.
     pub fn document(&self, id: &Identifier) -> Option<&'a Document> {
@@ -97,20 +96,18 @@ pub enum HitFiltersType<'a> {
 }
 
 /// Wrapper enum for document and token subscription filters.
-#[cfg(any(feature = "server", feature = "verify"))]
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum DriveSubscriptionFilter {
-    /// Contract Create filter variant.
-    ContractCreate(DriveDocumentQueryFilter),
-    /// Contract Update filter variant.
-    ContractUpdate(DriveDocumentQueryFilter),
+    /// Contract Create and Update filter variant.
+    Contract(DriveContractQueryFilter),
     /// Document subscription filter variant.
     Document(DriveDocumentQueryFilter),
     /// Token subscription filter variant.
     Token(DriveTokenQueryFilter),
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
+
 impl DriveSubscriptionFilter {
     /// Returns categorised matches for the provided transitions.
     pub fn matches_any_transition<'a>(
@@ -133,6 +130,9 @@ impl DriveSubscriptionFilter {
     /// Returns true when the transition satisfies this subscription filter.
     pub fn matches_transition(&self, state_transition: &StateTransition) -> TransitionCheckResult {
         match (self, state_transition) {
+            (DriveSubscriptionFilter::Contract(filter), _) => {
+                filter.matches_state_transition(state_transition)
+            }
             (
                 DriveSubscriptionFilter::Document(filter),
                 StateTransition::Batch(batch_transition),
@@ -176,30 +176,6 @@ impl DriveSubscriptionFilter {
         }
     }
 
-    /// Returns true when the original-state view of the transition action satisfies this filter.
-    pub fn matches_original_state_from_transition_action(
-        &self,
-        state_transition_action: &StateTransitionAction,
-        originals: &SubscriptionOriginalState<'_>,
-    ) -> bool {
-        match (self, state_transition_action) {
-            (
-                DriveSubscriptionFilter::Document(filter),
-                StateTransitionAction::BatchAction(batch_action),
-            ) => batch_action.transitions().iter().any(|transition_action| {
-                if let BatchedTransitionAction::DocumentAction(document_action) = transition_action
-                {
-                    let document_id = document_action.base().id();
-                    if let Some(original_document) = originals.document(&document_id) {
-                        return filter.matches_original_document(original_document);
-                    }
-                }
-                false
-            }),
-            _ => false,
-        }
-    }
-
     /// Returns `true` when the provided document transition satisfies this filter.
     pub fn matches_document_transition(
         &self,
@@ -207,6 +183,7 @@ impl DriveSubscriptionFilter {
         batch_owner_value: Option<&Value>,
     ) -> bool {
         match self {
+            DriveSubscriptionFilter::Contract(_) => false,
             DriveSubscriptionFilter::Document(filter) => {
                 filter.matches_document_transition(transition, batch_owner_value)
                     != TransitionCheckResult::Fail
@@ -218,10 +195,25 @@ impl DriveSubscriptionFilter {
     /// Returns `true` when the provided token transition satisfies this filter.
     pub fn matches_token_transition(&self, transition: &TokenTransition) -> bool {
         match self {
+            DriveSubscriptionFilter::Contract(_) => false,
             DriveSubscriptionFilter::Token(filter) => {
                 filter.matches_token_transition(transition) != TransitionCheckResult::Fail
             }
             DriveSubscriptionFilter::Document(_) => false,
+        }
+    }
+
+    /// Returns `true` when the provided contract update transition satisfies this filter after
+    /// evaluating original contract dependent clauses.
+    pub fn matches_contract_update_transition_original_contract(
+        &self,
+        original_contract: &DataContract,
+    ) -> bool {
+        match self {
+            DriveSubscriptionFilter::Contract(filter) => filter.matches_original_contract(
+                original_contract,
+            ),
+            DriveSubscriptionFilter::Document(_) | DriveSubscriptionFilter::Token(_) => false,
         }
     }
 }
