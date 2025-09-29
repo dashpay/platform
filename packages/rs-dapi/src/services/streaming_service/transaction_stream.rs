@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
 use dapi_grpc::core::v0::{
@@ -11,6 +12,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
+use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
@@ -20,6 +22,8 @@ use crate::services::streaming_service::{
 };
 
 const TRANSACTION_STREAM_BUFFER: usize = 512;
+/// Maximum duration to keep the delivery gate closed while replaying historical data.
+const GATE_MAX_TIMEOUT: Duration = Duration::from_secs(180);
 
 type TxResponseResult = Result<TransactionsWithProofsResponse, Status>;
 type TxResponseSender = mpsc::Sender<TxResponseResult>;
@@ -61,7 +65,19 @@ impl TransactionStreamState {
     }
 
     async fn wait_for_gate_open(&self) {
-        self.delivery_notify.notified().await;
+        // when true, the gate is already open
+        if self.delivery_gate.load(Ordering::Acquire) {
+            return;
+        }
+
+        if let Err(e) = timeout(GATE_MAX_TIMEOUT, self.delivery_notify.notified()).await {
+            warn!(
+                timeout = GATE_MAX_TIMEOUT.as_secs(),
+                "transactions_with_proofs=gate_open_timeout error: {}, forcibly opening gate", e
+            );
+
+            self.open_gate();
+        }
     }
 
     /// Marks a transaction as delivered. Returns false if it was already delivered.
