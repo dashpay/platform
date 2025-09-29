@@ -9,11 +9,10 @@ use dapi_grpc::platform::v0::{
     WaitForStateTransitionResultResponse, wait_for_state_transition_result_request,
     wait_for_state_transition_result_response,
 };
-use dapi_grpc::tonic::{Request, Response, metadata::MetadataValue};
+use dapi_grpc::tonic::{Request, Response};
 use std::time::Duration;
-use tokio::select;
 use tokio::time::timeout;
-use tracing::{debug, info, trace, warn};
+use tracing::{Instrument, debug, info, trace, warn};
 
 impl PlatformServiceImpl {
     pub async fn wait_for_state_transition_result_impl(
@@ -42,81 +41,87 @@ impl PlatformServiceImpl {
         let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
-        let span = tracing::span!(tracing::Level::INFO, "wait_for_state_transition_result", tx = %hash_hex);
-        let _enter = span.enter();
+        let span = tracing::info_span!("wait_for_state_transition_result", tx = %hash_hex);
 
-        info!("waitForStateTransitionResult called for hash: {}", hash_hex);
+        async move {
+            info!("waitForStateTransitionResult called for hash: {}", hash_hex);
 
-        // Check if WebSocket is connected
-        if !self.websocket_client.is_connected() {
-            return Err(DapiError::Unavailable(
-                "Tenderdash is not available".to_string(),
-            ));
+            // Check if WebSocket is connected
+            if !self.websocket_client.is_connected() {
+                return Err(DapiError::Unavailable(
+                    "Tenderdash is not available".to_string(),
+                ));
+            }
+
+            // RACE-FREE IMPLEMENTATION: Subscribe via subscription manager BEFORE checking existing state
+            trace!(
+                "Subscribing (manager) to platform tx for hash: {}",
+                hash_hex
+            );
+            let sub_handle = self
+                .subscriber_manager
+                .add_subscription(FilterType::PlatformTxId(hash_hex.clone()))
+                .await;
+
+            // Check if transaction already exists (after subscription is active)
+            trace!("Checking existing transaction for hash: {}", hash_hex);
+            match self.tenderdash_client.tx(hash_base64).await {
+                Ok(tx) => {
+                    debug!(tx = hash_hex, "Transaction already exists, returning it");
+                    return self.build_response_from_existing_tx(tx, v0.prove).await;
+                }
+                Err(error) => {
+                    debug!(?error, "Transaction not found, will wait for future events");
+                }
+            };
+
+            // Wait for transaction event with timeout
+            let timeout_duration =
+                Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
+
+            trace!(
+                "Waiting for transaction event with timeout: {:?}",
+                timeout_duration
+            );
+
+            // Filter events to find our specific transaction
+            timeout(timeout_duration, async {
+                loop {
+                    let result = sub_handle.recv().await;
+                    match result {
+                        Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
+                            debug!(tx = hash_hex, "Received matching transaction event");
+                            return self.build_response_from_event(event, v0.prove).await;
+                        }
+                        Some(message) => {
+                            // Ignore other message types
+                            warn!(
+                                ?message,
+                                "Received non-matching message, ignoring; this should not happen due to filtering"
+                            );
+                            continue;
+                        }
+                        None => {
+                            warn!("Platform tx subscription channel closed unexpectedly");
+                            return Err(DapiError::Unavailable(
+                                "Platform tx subscription channel closed unexpectedly".to_string(),
+                            ));
+                        }
+                    }
+                }
+            })
+            .await
+            .map_err(|msg| DapiError::Timeout(msg.to_string()))
+            .inspect_err(|e| {
+                tracing::warn!(
+                    error = %e,
+                    tx = %hash_hex,
+                    "wait_for_state_transition_result: timed out"
+                );
+            })?
         }
-
-        // RACE-FREE IMPLEMENTATION: Subscribe via subscription manager BEFORE checking existing state
-        trace!(
-            "Subscribing (manager) to platform tx for hash: {}",
-            hash_hex
-        );
-        let sub_handle = self
-            .subscriber_manager
-            .add_subscription(FilterType::PlatformTxId(hash_hex.clone()))
-            .await;
-
-        // Check if transaction already exists (after subscription is active)
-        trace!("Checking existing transaction for hash: {}", hash_hex);
-        match self.tenderdash_client.tx(hash_base64).await {
-            Ok(tx) => {
-                debug!(tx = hash_hex, "Transaction already exists, returning it");
-                return self.build_response_from_existing_tx(tx, v0.prove).await;
-            }
-            Err(error) => {
-                debug!(?error, "Transaction not found, will wait for future events");
-            }
-        };
-
-        // Wait for transaction event with timeout
-        let timeout_duration =
-            Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
-
-        trace!(
-            "Waiting for transaction event with timeout: {:?}",
-            timeout_duration
-        );
-
-        // Filter events to find our specific transaction
-        timeout(timeout_duration, async {
-            loop {
-                let result = sub_handle.recv().await;
-                match result {
-                    Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
-                        debug!(tx = hash_hex, "Received matching transaction event");
-                    return self.build_response_from_event(event, v0.prove).await;
-                }
-                Some(message) => {
-                    // Ignore other message types
-                    warn!(
-                        ?message,
-                        "Received non-matching message, ignoring; this should not happen due to filtering"
-                    );
-                    continue;
-                }
-                None => {
-                    warn!("Platform tx subscription channel closed unexpectedly");
-                    return Err(DapiError::Unavailable(
-                        "Platform tx subscription channel closed unexpectedly".to_string(),
-                    ));
-                }
-            }
-        }
-    }).await.map_err(|msg|DapiError::Timeout(msg.to_string()))
-    .inspect_err(|e| {
-            tracing::warn!(
-                error = %e,
-                tx = %hash_hex,
-                "wait_for_state_transition_result: timed out")
-    })?
+        .instrument(span)
+        .await
     }
 
     async fn build_response_from_existing_tx(

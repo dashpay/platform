@@ -9,6 +9,7 @@ use tracing::{debug, info, trace, warn};
 use crate::clients::CoreClient;
 use crate::error::{DAPIResult, DapiError};
 use crate::services::streaming_service::{FilterType, StreamingEvent, SubscriberManager};
+use crate::sync::Workers;
 
 #[derive(Default)]
 struct MasternodeState {
@@ -24,6 +25,7 @@ pub struct MasternodeListSync {
     state: RwLock<MasternodeState>,
     update_lock: Mutex<()>,
     ready_notify: Notify,
+    workers: Workers,
 }
 
 impl MasternodeListSync {
@@ -34,14 +36,16 @@ impl MasternodeListSync {
             state: RwLock::new(MasternodeState::default()),
             update_lock: Mutex::new(()),
             ready_notify: Notify::new(),
+            workers: Workers::default(),
         }
     }
 
     pub fn spawn_initial_sync(self: &Arc<Self>) {
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        self.workers.spawn(async move {
             trace!("masternode_sync=initial start");
-            match this.sync_best_chain_lock().await {
+            let result = this.sync_best_chain_lock().await;
+            match &result {
                 Ok(true) => {
                     info!("masternode_sync=initial completed");
                 }
@@ -51,13 +55,14 @@ impl MasternodeListSync {
                 Err(err) => {
                     warn!(error = %err, "masternode_sync=initial failed");
                 }
-            }
+            };
+            result
         });
     }
 
     pub fn start_chain_lock_listener(self: &Arc<Self>, subscriber_manager: Arc<SubscriberManager>) {
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        self.workers.spawn(async move {
             trace!("masternode_sync=listener started");
             let handle = subscriber_manager
                 .add_subscription(FilterType::CoreChainLocks)
@@ -70,6 +75,7 @@ impl MasternodeListSync {
                 }
             }
             debug!("masternode_sync=listener stopped");
+            Result::<(), String>::Err("listener stopped".to_string())
         });
     }
 

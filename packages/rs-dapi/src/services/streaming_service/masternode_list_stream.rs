@@ -28,7 +28,7 @@ impl StreamingServiceImpl {
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
         let tx_stream = tx.clone();
-        tokio::spawn(async move {
+        self.workers.spawn(async move {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
                     StreamingEvent::CoreMasternodeListDiff { data } => {
@@ -58,6 +58,7 @@ impl StreamingServiceImpl {
                     break;
                 }
             }
+            Result::<(),()>::Ok(())
         });
 
         if let Err(err) = self.masternode_list_sync.ensure_ready().await {

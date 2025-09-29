@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::atomic::Ordering;
 
 use crate::error::{DAPIResult, DapiError};
+use crate::sync::Workers;
 use async_trait::async_trait;
 use futures::StreamExt;
 use tokio::select;
@@ -97,6 +98,7 @@ pub struct ZmqConnection {
     // Receiver for ZMQ messages; see `next()` method for usage
     rx: Arc<Mutex<mpsc::Receiver<ZmqMessage>>>,
     connected: Arc<AtomicBool>,
+    workers: Workers,
 }
 
 impl Drop for ZmqConnection {
@@ -124,8 +126,16 @@ impl ZmqConnection {
         // updated in monitor
         let connected = Arc::new(AtomicBool::new(false));
 
+        let (tx, rx) = mpsc::channel(1000);
+
+        let connection = Self {
+            cancel: cancel.clone(),
+            rx: Arc::new(Mutex::new(rx)),
+            connected: connected.clone(),
+            workers: Workers::default(),
+        };
         // Start monitor
-        Self::start_monitor(socket.monitor(), connected.clone(), cancel.clone());
+        connection.start_monitor(socket.monitor());
 
         // Set connection timeout
         tokio::time::timeout(connection_timeout, async { socket.connect(zmq_uri).await })
@@ -140,22 +150,9 @@ impl ZmqConnection {
                 .await
                 .map_err(DapiError::ZmqConnection)?;
         }
+        connection.start_dispatcher(socket, tx);
 
-        let (tx, rx) = mpsc::channel(1000);
-
-        ZmqDispatcher {
-            socket,
-            zmq_tx: tx,
-            cancel: cancel.clone(),
-            connected: connected.clone(),
-        }
-        .spawn();
-
-        Ok(Self {
-            cancel,
-            rx: Arc::new(Mutex::new(rx)),
-            connected,
-        })
+        Ok(connection)
     }
 
     fn disconnected(&self) {
@@ -163,14 +160,24 @@ impl ZmqConnection {
         self.cancel.cancel();
     }
 
+    fn start_dispatcher(&self, socket: SubSocket, tx: mpsc::Sender<ZmqMessage>) {
+        let cancel = self.cancel.clone();
+
+        ZmqDispatcher {
+            socket,
+            zmq_tx: tx,
+            cancel: cancel.clone(),
+            connected: self.connected.clone(),
+        }
+        .spawn(&self.workers);
+    }
+
     /// Start monitor that will get connection updates.
-    fn start_monitor(
-        mut monitor: futures::channel::mpsc::Receiver<SocketEvent>,
-        connected: Arc<AtomicBool>,
-        cancel: CancellationToken,
-    ) {
+    fn start_monitor(&self, mut monitor: futures::channel::mpsc::Receiver<SocketEvent>) {
+        let connected = self.connected.clone();
+        let cancel = self.cancel.clone();
         // Start the monitor to listen for connection events
-        tokio::spawn(with_cancel(cancel.clone(), async move {
+        self.workers.spawn(with_cancel(cancel.clone(), async move {
             while let Some(event) = monitor.next().await {
                 if let Err(e) = Self::monitor_event(event, connected.clone(), cancel.clone()).await
                 {
@@ -427,9 +434,9 @@ struct ZmqDispatcher {
 
 impl ZmqDispatcher {
     /// Create a new ZmqDispatcher
-    fn spawn(self) {
+    fn spawn(self, workers: &Workers) {
         let cancel = self.cancel.clone();
-        tokio::spawn(with_cancel(cancel, self.dispatcher_worker()));
+        workers.spawn(with_cancel(cancel, self.dispatcher_worker()));
     }
 
     /// Receive messages from the ZMQ socket and dispatch them to the provided sender.

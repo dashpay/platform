@@ -199,7 +199,10 @@ fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a
 
 pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
+
+    tracing::trace!(?info_base64, "decode_consensus_error: received info");
     let decoded_bytes = base64_decode(&info_base64)?;
+    tracing::trace!(hex = %hex::encode(&decoded_bytes), len = decoded_bytes.len(), "decode_consensus_error: base64 decoded bytes");
     // CBOR-decode decoded_bytes
     let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
         .inspect_err(|e| {
@@ -235,6 +238,12 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
         );
         return None;
     }
+
+    tracing::trace!(
+        serialized_error_hex = %hex::encode(&serialized_error),
+        len = serialized_error.len(),
+        "decode_consensus_error: extracted consensus error bytes",
+    );
 
     Some(serialized_error)
 }

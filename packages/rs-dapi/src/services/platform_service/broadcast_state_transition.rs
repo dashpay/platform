@@ -14,7 +14,7 @@ use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};
 use tonic::Request;
-use tracing::{debug, error, info, warn};
+use tracing::{Instrument, debug, error, info, warn};
 
 impl PlatformServiceImpl {
     /// Complex implementation of broadcastStateTransition
@@ -49,62 +49,66 @@ impl PlatformServiceImpl {
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
 
-        let span =
-            tracing::span!(tracing::Level::INFO, "broadcast_state_transition_impl", tx = %txid_hex);
-        let _entered = span.enter();
+        let span = tracing::info_span!("broadcast_state_transition_impl", tx = %txid_hex);
 
-        // Convert to base64 for Tenderdash RPC
-        let tx_base64 = BASE64_STANDARD.encode(&tx);
+        async move {
+            // Convert to base64 for Tenderdash RPC
+            let tx_base64 = BASE64_STANDARD.encode(&tx);
 
-        // Attempt to broadcast the transaction; note that both Ok and Err can contain
-        // information about the broadcast result, so we need to handle both.
-        let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
-            Ok(broadcast_result) => {
-                if broadcast_result.code == 0 {
-                    info!(st_hash = %txid_hex, "broadcast_state_transition: State transition broadcasted successfully");
-                    // we are good, no need to return anything specific
-                    return Ok(BroadcastStateTransitionResponse {});
-                } else {
-                    debug!(
-                        code = broadcast_result.code,
-                        info = ?broadcast_result.info,
-                        data = ?broadcast_result.data,
-                        tx = %txid_hex,
-                        "broadcast_state_transition: State transition broadcast failed - service error"
-                    );
+            // Attempt to broadcast the transaction; note that both Ok and Err can contain
+            // information about the broadcast result, so we need to handle both.
+            let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
+                Ok(broadcast_result) => {
+                    if broadcast_result.code == 0 {
+                        info!(st_hash = %txid_hex, "broadcast_state_transition: State transition broadcasted successfully");
+                        // we are good, no need to return anything specific
+                        return Ok(BroadcastStateTransitionResponse {});
+                    } else {
+                        debug!(
+                            code = broadcast_result.code,
+                            info = ?broadcast_result.info,
+                            data = ?broadcast_result.data,
+                            tx = %txid_hex,
+                            "broadcast_state_transition: State transition broadcast failed - service error"
+                        );
 
-                    // TODO: review to get real error message
-                    let error_message = broadcast_result.data.clone().unwrap_or_default();
+                        // TODO: review to get real error message
+                        let error_message = broadcast_result.data.clone().unwrap_or_default();
 
-                    map_broadcast_error(
-                        broadcast_result.code,
-                        &error_message,
-                        broadcast_result.info.as_deref(),
-                    )
+                        map_broadcast_error(
+                            broadcast_result.code,
+                            &error_message,
+                            broadcast_result.info.as_deref(),
+                        )
+                    }
                 }
-            }
-            Err(DapiError::TenderdashClientError(e)) => DapiError::TenderdashClientError(e),
-            Err(error) => {
-                tracing::debug!(
-                    error = %error,
-                    tx = %txid_hex,
-                    "broadcast_state_transition: Error broadcasting state transition to Tenderdash"
-                );
-                return Err(error);
-            }
-        };
+                Err(DapiError::TenderdashClientError(e)) => DapiError::TenderdashClientError(e),
+                Err(error) => {
+                    tracing::debug!(
+                        error = %error,
+                        tx = %txid_hex,
+                        "broadcast_state_transition: Error broadcasting state transition to Tenderdash"
+                    );
+                    return Err(error);
+                }
+            };
 
-        let response: Result<BroadcastStateTransitionResponse, DapiError> = match error_result {
-            DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(&tx, &txid).await,
-            e => Err(e),
-        };
-        response.inspect_err(|e| {
-            error!(
-                error = %e,
-                st_hash = %txid_hex,
-                "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
-            );
-        })
+            let response: Result<BroadcastStateTransitionResponse, DapiError> = match error_result {
+                DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(&tx, &txid).await,
+                e => Err(e),
+            };
+            let response = response.inspect_err(|e| {
+                error!(
+                    error = %e,
+                    st_hash = %txid_hex,
+                    "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
+                );
+            });
+
+            response
+        }
+        .instrument(span)
+        .await
     }
 
     /// Handle duplicate transaction scenarios
