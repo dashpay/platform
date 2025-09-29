@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use dapi_grpc::core::v0::transactions_with_proofs_response::Responses;
@@ -11,7 +10,7 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use dashcore_rpc::dashcore::hashes::Hash;
-use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
+use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
@@ -32,45 +31,55 @@ type TxResponse = Response<TxResponseStream>;
 type DeliveredTxSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
 type DeliveredBlockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
 type DeliveredInstantLockSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveryGate = Arc<AtomicBool>;
-type DeliveryNotify = Arc<Notify>;
+type GateSender = watch::Sender<bool>;
+type GateReceiver = watch::Receiver<bool>;
 
 #[derive(Clone)]
 struct TransactionStreamState {
     delivered_txs: DeliveredTxSet,
     delivered_blocks: DeliveredBlockSet,
     delivered_instant_locks: DeliveredInstantLockSet,
-    delivery_gate: DeliveryGate,
-    delivery_notify: DeliveryNotify,
+    gate_sender: GateSender,
+    gate_receiver: GateReceiver,
 }
 
 impl TransactionStreamState {
     fn new() -> Self {
+        let (gate_sender, gate_receiver) = watch::channel(false);
         Self {
             delivered_txs: Arc::new(AsyncMutex::new(HashSet::new())),
             delivered_blocks: Arc::new(AsyncMutex::new(HashSet::new())),
             delivered_instant_locks: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivery_gate: Arc::new(AtomicBool::new(false)),
-            delivery_notify: Arc::new(Notify::new()),
+            gate_sender,
+            gate_receiver,
         }
     }
 
     fn is_gate_open(&self) -> bool {
-        self.delivery_gate.load(Ordering::Acquire)
+        *self.gate_receiver.borrow()
     }
 
     fn open_gate(&self) {
-        self.delivery_gate.store(true, Ordering::Release);
-        self.delivery_notify.notify_waiters();
+        let _ = self.gate_sender.send(true);
     }
 
     async fn wait_for_gate_open(&self) {
         // when true, the gate is already open
-        if self.delivery_gate.load(Ordering::Acquire) {
+        if self.is_gate_open() {
             return;
         }
 
-        if let Err(e) = timeout(GATE_MAX_TIMEOUT, self.delivery_notify.notified()).await {
+        let mut receiver = self.gate_receiver.clone();
+
+        let wait_future = async {
+            while !*receiver.borrow() {
+                if receiver.changed().await.is_err() {
+                    break;
+                }
+            }
+        };
+
+        if let Err(e) = timeout(GATE_MAX_TIMEOUT, wait_future).await {
             warn!(
                 timeout = GATE_MAX_TIMEOUT.as_secs(),
                 "transactions_with_proofs=gate_open_timeout error: {}, forcibly opening gate", e
