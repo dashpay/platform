@@ -1,3 +1,10 @@
+## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
+
+
+### Bug Fixes
+
+* **sdk:** wasm sdk is not initialized for static methods ([#2788](https://github.com/dashpay/platform/issues/2788))
+
 ## [2.1.0-dev.6](https://github.com/dashpay/platform/compare/v2.1.0-dev.5...v2.1.0-dev.6) (2025-09-24)
 
 
