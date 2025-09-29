@@ -69,6 +69,8 @@ public struct SPVSyncProgress {
     public let filterHeaderHeight: UInt32
     /// Absolute blockchain height reached for compact filters.
     public let filterHeight: UInt32
+    /// UNIX timestamp (seconds) when the current sync run started. 0 if unavailable.
+    public let syncStartedAt: TimeInterval
     // Checkpoint height we started from (0 if none)
     public let startHeight: UInt32
     public let rate: Double // blocks per second
@@ -170,6 +172,7 @@ public class SPVClient: ObservableObject {
     private var syncStartTime: Date?
     private var lastBlockHeight: UInt32 = 0
     internal var syncCancelled = false
+    fileprivate var currentSyncStartTimestamp: Int64 = 0
     fileprivate var lastProgressUIUpdate: TimeInterval = 0
     fileprivate let progressUICoalesceInterval: TimeInterval = 0.2
     fileprivate let swiftLoggingEnabled: Bool = {
@@ -463,6 +466,7 @@ public class SPVClient: ObservableObject {
             targetHeight: 0,
             filterHeaderHeight: self.startFromHeight,
             filterHeight: self.startFromHeight,
+            syncStartedAt: 0,
             startHeight: self.startFromHeight,
             rate: 0.0,
             estimatedTimeRemaining: nil
@@ -688,6 +692,7 @@ public class SPVClient: ObservableObject {
                 targetHeight: candidateTarget,
                 filterHeaderHeight: progress.filterHeaderHeight,
                 filterHeight: nextFilterHeight,
+                syncStartedAt: progress.syncStartedAt,
                 startHeight: baseHeight,
                 rate: updatedRate,
                 estimatedTimeRemaining: progress.estimatedTimeRemaining
@@ -887,6 +892,19 @@ private class CallbackContext {
             ? TimeInterval(ffiProgress.estimated_seconds_remaining)
             : nil
 
+        let syncStartTimestamp = ffiProgress.sync_start_timestamp
+        var previous = client.syncProgress
+        if syncStartTimestamp > 0 {
+            if syncStartTimestamp != client.currentSyncStartTimestamp {
+                client.currentSyncStartTimestamp = syncStartTimestamp
+                previous = nil
+            } else {
+                client.currentSyncStartTimestamp = syncStartTimestamp
+            }
+        } else if client.currentSyncStartTimestamp != 0 {
+            // Keep previous timestamp when FFI does not expose it
+        }
+
         if client.swiftLoggingEnabled {
             let pct = max(0.0, min(ffiProgress.percentage, 100.0))
             let cur = overview.header_height
@@ -943,7 +961,6 @@ private class CallbackContext {
             }
         }
 
-        let previous = client.syncProgress
         if let prev = previous {
             headerProgress = max(prev.headerProgress, headerProgress)
         }
@@ -1008,6 +1025,7 @@ private class CallbackContext {
             targetHeight: absoluteTarget,
             filterHeaderHeight: min(absoluteFilterHeader, absoluteTarget),
             filterHeight: min(absoluteFilter, absoluteTarget),
+            syncStartedAt: TimeInterval(syncStartTimestamp > 0 ? syncStartTimestamp : client.currentSyncStartTimestamp),
             startHeight: safeBase,
             rate: ffiProgress.headers_per_second,
             estimatedTimeRemaining: estimatedTime
@@ -1055,6 +1073,7 @@ private class CallbackContext {
                         targetHeight: client.syncProgress?.targetHeight ?? 0,
                         filterHeaderHeight: client.syncProgress?.filterHeaderHeight ?? (client.syncProgress?.targetHeight ?? 0),
                         filterHeight: client.syncProgress?.filterHeight ?? (client.syncProgress?.targetHeight ?? 0),
+                        syncStartedAt: client.syncProgress?.syncStartedAt ?? 0,
                         startHeight: client.startFromHeight,
                         rate: 0,
                         estimatedTimeRemaining: nil

@@ -113,6 +113,8 @@ public class WalletService: ObservableObject {
     @Published public var headerTargetHeight: Int = 0
     @Published public var blocksHit: Int = 0
     @Published public var lastSyncError: Error?
+
+    private var activeSyncStartTimestamp: TimeInterval = 0
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
     @Published var currentNetwork: Network = .testnet
     
@@ -745,9 +747,17 @@ extension WalletService: SPVClientDelegate {
         let mappedStage = WalletService.mapSyncStage(stage)
         let reportedFilterHeaderHeight = progress.filterHeaderHeight
         let reportedFilterHeight = progress.filterHeight
+        let syncStart = progress.syncStartedAt
 
         Task { @MainActor in
             let baseHeight = Int(startHeight)
+            if syncStart > 0 && syncStart != self.activeSyncStartTimestamp {
+                self.activeSyncStartTimestamp = syncStart
+                self.latestFilterHeaderHeight = baseHeight
+                self.latestFilterHeight = baseHeight
+                self.filterHeaderProgress = 0
+                self.transactionProgress = 0
+            }
             let absHeader = max(Int(currentHeight), baseHeight)
             var absTarget = max(Int(targetHeight), baseHeight)
 
