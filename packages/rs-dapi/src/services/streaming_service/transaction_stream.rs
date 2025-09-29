@@ -382,8 +382,11 @@ impl StreamingServiceImpl {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let mut match_flags = Vec::with_capacity(block.txdata.len());
                     for tx in block.txdata.iter() {
-                        let mut guard = bloom.write().unwrap();
-                        match_flags.push(super::bloom::matches_transaction(&mut guard, tx, *flags));
+                        match_flags.push(super::bloom::matches_transaction(
+                            Arc::clone(bloom),
+                            tx,
+                            *flags,
+                        ));
                     }
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                         warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
@@ -603,8 +606,7 @@ impl StreamingServiceImpl {
             let matches = match &filter {
                 FilterType::CoreAllTxs => true,
                 FilterType::CoreBloomFilter(bloom, flags) => {
-                    let mut guard = bloom.write().unwrap();
-                    super::bloom::matches_transaction(&mut guard, &tx, *flags)
+                    super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags)
                 }
                 _ => false,
             };
@@ -713,8 +715,7 @@ impl StreamingServiceImpl {
                         match deserialize::<CoreTx>(tx_bytes.as_slice()) {
                             Ok(tx) => {
                                 trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
-                                let mut guard = bloom.write().unwrap();
-                                super::bloom::matches_transaction(&mut guard, &tx, *flags)
+                                super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags)
                             }
                             Err(e) => {
                                 warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");

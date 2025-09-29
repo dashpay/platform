@@ -1,5 +1,6 @@
+use std::fmt::Debug;
 use std::sync::Arc;
-use tracing::{trace, warn};
+use tracing::{error, trace, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
@@ -34,19 +35,20 @@ pub enum FilterType {
 impl FilterType {
     fn matches_core_transaction(&self, raw_tx: &[u8]) -> bool {
         match self {
-            FilterType::CoreBloomFilter(f_lock, flags) => match deserialize::<CoreTx>(raw_tx) {
-                Ok(tx) => match f_lock.write() {
-                    Ok(mut guard) => super::bloom::matches_transaction(&mut guard, &tx, *flags),
-                    Err(_) => false,
-                },
+            FilterType::CoreBloomFilter(bloom, flags) => match deserialize::<CoreTx>(raw_tx) {
+                Ok(tx) => super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags),
+
                 Err(e) => {
                     warn!(
                         error = %e,
                         "Failed to deserialize core transaction for bloom filter matching, falling back to contains()"
                     );
-                    match f_lock.read() {
+                    match bloom.read() {
                         Ok(guard) => guard.contains(raw_tx),
-                        Err(_) => false,
+                        Err(_) => {
+                            error!("Failed to acquire read lock for bloom filter");
+                            false
+                        }
                     }
                 }
             },

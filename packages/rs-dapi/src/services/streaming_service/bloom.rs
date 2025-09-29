@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
 use dashcore_rpc::dashcore::{ScriptBuf, Transaction as CoreTx, Txid};
@@ -38,14 +40,25 @@ pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
         .collect()
 }
 
-pub fn matches_transaction(filter: &mut CoreBloomFilter, tx: &CoreTx, flags: BloomFlags) -> bool {
+pub fn matches_transaction(
+    filter_lock: Arc<std::sync::RwLock<CoreBloomFilter>>,
+    tx: &CoreTx,
+    flags: BloomFlags,
+) -> bool {
+    let filter = match filter_lock.read().inspect_err(|e| {
+        tracing::error!("Failed to acquire read lock for bloom filter: {}", e);
+    }) {
+        Ok(guard) => guard,
+        Err(_) => return false,
+    };
+
     let txid_be = txid_to_be_bytes(&tx.txid());
     if filter.contains(&txid_be) {
         return true;
     }
 
     for (index, out) in tx.output.iter().enumerate() {
-        if script_matches(filter, out.script_pubkey.as_bytes()) {
+        if script_matches(&filter, out.script_pubkey.as_bytes()) {
             if flags == BloomFlags::All
                 || (flags == BloomFlags::PubkeyOnly
                     && is_pubkey_script(out.script_pubkey.as_bytes()))
@@ -53,7 +66,12 @@ pub fn matches_transaction(filter: &mut CoreBloomFilter, tx: &CoreTx, flags: Blo
                 let mut outpoint = Vec::with_capacity(36);
                 outpoint.extend_from_slice(&txid_be);
                 outpoint.extend_from_slice(&(index as u32).to_le_bytes());
-                filter.insert(&outpoint);
+                drop(filter);
+                if let Ok(mut f) = filter_lock.write().inspect_err(|e| {
+                    tracing::error!("Failed to acquire write lock for bloom filter: {}", e);
+                }) {
+                    f.insert(&outpoint);
+                }
             }
             return true;
         }
@@ -64,7 +82,7 @@ pub fn matches_transaction(filter: &mut CoreBloomFilter, tx: &CoreTx, flags: Blo
         let prev_txid_be = txid_to_be_bytes(&input.previous_output.txid);
         outpoint.extend_from_slice(&prev_txid_be);
         outpoint.extend_from_slice(&input.previous_output.vout.to_le_bytes());
-        if filter.contains(&outpoint) || script_matches(filter, input.script_sig.as_bytes()) {
+        if filter.contains(&outpoint) || script_matches(&filter, input.script_sig.as_bytes()) {
             return true;
         }
     }
@@ -92,6 +110,7 @@ mod tests {
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash};
     use std::str::FromStr;
+    use std::sync::RwLock;
 
     #[test]
     fn test_insert_and_contains_roundtrip() {
@@ -132,7 +151,11 @@ mod tests {
         let txid_be = super::txid_to_be_bytes(&tx.txid());
         let mut filter = CoreBloomFilter::from_bytes(vec![0; 128], 3, 0, BloomFlags::None).unwrap();
         filter.insert(&txid_be);
-        assert!(matches_transaction(&mut filter, &tx, BloomFlags::None));
+        assert!(matches_transaction(
+            Arc::new(RwLock::new(filter)),
+            &tx,
+            BloomFlags::None
+        ));
     }
 
     #[test]
@@ -153,10 +176,16 @@ mod tests {
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 256], 5, 12345, BloomFlags::All).unwrap();
         filter.insert(&h160.to_byte_array());
-        assert!(matches_transaction(&mut filter, &tx, BloomFlags::All));
+        let filter_lock = Arc::new(RwLock::new(filter));
+        assert!(matches_transaction(
+            filter_lock.clone(),
+            &tx,
+            BloomFlags::All
+        ));
         let mut outpoint = super::txid_to_be_bytes(&tx.txid());
         outpoint.extend_from_slice(&(0u32).to_le_bytes());
-        assert!(filter.contains(&outpoint));
+        let guard = filter_lock.read().unwrap();
+        assert!(guard.contains(&outpoint));
     }
 
     #[test]
@@ -192,8 +221,17 @@ mod tests {
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 1024], 5, 123, BloomFlags::All).unwrap();
         filter.insert(&h160.to_byte_array());
-        assert!(matches_transaction(&mut filter, &tx_a, BloomFlags::All));
-        assert!(matches_transaction(&mut filter, &tx_b, BloomFlags::All));
+        let filter_lock = Arc::new(RwLock::new(filter));
+        assert!(matches_transaction(
+            filter_lock.clone(),
+            &tx_a,
+            BloomFlags::All
+        ));
+        assert!(matches_transaction(
+            filter_lock.clone(),
+            &tx_b,
+            BloomFlags::All
+        ));
     }
 
     #[test]
@@ -229,8 +267,17 @@ mod tests {
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 2048], 5, 456, BloomFlags::None).unwrap();
         filter.insert(&h160.to_byte_array());
-        assert!(matches_transaction(&mut filter, &tx_a, BloomFlags::None));
-        assert!(!matches_transaction(&mut filter, &tx_b, BloomFlags::None));
+        let filter_lock = Arc::new(RwLock::new(filter));
+        assert!(matches_transaction(
+            filter_lock.clone(),
+            &tx_a,
+            BloomFlags::None
+        ));
+        assert!(!matches_transaction(
+            filter_lock.clone(),
+            &tx_b,
+            BloomFlags::None
+        ));
     }
 
     #[test]
@@ -257,14 +304,15 @@ mod tests {
             }],
             special_transaction_payload: None,
         };
+        let filter_lock = Arc::new(RwLock::new(filter));
         assert!(matches_transaction(
-            &mut filter,
+            filter_lock.clone(),
             &tx_sh,
             BloomFlags::PubkeyOnly
         ));
         let mut outpoint = super::txid_to_be_bytes(&tx_sh.txid());
         outpoint.extend_from_slice(&(0u32).to_le_bytes());
-        assert!(!filter.contains(&outpoint));
+        assert!(!filter_lock.read().unwrap().contains(&outpoint));
         let tx_or = CoreTx {
             version: 2,
             lock_time: 0,
@@ -290,13 +338,13 @@ mod tests {
             special_transaction_payload: None,
         };
         assert!(matches_transaction(
-            &mut filter,
+            filter_lock.clone(),
             &tx_or,
             BloomFlags::PubkeyOnly
         ));
         let mut outpoint2 = super::txid_to_be_bytes(&tx_or.txid());
         outpoint2.extend_from_slice(&(0u32).to_le_bytes());
-        assert!(!filter.contains(&outpoint2));
+        assert!(!filter_lock.read().unwrap().contains(&outpoint2));
     }
 
     #[test]
@@ -316,7 +364,12 @@ mod tests {
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 1024], 5, 321, BloomFlags::None).unwrap();
         filter.insert(&[0xDE, 0xAD, 0xBE]);
-        assert!(matches_transaction(&mut filter, &tx, BloomFlags::None));
+        let filter_lock = Arc::new(RwLock::new(filter));
+        assert!(matches_transaction(
+            filter_lock.clone(),
+            &tx,
+            BloomFlags::None
+        ));
     }
 
     #[test]
@@ -348,7 +401,12 @@ mod tests {
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 4096], 5, 654, BloomFlags::None).unwrap();
         filter.insert(&pubkey);
-        assert!(!matches_transaction(&mut filter, &tx, BloomFlags::None));
+        let filter_lock = Arc::new(RwLock::new(filter));
+        assert!(!matches_transaction(
+            filter_lock.clone(),
+            &tx,
+            BloomFlags::None
+        ));
     }
 
     #[test]
