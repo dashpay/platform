@@ -209,7 +209,7 @@ impl IdentityKeysQuery {
     ///
     /// ```rust
     /// use dash_sdk::platform::{Identifier, IdentityKeysQuery};
-    /// 
+    ///
     /// let identity_id = Identifier::new([1; 32]);
     /// let key_ids = vec![0, 1, 2]; // Fetch keys with IDs 0, 1, and 2
     /// let query = IdentityKeysQuery::new(identity_id, key_ids);
@@ -242,7 +242,7 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
         if !prove {
             unimplemented!("queries without proofs are not supported yet");
         }
-        
+
         Ok(GetIdentityKeysRequest {
             version: Some(get_identity_keys_request::Version::V0(
                 GetIdentityKeysRequestV0 {
@@ -254,7 +254,7 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
                         request: Some(proto::key_request_type::Request::SpecificKeys(
                             SpecificKeys {
                                 key_ids: self.key_ids.into_iter().map(|id| id as u32).collect(),
-                            }
+                            },
                         )),
                     }),
                 },
@@ -870,9 +870,9 @@ mod tests {
     fn test_identity_keys_query_creation() {
         let identity_id = Identifier::new([1; 32]);
         let key_ids = vec![0, 1, 2];
-        
+
         let query = IdentityKeysQuery::new(identity_id.clone(), key_ids.clone());
-        
+
         assert_eq!(query.identity_id, identity_id);
         assert_eq!(query.key_ids, key_ids);
         assert_eq!(query.limit, None);
@@ -883,11 +883,11 @@ mod tests {
     fn test_identity_keys_query_with_options() {
         let identity_id = Identifier::new([2; 32]);
         let key_ids = vec![5, 10];
-        
+
         let query = IdentityKeysQuery::new(identity_id, key_ids)
             .with_limit(100)
             .with_offset(50);
-        
+
         assert_eq!(query.limit, Some(100));
         assert_eq!(query.offset, Some(50));
     }

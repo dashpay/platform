@@ -67,7 +67,7 @@ async fn test_identity_fetch_with_proof() {
         Err(e) => {
             #[cfg(feature = "network-testing")]
             panic!("Failed to fetch identity with proof: {}", e);
-            
+
             #[cfg(feature = "offline-testing")]
             tracing::warn!("Offline mode error (expected): {}", e);
         }
@@ -92,7 +92,9 @@ async fn test_document_fetch_many_with_proofs() {
 
     // We can't easily test document fetching without a real DataContract
     // This would require setting up mock responses properly
-    tracing::info!("Skipping document fetch test - would require full mock setup with DataContract");
+    tracing::info!(
+        "Skipping document fetch test - would require full mock setup with DataContract"
+    );
 }
 
 #[tokio::test]
@@ -179,23 +181,27 @@ async fn test_proof_data_with_short_grovedb_proof() {
 #[cfg(test)]
 mod identity_merkle_tests {
     use super::*;
-    use dpp::identity::Identity;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use dpp::identity::Identity;
     use dpp::identity::{IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::version::PlatformVersion;
     use std::collections::BTreeMap;
-    
+
     #[test]
     fn test_identity_merkle_tree_generation() {
         let platform_version = PlatformVersion::latest();
-        
+
         // Create identity with multiple keys
         let mut keys = BTreeMap::new();
-        
+
         for i in 0..5 {
             let key = IdentityPublicKeyV0 {
                 id: i,
-                purpose: if i % 2 == 0 { Purpose::AUTHENTICATION } else { Purpose::ENCRYPTION },
+                purpose: if i % 2 == 0 {
+                    Purpose::AUTHENTICATION
+                } else {
+                    Purpose::ENCRYPTION
+                },
                 security_level: match i {
                     0 => SecurityLevel::MASTER,
                     1 | 2 => SecurityLevel::HIGH,
@@ -209,28 +215,27 @@ mod identity_merkle_tests {
             };
             keys.insert(i, IdentityPublicKey::V0(key));
         }
-        
-        let identity = Identity::new_with_id_and_keys(
-            [0x42u8; 32].into(),
-            keys,
-            &platform_version,
-        ).expect("Failed to create identity");
-        
+
+        let identity = Identity::new_with_id_and_keys([0x42u8; 32].into(), keys, &platform_version)
+            .expect("Failed to create identity");
+
         // Build merkle tree
-        let tree = identity.build_keys_merkle_tree()
+        let tree = identity
+            .build_keys_merkle_tree()
             .expect("Failed to build merkle tree");
-        
+
         let root = tree.root();
         assert_ne!(root, [0u8; 32], "Root should not be zero");
-        
+
         // Get proofs for all keys
         for i in 0..5 {
-            let proof = identity.get_key_merkle_proof(i)
+            let proof = identity
+                .get_key_merkle_proof(i)
                 .expect(&format!("Failed to get proof for key {}", i));
-            
+
             assert_eq!(proof.key_id, i);
             assert_eq!(proof.root, root);
-            
+
             // Verify proof structure
             if i % 2 == 0 {
                 assert_eq!(proof.key_purpose, Purpose::AUTHENTICATION);
@@ -238,17 +243,18 @@ mod identity_merkle_tests {
                 assert_eq!(proof.key_purpose, Purpose::ENCRYPTION);
             }
         }
-        
+
         // Verify all roots are consistent
-        let root_from_method = identity.get_keys_merkle_root()
+        let root_from_method = identity
+            .get_keys_merkle_root()
             .expect("Failed to get merkle root");
         assert_eq!(root_from_method, root);
     }
-    
+
     #[test]
     fn test_identity_with_single_key() {
         let platform_version = PlatformVersion::latest();
-        
+
         let mut keys = BTreeMap::new();
         let key = IdentityPublicKeyV0 {
             id: 0,
@@ -261,32 +267,28 @@ mod identity_merkle_tests {
             contract_bounds: None,
         };
         keys.insert(0, IdentityPublicKey::V0(key));
-        
-        let identity = Identity::new_with_id_and_keys(
-            [0x11u8; 32].into(),
-            keys,
-            &platform_version,
-        ).expect("Failed to create identity");
-        
-        let proof = identity.get_key_merkle_proof(0)
+
+        let identity = Identity::new_with_id_and_keys([0x11u8; 32].into(), keys, &platform_version)
+            .expect("Failed to create identity");
+
+        let proof = identity
+            .get_key_merkle_proof(0)
             .expect("Failed to get proof");
-        
+
         // Single key should have empty proof path
         assert_eq!(proof.proof_path.len(), 0);
         assert_eq!(proof.key_purpose, Purpose::AUTHENTICATION);
         assert_eq!(proof.key_security_level, SecurityLevel::MASTER);
     }
-    
+
     #[test]
     fn test_identity_without_keys() {
         let platform_version = PlatformVersion::latest();
-        
-        let identity = Identity::new_with_id_and_keys(
-            [0x22u8; 32].into(),
-            BTreeMap::new(),
-            &platform_version,
-        ).expect("Failed to create identity");
-        
+
+        let identity =
+            Identity::new_with_id_and_keys([0x22u8; 32].into(), BTreeMap::new(), &platform_version)
+                .expect("Failed to create identity");
+
         // Should fail to build tree with no keys
         let result = identity.build_keys_merkle_tree();
         assert!(result.is_err());
@@ -297,62 +299,63 @@ mod identity_merkle_tests {
 mod document_proof_tests {
     use super::*;
     use dash_sdk::platform::document_proof::extract_merkle_path_from_grove_proof;
-    
+
     #[test]
     fn test_extract_merkle_path_empty_proof() {
         // Just root hash - should return error since there's no valid Merk proof
         let proof = vec![0u8; 32];
         let result = extract_merkle_path_from_grove_proof(&proof);
         assert!(result.is_err());
-        assert!(result.unwrap_err().to_string().contains("No valid Merk proofs found"));
+        assert!(result
+            .unwrap_err()
+            .to_string()
+            .contains("No valid Merk proofs found"));
     }
-    
+
     #[test]
     fn test_extract_merkle_path_with_operations() {
         // Test raw Merk proof format
         let mut proof = Vec::new();
-        
+
         // Add Push left operation with varint length
         proof.push(0x01); // Left sibling
-        proof.push(32);   // Length (32 bytes)
+        proof.push(32); // Length (32 bytes)
         proof.extend_from_slice(&[0xAA; 32]);
-        
+
         // Add Push right operation
         proof.push(0x02); // Right sibling
-        proof.push(32);   // Length (32 bytes)
+        proof.push(32); // Length (32 bytes)
         proof.extend_from_slice(&[0xBB; 32]);
-        
-        let path = extract_merkle_path_from_grove_proof(&proof)
-            .expect("Failed to extract path");
-        
+
+        let path = extract_merkle_path_from_grove_proof(&proof).expect("Failed to extract path");
+
         assert_eq!(path.len(), 2);
         assert_eq!(path[0].0, [0xAA; 32]);
         assert!(path[0].1); // is_left = true
         assert_eq!(path[1].0, [0xBB; 32]);
         assert!(!path[1].1); // is_left = false
     }
-    
+
     #[test]
     fn test_extract_merkle_path_grovedb_v0_format() {
         // Test GroveDB V0 format (starts with 0x00)
         let mut proof = vec![0x00]; // Version byte
-        
+
         // Add some padding that would be in a real GroveDB proof
         proof.extend_from_slice(&[0xFF; 10]);
-        
+
         // Add Merk proof operations
         proof.push(0x01); // Left sibling
-        proof.push(32);   // Length
+        proof.push(32); // Length
         proof.extend_from_slice(&[0xCC; 32]);
-        
-        let path = extract_merkle_path_from_grove_proof(&proof)
-            .expect("Failed to extract path");
-        
+
+        let path = extract_merkle_path_from_grove_proof(&proof).expect("Failed to extract path");
+
         assert_eq!(path.len(), 1);
         assert_eq!(path[0].0, [0xCC; 32]);
         assert!(path[0].1); // is_left = true
     }
-    
+
     #[test]
     fn test_extract_merkle_path_too_short() {
         let proof = vec![0u8; 16]; // Too short for root

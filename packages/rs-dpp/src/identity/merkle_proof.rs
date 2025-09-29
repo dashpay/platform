@@ -3,9 +3,9 @@
 //! This module provides functionality to generate merkle proofs for identity keys,
 //! which are useful for zero-knowledge proof applications.
 
-use crate::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use crate::identity::{Identity, IdentityPublicKey, KeyID, Purpose, SecurityLevel};
 use crate::ProtocolError;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -57,7 +57,7 @@ impl MerkleTree {
         // Walk up the tree from leaf to root
         for level_idx in 0..self.levels.len() - 1 {
             let current_level = &self.levels[level_idx];
-            
+
             // Determine sibling index and position
             let sibling_index = if current_index % 2 == 0 {
                 // Current node is left, sibling is right
@@ -99,25 +99,25 @@ fn hash_node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
 /// Leaf = H(H(H(key_id || public_key) || purpose) || security_level)
 fn hash_leaf(key_id: KeyID, key: &IdentityPublicKey) -> [u8; 32] {
     let mut hasher = Sha256::new();
-    
+
     // First layer: H(key_id || public_key)
     hasher.update(b"KeyLeaf1");
     hasher.update(&key_id.to_le_bytes());
     hasher.update(key.data().as_slice());
     let layer1 = hasher.finalize_reset();
-    
+
     // Second layer: H(layer1 || purpose)
     hasher.update(b"KeyLeaf2");
     hasher.update(&layer1);
     hasher.update(&[key.purpose() as u8]);
     let layer2 = hasher.finalize_reset();
-    
+
     // Third layer: H(layer2 || security_level)
     hasher.update(b"KeyLeaf3");
     hasher.update(&layer2);
     hasher.update(&[key.security_level() as u8]);
     let result = hasher.finalize();
-    
+
     let mut hash = [0u8; 32];
     hash.copy_from_slice(&result);
     hash
@@ -128,15 +128,14 @@ impl Identity {
     /// Each leaf is: H(H(H(key_id || public_key) || purpose) || security_level)
     pub fn build_keys_merkle_tree(&self) -> Result<MerkleTree, ProtocolError> {
         let keys = self.public_keys();
-        
+
         if keys.is_empty() {
             return Err(ProtocolError::Generic("Identity has no keys".to_string()));
         }
 
         // Create sorted list of keys by ID
-        let mut sorted_keys: Vec<(KeyID, &IdentityPublicKey)> = keys.iter()
-            .map(|(id, key)| (*id, key))
-            .collect();
+        let mut sorted_keys: Vec<(KeyID, &IdentityPublicKey)> =
+            keys.iter().map(|(id, key)| (*id, key)).collect();
         sorted_keys.sort_by_key(|(id, _)| *id);
 
         // Build key_to_index mapping
@@ -152,15 +151,15 @@ impl Identity {
             .iter()
             .map(|(key_id, key)| hash_leaf(*key_id, key))
             .collect();
-        
+
         levels.push(leaves.clone());
 
         // Build tree levels bottom-up
         let mut current_level = leaves;
-        
+
         while current_level.len() > 1 {
             let mut next_level = Vec::new();
-            
+
             for i in (0..current_level.len()).step_by(2) {
                 if i + 1 < current_level.len() {
                     // Hash two nodes together
@@ -171,7 +170,7 @@ impl Identity {
                     next_level.push(current_level[i]);
                 }
             }
-            
+
             levels.push(next_level.clone());
             current_level = next_level;
         }
@@ -188,13 +187,13 @@ impl Identity {
     /// Get merkle proof for a specific key
     pub fn get_key_merkle_proof(&self, key_id: KeyID) -> Result<KeyMerkleProof, ProtocolError> {
         let tree = self.build_keys_merkle_tree()?;
-        
+
         let key = self
             .get_public_key_by_id(key_id)
             .ok_or_else(|| ProtocolError::Generic(format!("Key {} not found", key_id)))?;
-        
+
         let proof_path = tree.generate_proof(key_id)?;
-        
+
         Ok(KeyMerkleProof {
             root: tree.root(),
             key_id,
@@ -213,38 +212,35 @@ impl Identity {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::identity::IdentityPublicKey;
     use crate::identity::identity_public_key::v0::IdentityPublicKeyV0;
+    use crate::identity::IdentityPublicKey;
     use crate::identity::KeyType;
     use crate::version::PlatformVersion;
 
     #[test]
     fn test_merkle_tree_single_key() {
         let platform_version = PlatformVersion::latest();
-        
+
         // Create identity with single key
         let mut keys = BTreeMap::new();
         let key = IdentityPublicKeyV0 {
             id: 0,
-            purpose: Purpose::Authentication,
+            purpose: Purpose::AUTHENTICATION,
             security_level: SecurityLevel::MASTER,
             key_type: KeyType::ECDSA_SECP256K1,
             read_only: false,
-            data: vec![1, 2, 3, 4, 5],
+            data: vec![1, 2, 3, 4, 5].into(),
             disabled_at: None,
             contract_bounds: None,
         };
         keys.insert(0, IdentityPublicKey::V0(key));
-        
-        let identity = Identity::new_with_id_and_keys(
-            [1u8; 32].into(),
-            keys,
-            &platform_version,
-        ).unwrap();
-        
+
+        let identity =
+            Identity::new_with_id_and_keys([1u8; 32].into(), keys, &platform_version).unwrap();
+
         let tree = identity.build_keys_merkle_tree().unwrap();
         assert_eq!(tree.levels.len(), 1); // Only root level for single node
-        
+
         let proof = identity.get_key_merkle_proof(0).unwrap();
         assert_eq!(proof.key_id, 0);
         assert_eq!(proof.proof_path.len(), 0); // No siblings for single key
@@ -253,52 +249,57 @@ mod tests {
     #[test]
     fn test_merkle_tree_multiple_keys() {
         let platform_version = PlatformVersion::latest();
-        
+
         // Create identity with multiple keys
         let mut keys = BTreeMap::new();
         for i in 0..4 {
             let key = IdentityPublicKeyV0 {
                 id: i,
-                purpose: if i < 2 { Purpose::Authentication } else { Purpose::Encryption },
-                security_level: if i == 0 { SecurityLevel::MASTER } else { SecurityLevel::HIGH },
+                purpose: if i < 2 {
+                    Purpose::AUTHENTICATION
+                } else {
+                    Purpose::ENCRYPTION
+                },
+                security_level: if i == 0 {
+                    SecurityLevel::MASTER
+                } else {
+                    SecurityLevel::HIGH
+                },
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: vec![i as u8; 33],
+                data: vec![i as u8; 33].into(),
                 disabled_at: None,
                 contract_bounds: None,
             };
             keys.insert(i, IdentityPublicKey::V0(key));
         }
-        
-        let identity = Identity::new_with_id_and_keys(
-            [1u8; 32].into(),
-            keys,
-            &platform_version,
-        ).unwrap();
-        
+
+        let identity =
+            Identity::new_with_id_and_keys([1u8; 32].into(), keys, &platform_version).unwrap();
+
         let tree = identity.build_keys_merkle_tree().unwrap();
         assert!(tree.levels.len() > 1);
-        
+
         // Test getting proof for each key
         for i in 0..4 {
             let proof = identity.get_key_merkle_proof(i).unwrap();
             assert_eq!(proof.key_id, i);
             assert!(proof.proof_path.len() > 0);
-            
+
             // Verify proof structure
             if i < 2 {
-                assert_eq!(proof.key_purpose, Purpose::Authentication);
+                assert_eq!(proof.key_purpose, Purpose::AUTHENTICATION);
             } else {
-                assert_eq!(proof.key_purpose, Purpose::Encryption);
+                assert_eq!(proof.key_purpose, Purpose::ENCRYPTION);
             }
-            
+
             if i == 0 {
                 assert_eq!(proof.key_security_level, SecurityLevel::MASTER);
             } else {
                 assert_eq!(proof.key_security_level, SecurityLevel::HIGH);
             }
         }
-        
+
         // Check that root is consistent
         let root1 = identity.get_keys_merkle_root().unwrap();
         let root2 = identity.get_key_merkle_proof(0).unwrap().root;
@@ -308,36 +309,33 @@ mod tests {
     #[test]
     fn test_merkle_proof_verification() {
         let platform_version = PlatformVersion::latest();
-        
+
         // Create identity with 3 keys
         let mut keys = BTreeMap::new();
         for i in 0..3 {
             let key = IdentityPublicKeyV0 {
                 id: i,
-                purpose: Purpose::Authentication,
+                purpose: Purpose::AUTHENTICATION,
                 security_level: SecurityLevel::HIGH,
                 key_type: KeyType::ECDSA_SECP256K1,
                 read_only: false,
-                data: vec![i as u8; 33],
+                data: vec![i as u8; 33].into(),
                 disabled_at: None,
                 contract_bounds: None,
             };
             keys.insert(i, IdentityPublicKey::V0(key));
         }
-        
-        let identity = Identity::new_with_id_and_keys(
-            [1u8; 32].into(),
-            keys,
-            &platform_version,
-        ).unwrap();
-        
+
+        let identity =
+            Identity::new_with_id_and_keys([1u8; 32].into(), keys, &platform_version).unwrap();
+
         // Get proof for middle key
         let proof = identity.get_key_merkle_proof(1).unwrap();
-        
+
         // Manually verify the proof
         let key = identity.get_public_key_by_id(1).unwrap();
         let mut current_hash = hash_leaf(1, key);
-        
+
         for (sibling_hash, is_left) in &proof.proof_path {
             current_hash = if *is_left {
                 hash_node(sibling_hash, &current_hash)
@@ -345,7 +343,7 @@ mod tests {
                 hash_node(&current_hash, sibling_hash)
             };
         }
-        
+
         assert_eq!(current_hash, proof.root);
     }
 }

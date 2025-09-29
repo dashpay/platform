@@ -11,44 +11,50 @@ use dpp::identity::accessors::IdentityGettersV0;
 ///
 /// This demonstrates how a ZK application would use the merkle proofs to prove
 /// key ownership without revealing which key was used.
-fn demonstrate_identity_key_zk_proof(identity: &Identity) -> Result<(), Box<dyn std::error::Error>> {
+fn demonstrate_identity_key_zk_proof(
+    identity: &Identity,
+) -> Result<(), Box<dyn std::error::Error>> {
     println!("\n=== Identity Key Merkle Proofs for ZK ===");
-    
+
     if identity.public_keys().is_empty() {
         println!("No keys found in identity");
         return Ok(());
     }
-    
+
     // Build merkle tree of all identity keys
     let merkle_tree = identity.build_keys_merkle_tree()?;
     let keys_root = merkle_tree.root();
-    
+
     println!("Keys merkle root: {}", hex::encode(keys_root));
     println!("Total keys: {}", identity.public_keys().len());
-    
+
     // Get merkle proof for a specific key
     let first_key_id = *identity.public_keys().keys().next().unwrap();
     let key_proof = identity.get_key_merkle_proof(first_key_id)?;
-    
+
     println!("\nMerkle proof for key {}:", key_proof.key_id);
     println!("  Purpose: {:?}", key_proof.key_purpose);
     println!("  Security level: {:?}", key_proof.key_security_level);
     println!("  Proof path length: {} nodes", key_proof.proof_path.len());
-    
+
     // Show the proof path structure
     for (level, (sibling_hash, is_left)) in key_proof.proof_path.iter().enumerate() {
-        println!("  Level {}: sibling position={}, hash={}...", 
+        println!(
+            "  Level {}: sibling position={}, hash={}...",
             level,
             if *is_left { "left" } else { "right" },
             hex::encode(&sibling_hash[..4])
         );
     }
-    
+
     println!("\nZK Proof Application:");
-    println!("  1. Public input: keys_root = {}", hex::encode(&keys_root[..8]));
+    println!(
+        "  1. Public input: keys_root = {}",
+        hex::encode(&keys_root[..8])
+    );
     println!("  2. Private inputs: key data and merkle path");
     println!("  3. Circuit proves: key exists in identity without revealing which key");
-    
+
     Ok(())
 }
 
@@ -98,28 +104,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     #[cfg(feature = "network-testing")]
     {
         use dash_sdk::platform::document_proof::fetch_document_with_proof;
-        
+
         // In production, you would use real contract and document IDs
         let contract_id = Identifier::from_string(
             "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec",
-            Default::default()
+            Default::default(),
         )?;
         let document_id = Identifier::from_string(
             "4EfA9Jrvv3nnCFdSf7fad59851iiTRZ6Wcu6YVJ4iSeF",
-            Default::default()
+            Default::default(),
         )?;
-        
+
         match fetch_document_with_proof(&sdk, &contract_id, &document_id).await {
             Ok(doc_proof) => {
                 println!("Document fetched with merkle proof:");
                 println!("  Owner: {}", doc_proof.owner_id);
                 println!("  State root: {}", hex::encode(doc_proof.state_root));
-                println!("  Merkle path length: {} nodes", doc_proof.merkle_path.len());
+                println!(
+                    "  Merkle path length: {} nodes",
+                    doc_proof.merkle_path.len()
+                );
                 println!("  Block height: {}", doc_proof.block_height);
-                
+
                 // Show merkle path for ZK circuit
                 for (level, (hash, is_left)) in doc_proof.merkle_path.iter().enumerate() {
-                    println!("    Level {}: {} sibling, hash={}...",
+                    println!(
+                        "    Level {}: {} sibling, hash={}...",
                         level,
                         if *is_left { "left" } else { "right" },
                         hex::encode(&hash[..4])
@@ -131,14 +141,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     }
-    
+
     #[cfg(not(feature = "network-testing"))]
     {
         println!("Document fetching with the new API:");
         println!("```rust");
         println!("use dash_sdk::platform::document_proof::fetch_document_with_proof;");
         println!("");
-        println!("let doc_proof = fetch_document_with_proof(&sdk, &contract_id, &document_id).await?;");
+        println!(
+            "let doc_proof = fetch_document_with_proof(&sdk, &contract_id, &document_id).await?;"
+        );
         println!("");
         println!("// doc_proof contains:");
         println!("// - document: The fetched document");
