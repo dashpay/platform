@@ -4,6 +4,7 @@ use dapi_grpc::platform::v0::{
 };
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
 
+use core::panic;
 use std::{fmt::Debug, str::FromStr};
 use tonic::{Code, metadata::MetadataValue};
 
@@ -18,6 +19,18 @@ pub struct TenderdashStatus {
 
 impl TenderdashStatus {
     pub fn new(code: i64, message: Option<String>, consensus_error: Option<Vec<u8>>) -> Self {
+        // sanity check: consensus_error must deserialize to ConsensusError if present
+        if let Some(ref bytes) = consensus_error
+            && ConsensusError::deserialize_from_bytes(bytes).is_err()
+        {
+            tracing::warn!(
+                data = hex::encode(bytes),
+                "TenderdashStatus consensus_error failed to deserialize to ConsensusError"
+            );
+
+            // TODO: remove this panic after debugging
+            panic!("TenderdashStatus consensus_error must serialize to ConsensusError");
+        }
         Self {
             code,
             message,

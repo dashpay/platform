@@ -1,5 +1,5 @@
 use crate::error::DapiError;
-use crate::services::platform_service::error_mapping::base64_decode;
+use crate::services::platform_service::error_mapping::decode_consensus_error;
 use crate::services::platform_service::{PlatformServiceImpl, TenderdashStatus};
 use crate::services::streaming_service::FilterType;
 use base64::Engine;
@@ -143,7 +143,7 @@ impl PlatformServiceImpl {
             let consensus_error_serialized = tx_result
                 .info
                 .as_ref()
-                .and_then(|info_base64| base64_decode(info_base64));
+                .and_then(|info_base64| decode_consensus_error(info_base64.clone()));
 
             let error = TenderdashStatus::new(
                 tx_result.code,
@@ -227,7 +227,12 @@ impl PlatformServiceImpl {
                     data = ?data,
                     "Transaction event indicates error"
                 );
-                let error = TenderdashStatus::new(code as i64, data, base64_decode(&info));
+                let consensus_error = if info.is_empty() {
+                    None
+                } else {
+                    decode_consensus_error(info.clone())
+                };
+                let error = TenderdashStatus::new(code as i64, data, consensus_error);
                 let result: Response<WaitForStateTransitionResultResponse> = error.into();
 
                 Ok(result)
