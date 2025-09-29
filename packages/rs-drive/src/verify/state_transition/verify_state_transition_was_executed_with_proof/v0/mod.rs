@@ -175,6 +175,7 @@ impl Drive {
                                     create_transition,
                                     documents_batch_transition.owner_id(),
                                     block_info,
+                                    &contract,
                                     &document_type,
                                     platform_version,
                                 )?;

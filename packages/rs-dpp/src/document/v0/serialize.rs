@@ -36,7 +36,6 @@ use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::DataContractConfig;
-use crate::document::transfer::Transferable;
 use crate::nft::TradeMode;
 use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use std::io::{BufReader, Read};
@@ -489,7 +488,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
     /// id 32 bytes + owner_id 32 bytes + encoded values byte arrays
     /// Serialize v2 will encode the creator id as well.
     fn serialize_v2(&self, document_type: DocumentTypeRef) -> Result<Vec<u8>, ProtocolError> {
-        let mut buffer: Vec<u8> = 2u64.encode_var_vec(); //version 1
+        let mut buffer: Vec<u8> = 2u64.encode_var_vec(); //version 2
 
         // $id
         buffer.extend(self.id.as_slice());
@@ -498,7 +497,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         buffer.extend(self.owner_id.as_slice());
 
         if document_type.trade_mode() != TradeMode::None
-            || document_type.documents_transferable() != Transferable::Never
+            || document_type.documents_transferable().is_transferable()
         {
             if let Some(creator_id) = self.properties.get_optional_identifier(CREATOR_ID)? {
                 buffer.push(1);
@@ -1185,7 +1184,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
 
         // $creatorId
         let creator_id: Option<Identifier> = if document_type.trade_mode() != TradeMode::None
-            || document_type.documents_transferable() != Transferable::Never
+            || document_type.documents_transferable().is_transferable()
         {
             let has_creator_id = buf.read_u8().map_err(|_| {
                 DataContractError::CorruptedSerialization(

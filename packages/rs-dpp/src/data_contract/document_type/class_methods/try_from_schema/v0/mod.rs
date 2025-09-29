@@ -37,7 +37,7 @@ use crate::data_contract::config::DataContractConfig;
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
-    NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
+    NOT_ALLOWED_SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error, try_from_schema,
@@ -63,6 +63,8 @@ impl DocumentTypeV0 {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
@@ -424,7 +426,14 @@ impl DocumentTypeV0 {
                                 }
 
                                 // Indexed property must be defined in user schema if it's not a system one
-                                if !SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
+                                if !DocumentType::system_properties_contains(
+                                    data_contract_system_version,
+                                    contract_config_version,
+                                    documents_transferable,
+                                    trade_mode,
+                                    &index_property.name.as_str(),
+                                    platform_version,
+                                )? {
                                     let property_definition = flattened_document_properties
                                         .get(&index_property.name)
                                         .ok_or_else(|| {
@@ -596,6 +605,8 @@ mod tests {
 
             let _result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                0,
+                config.version(),
                 "valid_name-a-b-123",
                 schema,
                 None,
@@ -627,6 +638,8 @@ mod tests {
 
             let result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                0,
+                config.version(),
                 "",
                 schema,
                 None,
@@ -669,6 +682,8 @@ mod tests {
 
             let result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                0,
+                config.version(),
                 &"a".repeat(65),
                 schema,
                 None,
@@ -711,6 +726,8 @@ mod tests {
 
             let result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                0,
+                config.version(),
                 "invalid name",
                 schema.clone(),
                 None,
@@ -737,6 +754,8 @@ mod tests {
 
             let result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                0,
+                config.version(),
                 "invalid&name",
                 schema,
                 None,

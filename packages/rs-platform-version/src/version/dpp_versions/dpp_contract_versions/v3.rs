@@ -5,19 +5,20 @@ use crate::version::dpp_versions::dpp_contract_versions::{
 };
 use versioned_feature_core::FeatureVersionBounds;
 
-pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
+// Introduced in protocol version 10, system_properties are changed to allow to make indexes on $creatorId
+pub const CONTRACT_VERSIONS_V3: DPPContractVersions = DPPContractVersions {
     max_serialized_size: 65000,
     contract_serialization_version: FeatureVersionBounds {
         min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
+        max_version: 1,
+        default_current_version: 1,
     },
-    contract_structure_version: 0,
+    contract_structure_version: 1,
     created_data_contract_structure: 0,
     config: FeatureVersionBounds {
         min_version: 0,
-        max_version: 0,
-        default_current_version: 0,
+        max_version: 1,
+        default_current_version: 1,
     },
     methods: DataContractMethodVersions {
         validate_document: 0,
@@ -25,19 +26,19 @@ pub const CONTRACT_VERSIONS_V1: DPPContractVersions = DPPContractVersions {
         schema: 0,
         validate_groups: 0,
         equal_ignoring_time_fields: 0,
-        registration_cost: 0,
+        registration_cost: 1,
     },
     document_type_versions: DocumentTypeVersions {
         index_versions: DocumentTypeIndexVersions {
             index_levels_from_indices: 0,
         },
         class_method_versions: DocumentTypeClassMethodVersions {
-            try_from_schema: 0,
-            create_document_types_from_document_schemas: 0,
+            try_from_schema: 1,
+            create_document_types_from_document_schemas: 1,
         },
         structure_version: 0,
         schema: DocumentTypeSchemaVersions {
-            should_add_creator_id: 0,
+            should_add_creator_id: 1, //changed
             enrich_with_base_schema: 0,
             find_identifier_and_binary_paths: 0,
             validate_max_depth: 0,

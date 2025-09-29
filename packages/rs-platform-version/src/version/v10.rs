@@ -1,6 +1,6 @@
 use crate::version::consensus_versions::ConsensusVersions;
 use crate::version::dpp_versions::dpp_asset_lock_versions::v1::DPP_ASSET_LOCK_VERSIONS_V1;
-use crate::version::dpp_versions::dpp_contract_versions::v2::CONTRACT_VERSIONS_V2;
+use crate::version::dpp_versions::dpp_contract_versions::v3::CONTRACT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_costs_versions::v1::DPP_COSTS_VERSIONS_V1;
 use crate::version::dpp_versions::dpp_document_versions::v3::DOCUMENT_VERSIONS_V3;
 use crate::version::dpp_versions::dpp_factory_versions::v1::DPP_FACTORY_VERSIONS_V1;
@@ -47,7 +47,7 @@ pub const PLATFORM_V10: PlatformVersion = PlatformVersion {
         state_transition_conversion_versions: STATE_TRANSITION_CONVERSION_VERSIONS_V2,
         state_transition_method_versions: STATE_TRANSITION_METHOD_VERSIONS_V1,
         state_transitions: STATE_TRANSITION_VERSIONS_V2,
-        contract_versions: CONTRACT_VERSIONS_V2,
+        contract_versions: CONTRACT_VERSIONS_V3, // changed to allow indexes on creator id
         document_versions: DOCUMENT_VERSIONS_V3, // changed to support serialization of creator id
         identity_versions: IDENTITY_VERSIONS_V1,
         voting_versions: VOTING_VERSION_V2,

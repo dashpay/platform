@@ -7,6 +7,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeV0Methods;
 use dpp::data_contract::document_type::restricted_creation::CreationRestrictionMode;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
+use dpp::document::property_names::CREATOR_ID;
 use dpp::identifier::Identifier;
 use dpp::validation::{SimpleConsensusValidationResult};
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
@@ -104,10 +105,12 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
             }
         }
 
+        let mut data = self.data().clone();
+        data.remove(CREATOR_ID);
         // Validate user defined properties
 
         data_contract
-            .validate_document_properties(document_type_name, self.data().into(), platform_version)
+            .validate_document_properties(document_type_name, data.into(), platform_version)
             .map_err(Error::Protocol)
     }
 }

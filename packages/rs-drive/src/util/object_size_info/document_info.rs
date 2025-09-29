@@ -115,7 +115,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)

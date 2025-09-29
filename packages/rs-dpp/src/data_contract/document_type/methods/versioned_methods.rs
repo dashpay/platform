@@ -491,7 +491,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &Value,
     ) -> Result<Vec<u8>, ProtocolError> {
         match key {
-            "$ownerId" | "$id" => {
+            "$ownerId" | "$id" | "$creatorId" => {
                 let bytes = value
                     .to_identifier_bytes()
                     .map_err(ProtocolError::ValueError)?;
@@ -544,7 +544,7 @@ pub trait DocumentTypeV0MethodsVersioned: DocumentTypeV0Getters + DocumentTypeBa
         value: &[u8],
     ) -> Result<Value, ProtocolError> {
         match key {
-            "$ownerId" | "$id" => {
+            "$ownerId" | "$id" | "$creatorId" => {
                 let bytes = Identifier::from_bytes(value)?;
                 Ok(Value::Identifier(bytes.to_buffer()))
             }
