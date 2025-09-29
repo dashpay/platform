@@ -168,6 +168,7 @@ impl StreamingServiceImpl {
             tokio::select! {
                 _ = state.wait_for_gate_open(), if gated => {
                     gated = !state.is_gate_open();
+                    // gated changed from true to false, flush pending events
                     if !gated {
                         if !Self::flush_transaction_pending(
                             &filter,
@@ -539,7 +540,7 @@ impl StreamingServiceImpl {
         )
         .await?;
 
-        self.fetch_mempool_transactions(filter.clone(), state.clone(), tx.clone())
+        self.fetch_mempool_transactions(filter.clone(), tx.clone())
             .await?;
 
         state.open_gate();
@@ -623,10 +624,12 @@ impl StreamingServiceImpl {
     async fn fetch_mempool_transactions(
         &self,
         filter: FilterType,
-        state: TransactionStreamState,
         tx: TxResponseSender,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::serialize;
+        // We have separate stream state, as we want to deliver finalized txs even if they were
+        // already delivered from mempool
+        let state: TransactionStreamState = TransactionStreamState::new();
 
         let txids = self
             .core_client

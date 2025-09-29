@@ -56,11 +56,11 @@ where
 impl<E, F> EventBus<E, F> {
     /// Remove a subscription by id and update metrics.
     pub async fn remove_subscription(&self, id: u64) {
-        tracing::debug!("event_bus: trying to remove subscription id={}", id);
         let mut subs = self.subs.write().await;
         if subs.remove(&id).is_some() {
             metrics_unsubscribe_inc();
             metrics_active_gauge_set(subs.len());
+            tracing::debug!("event_bus: removed subscription id={}", id);
         } else {
             tracing::debug!("event_bus: subscription id={} not found, not removed", id);
         }
