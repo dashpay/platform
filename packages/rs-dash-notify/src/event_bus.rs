@@ -1,6 +1,7 @@
 //! Generic, clonable in-process event bus with pluggable filtering.
 
 use std::collections::BTreeMap;
+use std::fmt::Debug;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
@@ -45,7 +46,7 @@ impl<E, F> Clone for EventBus<E, F> {
 impl<E, F> Default for EventBus<E, F>
 where
     E: Clone + Send + 'static,
-    F: Filter<E> + Send + Sync + 'static,
+    F: Filter<E> + Send + Sync + Debug + 'static,
 {
     fn default() -> Self {
         Self::new()
@@ -69,7 +70,7 @@ impl<E, F> EventBus<E, F> {
 impl<E, F> EventBus<E, F>
 where
     E: Clone + Send + 'static,
-    F: Filter<E> + Send + Sync + 'static,
+    F: Filter<E> + Debug + Send + Sync + 'static,
 {
     /// Create a new, empty event bus.
     pub fn new() -> Self {
@@ -89,7 +90,8 @@ where
 
     /// Add a new subscription using the provided filter.
     pub async fn add_subscription(&self, filter: F) -> SubscriptionHandle<E, F> {
-        tracing::debug!("event_bus: adding subscription");
+        tracing::trace!(?filter, "event_bus: adding subscription");
+
         let id = self.counter.fetch_add(1, Ordering::SeqCst);
         let (tx, rx) = mpsc::channel::<E>(self.channel_capacity);
 
@@ -101,6 +103,7 @@ where
             metrics_active_gauge_set(subs.len());
             metrics_subscribe_inc();
         }
+        tracing::debug!(sub_id = id, "event_bus: added subscription");
 
         SubscriptionHandle {
             id,
@@ -417,7 +420,7 @@ mod tests {
         Num(u32),
     }
 
-    #[derive(Clone)]
+    #[derive(Clone, Debug)]
     struct EvenOnly;
 
     impl Filter<Evt> for EvenOnly {

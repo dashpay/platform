@@ -651,7 +651,7 @@ impl EventSubscriber {
     }
 } // ---- Filters ----
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct IdFilter {
     id: String,
 }
@@ -722,7 +722,6 @@ mod tests {
     use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
     use std::collections::HashMap;
     use tokio::time::{timeout, Duration};
-    use tokio_stream::wrappers::ReceiverStream;
 
     fn make_add_cmd(id: &str) -> PlatformEventsCommand {
         PlatformEventsCommand {
@@ -774,11 +773,11 @@ mod tests {
 
         // Two subscribers share the same client_subscription_id
         let EventSubscriber {
-            cmd_tx: mut sub1_cmd_tx,
+            cmd_tx: sub1_cmd_tx,
             resp_rx: mut resp_rx1,
         } = mux.add_subscriber().await;
         let EventSubscriber {
-            cmd_tx: mut sub2_cmd_tx,
+            cmd_tx: sub2_cmd_tx,
             resp_rx: mut resp_rx2,
         } = mux.add_subscriber().await;
 

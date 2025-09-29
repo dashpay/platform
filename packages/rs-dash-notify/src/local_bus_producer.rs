@@ -12,6 +12,7 @@ use dapi_grpc::platform::v0::{
     PlatformEventMessageV0, PlatformEventV0, PlatformEventsResponse, PlatformFilterV0,
 };
 use std::collections::HashMap;
+use std::fmt::Debug;
 use std::sync::Arc;
 
 /// Runs a local producer that bridges EventMux commands to a local EventBus of Platform events.
@@ -24,7 +25,7 @@ pub async fn run_local_platform_events_producer<F>(
     event_bus: EventBus<PlatformEventV0, F>,
     make_adapter: Arc<dyn Fn(PlatformFilterV0) -> F + Send + Sync>,
 ) where
-    F: crate::event_bus::Filter<PlatformEventV0> + Send + Sync + 'static,
+    F: crate::event_bus::Filter<PlatformEventV0> + Send + Sync + Debug + 'static,
 {
     let producer = mux.add_producer().await;
     let mut cmd_rx = producer.cmd_rx;
