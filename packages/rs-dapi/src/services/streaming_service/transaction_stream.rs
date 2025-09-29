@@ -269,7 +269,7 @@ impl StreamingServiceImpl {
             return true;
         }
 
-        let queued: Vec<(StreamingEvent, String)> = pending.drain(..).collect();
+        let queued: Vec<(StreamingEvent, String)> = std::mem::take(pending);
         for (event, handle_id) in queued {
             if !Self::forward_transaction_event(
                 event,
@@ -690,10 +690,12 @@ impl StreamingServiceImpl {
     async fn fetch_mempool_transactions_worker(
         filter: FilterType,
         tx: TxResponseSender,
-        state: TransactionStreamState,
+        _state: TransactionStreamState,
         core_client: CoreClient,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::serialize;
+        // separate state so that mempool txs do not interfere with historical/live txs
+        let state = TransactionStreamState::new();
 
         let txids = core_client
             .get_mempool_txids()
