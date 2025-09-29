@@ -4,6 +4,7 @@ use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, warn};
 
+use crate::DapiError;
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
 
 const MASTERNODE_STREAM_BUFFER: usize = 512;
@@ -58,7 +59,7 @@ impl StreamingServiceImpl {
                     break;
                 }
             }
-            Result::<(),()>::Ok(())
+            Result::<(),DapiError>::Ok(())
         });
 
         if let Err(err) = self.masternode_list_sync.ensure_ready().await {

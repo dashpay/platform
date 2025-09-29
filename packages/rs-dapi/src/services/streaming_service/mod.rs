@@ -9,6 +9,7 @@ mod subscriber_manager;
 mod transaction_stream;
 mod zmq_listener;
 
+use crate::DapiError;
 use crate::clients::CoreClient;
 use crate::clients::traits::TenderdashClientTrait;
 use crate::config::Config;
@@ -204,7 +205,7 @@ impl StreamingServiceImpl {
         let subscriber_manager_clone = subscriber_manager.clone();
         workers.spawn(async move {
             Self::core_zmq_subscription_worker(zmq_listener_clone, subscriber_manager_clone).await;
-            Ok::<(), ()>(())
+            Ok::<(), DapiError>(())
         });
 
         // Spawn Tenderdash transaction forwarder worker
@@ -212,13 +213,13 @@ impl StreamingServiceImpl {
         let sub_mgr = subscriber_manager.clone();
         workers.spawn(async move {
             Self::tenderdash_transactions_subscription_worker(td_client, sub_mgr).await;
-            Ok::<(), ()>(())
+            Ok::<(), DapiError>(())
         });
         let td_client = tenderdash_client.clone();
         let sub_mgr = subscriber_manager.clone();
         workers.spawn(async move {
             Self::tenderdash_block_subscription_worker(td_client, sub_mgr).await;
-            Ok::<(), ()>(())
+            Ok::<(), DapiError>(())
         });
 
         info!(

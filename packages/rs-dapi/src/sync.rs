@@ -3,18 +3,16 @@ use std::sync::Mutex;
 use std::{fmt::Debug, sync::Arc};
 use tokio::task::{AbortHandle, JoinSet};
 
+use crate::DapiError;
+
 #[derive(Clone, Default)]
 pub struct Workers {
-    inner: Arc<Mutex<JoinSet<()>>>,
+    pub(crate) inner: Arc<Mutex<JoinSet<Result<(), DapiError>>>>,
 }
 
 impl Debug for Workers {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let workers = self
-            .inner
-            .try_lock()
-            .and_then(|j| Ok(j.len() as i64))
-            .unwrap_or(-1);
+        let workers = self.inner.try_lock().map(|j| j.len() as i64).unwrap_or(-1);
         write!(f, "Workers {{ num_workers: {workers} }}")
     }
 }
@@ -30,7 +28,7 @@ impl Workers {
     pub fn spawn<F, O, E>(&self, fut: F) -> AbortHandle
     where
         F: Future<Output = Result<O, E>> + Send + 'static,
-        E: Debug,
+        E: Debug + Into<DapiError>,
     {
         let mut join_set = match self.inner.lock() {
             Ok(guard) => guard,
@@ -40,8 +38,12 @@ impl Workers {
             }
         };
         join_set.spawn(async move {
-            if let Err(e) = fut.await {
-                tracing::error!(error=?e, "Worker task failed");
+            match fut.await {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    tracing::error!(error=?e, "Worker task failed");
+                    Err(e.into())
+                }
             }
         })
     }

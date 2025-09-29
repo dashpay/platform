@@ -10,11 +10,15 @@ use dapi_grpc::core::v0::{
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::Block;
 use dashcore_rpc::dashcore::hashes::Hash;
+use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
+use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
+use crate::DapiError;
+use crate::clients::{CoreClient, core_client};
 use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
     bloom::bloom_flags_from_int,
@@ -59,8 +63,13 @@ impl TransactionStreamState {
         *self.gate_receiver.borrow()
     }
 
-    fn open_gate(&self) {
-        let _ = self.gate_sender.send(true);
+    /// Open the gate to allow live events to be processed.
+    ///
+    /// Provide TransactionStreamState::gate_sender.
+    ///
+    /// This is decoupled for easier handling between tasks.
+    fn open_gate(sender: &GateSender) {
+        let _ = sender.send(true);
     }
 
     async fn wait_for_gate_open(&self) {
@@ -85,7 +94,7 @@ impl TransactionStreamState {
                 "transactions_with_proofs=gate_open_timeout error: {}, forcibly opening gate", e
             );
 
-            self.open_gate();
+            Self::open_gate(&self.gate_sender);
         }
     }
 
@@ -139,14 +148,26 @@ impl StreamingServiceImpl {
             .from_block
             .ok_or_else(|| Status::invalid_argument("Must specify from_block"))?;
 
+        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
         if count > 0 {
-            return self
-                .handle_transactions_historical_mode(from_block, count, filter)
-                .await;
+            // Historical mode
+            self.spawn_fetch_transactions_history(
+                Some(from_block),
+                Some(count as usize),
+                filter,
+                None,
+                tx,
+                None,
+            )
+            .await?;
+
+            debug!("transactions_with_proofs=historical_stream_ready");
+        } else {
+            self.handle_transactions_combined_mode(from_block, filter, tx)
+                .await?;
         }
 
-        self.handle_transactions_combined_mode(from_block, filter)
-            .await
+        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     async fn transaction_worker(
@@ -155,7 +176,7 @@ impl StreamingServiceImpl {
         tx: TxResponseSender,
         filter: FilterType,
         state: TransactionStreamState,
-    ) {
+    ) -> Result<(), DapiError> {
         let subscriber_id = tx_handle.id().to_string();
         let tx_handle_id = tx_handle.id().to_string();
         let block_handle_id = block_handle.id().to_string();
@@ -169,8 +190,8 @@ impl StreamingServiceImpl {
                 _ = state.wait_for_gate_open(), if gated => {
                     gated = !state.is_gate_open();
                     // gated changed from true to false, flush pending events
-                    if !gated {
-                        if !Self::flush_transaction_pending(
+                    if !gated
+                        && !Self::flush_transaction_pending(
                             &filter,
                             &subscriber_id,
                             &tx,
@@ -179,7 +200,6 @@ impl StreamingServiceImpl {
                         ).await {
                             break;
                         }
-                    }
                 }
                 message = block_handle.recv() => {
                     match message {
@@ -235,6 +255,7 @@ impl StreamingServiceImpl {
         }
 
         debug!(subscriber_id, "transactions_with_proofs=worker_finished");
+        Err(DapiError::ConnectionClosed)
     }
 
     async fn flush_transaction_pending(
@@ -315,18 +336,17 @@ impl StreamingServiceImpl {
                     super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
                         .unwrap_or_else(|| "n/a".to_string());
 
-                if block_hash != "n/a" {
-                    if let Ok(hash_bytes) = hex::decode(&block_hash) {
-                        if !state.mark_block_delivered(&hash_bytes).await {
-                            trace!(
-                                subscriber_id,
-                                handle_id,
-                                block_hash = %block_hash,
-                                "transactions_with_proofs=skip_duplicate_merkle_block"
-                            );
-                            return true;
-                        }
-                    }
+                if block_hash != "n/a"
+                    && let Ok(hash_bytes) = hex::decode(&block_hash)
+                    && !state.mark_block_delivered(&hash_bytes).await
+                {
+                    trace!(
+                        subscriber_id,
+                        handle_id,
+                        block_hash = %block_hash,
+                        "transactions_with_proofs=skip_duplicate_merkle_block"
+                    );
+                    return true;
                 }
 
                 trace!(
@@ -374,12 +394,19 @@ impl StreamingServiceImpl {
         if let Some(response) = maybe_response {
             match response {
                 Ok(resp) => {
-                    if tx_sender.send(Ok(resp)).await.is_err() {
+                    if tx_sender.send(Ok(resp.clone())).await.is_err() {
                         debug!(
                             subscriber_id,
                             "transactions_with_proofs=client_disconnected"
                         );
                         return false;
+                    } else {
+                        trace!(
+                            event = ?resp,
+                            subscriber_id,
+                            handle_id,
+                            "transactions_with_proofs=forward_transaction_event_success"
+                        );
                     }
                 }
                 Err(status) => {
@@ -457,6 +484,11 @@ impl StreamingServiceImpl {
         Ok(response)
     }
 
+    // Starts a live transaction stream by creating subscriptions for transactions and blocks.
+    //
+    // Returns the subscriber ID to be used for debugging/logging purposes.
+    //
+    // Spawns a background task to handle the stream.
     async fn start_live_transaction_stream(
         &self,
         filter: FilterType,
@@ -483,8 +515,7 @@ impl StreamingServiceImpl {
             "transactions_with_proofs=merkle_subscription_created"
         );
 
-        let workers = self.workers.clone();
-        workers.spawn(async move {
+        self.workers.spawn(async move {
             Self::transaction_worker(
                 tx_subscription_handle,
                 merkle_block_subscription_handle,
@@ -492,70 +523,87 @@ impl StreamingServiceImpl {
                 filter,
                 state,
             )
-            .await;
-            Ok::<(), ()>(())
+            .await
         });
 
         subscriber_id
-    }
-
-    async fn handle_transactions_historical_mode(
-        &self,
-        from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
-        count: u32,
-        filter: FilterType,
-    ) -> Result<TxResponse, Status> {
-        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
-        self.fetch_transactions_history(
-            Some(from_block),
-            Some(count as usize),
-            filter,
-            None,
-            tx.clone(),
-        )
-        .await?;
-
-        debug!("transactions_with_proofs=historical_stream_ready");
-        Ok(Response::new(ReceiverStream::new(rx)))
     }
 
     async fn handle_transactions_combined_mode(
         &self,
         from_block: dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock,
         filter: FilterType,
-    ) -> Result<TxResponse, Status> {
-        let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
+        tx: TxResponseSender,
+    ) -> Result<(), Status> {
         let state = TransactionStreamState::new();
 
+        // Will spawn worker thread, gated until historical replay is done
         let subscriber_id = self
             .start_live_transaction_stream(filter.clone(), tx.clone(), state.clone())
             .await;
 
-        self.fetch_transactions_history(
+        // We need our own worker pool so that we can open the gate once historical sync is done
+        let mut local_workers = JoinSet::new();
+
+        // Fetch historical transactions in a separate task
+        let core_client = self.core_client.clone();
+
+        // this will add new worked to the local_workers pool
+        self.spawn_fetch_transactions_history(
             Some(from_block),
             None,
             filter.clone(),
             Some(state.clone()),
             tx.clone(),
+            Some(&mut local_workers),
         )
         .await?;
 
-        self.fetch_mempool_transactions(filter.clone(), tx.clone())
-            .await?;
+        let gate_sender = state.gate_sender.clone();
 
-        state.open_gate();
+        local_workers.spawn(
+            Self::fetch_mempool_transactions_worker(filter.clone(), tx.clone(), state, core_client)
+                .map_err(DapiError::from),
+        );
+
+        // Now, thread that will wait for all local workers  to complete and disable the gate
+        let sub_id = subscriber_id.clone();
+        self.workers.spawn(async move {
+        while let Some(result) = local_workers.join_next().await {
+            match result {
+                Ok(Ok(())) => { /* task completed successfully */ }
+                Ok(Err(e)) => {
+                    warn!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
+                    // return error back to caller
+                    let status =  e.to_status();
+                    let _ = tx.send(Err(status)).await; // ignore returned value
+                    return Err(e);
+                }
+                Err(e) => {
+                    warn!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
+                    return Err(DapiError::TaskJoin(e));
+                }
+            }
+        }
+        TransactionStreamState::open_gate(&gate_sender);
+        debug!(subscriber_id=&sub_id, "transactions_with_proofs=historical_sync_completed_gate_opened");
+
+        Ok(())
+    });
 
         debug!(subscriber_id, "transactions_with_proofs=stream_ready");
-        Ok(Response::new(ReceiverStream::new(rx)))
+        Ok(())
     }
 
-    async fn fetch_transactions_history(
+    /// Spawns new thread that fetches historical transactions starting from the specified block.
+    async fn spawn_fetch_transactions_history(
         &self,
         from_block: Option<dapi_grpc::core::v0::transactions_with_proofs_request::FromBlock>,
         limit: Option<usize>,
         filter: FilterType,
         state: Option<TransactionStreamState>,
         tx: TxResponseSender,
+        workers: Option<&mut JoinSet<Result<(), DapiError>>>, // defaults to self.workers if None
     ) -> Result<(), Status> {
         use std::str::FromStr;
 
@@ -616,23 +664,38 @@ impl StreamingServiceImpl {
         if count_target == 0 {
             return Ok(());
         }
+        let core_client = self.core_client.clone();
 
-        self.process_transactions_from_height(start_height, count_target, filter, state, tx)
-            .await
+        let worker = Self::process_transactions_from_height(
+            start_height,
+            count_target,
+            filter,
+            state,
+            tx,
+            core_client,
+        )
+        .map_err(DapiError::from);
+
+        if let Some(workers) = workers {
+            workers.spawn(worker);
+        } else {
+            self.workers.spawn(worker);
+        }
+        Ok(())
     }
 
-    async fn fetch_mempool_transactions(
-        &self,
+    /// Starts fetching mempool transactions that match the filter and sends them to the client.
+    ///
+    /// Blocking; caller should spawn in a separate task.
+    async fn fetch_mempool_transactions_worker(
         filter: FilterType,
         tx: TxResponseSender,
+        state: TransactionStreamState,
+        core_client: CoreClient,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::serialize;
-        // We have separate stream state, as we want to deliver finalized txs even if they were
-        // already delivered from mempool
-        let state: TransactionStreamState = TransactionStreamState::new();
 
-        let txids = self
-            .core_client
+        let txids = core_client
             .get_mempool_txids()
             .await
             .map_err(Status::from)?;
@@ -645,7 +708,7 @@ impl StreamingServiceImpl {
         let mut matching: Vec<Vec<u8>> = Vec::new();
 
         for txid in txids {
-            let tx = match self.core_client.get_raw_transaction(txid).await {
+            let tx = match core_client.get_raw_transaction(txid).await {
                 Ok(tx) => tx,
                 Err(err) => {
                     warn!(error = %err, "transactions_with_proofs=mempool_tx_fetch_failed");
@@ -706,12 +769,12 @@ impl StreamingServiceImpl {
     }
 
     async fn process_transactions_from_height(
-        &self,
         start_height: usize,
         count: usize,
         filter: FilterType,
         state: Option<TransactionStreamState>,
         tx: TxResponseSender,
+        core_client: core_client::CoreClient,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -723,7 +786,7 @@ impl StreamingServiceImpl {
 
         for i in 0..count {
             let height = (start_height + i) as u32;
-            let hash = match self.core_client.get_block_hash(height).await {
+            let hash = match core_client.get_block_hash(height).await {
                 Ok(h) => h,
                 Err(e) => {
                     trace!(height, error = ?e, "transactions_with_proofs=get_block_hash_failed");
@@ -731,7 +794,7 @@ impl StreamingServiceImpl {
                 }
             };
 
-            let block = match self.core_client.get_block_by_hash(hash).await {
+            let block = match core_client.get_block_by_hash(hash).await {
                 Ok(b) => b,
                 Err(e) => {
                     trace!(height, error = ?e, "transactions_with_proofs=get_block_raw_with_txs_failed");
@@ -739,11 +802,7 @@ impl StreamingServiceImpl {
                 }
             };
 
-            let txs_bytes = match self
-                .core_client
-                .get_block_transactions_bytes_by_hash(hash)
-                .await
-            {
+            let txs_bytes = match core_client.get_block_transactions_bytes_by_hash(hash).await {
                 Ok(t) => t,
                 Err(e) => {
                     warn!(height, error = ?e, "transactions_with_proofs=get_block_txs_failed, skipping block");

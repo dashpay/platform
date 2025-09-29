@@ -12,6 +12,7 @@ use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
+use crate::DapiError;
 use crate::services::streaming_service::{
     FilterType, StreamingEvent, StreamingServiceImpl, SubscriptionHandle,
 };
@@ -145,7 +146,7 @@ impl StreamingServiceImpl {
                 delivery_notify,
             )
             .await;
-            Ok::<(), ()>(())
+            Ok::<(), DapiError>(())
         });
 
         subscriber_id

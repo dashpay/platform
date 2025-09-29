@@ -75,7 +75,7 @@ impl MasternodeListSync {
                 }
             }
             debug!("masternode_sync=listener stopped");
-            Result::<(), String>::Err("listener stopped".to_string())
+            Result::<(), DapiError>::Err(DapiError::ConnectionClosed)
         });
     }
 
