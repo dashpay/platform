@@ -6,6 +6,7 @@ const { hash, sha256 } = require('@dashevo/wasm-dpp/lib/utils/hash');
 const getDataContractFixture = require('../../../lib/test/fixtures/getDataContractFixture');
 const createClientWithFundedWallet = require('../../../lib/test/createClientWithFundedWallet');
 const waitForSTPropagated = require('../../../lib/waitForSTPropagated');
+const { debug } = require('util');
 
 const {
   Essentials: {
