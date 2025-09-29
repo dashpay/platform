@@ -154,6 +154,7 @@ where
             match sender.try_send(payload) {
                 Ok(()) => {
                     metrics_events_delivered_inc();
+                    tracing::trace!(subscription_id = id, "event_bus: event delivered");
                 }
                 Err(TrySendError::Full(_value)) => {
                     metrics_events_dropped_inc();

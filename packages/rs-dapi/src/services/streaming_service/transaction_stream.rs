@@ -64,6 +64,7 @@ impl TransactionStreamState {
         self.delivery_notify.notified().await;
     }
 
+    /// Marks a transaction as delivered. Returns false if it was already delivered.
     async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
         let mut guard = self.delivered_txs.lock().await;
         guard.insert(txid.to_vec())
@@ -169,10 +170,14 @@ impl StreamingServiceImpl {
                                 &tx,
                                 &state,
                             ).await {
+                                tracing::debug!(subscriber_id, block_handle_id, "transactions_with_proofs=forward_block_event_failed");
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            tracing::debug!(subscriber_id, block_handle_id, "transactions_with_proofs=block_subscription_closed");
+                            break
+                        },
                     }
                 }
                 message = tx_handle.recv() => {
@@ -190,10 +195,14 @@ impl StreamingServiceImpl {
                                 &tx,
                                 &state,
                             ).await {
+                                tracing::debug!(subscriber_id, tx_handle_id, "transactions_with_proofs=forward_tx_event_failed");
                                 break;
                             }
                         }
-                        None => break,
+                        None => {
+                            tracing::debug!(subscriber_id, tx_handle_id, "transactions_with_proofs=tx_subscription_closed");
+                            break
+                        },
                     }
                 }
             }
@@ -230,7 +239,10 @@ impl StreamingServiceImpl {
         }
         true
     }
-
+    /// Forwards a single transaction-related event to the client if it matches the filter and
+    /// has not been previously delivered.
+    ///
+    /// Returns false if the client has disconnected.
     async fn forward_transaction_event(
         event: StreamingEvent,
         handle_id: &str,
@@ -241,27 +253,27 @@ impl StreamingServiceImpl {
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
-                let txid_bytes = super::StreamingServiceImpl::txid_bytes_from_bytes(&data);
-                if let Some(ref txid_bytes) = txid_bytes {
-                    if !state.mark_transaction_delivered(txid_bytes).await {
-                        trace!(
-                            subscriber_id,
-                            handle_id,
-                            txid = %hex::encode(txid_bytes),
-                            "transactions_with_proofs=skip_duplicate_transaction"
-                        );
-                        return true;
-                    }
-                }
+                let Some(txid_bytes) = super::StreamingServiceImpl::txid_bytes_from_bytes(&data)
+                else {
+                    tracing::debug!("transactions_with_proofs=transaction_no_txid");
+                    return true;
+                };
 
-                let txid_display = txid_bytes
-                    .as_ref()
-                    .map(|bytes| hex::encode(bytes))
-                    .unwrap_or_else(|| "n/a".to_string());
+                let already_delivered = !state.mark_transaction_delivered(&txid_bytes).await;
+                if already_delivered {
+                    trace!(
+                        subscriber_id,
+                        handle_id,
+                        txid = %hex::encode(txid_bytes),
+                        "transactions_with_proofs=skip_duplicate_transaction"
+                    );
+                    return true;
+                };
+
                 trace!(
                     subscriber_id,
                     handle_id,
-                    txid = %txid_display,
+                    txid = hex::encode(&txid_bytes),
                     payload_size = data.len(),
                     "transactions_with_proofs=forward_raw_transaction"
                 );
@@ -346,9 +358,19 @@ impl StreamingServiceImpl {
                 }
                 Err(status) => {
                     let _ = tx_sender.send(Err(status.clone())).await;
+                    debug!(
+                        subscriber_id,
+                        error = %status,
+                        "transactions_with_proofs=send_error_to_client"
+                    );
                     return false;
                 }
             }
+        } else {
+            trace!(
+                subscriber_id,
+                handle_id, "transactions_with_proofs=no_response_event"
+            );
         }
 
         true
