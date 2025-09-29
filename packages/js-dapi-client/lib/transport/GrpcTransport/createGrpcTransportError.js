@@ -124,6 +124,7 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
       throw new Error(`Can't deserialize consensus error ${code}: serialized data is missing`);
     }
 
+    console.log('consensusErrorString', consensusErrorString);
     const consensusErrorBytes = Buffer.from(consensusErrorString, 'base64');
     const consensusError = deserializeConsensusError(consensusErrorBytes);
 
