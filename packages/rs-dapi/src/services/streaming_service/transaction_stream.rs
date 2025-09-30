@@ -124,6 +124,12 @@ impl TransactionStreamState {
         }
     }
 
+    /// Returns true if transaction has already been delivered on this stream
+    async fn has_transaction_been_delivered(&self, txid: &[u8]) -> bool {
+        let guard = self.delivered_txs.lock().await;
+        guard.contains(txid)
+    }
+
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
         tracing::trace!(
             block_hash = hex::encode(block_hash),
@@ -373,7 +379,9 @@ impl StreamingServiceImpl {
                     "transactions_with_proofs=forward_merkle_block"
                 );
 
-                match Self::build_transaction_merkle_response(filter, &data, handle_id) {
+                match Self::build_transaction_merkle_response(filter, &data, handle_id, Some(state))
+                    .await
+                {
                     Ok(resp) => Some(Ok(resp)),
                     Err(e) => Some(Err(e)),
                 }
@@ -445,10 +453,11 @@ impl StreamingServiceImpl {
         true
     }
 
-    fn build_transaction_merkle_response(
+    async fn build_transaction_merkle_response(
         filter: &FilterType,
         raw_block: &[u8],
         handle_id: &str,
+        state: Option<&TransactionStreamState>,
     ) -> Result<TransactionsWithProofsResponse, Status> {
         use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
 
@@ -473,11 +482,16 @@ impl StreamingServiceImpl {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let mut match_flags = Vec::with_capacity(block.txdata.len());
                     for tx in block.txdata.iter() {
-                        match_flags.push(super::bloom::matches_transaction(
-                            Arc::clone(bloom),
-                            tx,
-                            *flags,
-                        ));
+                        let mut matches =
+                            super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags);
+                        // Also include any txids we have already delivered on this stream
+                        if let Some(s) = state.as_ref() {
+                            let txid_bytes = tx.txid().to_byte_array();
+                            if s.has_transaction_been_delivered(&txid_bytes).await {
+                                matches = true;
+                            }
+                        }
+                        match_flags.push(matches);
                     }
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                         warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
@@ -834,7 +848,7 @@ impl StreamingServiceImpl {
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
 
             for tx_bytes in txs_bytes.iter() {
-                let matches = match &filter {
+                let filter_matched = match &filter {
                     FilterType::CoreAllTxs => true,
                     FilterType::CoreBloomFilter(bloom, flags) => {
                         match deserialize::<CoreTx>(tx_bytes.as_slice()) {
@@ -848,7 +862,7 @@ impl StreamingServiceImpl {
                                 matches
                             }
                             Err(e) => {
-                                warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
+                                warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, checking raw-bytes contains()");
                                 let guard = bloom.read().unwrap();
                                 guard.contains(tx_bytes)
                             }
@@ -856,8 +870,19 @@ impl StreamingServiceImpl {
                     }
                     _ => false,
                 };
-                match_flags.push(matches);
-                if matches {
+                // Include previously delivered transactions in PMT regardless of bloom match
+                let mut matches_for_merkle = filter_matched;
+                if let Some(state) = state.as_ref()
+                    && let Some(hash_bytes) =
+                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
+                    && state.has_transaction_been_delivered(&hash_bytes).await
+                {
+                    matches_for_merkle = true;
+                }
+
+                match_flags.push(matches_for_merkle);
+                // Only send raw transactions when they matched the bloom filter
+                if filter_matched {
                     if let Some(hash_bytes) =
                         super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
                     {
