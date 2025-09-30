@@ -112,6 +112,12 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
             DocumentReplaceTransitionAction::V0(v0) => v0.data,
         }
     }
+
+    fn creator_id(&self) -> Option<Identifier> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => v0.creator_id,
+        }
+    }
 }
 
 /// document from replace transition

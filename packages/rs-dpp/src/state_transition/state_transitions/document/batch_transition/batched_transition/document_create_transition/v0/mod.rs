@@ -22,7 +22,6 @@ use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
-use crate::document::property_names::CREATOR_ID;
 use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -198,21 +197,21 @@ impl DocumentFromCreateTransitionV0 for Document {
     where
         Self: Sized,
     {
-        let DocumentCreateTransitionV0 { base, mut data, .. } = v0;
+        let DocumentCreateTransitionV0 { base, data, .. } = v0;
 
         let requires_created_at = document_type
             .required_fields()
             .contains(document::property_names::CREATED_AT);
 
-        let adds_creator_id = document_type.should_use_creator_id(
+        let creator_id = if document_type.should_use_creator_id(
             contract.system_version_type(),
             contract.config().version(),
             platform_version,
-        )?;
-
-        if adds_creator_id {
-            data.insert(CREATOR_ID.to_string(), owner_id.into());
-        }
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
 
         let requires_updated_at = document_type
             .required_fields()
@@ -284,6 +283,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -311,16 +311,17 @@ impl DocumentFromCreateTransitionV0 for Document {
             .required_fields()
             .contains(document::property_names::CREATED_AT);
 
-        let mut properties = data.clone();
-        let adds_creator_id = document_type.should_use_creator_id(
+        let properties = data.clone();
+
+        let creator_id = if document_type.should_use_creator_id(
             contract.system_version_type(),
             contract.config().version(),
             platform_version,
-        )?;
-
-        if adds_creator_id {
-            properties.insert(CREATOR_ID.to_string(), owner_id.into());
-        }
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
 
         let requires_updated_at = document_type
             .required_fields()
@@ -392,6 +393,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

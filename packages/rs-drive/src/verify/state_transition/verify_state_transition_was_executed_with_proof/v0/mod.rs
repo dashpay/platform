@@ -212,6 +212,7 @@ impl Drive {
                                     document.created_at(), //we can trust the created at (as we don't care)
                                     document.created_at_block_height(), //we can trust the created at block height (as we don't care)
                                     document.created_at_core_block_height(), //we can trust the created at core block height (as we don't care)
+                                    document.creator_id(),
                                     block_info,
                                     &document_type,
                                     platform_version,

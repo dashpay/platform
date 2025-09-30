@@ -25,7 +25,7 @@ impl DocumentType {
         contract_config_version: u16,
         transferable: Transferable,
         trade_mode: TradeMode,
-        index_name: &str,
+        property_name: &str,
         platform_version: &PlatformVersion,
     ) -> Result<bool, ProtocolError> {
         match platform_version
@@ -35,20 +35,20 @@ impl DocumentType {
             .schema
             .should_add_creator_id
         {
-            0 => Ok(SYSTEM_PROPERTIES.contains(&index_name)),
+            0 => Ok(SYSTEM_PROPERTIES.contains(&property_name)),
             1 => {
-                if index_name == CREATOR_ID
+                if property_name == CREATOR_ID
                     && contract_system_version > 0
                     && contract_config_version > 0
                     && (transferable.is_transferable() || trade_mode != TradeMode::None)
                 {
                     Ok(true)
                 } else {
-                    Ok(SYSTEM_PROPERTIES.contains(&index_name))
+                    Ok(SYSTEM_PROPERTIES.contains(&property_name))
                 }
             }
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "DocumentType::system_properties".to_string(),
+                method: "DocumentType::system_properties_contains".to_string(),
                 known_versions: vec![0, 1],
                 received: version,
             }),

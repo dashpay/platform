@@ -2,8 +2,8 @@ use crate::data_contract::document_type::{DocumentPropertyType, DocumentTypeRef}
 use crate::data_contract::errors::DataContractError;
 
 use crate::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, PRICE,
-    TRANSFERRED_AT, TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, PRICE, TRANSFERRED_AT,
+    TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 
@@ -37,7 +37,6 @@ use crate::consensus::ConsensusError;
 use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::config::DataContractConfig;
 use crate::nft::TradeMode;
-use platform_value::btreemap_extensions::BTreeValueMapHelper;
 use std::io::{BufReader, Read};
 
 impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
@@ -499,7 +498,7 @@ impl DocumentPlatformSerializationMethodsV0 for DocumentV0 {
         if document_type.trade_mode() != TradeMode::None
             || document_type.documents_transferable().is_transferable()
         {
-            if let Some(creator_id) = self.properties.get_optional_identifier(CREATOR_ID)? {
+            if let Some(creator_id) = self.creator_id {
                 buffer.push(1);
                 buffer.extend(creator_id.as_slice());
             } else {
@@ -932,6 +931,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id: None,
         })
     }
 
@@ -1148,6 +1148,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id: None,
         })
     }
 
@@ -1375,10 +1376,6 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             properties.insert(PRICE.to_string(), price.into());
         }
 
-        if let Some(creator_id) = creator_id {
-            properties.insert(CREATOR_ID.to_string(), creator_id.into());
-        }
-
         Ok(DocumentV0 {
             id: Identifier::new(id),
             properties,
@@ -1393,6 +1390,7 @@ impl DocumentPlatformDeserializationMethodsV0 for DocumentV0 {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id,
         })
     }
 }

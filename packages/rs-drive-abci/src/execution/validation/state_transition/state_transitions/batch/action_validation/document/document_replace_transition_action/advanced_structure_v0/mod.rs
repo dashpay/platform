@@ -2,7 +2,6 @@ use dpp::consensus::basic::document::{InvalidDocumentTransitionActionError, Inva
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::validate_document::DataContractDocumentValidationMethodsV0;
-use dpp::document::property_names::CREATOR_ID;
 use dpp::validation::SimpleConsensusValidationResult;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use drive::state_transition_action::batch::batched_transition::document_transition::document_replace_transition_action::{DocumentReplaceTransitionAction, DocumentReplaceTransitionActionAccessorsV0};
@@ -43,12 +42,10 @@ impl DocumentReplaceTransitionActionStructureValidationV0 for DocumentReplaceTra
             ));
         }
 
-        let mut data = self.data().clone();
-        data.remove(CREATOR_ID);
         // Validate user defined properties
 
         data_contract
-            .validate_document_properties(document_type_name, data.into(), platform_version)
+            .validate_document_properties(document_type_name, self.data().into(), platform_version)
             .map_err(Error::Protocol)
     }
 }

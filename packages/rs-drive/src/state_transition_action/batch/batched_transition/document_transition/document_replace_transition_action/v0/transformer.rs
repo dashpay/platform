@@ -3,7 +3,6 @@ use dpp::document::property_names;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
 use dpp::data_contract::document_type::accessors::DocumentTypeV1Getters;
-use dpp::document::property_names::CREATOR_ID;
 use dpp::fee::fee_result::FeeResult;
 use dpp::identity::TimestampMillis;
 use dpp::prelude::{BlockHeight, ConsensusValidationResult, CoreBlockHeight, UserFeeIncrease};
@@ -96,11 +95,6 @@ impl DocumentReplaceTransitionActionV0 {
             None
         };
 
-        let mut data = data.clone();
-        if let Some(original_creator_id) = original_creator_id {
-            data.insert(CREATOR_ID.to_string(), original_creator_id.into());
-        };
-
         Ok((
             BatchedTransitionAction::DocumentAction(DocumentTransitionAction::ReplaceAction(
                 DocumentReplaceTransitionActionV0 {
@@ -115,7 +109,8 @@ impl DocumentReplaceTransitionActionV0 {
                     created_at_core_block_height: originally_created_at_core_block_height,
                     updated_at_core_block_height,
                     transferred_at_core_block_height: originally_transferred_at_core_block_height,
-                    data,
+                    data: data.clone(),
+                    creator_id: original_creator_id,
                 }
                 .into(),
             ))

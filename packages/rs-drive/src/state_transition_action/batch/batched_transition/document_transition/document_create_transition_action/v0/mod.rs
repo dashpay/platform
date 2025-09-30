@@ -12,7 +12,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use dpp::document::property_names::{
-    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, CREATOR_ID, TRANSFERRED_AT,
+    CREATED_AT, CREATED_AT_BLOCK_HEIGHT, CREATED_AT_CORE_BLOCK_HEIGHT, TRANSFERRED_AT,
     TRANSFERRED_AT_BLOCK_HEIGHT, TRANSFERRED_AT_CORE_BLOCK_HEIGHT, UPDATED_AT,
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
@@ -154,13 +154,15 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     data.retain(|key, _| !transient_fields.contains(key));
                 }
 
-                if document_type.should_use_creator_id(
+                let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),
                     data_contract.contract.config().version(),
                     platform_version,
                 )? {
-                    data.insert(CREATOR_ID.to_string(), owner_id.into());
-                }
+                    Some(owner_id)
+                } else {
+                    None
+                };
 
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
@@ -236,6 +238,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                             } else {
                                 None
                             },
+                        creator_id,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
@@ -283,13 +286,15 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                     data.retain(|key, _| !transient_fields.contains(key));
                 }
 
-                if document_type.should_use_creator_id(
+                let creator_id = if document_type.should_use_creator_id(
                     data_contract.contract.system_version_type(),
                     data_contract.contract.config().version(),
                     platform_version,
                 )? {
-                    data.insert(CREATOR_ID.to_string(), owner_id.into());
-                }
+                    Some(owner_id)
+                } else {
+                    None
+                };
 
                 let is_created_at_required = required_fields.contains(CREATED_AT);
                 let is_updated_at_required = required_fields.contains(UPDATED_AT);
@@ -365,6 +370,7 @@ impl DocumentFromCreateTransitionActionV0 for Document {
                             } else {
                                 None
                             },
+                        creator_id,
                     }
                     .into()),
                     version => Err(ProtocolError::UnknownVersionMismatch {
