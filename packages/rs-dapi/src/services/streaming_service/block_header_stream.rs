@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
@@ -8,7 +7,7 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::encode::serialize as serialize_consensus;
-use tokio::sync::{Mutex as AsyncMutex, Notify, mpsc};
+use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
 
@@ -24,8 +23,8 @@ type BlockHeaderResponseSender = mpsc::Sender<BlockHeaderResponseResult>;
 type BlockHeaderResponseStream = ReceiverStream<BlockHeaderResponseResult>;
 type BlockHeaderResponse = Response<BlockHeaderResponseStream>;
 type DeliveredHashSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
-type DeliveryGate = Arc<AtomicBool>;
-type DeliveryNotify = Arc<Notify>;
+type DeliveryGateSender = watch::Sender<bool>;
+type DeliveryGateReceiver = watch::Receiver<bool>;
 
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
@@ -78,7 +77,7 @@ impl StreamingServiceImpl {
 
         self.send_initial_chainlock(tx.clone()).await?;
 
-        self.fetch_historical_blocks(from_block, Some(count as usize), None, tx)
+        self.spawn_fetch_historical_headers(from_block, Some(count as usize), None, tx, None, None)
             .await?;
 
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
@@ -92,22 +91,25 @@ impl StreamingServiceImpl {
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(HashSet::new()));
-        let delivery_gate: DeliveryGate = Arc::new(AtomicBool::new(false));
-        let delivery_notify: DeliveryNotify = Arc::new(Notify::new());
+        let (delivery_gate_tx, delivery_gate_rx) = watch::channel(false);
 
         let subscriber_id = self
             .start_live_stream(
                 tx.clone(),
                 delivered_hashes.clone(),
-                delivery_gate.clone(),
-                delivery_notify.clone(),
+                delivery_gate_rx.clone(),
             )
             .await;
         self.send_initial_chainlock(tx.clone()).await?;
-        self.fetch_historical_blocks(from_block, None, Some(delivered_hashes.clone()), tx.clone())
-            .await?;
-        delivery_gate.store(true, Ordering::Release);
-        delivery_notify.notify_waiters();
+        self.spawn_fetch_historical_headers(
+            from_block,
+            None,
+            Some(delivered_hashes),
+            tx,
+            Some(delivery_gate_tx),
+            Some(subscriber_id.clone()),
+        )
+        .await?;
         let stream: BlockHeaderResponseStream = ReceiverStream::new(rx);
         debug!(
             subscriber_id = subscriber_id.as_str(),
@@ -116,12 +118,61 @@ impl StreamingServiceImpl {
         Ok(Response::new(stream))
     }
 
+    async fn spawn_fetch_historical_headers(
+        &self,
+        from_block: FromBlock,
+        limit: Option<usize>,
+        delivered_hashes: Option<DeliveredHashSet>,
+        tx: BlockHeaderResponseSender,
+        gate: Option<DeliveryGateSender>,
+        subscriber_id: Option<String>,
+    ) -> Result<(), Status> {
+        let service = self.clone();
+
+        self.workers.spawn(async move {
+            let result = service
+                .fetch_historical_blocks(
+                    from_block,
+                    limit,
+                    delivered_hashes,
+                    tx.clone(),
+                )
+                .await;
+
+            if let Some(gate) = gate {
+                let _ = gate.send(true);
+            }
+            // watch receivers wake via the send above; no separate notification needed.
+
+            match result {
+                Ok(()) => {
+                    if let Some(ref id) = subscriber_id {
+                        debug!(subscriber_id = id.as_str(), "block_headers=historical_fetch_completed");
+                    } else {
+                        debug!("block_headers=historical_fetch_completed");
+                    }
+                    Ok(())
+                }
+                Err(status) => {
+                    if let Some(ref id) = subscriber_id {
+                        warn!(subscriber_id = id.as_str(), error = %status, "block_headers=historical_fetch_failed");
+                    } else {
+                        warn!(error = %status, "block_headers=historical_fetch_failed");
+                    }
+                    let _ = tx.send(Err(status.clone())).await;
+                    Err(DapiError::from(status))
+                }
+            }
+        });
+
+        Ok(())
+    }
+
     async fn start_live_stream(
         &self,
         tx: BlockHeaderResponseSender,
         delivered_hashes: DeliveredHashSet,
-        delivery_gate: DeliveryGate,
-        delivery_notify: DeliveryNotify,
+        delivery_gate: DeliveryGateReceiver,
     ) -> String {
         let filter = FilterType::CoreAllBlocks;
         let block_handle = self.subscriber_manager.add_subscription(filter).await;
@@ -147,7 +198,6 @@ impl StreamingServiceImpl {
                 tx,
                 delivered_hashes,
                 delivery_gate,
-                delivery_notify,
             )
             .await;
             Ok::<(), DapiError>(())
@@ -183,17 +233,19 @@ impl StreamingServiceImpl {
         chainlock_handle: SubscriptionHandle,
         tx: BlockHeaderResponseSender,
         delivered_hashes: DeliveredHashSet,
-        delivery_gate: DeliveryGate,
-        delivery_notify: DeliveryNotify,
+        mut delivery_gate: DeliveryGateReceiver,
     ) {
         let subscriber_id = block_handle.id().to_string();
         let mut pending: Vec<StreamingEvent> = Vec::new();
-        let mut gated = !delivery_gate.load(Ordering::Acquire);
+        let mut gated = !*delivery_gate.borrow();
 
         loop {
             tokio::select! {
-                _ = delivery_notify.notified(), if gated => {
-                    gated = !delivery_gate.load(Ordering::Acquire);
+                gate_change = delivery_gate.changed(), if gated => {
+                    if gate_change.is_err() {
+                        break;
+                    }
+                    gated = !*delivery_gate.borrow();
                     if !gated
                         && !Self::flush_pending(&subscriber_id, &tx, &delivered_hashes, &mut pending).await {
                             break;

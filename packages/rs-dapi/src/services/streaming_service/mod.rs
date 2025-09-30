@@ -25,7 +25,10 @@ pub(crate) use subscriber_manager::{
 };
 pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 
-/// Streaming service implementation with ZMQ integration
+/// Streaming service implementation with ZMQ integration.
+///
+/// Cheap cloning is supported, and will create references to the same background workers.
+/// Doesn't store any state itself; all state is in the background workers.
 #[derive(Clone)]
 pub struct StreamingServiceImpl {
     pub drive_client: crate::clients::drive_client::DriveClient,
