@@ -300,8 +300,10 @@ impl StreamingServiceImpl {
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
-                let Some(txid_bytes) = super::StreamingServiceImpl::txid_bytes_from_bytes(&data)
-                else {
+                let (Some(txid_bytes), Some(txid_hex)) = (
+                    super::StreamingServiceImpl::txid_bytes_from_bytes(&data),
+                    super::StreamingServiceImpl::txid_hex_from_bytes(&data),
+                ) else {
                     tracing::debug!("transactions_with_proofs=transaction_no_txid");
                     return true;
                 };
@@ -311,7 +313,7 @@ impl StreamingServiceImpl {
                     trace!(
                         subscriber_id,
                         handle_id,
-                        txid = %hex::encode(txid_bytes),
+                        txid = txid_hex,
                         "transactions_with_proofs=skip_duplicate_transaction"
                     );
                     return true;
@@ -320,7 +322,7 @@ impl StreamingServiceImpl {
                 trace!(
                     subscriber_id,
                     handle_id,
-                    txid = hex::encode(&txid_bytes),
+                    txid = txid_hex,
                     payload_size = data.len(),
                     "transactions_with_proofs=forward_raw_transaction"
                 );
@@ -825,8 +827,13 @@ impl StreamingServiceImpl {
                     FilterType::CoreBloomFilter(bloom, flags) => {
                         match deserialize::<CoreTx>(tx_bytes.as_slice()) {
                             Ok(tx) => {
-                                trace!(height, txid = %tx.txid(), "transactions_with_proofs=bloom_matched");
-                                super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags)
+                                let matches = super::bloom::matches_transaction(
+                                    Arc::clone(bloom),
+                                    &tx,
+                                    *flags,
+                                );
+                                trace!(height,matches, txid = %tx.txid(), "transactions_with_proofs=bloom_match");
+                                matches
                             }
                             Err(e) => {
                                 warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, skipping tx");
