@@ -1,32 +1,31 @@
-use lru::LruCache;
+use quick_cache::{Weighter, sync::Cache};
 use std::fmt::Debug;
-use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 use tokio_util::bytes::Bytes;
 
+use crate::DapiError;
 use crate::services::streaming_service::SubscriptionHandle;
+use crate::sync::Workers;
+
+const ESTIMATED_ENTRY_SIZE_BYTES: usize = 1024;
 
 #[derive(Clone)]
 pub struct LruResponseCache {
-    inner: Arc<Mutex<LruCache<CacheKey, CachedValue>>>,
+    inner: Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>,
+    #[allow(dead_code)]
+    workers: Workers,
 }
 
 impl Debug for LruResponseCache {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let lock = self.inner.try_lock();
-        if let Ok(guard) = lock {
-            write!(
-                f,
-                "LruResponseCache {{ size: {}, capacity: {} }}",
-                guard.len(),
-                guard.cap()
-            )
-        } else {
-            write!(f, "LruResponseCache {{ <locked> }}")
-        }
+        write!(
+            f,
+            "LruResponseCache {{ size: {}, weight: {}, capacity: {} }}",
+            self.inner.len(),
+            self.inner.weight(),
+            self.inner.capacity()
+        )
     }
 }
 
@@ -37,33 +36,71 @@ struct CachedValue {
     bytes: Bytes,
 }
 
+impl CachedValue {
+    #[inline(always)]
+    fn new<T: serde::Serialize>(data: T) -> Self {
+        Self {
+            inserted_at: Instant::now(),
+            bytes: Bytes::from(serialize(&data).unwrap()),
+        }
+    }
+
+    fn value<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
+        deserialize::<T>(&self.bytes)
+    }
+}
+
+#[derive(Clone, Default)]
+struct CachedValueWeighter;
+
+impl Weighter<CacheKey, CachedValue> for CachedValueWeighter {
+    fn weight(&self, _key: &CacheKey, value: &CachedValue) -> u64 {
+        let structural = std::mem::size_of::<CachedValue>() as u64;
+        let payload = value.bytes.len() as u64;
+        (structural + payload).max(1)
+    }
+}
+
 impl LruResponseCache {
     /// Create a cache with a fixed capacity and without any external invalidation.
     /// Use this when caching immutable responses (e.g., blocks by hash).
+    /// `capacity` is expressed in bytes.
     pub fn with_capacity(capacity: usize) -> Self {
-        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
-        let inner = Arc::new(Mutex::new(LruCache::new(cap)));
-        Self { inner }
+        Self {
+            inner: Self::new_cache(capacity),
+            workers: Workers::new(),
+        }
     }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
+    /// `capacity` is expressed in bytes.
     pub fn new(capacity: usize, receiver: SubscriptionHandle) -> Self {
-        let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
-        let inner = Arc::new(Mutex::new(LruCache::new(cap)));
+        let inner = Self::new_cache(capacity);
         let inner_clone = inner.clone();
-        let mut workers = tokio::task::join_set::JoinSet::new();
+        let workers = Workers::new();
         workers.spawn(async move {
             while receiver.recv().await.is_some() {
-                inner_clone.lock().await.clear();
+                inner_clone.clear();
             }
             tracing::debug!("Cache invalidation task exiting");
+            Result::<(), DapiError>::Ok(())
         });
 
-        Self { inner }
+        Self { inner, workers }
+    }
+
+    fn new_cache(capacity: usize) -> Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>> {
+        let capacity = capacity.max(1);
+        let estimated_items = (capacity / ESTIMATED_ENTRY_SIZE_BYTES).max(1);
+        Arc::new(Cache::with_weighter(
+            estimated_items,
+            capacity as u64,
+            CachedValueWeighter,
+        ))
     }
 
     pub async fn clear(&self) {
-        self.inner.lock().await.clear();
+        self.inner.clear();
     }
 
     #[inline(always)]
@@ -71,10 +108,7 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let mut lock = self.inner.lock().await;
-        lock.get(key)
-            .map(|cv| cv.bytes.clone())
-            .and_then(|b| deserialize::<T>(&b))
+        self.inner.get(key).and_then(|cv| cv.value())
     }
 
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
@@ -82,13 +116,12 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let mut lock = self.inner.lock().await;
-        if let Some(cv) = lock.get(key).cloned() {
+        if let Some(cv) = self.inner.get(key) {
             if cv.inserted_at.elapsed() <= ttl {
-                return deserialize::<T>(&cv.bytes);
+                return cv.value();
             }
             // expired, drop it
-            lock.pop(key);
+            self.inner.remove(key);
         }
         None
     }
@@ -97,13 +130,8 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        if let Some(buf) = serialize(value) {
-            let cv = CachedValue {
-                inserted_at: Instant::now(),
-                bytes: Bytes::from(buf),
-            };
-            self.inner.lock().await.put(key, cv);
-        }
+        let cv = CachedValue::new(value);
+        self.inner.insert(key, cv);
     }
 
     /// Get a cached value or compute it using `producer` and insert into cache.
@@ -114,13 +142,17 @@ impl LruResponseCache {
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
     {
-        if let Some(value) = self.get::<T>(&key).await {
-            return Ok(value);
-        }
+        use futures::future::FutureExt;
 
-        let value = producer().await?;
-        self.put(key, &value).await;
-        Ok(value)
+        self.inner
+            .get_or_insert_async(&key, async move {
+                // wrapped in async block to not execute producer immediately
+                producer()
+                    .map(|result| result.map(|value| CachedValue::new(value)))
+                    .await
+            })
+            .await
+            .map(|cv| cv.value().expect("Deserialization must succeed"))
     }
 }
 

@@ -22,8 +22,8 @@ impl CoreClient {
             .map_err(|e| DapiError::client(format!("Failed to create Core RPC client: {}", e)))?;
         Ok(Self {
             client: Arc::new(client),
-            // Default capacity; immutable responses are small and de-duped by key
-            cache: LruResponseCache::with_capacity(1024),
+            // Default cache budget (~64MiB) keeps a few recent block responses around.
+            cache: LruResponseCache::with_capacity(64 * 1024 * 1024),
             access_guard: Arc::new(CoreRpcAccessGuard::new(CORE_RPC_GUARD_PERMITS)),
         })
     }
