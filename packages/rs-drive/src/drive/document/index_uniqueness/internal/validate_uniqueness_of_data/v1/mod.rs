@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{UniquenessOfDataRequest, UniquenessOfDataRequestV0};
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{UniquenessOfDataRequest, UniquenessOfDataRequestV0, UniquenessOfDataRequestV1};
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -15,7 +15,7 @@ use grovedb::TransactionArg;
 use std::collections::BTreeMap;
 
 impl Drive {
-    /// Validates the uniqueness of data for version 0.
+    /// Validates the uniqueness of data for version 1.
     ///
     /// This method checks if a given data, within the context of its associated contract and
     /// document type, is unique. If an index is not flagged as unique, it is considered non-problematic.
@@ -35,28 +35,27 @@ impl Drive {
     /// * Contains a validation result indicating if the data is unique or not, or
     /// * An error that occurred during the operation.
     #[inline(always)]
-    pub(super) fn validate_uniqueness_of_data_v0(
+    pub(super) fn validate_uniqueness_of_data_v1(
         &self,
-        request: UniquenessOfDataRequestV0,
+        request: UniquenessOfDataRequestV1,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let UniquenessOfDataRequestV0 {
+        let UniquenessOfDataRequestV1 {
             contract,
             document_type,
             owner_id,
-            document_id,
-            allow_original,
+            changed_owner_id, creator_id, document_id,
             created_at,
             updated_at,
-            transferred_at,
-            created_at_block_height,
+            changed_updated_at, transferred_at,
+            changed_transferred_at, created_at_block_height,
             updated_at_block_height,
-            transferred_at_block_height,
-            created_at_core_block_height,
+            changed_updated_at_block_height, transferred_at_block_height,
+            changed_transferred_at_block_height, created_at_core_block_height,
             updated_at_core_block_height,
-            transferred_at_core_block_height,
-            data,
+            changed_updated_at_core_block_height, transferred_at_core_block_height,
+            changed_transferred_at_core_block_height, data, changed_data_values,
         } = request;
 
         let validation_results = document_type
@@ -74,6 +73,13 @@ impl Drive {
                             let value = match property.name.as_str() {
                                 property_names::OWNER_ID => {
                                     platform_value!(owner_id)
+                                }
+                                property_names::CREATOR_ID => {
+                                    if let Some(creator_id) = creator_id {
+                                        platform_value!(creator_id)
+                                    } else {
+                                        return None;
+                                    }
                                 }
                                 property_names::CREATED_AT => {
                                     if let Some(created_at) = created_at {
