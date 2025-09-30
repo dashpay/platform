@@ -160,10 +160,20 @@ class TransactionsReader extends EventEmitter {
           const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
 
           if (transactions.length) {
+            this.logger.silly('[TransactionsReader] Received historical transactions from stream', {
+              txids: transactions.map((tx) => tx.hash),
+            });
             this.emit(EVENTS.HISTORICAL_TRANSACTIONS, transactions);
           }
         } else if (rawMerkleBlock) {
           const merkleBlock = parseRawMerkleBlock(rawMerkleBlock);
+          const blockHash = merkleBlock && merkleBlock.header
+            ? merkleBlock.header.hash
+            : undefined;
+
+          this.logger.silly('[TransactionsReader] Received historical merkle block from stream', {
+            blockHash,
+          });
 
           let rejected = false;
           let accepted = false;
@@ -346,10 +356,20 @@ class TransactionsReader extends EventEmitter {
         };
 
         if (transactions.length) {
+          this.logger.silly('[TransactionsReader] Received continuous transactions from stream', {
+            txids: transactions.map((tx) => tx.hash),
+          });
           this.emit(EVENTS.NEW_TRANSACTIONS, { transactions, handleNewAddresses });
         }
       } else if (rawMerkleBlock) {
         const merkleBlock = parseRawMerkleBlock(rawMerkleBlock);
+        const blockHash = merkleBlock && merkleBlock.header
+          ? merkleBlock.header.hash
+          : undefined;
+
+        this.logger.silly('[TransactionsReader] Received continuous merkle block from stream', {
+          blockHash,
+        });
 
         let rejected = false;
         let accepted = false;
