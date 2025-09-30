@@ -21,6 +21,8 @@ pub enum Metric {
     PlatformEventsForwardedErrors,
     /// Platform events: upstream streams started counter
     PlatformEventsUpstreamStreams,
+    /// Active worker tasks gauge
+    WorkersActive,
 }
 
 impl Metric {
@@ -39,6 +41,7 @@ impl Metric {
             Metric::PlatformEventsUpstreamStreams => {
                 "rsdapi_platform_events_upstream_streams_total"
             }
+            Metric::WorkersActive => "rsdapi_workers_active_tasks",
         }
     }
 
@@ -55,6 +58,7 @@ impl Metric {
             Metric::PlatformEventsUpstreamStreams => {
                 "Upstream subscribePlatformEvents streams started"
             }
+            Metric::WorkersActive => "Current number of active background worker tasks",
         }
     }
 }
@@ -151,6 +155,11 @@ pub static PLATFORM_EVENTS_UPSTREAM_STREAMS: Lazy<IntCounter> = Lazy::new(|| {
     .expect("create counter")
 });
 
+pub static WORKERS_ACTIVE: Lazy<IntGauge> = Lazy::new(|| {
+    register_int_gauge!(Metric::WorkersActive.name(), Metric::WorkersActive.help())
+        .expect("create gauge")
+});
+
 /// Root typed accessor for metrics
 pub struct Metrics;
 
@@ -239,4 +248,14 @@ pub fn platform_events_forwarded_error() {
 #[inline]
 pub fn platform_events_upstream_stream_started() {
     PLATFORM_EVENTS_UPSTREAM_STREAMS.inc();
+}
+
+#[inline]
+pub fn workers_active_inc() {
+    WORKERS_ACTIVE.inc();
+}
+
+#[inline]
+pub fn workers_active_dec() {
+    WORKERS_ACTIVE.dec();
 }

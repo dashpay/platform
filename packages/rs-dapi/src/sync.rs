@@ -3,7 +3,22 @@ use std::sync::Mutex;
 use std::{fmt::Debug, sync::Arc};
 use tokio::task::{AbortHandle, JoinSet};
 
-use crate::DapiError;
+use crate::{DapiError, metrics};
+
+struct WorkerMetricsGuard;
+
+impl WorkerMetricsGuard {
+    fn new() -> Self {
+        metrics::workers_active_inc();
+        Self
+    }
+}
+
+impl Drop for WorkerMetricsGuard {
+    fn drop(&mut self) {
+        metrics::workers_active_dec();
+    }
+}
 
 #[derive(Clone, Default)]
 pub struct Workers {
@@ -37,7 +52,9 @@ impl Workers {
                 std::process::exit(1);
             }
         };
+        let metrics_guard = WorkerMetricsGuard::new();
         join_set.spawn(async move {
+            let _metrics_guard = metrics_guard;
             match fut.await {
                 Ok(_) => Ok(()),
                 Err(e) => {
