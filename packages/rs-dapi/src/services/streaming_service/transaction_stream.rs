@@ -706,12 +706,10 @@ impl StreamingServiceImpl {
     async fn fetch_mempool_transactions_worker(
         filter: FilterType,
         tx: TxResponseSender,
-        _state: TransactionStreamState,
+        state: TransactionStreamState,
         core_client: CoreClient,
     ) -> Result<(), Status> {
         use dashcore_rpc::dashcore::consensus::encode::serialize;
-        // separate state so that mempool txs do not interfere with historical/live txs
-        let state = TransactionStreamState::new();
 
         let txids = core_client
             .get_mempool_txids()
