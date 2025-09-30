@@ -32,6 +32,8 @@ pub(in crate::drive::document::index_uniqueness) struct UniquenessOfDataRequest<
     pub document_type: DocumentTypeRef<'a>,
     /// The ID representing the owner.
     pub owner_id: Identifier,
+    /// The ID representing the original creator.
+    pub creator_id: Option<Identifier>,
     /// The ID of the document in question.
     pub document_id: Identifier,
     /// A flag indicating if the original (existing) document is considered permissible.

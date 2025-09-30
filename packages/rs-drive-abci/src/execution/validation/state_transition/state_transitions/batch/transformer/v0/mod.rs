@@ -17,7 +17,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::document::document_incorrect_purchase_price_error::DocumentIncorrectPurchasePriceError;
 use dpp::consensus::state::document::document_not_for_sale_error::DocumentNotForSaleError;
-use dpp::document::property_names::{CREATOR_ID, PRICE};
+use dpp::document::property_names::PRICE;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
@@ -706,9 +706,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                 let original_document_transferred_at_core_block_height =
                     original_document.transferred_at_core_block_height();
 
-                let original_creator_id = original_document
-                    .properties()
-                    .get_optional_identifier(CREATOR_ID)?;
+                let original_creator_id = original_document.creator_id();
 
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition.base().id(),

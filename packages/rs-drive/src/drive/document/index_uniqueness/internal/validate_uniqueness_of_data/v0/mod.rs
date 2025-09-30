@@ -45,6 +45,7 @@ impl Drive {
             contract,
             document_type,
             owner_id,
+            creator_id,
             document_id,
             allow_original,
             created_at,
@@ -78,6 +79,13 @@ impl Drive {
                                 property_names::CREATED_AT => {
                                     if let Some(created_at) = created_at {
                                         platform_value!(created_at)
+                                    } else {
+                                        return None;
+                                    }
+                                }
+                                property_names::CREATOR_ID => {
+                                    if let Some(creator_id) = creator_id {
+                                        platform_value!(creator_id)
                                     } else {
                                         return None;
                                     }

@@ -18,7 +18,7 @@ use dpp::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use grovedb::TransactionArg;
-
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -55,10 +55,21 @@ impl Drive {
 
         let block_info = document_create_transition.block_info();
 
+        let creator_id = if document_type.should_use_creator_id(
+            contract.system_version_type(),
+            contract.config().version(),
+            platform_version,
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
+
         let request = UniquenessOfDataRequest {
             contract,
             document_type,
             owner_id,
+            creator_id,
             document_id: document_create_transition.base().id(),
             allow_original: false,
             created_at: if is_created_at_required {

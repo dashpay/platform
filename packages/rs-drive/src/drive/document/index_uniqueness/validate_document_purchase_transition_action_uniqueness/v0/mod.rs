@@ -34,6 +34,7 @@ impl Drive {
             contract,
             document_type,
             owner_id,
+            creator_id: document_purchase_transition.document().creator_id(),
             document_id: document_purchase_transition.base().id(),
             allow_original: true,
             created_at: document_purchase_transition.document().created_at(),
