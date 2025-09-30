@@ -101,8 +101,7 @@ impl TransactionStreamState {
     /// Marks a transaction as delivered. Returns false if it was already delivered.
     async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
         tracing::trace!(
-            txid = StreamingServiceImpl::txid_hex_from_bytes(txid)
-                .unwrap_or_else(|| "n/a".to_string()),
+            txid = txid_to_hex(txid),
             "transaction_stream=mark_transaction_delivered"
         );
         let mut guard = self.delivered_txs.lock().await;
@@ -116,8 +115,7 @@ impl TransactionStreamState {
         let mut guard = self.delivered_txs.lock().await;
         for txid in txids {
             tracing::trace!(
-                txid = StreamingServiceImpl::txid_hex_from_bytes(&txid)
-                    .unwrap_or_else(|| "n/a".to_string()),
+                txid = txid_to_hex(&txid),
                 "transaction_stream=mark_transaction_delivered"
             );
             guard.insert(txid);
@@ -1007,4 +1005,11 @@ fn parse_bloom_filter(
     .map_err(|e| Status::invalid_argument(format!("invalid bloom filter data: {}", e)))?;
 
     Ok((core_filter, flags))
+}
+
+fn txid_to_hex(txid: &[u8]) -> String {
+    let mut buf = txid.to_vec();
+    // txid is displayed in reverse byte order (little-endian)
+    buf.reverse();
+    hex::encode(buf)
 }
