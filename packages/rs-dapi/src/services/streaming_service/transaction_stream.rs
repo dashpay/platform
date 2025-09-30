@@ -129,12 +129,14 @@ impl TransactionStreamState {
     }
 
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
-        tracing::trace!(
-            block_hash = hex::encode(block_hash),
-            "transaction_stream=mark_block_delivered"
-        );
         let mut guard = self.delivered_blocks.lock().await;
-        guard.insert(block_hash.to_vec())
+        let inserted = guard.insert(block_hash.to_vec());
+        trace!(
+            block_hash = %hex::encode(block_hash),
+            inserted,
+            "transactions_with_proofs=block_delivery_state_updated"
+        );
+        inserted
     }
 
     async fn mark_instant_lock_delivered(&self, instant_lock: &[u8]) -> bool {
@@ -464,7 +466,12 @@ impl StreamingServiceImpl {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let match_flags = vec![true; block.txdata.len()];
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
-                        warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
+                        warn!(
+                            handle_id,
+                            block_hash = %block.block_hash(),
+                            error = %e,
+                            "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block"
+                        );
                         serialize(&block)
                     });
                     TransactionsWithProofsResponse {
@@ -492,7 +499,12 @@ impl StreamingServiceImpl {
                         match_flags.push(matches);
                     }
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
-                        warn!(handle_id, error = %e, "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block");
+                        warn!(
+                            handle_id,
+                            block_hash = %block.block_hash(),
+                            error = %e,
+                            "transactions_with_proofs=live_merkle_build_failed_fallback_raw_block"
+                        );
                         serialize(&block)
                     });
                     TransactionsWithProofsResponse {
@@ -821,6 +833,11 @@ impl StreamingServiceImpl {
                     break;
                 }
             };
+            trace!(
+                height,
+                block_hash = %hash,
+                "transactions_with_proofs=historical_block_fetched"
+            );
 
             let block = match core_client.get_block_by_hash(hash).await {
                 Ok(b) => b,
@@ -833,7 +850,12 @@ impl StreamingServiceImpl {
             let txs_bytes = match core_client.get_block_transactions_bytes_by_hash(hash).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!(height, error = ?e, "transactions_with_proofs=get_block_txs_failed, skipping block");
+                    warn!(
+                        height,
+                        block_hash = %hash,
+                        error = ?e,
+                        "transactions_with_proofs=get_block_txs_failed, skipping block"
+                    );
                     continue;
                 }
             };

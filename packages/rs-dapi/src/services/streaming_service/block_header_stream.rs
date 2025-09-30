@@ -6,7 +6,9 @@ use dapi_grpc::core::v0::{
     BlockHeaders, BlockHeadersWithChainLocksRequest, BlockHeadersWithChainLocksResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dashcore_rpc::dashcore::consensus::encode::serialize as serialize_consensus;
+use dashcore_rpc::dashcore::consensus::encode::{
+    deserialize as deserialize_consensus, serialize as serialize_consensus,
+};
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
@@ -215,7 +217,11 @@ impl StreamingServiceImpl {
             .await
             .map_err(Status::from)?
         {
-            trace!(?chain_lock, "block_headers=initial_chain_lock");
+            trace!(
+                height = chain_lock.block_height,
+                block_hash = %chain_lock.block_hash,
+                "block_headers=initial_chain_lock"
+            );
             let chain_lock_bytes = serialize_consensus(&chain_lock);
             let response = BlockHeadersWithChainLocksResponse {
                 responses: Some(
@@ -334,6 +340,12 @@ impl StreamingServiceImpl {
                     } else {
                         hashes.insert(hash_bytes);
                     }
+                } else {
+                    warn!(
+                        subscriber_id,
+                        block_hash = %block_hash_hex,
+                        "block_headers=forward_block_invalid_hash"
+                    );
                 }
 
                 if !allow_forward {
@@ -366,11 +378,25 @@ impl StreamingServiceImpl {
                 }))
             }
             StreamingEvent::CoreChainLock { data } => {
-                trace!(
-                    subscriber_id,
-                    payload_size = data.len(),
-                    "block_headers=forward_chain_lock"
-                );
+                if tracing::enabled!(tracing::Level::TRACE) {
+                    if let Ok(chain_lock) =
+                        deserialize_consensus::<dashcore_rpc::dashcore::ChainLock>(&data)
+                    {
+                        trace!(
+                            subscriber_id,
+                            height = chain_lock.block_height,
+                            block_hash = %chain_lock.block_hash,
+                            payload_size = data.len(),
+                            "block_headers=forward_chain_lock"
+                        );
+                    } else {
+                        trace!(
+                            subscriber_id,
+                            payload_size = data.len(),
+                            "block_headers=forward_chain_lock"
+                        );
+                    }
+                }
                 Some(Ok(BlockHeadersWithChainLocksResponse {
                     responses: Some(
                         dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::ChainLock(data),
@@ -388,12 +414,18 @@ impl StreamingServiceImpl {
             }
         };
 
-        if let Some(response) = maybe_response
+        if let Some(response) = maybe_response.clone()
             && tx.send(response).await.is_err()
         {
             debug!(subscriber_id, "block_headers=client_disconnected");
             return false;
         }
+
+        trace!(
+            subscriber_id,
+            response=?maybe_response, "block_headers=event_forwarded"
+        );
+
         true
     }
 
@@ -487,6 +519,11 @@ impl StreamingServiceImpl {
                     .get_block_hash(height)
                     .await
                     .map_err(Status::from)?;
+                trace!(
+                    height,
+                    block_hash = %hash,
+                    "block_headers=historical_header_fetched"
+                );
 
                 let header_bytes = self
                     .core_client
@@ -510,6 +547,10 @@ impl StreamingServiceImpl {
             if let Some(ref shared) = delivered_hashes {
                 let mut hashes = shared.lock().await;
                 for hash in hashes_to_store {
+                    trace!(
+                        block_hash = %hex::encode(&hash),
+                        "block_headers=delivered_hash_recorded"
+                    );
                     hashes.insert(hash);
                 }
             }
@@ -529,10 +570,13 @@ impl StreamingServiceImpl {
                 return Ok(());
             }
 
+            trace!(
+                current_height,
+                batch_size, remaining, "block_headers=historical_batch_sent"
+            );
+
             remaining = remaining.saturating_sub(batch_size);
             current_height += batch_size;
-
-            // No additional throttling here; Core client applies backpressure.
         }
 
         Ok(())
