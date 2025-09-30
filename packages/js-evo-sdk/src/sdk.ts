@@ -145,3 +145,4 @@ export { GroupFacade } from './group/facade.js';
 export { VotingFacade } from './voting/facade.js';
 export { wallet } from './wallet/functions.js';
 export { verifyIdentityResponse, verifyDataContract, verifyDocuments, start } from './wasm.js';
+export { DataContract } from './wasm.js';

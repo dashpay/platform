@@ -294,7 +294,7 @@ impl IdentityWasm {
 //     }
 // }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name=DataContract)]
 pub struct DataContractWasm(DataContract);
 
 impl From<DataContract> for DataContractWasm {
@@ -303,10 +303,28 @@ impl From<DataContract> for DataContractWasm {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     pub fn id(&self) -> String {
         self.0.id().to_string(Encoding::Base58)
+    }
+
+    #[wasm_bindgen(js_name=fromJSON)]
+    pub fn from_json(json: &JsValue, platform_version: u32) -> Result<DataContractWasm, WasmSdkError> {
+        let platform_version = &PlatformVersion::get(platform_version).map_err(|e| {
+            WasmSdkError::invalid_argument(format!(
+                "unknown platform version {platform_version}: {e}"
+            ))
+        })?;
+
+        let data_contract = DataContract::from_json(serde_wasm_bindgen::from_value(json.clone()).map_err(|e| {
+                WasmSdkError::serialization(format!("failed to convert json: {}", e))
+            })?, true, platform_version)
+            .map_err(|e| {
+                WasmSdkError::serialization(format!("failed to create DataContract from json: {}", e))
+            })?;
+
+        Ok(data_contract.into())
     }
 
     #[wasm_bindgen(js_name=toJSON)]
