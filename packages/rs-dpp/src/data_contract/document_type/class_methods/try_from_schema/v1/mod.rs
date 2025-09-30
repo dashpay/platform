@@ -448,7 +448,7 @@ impl DocumentTypeV1 {
                                     contract_config_version,
                                     documents_transferable,
                                     trade_mode,
-                                    &index_property.name.as_str(),
+                                    index_property.name.as_str(),
                                     platform_version,
                                 )? {
                                     let property_definition = flattened_document_properties
