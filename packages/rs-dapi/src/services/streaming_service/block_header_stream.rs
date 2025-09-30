@@ -7,6 +7,7 @@ use dapi_grpc::core::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use dashcore_rpc::dashcore::consensus::encode::serialize as serialize_consensus;
+use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{debug, trace, warn};
@@ -26,6 +27,7 @@ type DeliveredHashSet = Arc<AsyncMutex<HashSet<Vec<u8>>>>;
 type DeliveryGateSender = watch::Sender<bool>;
 type DeliveryGateReceiver = watch::Receiver<bool>;
 
+const MAX_HEADERS_PER_BATCH: usize = 500;
 impl StreamingServiceImpl {
     pub async fn subscribe_to_block_headers_with_chain_locks_impl(
         &self,
@@ -404,7 +406,13 @@ impl StreamingServiceImpl {
     ) -> Result<(), Status> {
         use std::str::FromStr;
 
-        let (start_height, count_target) = match from_block {
+        let best_height = self
+            .core_client
+            .get_block_count()
+            .await
+            .map_err(Status::from)? as usize;
+
+        let (start_height, available, desired) = match from_block {
             FromBlock::FromBlockHash(hash) => {
                 let hash_hex = hex::encode(&hash);
                 let block_hash = dashcore_rpc::dashcore::BlockHash::from_str(&hash_hex)
@@ -415,49 +423,32 @@ impl StreamingServiceImpl {
                     .await
                     .map_err(Status::from)?;
                 let start = header.height as usize;
-                let desired = if let Some(limit) = limit {
-                    limit
-                } else {
-                    let best = self
-                        .core_client
-                        .get_block_count()
-                        .await
-                        .map_err(Status::from)? as usize;
-                    best.saturating_sub(start).saturating_add(1)
-                };
+                let available = best_height.saturating_sub(start).saturating_add(1);
+                let desired = limit.unwrap_or(available);
                 debug!(start, desired, "block_headers=historical_from_hash_request");
-                (start, desired)
+                (start, available, desired)
             }
             FromBlock::FromBlockHeight(height) => {
                 let start = height as usize;
-                let desired = if let Some(limit) = limit {
-                    limit
-                } else {
-                    let best = self
-                        .core_client
-                        .get_block_count()
-                        .await
-                        .map_err(Status::from)? as usize;
-                    best.saturating_sub(start).saturating_add(1)
-                };
+                if start == 0 {
+                    return Err(Status::invalid_argument(
+                        "Minimum value for `fromBlockHeight` is 1",
+                    ));
+                }
+                let available = best_height.saturating_sub(start).saturating_add(1);
+                let desired = limit.unwrap_or(available);
                 debug!(
                     start,
                     desired, "block_headers=historical_from_height_request"
                 );
-                (start, desired)
+                (start, available, desired)
             }
         };
 
-        if count_target == 0 {
+        if available == 0 {
             return Ok(());
         }
 
-        // Align with historical JS behaviour: count cannot exceed tip.
-        let best_height = self
-            .core_client
-            .get_block_count()
-            .await
-            .map_err(Status::from)? as usize;
         if start_height >= best_height.saturating_add(1) {
             warn!(start_height, best_height, "block_headers=start_beyond_tip");
             return Err(Status::not_found(format!(
@@ -465,118 +456,85 @@ impl StreamingServiceImpl {
                 start_height
             )));
         }
-        let max_available = best_height.saturating_sub(start_height).saturating_add(1);
-        if count_target > max_available {
+
+        if desired == 0 {
+            return Ok(());
+        }
+
+        if desired > available {
             warn!(
                 start_height,
-                requested = count_target,
-                max_available,
+                requested = desired,
+                max_available = available,
                 "block_headers=count_exceeds_tip"
             );
             return Err(Status::invalid_argument("count exceeds chain tip"));
         }
 
-        self.process_historical_blocks_from_height(start_height, count_target, delivered_hashes, tx)
-            .await
-    }
+        let mut remaining = desired;
+        let mut current_height = start_height;
 
-    /// Process historical blocks from a specific block height
-    async fn process_historical_blocks_from_height(
-        &self,
-        from_height: usize,
-        count: usize,
-        delivered_hashes: Option<DeliveredHashSet>,
-        tx: BlockHeaderResponseSender,
-    ) -> Result<(), Status> {
-        // Fetch blocks sequentially and send only block headers (80 bytes each)
-        // Chunk responses to avoid huge gRPC messages.
-        const CHUNK_SIZE: usize = 1000;
+        while remaining > 0 {
+            let batch_size = remaining.min(MAX_HEADERS_PER_BATCH);
 
-        trace!(
-            from_height,
-            count, "block_headers=historical_from_height_begin"
-        );
+            let mut response_headers = Vec::with_capacity(batch_size);
+            let mut hashes_to_store: Vec<Vec<u8>> = Vec::with_capacity(batch_size);
 
-        let mut collected: Vec<Vec<u8>> = Vec::with_capacity(CHUNK_SIZE);
-        let mut sent: usize = 0;
+            for offset in 0..batch_size {
+                let height = (current_height + offset) as u32;
+                let hash = self
+                    .core_client
+                    .get_block_hash(height)
+                    .await
+                    .map_err(Status::from)?;
 
-        for i in 0..count {
-            let height = (from_height + i) as u32;
-            // Resolve hash
-            let hash = match self.core_client.get_block_hash(height).await {
-                Ok(h) => h,
-                Err(e) => {
-                    // Stop on first error (e.g., height beyond tip)
-                    trace!(height, error = ?e, "block_headers=historical_get_block_hash_failed");
-                    break;
+                let header_bytes = self
+                    .core_client
+                    .get_block_header_bytes_by_hash(hash)
+                    .await
+                    .map_err(Status::from)?;
+
+                if header_bytes.len() < 80 {
+                    return Err(Status::internal(
+                        "Received malformed block header (len < 80)",
+                    ));
                 }
-            };
 
-            let hash_bytes = hex::decode(hash.to_string()).map_err(|e| {
-                warn!(height, error = %e, "block_headers=hash_decode_failed");
-                Status::internal("Failed to decode block hash")
-            })?;
+                response_headers.push(header_bytes[..80].to_vec());
 
-            // Fetch block bytes and slice header (first 80 bytes)
-            let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
-                Ok(b) => b,
-                Err(e) => {
-                    trace!(height, error = ?e, "block_headers=historical_get_block_failed");
-                    break;
+                if delivered_hashes.is_some() {
+                    hashes_to_store.push(hash.to_byte_array().to_vec());
                 }
-            };
-            if block_bytes.len() < 80 {
-                // Malformed block; abort
-                return Err(Status::internal(
-                    "Received malformed block bytes (len < 80)",
-                ));
             }
-            let header_bytes = block_bytes[..80].to_vec();
-            collected.push(header_bytes);
 
             if let Some(ref shared) = delivered_hashes {
                 let mut hashes = shared.lock().await;
-                hashes.insert(hash_bytes);
-            }
-
-            while collected.len() >= CHUNK_SIZE {
-                let bh = BlockHeaders {
-                    headers: collected.drain(..CHUNK_SIZE).collect(),
-                };
-                let response = BlockHeadersWithChainLocksResponse {
-                    responses: Some(
-                        dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
-                    ),
-                };
-                if tx.send(Ok(response)).await.is_err() {
-                    debug!("block_headers=historical_client_disconnected");
-                    return Ok(());
+                for hash in hashes_to_store {
+                    hashes.insert(hash);
                 }
-                sent += CHUNK_SIZE;
             }
 
-            // CoreClient handles RPC flow control, so no additional pacing is required here.
-        }
-
-        // Flush remaining headers
-        if !collected.is_empty() {
-            let bh = BlockHeaders { headers: collected };
             let response = BlockHeadersWithChainLocksResponse {
                 responses: Some(
-                    dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(bh),
+                    dapi_grpc::core::v0::block_headers_with_chain_locks_response::Responses::BlockHeaders(
+                        BlockHeaders {
+                            headers: response_headers,
+                        },
+                    ),
                 ),
             };
+
             if tx.send(Ok(response)).await.is_err() {
                 debug!("block_headers=historical_client_disconnected");
                 return Ok(());
             }
-            sent += 1; // mark as sent (approximate)
+
+            remaining = remaining.saturating_sub(batch_size);
+            current_height += batch_size;
+
+            // No additional throttling here; Core client applies backpressure.
         }
 
-        trace!(
-            from_height,
-            count, sent, "block_headers=historical_from_height_end"
-        );
         Ok(())
     }
 }

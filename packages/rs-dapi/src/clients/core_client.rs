@@ -169,6 +169,20 @@ impl CoreClient {
         Ok(block)
     }
 
+    pub async fn get_block_header_bytes_by_hash(
+        &self,
+        hash: dashcore_rpc::dashcore::BlockHash,
+    ) -> DAPIResult<Vec<u8>> {
+        trace!("Core RPC: get_block_header");
+        let header = self
+            .guarded_blocking_call(move |client| client.get_block_header(&hash))
+            .await
+            .to_dapi_result()?;
+
+        let bytes = dashcore::consensus::encode::serialize(&header);
+        Ok(bytes)
+    }
+
     pub async fn get_block_bytes_by_hash_hex(&self, hash_hex: &str) -> DAPIResult<Vec<u8>> {
         use std::str::FromStr;
         if hash_hex.trim().is_empty() {
