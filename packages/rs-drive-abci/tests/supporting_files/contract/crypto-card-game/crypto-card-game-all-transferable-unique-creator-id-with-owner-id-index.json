@@ -68,8 +68,11 @@
           ]
         },
         {
-          "name": "creator",
+          "name": "owner_creator",
           "properties": [
+            {
+              "$ownerId": "asc"
+            },
             {
               "$creatorId": "asc"
             }
