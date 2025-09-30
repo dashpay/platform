@@ -37,24 +37,28 @@ impl StreamingServiceImpl {
 
         // Validate parameters
         let count = req.count;
+        let validation_error = "Minimum value for `fromBlockHeight` is 1";
+
         let from_block = match req.from_block {
+            Some(FromBlock::FromBlockHeight(height)) => {
+                if height == 0 {
+                    warn!(height, "block_headers=invalid_starting_height");
+                    return Err(Status::invalid_argument(validation_error));
+                }
+                FromBlock::FromBlockHeight(height)
+            }
+            Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
+                warn!("block_headers=empty_from_block_hash");
+                return Err(Status::invalid_argument(validation_error));
+            }
             Some(from_block) => from_block,
             None => {
                 warn!("block_headers=missing_from_block");
-                return Err(Status::invalid_argument("Must specify from_block"));
+                return Err(Status::invalid_argument(validation_error));
             }
         };
 
         trace!(count, "block_headers=request_parsed");
-
-        if let FromBlock::FromBlockHeight(height) = &from_block
-            && *height == 0
-        {
-            warn!(height, "block_headers=invalid_starting_height");
-            return Err(Status::invalid_argument(
-                "Minimum value for from_block_height is 1",
-            ));
-        }
 
         let response = if count > 0 {
             self.handle_historical_mode(from_block, count).await?
@@ -282,6 +286,16 @@ impl StreamingServiceImpl {
                     return true;
                 }
 
+                if data.len() < 80 {
+                    warn!(
+                        subscriber_id,
+                        payload_size = data.len(),
+                        "block_headers=forward_block_short_payload"
+                    );
+                    return true;
+                }
+
+                let header_bytes = data[..80].to_vec();
                 trace!(
                     subscriber_id,
                     block_hash = %block_hash_hex,
@@ -289,7 +303,7 @@ impl StreamingServiceImpl {
                     "block_headers=forward_block"
                 );
                 let block_headers = BlockHeaders {
-                    headers: vec![data],
+                    headers: vec![header_bytes],
                 };
                 Some(Ok(BlockHeadersWithChainLocksResponse {
                     responses: Some(
@@ -446,8 +460,10 @@ impl StreamingServiceImpl {
                 }
             };
 
-            let hash_bytes =
-                <dashcore_rpc::dashcore::BlockHash as AsRef<[u8]>>::as_ref(&hash).to_vec();
+            let hash_bytes = hex::decode(hash.to_string()).map_err(|e| {
+                warn!(height, error = %e, "block_headers=hash_decode_failed");
+                Status::internal("Failed to decode block hash")
+            })?;
 
             // Fetch block bytes and slice header (first 80 bytes)
             let block_bytes = match self.core_client.get_block_bytes_by_hash(hash).await {
