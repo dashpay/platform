@@ -116,11 +116,13 @@ export class EvoSDK {
     return this.wasm.version();
   }
 
-  static setLogLevel(levelOrFilter: string): void {
+  static async setLogLevel(levelOrFilter: string): Promise<void> {
+    await initWasm();
     wasm.WasmSdk.setLogLevel(levelOrFilter);
   }
 
-  static getLatestVersionNumber(): number {
+  static async getLatestVersionNumber(): Promise<number> {
+    await initWasm();
     return wasm.WasmSdkBuilder.getLatestVersionNumber();
   }
 

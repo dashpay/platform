@@ -1,6 +1,6 @@
 [package]
 name = "dash-context-provider"
-version = "2.1.0-dev.6"
+version = "2.1.0-dev.7"
 edition = "2021"
 authors = ["sam@dash.org"]
 license = "MIT"
