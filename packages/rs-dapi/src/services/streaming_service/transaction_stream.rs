@@ -100,6 +100,11 @@ impl TransactionStreamState {
 
     /// Marks a transaction as delivered. Returns false if it was already delivered.
     async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
+        tracing::trace!(
+            txid = StreamingServiceImpl::txid_hex_from_bytes(txid)
+                .unwrap_or_else(|| "n/a".to_string()),
+            "transaction_stream=mark_transaction_delivered"
+        );
         let mut guard = self.delivered_txs.lock().await;
         guard.insert(txid.to_vec())
     }
@@ -110,11 +115,20 @@ impl TransactionStreamState {
     {
         let mut guard = self.delivered_txs.lock().await;
         for txid in txids {
+            tracing::trace!(
+                txid = StreamingServiceImpl::txid_hex_from_bytes(&txid)
+                    .unwrap_or_else(|| "n/a".to_string()),
+                "transaction_stream=mark_transaction_delivered"
+            );
             guard.insert(txid);
         }
     }
 
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
+        tracing::trace!(
+            block_hash = hex::encode(block_hash),
+            "transaction_stream=mark_block_delivered"
+        );
         let mut guard = self.delivered_blocks.lock().await;
         guard.insert(block_hash.to_vec())
     }
@@ -870,13 +884,13 @@ impl StreamingServiceImpl {
                     debug!("transactions_with_proofs=historical_client_disconnected");
                     return Ok(());
                 }
-
-                if let Some(state) = state.as_ref() {
-                    state.mark_block_delivered(&block_hash_bytes).await;
-                }
             }
 
             // deliver the merkle block (even if its' empty)
+            if let Some(state) = state.as_ref() {
+                state.mark_block_delivered(&block_hash_bytes).await;
+            }
+
             let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                     let bh = block.block_hash();
                     warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
