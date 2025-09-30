@@ -874,21 +874,28 @@ impl StreamingServiceImpl {
                 if let Some(state) = state.as_ref() {
                     state.mark_block_delivered(&block_hash_bytes).await;
                 }
+            }
 
-                let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
+            // deliver the merkle block (even if its' empty)
+            let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                     let bh = block.block_hash();
                     warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
                     dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                 });
 
-                let response = TransactionsWithProofsResponse {
-                    responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
-                };
-                if tx.send(Ok(response)).await.is_err() {
-                    debug!("transactions_with_proofs=historical_client_disconnected");
-                    return Ok(());
-                }
+            let response = TransactionsWithProofsResponse {
+                responses: Some(Responses::RawMerkleBlock(merkle_block_bytes)),
+            };
+            if tx.send(Ok(response)).await.is_err() {
+                debug!("transactions_with_proofs=historical_client_disconnected");
+                return Ok(());
             }
+
+            trace!(
+                height,
+                block_hash = %hash,
+                "transactions_with_proofs=historical_block_delivered"
+            );
         }
 
         trace!(
