@@ -107,9 +107,6 @@ impl TransactionStreamState {
         );
         let mut guard = self.delivered_txs.lock().await;
         guard.insert(txid.to_vec())
-        // TODO: this disables deduplication, remove after testing
-        ;
-        true
     }
 
     async fn mark_transactions_delivered<I>(&self, txids: I)
@@ -134,17 +131,11 @@ impl TransactionStreamState {
         );
         let mut guard = self.delivered_blocks.lock().await;
         guard.insert(block_hash.to_vec())
-        // TODO: this disables deduplication, remove after testing
-        ;
-        true
     }
 
     async fn mark_instant_lock_delivered(&self, instant_lock: &[u8]) -> bool {
         let mut guard = self.delivered_instant_locks.lock().await;
         guard.insert(instant_lock.to_vec())
-        // TODO: this disables deduplication, remove after testing
-        ;
-        true
     }
 }
 
