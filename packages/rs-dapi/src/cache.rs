@@ -12,9 +12,6 @@ use crate::services::streaming_service::SubscriptionHandle;
 #[derive(Clone)]
 pub struct LruResponseCache {
     inner: Arc<Mutex<LruCache<CacheKey, CachedValue>>>,
-    /// Background workers for cache management; will be aborted when last reference is dropped
-    #[allow(dead_code)]
-    workers: Arc<JoinSet<()>>,
 }
 
 impl Debug for LruResponseCache {
@@ -46,10 +43,7 @@ impl LruResponseCache {
     pub fn with_capacity(capacity: usize) -> Self {
         let cap = NonZeroUsize::new(capacity.max(1)).unwrap();
         let inner = Arc::new(Mutex::new(LruCache::new(cap)));
-        Self {
-            inner,
-            workers: Arc::new(tokio::task::join_set::JoinSet::new()),
-        }
+        Self { inner }
     }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
@@ -65,10 +59,7 @@ impl LruResponseCache {
             tracing::debug!("Cache invalidation task exiting");
         });
 
-        Self {
-            inner,
-            workers: Arc::new(workers),
-        }
+        Self { inner }
     }
 
     pub async fn clear(&self) {
