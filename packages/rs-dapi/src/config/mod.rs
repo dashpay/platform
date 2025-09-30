@@ -71,6 +71,12 @@ pub struct DapiConfig {
     /// Dash Core configuration for blockchain data
     #[serde(flatten)]
     pub core: CoreConfig,
+    /// Memory budget for cached Platform API responses (bytes)
+    #[serde(
+        rename = "dapi_platform_cache_bytes",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub platform_cache_bytes: u64,
     /// Timeout for waiting for state transition results (in milliseconds)
     #[serde(
         rename = "dapi_state_transition_wait_timeout",
@@ -116,6 +122,12 @@ pub struct CoreConfig {
     /// Dash Core RPC password
     #[serde(rename = "dapi_core_rpc_pass")]
     pub rpc_pass: String,
+    /// Memory budget for cached Core RPC responses (bytes)
+    #[serde(
+        rename = "dapi_core_cache_bytes",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub cache_bytes: u64,
 }
 
 impl Default for DapiConfig {
@@ -125,6 +137,7 @@ impl Default for DapiConfig {
             drive: DriveConfig::default(),
             tenderdash: TenderdashConfig::default(),
             core: CoreConfig::default(),
+            platform_cache_bytes: 2 * 1024 * 1024,
             state_transition_wait_timeout: 30000, // 30 seconds default
             logging: LoggingConfig::default(),
         }
@@ -155,6 +168,7 @@ impl Default for CoreConfig {
             rpc_url: "http://127.0.0.1:9998".to_string(),
             rpc_user: String::new(),
             rpc_pass: String::new(),
+            cache_bytes: 64 * 1024 * 1024,
         }
     }
 }

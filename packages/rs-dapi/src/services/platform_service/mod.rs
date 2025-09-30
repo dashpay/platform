@@ -157,15 +157,17 @@ impl PlatformServiceImpl {
             );
         }
 
+        let platform_cache_bytes = config.dapi.platform_cache_bytes;
+
         Self {
             drive_client,
             tenderdash_client,
             websocket_client,
             config,
             platform_cache: crate::cache::LruResponseCache::new(
-                2 * 1024 * 1024,
+                platform_cache_bytes,
                 invalidation_subscription,
-            ), // ~2MiB budget is ample for status payloads
+            ),
             subscriber_manager,
             platform_events_mux: event_mux,
             workers: Arc::new(Mutex::new(workers)),

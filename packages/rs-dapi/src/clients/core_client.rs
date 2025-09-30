@@ -17,13 +17,17 @@ pub struct CoreClient {
 }
 
 impl CoreClient {
-    pub fn new(url: String, user: String, pass: Zeroizing<String>) -> DAPIResult<Self> {
+    pub fn new(
+        url: String,
+        user: String,
+        pass: Zeroizing<String>,
+        cache_capacity_bytes: u64,
+    ) -> DAPIResult<Self> {
         let client = Client::new(&url, Auth::UserPass(user, pass.to_string()))
             .map_err(|e| DapiError::client(format!("Failed to create Core RPC client: {}", e)))?;
         Ok(Self {
             client: Arc::new(client),
-            // Default cache budget (~64MiB) keeps a few recent block responses around.
-            cache: LruResponseCache::with_capacity(64 * 1024 * 1024),
+            cache: LruResponseCache::with_capacity(cache_capacity_bytes),
             access_guard: Arc::new(CoreRpcAccessGuard::new(CORE_RPC_GUARD_PERMITS)),
         })
     }

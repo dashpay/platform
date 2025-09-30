@@ -8,7 +8,7 @@ use crate::DapiError;
 use crate::services::streaming_service::SubscriptionHandle;
 use crate::sync::Workers;
 
-const ESTIMATED_ENTRY_SIZE_BYTES: usize = 1024;
+const ESTIMATED_ENTRY_SIZE_BYTES: u64 = 1024;
 
 #[derive(Clone)]
 pub struct LruResponseCache {
@@ -65,7 +65,7 @@ impl LruResponseCache {
     /// Create a cache with a fixed capacity and without any external invalidation.
     /// Use this when caching immutable responses (e.g., blocks by hash).
     /// `capacity` is expressed in bytes.
-    pub fn with_capacity(capacity: usize) -> Self {
+    pub fn with_capacity(capacity: u64) -> Self {
         Self {
             inner: Self::new_cache(capacity),
             workers: Workers::new(),
@@ -74,7 +74,7 @@ impl LruResponseCache {
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
     /// `capacity` is expressed in bytes.
-    pub fn new(capacity: usize, receiver: SubscriptionHandle) -> Self {
+    pub fn new(capacity: u64, receiver: SubscriptionHandle) -> Self {
         let inner = Self::new_cache(capacity);
         let inner_clone = inner.clone();
         let workers = Workers::new();
@@ -89,12 +89,13 @@ impl LruResponseCache {
         Self { inner, workers }
     }
 
-    fn new_cache(capacity: usize) -> Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>> {
-        let capacity = capacity.max(1);
-        let estimated_items = (capacity / ESTIMATED_ENTRY_SIZE_BYTES).max(1);
+    fn new_cache(capacity: u64) -> Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>> {
+        let capacity_bytes = capacity.max(1);
+        let estimated_items_u64 = (capacity_bytes / ESTIMATED_ENTRY_SIZE_BYTES).max(1);
+        let estimated_items = estimated_items_u64.min(usize::MAX as u64) as usize;
         Arc::new(Cache::with_weighter(
             estimated_items,
-            capacity as u64,
+            capacity_bytes,
             CachedValueWeighter,
         ))
     }
