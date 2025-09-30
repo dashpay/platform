@@ -124,22 +124,7 @@ async function createGrpcTransportError(grpcError, dapiAddress) {
       throw new Error(`Can't deserialize consensus error ${code}: serialized data is missing`);
     }
 
-    let consensusErrorBytes;
-    if (Buffer.isBuffer(consensusErrorString)) {
-      if (this?.logger?.silly) {
-        this.logger.silly('consensusErrorString', {
-          asAscii: consensusErrorString.toString('ascii'),
-          hex: consensusErrorString.toString('hex'),
-        });
-      }
-      consensusErrorBytes = consensusErrorString;
-    } else {
-      if (this?.logger?.silly) {
-        this.logger.silly('consensusErrorString', consensusErrorString);
-      }
-      consensusErrorBytes = Buffer.from(consensusErrorString, 'base64');
-    }
-
+    const consensusErrorBytes = Buffer.from(consensusErrorString, 'base64');
     const consensusError = deserializeConsensusError(consensusErrorBytes);
 
     delete data.serializedError;
