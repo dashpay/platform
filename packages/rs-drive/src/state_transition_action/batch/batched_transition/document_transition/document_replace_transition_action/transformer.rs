@@ -1,9 +1,9 @@
 use dpp::block::block_info::BlockInfo;
 use dpp::platform_value::Identifier;
 use std::sync::Arc;
+use dpp::document::Document;
 use dpp::fee::fee_result::FeeResult;
-use dpp::identity::TimestampMillis;
-use dpp::prelude::{BlockHeight, ConsensusValidationResult, CoreBlockHeight, UserFeeIncrease};
+use dpp::prelude::{ConsensusValidationResult, UserFeeIncrease};
 use dpp::ProtocolError;
 use dpp::state_transition::batch_transition::batched_transition::DocumentReplaceTransition;
 use crate::drive::contract::DataContractFetchInfo;
@@ -17,13 +17,7 @@ impl DocumentReplaceTransitionAction {
     pub fn try_from_borrowed_document_replace_transition(
         document_replace_transition: &DocumentReplaceTransition,
         owner_id: Identifier,
-        originally_created_at: Option<TimestampMillis>,
-        originally_created_at_block_height: Option<BlockHeight>,
-        originally_created_at_core_block_height: Option<CoreBlockHeight>,
-        originally_transferred_at: Option<TimestampMillis>,
-        originally_transferred_at_block_height: Option<BlockHeight>,
-        originally_transferred_at_core_block_height: Option<CoreBlockHeight>,
-        original_creator_id: Option<Identifier>,
+        original_document: &Document,
         block_info: &BlockInfo,
         user_fee_increase: UserFeeIncrease,
         get_data_contract: impl Fn(Identifier) -> Result<Arc<DataContractFetchInfo>, ProtocolError>,
@@ -39,13 +33,7 @@ impl DocumentReplaceTransitionAction {
                 DocumentReplaceTransitionActionV0::try_from_borrowed_document_replace_transition(
                     v0,
                     owner_id,
-                    originally_created_at,
-                    originally_created_at_block_height,
-                    originally_created_at_core_block_height,
-                    originally_transferred_at,
-                    originally_transferred_at_block_height,
-                    originally_transferred_at_core_block_height,
-                    original_creator_id,
+                    original_document,
                     block_info,
                     user_fee_increase,
                     get_data_contract,

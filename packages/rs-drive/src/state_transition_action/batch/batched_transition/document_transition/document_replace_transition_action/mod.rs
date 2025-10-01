@@ -1,6 +1,6 @@
 mod v0;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use derive_more::From;
 
@@ -104,6 +104,12 @@ impl DocumentReplaceTransitionActionAccessorsV0 for DocumentReplaceTransitionAct
     fn data(&self) -> &BTreeMap<String, Value> {
         match self {
             DocumentReplaceTransitionAction::V0(v0) => &v0.data,
+        }
+    }
+
+    fn changed_data_fields(&self) -> &BTreeSet<String> {
+        match self {
+            DocumentReplaceTransitionAction::V0(v0) => &v0.changed_data_fields,
         }
     }
 

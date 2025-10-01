@@ -6,7 +6,7 @@ use dpp::platform_value::{Identifier, Value};
 use dpp::prelude::{BlockHeight, CoreBlockHeight, Revision};
 use dpp::ProtocolError;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::{DocumentBaseTransitionAction, DocumentBaseTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -38,6 +38,8 @@ pub struct DocumentReplaceTransitionActionV0 {
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
     /// Document properties
     pub data: BTreeMap<String, Value>,
+    /// Updated fields
+    pub changed_data_fields: BTreeSet<String>,
     /// Creator id
     pub creator_id: Option<Identifier>,
 }
@@ -76,6 +78,9 @@ pub trait DocumentReplaceTransitionActionAccessorsV0 {
 
     /// data
     fn data(&self) -> &BTreeMap<String, Value>;
+
+    /// The fields that have changed
+    fn changed_data_fields(&self) -> &BTreeSet<String>;
     /// data owned
     fn data_owned(self) -> BTreeMap<String, Value>;
 
@@ -141,6 +146,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            ..
         } = value;
 
         let id = base.id();
@@ -194,6 +200,7 @@ impl DocumentFromReplaceTransitionActionV0 for Document {
             transferred_at_core_block_height,
             data,
             creator_id,
+            ..
         } = value;
 
         let id = base.id();

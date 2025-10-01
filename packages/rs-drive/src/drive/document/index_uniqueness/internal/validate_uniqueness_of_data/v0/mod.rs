@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{UniquenessOfDataRequest, UniquenessOfDataRequestV0};
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};

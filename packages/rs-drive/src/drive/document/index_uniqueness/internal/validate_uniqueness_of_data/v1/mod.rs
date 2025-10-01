@@ -1,6 +1,8 @@
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{UniquenessOfDataRequest, UniquenessOfDataRequestV0, UniquenessOfDataRequestV1};
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+    UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+};
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -45,17 +47,19 @@ impl Drive {
             contract,
             document_type,
             owner_id,
-            changed_owner_id, creator_id, document_id,
+            creator_id,
+            document_id,
             created_at,
             updated_at,
-            changed_updated_at, transferred_at,
-            changed_transferred_at, created_at_block_height,
+            transferred_at,
+            created_at_block_height,
             updated_at_block_height,
-            changed_updated_at_block_height, transferred_at_block_height,
-            changed_transferred_at_block_height, created_at_core_block_height,
+            transferred_at_block_height,
+            created_at_core_block_height,
             updated_at_core_block_height,
-            changed_updated_at_core_block_height, transferred_at_core_block_height,
-            changed_transferred_at_core_block_height, data, changed_data_values,
+            transferred_at_core_block_height,
+            data,
+            update_type,
         } = request;
 
         let validation_results = document_type
@@ -66,110 +70,283 @@ impl Drive {
                     // if an index is not unique there is no issue
                     None
                 } else {
-                    let where_queries = index
-                        .properties
-                        .iter()
-                        .filter_map(|property| {
-                            let value = match property.name.as_str() {
-                                property_names::OWNER_ID => {
-                                    platform_value!(owner_id)
-                                }
-                                property_names::CREATOR_ID => {
-                                    if let Some(creator_id) = creator_id {
-                                        platform_value!(creator_id)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::CREATED_AT => {
-                                    if let Some(created_at) = created_at {
-                                        platform_value!(created_at)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::UPDATED_AT => {
-                                    if let Some(updated_at) = updated_at {
-                                        platform_value!(updated_at)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::TRANSFERRED_AT => {
-                                    if let Some(transferred_at) = transferred_at {
-                                        platform_value!(transferred_at)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::CREATED_AT_BLOCK_HEIGHT => {
-                                    if let Some(created_at_block_height) = created_at_block_height {
-                                        platform_value!(created_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::UPDATED_AT_BLOCK_HEIGHT => {
-                                    if let Some(updated_at_block_height) = updated_at_block_height {
-                                        platform_value!(updated_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
-                                    if let Some(transferred_at_block_height) =
-                                        transferred_at_block_height
-                                    {
-                                        platform_value!(transferred_at_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::CREATED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(created_at_core_block_height) =
-                                        created_at_core_block_height
-                                    {
-                                        platform_value!(created_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::UPDATED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(updated_at_core_block_height) =
-                                        updated_at_core_block_height
-                                    {
-                                        platform_value!(updated_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
-                                    if let Some(transferred_at_core_block_height) =
-                                        transferred_at_core_block_height
-                                    {
-                                        platform_value!(transferred_at_core_block_height)
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                                _ => {
-                                    if let Some(value) = data.get(property.name.as_str()) {
-                                        value.clone()
-                                    } else {
-                                        return None;
-                                    }
-                                }
-                            };
-                            Some((
-                                property.name.clone(),
-                                WhereClause {
-                                    field: property.name.clone(),
-                                    operator: WhereOperator::Equal,
-                                    value,
-                                },
-                            ))
-                        })
-                        .collect::<BTreeMap<String, WhereClause>>();
+                    let (where_queries, allow_original) = match &update_type {
+                        UniquenessOfDataRequestUpdateType::NewDocument => {
+                            let where_queries = index
+                                .properties
+                                .iter()
+                                .filter_map(|property| {
+                                    let value = match property.name.as_str() {
+                                        property_names::OWNER_ID => {
+                                            platform_value!(owner_id)
+                                        }
+                                        property_names::CREATOR_ID => {
+                                            if let Some(creator_id) = creator_id {
+                                                platform_value!(creator_id)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT => {
+                                            if let Some(created_at) = created_at {
+                                                platform_value!(created_at)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT => {
+                                            if let Some(updated_at) = updated_at {
+                                                platform_value!(updated_at)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT => {
+                                            if let Some(transferred_at) = transferred_at {
+                                                platform_value!(transferred_at)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT_BLOCK_HEIGHT => {
+                                            if let Some(created_at_block_height) =
+                                                created_at_block_height
+                                            {
+                                                platform_value!(created_at_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT_BLOCK_HEIGHT => {
+                                            if let Some(updated_at_block_height) =
+                                                updated_at_block_height
+                                            {
+                                                platform_value!(updated_at_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
+                                            if let Some(transferred_at_block_height) =
+                                                transferred_at_block_height
+                                            {
+                                                platform_value!(transferred_at_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT_CORE_BLOCK_HEIGHT => {
+                                            if let Some(created_at_core_block_height) =
+                                                created_at_core_block_height
+                                            {
+                                                platform_value!(created_at_core_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT_CORE_BLOCK_HEIGHT => {
+                                            if let Some(updated_at_core_block_height) =
+                                                updated_at_core_block_height
+                                            {
+                                                platform_value!(updated_at_core_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+                                            if let Some(transferred_at_core_block_height) =
+                                                transferred_at_core_block_height
+                                            {
+                                                platform_value!(transferred_at_core_block_height)
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                        _ => {
+                                            if let Some(value) = data.get(property.name.as_str()) {
+                                                value.clone()
+                                            } else {
+                                                return None;
+                                            }
+                                        }
+                                    };
+                                    Some((
+                                        property.name.clone(),
+                                        WhereClause {
+                                            field: property.name.clone(),
+                                            operator: WhereOperator::Equal,
+                                            value,
+                                        },
+                                    ))
+                                })
+                                .collect::<BTreeMap<String, WhereClause>>();
+                            (where_queries, false)
+                        }
+                        UniquenessOfDataRequestUpdateType::ChangedDocument {
+                            changed_owner_id,
+                            changed_updated_at,
+                            changed_transferred_at,
+                            changed_updated_at_block_height,
+                            changed_transferred_at_block_height,
+                            changed_updated_at_core_block_height,
+                            changed_transferred_at_core_block_height,
+                            changed_data_values,
+                        } => {
+                            let mut allow_original = true;
+                            let mut exit_early = false;
+                            let where_queries = index
+                                .properties
+                                .iter()
+                                .filter_map(|property| {
+                                    let value = match property.name.as_str() {
+                                        property_names::OWNER_ID => {
+                                            if *changed_owner_id {
+                                                allow_original = false;
+                                            }
+                                            platform_value!(owner_id)
+                                        }
+                                        property_names::CREATOR_ID => {
+                                            if let Some(creator_id) = creator_id {
+                                                platform_value!(creator_id)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT => {
+                                            if let Some(created_at) = created_at {
+                                                platform_value!(created_at)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT => {
+                                            if *changed_updated_at {
+                                                allow_original = false;
+                                            }
+                                            if let Some(updated_at) = updated_at {
+                                                platform_value!(updated_at)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT => {
+                                            if *changed_transferred_at {
+                                                allow_original = false;
+                                            }
+                                            if let Some(transferred_at) = transferred_at {
+                                                platform_value!(transferred_at)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT_BLOCK_HEIGHT => {
+                                            if let Some(created_at_block_height) =
+                                                created_at_block_height
+                                            {
+                                                platform_value!(created_at_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT_BLOCK_HEIGHT => {
+                                            if *changed_updated_at_block_height {
+                                                allow_original = false;
+                                            }
+                                            if let Some(updated_at_block_height) =
+                                                updated_at_block_height
+                                            {
+                                                platform_value!(updated_at_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT_BLOCK_HEIGHT => {
+                                            if *changed_transferred_at_block_height {
+                                                allow_original = false;
+                                            }
+                                            if let Some(transferred_at_block_height) =
+                                                transferred_at_block_height
+                                            {
+                                                platform_value!(transferred_at_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::CREATED_AT_CORE_BLOCK_HEIGHT => {
+                                            if let Some(created_at_core_block_height) =
+                                                created_at_core_block_height
+                                            {
+                                                platform_value!(created_at_core_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::UPDATED_AT_CORE_BLOCK_HEIGHT => {
+                                            if *changed_updated_at_core_block_height {
+                                                allow_original = false;
+                                            }
+                                            if let Some(updated_at_core_block_height) =
+                                                updated_at_core_block_height
+                                            {
+                                                platform_value!(updated_at_core_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT => {
+                                            if *changed_transferred_at_core_block_height {
+                                                allow_original = false;
+                                            }
+                                            if let Some(transferred_at_core_block_height) =
+                                                transferred_at_core_block_height
+                                            {
+                                                platform_value!(transferred_at_core_block_height)
+                                            } else {
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                        _ => {
+                                            if let Some(value) = data.get(property.name.as_str()) {
+                                                // If the property is not none then the uniqueness should exist
+                                                if changed_data_values.get(&property.name).is_some()
+                                                {
+                                                    allow_original = false;
+                                                }
+                                                value.clone()
+                                            } else {
+                                                // If any of the index is null then the uniqueness no longer exists
+                                                exit_early = true;
+                                                return None;
+                                            }
+                                        }
+                                    };
+                                    Some((
+                                        property.name.clone(),
+                                        WhereClause {
+                                            field: property.name.clone(),
+                                            operator: WhereOperator::Equal,
+                                            value,
+                                        },
+                                    ))
+                                })
+                                .collect::<BTreeMap<String, WhereClause>>();
+                            if exit_early {
+                                return None;
+                            } else {
+                                (where_queries, allow_original)
+                            }
+                        }
+                    };
 
                     if where_queries.len() < index.properties.len() {
                         // there are empty fields, which means that the index is no longer unique

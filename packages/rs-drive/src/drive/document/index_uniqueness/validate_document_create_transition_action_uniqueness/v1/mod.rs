@@ -2,7 +2,9 @@ use dpp::data_contract::DataContract;
 
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+    UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+};
 use crate::error::Error;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -18,6 +20,7 @@ use dpp::document::property_names::{
     UPDATED_AT_BLOCK_HEIGHT, UPDATED_AT_CORE_BLOCK_HEIGHT,
 };
 use grovedb::TransactionArg;
+use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_base_transition_action::DocumentBaseTransitionActionAccessorsV0;
 use crate::state_transition_action::batch::batched_transition::document_transition::document_create_transition_action::{DocumentCreateTransitionAction, DocumentCreateTransitionActionAccessorsV0};
 use dpp::version::PlatformVersion;
@@ -25,7 +28,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Validate that a document create transition action would be unique in the state
     #[inline(always)]
-    pub(super) fn validate_document_create_transition_action_uniqueness_v0(
+    pub(super) fn validate_document_create_transition_action_uniqueness_v1(
         &self,
         contract: &DataContract,
         document_type: DocumentTypeRef,
@@ -54,12 +57,22 @@ impl Drive {
 
         let block_info = document_create_transition.block_info();
 
-        let request = UniquenessOfDataRequestV0 {
+        let creator_id = if document_type.should_use_creator_id(
+            contract.system_version_type(),
+            contract.config().version(),
+            platform_version,
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
+
+        let request = UniquenessOfDataRequestV1 {
             contract,
             document_type,
             owner_id,
+            creator_id,
             document_id: document_create_transition.base().id(),
-            allow_original: false,
             created_at: if is_created_at_required {
                 Some(block_info.time_ms)
             } else {
@@ -106,6 +119,7 @@ impl Drive {
                 None
             },
             data: document_create_transition.data(),
+            update_type: UniquenessOfDataRequestUpdateType::NewDocument,
         };
         self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
     }

@@ -1,8 +1,12 @@
 use dpp::data_contract::DataContract;
+use std::borrow::Cow;
+use std::collections::BTreeSet;
 
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::{
+    UniquenessOfDataRequestUpdateType, UniquenessOfDataRequestV1,
+};
 use crate::error::Error;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
@@ -21,7 +25,7 @@ use dpp::version::PlatformVersion;
 impl Drive {
     /// Validate that a document purchase transition action would be unique in the state
     #[inline(always)]
-    pub(super) fn validate_document_purchase_transition_action_uniqueness_v0(
+    pub(super) fn validate_document_purchase_transition_action_uniqueness_v1(
         &self,
         contract: &DataContract,
         document_type: DocumentTypeRef,
@@ -30,12 +34,12 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let request = UniquenessOfDataRequestV0 {
+        let request = UniquenessOfDataRequestV1 {
             contract,
             document_type,
             owner_id,
+            creator_id: document_purchase_transition.document().creator_id(),
             document_id: document_purchase_transition.base().id(),
-            allow_original: true,
             created_at: document_purchase_transition.document().created_at(),
             updated_at: document_purchase_transition.document().updated_at(),
             transferred_at: document_purchase_transition.document().transferred_at(),
@@ -58,6 +62,16 @@ impl Drive {
                 .document()
                 .transferred_at_core_block_height(),
             data: document_purchase_transition.document().properties(),
+            update_type: UniquenessOfDataRequestUpdateType::ChangedDocument {
+                changed_owner_id: true,
+                changed_updated_at: false,
+                changed_transferred_at: true,
+                changed_updated_at_block_height: false,
+                changed_transferred_at_block_height: true,
+                changed_updated_at_core_block_height: false,
+                changed_transferred_at_core_block_height: true,
+                changed_data_values: Cow::Owned(BTreeSet::from(["price".to_string()])),
+            },
         };
         self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
     }

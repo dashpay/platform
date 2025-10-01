@@ -2748,7 +2748,7 @@ mod transfer_tests {
 
         // Step 8: Now receiver can transfer document1 back to creator
         // This should SUCCEED because (creator, creator) is now available
-        document1.set_revision(Some(4));
+        document1.set_revision(Some(3));
 
         let documents_batch_transfer_transition_back2 =
             BatchTransition::new_document_transfer_transition_from_document(

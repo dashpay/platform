@@ -5,7 +5,9 @@ use crate::version::drive_versions::drive_document_method_versions::{
     DriveDocumentQueryMethodVersions, DriveDocumentUpdateMethodVersions,
 };
 
-pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
+/// This was introduced in protocol v10 to deal with changes in queries for document uniqueness
+/// during validation.
+pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V2: DriveDocumentMethodVersions =
     DriveDocumentMethodVersions {
         query: DriveDocumentQueryMethodVersions {
             query_documents: 0,
@@ -61,10 +63,10 @@ pub const DRIVE_DOCUMENT_METHOD_VERSIONS_V1: DriveDocumentMethodVersions =
             stateless_delete_of_non_tree_for_costs: 0,
         },
         index_uniqueness: DriveDocumentIndexUniquenessMethodVersions {
-            validate_document_create_transition_action_uniqueness: 0,
-            validate_document_replace_transition_action_uniqueness: 0,
-            validate_document_transfer_transition_action_uniqueness: 0,
-            validate_document_purchase_transition_action_uniqueness: 0,
-            validate_document_update_price_transition_action_uniqueness: 0,
+            validate_document_create_transition_action_uniqueness: 1, // Changed
+            validate_document_replace_transition_action_uniqueness: 1, // Changed
+            validate_document_transfer_transition_action_uniqueness: 1, // Changed
+            validate_document_purchase_transition_action_uniqueness: 1, // Changed
+            validate_document_update_price_transition_action_uniqueness: 1, // Changed
         },
     };

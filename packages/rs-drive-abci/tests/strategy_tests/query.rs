@@ -833,7 +833,7 @@ mod tests {
                         assert!(!proof.signature.is_empty());
 
                         // Verify the proof
-                        let (root_hash, finalized_epoch_infos) =
+                        let (_root_hash, finalized_epoch_infos) =
                             Drive::verify_finalized_epoch_infos(
                                 &proof.grovedb_proof,
                                 0,

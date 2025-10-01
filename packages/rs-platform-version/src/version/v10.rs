@@ -20,7 +20,7 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v4::DRIVE_VERSION_V4;
+use crate::version::drive_versions::v5::DRIVE_VERSION_V5;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;
 use crate::version::system_data_contract_versions::v1::SYSTEM_DATA_CONTRACT_VERSIONS_V1;
@@ -32,7 +32,7 @@ pub const PROTOCOL_VERSION_10: ProtocolVersion = 10;
 /// This version was for Platform release 2.1.0
 pub const PLATFORM_V10: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_10,
-    drive: DRIVE_VERSION_V4,
+    drive: DRIVE_VERSION_V5, // Changed to deal with document uniqueness improvements
     drive_abci: DriveAbciVersion {
         structs: DRIVE_ABCI_STRUCTURE_VERSIONS_V1,
         methods: DRIVE_ABCI_METHOD_VERSIONS_V6,

@@ -688,26 +688,6 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
 
                 let original_document = validation_result.into_data()?;
 
-                // There is a case where we updated a just deleted document
-                // In this case we don't care about the created at
-                let original_document_created_at = original_document.created_at();
-
-                let original_document_created_at_block_height =
-                    original_document.created_at_block_height();
-
-                let original_document_created_at_core_block_height =
-                    original_document.created_at_core_block_height();
-
-                let original_document_transferred_at = original_document.transferred_at();
-
-                let original_document_transferred_at_block_height =
-                    original_document.transferred_at_block_height();
-
-                let original_document_transferred_at_core_block_height =
-                    original_document.transferred_at_core_block_height();
-
-                let original_creator_id = original_document.creator_id();
-
                 let validation_result = Self::check_ownership_of_old_replaced_document_v0(
                     document_replace_transition.base().id(),
                     original_document,
@@ -739,13 +719,7 @@ impl BatchTransitionInternalTransformerV0 for BatchTransition {
                     DocumentReplaceTransitionAction::try_from_borrowed_document_replace_transition(
                         document_replace_transition,
                         owner_id,
-                        original_document_created_at,
-                        original_document_created_at_block_height,
-                        original_document_created_at_core_block_height,
-                        original_document_transferred_at,
-                        original_document_transferred_at_block_height,
-                        original_document_transferred_at_core_block_height,
-                        original_creator_id,
+                        original_document,
                         block_info,
                         user_fee_increase,
                         |_identifier| Ok(data_contract_fetch_info.clone()),
