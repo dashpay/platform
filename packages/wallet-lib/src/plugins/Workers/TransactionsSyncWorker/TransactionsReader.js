@@ -321,7 +321,7 @@ class TransactionsReader extends EventEmitter {
       this.continuousSyncStream = null;
 
       const newAddresses = [...addresses, ...addressesGenerated];
-      addressesGenerated = [];
+      addressesGenerated.slice();
       this.logger.silly('[TransactionsReader] New addresses generated. Restarting continuous sync with', {
         fromBlockHeight,
         _addressesCount: newAddresses.length,
