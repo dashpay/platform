@@ -1,7 +1,11 @@
 const { EventEmitter } = require('events');
 const GrpcErrorCodes = require('@dashevo/grpc-common/lib/server/error/GrpcErrorCodes');
 const {
-  createBloomFilter, parseRawTransactions, parseRawMerkleBlock, parseRawInstantLocks,
+  createBloomFilter,
+  parseRawTransactions,
+  parseRawMerkleBlock,
+  parseRawInstantLocks,
+  getTxHashesFromMerkleBlock,
 } = require('./utils');
 
 const logger = require('../../../logger');
@@ -367,8 +371,11 @@ class TransactionsReader extends EventEmitter {
           ? merkleBlock.header.hash
           : undefined;
 
+        const txids = Array.from(getTxHashesFromMerkleBlock(merkleBlock));
+
         this.logger.silly('[TransactionsReader] Received continuous merkle block from stream', {
           blockHash,
+          txids,
         });
 
         let rejected = false;
