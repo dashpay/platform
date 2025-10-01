@@ -84,7 +84,14 @@ const getAddressesToSync = (keyChainStore) => keyChainStore.getKeyChains()
  */
 const parseRawInstantLocks = (rawInstantLocks) => rawInstantLocks
   .getMessagesList()
-  .map((instantSendLock) => new InstantLock(Buffer.from(instantSendLock)));
+  .map((instantSendLock) => {
+    try {
+      return new InstantLock(Buffer.from(instantSendLock));
+    } catch (e) {
+      return null;
+    }
+  })
+  .filter(Boolean);
 
 /**
  * @param merkleBlock
