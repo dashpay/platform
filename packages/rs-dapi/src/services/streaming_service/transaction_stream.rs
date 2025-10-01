@@ -8,8 +8,7 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dashcore_rpc::dashcore::Block;
-use dashcore_rpc::dashcore::hashes::Hash;
+use dashcore_rpc::dashcore::{consensus::deserialize, hashes::Hash, Block, InstantLock};
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio::task::JoinSet;
@@ -124,8 +123,8 @@ impl TransactionStreamState {
 
     /// Returns true if transaction has already been delivered on this stream
     async fn has_transaction_been_delivered(&self, txid: &[u8]) -> bool {
-        let guard = self.delivered_txs.lock().await;
-        guard.contains(txid)
+        self.delivered_txs.lock().await.contains(txid)
+            || self.delivered_instant_locks.lock().await.contains(txid)
     }
 
     async fn mark_block_delivered(&self, block_hash: &[u8]) -> bool {
@@ -139,9 +138,9 @@ impl TransactionStreamState {
         inserted
     }
 
-    async fn mark_instant_lock_delivered(&self, instant_lock: &[u8]) -> bool {
+    async fn mark_instant_lock_delivered(&self, txid: &[u8]) -> bool {
         let mut guard = self.delivered_instant_locks.lock().await;
-        guard.insert(instant_lock.to_vec())
+        guard.insert(txid.to_vec())
     }
 }
 
@@ -387,12 +386,29 @@ impl StreamingServiceImpl {
                 }
             }
             StreamingEvent::CoreInstantLock { data } => {
-                if !state.mark_instant_lock_delivered(&data).await {
-                    trace!(
-                        subscriber_id,
-                        handle_id, "transactions_with_proofs=skip_duplicate_instant_lock"
-                    );
-                    return true;
+                let txid_bytes = match deserialize::<InstantLock>(data.as_slice()) {
+                    Ok(instant_lock) => Some(*instant_lock.txid.as_byte_array()),
+                    Err(e) => {
+                        warn!(
+                            subscriber_id,
+                            handle_id,
+                            error = %e,
+                            "transactions_with_proofs=invalid_instant_lock"
+                        );
+                        None
+                    }
+                };
+
+                if let Some(txid_bytes) = txid_bytes {
+                    if !state.mark_instant_lock_delivered(&txid_bytes).await {
+                        trace!(
+                            subscriber_id,
+                            handle_id,
+                            txid = %txid_to_hex(&txid_bytes),
+                            "transactions_with_proofs=skip_duplicate_instant_lock"
+                        );
+                        return true;
+                    }
                 }
 
                 trace!(
