@@ -65,7 +65,6 @@ impl Drive {
                 contract,
                 document_type,
                 document_purchase_transition,
-                owner_id,
                 transaction,
                 platform_version,
             ),

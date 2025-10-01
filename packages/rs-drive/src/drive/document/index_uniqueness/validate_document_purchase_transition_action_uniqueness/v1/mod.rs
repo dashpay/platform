@@ -30,14 +30,13 @@ impl Drive {
         contract: &DataContract,
         document_type: DocumentTypeRef,
         document_purchase_transition: &DocumentPurchaseTransitionAction,
-        owner_id: Identifier,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         let request = UniquenessOfDataRequestV1 {
             contract,
             document_type,
-            owner_id,
+            owner_id: document_purchase_transition.document().owner_id(),
             creator_id: document_purchase_transition.document().creator_id(),
             document_id: document_purchase_transition.base().id(),
             created_at: document_purchase_transition.document().created_at(),
@@ -70,7 +69,7 @@ impl Drive {
                 changed_transferred_at_block_height: true,
                 changed_updated_at_core_block_height: false,
                 changed_transferred_at_core_block_height: true,
-                changed_data_values: Cow::Owned(BTreeSet::from(["price".to_string()])),
+                changed_data_values: Default::default(), // we don't need to set price as changed, because it is changing to None, which isn't a unique index
             },
         };
         self.validate_uniqueness_of_data(request.into(), transaction, platform_version)
