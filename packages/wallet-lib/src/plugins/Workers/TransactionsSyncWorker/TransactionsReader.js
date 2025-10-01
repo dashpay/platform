@@ -292,7 +292,9 @@ class TransactionsReader extends EventEmitter {
       throw new Error(`Invalid fromBlockHeight: ${fromBlockHeight}`);
     }
 
-    const bloomFilter = createBloomFilter(addresses);
+    let currentAddresses = addresses;
+
+    const bloomFilter = createBloomFilter(currentAddresses);
     const stream = await this.createContinuousSyncStream(bloomFilter, {
       fromBlockHeight,
       count: 0,
@@ -301,7 +303,7 @@ class TransactionsReader extends EventEmitter {
 
     this.logger.silly('[TransactionsReader] Started continuous sync with', {
       fromBlockHeight,
-      _addressesCount: addresses.length,
+      _addressesCount: currentAddresses.length,
     });
 
     let lastSyncedBlockHeight = fromBlockHeight;
@@ -320,15 +322,16 @@ class TransactionsReader extends EventEmitter {
       this.cancelStream(stream);
       this.continuousSyncStream = null;
 
-      const newAddresses = [...addresses, ...addressesGenerated];
-      addressesGenerated.slice();
+      const resumeFromHeight = Math.max(1, lastSyncedBlockHeight);
+      const newAddresses = [...currentAddresses, ...addressesGenerated];
+      currentAddresses = newAddresses;
       this.logger.silly('[TransactionsReader] New addresses generated. Restarting continuous sync with', {
-        fromBlockHeight,
+        fromBlockHeight: resumeFromHeight,
         _addressesCount: newAddresses.length,
       });
 
       this.startContinuousSync(
-        fromBlockHeight,
+        resumeFromHeight,
         newAddresses,
       ).then((newStream) => {
         this.continuousSyncStream = newStream;
@@ -350,7 +353,7 @@ class TransactionsReader extends EventEmitter {
           return;
         }
 
-        const transactions = parseRawTransactions(rawTransactions, addresses, this.network);
+        const transactions = parseRawTransactions(rawTransactions, currentAddresses, this.network);
 
         /**
          * @param {string[]} newAddresses
@@ -437,14 +440,15 @@ class TransactionsReader extends EventEmitter {
     };
 
     const beforeReconnectHandler = (updateArguments) => {
+      const resumeFromHeight = Math.max(1, lastSyncedBlockHeight);
       this.logger.silly('[TransactionsReader] Reconnecting to stream with', {
-        fromBlockHeight: lastSyncedBlockHeight,
-        _addressesCount: addresses.length,
+        fromBlockHeight: resumeFromHeight,
+        _addressesCount: currentAddresses.length,
       });
       updateArguments(
-        createBloomFilter(addresses),
+        createBloomFilter(currentAddresses),
         {
-          fromBlockHeight: lastSyncedBlockHeight,
+          fromBlockHeight: resumeFromHeight,
           count: 0,
         },
       );
