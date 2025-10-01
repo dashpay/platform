@@ -40,8 +40,7 @@ type GateReceiver = watch::Receiver<bool>;
 
 #[derive(Clone)]
 struct TransactionStreamState {
-    delivered_mempool_txs: DeliveredTxSet,
-    delivered_block_txs: DeliveredTxSet,
+    delivered_txs: DeliveredTxSet,
     delivered_blocks: DeliveredBlockSet,
     delivered_instant_locks: DeliveredInstantLockSet,
     gate_sender: GateSender,
@@ -52,8 +51,7 @@ impl TransactionStreamState {
     fn new() -> Self {
         let (gate_sender, gate_receiver) = watch::channel(false);
         Self {
-            delivered_mempool_txs: Arc::new(AsyncMutex::new(HashSet::new())),
-            delivered_block_txs: Arc::new(AsyncMutex::new(HashSet::new())),
+            delivered_txs: Arc::new(AsyncMutex::new(HashSet::new())),
             delivered_blocks: Arc::new(AsyncMutex::new(HashSet::new())),
             delivered_instant_locks: Arc::new(AsyncMutex::new(HashSet::new())),
             gate_sender,
@@ -100,44 +98,33 @@ impl TransactionStreamState {
         }
     }
 
-    /// Marks a mempool transaction as delivered. Returns false if it was already delivered.
-    async fn mark_mempool_transaction_delivered(&self, txid: &[u8]) -> bool {
+    /// Marks a transaction as delivered. Returns false if it was already delivered.
+    async fn mark_transaction_delivered(&self, txid: &[u8]) -> bool {
         tracing::trace!(
             txid = txid_to_hex(txid),
-            "transaction_stream=mark_mempool_transaction_delivered"
+            "transaction_stream=mark_transaction_delivered"
         );
-        let mut guard = self.delivered_mempool_txs.lock().await;
+        let mut guard = self.delivered_txs.lock().await;
         guard.insert(txid.to_vec())
     }
 
-    async fn mark_block_transactions_delivered<I>(&self, txids: I)
+    async fn mark_transactions_delivered<I>(&self, txids: I)
     where
         I: IntoIterator<Item = Vec<u8>>,
     {
+        let mut guard = self.delivered_txs.lock().await;
         for txid in txids {
-            let _ = self.mark_block_transaction_delivered(&txid).await;
+            tracing::trace!(
+                txid = txid_to_hex(&txid),
+                "transaction_stream=mark_transaction_delivered"
+            );
+            guard.insert(txid);
         }
-    }
-
-    async fn mark_block_transaction_delivered(&self, txid: &[u8]) -> bool {
-        tracing::trace!(
-            txid = txid_to_hex(txid),
-            "transaction_stream=mark_block_transaction_delivered"
-        );
-        let mut guard = self.delivered_block_txs.lock().await;
-        guard.insert(txid.to_vec())
     }
 
     /// Returns true if transaction has already been delivered on this stream
     async fn has_transaction_been_delivered(&self, txid: &[u8]) -> bool {
-        {
-            let guard = self.delivered_mempool_txs.lock().await;
-            if guard.contains(txid) {
-                return true;
-            }
-        }
-
-        let guard = self.delivered_block_txs.lock().await;
+        let guard = self.delivered_txs.lock().await;
         guard.contains(txid)
     }
 
@@ -341,8 +328,7 @@ impl StreamingServiceImpl {
                     return true;
                 };
 
-                let already_delivered =
-                    !state.mark_mempool_transaction_delivered(&txid_bytes).await;
+                let already_delivered = !state.mark_transaction_delivered(&txid_bytes).await;
                 if already_delivered {
                     trace!(
                         subscriber_id,
@@ -475,19 +461,10 @@ impl StreamingServiceImpl {
     ) -> Result<TransactionsWithProofsResponse, Status> {
         use dashcore_rpc::dashcore::consensus::encode::{deserialize, serialize};
 
-        let mut block_delivered_txids: Option<Vec<Vec<u8>>> = None;
-
         let response = match filter {
             FilterType::CoreAllTxs => {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let match_flags = vec![true; block.txdata.len()];
-                    block_delivered_txids = Some(
-                        block
-                            .txdata
-                            .iter()
-                            .map(|tx| tx.txid().to_byte_array().to_vec())
-                            .collect(),
-                    );
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                         warn!(
                             handle_id,
@@ -509,7 +486,6 @@ impl StreamingServiceImpl {
             FilterType::CoreBloomFilter(bloom, flags) => {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let mut match_flags = Vec::with_capacity(block.txdata.len());
-                    let mut block_txids = Vec::with_capacity(block.txdata.len());
                     for tx in block.txdata.iter() {
                         let mut matches =
                             super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags);
@@ -521,11 +497,7 @@ impl StreamingServiceImpl {
                             }
                         }
                         match_flags.push(matches);
-                        if matches {
-                            block_txids.push(tx.txid().to_byte_array().to_vec());
-                        }
                     }
-                    block_delivered_txids = Some(block_txids);
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                         warn!(
                             handle_id,
@@ -548,10 +520,6 @@ impl StreamingServiceImpl {
                 responses: Some(Responses::RawMerkleBlock(raw_block.to_vec())),
             },
         };
-
-        if let (Some(state), Some(txids)) = (state, block_delivered_txids) {
-            state.mark_block_transactions_delivered(txids).await;
-        }
 
         Ok(response)
     }
@@ -803,7 +771,7 @@ impl StreamingServiceImpl {
             let tx_bytes = serialize(&tx);
             let txid_bytes = tx.txid().to_byte_array();
 
-            if !state.mark_mempool_transaction_delivered(&txid_bytes).await {
+            if !state.mark_transaction_delivered(&txid_bytes).await {
                 trace!(
                     txid = %tx.txid(),
                     "transactions_with_proofs=skip_duplicate_mempool_transaction"
@@ -896,11 +864,10 @@ impl StreamingServiceImpl {
                 <dashcore_rpc::dashcore::BlockHash as AsRef<[u8]>>::as_ref(&hash).to_vec();
 
             let mut matching: Vec<Vec<u8>> = Vec::new();
-            let mut block_delivered_txids: Vec<Vec<u8>> = Vec::new();
+            let mut matching_hashes: Vec<Vec<u8>> = Vec::new();
             let mut match_flags: Vec<bool> = Vec::with_capacity(txs_bytes.len());
 
             for tx_bytes in txs_bytes.iter() {
-                let txid_bytes_opt = super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes);
                 let filter_matched = match &filter {
                     FilterType::CoreAllTxs => true,
                     FilterType::CoreBloomFilter(bloom, flags) => {
@@ -925,34 +892,31 @@ impl StreamingServiceImpl {
                 };
                 // Include previously delivered transactions in PMT regardless of bloom match
                 let mut matches_for_merkle = filter_matched;
-                if let Some(state) = state.as_ref() {
-                    if let Some(hash_bytes) = txid_bytes_opt.as_deref() {
-                        if state.has_transaction_been_delivered(hash_bytes).await {
-                            matches_for_merkle = true;
-                        }
-                    }
+                if let Some(state) = state.as_ref()
+                    && let Some(hash_bytes) =
+                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
+                    && state.has_transaction_been_delivered(&hash_bytes).await
+                {
+                    matches_for_merkle = true;
                 }
 
                 match_flags.push(matches_for_merkle);
-                if matches_for_merkle {
-                    if let Some(hash_bytes) = &txid_bytes_opt {
-                        block_delivered_txids.push(hash_bytes.clone());
-                    }
-                }
                 // Only send raw transactions when they matched the bloom filter
                 if filter_matched {
+                    if let Some(hash_bytes) =
+                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
+                    {
+                        matching_hashes.push(hash_bytes);
+                    }
                     matching.push(tx_bytes.clone());
                 }
             }
 
-            if let Some(state) = state.as_ref() {
-                let txids_for_block = std::mem::take(&mut block_delivered_txids);
-                state
-                    .mark_block_transactions_delivered(txids_for_block)
-                    .await;
-            }
-
             if !matching.is_empty() {
+                if let Some(state) = state.as_ref() {
+                    state.mark_transactions_delivered(matching_hashes).await;
+                }
+
                 let raw_transactions = RawTransactions {
                     transactions: matching,
                 };
