@@ -1,6 +1,4 @@
 use dpp::data_contract::DataContract;
-use std::borrow::Cow;
-use std::collections::BTreeSet;
 
 use crate::drive::Drive;
 
@@ -10,8 +8,6 @@ use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_d
 use crate::error::Error;
 
 use dpp::data_contract::document_type::DocumentTypeRef;
-
-use dpp::identifier::Identifier;
 
 use dpp::validation::SimpleConsensusValidationResult;
 
