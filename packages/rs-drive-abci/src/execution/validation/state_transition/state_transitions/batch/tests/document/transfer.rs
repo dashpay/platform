@@ -1774,7 +1774,7 @@ mod transfer_tests {
     }
 
     #[test]
-    fn test_document_creator_id_unique_index_enforcement() {
+    fn test_document_creator_id_unique_index_enforcement_during_transfer() {
         // This test verifies that a unique index on creator_id is properly enforced throughout
         // the complete document lifecycle, ensuring that only one document per creator can exist
         // at any time, regardless of ownership changes.
@@ -2284,7 +2284,7 @@ mod transfer_tests {
     }
 
     #[test]
-    fn test_document_owner_and_creator_id_unique_index_enforcement() {
+    fn test_document_owner_and_creator_id_unique_index_enforcement_during_transfer() {
         // This test verifies that a unique compound index on (owner_id, creator_id) is properly
         // enforced throughout the document lifecycle, allowing a creator to have multiple documents
         // but preventing duplicate (owner, creator) combinations.
