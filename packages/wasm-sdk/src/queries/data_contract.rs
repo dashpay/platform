@@ -40,7 +40,8 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        let platform_version = dash_sdk::dpp::version::PlatformVersion::get(self.version()).unwrap();
+        let platform_version =
+            dash_sdk::dpp::version::PlatformVersion::get(self.version()).unwrap();
         Ok(DataContractWasm::new(contract, platform_version))
     }
 
