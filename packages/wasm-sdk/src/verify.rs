@@ -122,7 +122,7 @@ pub async fn verify_data_contract() -> Option<DataContractWasm> {
     )
     .expect("parse proof");
 
-    response.map(DataContractWasm::from)
+    response.map(|contract| DataContractWasm::new(contract, PlatformVersion::latest()))
 }
 
 #[wasm_bindgen(js_name = "verifyDocuments")]
