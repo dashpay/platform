@@ -8,12 +8,14 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dashcore_rpc::dashcore::{consensus::deserialize, hashes::Hash, Block, InstantLock};
+use dashcore_rpc::dashcore::{Block, InstantLock, hashes::Hash};
+use dpp::dashcore::consensus::Decodable;
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
+use tokio_util::bytes::Buf;
 use tracing::{debug, trace, warn};
 
 use crate::DapiError;
@@ -386,7 +388,7 @@ impl StreamingServiceImpl {
                 }
             }
             StreamingEvent::CoreInstantLock { data } => {
-                let txid_bytes = match deserialize::<InstantLock>(data.as_slice()) {
+                let txid_bytes = match InstantLock::consensus_decode(&mut data.reader()) {
                     Ok(instant_lock) => Some(*instant_lock.txid.as_byte_array()),
                     Err(e) => {
                         warn!(
@@ -399,16 +401,16 @@ impl StreamingServiceImpl {
                     }
                 };
 
-                if let Some(txid_bytes) = txid_bytes {
-                    if !state.mark_instant_lock_delivered(&txid_bytes).await {
-                        trace!(
-                            subscriber_id,
-                            handle_id,
-                            txid = %txid_to_hex(&txid_bytes),
-                            "transactions_with_proofs=skip_duplicate_instant_lock"
-                        );
-                        return true;
-                    }
+                if let Some(txid_bytes) = txid_bytes
+                    && !state.mark_instant_lock_delivered(&txid_bytes).await
+                {
+                    trace!(
+                        subscriber_id,
+                        handle_id,
+                        txid = %txid_to_hex(&txid_bytes),
+                        "transactions_with_proofs=skip_duplicate_instant_lock"
+                    );
+                    return true;
                 }
 
                 trace!(
