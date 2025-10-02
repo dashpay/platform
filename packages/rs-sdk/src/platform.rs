@@ -18,6 +18,7 @@ pub mod types;
 
 pub mod documents;
 pub mod dpns_usernames;
+#[cfg(feature = "subscriptions")]
 pub mod events;
 pub mod group_actions;
 pub mod tokens;

@@ -46,6 +46,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 #[cfg(feature = "mocks")]
 use tokio::sync::MutexGuard;
+#[cfg(feature = "subscriptions")]
 use tokio::task::JoinSet;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
@@ -143,6 +144,7 @@ pub struct Sdk {
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
 
+    #[cfg(feature = "subscriptions")]
     /// Set of worker tasks spawned by the SDK
     workers: Arc<Mutex<JoinSet<()>>>,
 }
@@ -159,6 +161,7 @@ impl Clone for Sdk {
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
             dapi_client_settings: self.dapi_client_settings,
+            #[cfg(feature = "subscriptions")]
             workers: Arc::clone(&self.workers),
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
@@ -602,6 +605,7 @@ impl Sdk {
     }
 
     /// Spawn a new worker task that will be managed by the Sdk.
+    #[cfg(feature = "subscriptions")]
     pub(crate) async fn spawn(
         &self,
         task: impl std::future::Future<Output = ()> + Send + 'static,
@@ -1101,6 +1105,7 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    #[cfg(feature = "subscriptions")]
                     workers: Default::default(),
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
@@ -1170,6 +1175,7 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    #[cfg(feature = "subscriptions")]
                     workers: Default::default(),
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
