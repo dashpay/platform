@@ -27,6 +27,13 @@ pub enum DataContractConfig {
 }
 
 impl DataContractConfig {
+    pub fn version(&self) -> u16 {
+        match self {
+            DataContractConfig::V0(_) => 0,
+            DataContractConfig::V1(_) => 1,
+        }
+    }
+
     pub fn default_for_version(
         platform_version: &PlatformVersion,
     ) -> Result<DataContractConfig, ProtocolError> {

@@ -13,17 +13,20 @@ use std::collections::BTreeMap;
 
 use std::string::ToString;
 
-#[cfg(feature = "state-transition-value-conversion")]
 use crate::data_contract::DataContract;
 
 use crate::{document, errors::ProtocolError};
 
 use crate::block::block_info::BlockInfo;
+use crate::data_contract::accessors::v0::DataContractV0Getters;
 use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::methods::DocumentTypeBasicMethods;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0};
 use crate::fee::Credits;
+#[cfg(feature = "state-transition-value-conversion")]
+use crate::state_transition::batch_transition;
+use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 #[cfg(feature = "state-transition-value-conversion")]
 use crate::state_transition::batch_transition::document_base_transition::v0::DocumentBaseTransitionV0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -33,10 +36,6 @@ use derive_more::Display;
 #[cfg(feature = "state-transition-value-conversion")]
 use platform_value::btreemap_extensions::BTreeValueRemoveTupleFromMapHelper;
 use platform_version::version::PlatformVersion;
-
-#[cfg(feature = "state-transition-value-conversion")]
-use crate::state_transition::batch_transition;
-use crate::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 
 mod property_names {
     pub const ENTROPY: &str = "$entropy";
@@ -152,6 +151,7 @@ pub trait DocumentFromCreateTransitionV0 {
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -177,6 +177,7 @@ pub trait DocumentFromCreateTransitionV0 {
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -189,6 +190,7 @@ impl DocumentFromCreateTransitionV0 for Document {
         v0: DocumentCreateTransitionV0,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -200,6 +202,17 @@ impl DocumentFromCreateTransitionV0 for Document {
         let requires_created_at = document_type
             .required_fields()
             .contains(document::property_names::CREATED_AT);
+
+        let creator_id = if document_type.should_use_creator_id(
+            contract.system_version_type(),
+            contract.config().version(),
+            platform_version,
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
+
         let requires_updated_at = document_type
             .required_fields()
             .contains(document::property_names::UPDATED_AT);
@@ -270,6 +283,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
@@ -284,6 +298,7 @@ impl DocumentFromCreateTransitionV0 for Document {
         v0: &DocumentCreateTransitionV0,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -295,6 +310,19 @@ impl DocumentFromCreateTransitionV0 for Document {
         let requires_created_at = document_type
             .required_fields()
             .contains(document::property_names::CREATED_AT);
+
+        let properties = data.clone();
+
+        let creator_id = if document_type.should_use_creator_id(
+            contract.system_version_type(),
+            contract.config().version(),
+            platform_version,
+        )? {
+            Some(owner_id)
+        } else {
+            None
+        };
+
         let requires_updated_at = document_type
             .required_fields()
             .contains(document::property_names::UPDATED_AT);
@@ -354,7 +382,7 @@ impl DocumentFromCreateTransitionV0 for Document {
             0 => Ok(DocumentV0 {
                 id: base.id(),
                 owner_id,
-                properties: data.clone(),
+                properties,
                 revision: document_type.initial_revision(),
                 created_at,
                 updated_at,
@@ -365,6 +393,7 @@ impl DocumentFromCreateTransitionV0 for Document {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
+                creator_id,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

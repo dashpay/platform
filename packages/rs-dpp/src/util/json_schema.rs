@@ -102,20 +102,6 @@ impl JsonSchemaExt for JsonValue {
         bail!("the {:?} isn't an map", self);
     }
 
-    // TODO: Why we are doing this?
-    // fn get_indices<I: FromIterator<Index>>(&self) -> Result<I, anyhow::Error> {
-    //     let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
-    //         Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
-    //
-    //         None => vec![],
-    //     };
-    //
-    //     indices_with_raw_properties
-    //         .into_iter()
-    //         .map(Index::try_from)
-    //         .collect::<Result<I, anyhow::Error>>()
-    // }
-
     fn is_type_of_identifier(&self) -> bool {
         if let JsonValue::Object(ref map) = self {
             if let Some(JsonValue::String(media_type)) = map.get("contentMediaType") {
@@ -124,23 +110,6 @@ impl JsonSchemaExt for JsonValue {
         }
         false
     }
-
-    // TODO: Why do we need this?
-    // fn get_indices_map<I: FromIterator<(String, Index)>>(&self) -> Result<I, Error> {
-    //     let indices_with_raw_properties: Vec<IndexWithRawProperties> = match self.get("indices") {
-    //         Some(raw_indices) => serde_json::from_value(raw_indices.to_owned())?,
-    //
-    //         None => vec![],
-    //     };
-    //
-    //     indices_with_raw_properties
-    //         .into_iter()
-    //         .map(|r| {
-    //             let index = Index::try_from(r)?;
-    //             Ok((index.name().clone(), index))
-    //         })
-    //         .collect::<Result<I, anyhow::Error>>()
-    // }
 }
 
 #[cfg(test)]
@@ -213,6 +182,8 @@ mod test {
 
         let document_type = DocumentType::try_from_schema(
             Identifier::random(),
+            1,
+            config.version(),
             "doc",
             platform_value,
             None,

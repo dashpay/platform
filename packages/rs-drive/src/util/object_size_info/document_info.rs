@@ -115,7 +115,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
         platform_version: &PlatformVersion,
     ) -> Result<u16, Error> {
         match key_path {
-            "$ownerId" | "$id" => Ok(DEFAULT_HASH_SIZE_U16),
+            "$ownerId" | "$id" | "$creatorId" => Ok(DEFAULT_HASH_SIZE_U16),
             "$createdAt" | "$updatedAt" | "$transferredAt" => Ok(U64_SIZE_U16),
             "$createdAtBlockHeight" | "$updatedAtBlockHeight" | "$transferredAtBlockHeight" => {
                 Ok(U64_SIZE_U16)
@@ -184,7 +184,7 @@ impl DocumentInfoV0Methods for DocumentInfo<'_> {
                     DriveError::CorruptedCodeExecution("size_info_with_base_event None but needed"),
                 ))?;
                 match key_path {
-                    "$ownerId" | "$id" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
+                    "$ownerId" | "$id" | "$creatorId" => Ok(Some(KeySize(KeyInfo::MaxKeySize {
                         unique_id: document_type
                             .unique_id_for_document_field(index_level, base_event)
                             .to_vec(),

@@ -19,19 +19,7 @@ mod v0;
 mod v1;
 
 const NOT_ALLOWED_SYSTEM_PROPERTIES: [&str; 1] = ["$id"];
-const SYSTEM_PROPERTIES: [&str; 11] = [
-    "$id",
-    "$ownerId",
-    "$createdAt",
-    "$updatedAt",
-    "$transferredAt",
-    "$createdAtBlockHeight",
-    "$updatedAtBlockHeight",
-    "$transferredAtBlockHeight",
-    "$createdAtCoreBlockHeight",
-    "$updatedAtCoreBlockHeight",
-    "$transferredAtCoreBlockHeight",
-];
+
 const MAX_INDEXED_STRING_PROPERTY_LENGTH: u16 = 63;
 const MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH: u16 = 255;
 const MAX_INDEXED_ARRAY_ITEMS: usize = 1024;
@@ -40,6 +28,8 @@ impl DocumentType {
     #[allow(clippy::too_many_arguments)]
     pub fn try_from_schema(
         data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
@@ -58,6 +48,8 @@ impl DocumentType {
         {
             0 => DocumentTypeV0::try_from_schema(
                 data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
                 name,
                 schema,
                 schema_defs,
@@ -69,6 +61,8 @@ impl DocumentType {
             .map(|document_type| document_type.into()),
             1 => DocumentTypeV1::try_from_schema(
                 data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
                 name,
                 schema,
                 schema_defs,

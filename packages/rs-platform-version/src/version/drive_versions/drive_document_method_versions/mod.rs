@@ -1,6 +1,7 @@
 use versioned_feature_core::FeatureVersion;
 
 pub mod v1;
+pub mod v2;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentMethodVersions {
@@ -80,11 +81,9 @@ pub struct DriveDocumentDeleteMethodVersions {
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveDocumentIndexUniquenessMethodVersions {
-    pub validate_document_uniqueness: FeatureVersion,
     pub validate_document_create_transition_action_uniqueness: FeatureVersion,
     pub validate_document_replace_transition_action_uniqueness: FeatureVersion,
     pub validate_document_transfer_transition_action_uniqueness: FeatureVersion,
     pub validate_document_purchase_transition_action_uniqueness: FeatureVersion,
     pub validate_document_update_price_transition_action_uniqueness: FeatureVersion,
-    pub validate_uniqueness_of_data: FeatureVersion,
 }
