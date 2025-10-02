@@ -251,7 +251,6 @@ export default function getBaseConfigFactory() {
             },
             waitForStResultTimeout: 120000,
           },
-          // TODO: rs-dapi parallel deployment configuration for first phase testing
           rsDapi: {
             docker: {
               image: `dashpay/rs-dapi:${dockerImageVersion}`,
