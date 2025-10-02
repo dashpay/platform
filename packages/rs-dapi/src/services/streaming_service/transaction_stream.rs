@@ -389,21 +389,20 @@ impl StreamingServiceImpl {
             }
             StreamingEvent::CoreInstantLock { data } => {
                 let txid_bytes = match InstantLock::consensus_decode(&mut data.reader()) {
-                    Ok(instant_lock) => Some(*instant_lock.txid.as_byte_array()),
+                    Ok(instant_lock) => *instant_lock.txid.as_byte_array(),
                     Err(e) => {
                         warn!(
                             subscriber_id,
                             handle_id,
                             error = %e,
-                            "transactions_with_proofs=invalid_instant_lock"
+                            "transactions_with_proofs=drop_invalid_instant_lock"
                         );
-                        None
+
+                        return true;
                     }
                 };
 
-                if let Some(txid_bytes) = txid_bytes
-                    && !state.mark_instant_lock_delivered(&txid_bytes).await
-                {
+                if !state.mark_instant_lock_delivered(&txid_bytes).await {
                     trace!(
                         subscriber_id,
                         handle_id,
