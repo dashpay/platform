@@ -94,7 +94,12 @@ public final class HDWallet: HDWalletModels {
             account.addresses.flatMap { $0.transactions }
         }
     }
-    
+
+    // Transaction count across all accounts
+    public var transactionCount: Int {
+        return transactions.count
+    }
+
     // All addresses across all accounts
     public var addresses: [HDAddress] {
         return accounts.flatMap { $0.addresses }

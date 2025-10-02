@@ -278,8 +278,36 @@ class WalletManager: ObservableObject {
         await loadWallets()
     }
     
+    // MARK: - Transaction Management
+
+    /// Get transactions for a wallet
+    /// - Parameters:
+    ///   - wallet: The wallet to get transactions for
+    ///   - accountIndex: The account index (default 0)
+    /// - Returns: Array of wallet transactions
+    func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        // Get managed account
+        let managedAccount = try sdkWalletManager.getManagedAccount(
+            walletId: walletId,
+            network: network,
+            accountIndex: accountIndex,
+            accountType: .standardBIP44
+        )
+
+        // Get current height (TODO: get from SPV client when available)
+        let currentHeight: UInt32 = 0
+
+        return try managedAccount.getTransactions(currentHeight: currentHeight)
+    }
+
     // MARK: - Account Management
-    
+
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
