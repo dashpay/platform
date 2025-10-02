@@ -156,7 +156,10 @@ public class SPVClient: ObservableObject {
     // FFI handles
     private var client: UnsafeMutablePointer<FFIDashSpvClient>?
     private var config: UnsafeMutablePointer<FFIClientConfig>?
-    
+
+    // Event polling task
+    private var eventPollingTask: Task<Void, Never>?
+
     // Callback context
     private var callbackContext: CallbackContext?
     
@@ -193,6 +196,8 @@ public class SPVClient: ObservableObject {
     public var baseSyncHeight: UInt32 { startFromHeight }
     
     deinit {
+        // Stop event polling (synchronously cancel the task)
+        eventPollingTask?.cancel()
         // Minimal teardown; prefer explicit stop() by callers.
     }
     
@@ -456,6 +461,10 @@ public class SPVClient: ObservableObject {
         syncCancelled = false
         syncStartTime = Date()
         blocksHit = 0
+
+        // Start event polling to drain Rust event queue
+        startEventPolling()
+
         // Reset UI progress to known baseline (0%) before events arrive
         self.syncProgress = SPVSyncProgress(
             stage: .headers,
@@ -531,6 +540,9 @@ public class SPVClient: ObservableObject {
 
     public func stopSync(preserveProgress: Bool = true) {
         guard let client = client else { return }
+
+        // Stop event polling
+        stopEventPolling()
 
         let stopResult = dash_spv_ffi_client_stop(client)
         if stopResult != 0, let err = dash_spv_ffi_get_last_error() {
@@ -715,16 +727,28 @@ public class SPVClient: ObservableObject {
             blockHeight: blockHeight
         )
 
-        // Debug: print tx event summary
-        if swiftLoggingEnabled {
-            let txidHex = txid.map { String(format: "%02x", $0) }.joined()
-            let bh = blockHeight.map(String.init) ?? "nil"
-            print("[SPV][Tx] txid=\(txidHex.prefix(16))… confirmed=\(confirmed) amount=\(amount) blockHeight=\(bh)")
-        }
-
         delegate?.spvClient(self, didReceiveTransaction: transaction)
     }
-    
+
+    // MARK: - Event Polling
+
+    private func startEventPolling() {
+        eventPollingTask?.cancel()
+
+        eventPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self, let client = self.client else { break }
+                dash_spv_ffi_client_drain_events(client)
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+    }
+
+    private func stopEventPolling() {
+        eventPollingTask?.cancel()
+        eventPollingTask = nil
+    }
+
     // MARK: - Wallet Manager Access
     
     public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {

@@ -612,7 +612,7 @@ class WalletManager: ObservableObject {
               let walletId = wallet.walletId else {
             return
         }
-        
+
         // Get balance via SDK wrappers
         do {
             let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: wallet.dashNetwork.toKeyWalletNetwork())
@@ -627,7 +627,77 @@ class WalletManager: ObservableObject {
             print("Failed to update balance: \(error)")
         }
     }
-    
+
+    /// Sync all wallet state from Rust WalletManager to SwiftData
+    /// This should be called whenever the Rust wallet state changes (e.g., after processing a transaction)
+    func syncWalletStateFromRust(for wallet: HDWallet) async {
+        guard let walletId = wallet.walletId else { return }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        // Get the wallet-level balance (this works correctly)
+        guard let walletBalance = try? sdkWalletManager.getWalletBalance(walletId: walletId) else {
+            return
+        }
+
+        do {
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+
+            // Sync all accounts
+            for account in wallet.accounts {
+                if let managed = collection.getBIP44Account(at: account.accountNumber) {
+                    // Sync balance - use wallet-level balance for single-account wallets
+                    // since account-level balance query is currently broken
+                    if account.accountNumber == 0 && wallet.accounts.count == 1 {
+                        account.confirmedBalance = walletBalance.confirmed
+                        account.unconfirmedBalance = walletBalance.unconfirmed
+                    } else if let bal = try? managed.getBalance() {
+                        account.confirmedBalance = bal.confirmed
+                        account.unconfirmedBalance = bal.unconfirmed
+                    }
+
+                    // 2. Sync addresses (update isUsed flags)
+                    if let externalPool = managed.getExternalAddressPool() {
+                        if let infos = try? externalPool.getAddresses(from: 0, to: 100) {
+                            // Update existing addresses and add new ones if needed
+                            for info in infos {
+                                if let existingAddr = account.externalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    // New address discovered - add it
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .external, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.externalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+
+                    if let internalPool = managed.getInternalAddressPool() {
+                        if let infos = try? internalPool.getAddresses(from: 0, to: 100) {
+                            for info in infos {
+                                if let existingAddr = account.internalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .internal, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.internalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save all changes to SwiftData
+            try modelContainer.mainContext.save()
+        } catch {
+            print("❌ [WalletManager] Failed to sync wallet state: \(error)")
+        }
+    }
+
     // MARK: - Public Utility Methods
     
     func reloadWallets() async {
