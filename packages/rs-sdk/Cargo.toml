@@ -13,7 +13,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 ] }
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
-rs-dash-notify = { path = "../rs-dash-notify" }
+rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }

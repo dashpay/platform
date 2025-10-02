@@ -79,7 +79,7 @@ derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-rs-dash-notify = { path = "../rs-dash-notify" }
+rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 sha2 = { version = "0.10" }
 
 [dev-dependencies]

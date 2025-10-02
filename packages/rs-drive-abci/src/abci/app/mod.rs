@@ -14,9 +14,9 @@ use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::DefaultCoreRPC;
 pub use check_tx::CheckTxAbciApplication;
 pub use consensus::ConsensusAbciApplication;
+use dash_event_bus::event_bus::EventBus;
 use dpp::version::PlatformVersion;
 pub use full::FullAbciApplication;
-use rs_dash_notify::event_bus::EventBus;
 
 /// Provides access to the in-process Platform event bus
 pub trait EventBusApplication {

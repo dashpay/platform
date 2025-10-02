@@ -5,9 +5,9 @@ use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
 use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 use dapi_grpc::platform::v0::platform_events_response::Version as RespVersion;
 use dapi_grpc::platform::v0::{AddSubscriptionV0, PingV0, PlatformEventsCommand, PlatformFilterV0};
+use dash_event_bus::{EventMux, GrpcPlatformEventsProducer};
 use rs_dapi_client::transport::create_channel;
 use rs_dapi_client::{RequestSettings, Uri};
-use rs_dash_notify::{EventMux, GrpcPlatformEventsProducer};
 use tokio::time::{timeout, Duration};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]

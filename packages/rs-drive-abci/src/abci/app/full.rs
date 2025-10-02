@@ -12,7 +12,7 @@ use crate::rpc::core::CoreRPCLike;
 use dapi_grpc::platform::v0::PlatformEventV0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
-use rs_dash_notify::event_bus::EventBus;
+use dash_event_bus::event_bus::EventBus;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;

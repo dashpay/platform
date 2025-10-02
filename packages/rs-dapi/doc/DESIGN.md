@@ -294,7 +294,7 @@ rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint and cur
 
 - Upstream behavior:
   - Each client stream obtains its own upstream Drive connection; tokio channels forward commands upstream and pipe responses back downstream without pooling.
-  - The `EventMux` from `rs-dash-notify` is retained for future multiplexing work but does not alter traffic today.
+  - The `EventMux` from `rs-dash-event-bus` is retained for future multiplexing work but does not alter traffic today.
 
 - Observability:
   - Standard `tracing` logging wraps the forwarders, and the proxy participates in the existing `/metrics` exporter via shared counters.

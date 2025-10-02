@@ -7,7 +7,7 @@ use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::{Address, AddressList};
-use rs_dash_notify::SubscriptionHandle;
+use dash_event_bus::SubscriptionHandle;
 use serde::Deserialize;
 use std::str::FromStr;
 use zeroize::Zeroizing;

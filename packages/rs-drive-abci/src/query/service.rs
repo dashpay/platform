@@ -53,9 +53,9 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
+use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
+use dash_event_bus::{sender_sink, EventMux};
 use dpp::version::PlatformVersion;
-use rs_dash_notify::event_bus::{EventBus, Filter as EventBusFilter, SubscriptionHandle};
-use rs_dash_notify::{sender_sink, EventMux};
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
@@ -100,7 +100,7 @@ impl QueryService {
             workers.spawn(async move {
                 use std::sync::Arc;
                 let mk = Arc::new(|f| PlatformFilterAdapter::new(f));
-                rs_dash_notify::run_local_platform_events_producer(worker_mux, bus, mk).await;
+                dash_event_bus::run_local_platform_events_producer(worker_mux, bus, mk).await;
             });
         }
 
@@ -906,7 +906,7 @@ impl PlatformService for QueryService {
     }
 }
 
-// Local event forwarding handled in rs_dash_notify shared local_bus_producer
+// Local event forwarding handled in dash_event_bus shared local_bus_producer
 
 /// Local producer: consumes commands from mux and produces responses by
 /// subscribing to internal `event_bus` and forwarding events as responses.
@@ -960,7 +960,7 @@ async fn run_local_platform_events_producer(
                         let handle_clone = handle.clone();
                         let resp_tx_clone = resp_tx.clone();
                         tokio::spawn(async move {
-                            // forwarding handled in rs-dash-notify shared producer in new setup
+                            // forwarding handled in rs-dash-event-bus shared producer in new setup
                             let _ = (handle_clone, id_for, resp_tx_clone);
                         });
 

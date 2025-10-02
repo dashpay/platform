@@ -14,7 +14,7 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use futures::FutureExt;
-use rs_dash_notify::EventMux;
+use dash_event_bus::EventMux;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -144,7 +144,7 @@ impl PlatformServiceImpl {
         let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
         workers.spawn(async {
             if let Err(e) =
-                rs_dash_notify::GrpcPlatformEventsProducer::run(worker_mux, mux_client, ready_tx)
+                dash_event_bus::GrpcPlatformEventsProducer::run(worker_mux, mux_client, ready_tx)
                     .await
             {
                 tracing::error!("platform events producer terminated: {}", e);

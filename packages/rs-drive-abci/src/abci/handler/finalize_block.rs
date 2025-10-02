@@ -113,7 +113,7 @@ where
 }
 
 fn publish_block_committed_event(
-    event_bus: &rs_dash_notify::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    event_bus: &dash_event_bus::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
     request_finalize_block: &FinalizeBlockCleanedRequest,
 ) -> Result<(), Error> {
     // Publish BlockCommitted platform event to the global event bus (best-effort)
@@ -146,7 +146,7 @@ fn publish_block_committed_event(
 }
 
 fn publish_state_transition_result_events(
-    event_bus: &rs_dash_notify::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    event_bus: &dash_event_bus::event_bus::EventBus<PlatformEventV0, PlatformFilterAdapter>,
     request_finalize_block: &FinalizeBlockCleanedRequest,
 ) -> Result<(), Error> {
     // Prepare BlockMetadata once

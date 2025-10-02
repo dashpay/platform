@@ -21,7 +21,7 @@ pub fn start(
     cancel: CancellationToken,
 ) {
     // Create a shared EventBus for platform events (filters adapted from gRPC filters)
-    let event_bus = rs_dash_notify::event_bus::EventBus::<
+    let event_bus = dash_event_bus::event_bus::EventBus::<
         dapi_grpc::platform::v0::PlatformEventV0,
         crate::query::PlatformFilterAdapter,
     >::new();

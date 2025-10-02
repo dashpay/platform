@@ -86,7 +86,7 @@ dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
 quick_cache = "0.6.16"
 prometheus = "0.14"
 once_cell = "1.19"
-rs-dash-notify = { path = "../rs-dash-notify" }
+rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 
 # Dash Core RPC client
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "ed9aa52a21b61ead36c9407a9fe09a32fe24681c" }

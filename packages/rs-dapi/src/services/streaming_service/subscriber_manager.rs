@@ -5,7 +5,7 @@ use tracing::{error, trace, warn};
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::{Transaction as CoreTx, consensus::encode::deserialize};
-use rs_dash_notify::event_bus::{
+use dash_event_bus::event_bus::{
     EventBus, Filter as EventBusFilter, SubscriptionHandle as EventBusSubscriptionHandle,
 };
 
