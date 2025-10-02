@@ -635,23 +635,14 @@ class WalletManager: ObservableObject {
 
         let network = wallet.dashNetwork.toKeyWalletNetwork()
 
-        // Get the wallet-level balance (this works correctly)
-        guard let walletBalance = try? sdkWalletManager.getWalletBalance(walletId: walletId) else {
-            return
-        }
-
         do {
             let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
 
             // Sync all accounts
             for account in wallet.accounts {
                 if let managed = collection.getBIP44Account(at: account.accountNumber) {
-                    // Sync balance - use wallet-level balance for single-account wallets
-                    // since account-level balance query is currently broken
-                    if account.accountNumber == 0 && wallet.accounts.count == 1 {
-                        account.confirmedBalance = walletBalance.confirmed
-                        account.unconfirmedBalance = walletBalance.unconfirmed
-                    } else if let bal = try? managed.getBalance() {
+                    // Sync balance from account
+                    if let bal = try? managed.getBalance() {
                         account.confirmedBalance = bal.confirmed
                         account.unconfirmedBalance = bal.unconfirmed
                     }
