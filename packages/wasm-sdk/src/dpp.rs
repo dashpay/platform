@@ -298,6 +298,15 @@ impl IdentityWasm {
 pub struct DataContractWasm(DataContract);
 
 impl DataContractWasm {
+    /// Create a DataContractWasm from a DataContract.
+    ///
+    /// This is the primary constructor for wrapping a data contract.
+    /// Note that serialization via `to_json()` requires providing an explicit
+    /// platform version to ensure version-specific fields (e.g., `groups` and
+    /// `tokens` for token contracts) are correctly included.
+    ///
+    /// # Arguments
+    /// * `data_contract` - The data contract to wrap
     pub(crate) fn from_data_contract(data_contract: DataContract) -> Self {
         Self(data_contract)
     }
