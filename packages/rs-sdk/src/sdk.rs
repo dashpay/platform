@@ -44,7 +44,9 @@ use std::sync::{atomic, Arc};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
 #[cfg(feature = "mocks")]
-use tokio::sync::{Mutex, MutexGuard};
+use tokio::sync::MutexGuard;
+use tokio::sync::Mutex;
+use tokio::task::JoinSet;
 use tokio_util::sync::{CancellationToken, WaitForCancellationFuture};
 use zeroize::Zeroizing;
 
@@ -140,6 +142,9 @@ pub struct Sdk {
 
     #[cfg(feature = "mocks")]
     dump_dir: Option<PathBuf>,
+
+    /// Set of worker tasks spawned by the SDK
+    workers: Arc<Mutex<JoinSet<()>>>,
 }
 impl Clone for Sdk {
     fn clone(&self) -> Self {
@@ -154,6 +159,7 @@ impl Clone for Sdk {
             metadata_height_tolerance: self.metadata_height_tolerance,
             metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
             dapi_client_settings: self.dapi_client_settings,
+            workers: Arc::clone(&self.workers),
             #[cfg(feature = "mocks")]
             dump_dir: self.dump_dir.clone(),
         }
@@ -593,6 +599,25 @@ impl Sdk {
             #[cfg(feature = "mocks")]
             SdkInstance::Mock { address_list, .. } => address_list,
         }
+    }
+
+    /// Spawn a new worker task that will be managed by the Sdk.
+    pub(crate) async fn spawn(
+        &self,
+        task: impl std::future::Future<Output = ()> + Send + 'static,
+    ) -> tokio::sync::oneshot::Receiver<()> {
+        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
+        let mut workers = self
+            .workers
+            .try_lock()
+            .expect("workers lock is poisoned or in use");
+        workers.spawn(async move {
+            task.await;
+            let _ = done_tx.send(());
+        });
+        tokio::task::yield_now().await;
+
+        done_rx
     }
 }
 
@@ -1076,6 +1101,7 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    workers: Default::default(),
                     #[cfg(feature = "mocks")]
                     dump_dir: self.dump_dir,
                 };
@@ -1144,6 +1170,7 @@ impl SdkBuilder {
                     metadata_last_seen_height: Arc::new(atomic::AtomicU64::new(0)),
                     metadata_height_tolerance: self.metadata_height_tolerance,
                     metadata_time_tolerance_ms: self.metadata_time_tolerance_ms,
+                    workers: Default::default(),
                 };
                 let mut guard = mock_sdk.try_lock().expect("mock sdk is in use by another thread and cannot be reconfigured");
                 guard.set_sdk(sdk.clone());
@@ -1156,6 +1183,10 @@ impl SdkBuilder {
             #[cfg(not(feature = "mocks"))]
             None => return Err(Error::Config("Mock mode is not available. Please enable `mocks` feature or provide address list.".to_string())),
         };
+
+        // let sdk_clone = sdk.clone();
+        // start subscribing to events
+        // crate::sync::block_on(async move { sdk_clone.get_event_mux().await })??;
 
         Ok(sdk)
     }

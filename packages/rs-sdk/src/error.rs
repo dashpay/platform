@@ -38,6 +38,9 @@ pub enum Error {
     /// DAPI client error, for example, connection error
     #[error("Dapi client error: {0}")]
     DapiClientError(rs_dapi_client::DapiClientError),
+    /// Subscription error
+    #[error("Subscription error: {0}")]
+    SubscriptionError(String),
     #[cfg(feature = "mocks")]
     /// DAPI mocks error
     #[error("Dapi mocks error: {0}")]

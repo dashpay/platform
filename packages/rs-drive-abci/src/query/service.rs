@@ -47,20 +47,33 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    PlatformEventV0 as PlatformEvent, PlatformEventsCommand, PlatformEventsResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
+use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
+use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter};
+use dash_event_bus::{sender_sink, EventMux};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
+
+const PLATFORM_EVENTS_STREAM_BUFFER: usize = 128;
 
 /// Service to handle platform queries
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
+    _event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    /// Multiplexer for Platform events
+    platform_events_mux: EventMux,
+    /// background worker tasks
+    workers: Arc<Mutex<tokio::task::JoinSet<()>>>,
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -72,8 +85,30 @@ type QueryMethod<RQ, RS> = fn(
 
 impl QueryService {
     /// Creates new QueryService
-    pub fn new(platform: Arc<Platform<DefaultCoreRPC>>) -> Self {
-        Self { platform }
+    pub fn new(
+        platform: Arc<Platform<DefaultCoreRPC>>,
+        event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    ) -> Self {
+        let mux = EventMux::new();
+        let mut workers = tokio::task::JoinSet::new();
+
+        // Start local mux producer to bridge internal event_bus
+        {
+            let bus = event_bus.clone();
+            let worker_mux = mux.clone();
+            workers.spawn(async move {
+                use std::sync::Arc;
+                let mk = Arc::new(|f| PlatformFilterAdapter::new(f));
+                dash_event_bus::run_local_platform_events_producer(worker_mux, bus, mk).await;
+            });
+        }
+
+        Self {
+            platform,
+            _event_bus: event_bus,
+            platform_events_mux: mux,
+            workers: Arc::new(Mutex::new(workers)),
+        }
     }
 
     async fn handle_blocking_query<RQ, RS>(
@@ -250,6 +285,47 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
     tracing::error!("{} endpoint is called but it's not supported", name);
 
     Err(Status::unimplemented("the endpoint is not supported"))
+}
+
+/// Adapter implementing EventBus filter semantics based on incoming gRPC `PlatformFilterV0`.
+#[derive(Clone, Debug)]
+pub struct PlatformFilterAdapter {
+    inner: dapi_grpc::platform::v0::PlatformFilterV0,
+}
+
+impl PlatformFilterAdapter {
+    /// Create a new adapter wrapping the provided gRPC `PlatformFilterV0`.
+    pub fn new(inner: dapi_grpc::platform::v0::PlatformFilterV0) -> Self {
+        Self { inner }
+    }
+}
+
+impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
+    fn matches(&self, event: &PlatformEvent) -> bool {
+        use dapi_grpc::platform::v0::platform_event_v0::Event as Evt;
+        use dapi_grpc::platform::v0::platform_filter_v0::Kind;
+        match self.inner.kind.as_ref() {
+            None => false,
+            Some(Kind::All(all)) => *all,
+            Some(Kind::BlockCommitted(b)) => {
+                if !*b {
+                    return false;
+                }
+                matches!(event.event, Some(Evt::BlockCommitted(_)))
+            }
+            Some(Kind::StateTransitionResult(filter)) => {
+                // If tx_hash is provided, match only that hash; otherwise match any STR
+                if let Some(Evt::StateTransitionFinalized(ref r)) = event.event {
+                    match &filter.tx_hash {
+                        Some(h) => r.tx_hash == *h,
+                        None => true,
+                    }
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -802,8 +878,32 @@ impl PlatformService for QueryService {
         )
         .await
     }
-}
 
+    type subscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
+
+    /// Uses EventMux: forward inbound commands to mux subscriber and return its response stream
+    async fn subscribe_platform_events(
+        &self,
+        request: Request<Streaming<PlatformEventsCommand>>,
+    ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
+        // TODO: two issues are to be resolved:
+        // 1) restart of client with the same subscription id shows that old subscription is not removed
+        // 2) connection drops after some time
+        // return Err(Status::unimplemented("the endpoint is not supported yet"));
+        let inbound = request.into_inner();
+        let (downstream_tx, rx) =
+            mpsc::channel::<Result<PlatformEventsResponse, Status>>(PLATFORM_EVENTS_STREAM_BUFFER);
+        let subscriber = self.platform_events_mux.add_subscriber().await;
+
+        let mut workers = self.workers.lock().unwrap();
+        workers.spawn(async move {
+            let resp_sink = sender_sink(downstream_tx);
+            subscriber.forward(inbound, resp_sink).await;
+        });
+
+        Ok(Response::new(ReceiverStream::new(rx)))
+    }
+}
 #[async_trait]
 impl DriveInternal for QueryService {
     async fn get_proofs(

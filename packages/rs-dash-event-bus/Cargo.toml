@@ -1,0 +1,37 @@
+[package]
+name = "rs-dash-event-bus"
+version = "2.1.0-dev.3"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Shared event bus and Platform events multiplexer for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
+
+[lib]
+name = "dash_event_bus"
+path = "src/lib.rs"
+
+[features]
+default = []
+metrics = ["dep:metrics"]
+
+[dependencies]
+tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
+tokio-stream = { version = "0.1", features = ["sync"] }
+tokio-util = { version = "0.7", features = ["rt"] }
+tracing = "0.1"
+futures = "0.3"
+sender-sink = { version = "0.2.1" }
+
+# Internal workspace crates
+dapi-grpc = { path = "../dapi-grpc" }
+rs-dapi-client = { path = "../rs-dapi-client" }
+
+# Optional metrics
+metrics = { version = "0.24.2", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+] }

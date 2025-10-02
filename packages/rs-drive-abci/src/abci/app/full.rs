@@ -1,13 +1,18 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, EventBusApplication, PlatformApplication, TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::CoreRPCLike;
+use dapi_grpc::platform::v0::PlatformEventV0;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
+use dash_event_bus::event_bus::EventBus;
 use std::fmt::Debug;
 use std::sync::RwLock;
 use tenderdash_abci::proto::abci as proto;
@@ -23,6 +28,8 @@ pub struct FullAbciApplication<'a, C> {
     pub transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
     pub block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// In-process Platform event bus used to publish events at finalize_block
+    pub event_bus: EventBus<PlatformEventV0, PlatformFilterAdapter>,
 }
 
 impl<'a, C> FullAbciApplication<'a, C> {
@@ -32,6 +39,7 @@ impl<'a, C> FullAbciApplication<'a, C> {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            event_bus: EventBus::new(),
         }
     }
 }
@@ -45,6 +53,12 @@ impl<C> PlatformApplication<C> for FullAbciApplication<'_, C> {
 impl<C> BlockExecutionApplication for FullAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
+    }
+}
+
+impl<C> EventBusApplication for FullAbciApplication<'_, C> {
+    fn event_bus(&self) -> &EventBus<PlatformEventV0, PlatformFilterAdapter> {
+        &self.event_bus
     }
 }
 
