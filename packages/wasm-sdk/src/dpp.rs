@@ -310,19 +310,26 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(js_name=fromJSON)]
-    pub fn from_json(json: &JsValue, platform_version: u32) -> Result<DataContractWasm, WasmSdkError> {
+    pub fn from_json(
+        json: &JsValue,
+        platform_version: u32,
+    ) -> Result<DataContractWasm, WasmSdkError> {
         let platform_version = &PlatformVersion::get(platform_version).map_err(|e| {
             WasmSdkError::invalid_argument(format!(
                 "unknown platform version {platform_version}: {e}"
             ))
         })?;
 
-        let data_contract = DataContract::from_json(serde_wasm_bindgen::from_value(json.clone()).map_err(|e| {
+        let data_contract = DataContract::from_json(
+            serde_wasm_bindgen::from_value(json.clone()).map_err(|e| {
                 WasmSdkError::serialization(format!("failed to convert json: {}", e))
-            })?, true, platform_version)
-            .map_err(|e| {
-                WasmSdkError::serialization(format!("failed to create DataContract from json: {}", e))
-            })?;
+            })?,
+            true,
+            platform_version,
+        )
+        .map_err(|e| {
+            WasmSdkError::serialization(format!("failed to create DataContract from json: {}", e))
+        })?;
 
         Ok(data_contract.into())
     }
