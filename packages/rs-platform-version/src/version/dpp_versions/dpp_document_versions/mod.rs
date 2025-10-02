@@ -2,6 +2,7 @@ use versioned_feature_core::{FeatureVersion, FeatureVersionBounds};
 
 pub mod v1;
 pub mod v2;
+pub mod v3;
 
 #[derive(Clone, Debug, Default)]
 pub struct DPPDocumentVersions {

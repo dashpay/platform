@@ -3,13 +3,13 @@ use crate::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use crate::data_contract::document_type::DocumentType;
 
 use crate::consensus::basic::document::{
-    DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError, MissingDocumentTypeError,
+    DocumentFieldMaxSizeExceededError, InvalidDocumentTypeError,
 };
 use crate::consensus::basic::BasicError;
 use crate::consensus::ConsensusError;
 use crate::data_contract::schema::DataContractSchemaMethodsV0;
 use crate::data_contract::DataContract;
-use crate::document::{property_names, Document, DocumentV0Getters};
+use crate::document::{Document, DocumentV0Getters};
 use crate::validation::SimpleConsensusValidationResult;
 use crate::ProtocolError;
 use platform_value::Value;
@@ -97,7 +97,6 @@ impl DataContract {
         }
     }
 
-    // TODO: Move to document
     #[inline(always)]
     pub(super) fn validate_document_v0(
         &self,
@@ -105,30 +104,6 @@ impl DataContract {
         document: &Document,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, ProtocolError> {
-        // Make sure that the document type is defined in the contract
-        let Some(document_type) = self.document_type_optional_for_name(name) else {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                InvalidDocumentTypeError::new(name.to_string(), self.id()).into(),
-            ));
-        };
-
-        // Make sure that timestamps are present if required
-        let required_fields = document_type.required_fields();
-
-        if required_fields.contains(property_names::CREATED_AT) && document.created_at().is_none() {
-            // TODO: Create a special consensus error for this
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                MissingDocumentTypeError::new().into(),
-            ));
-        }
-
-        if required_fields.contains(property_names::UPDATED_AT) && document.updated_at().is_none() {
-            // TODO: Create a special consensus error for this
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                MissingDocumentTypeError::new().into(),
-            ));
-        }
-
         // Validate user defined properties
         self.validate_document_properties_v0(name, document.properties().into(), platform_version)
     }

@@ -1674,7 +1674,9 @@ fn is_numeric_value(value: &Value) -> bool {
 fn meta_field_property_type(field: &str) -> Option<DocumentPropertyType> {
     match field {
         // Identifiers
-        "$id" | "$ownerId" | "$dataContractId" => Some(DocumentPropertyType::Identifier),
+        "$id" | "$ownerId" | "$dataContractId" | "$creatorId" => {
+            Some(DocumentPropertyType::Identifier)
+        }
         // Dates (millis since epoch)
         "$createdAt" | "$updatedAt" | "$transferredAt" => Some(DocumentPropertyType::Date),
         // Block heights and core block heights

@@ -616,6 +616,7 @@ impl WasmSdk {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         });
 
         // Fetch the identity to get the correct key
@@ -940,6 +941,7 @@ impl WasmSdk {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         });
 
         // Create a delete transition
@@ -1049,6 +1051,7 @@ impl WasmSdk {
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
+            creator_id: document.creator_id(),
         });
 
         // Fetch the identity to get the correct key
@@ -1182,6 +1185,7 @@ impl WasmSdk {
             created_at_core_block_height: document.created_at_core_block_height(),
             updated_at_core_block_height: document.updated_at_core_block_height(),
             transferred_at_core_block_height: document.transferred_at_core_block_height(),
+            creator_id: document.creator_id(),
         });
 
         // Fetch buyer identity
@@ -1343,6 +1347,7 @@ impl WasmSdk {
             created_at_core_block_height: existing_doc.created_at_core_block_height(),
             updated_at_core_block_height: existing_doc.updated_at_core_block_height(),
             transferred_at_core_block_height: existing_doc.transferred_at_core_block_height(),
+            creator_id: existing_doc.creator_id(),
         });
 
         // Fetch the identity to get the authentication key
