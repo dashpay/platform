@@ -323,18 +323,19 @@ class WalletManager: ObservableObject {
         var ffiType = FFIAccountType(rawValue: 0)
         if let m = managed {
             ffiType = FFIAccountType(rawValue: m.accountType?.rawValue ?? 0)
-            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            // Query all generated addresses (up to 10000 to be safe, includes gap limit)
+            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 10000) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
-            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 10000) {
                 internalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
             // Single pool fallback
-            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 10000) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
@@ -647,9 +648,9 @@ class WalletManager: ObservableObject {
                         account.unconfirmedBalance = bal.unconfirmed
                     }
 
-                    // 2. Sync addresses (update isUsed flags)
+                    // Sync addresses (update isUsed flags and add new addresses)
                     if let externalPool = managed.getExternalAddressPool() {
-                        if let infos = try? externalPool.getAddresses(from: 0, to: 100) {
+                        if let infos = try? externalPool.getAddresses(from: 0, to: 10000) {
                             // Update existing addresses and add new ones if needed
                             for info in infos {
                                 if let existingAddr = account.externalAddresses.first(where: { $0.address == info.address }) {
@@ -666,7 +667,7 @@ class WalletManager: ObservableObject {
                     }
 
                     if let internalPool = managed.getInternalAddressPool() {
-                        if let infos = try? internalPool.getAddresses(from: 0, to: 100) {
+                        if let infos = try? internalPool.getAddresses(from: 0, to: 10000) {
                             for info in infos {
                                 if let existingAddr = account.internalAddresses.first(where: { $0.address == info.address }) {
                                     existingAddr.isUsed = info.used
