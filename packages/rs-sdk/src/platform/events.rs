@@ -1,9 +1,9 @@
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::PlatformFilterV0;
-use rs_dapi_client::transport::{create_channel, PlatformGrpcClient};
-use rs_dapi_client::{RequestSettings, Uri};
 use dash_event_bus::GrpcPlatformEventsProducer;
 use dash_event_bus::{EventMux, PlatformEventsSubscriptionHandle};
+use rs_dapi_client::transport::{create_channel, PlatformGrpcClient};
+use rs_dapi_client::{RequestSettings, Uri};
 use std::time::Duration;
 use tokio::time::timeout;
 

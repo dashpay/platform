@@ -3,11 +3,11 @@ use dapi_grpc::platform::v0::PlatformFilterV0;
 use dapi_grpc::platform::v0::{
     platform_events_response::platform_events_response_v0::Response as Resp, PlatformEventsResponse,
 };
+use dash_event_bus::SubscriptionHandle;
 use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
 use dash_sdk::platform::types::epoch::Epoch;
 use dash_sdk::{Sdk, SdkBuilder};
 use rs_dapi_client::{Address, AddressList};
-use dash_event_bus::SubscriptionHandle;
 use serde::Deserialize;
 use std::str::FromStr;
 use zeroize::Zeroizing;
