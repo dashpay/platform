@@ -5073,7 +5073,7 @@ dependencies = [
 
 [[package]]
 name = "rs-dash-event-bus"
-version = "2.1.0-dev.3"
+version = "2.1.0-dev.7"
 dependencies = [
  "dapi-grpc",
  "futures",
