@@ -1,4 +1,4 @@
-import init, * as sdk from '../../dist/sdk.js';
+import init, * as sdk from '../../dist/sdk.compressed.js';
 
 describe('Epochs and evonode blocks', function describeEpochs() {
   this.timeout(60000);

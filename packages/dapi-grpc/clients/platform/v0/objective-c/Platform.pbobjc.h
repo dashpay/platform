@@ -80,6 +80,11 @@ CF_EXTERN_C_BEGIN
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0;
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodeProposedBlocks;
 @class GetEvonodesProposedEpochBlocksResponse_GetEvonodesProposedEpochBlocksResponseV0_EvonodesProposedBlocks;
+@class GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0;
+@class GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0;
+@class GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer;
+@class GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo;
+@class GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos;
 @class GetGroupActionSignersRequest_GetGroupActionSignersRequestV0;
 @class GetGroupActionSignersResponse_GetGroupActionSignersResponseV0;
 @class GetGroupActionSignersResponse_GetGroupActionSignersResponseV0_GroupActionSigner;
@@ -139,6 +144,10 @@ CF_EXTERN_C_BEGIN
 @class GetIdentityBalanceAndRevisionResponse_GetIdentityBalanceAndRevisionResponseV0_BalanceAndRevision;
 @class GetIdentityBalanceRequest_GetIdentityBalanceRequestV0;
 @class GetIdentityBalanceResponse_GetIdentityBalanceResponseV0;
+@class GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse;
+@class GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse;
 @class GetIdentityByPublicKeyHashRequest_GetIdentityByPublicKeyHashRequestV0;
 @class GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0;
 @class GetIdentityContractNonceRequest_GetIdentityContractNonceRequestV0;
@@ -184,12 +193,19 @@ CF_EXTERN_C_BEGIN
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive;
 @class GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash;
 @class GetStatusResponse_GetStatusResponseV0_Version_Software;
+@class GetTokenContractInfoRequest_GetTokenContractInfoRequestV0;
+@class GetTokenContractInfoResponse_GetTokenContractInfoResponseV0;
+@class GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData;
 @class GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PriceForQuantity;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_PricingSchedule;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePriceEntry;
 @class GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchasePricesResponseV0_TokenDirectPurchasePrices;
+@class GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo;
+@class GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0;
+@class GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0;
+@class GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0;
 @class GetTokenPreProgrammedDistributionsRequest_GetTokenPreProgrammedDistributionsRequestV0_StartAtInfo;
 @class GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgrammedDistributionsResponseV0;
@@ -2440,6 +2456,143 @@ GPB_FINAL @interface GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHa
  **/
 void GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0_ClearResultOneOfCase(GetIdentityByPublicKeyHashResponse_GetIdentityByPublicKeyHashResponseV0 *message);
 
+#pragma mark - GetIdentityByNonUniquePublicKeyHashRequest
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase) {
+  GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityByNonUniquePublicKeyHashRequest_ClearVersionOneOfCase(GetIdentityByNonUniquePublicKeyHashRequest *message);
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0_FieldNumber_PublicKeyHash = 1,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0_FieldNumber_StartAfter = 2,
+  GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0_FieldNumber_Prove = 3,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashRequest_GetIdentityByNonUniquePublicKeyHashRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *publicKeyHash;
+
+/** Give one result after a previous result */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *startAfter;
+/** Test to see if @c startAfter has been set. */
+@property(nonatomic, readwrite) BOOL hasStartAfter;
+
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase) {
+  GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetIdentityByNonUniquePublicKeyHashResponse_ClearVersionOneOfCase(GetIdentityByNonUniquePublicKeyHashResponse *message);
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Proof = 2,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Identity = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_Result_OneOfCase resultOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse *identity;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_ClearResultOneOfCase(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0 *message);
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse_FieldNumber_Identity = 1,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityResponse : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identity;
+/** Test to see if @c identity has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentity;
+
+@end
+
+#pragma mark - GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse
+
+typedef GPB_ENUM(GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber) {
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_GrovedbIdentityPublicKeyHashProof = 1,
+  GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse_FieldNumber_IdentityProofBytes = 2,
+};
+
+GPB_FINAL @interface GetIdentityByNonUniquePublicKeyHashResponse_GetIdentityByNonUniquePublicKeyHashResponseV0_IdentityProvedResponse : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) Proof *grovedbIdentityPublicKeyHashProof;
+/** Test to see if @c grovedbIdentityPublicKeyHashProof has been set. */
+@property(nonatomic, readwrite) BOOL hasGrovedbIdentityPublicKeyHashProof;
+
+/** A hack, we return 2 proofs */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityProofBytes;
+/** Test to see if @c identityProofBytes has been set. */
+@property(nonatomic, readwrite) BOOL hasIdentityProofBytes;
+
+@end
+
 #pragma mark - WaitForStateTransitionResultRequest
 
 typedef GPB_ENUM(WaitForStateTransitionResultRequest_FieldNumber) {
@@ -3108,6 +3261,223 @@ GPB_FINAL @interface GetEpochsInfoResponse_GetEpochsInfoResponseV0_EpochInfo : G
 @property(nonatomic, readwrite) double feeMultiplier;
 
 @property(nonatomic, readwrite) uint32_t protocolVersion;
+
+@end
+
+#pragma mark - GetFinalizedEpochInfosRequest
+
+typedef GPB_ENUM(GetFinalizedEpochInfosRequest_FieldNumber) {
+  GetFinalizedEpochInfosRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetFinalizedEpochInfosRequest_Version_OneOfCase) {
+  GetFinalizedEpochInfosRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetFinalizedEpochInfosRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetFinalizedEpochInfosRequest : GPBMessage
+
+@property(nonatomic, readonly) GetFinalizedEpochInfosRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetFinalizedEpochInfosRequest_ClearVersionOneOfCase(GetFinalizedEpochInfosRequest *message);
+
+#pragma mark - GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0
+
+typedef GPB_ENUM(GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber) {
+  GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber_StartEpochIndex = 1,
+  GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber_StartEpochIndexIncluded = 2,
+  GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber_EndEpochIndex = 3,
+  GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber_EndEpochIndexIncluded = 4,
+  GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0_FieldNumber_Prove = 5,
+};
+
+GPB_FINAL @interface GetFinalizedEpochInfosRequest_GetFinalizedEpochInfosRequestV0 : GPBMessage
+
+/** The starting epoch index */
+@property(nonatomic, readwrite) uint32_t startEpochIndex;
+
+/** Whether to include the start epoch */
+@property(nonatomic, readwrite) BOOL startEpochIndexIncluded;
+
+/** The ending epoch index */
+@property(nonatomic, readwrite) uint32_t endEpochIndex;
+
+/** Whether to include the end epoch */
+@property(nonatomic, readwrite) BOOL endEpochIndexIncluded;
+
+/** Flag to request a proof as the response */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetFinalizedEpochInfosResponse
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_FieldNumber) {
+  GetFinalizedEpochInfosResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_Version_OneOfCase) {
+  GetFinalizedEpochInfosResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetFinalizedEpochInfosResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetFinalizedEpochInfosResponse : GPBMessage
+
+@property(nonatomic, readonly) GetFinalizedEpochInfosResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetFinalizedEpochInfosResponse_ClearVersionOneOfCase(GetFinalizedEpochInfosResponse *message);
+
+#pragma mark - GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FieldNumber) {
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FieldNumber_Epochs = 1,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FieldNumber_Proof = 2,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_Result_OneOfCase) {
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_Result_OneOfCase_Epochs = 1,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** The actual finalized information about the requested epochs */
+@property(nonatomic, readwrite, strong, null_resettable) GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos *epochs;
+
+/** Cryptographic proof of the finalized epoch information, if requested */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_ClearResultOneOfCase(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0 *message);
+
+#pragma mark - GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos_FieldNumber) {
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos_FieldNumber_FinalizedEpochInfosArray = 1,
+};
+
+/**
+ * FinalizedEpochInfos holds a collection of finalized epoch information entries
+ **/
+GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos : GPBMessage
+
+/** List of finalized information for each requested epoch */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo*> *finalizedEpochInfosArray;
+/** The number of items in @c finalizedEpochInfosArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger finalizedEpochInfosArray_Count;
+
+@end
+
+#pragma mark - GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber) {
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_Number = 1,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_FirstBlockHeight = 2,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_FirstCoreBlockHeight = 3,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_FirstBlockTime = 4,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_FeeMultiplier = 5,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_ProtocolVersion = 6,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_TotalBlocksInEpoch = 7,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_NextEpochStartCoreBlockHeight = 8,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_TotalProcessingFees = 9,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_TotalDistributedStorageFees = 10,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_TotalCreatedStorageFees = 11,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_CoreBlockRewards = 12,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo_FieldNumber_BlockProposersArray = 13,
+};
+
+/**
+ * FinalizedEpochInfo represents finalized information about a single epoch
+ **/
+GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfo : GPBMessage
+
+/** The number of the epoch */
+@property(nonatomic, readwrite) uint32_t number;
+
+/** The height of the first block in this epoch */
+@property(nonatomic, readwrite) uint64_t firstBlockHeight;
+
+/** The height of the first Core block in this epoch */
+@property(nonatomic, readwrite) uint32_t firstCoreBlockHeight;
+
+/** The timestamp of the first block (milliseconds) */
+@property(nonatomic, readwrite) uint64_t firstBlockTime;
+
+/** The fee multiplier (converted from permille) */
+@property(nonatomic, readwrite) double feeMultiplier;
+
+/** The protocol version for this epoch */
+@property(nonatomic, readwrite) uint32_t protocolVersion;
+
+/** Total number of blocks in the epoch */
+@property(nonatomic, readwrite) uint64_t totalBlocksInEpoch;
+
+/** Core block height where next epoch starts */
+@property(nonatomic, readwrite) uint32_t nextEpochStartCoreBlockHeight;
+
+/** Total processing fees collected */
+@property(nonatomic, readwrite) uint64_t totalProcessingFees;
+
+/** Total storage fees distributed */
+@property(nonatomic, readwrite) uint64_t totalDistributedStorageFees;
+
+/** Total storage fees created */
+@property(nonatomic, readwrite) uint64_t totalCreatedStorageFees;
+
+/** Rewards from core blocks */
+@property(nonatomic, readwrite) uint64_t coreBlockRewards;
+
+/** List of block proposers and their counts */
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer*> *blockProposersArray;
+/** The number of items in @c blockProposersArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger blockProposersArray_Count;
+
+@end
+
+#pragma mark - GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer
+
+typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer_FieldNumber) {
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer_FieldNumber_ProposerId = 1,
+  GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer_FieldNumber_BlockCount = 2,
+};
+
+/**
+ * BlockProposer represents a block proposer and their block count
+ **/
+GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_BlockProposer : GPBMessage
+
+/** The proposer's identifier */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *proposerId;
+
+/** Number of blocks proposed */
+@property(nonatomic, readwrite) uint32_t blockCount;
 
 @end
 
@@ -5495,6 +5865,63 @@ GPB_FINAL @interface GetTokenStatusesResponse_GetTokenStatusesResponseV0_TokenSt
 
 @end
 
+#pragma mark - GetTokenDirectPurchasePricesRequest
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Retrieve direct purchase prices defined for one or more tokens.
+ *
+ * Some tokens can have a direct purchase price defined using
+ * `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
+ * This request retrieves the direct purchase prices for those tokens and
+ * returns [GetTokenDirectPurchasePricesResponse].
+ **/
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
+
+#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
+
+typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
+  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
+};
+
+GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
+
+/**
+ * List of token IDs to get prices for.
+ *
+ * The list must not be empty.
+ * Token IDs must have 32 bytes and be unique.
+ * Results for non-unique token IDs are undefined.
+ **/
+@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
+/** The number of items in @c tokenIdsArray without causing the array to be created. */
+@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
+
+/** Whether to return proofs for the response, or just direct response. */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
 #pragma mark - GetTokenDirectPurchasePricesResponse
 
 typedef GPB_ENUM(GetTokenDirectPurchasePricesResponse_FieldNumber) {
@@ -5655,60 +6082,133 @@ GPB_FINAL @interface GetTokenDirectPurchasePricesResponse_GetTokenDirectPurchase
 
 @end
 
-#pragma mark - GetTokenDirectPurchasePricesRequest
+#pragma mark - GetTokenContractInfoRequest
 
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_FieldNumber) {
-  GetTokenDirectPurchasePricesRequest_FieldNumber_V0 = 1,
+typedef GPB_ENUM(GetTokenContractInfoRequest_FieldNumber) {
+  GetTokenContractInfoRequest_FieldNumber_V0 = 1,
 };
 
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_Version_OneOfCase) {
-  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
-  GetTokenDirectPurchasePricesRequest_Version_OneOfCase_V0 = 1,
+typedef GPB_ENUM(GetTokenContractInfoRequest_Version_OneOfCase) {
+  GetTokenContractInfoRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenContractInfoRequest_Version_OneOfCase_V0 = 1,
 };
 
 /**
- * Retrieve direct purchase prices defined for one or more tokens.
- *
- * Some tokens can have a direct purchase price defined using
- * `TokenSetPriceForDirectPurchaseTransition` (see `dpp` crate for details).
- * This request retrieves the direct purchase prices for those tokens and
- * returns [GetTokenDirectPurchasePricesResponse].
+ * Request to retrieve token contract info for a specific token ID.
  **/
-GPB_FINAL @interface GetTokenDirectPurchasePricesRequest : GPBMessage
+GPB_FINAL @interface GetTokenContractInfoRequest : GPBMessage
 
-@property(nonatomic, readonly) GetTokenDirectPurchasePricesRequest_Version_OneOfCase versionOneOfCase;
+@property(nonatomic, readonly) GetTokenContractInfoRequest_Version_OneOfCase versionOneOfCase;
 
-@property(nonatomic, readwrite, strong, null_resettable) GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 *v0;
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenContractInfoRequest_GetTokenContractInfoRequestV0 *v0;
 
 @end
 
 /**
  * Clears whatever value was set for the oneof 'version'.
  **/
-void GetTokenDirectPurchasePricesRequest_ClearVersionOneOfCase(GetTokenDirectPurchasePricesRequest *message);
+void GetTokenContractInfoRequest_ClearVersionOneOfCase(GetTokenContractInfoRequest *message);
 
-#pragma mark - GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0
+#pragma mark - GetTokenContractInfoRequest_GetTokenContractInfoRequestV0
 
-typedef GPB_ENUM(GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber) {
-  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_TokenIdsArray = 1,
-  GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0_FieldNumber_Prove = 2,
+typedef GPB_ENUM(GetTokenContractInfoRequest_GetTokenContractInfoRequestV0_FieldNumber) {
+  GetTokenContractInfoRequest_GetTokenContractInfoRequestV0_FieldNumber_TokenId = 1,
+  GetTokenContractInfoRequest_GetTokenContractInfoRequestV0_FieldNumber_Prove = 2,
 };
 
-GPB_FINAL @interface GetTokenDirectPurchasePricesRequest_GetTokenDirectPurchasePricesRequestV0 : GPBMessage
+GPB_FINAL @interface GetTokenContractInfoRequest_GetTokenContractInfoRequestV0 : GPBMessage
 
 /**
- * List of token IDs to get prices for.
- *
- * The list must not be empty.
- * Token IDs must have 32 bytes and be unique.
- * Results for non-unique token IDs are undefined.
+ * The token ID to retrieve contract info for.
+ * Must be exactly 32 bytes.
  **/
-@property(nonatomic, readwrite, strong, null_resettable) NSMutableArray<NSData*> *tokenIdsArray;
-/** The number of items in @c tokenIdsArray without causing the array to be created. */
-@property(nonatomic, readonly) NSUInteger tokenIdsArray_Count;
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
 
-/** Whether to return proofs for the response, or just direct response. */
+/** Whether to return a cryptographic proof. */
 @property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetTokenContractInfoResponse
+
+typedef GPB_ENUM(GetTokenContractInfoResponse_FieldNumber) {
+  GetTokenContractInfoResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenContractInfoResponse_Version_OneOfCase) {
+  GetTokenContractInfoResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenContractInfoResponse_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Response to GetTokenContractInfoRequest.
+ **/
+GPB_FINAL @interface GetTokenContractInfoResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTokenContractInfoResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenContractInfoResponse_GetTokenContractInfoResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenContractInfoResponse_ClearVersionOneOfCase(GetTokenContractInfoResponse *message);
+
+#pragma mark - GetTokenContractInfoResponse_GetTokenContractInfoResponseV0
+
+typedef GPB_ENUM(GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_FieldNumber) {
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_FieldNumber_Data_p = 1,
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_FieldNumber_Proof = 2,
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_Result_OneOfCase) {
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_Result_OneOfCase_Data_p = 1,
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTokenContractInfoResponse_GetTokenContractInfoResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Direct token contract data */
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData *data_p;
+
+/** Cryptographic proof of token contract info */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Metadata about the blockchain state at the time of the query */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_ClearResultOneOfCase(GetTokenContractInfoResponse_GetTokenContractInfoResponseV0 *message);
+
+#pragma mark - GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData
+
+typedef GPB_ENUM(GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData_FieldNumber) {
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData_FieldNumber_ContractId = 1,
+  GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData_FieldNumber_TokenContractPosition = 2,
+};
+
+/**
+ * Direct token contract info.
+ **/
+GPB_FINAL @interface GetTokenContractInfoResponse_GetTokenContractInfoResponseV0_TokenContractInfoData : GPBMessage
+
+/** The ID of the contract associated with the token. */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+/** The position of the token within the contract. */
+@property(nonatomic, readwrite) uint32_t tokenContractPosition;
 
 @end
 
@@ -5883,6 +6383,173 @@ GPB_FINAL @interface GetTokenPreProgrammedDistributionsResponse_GetTokenPreProgr
 @property(nonatomic, readonly) NSUInteger tokenDistributionsArray_Count;
 
 @end
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimRequest
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimRequest_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimRequest_Version_OneOfCase) {
+  GetTokenPerpetualDistributionLastClaimRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPerpetualDistributionLastClaimRequest_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimRequest : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPerpetualDistributionLastClaimRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenPerpetualDistributionLastClaimRequest_ClearVersionOneOfCase(GetTokenPerpetualDistributionLastClaimRequest *message);
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo_FieldNumber_ContractId = 1,
+  GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo_FieldNumber_TokenContractPosition = 2,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *contractId;
+
+/** the token contract position */
+@property(nonatomic, readwrite) uint32_t tokenContractPosition;
+
+@end
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0_FieldNumber_TokenId = 1,
+  GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0_FieldNumber_ContractInfo = 2,
+  GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0_FieldNumber_IdentityId = 4,
+  GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0_FieldNumber_Prove = 5,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpetualDistributionLastClaimRequestV0 : GPBMessage
+
+/** 32‑byte token identifier */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
+
+/** This should be set if you wish to get back the last claim info as a specific type */
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo *contractInfo;
+/** Test to see if @c contractInfo has been set. */
+@property(nonatomic, readwrite) BOOL hasContractInfo;
+
+/** Identity whose last‑claim timestamp is requested */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *identityId;
+
+/** Return GroveDB / signature proof instead of raw value */
+@property(nonatomic, readwrite) BOOL prove;
+
+@end
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimResponse
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_Version_OneOfCase) {
+  GetTokenPerpetualDistributionLastClaimResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPerpetualDistributionLastClaimResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimResponse : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPerpetualDistributionLastClaimResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void GetTokenPerpetualDistributionLastClaimResponse_ClearVersionOneOfCase(GetTokenPerpetualDistributionLastClaimResponse *message);
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_FieldNumber_LastClaim = 1,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_FieldNumber_Proof = 2,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_FieldNumber_Metadata = 3,
+};
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_Result_OneOfCase) {
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_Result_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_Result_OneOfCase_LastClaim = 1,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_Result_OneOfCase_Proof = 2,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0 : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_Result_OneOfCase resultOneOfCase;
+
+/** Direct answer */
+@property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo *lastClaim;
+
+/** GroveDB / quorum proof */
+@property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
+
+/** Chain context */
+@property(nonatomic, readwrite, strong, null_resettable) ResponseMetadata *metadata;
+/** Test to see if @c metadata has been set. */
+@property(nonatomic, readwrite) BOOL hasMetadata;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'result'.
+ **/
+void GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_ClearResultOneOfCase(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0 *message);
+
+#pragma mark - GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_FieldNumber) {
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_FieldNumber_TimestampMs = 1,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_FieldNumber_BlockHeight = 2,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_FieldNumber_Epoch = 3,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_FieldNumber_RawBytes = 4,
+};
+
+typedef GPB_ENUM(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase) {
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase_GPBUnsetOneOfCase = 0,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase_TimestampMs = 1,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase_BlockHeight = 2,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase_Epoch = 3,
+  GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase_RawBytes = 4,
+};
+
+GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo : GPBMessage
+
+@property(nonatomic, readonly) GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_PaidAt_OneOfCase paidAtOneOfCase;
+
+/** Unix epoch, ms */
+@property(nonatomic, readwrite) uint64_t timestampMs;
+
+/** Core‑block height */
+@property(nonatomic, readwrite) uint64_t blockHeight;
+
+/** Epoch index */
+@property(nonatomic, readwrite) uint32_t epoch;
+
+/** Arbitrary encoding */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *rawBytes;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'paidAt'.
+ **/
+void GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo_ClearPaidAtOneOfCase(GetTokenPerpetualDistributionLastClaimResponse_GetTokenPerpetualDistributionLastClaimResponseV0_LastClaimInfo *message);
 
 #pragma mark - GetTokenTotalSupplyRequest
 
@@ -6480,7 +7147,8 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_MintEvent
 
 typedef GPB_ENUM(GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent_FieldNumber) {
   GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent_FieldNumber_Amount = 1,
-  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent_FieldNumber_PublicNote = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent_FieldNumber_BurnFromId = 2,
+  GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent_FieldNumber_PublicNote = 3,
 };
 
 /**
@@ -6490,6 +7158,9 @@ GPB_FINAL @interface GetGroupActionsResponse_GetGroupActionsResponseV0_BurnEvent
 
 /** Amount to burn */
 @property(nonatomic, readwrite) uint64_t amount;
+
+/** The identifier to burn from */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *burnFromId;
 
 /** Public note */
 @property(nonatomic, readwrite, copy, null_resettable) NSString *publicNote;

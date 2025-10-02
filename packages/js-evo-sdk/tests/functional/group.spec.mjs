@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { EvoSDK } from '../../dist/sdk.js';
+import { EvoSDK } from '../../dist/evo-sdk.module.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
 describe('Group', function groupSuite() {
@@ -31,5 +31,30 @@ describe('Group', function groupSuite() {
       limit: 5,
     });
     expect(res).to.exist();
+  });
+
+  it('info() is callable for group contracts', async () => {
+    const res = await sdk.group.info(TEST_IDS.groupContractId, 0);
+    expect(res).to.exist();
+  });
+
+  it('members() is callable for group contracts', async () => {
+    const res = await sdk.group.members(TEST_IDS.groupContractId, 0, { limit: 5 });
+    expect(res).to.exist();
+  });
+
+  it('identityGroups() is callable for known identity', async () => {
+    const res = await sdk.group.identityGroups(TEST_IDS.identityId);
+    expect(res).to.exist();
+  });
+
+  it('actions() is callable for group contract', async () => {
+    const res = await sdk.group.actions(TEST_IDS.groupContractId, 0, 'ACTIVE', { count: 5 });
+    expect(res).to.exist();
+  });
+
+  it('groupsDataContracts() is callable with known ids', async () => {
+    const res = await sdk.group.groupsDataContracts([TEST_IDS.groupContractId]);
+    expect(res).to.not.equal(undefined);
   });
 });

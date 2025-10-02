@@ -1,3 +1,27 @@
+## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
+
+
+### Bug Fixes
+
+* **sdk:** wasm sdk is not initialized for static methods ([#2788](https://github.com/dashpay/platform/issues/2788))
+
+## [2.1.0-dev.6](https://github.com/dashpay/platform/compare/v2.1.0-dev.5...v2.1.0-dev.6) (2025-09-24)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 2 ([#2781](https://github.com/dashpay/platform/issues/2781))
+* **sdk:** add more SDK methods ([#2784](https://github.com/dashpay/platform/issues/2784))
+
+### Bug Fixes
+
+* **dashmate:** incompatible tenderdash version ([#2786](https://github.com/dashpay/platform/issues/2786))
+
+
+### Performance Improvements
+
+* **rs-sdk:** optimize wasm-sdk bundle size ([#2783](https://github.com/dashpay/platform/issues/2783))
+
 ## [2.1.0-dev.5](https://github.com/dashpay/platform/compare/v2.1.0-dev.4...v2.1.0-dev.5) (2025-09-19)
 
 

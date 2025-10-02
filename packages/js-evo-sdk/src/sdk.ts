@@ -45,7 +45,6 @@ export class EvoSDK {
   public system!: SystemFacade;
   public group!: GroupFacade;
   public voting!: VotingFacade;
-
   constructor(options: EvoSDKOptions = {}) {
     // Apply defaults while preserving any future connection options
     const { network = 'testnet', trusted = false, ...connection } = options;
@@ -113,6 +112,20 @@ export class EvoSDK {
     return sdk;
   }
 
+  version(): number {
+    return this.wasm.version();
+  }
+
+  static async setLogLevel(levelOrFilter: string): Promise<void> {
+    await initWasm();
+    wasm.WasmSdk.setLogLevel(levelOrFilter);
+  }
+
+  static async getLatestVersionNumber(): Promise<number> {
+    await initWasm();
+    return wasm.WasmSdkBuilder.getLatestVersionNumber();
+  }
+
   // Factory helpers that return configured instances (not connected)
   static testnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', ...options }); }
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
@@ -130,4 +143,5 @@ export { ProtocolFacade } from './protocol/facade.js';
 export { SystemFacade } from './system/facade.js';
 export { GroupFacade } from './group/facade.js';
 export { VotingFacade } from './voting/facade.js';
-// For error types, import directly from '@dashevo/wasm-sdk/errors'
+export { wallet } from './wallet/functions.js';
+export { verifyIdentityResponse, verifyDataContract, verifyDocuments, start } from './wasm.js';

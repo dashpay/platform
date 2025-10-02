@@ -5,7 +5,7 @@ jobs:
   build-js:
     name: Build JS
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact

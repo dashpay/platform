@@ -1,6 +1,6 @@
 [package]
 name = "wasm-sdk"
-version = "2.1.0-dev.5"
+version = "2.1.0-dev.7"
 edition = "2021"
 publish = false
 rust-version.workspace = true

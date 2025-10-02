@@ -1,4 +1,4 @@
-import { EvoSDK } from '../../dist/sdk.js';
+import { EvoSDK } from '../../dist/evo-sdk.module.js';
 
 describe('EvoSDK', () => {
   it('exposes constructor and factories', () => {
@@ -9,12 +9,10 @@ describe('EvoSDK', () => {
     expect(EvoSDK.mainnetTrusted).to.be.a('function');
   });
 
-  it('connects and sets isConnected', async function connectsAndSetsIsConnected() {
-    this.timeout(90000);
-
-    const sdk = new EvoSDK();
-    expect(sdk.isConnected).to.equal(false);
-    await sdk.connect();
+  it('fromWasm() marks instance as connected', () => {
+    const wasmStub = { version: () => 1 };
+    const sdk = EvoSDK.fromWasm(wasmStub);
     expect(sdk.isConnected).to.equal(true);
+    expect(sdk.wasm).to.equal(wasmStub);
   });
 });

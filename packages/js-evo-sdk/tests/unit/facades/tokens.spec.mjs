@@ -19,6 +19,8 @@ describe('TokensFacade', () => {
     this.sinon.stub(wasmSdk, 'getTokenStatusesWithProofInfo').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalances').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentitiesTokenBalancesWithProofInfo').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getIdentityTokenBalances').resolves('ok');
+    this.sinon.stub(wasmSdk, 'getIdentityTokenBalancesWithProofInfo').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentityTokenInfos').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentitiesTokenInfos').resolves('ok');
     this.sinon.stub(wasmSdk, 'getIdentityTokenInfosWithProofInfo').resolves('ok');
@@ -43,6 +45,11 @@ describe('TokensFacade', () => {
     this.sinon.stub(wasmSdk, 'tokenConfigUpdate').resolves('ok');
   });
 
+  it('calculateId() uses wasm static helper', () => {
+    const out = client.tokens.calculateId('Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv', 0);
+    expect(out).to.equal('BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus');
+  });
+
   it('query functions forward to instance methods', async () => {
     await client.tokens.priceByContract('c', 1);
     await client.tokens.totalSupply('t');
@@ -51,6 +58,8 @@ describe('TokensFacade', () => {
     await client.tokens.statusesWithProof(['a']);
     await client.tokens.balances(['i1', 'i2'], 't');
     await client.tokens.balancesWithProof(['i'], 't');
+    await client.tokens.identityBalances('id', ['t']);
+    await client.tokens.identityBalancesWithProof('id', ['t']);
     await client.tokens.identityTokenInfos('id', ['t1', 't2']);
     await client.tokens.identitiesTokenInfos(['i1'], 't');
     await client.tokens.identityTokenInfosWithProof('id', ['t']);
@@ -64,6 +73,22 @@ describe('TokensFacade', () => {
     expect(wasmSdk.getTokenPriceByContract).to.be.calledOnceWithExactly('c', 1);
     expect(wasmSdk.getTokenTotalSupply).to.be.calledOnceWithExactly('t');
     expect(wasmSdk.getTokenTotalSupplyWithProofInfo).to.be.calledOnceWithExactly('t');
+    expect(wasmSdk.getTokenStatuses).to.be.calledOnceWithExactly(['a', 'b']);
+    expect(wasmSdk.getTokenStatusesWithProofInfo).to.be.calledOnceWithExactly(['a']);
+    expect(wasmSdk.getIdentitiesTokenBalances).to.be.calledOnceWithExactly(['i1', 'i2'], 't');
+    expect(wasmSdk.getIdentitiesTokenBalancesWithProofInfo).to.be.calledOnceWithExactly(['i'], 't');
+    expect(wasmSdk.getIdentityTokenBalances).to.be.calledOnceWithExactly('id', ['t']);
+    expect(wasmSdk.getIdentityTokenBalancesWithProofInfo).to.be.calledOnceWithExactly('id', ['t']);
+    expect(wasmSdk.getIdentityTokenInfos).to.be.calledOnceWithExactly('id', ['t1', 't2']);
+    expect(wasmSdk.getIdentitiesTokenInfos).to.be.calledOnceWithExactly(['i1'], 't');
+    expect(wasmSdk.getIdentityTokenInfosWithProofInfo).to.be.calledOnceWithExactly('id', ['t']);
+    expect(wasmSdk.getIdentitiesTokenInfosWithProofInfo).to.be.calledOnceWithExactly(['i'], 't');
+    expect(wasmSdk.getTokenDirectPurchasePrices).to.be.calledOnceWithExactly(['t']);
+    expect(wasmSdk.getTokenDirectPurchasePricesWithProofInfo).to.be.calledOnceWithExactly(['t']);
+    expect(wasmSdk.getTokenContractInfo).to.be.calledOnceWithExactly('c');
+    expect(wasmSdk.getTokenContractInfoWithProofInfo).to.be.calledOnceWithExactly('c');
+    expect(wasmSdk.getTokenPerpetualDistributionLastClaim).to.be.calledOnceWithExactly('i', 't');
+    expect(wasmSdk.getTokenPerpetualDistributionLastClaimWithProofInfo).to.be.calledOnceWithExactly('i', 't');
   });
 
   it('mint() stringifies amount and passes nullables', async () => {

@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-sdk",
-  "version": "2.1.0-dev.5",
+  "version": "2.1.0-dev.7",
   "type": "module",
   "main": "./dist/sdk.js",
   "types": "./dist/sdk.d.ts",
@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/sdk.d.ts",
       "import": "./dist/sdk.js"
+    },
+    "./compressed": {
+      "types": "./dist/sdk.d.ts",
+      "import": "./dist/sdk.compressed.js"
     },
     "./raw": {
       "types": "./dist/raw/wasm_sdk.d.ts",
