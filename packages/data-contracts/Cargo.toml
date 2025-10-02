@@ -9,7 +9,16 @@ license = "MIT"
 [features]
 default = ["all-contracts"]
 # Include all contracts
-all-contracts = ["withdrawals", "masternode-rewards", "dpns", "dashpay", "feature-flags", "wallet-utils", "token-history", "keyword-search"]
+all-contracts = [
+    "withdrawals",
+    "masternode-rewards",
+    "dpns",
+    "dashpay",
+    "feature-flags",
+    "wallet-utils",
+    "token-history",
+    "keyword-search",
+]
 
 # Individual contract features
 withdrawals = ["dep:withdrawals-contract"]
