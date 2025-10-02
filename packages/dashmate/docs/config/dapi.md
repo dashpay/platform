@@ -56,3 +56,9 @@ This timeout setting controls how long DAPI will wait for state transition resul
 | `platform.dapi.rsDapi.metrics.port` | Host port for both health checks and Prometheus metrics | `9091` | `9191` |
 
 The rs-dapi metrics server exposes `/health`, `/ready`, `/live`, and `/metrics`. Prometheus-compatible metrics are served from `/metrics` on the configured port, allowing separate node instances on the same machine to use distinct ports.
+
+### Logging
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.dapi.rsDapi.logging.level` | rs-dapi log verbosity. Accepts standard levels (`error`, `warn`, `info`, `debug`, `trace`, `off`) or a full `RUST_LOG` filter string | `info` | `debug` |

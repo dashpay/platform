@@ -268,6 +268,9 @@ export default function getBaseConfigFactory() {
               host: '127.0.0.1',
               port: 9091,
             },
+            logging: {
+              level: 'info',
+            },
           },
         },
         drive: {

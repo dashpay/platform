@@ -13,8 +13,8 @@ use dapi_grpc::platform::v0::{
     GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use futures::FutureExt;
 use dash_event_bus::EventMux;
+use futures::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;

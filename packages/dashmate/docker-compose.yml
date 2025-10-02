@@ -219,7 +219,7 @@ services:
       - DAPI_CORE_RPC_USER=dapi
       - DAPI_CORE_RPC_PASS=${CORE_RPC_USERS_DAPI_PASSWORD:?err}
       - DAPI_STATE_TRANSITION_WAIT_TIMEOUT=${PLATFORM_DAPI_API_WAIT_FOR_ST_RESULT_TIMEOUT:?err}
-      - DAPI_LOGGING_LEVEL=trace
+      - DAPI_LOGGING_LEVEL=${PLATFORM_DAPI_RS_DAPI_LOGGING_LEVEL:-info}
     expose:
       - 3009  # JSON-RPC
       - 3010  # gRPC (different from current DAPI to avoid conflict)

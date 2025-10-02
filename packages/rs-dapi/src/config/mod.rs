@@ -176,7 +176,7 @@ impl Default for CoreConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct LoggingConfig {
-    /// Main application log level; TODO: not supported yet
+    /// Main application log level or explicit RUST_LOG filter string
     #[serde(rename = "dapi_logging_level")]
     pub level: String,
     /// Enable structured JSON logging for application logs

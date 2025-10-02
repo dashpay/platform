@@ -3,11 +3,11 @@ use std::sync::Arc;
 use tracing::{error, trace, warn};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
-use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
-use dashcore_rpc::dashcore::{Transaction as CoreTx, consensus::encode::deserialize};
 use dash_event_bus::event_bus::{
     EventBus, Filter as EventBusFilter, SubscriptionHandle as EventBusSubscriptionHandle,
 };
+use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
+use dashcore_rpc::dashcore::{Transaction as CoreTx, consensus::encode::deserialize};
 
 /// Types of filters supported by the streaming service
 #[derive(Debug, Clone)]

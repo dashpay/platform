@@ -1158,6 +1158,28 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '2.1.0-dev.7': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              return;
+            }
+
+            if (!options.platform.dapi.rsDapi.logging) {
+              options.platform.dapi.rsDapi.logging = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logging'));
+              return;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logging.level === 'undefined') {
+              options.platform.dapi.rsDapi.logging.level = defaultConfig.get('platform.dapi.rsDapi.logging.level');
+            }
+          });
+
+        return configFile;
+      },
       '2.0.2-rc.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {

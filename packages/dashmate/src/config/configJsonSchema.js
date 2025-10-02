@@ -895,8 +895,20 @@ export default {
                   required: ['host', 'port'],
                   additionalProperties: false,
                 },
+                logging: {
+                  type: 'object',
+                  properties: {
+                    level: {
+                      type: 'string',
+                      minLength: 1,
+                      description: 'error, warn, info, debug, trace, off or logging specification string in RUST_LOG format',
+                    },
+                  },
+                  required: ['level'],
+                  additionalProperties: false,
+                },
               },
-              required: ['docker', 'metrics'],
+              required: ['docker', 'metrics', 'logging'],
               additionalProperties: false,
             },
           },
