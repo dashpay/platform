@@ -373,6 +373,7 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
+    packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
@@ -451,6 +452,7 @@ COPY --parents \
     .cargo \
     packages/dapi-grpc \
     packages/rs-dapi-grpc-macros \
+    packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -553,6 +555,7 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-platform-value \
     packages/rs-platform-serialization \
