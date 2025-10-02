@@ -15,7 +15,6 @@ use crate::error::query::QueryError;
 
 use dpp::validation::ValidationResult;
 
-pub use service::PlatformFilterAdapter;
 pub use service::QueryService;
 
 /// A query validation result

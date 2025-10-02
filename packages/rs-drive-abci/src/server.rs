@@ -20,13 +20,7 @@ pub fn start(
     config: PlatformConfig,
     cancel: CancellationToken,
 ) {
-    // Create a shared EventBus for platform events (filters adapted from gRPC filters)
-    let event_bus = dash_event_bus::event_bus::EventBus::<
-        dapi_grpc::platform::v0::PlatformEventV0,
-        crate::query::PlatformFilterAdapter,
-    >::new();
-
-    let query_service = Arc::new(QueryService::new(Arc::clone(&platform), event_bus.clone()));
+    let query_service = Arc::new(QueryService::new(Arc::clone(&platform)));
 
     let drive_internal = Arc::clone(&query_service);
 
@@ -76,7 +70,7 @@ pub fn start(
 
     // Start blocking ABCI socket-server that process consensus requests sequentially
 
-    let app = ConsensusAbciApplication::new(platform.as_ref(), event_bus.clone());
+    let app = ConsensusAbciApplication::new(platform.as_ref());
 
     let server = tenderdash_abci::ServerBuilder::new(app, &config.abci.consensus_bind_address)
         .with_cancel_token(cancel.clone())

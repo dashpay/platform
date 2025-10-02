@@ -13,7 +13,7 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-
+tokio-stream = "0.1"
 arc-swap = "1.7.0"
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 ciborium = { version = "0.2.2" }
@@ -63,7 +63,7 @@ reopen = { version = "1.0.3" }
 delegate = { version = "0.13" }
 regex = { version = "1.8.1" }
 metrics = { version = "0.24" }
-metrics-exporter-prometheus = { version = "0.17", default-features = false, features = [
+metrics-exporter-prometheus = { version = "0.16", default-features = false, features = [
   "http-listener",
 ] }
 url = { version = "2.3.1" }
@@ -74,13 +74,10 @@ tokio = { version = "1.40", features = [
   "time",
 ] }
 tokio-util = { version = "0.7" }
-tokio-stream = "0.1"
 derive_more = { version = "1.0", features = ["from", "deref", "deref_mut"] }
 async-trait = "0.1.77"
 console-subscriber = { version = "0.4", optional = true }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f", optional = true }
-rs-dash-event-bus = { path = "../rs-dash-event-bus" }
-sha2 = { version = "0.10" }
 
 [dev-dependencies]
 bs58 = { version = "0.5.0" }

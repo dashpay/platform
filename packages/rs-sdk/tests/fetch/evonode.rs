@@ -16,9 +16,8 @@ async fn test_evonode_status() {
     let cfg = Config::new();
     let sdk = cfg.setup_api("test_evonode_status").await;
 
-    for (index, (address, status)) in cfg.address_list().into_iter().enumerate() {
+    for (address, _status) in cfg.address_list() {
         let node = EvoNode::new(address.clone());
-        tracing::info!(?node, ?address, ?status, "checking evonode {index} status");
         match timeout(
             Duration::from_secs(3),
             EvoNodeStatus::fetch_unproved(&sdk, node),
@@ -26,7 +25,7 @@ async fn test_evonode_status() {
         .await
         {
             Ok(Ok(Some(status))) => {
-                tracing::debug!(?status, ?address, "evonode status OK");
+                tracing::debug!(?status, ?address, "evonode status");
                 // Add assertions here to verify the status contents
                 assert!(
                     status.chain.latest_block_height > 0,

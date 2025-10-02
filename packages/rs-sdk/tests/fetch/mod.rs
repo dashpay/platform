@@ -24,7 +24,6 @@ mod identity;
 mod identity_contract_nonce;
 mod mock_fetch;
 mod mock_fetch_many;
-mod platform_events;
 mod prefunded_specialized_balance;
 mod protocol_version_vote_count;
 mod protocol_version_votes;

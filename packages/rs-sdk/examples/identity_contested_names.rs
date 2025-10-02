@@ -43,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Get non-resolved contests for this identity
     let identity_contests = sdk
         .get_non_resolved_dpns_contests_for_identity(
-            identity_id,
+            identity_id.clone(),
             Some(20), // limit to 20 results
         )
         .await?;
