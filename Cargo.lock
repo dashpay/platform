@@ -655,8 +655,8 @@ dependencies = [
 
 [[package]]
 name = "blsful"
-version = "3.0.0-pre8"
-source = "git+https://github.com/dashpay/agora-blsful?rev=be108b2cf6ac64eedbe04f91c63731533c8956bc#be108b2cf6ac64eedbe04f91c63731533c8956bc"
+version = "3.0.0"
+source = "git+https://github.com/dashpay/agora-blsful?rev=0c34a7a488a0bd1c9a9a2196e793b303ad35c900#0c34a7a488a0bd1c9a9a2196e793b303ad35c900"
 dependencies = [
  "anyhow",
  "blstrs_plus",
@@ -1443,7 +1443,7 @@ dependencies = [
 [[package]]
 name = "dash-network"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "bincode_derive",
@@ -1514,7 +1514,7 @@ dependencies = [
 [[package]]
 name = "dash-spv"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1542,12 +1542,14 @@ dependencies = [
 [[package]]
 name = "dash-spv-ffi"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "cbindgen 0.29.0",
+ "clap",
  "dash-spv",
  "dashcore",
  "env_logger 0.10.2",
+ "futures",
  "hex",
  "key-wallet",
  "key-wallet-ffi",
@@ -1565,7 +1567,7 @@ dependencies = [
 [[package]]
 name = "dashcore"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "anyhow",
  "base64-compat",
@@ -1591,12 +1593,12 @@ dependencies = [
 [[package]]
 name = "dashcore-private"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 
 [[package]]
 name = "dashcore-rpc"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "dashcore-rpc-json",
  "hex",
@@ -1609,7 +1611,7 @@ dependencies = [
 [[package]]
 name = "dashcore-rpc-json"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore",
@@ -1624,7 +1626,7 @@ dependencies = [
 [[package]]
 name = "dashcore_hashes"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "bincode 2.0.0-rc.3",
  "dashcore-private",
@@ -2054,9 +2056,9 @@ dependencies = [
 
 [[package]]
 name = "elliptic-curve-tools"
-version = "0.1.2"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e48843edfbd0a370b3dd14cdbb4e446e9a8855311e6b2b57bf9a1fd1367bc317"
+checksum = "1de2b6fae800f08032a6ea32995b52925b1d451bff9d445c8ab2932323277faf"
 dependencies = [
  "elliptic-curve",
  "heapless",
@@ -3436,7 +3438,7 @@ dependencies = [
 [[package]]
 name = "key-wallet"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "aes",
  "base58ck",
@@ -3458,13 +3460,14 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "tracing",
  "zeroize",
 ]
 
 [[package]]
 name = "key-wallet-ffi"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "cbindgen 0.29.0",
  "dash-network",
@@ -3480,7 +3483,7 @@ dependencies = [
 [[package]]
 name = "key-wallet-manager"
 version = "0.40.0"
-source = "git+https://github.com/dashpay/rust-dashcore?rev=ed9aa52a21b61ead36c9407a9fe09a32fe24681c#ed9aa52a21b61ead36c9407a9fe09a32fe24681c"
+source = "git+https://github.com/dashpay/rust-dashcore?rev=e44b1fb2086ad57c8884995f9f93f14de91bf964#e44b1fb2086ad57c8884995f9f93f14de91bf964"
 dependencies = [
  "async-trait",
  "bincode 2.0.0-rc.3",
@@ -7161,8 +7164,7 @@ checksum = "7302ac74a033bf17b6e609ceec0f891ca9200d502d31f02dc7908d3d98767c9d"
 [[package]]
 name = "vsss-rs"
 version = "5.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fec4ebcc5594130c31b49594d55c0583fe80621f252f570b222ca4845cafd3cf"
+source = "git+https://github.com/dashpay/vsss-rs?branch=main#668f1406bf25a4b9a95cd97c9069f7a1632897c3"
 dependencies = [
  "crypto-bigint",
  "elliptic-curve",
