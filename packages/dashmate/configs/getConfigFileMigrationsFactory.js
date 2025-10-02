@@ -1096,6 +1096,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.0.2-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
+            }
+          });
+        return configFile;
+      },
       '2.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
@@ -1109,8 +1118,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1-dev';
           });
         return configFile;
-      }
-      ,
+      },
       // Introduce DAPI selection flag (defaults to rs-dapi)
       '2.1.0-dev.3': (configFile) => {
         Object.entries(configFile.configs)
@@ -1178,15 +1186,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
           });
 
-        return configFile;
-      },
-      '2.0.2-rc.1': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
-            }
-          });
         return configFile;
       },
     };
