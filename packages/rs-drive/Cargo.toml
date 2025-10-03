@@ -111,7 +111,7 @@ server = [
   "grovedb-storage",
   "grovedb-costs",
   "itertools",
-  "rand",                    #todo: this should be removed eventually
+  "rand",                     #todo: this should be removed eventually
   "enum-map",
   "intmap",
 ]
@@ -124,5 +124,5 @@ verify = [
   "dpp/state-transitions",
   "dpp/system_contracts",
   "dpp/token-history-contract",
-  "dpp/withdrawals-contract"
+  "dpp/withdrawals-contract",
 ]

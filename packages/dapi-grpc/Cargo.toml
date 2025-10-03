@@ -51,9 +51,7 @@ platform-version = { path = "../rs-platform-version" }
 tonic-prost = { version = "0.14.2" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-tonic = { version = "0.14.2", features = [
-  "codegen",
-], default-features = false }
+tonic = { version = "0.14.2", features = ["codegen"], default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

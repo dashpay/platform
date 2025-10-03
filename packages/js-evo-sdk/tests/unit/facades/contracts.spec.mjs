@@ -4,6 +4,7 @@ import { EvoSDK } from '../../../dist/sdk.js';
 describe('ContractsFacade', () => {
   let wasmSdk;
   let client;
+  let dataContract;
 
   beforeEach(async function setup() {
     await init();
@@ -11,8 +12,10 @@ describe('ContractsFacade', () => {
     wasmSdk = builder.build();
     client = EvoSDK.fromWasm(wasmSdk);
 
+    dataContract = Object.create(wasmSDKPackage.DataContract.prototype);
+
     // instance methods used by ContractsFacade
-    this.sinon.stub(wasmSdk, 'getDataContract').resolves(true);
+    this.sinon.stub(wasmSdk, 'getDataContract').resolves(dataContract);
     this.sinon.stub(wasmSdk, 'getDataContractWithProofInfo').resolves(true);
     this.sinon.stub(wasmSdk, 'getDataContractHistory').resolves(true);
     this.sinon.stub(wasmSdk, 'getDataContractHistoryWithProofInfo').resolves(true);
@@ -23,8 +26,9 @@ describe('ContractsFacade', () => {
   });
 
   it('fetch() forwards to instance getDataContract', async () => {
-    await client.contracts.fetch('c');
+    const result = await client.contracts.fetch('c');
     expect(wasmSdk.getDataContract).to.be.calledOnceWithExactly('c');
+    expect(result).to.be.instanceOf(wasmSDKPackage.DataContract);
   });
 
   it('fetchWithProof() forwards to instance getDataContractWithProofInfo', async () => {

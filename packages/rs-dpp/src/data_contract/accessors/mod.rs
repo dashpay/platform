@@ -38,6 +38,13 @@ impl DataContractV0Getters for DataContract {
         }
     }
 
+    fn system_version_type(&self) -> u16 {
+        match self {
+            DataContract::V0(_) => 0,
+            DataContract::V1(_) => 1,
+        }
+    }
+
     fn version(&self) -> u32 {
         match self {
             DataContract::V0(v0) => v0.version(),

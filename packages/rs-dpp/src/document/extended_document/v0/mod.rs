@@ -382,6 +382,9 @@ impl ExtendedDocumentV0 {
         let binary_paths = document_type.binary_paths();
 
         document_value.replace_at_paths(["$id", "$ownerId"], ReplacementType::Identifier)?;
+        if document_value.has("$creatorId")? {
+            document_value.replace_at_path("$creatorId", ReplacementType::Identifier)?;
+        }
         document_value.replace_at_paths(
             identifiers.iter().map(|s| s.as_str()),
             ReplacementType::Identifier,

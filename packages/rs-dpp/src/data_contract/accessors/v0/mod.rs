@@ -11,6 +11,7 @@ pub trait DataContractV0Getters {
     fn id(&self) -> Identifier;
 
     fn id_ref(&self) -> &Identifier;
+    fn system_version_type(&self) -> u16;
 
     /// Returns the version of this data contract.
     fn version(&self) -> u32;
