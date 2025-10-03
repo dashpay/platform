@@ -21,21 +21,6 @@
 
 * script to backup and restore state
 
-### [2.0.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.0.1) (2025-07-10)
-
-
-### ⚠ BREAKING CHANGES
-
-* **platform:** update keyword search contract ID and owner ID bytes (#2693)
-
-### Bug Fixes
-
-* **platform:** update keyword search contract ID and owner ID bytes ([#2693](https://github.com/dashpay/platform/issues/2693))
-
-
-### Miscellaneous Chores
-
-* release version 2.0.1 ([#2695](https://github.com/dashpay/platform/issues/2695))
 
 ## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
 
