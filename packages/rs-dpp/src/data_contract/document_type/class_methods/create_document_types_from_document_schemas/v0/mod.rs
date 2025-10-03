@@ -13,6 +13,8 @@ impl DocumentType {
     #[allow(clippy::too_many_arguments)]
     pub(in crate::data_contract) fn create_document_types_from_document_schemas_v0(
         data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
         token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
@@ -38,6 +40,8 @@ impl DocumentType {
             {
                 0 => DocumentType::try_from_schema(
                     data_contract_id,
+                    data_contract_system_version,
+                    contract_config_version,
                     &name,
                     schema,
                     schema_defs,
@@ -84,6 +88,8 @@ mod tests {
 
         let result = DocumentType::create_document_types_from_document_schemas(
             id,
+            1,
+            config.version(),
             Default::default(),
             None,
             &BTreeMap::new(),

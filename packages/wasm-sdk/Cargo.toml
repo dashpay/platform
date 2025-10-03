@@ -102,6 +102,9 @@ rs-dapi-client = { path = "../rs-dapi-client" }
 hmac = { version = "0.12" }
 sha2 = { version = "0.10" }
 
+[dev-dependencies]
+wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }
+
 [profile.release]
 opt-level = "z"
 panic = "abort"

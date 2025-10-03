@@ -1,4 +1,4 @@
-import { EvoSDK } from '../../dist/evo-sdk.module.js';
+import { EvoSDK, DataContract } from '../../dist/evo-sdk.module.js';
 import { TEST_IDS } from '../fixtures/testnet.mjs';
 
 describe('Data Contracts', function dataContractsSuite() {
@@ -13,7 +13,7 @@ describe('Data Contracts', function dataContractsSuite() {
 
   it('fetch() returns data contract', async () => {
     const res = await sdk.contracts.fetch(TEST_IDS.dataContractId);
-    expect(res).to.exist();
+    expect(res).to.be.instanceOf(DataContract);
   });
 
   it('fetchWithProof() returns proof info', async () => {
