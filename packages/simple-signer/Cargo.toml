@@ -1,6 +1,6 @@
 [package]
 name = "simple-signer"
-version = "2.1.0-dev.7"
+version = "2.1.0-dev.8"
 edition = "2021"
 rust-version.workspace = true
 

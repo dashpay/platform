@@ -3,7 +3,7 @@
   "collaborators": [
     "Dash Core Group <dev@dash.org>"
   ],
-  "version": "2.1.0-dev.7",
+  "version": "2.1.0-dev.8",
   "license": "MIT",
   "description": "WASM bindings for Drive verify functions",
   "repository": {
