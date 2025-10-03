@@ -92,12 +92,8 @@ rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964" }
 zeroize = "1.8"
 
-[build-dependencies]
-tonic-build = "0.14.2"
 
 [dev-dependencies]
-# Additional dependencies for integration tests
-tokio-test = "0.4.4"
 tempfile = "3.13.0"
 serial_test = "3.1.1"
 test-case = "3.3.1"

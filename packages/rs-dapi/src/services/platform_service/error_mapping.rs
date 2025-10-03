@@ -302,6 +302,7 @@ impl From<serde_json::Value> for TenderdashStatus {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::{serialization::PlatformSerializableWithPlatformVersion, version::PlatformVersion};
     use serde::Deserialize;
 
     fn setup_tracing() {
@@ -320,11 +321,15 @@ mod tests {
     fn to_status_sets_expected_metadata() {
         setup_tracing();
 
-        let consensus_error = vec![0x01, 0x02, 0x03];
+        let consensus_error = ConsensusError::DefaultError;
+        let original_consensus_error_bytes = consensus_error
+            .serialize_to_bytes_with_platform_version(PlatformVersion::latest())
+            .expect("should serialize");
+
         let status = TenderdashStatus::new(
             42,
             Some("metadata test".to_string()),
-            Some(consensus_error.clone()),
+            Some(original_consensus_error_bytes.clone()),
         )
         .to_status();
 
@@ -348,7 +353,10 @@ mod tests {
             .expect("missing consensus error metadata")
             .to_bytes()
             .expect("consensus error metadata should be valid bytes");
-        assert_eq!(consensus_error_bytes.as_ref(), consensus_error.as_slice());
+        assert_eq!(
+            consensus_error_bytes.as_ref(),
+            original_consensus_error_bytes.as_slice()
+        );
     }
     #[test_case::test_case(
         "oWRkYXRhoW9zZXJpYWxpemVkRXJyb3KYIgMAGCwYHRgeGIoYwhh+GHwYvRhmGJ0UGNUYuhjlARjgGN0YmBhkERinGB0YPRh5GDIMGBkWGLcYfhMYzg=="; "info_fixture_1"
