@@ -45,8 +45,8 @@ describe('TokensFacade', () => {
     this.sinon.stub(wasmSdk, 'tokenConfigUpdate').resolves('ok');
   });
 
-  it('calculateId() uses wasm static helper', () => {
-    const out = client.tokens.calculateId('Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv', 0);
+  it('calculateId() uses wasm static helper', async () => {
+    const out = await client.tokens.calculateId('Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv', 0);
     expect(out).to.equal('BpJvvpPiR2obh7ueZixjtYXsmWQdgJhiZtQJWjD7Ruus');
   });
 

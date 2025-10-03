@@ -8,15 +8,18 @@ export class DpnsFacade {
     this.sdk = sdk;
   }
 
-  convertToHomographSafe(input: string): string {
+  async convertToHomographSafe(input: string): Promise<string> {
+    await wasm.ensureInitialized();
     return wasm.WasmSdk.dpnsConvertToHomographSafe(input);
   }
 
-  isValidUsername(label: string): boolean {
+  async isValidUsername(label: string): Promise<boolean> {
+    await wasm.ensureInitialized();
     return wasm.WasmSdk.dpnsIsValidUsername(label);
   }
 
-  isContestedUsername(label: string): boolean {
+  async isContestedUsername(label: string): Promise<boolean> {
+    await wasm.ensureInitialized();
     return wasm.WasmSdk.dpnsIsContestedUsername(label);
   }
 
