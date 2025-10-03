@@ -20,13 +20,10 @@ let faucetClient;
  */
 async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
   const useFaucetWalletStorage = process.env.FAUCET_WALLET_USE_STORAGE === 'true';
-
-  const dapiAddresses = (process.env.DAPI_ADDRESSES || '')
-    .split(',')
-    .map((address) => address.trim())
-    .filter(Boolean);
+  const seeds = getDAPISeeds();
 
   const clientOpts = {
+    seeds,
     network: process.env.NETWORK,
     timeout: 25000,
     apps: {
@@ -35,12 +32,6 @@ async function createClientWithFundedWallet(amount, HDPrivateKey = undefined) {
       },
     },
   };
-
-  if (dapiAddresses.length > 0) {
-    clientOpts.dapiAddresses = dapiAddresses;
-  } else {
-    clientOpts.seeds = getDAPISeeds();
-  }
 
   if (!faucetClient || (faucetClient && useFaucetWalletStorage)) {
     faucetClient = createFaucetClient();
