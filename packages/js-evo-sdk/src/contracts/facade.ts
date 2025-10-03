@@ -9,7 +9,7 @@ export class ContractsFacade {
     this.sdk = sdk;
   }
 
-  async fetch(contractId: string): Promise<wasm.DataContractWasm> {
+  async fetch(contractId: string): Promise<wasm.DataContract> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContract(contractId);
   }
