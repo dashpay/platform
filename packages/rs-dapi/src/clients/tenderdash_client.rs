@@ -1,8 +1,6 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
-use super::traits::TenderdashClientTrait;
 use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::error::{DAPIResult, DapiError};
-use async_trait::async_trait;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{Deserialize, Serialize};
@@ -251,7 +249,7 @@ impl TenderdashClient {
         Ok(tenderdash_client)
     }
 
-    async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
+    pub async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         trace!("Making status request to Tenderdash at: {}", self.base_url);
         let request_body = json!({
             "jsonrpc": "2.0",
@@ -349,35 +347,7 @@ impl TenderdashClient {
 
         self.post(request_body).await
     }
-}
-
-#[async_trait]
-impl TenderdashClientTrait for TenderdashClient {
-    async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
-        self.status().await
-    }
-
-    async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
-        self.net_info().await
-    }
-
-    async fn broadcast_tx(&self, tx: String) -> DAPIResult<BroadcastTxResponse> {
-        self.broadcast_tx(tx).await
-    }
-
-    async fn check_tx(&self, tx: String) -> DAPIResult<CheckTxResponse> {
-        self.check_tx(tx).await
-    }
-
-    async fn unconfirmed_txs(&self, limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
-        self.unconfirmed_txs(limit).await
-    }
-
-    async fn tx(&self, hash: String) -> DAPIResult<TxResponse> {
-        self.tx(hash).await
-    }
-
-    fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
+    pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.subscribe()
         } else {
@@ -386,7 +356,7 @@ impl TenderdashClientTrait for TenderdashClient {
             rx
         }
     }
-    fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent> {
+    pub fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent> {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.subscribe_blocks()
         } else {
@@ -396,7 +366,7 @@ impl TenderdashClientTrait for TenderdashClient {
         }
     }
 
-    fn is_websocket_connected(&self) -> bool {
+    pub fn is_websocket_connected(&self) -> bool {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.is_connected()
         } else {

@@ -10,8 +10,7 @@ mod transaction_stream;
 mod zmq_listener;
 
 use crate::DapiError;
-use crate::clients::CoreClient;
-use crate::clients::traits::TenderdashClientTrait;
+use crate::clients::{CoreClient, TenderdashClient};
 use crate::config::Config;
 use crate::sync::Workers;
 use std::sync::Arc;
@@ -23,7 +22,7 @@ pub(crate) use masternode_list_sync::MasternodeListSync;
 pub(crate) use subscriber_manager::{
     FilterType, StreamingEvent, SubscriberManager, SubscriptionHandle,
 };
-pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
+pub(crate) use zmq_listener::{ZmqEvent, ZmqListener};
 
 /// Streaming service implementation with ZMQ integration.
 ///
@@ -32,10 +31,10 @@ pub(crate) use zmq_listener::{ZmqEvent, ZmqListener, ZmqListenerTrait};
 #[derive(Clone)]
 pub struct StreamingServiceImpl {
     pub drive_client: crate::clients::drive_client::DriveClient,
-    pub tenderdash_client: Arc<dyn TenderdashClientTrait>,
+    pub tenderdash_client: Arc<TenderdashClient>,
     pub core_client: CoreClient,
     pub config: Arc<Config>,
-    pub zmq_listener: Arc<dyn ZmqListenerTrait>,
+    pub zmq_listener: Arc<ZmqListener>,
     pub subscriber_manager: Arc<SubscriberManager>,
     pub masternode_list_sync: Arc<MasternodeListSync>,
     /// Background workers; aborted when the last reference is dropped
@@ -160,7 +159,7 @@ impl StreamingServiceImpl {
     }
     pub fn new(
         drive_client: crate::clients::drive_client::DriveClient,
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        tenderdash_client: Arc<TenderdashClient>,
         core_client: CoreClient,
         config: Arc<Config>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -168,8 +167,7 @@ impl StreamingServiceImpl {
             zmq_url = %config.dapi.core.zmq_url,
             "Creating streaming service with default ZMQ listener"
         );
-        let zmq_listener: Arc<dyn ZmqListenerTrait> =
-            Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
+        let zmq_listener = Arc::new(ZmqListener::new(&config.dapi.core.zmq_url)?);
 
         Self::create_with_common_setup(
             drive_client,
@@ -183,10 +181,10 @@ impl StreamingServiceImpl {
     /// Create a new streaming service with a custom ZMQ listener (useful for testing)
     fn create_with_common_setup(
         drive_client: crate::clients::drive_client::DriveClient,
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        tenderdash_client: Arc<TenderdashClient>,
         core_client: CoreClient,
         config: Arc<Config>,
-        zmq_listener: Arc<dyn ZmqListenerTrait>,
+        zmq_listener: Arc<ZmqListener>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         trace!(
             zmq_url = %config.dapi.core.zmq_url,
@@ -247,7 +245,7 @@ impl StreamingServiceImpl {
 
     /// Background worker: subscribe to Tenderdash transactions and forward to subscribers
     async fn tenderdash_transactions_subscription_worker(
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        tenderdash_client: Arc<TenderdashClient>,
         subscriber_manager: Arc<SubscriberManager>,
     ) {
         trace!("Starting Tenderdash tx forwarder loop");
@@ -291,7 +289,7 @@ impl StreamingServiceImpl {
 
     /// Background worker: subscribe to Tenderdash transactions and forward to subscribers
     async fn tenderdash_block_subscription_worker(
-        tenderdash_client: Arc<dyn TenderdashClientTrait>,
+        tenderdash_client: Arc<TenderdashClient>,
         subscriber_manager: Arc<SubscriberManager>,
     ) {
         trace!("Starting Tenderdash block forwarder loop");
@@ -333,7 +331,7 @@ impl StreamingServiceImpl {
 
     /// Background worker: subscribe to ZMQ and process events, with retry/backoff
     async fn core_zmq_subscription_worker(
-        zmq_listener: Arc<dyn ZmqListenerTrait>,
+        zmq_listener: Arc<ZmqListener>,
         subscriber_manager: Arc<SubscriberManager>,
     ) {
         trace!("Starting ZMQ subscribe/process loop");

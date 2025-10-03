@@ -85,16 +85,6 @@ pub enum ZmqEvent {
     HashBlock { hash: Vec<u8> },
 }
 
-/// Trait for ZMQ listeners that can start streaming events asynchronously
-#[async_trait]
-pub trait ZmqListenerTrait: Send + Sync {
-    /// Subscribe to ZMQ events and return a receiver for them
-    async fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>>;
-
-    /// Check if the ZMQ listener is connected
-    fn is_connected(&self) -> bool;
-}
-
 #[derive(Clone)]
 pub struct ZmqConnection {
     cancel: CancellationToken,
@@ -299,6 +289,16 @@ impl ZmqListener {
 
         Ok(())
     }
+
+    /// Subscribe to ZMQ events and return a receiver for them
+    pub async fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
+        Ok(self.event_sender.subscribe())
+    }
+
+    /// Check if the ZMQ listener is connected (placeholder)
+    pub fn is_connected(&self) -> bool {
+        !self.cancel.is_cancelled()
+    }
     /// ZMQ listener task that runs asynchronously
     async fn zmq_listener_task(
         zmq_uri: String,
@@ -413,21 +413,6 @@ impl ZmqListener {
                 None
             }
         }
-    }
-}
-
-#[async_trait]
-impl ZmqListenerTrait for ZmqListener {
-    /// Subscribe to ZMQ events and return a receiver for them
-    async fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
-        let receiver = self.event_sender.subscribe();
-
-        Ok(receiver)
-    }
-
-    /// Check if the ZMQ listener is connected (placeholder)
-    fn is_connected(&self) -> bool {
-        !self.cancel.is_cancelled()
     }
 }
 

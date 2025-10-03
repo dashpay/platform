@@ -96,6 +96,7 @@ macro_rules! drive_method {
         }
     };
 }
+use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
@@ -104,7 +105,7 @@ use crate::services::streaming_service::FilterType;
 #[derive(Clone)]
 pub struct PlatformServiceImpl {
     pub drive_client: crate::clients::drive_client::DriveClient,
-    pub tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
+    pub tenderdash_client: Arc<TenderdashClient>,
     pub websocket_client: Arc<TenderdashWebSocketClient>,
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
@@ -116,7 +117,7 @@ pub struct PlatformServiceImpl {
 impl PlatformServiceImpl {
     pub async fn new(
         drive_client: crate::clients::drive_client::DriveClient,
-        tenderdash_client: Arc<dyn crate::clients::traits::TenderdashClientTrait>,
+        tenderdash_client: Arc<TenderdashClient>,
         config: Arc<Config>,
         subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
