@@ -1,0 +1,32 @@
+[package]
+name = "wasm-dpp2"
+version = "1.0.5"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
+bincode = "=2.0.0-rc.3"
+bincode_derive = "=2.0.0-rc.3"
+wasm-bindgen = { version = "=0.2.100", default-features = false, features = ["serde-serialize"] }
+dpp = { git = "https://github.com/owl352/platform", branch = "v2.0.1", default-features = false, features = [
+    "state-transition-signing",
+    "document-json-conversion",
+    "identity-serialization",
+    "identity-value-conversion",
+    "data-contract-json-conversion",
+    "document-value-conversion",
+    "bls-signatures",
+    "platform-value",
+    "state-transitions",
+    "state-transition-serde-conversion"
+] }
+serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
+serde = { version = "1.0.197", features = ["derive"] }
+serde_json = { version = "1.0", features = ["preserve_order"] }
+js-sys = "0.3.77"
+hex = "0.4.3"
+anyhow = "1.0.75"
+sha2 = "0.10.8"

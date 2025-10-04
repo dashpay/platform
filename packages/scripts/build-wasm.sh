@@ -21,6 +21,7 @@ PACKAGE_NAME=""
 TARGET_TYPE="web"
 OPT_LEVEL="full"
 USE_WASM_PACK=false
+DEFAULT_FEATURES_FALLBACK=true
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -76,6 +77,12 @@ case "$PACKAGE_NAME" in
     "wasm-sdk")
         USE_WASM_PACK=true
         WASM_FILE="wasm_sdk_bg.wasm"
+        DEFAULT_FEATURES_FALLBACK=true
+        ;;
+    "wasm-dpp2")
+        USE_WASM_PACK=true
+        WASM_FILE="wasm_dpp2_bg.wasm"
+        DEFAULT_FEATURES_FALLBACK=false
         ;;
     "wasm-drive-verify")
         USE_WASM_PACK=false
@@ -113,10 +120,12 @@ if [ "$USE_WASM_PACK" = true ]; then
     if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
         echo "CARGO_BUILD_FEATURES is set to: '$CARGO_BUILD_FEATURES'"
         FEATURES_ARG="--features $CARGO_BUILD_FEATURES"
-    else
+    elif [ "$DEFAULT_FEATURES_FALLBACK" = true ]; then
         echo "CARGO_BUILD_FEATURES is not set, using default features"
-        # Explicitly pass default features to ensure they're used
         FEATURES_ARG="--features default"
+    else
+        echo "CARGO_BUILD_FEATURES is not set, building with crate defaults"
+        FEATURES_ARG=""
     fi
 
     echo "Running: wasm-pack build --target $TARGET_TYPE --release --no-opt $FEATURES_ARG"
