@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::batch::token_base_transition::TokenBaseTransitionWASM;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenDirectPurchaseTransitionWASM)]
+#[wasm_bindgen(js_name=TokenDirectPurchaseTransition)]
 pub struct TokenDirectPurchaseTransitionWASM(TokenDirectPurchaseTransition);
 
 impl From<TokenDirectPurchaseTransitionWASM> for TokenDirectPurchaseTransition {
@@ -23,16 +23,16 @@ impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenDirectPurchaseTransition)]
 impl TokenDirectPurchaseTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenDirectPurchaseTransitionWASM".to_string()
+        "TokenDirectPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenDirectPurchaseTransitionWASM".to_string()
+        "TokenDirectPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

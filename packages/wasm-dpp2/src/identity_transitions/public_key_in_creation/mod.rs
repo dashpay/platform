@@ -18,7 +18,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "IdentityPublicKeyInCreationWASM")]
+#[wasm_bindgen(js_name = "IdentityPublicKeyInCreation")]
 pub struct IdentityPublicKeyInCreationWASM(IdentityPublicKeyInCreation);
 
 impl From<IdentityPublicKeyInCreation> for IdentityPublicKeyInCreationWASM {
@@ -37,7 +37,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyInCreationWASM {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let value =
-            value.to_wasm::<IdentityPublicKeyInCreationWASM>("IdentityPublicKeyInCreationWASM")?;
+            value.to_wasm::<IdentityPublicKeyInCreationWASM>("IdentityPublicKeyInCreation")?;
 
         Ok(value.clone())
     }
@@ -63,16 +63,16 @@ impl From<IdentityPublicKeyInCreationWASM> for IdentityPublicKey {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
 impl IdentityPublicKeyInCreationWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityPublicKeyInCreationWASM".to_string()
+        "IdentityPublicKeyInCreation".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityPublicKeyInCreationWASM".to_string()
+        "IdentityPublicKeyInCreation".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -94,7 +94,7 @@ impl IdentityPublicKeyInCreationWASM {
                 true => None,
                 false => Some(
                     js_contract_bounds
-                        .to_wasm::<ContractBoundsWASM>("ContractBoundsWASM")?
+                        .to_wasm::<ContractBoundsWASM>("ContractBounds")?
                         .clone()
                         .into(),
                 ),
@@ -228,7 +228,7 @@ impl IdentityPublicKeyInCreationWASM {
             true => self.0.set_contract_bounds(None),
             false => {
                 let bounds = js_bounds
-                    .to_wasm::<ContractBoundsWASM>("ContractBoundsWASM")?
+                    .to_wasm::<ContractBoundsWASM>("ContractBounds")?
                     .clone();
 
                 self.0.set_contract_bounds(Some(bounds.into()))

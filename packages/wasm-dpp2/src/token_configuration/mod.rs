@@ -33,7 +33,7 @@ pub mod reward_distribution_type;
 pub mod trade_mode;
 
 #[derive(Clone, PartialEq, Debug)]
-#[wasm_bindgen(js_name = "TokenConfigurationWASM")]
+#[wasm_bindgen(js_name = "TokenConfiguration")]
 pub struct TokenConfigurationWASM(TokenConfiguration);
 
 impl From<TokenConfiguration> for TokenConfigurationWASM {
@@ -48,16 +48,16 @@ impl From<TokenConfigurationWASM> for TokenConfiguration {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfiguration)]
 impl TokenConfigurationWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenConfigurationWASM".to_string()
+        "TokenConfiguration".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenConfigurationWASM".to_string()
+        "TokenConfiguration".to_string()
     }
 
     #[wasm_bindgen(constructor)]

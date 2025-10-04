@@ -9,7 +9,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenUnFreezeTransitionWASM)]
+#[wasm_bindgen(js_name=TokenUnFreezeTransition)]
 pub struct TokenUnFreezeTransitionWASM(TokenUnfreezeTransition);
 
 impl From<TokenUnfreezeTransition> for TokenUnFreezeTransitionWASM {
@@ -24,16 +24,16 @@ impl From<TokenUnFreezeTransitionWASM> for TokenUnfreezeTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenUnFreezeTransition)]
 impl TokenUnFreezeTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenUnFreezeTransitionWASM".to_string()
+        "TokenUnFreezeTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenUnFreezeTransitionWASM".to_string()
+        "TokenUnFreezeTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

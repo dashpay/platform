@@ -7,7 +7,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPer
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
 impl TokenConfigurationChangeItemWASM {
     #[wasm_bindgen(js_name = "PerpetualDistributionConfigurationItem")]
     pub fn perpetual_distribution_item(js_perpetual_distribution_value: JsValue) -> Self {
@@ -16,7 +16,7 @@ impl TokenConfigurationChangeItemWASM {
                 true => None,
                 false => Some(
                     js_perpetual_distribution_value
-                        .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistributionWASM")
+                        .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")
                         .unwrap()
                         .clone()
                         .into(),

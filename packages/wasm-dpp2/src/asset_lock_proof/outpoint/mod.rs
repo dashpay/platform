@@ -5,7 +5,7 @@ use dpp::platform_value::string_encoding::{decode, encode};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "OutPointWASM")]
+#[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Clone)]
 pub struct OutPointWASM(OutPoint);
 
@@ -24,22 +24,22 @@ impl From<OutPointWASM> for OutPoint {
 impl TryFrom<JsValue> for OutPointWASM {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        let value = value.to_wasm::<OutPointWASM>("OutPointWASM")?;
+        let value = value.to_wasm::<OutPointWASM>("OutPoint")?;
 
         Ok(value.clone())
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = OutPoint)]
 impl OutPointWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "OutPointWASM".to_string()
+        "OutPoint".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "OutPointWASM".to_string()
+        "OutPoint".to_string()
     }
 
     #[wasm_bindgen(constructor)]

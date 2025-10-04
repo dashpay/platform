@@ -9,7 +9,7 @@ before(async () => {
 describe('TokenPreProgrammedDistribution', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
@@ -23,7 +23,7 @@ describe('TokenPreProgrammedDistribution', () => {
 
   describe('getters', () => {
     it('should allow to get distributions', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10100),
@@ -41,7 +41,7 @@ describe('TokenPreProgrammedDistribution', () => {
 
   describe('setters', () => {
     it('should allow to set distributions', () => {
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10100),

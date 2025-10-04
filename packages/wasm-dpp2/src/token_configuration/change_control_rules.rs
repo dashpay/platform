@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "ChangeControlRulesWASM")]
+#[wasm_bindgen(js_name = "ChangeControlRules")]
 pub struct ChangeControlRulesWASM(ChangeControlRules);
 
 impl From<ChangeControlRules> for ChangeControlRulesWASM {
@@ -29,16 +29,16 @@ impl From<ChangeControlRulesWASM> for ChangeControlRules {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = ChangeControlRules)]
 impl ChangeControlRulesWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "ChangeControlRulesWASM".to_string()
+        "ChangeControlRules".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "ChangeControlRulesWASM".to_string()
+        "ChangeControlRules".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -183,7 +183,7 @@ impl ChangeControlRulesWASM {
 
             let group_value = Reflect::get(js_groups, &key)?;
 
-            let group = group_value.to_wasm::<GroupWASM>("GroupWASM")?.clone();
+            let group = group_value.to_wasm::<GroupWASM>("Group")?.clone();
 
             groups.insert(contract_position, group.into());
         }

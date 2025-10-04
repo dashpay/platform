@@ -7,7 +7,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenBurnTransitionWASM)]
+#[wasm_bindgen(js_name=TokenBurnTransition)]
 pub struct TokenBurnTransitionWASM(TokenBurnTransition);
 
 impl From<TokenBurnTransition> for TokenBurnTransitionWASM {
@@ -22,16 +22,16 @@ impl From<TokenBurnTransitionWASM> for TokenBurnTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenBurnTransition)]
 impl TokenBurnTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenBurnTransitionWASM".to_string()
+        "TokenBurnTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenBurnTransitionWASM".to_string()
+        "TokenBurnTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

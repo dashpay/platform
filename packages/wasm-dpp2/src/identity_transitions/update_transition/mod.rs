@@ -18,20 +18,20 @@ use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, Stat
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "IdentityUpdateTransitionWASM")]
+#[wasm_bindgen(js_name = "IdentityUpdateTransition")]
 #[derive(Clone)]
 pub struct IdentityUpdateTransitionWASM(IdentityUpdateTransition);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityUpdateTransition)]
 impl IdentityUpdateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityUpdateTransitionWASM".to_string()
+        "IdentityUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityUpdateTransitionWASM".to_string()
+        "IdentityUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

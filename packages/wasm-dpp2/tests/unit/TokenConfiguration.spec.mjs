@@ -9,7 +9,7 @@ before(async () => {
 describe('TokenConfiguration', () => {
   describe('serialization / deserialization', () => {
     it('Should allow to create from values', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
             shouldCapitalize: true,
@@ -20,9 +20,9 @@ describe('TokenConfiguration', () => {
         1,
       );
 
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -30,7 +30,7 @@ describe('TokenConfiguration', () => {
         true,
       );
 
-      const keepHistory = new wasm.TokenKeepsHistoryRulesWASM(
+      const keepHistory = new wasm.TokenKeepsHistoryRules(
         true,
         true,
         true,
@@ -39,7 +39,7 @@ describe('TokenConfiguration', () => {
         true,
       );
 
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
@@ -47,7 +47,7 @@ describe('TokenConfiguration', () => {
         },
       );
 
-      const distributionRules = new wasm.TokenDistributionRulesWASM(
+      const distributionRules = new wasm.TokenDistributionRules(
         undefined,
         changeRules,
         preProgrammedDistribution,
@@ -58,14 +58,14 @@ describe('TokenConfiguration', () => {
         changeRules,
       );
 
-      const tradeMode = wasm.TokenTradeModeWASM.NotTradeable();
+      const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-      const marketplaceRules = new wasm.TokenMarketplaceRulesWASM(
+      const marketplaceRules = new wasm.TokenMarketplaceRules(
         tradeMode,
         changeRules,
       );
 
-      const config = new wasm.TokenConfigurationWASM(
+      const config = new wasm.TokenConfiguration(
         convention,
         changeRules,
         BigInt(999999999),
@@ -93,7 +93,7 @@ describe('TokenConfiguration', () => {
 
   describe('getters', () => {
     it('should allow to get getters', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: {
             shouldCapitalize: true,
@@ -104,9 +104,9 @@ describe('TokenConfiguration', () => {
         1,
       );
 
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -114,7 +114,7 @@ describe('TokenConfiguration', () => {
         true,
       );
 
-      const keepHistory = new wasm.TokenKeepsHistoryRulesWASM(
+      const keepHistory = new wasm.TokenKeepsHistoryRules(
         true,
         true,
         true,
@@ -123,7 +123,7 @@ describe('TokenConfiguration', () => {
         true,
       );
 
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
@@ -131,7 +131,7 @@ describe('TokenConfiguration', () => {
         },
       );
 
-      const distributionRules = new wasm.TokenDistributionRulesWASM(
+      const distributionRules = new wasm.TokenDistributionRules(
         undefined,
         changeRules,
         preProgrammedDistribution,
@@ -142,14 +142,14 @@ describe('TokenConfiguration', () => {
         changeRules,
       );
 
-      const tradeMode = wasm.TokenTradeModeWASM.NotTradeable();
+      const tradeMode = wasm.TokenTradeMode.NotTradeable();
 
-      const marketplaceRules = new wasm.TokenMarketplaceRulesWASM(
+      const marketplaceRules = new wasm.TokenMarketplaceRules(
         tradeMode,
         changeRules,
       );
 
-      const config = new wasm.TokenConfigurationWASM(
+      const config = new wasm.TokenConfiguration(
         convention,
         changeRules,
         BigInt(999999999),
@@ -171,22 +171,22 @@ describe('TokenConfiguration', () => {
         'note',
       );
 
-      expect(config.conventions.constructor.name).to.equal('TokenConfigurationConventionWASM');
-      expect(config.conventionsChangeRules.constructor.name).to.equal('ChangeControlRulesWASM');
+      expect(config.conventions.constructor.name).to.equal('TokenConfigurationConvention');
+      expect(config.conventionsChangeRules.constructor.name).to.equal('ChangeControlRules');
       expect(config.baseSupply.constructor.name).to.equal('BigInt');
-      expect(config.keepsHistory.constructor.name).to.equal('TokenKeepsHistoryRulesWASM');
+      expect(config.keepsHistory.constructor.name).to.equal('TokenKeepsHistoryRules');
       expect(config.startAsPaused.constructor.name).to.equal('Boolean');
       expect(config.isAllowedTransferToFrozenBalance.constructor.name).to.equal('Boolean');
       expect(config.maxSupply).to.equal(undefined);
-      expect(config.maxSupplyChangeRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.distributionRules.constructor.name).to.equal('TokenDistributionRulesWASM');
-      expect(config.marketplaceRules.constructor.name).to.equal('TokenMarketplaceRulesWASM');
-      expect(config.manualMintingRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.manualBurningRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.freezeRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.unfreezeRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.destroyFrozenFundsRules.constructor.name).to.equal('ChangeControlRulesWASM');
-      expect(config.emergencyActionRules.constructor.name).to.equal('ChangeControlRulesWASM');
+      expect(config.maxSupplyChangeRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.distributionRules.constructor.name).to.equal('TokenDistributionRules');
+      expect(config.marketplaceRules.constructor.name).to.equal('TokenMarketplaceRules');
+      expect(config.manualMintingRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.manualBurningRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.freezeRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.unfreezeRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.destroyFrozenFundsRules.constructor.name).to.equal('ChangeControlRules');
+      expect(config.emergencyActionRules.constructor.name).to.equal('ChangeControlRules');
       expect(config.mainControlGroup).to.equal(undefined);
       expect(config.description.constructor.name).to.equal('String');
     });

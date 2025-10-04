@@ -10,13 +10,13 @@ before(async () => {
 describe('InstantLock', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create InstantLock from values', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
       expect(instantLockProof.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to convert to object', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
       const expected = {
         instantLock: instantLockBytes,
@@ -34,7 +34,7 @@ describe('InstantLock', () => {
         outputIndex: 0,
       };
 
-      const instantLockProof = wasm.InstantAssetLockProofWASM.fromObject(lockObject);
+      const instantLockProof = wasm.InstantAssetLockProof.fromObject(lockObject);
 
       expect(instantLockProof.__wbg_ptr).to.not.equal(0);
     });
@@ -42,33 +42,33 @@ describe('InstantLock', () => {
 
   describe('getters', () => {
     it('should allow to get output', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      expect(instantLockProof.getOutput().constructor.name).to.deep.equal('TxOutWASM');
+      expect(instantLockProof.getOutput().constructor.name).to.deep.equal('TxOut');
     });
 
     it('should allow to convert to get OutPoint', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      expect(instantLockProof.getOutPoint().constructor.name).to.deep.equal('OutPointWASM');
+      expect(instantLockProof.getOutPoint().constructor.name).to.deep.equal('OutPoint');
     });
 
     it('should allow to get output index', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
       expect(instantLockProof.outputIndex).to.deep.equal(0);
     });
 
     it('should allow to get instant lock', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      expect(instantLockProof.instantLock.constructor.name).to.deep.equal('InstantLockWASM');
+      expect(instantLockProof.instantLock.constructor.name).to.deep.equal('InstantLock');
     });
   });
 
   describe('setters', () => {
     it('should allow to set output index', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
       instantLockProof.outputIndex = 12;
 
@@ -76,9 +76,9 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set instant lock', () => {
-      const instantLockProof = new wasm.InstantAssetLockProofWASM(instantLockBytes, transactionBytes, 0);
+      const instantLockProof = new wasm.InstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      const newInstantLockProof = new wasm.InstantLockWASM(
+      const newInstantLockProof = new wasm.InstantLock(
         0,
         [],
         'dbdb604952d08184b55d48c915ed78aadc81dbc5cc98e8b4821abe5b4bbcbecb',

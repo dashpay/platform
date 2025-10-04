@@ -6,7 +6,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::token_configuration::distribution_function::DistributionFunctionWASM;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "RewardDistributionTypeWASM")]
+#[wasm_bindgen(js_name = "RewardDistributionType")]
 pub struct RewardDistributionTypeWASM(RewardDistributionType);
 
 impl From<RewardDistributionType> for RewardDistributionTypeWASM {
@@ -21,16 +21,16 @@ impl From<RewardDistributionTypeWASM> for RewardDistributionType {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = RewardDistributionType)]
 impl RewardDistributionTypeWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "RewardDistributionTypeWASM".to_string()
+        "RewardDistributionType".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "RewardDistributionTypeWASM".to_string()
+        "RewardDistributionType".to_string()
     }
 
     #[wasm_bindgen(js_name = "BlockBasedDistribution")]
@@ -92,36 +92,36 @@ impl RewardDistributionTypeWASM {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "BlockBasedDistributionWASM")]
+#[wasm_bindgen(js_name = "BlockBasedDistribution")]
 pub struct BlockBasedDistributionWASM {
     pub interval: BlockHeightInterval,
     function: DistributionFunctionWASM,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "TimeBasedDistributionWASM")]
+#[wasm_bindgen(js_name = "TimeBasedDistribution")]
 pub struct TimeBasedDistributionWASM {
     pub interval: TimestampMillisInterval,
     function: DistributionFunctionWASM,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "EpochBasedDistributionWASM")]
+#[wasm_bindgen(js_name = "EpochBasedDistribution")]
 pub struct EpochBasedDistributionWASM {
     pub interval: EpochInterval,
     function: DistributionFunctionWASM,
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = BlockBasedDistribution)]
 impl BlockBasedDistributionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "BlockBasedDistributionWASM".to_string()
+        "BlockBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "BlockBasedDistributionWASM".to_string()
+        "BlockBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = "function")]
@@ -135,16 +135,16 @@ impl BlockBasedDistributionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TimeBasedDistribution)]
 impl TimeBasedDistributionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TimeBasedDistributionWASM".to_string()
+        "TimeBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TimeBasedDistributionWASM".to_string()
+        "TimeBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = "function")]
@@ -158,16 +158,16 @@ impl TimeBasedDistributionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = EpochBasedDistribution)]
 impl EpochBasedDistributionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "EpochBasedDistributionWASM".to_string()
+        "EpochBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "EpochBasedDistributionWASM".to_string()
+        "EpochBasedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = "function")]

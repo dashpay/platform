@@ -6,7 +6,7 @@ use dpp::data_contract::associated_token::token_perpetual_distribution::v0::Toke
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, PartialEq, Debug)]
-#[wasm_bindgen(js_name = "TokenPerpetualDistributionWASM")]
+#[wasm_bindgen(js_name = "TokenPerpetualDistribution")]
 pub struct TokenPerpetualDistributionWASM(TokenPerpetualDistribution);
 
 impl From<TokenPerpetualDistributionWASM> for TokenPerpetualDistribution {
@@ -21,16 +21,16 @@ impl From<TokenPerpetualDistribution> for TokenPerpetualDistributionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenPerpetualDistribution)]
 impl TokenPerpetualDistributionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenPerpetualDistributionWASM".to_string()
+        "TokenPerpetualDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenPerpetualDistributionWASM".to_string()
+        "TokenPerpetualDistribution".to_string()
     }
 
     #[wasm_bindgen(constructor)]

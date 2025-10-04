@@ -3,7 +3,7 @@ use dpp::dashcore::{PublicKey, secp256k1};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "PublicKeyWASM")]
+#[wasm_bindgen(js_name = "PublicKey")]
 pub struct PublicKeyWASM(PublicKey);
 
 impl From<PublicKey> for PublicKeyWASM {
@@ -18,16 +18,16 @@ impl From<PublicKeyWASM> for PublicKey {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PublicKey)]
 impl PublicKeyWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "PublicKeyWASM".to_string()
+        "PublicKey".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "PublicKeyWASM".to_string()
+        "PublicKey".to_string()
     }
 
     #[wasm_bindgen(constructor)]

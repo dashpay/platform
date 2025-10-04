@@ -8,7 +8,7 @@ use dpp::data_contract::associated_token::token_marketplace_rules::v0::TokenMark
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, PartialEq, Debug)]
-#[wasm_bindgen(js_name = "TokenMarketplaceRulesWASM")]
+#[wasm_bindgen(js_name = "TokenMarketplaceRules")]
 pub struct TokenMarketplaceRulesWASM(TokenMarketplaceRules);
 
 impl From<TokenMarketplaceRules> for TokenMarketplaceRulesWASM {
@@ -23,16 +23,16 @@ impl From<TokenMarketplaceRulesWASM> for TokenMarketplaceRules {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenMarketplaceRules)]
 impl TokenMarketplaceRulesWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenMarketplaceRulesWASM".to_string()
+        "TokenMarketplaceRules".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenMarketplaceRulesWASM".to_string()
+        "TokenMarketplaceRules".to_string()
     }
 
     #[wasm_bindgen(constructor)]

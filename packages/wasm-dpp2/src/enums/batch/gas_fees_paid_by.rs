@@ -3,7 +3,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Default)]
-#[wasm_bindgen(js_name = "GasFeesPaidByWASM")]
+#[wasm_bindgen(js_name = "GasFeesPaidBy")]
 pub enum GasFeesPaidByWASM {
     #[default]
     DocumentOwner = 0,

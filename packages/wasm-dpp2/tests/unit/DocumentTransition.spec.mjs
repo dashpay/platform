@@ -15,9 +15,9 @@ let replaceTransition;
 
 describe('DocumentTransition', () => {
   before(async () => {
-    documentInstance = new wasm.DocumentWASM(document, documentTypeName, revision, dataContractId, ownerId, id);
-    createTransition = new wasm.DocumentCreateTransitionWASM(documentInstance, BigInt(1));
-    replaceTransition = new wasm.DocumentReplaceTransitionWASM(documentInstance, BigInt(1));
+    documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+    createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+    replaceTransition = new wasm.DocumentReplaceTransition(documentInstance, BigInt(1));
   });
 
   describe('serialization / deserialization', () => {

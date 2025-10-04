@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "TokenConfigurationChangeItemWASM")]
+#[wasm_bindgen(js_name = "TokenConfigurationChangeItem")]
 pub struct TokenConfigurationChangeItemWASM(TokenConfigurationChangeItem);
 
 impl From<TokenConfigurationChangeItemWASM> for TokenConfigurationChangeItem {
@@ -25,16 +25,16 @@ impl From<TokenConfigurationChangeItem> for TokenConfigurationChangeItemWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
 impl TokenConfigurationChangeItemWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenConfigurationChangeItemWASM".to_string()
+        "TokenConfigurationChangeItem".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenConfigurationChangeItemWASM".to_string()
+        "TokenConfigurationChangeItem".to_string()
     }
 
     #[wasm_bindgen(js_name = "getItemName")]

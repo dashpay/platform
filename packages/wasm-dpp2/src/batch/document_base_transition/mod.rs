@@ -11,7 +11,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "DocumentBaseTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentBaseTransition")]
 pub struct DocumentBaseTransitionWASM(DocumentBaseTransition);
 
 impl From<DocumentBaseTransition> for DocumentBaseTransitionWASM {
@@ -26,16 +26,16 @@ impl From<DocumentBaseTransitionWASM> for DocumentBaseTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentBaseTransition)]
 impl DocumentBaseTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentBaseTransitionWASM".to_string()
+        "DocumentBaseTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentBaseTransitionWASM".to_string()
+        "DocumentBaseTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -51,7 +51,7 @@ impl DocumentBaseTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfoWASM")?
+                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
                         .clone()
                         .into(),
                 ),

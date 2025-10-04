@@ -3,7 +3,7 @@ use js_sys::Uint8Array;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "TxOutWASM")]
+#[wasm_bindgen(js_name = "TxOut")]
 #[derive(Clone)]
 pub struct TxOutWASM(TxOut);
 
@@ -19,16 +19,16 @@ impl From<TxOutWASM> for TxOut {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TxOut)]
 impl TxOutWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TxOutWASM".to_string()
+        "TxOut".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TxOutWASM".to_string()
+        "TxOut".to_string()
     }
 
     #[wasm_bindgen(constructor)]

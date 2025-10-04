@@ -13,7 +13,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "IdentityWASM")]
+#[wasm_bindgen(js_name = "Identity")]
 pub struct IdentityWASM(Identity);
 
 impl From<Identity> for IdentityWASM {
@@ -22,16 +22,16 @@ impl From<Identity> for IdentityWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = Identity)]
 impl IdentityWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityWASM".to_string()
+        "Identity".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityWASM".to_string()
+        "Identity".to_string()
     }
 
     #[wasm_bindgen(constructor)]

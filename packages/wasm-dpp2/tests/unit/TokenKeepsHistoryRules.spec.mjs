@@ -9,7 +9,7 @@ before(async () => {
 describe('TokenKeepsHistoryRules', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create TokenKeepsHistoryRules from values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRulesWASM(
+      const keepHistory = new wasm.TokenKeepsHistoryRules(
         true,
         true,
         true,
@@ -24,7 +24,7 @@ describe('TokenKeepsHistoryRules', () => {
 
   describe('getters', () => {
     it('should allow to get values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRulesWASM(
+      const keepHistory = new wasm.TokenKeepsHistoryRules(
         true,
         true,
         true,
@@ -44,7 +44,7 @@ describe('TokenKeepsHistoryRules', () => {
 
   describe('setters', () => {
     it('should allow to set values', () => {
-      const keepHistory = new wasm.TokenKeepsHistoryRulesWASM(
+      const keepHistory = new wasm.TokenKeepsHistoryRules(
         true,
         true,
         true,

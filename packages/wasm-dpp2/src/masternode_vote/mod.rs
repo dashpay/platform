@@ -21,7 +21,7 @@ use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, Stat
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "MasternodeVoteTransitionWASM")]
+#[wasm_bindgen(js_name = "MasternodeVoteTransition")]
 #[derive(Clone)]
 pub struct MasternodeVoteTransitionWASM(MasternodeVoteTransition);
 
@@ -37,16 +37,16 @@ impl From<MasternodeVoteTransitionWASM> for MasternodeVoteTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = MasternodeVoteTransition)]
 impl MasternodeVoteTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "MasternodeVoteTransitionWASM".to_string()
+        "MasternodeVoteTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "MasternodeVoteTransitionWASM".to_string()
+        "MasternodeVoteTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

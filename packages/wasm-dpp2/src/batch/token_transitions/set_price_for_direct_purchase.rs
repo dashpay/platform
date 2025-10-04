@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenSetPriceForDirectPurchaseTransitionWASM)]
+#[wasm_bindgen(js_name=TokenSetPriceForDirectPurchaseTransition)]
 pub struct TokenSetPriceForDirectPurchaseTransitionWASM(TokenSetPriceForDirectPurchaseTransition);
 
 impl From<TokenSetPriceForDirectPurchaseTransition>
@@ -29,16 +29,16 @@ impl From<TokenSetPriceForDirectPurchaseTransitionWASM>
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenSetPriceForDirectPurchaseTransition)]
 impl TokenSetPriceForDirectPurchaseTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenSetPriceForDirectPurchaseTransitionWASM".to_string()
+        "TokenSetPriceForDirectPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenSetPriceForDirectPurchaseTransitionWASM".to_string()
+        "TokenSetPriceForDirectPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -51,7 +51,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWASM {
             true => None,
             false => Some(
                 js_price
-                    .to_wasm::<TokenPricingScheduleWASM>("TokenPricingScheduleWASM")?
+                    .to_wasm::<TokenPricingScheduleWASM>("TokenPricingSchedule")?
                     .clone()
                     .into(),
             ),
@@ -102,7 +102,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWASM {
             true => None,
             false => Some(
                 js_price
-                    .to_wasm::<TokenPricingScheduleWASM>("TokenPricingScheduleWASM")?
+                    .to_wasm::<TokenPricingScheduleWASM>("TokenPricingSchedule")?
                     .clone()
                     .into(),
             ),

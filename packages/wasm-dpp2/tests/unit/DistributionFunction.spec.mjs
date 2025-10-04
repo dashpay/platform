@@ -9,7 +9,7 @@ before(async () => {
 describe('DistributionFunction', function () {
   describe('serialization / deserialization', function () {
     it('shoulda allow to create FixedAmountDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111)
       )
 
@@ -17,7 +17,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Random', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Random(
+      const distributionFunction = wasm.DistributionFunction.Random(
         BigInt(111),
         BigInt(113)
       )
@@ -26,7 +26,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create StepDecreasingAmount', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.StepDecreasingAmount(
+      const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
         11,
         11,
         11,
@@ -41,7 +41,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Stepwise', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Stepwise(
+      const distributionFunction = wasm.DistributionFunction.Stepwise(
         {
           11111111121: BigInt(111)
         }
@@ -51,7 +51,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Linear', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Linear(
+      const distributionFunction = wasm.DistributionFunction.Linear(
         BigInt(111),
         BigInt(113),
         undefined,
@@ -64,7 +64,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Polynomial', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Polynomial(
+      const distributionFunction = wasm.DistributionFunction.Polynomial(
         BigInt(111),
         BigInt(113),
         BigInt(113),
@@ -80,7 +80,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Exponential', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Exponential(
+      const distributionFunction = wasm.DistributionFunction.Exponential(
         BigInt(111),
         BigInt(113),
         BigInt(113),
@@ -96,7 +96,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create Logarithmic', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.Logarithmic(
+      const distributionFunction = wasm.DistributionFunction.Logarithmic(
         BigInt(111),
         BigInt(113),
         BigInt(113),
@@ -112,7 +112,7 @@ describe('DistributionFunction', function () {
     })
 
     it('shoulda allow to create InvertedLogarithmic', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.InvertedLogarithmic(
+      const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
         BigInt(111),
         BigInt(113),
         BigInt(113),
@@ -131,7 +131,7 @@ describe('DistributionFunction', function () {
   describe('getters', function () {
     describe('function name', function () {
       it('FixedAmountDistribution', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+        const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111)
         )
 
@@ -139,7 +139,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Random', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Random(
+        const distributionFunction = wasm.DistributionFunction.Random(
           BigInt(111),
           BigInt(113)
         )
@@ -148,7 +148,7 @@ describe('DistributionFunction', function () {
       })
 
       it('StepDecreasingAmount', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.StepDecreasingAmount(
+        const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
           11,
           11,
           11,
@@ -163,7 +163,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Stepwise', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Stepwise(
+        const distributionFunction = wasm.DistributionFunction.Stepwise(
           {
             11111111121: BigInt(111)
           }
@@ -173,7 +173,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Linear', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Linear(
+        const distributionFunction = wasm.DistributionFunction.Linear(
           BigInt(111),
           BigInt(113),
           undefined,
@@ -186,7 +186,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Polynomial', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Polynomial(
+        const distributionFunction = wasm.DistributionFunction.Polynomial(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -202,7 +202,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Exponential', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Exponential(
+        const distributionFunction = wasm.DistributionFunction.Exponential(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -218,7 +218,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Logarithmic', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Logarithmic(
+        const distributionFunction = wasm.DistributionFunction.Logarithmic(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -234,7 +234,7 @@ describe('DistributionFunction', function () {
       })
 
       it('InvertedLogarithmic', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.InvertedLogarithmic(
+        const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -251,7 +251,7 @@ describe('DistributionFunction', function () {
     })
     describe('function value', function () {
       it('FixedAmountDistribution', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+        const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
           BigInt(111)
         )
 
@@ -259,7 +259,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Random', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Random(
+        const distributionFunction = wasm.DistributionFunction.Random(
           BigInt(111),
           BigInt(113)
         )
@@ -269,7 +269,7 @@ describe('DistributionFunction', function () {
       })
 
       it('StepDecreasingAmount', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.StepDecreasingAmount(
+        const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
           11,
           11,
           11,
@@ -291,7 +291,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Stepwise', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Stepwise(
+        const distributionFunction = wasm.DistributionFunction.Stepwise(
           {
             11111111121: BigInt(111)
           }
@@ -303,7 +303,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Linear', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Linear(
+        const distributionFunction = wasm.DistributionFunction.Linear(
           BigInt(111),
           BigInt(113),
           undefined,
@@ -321,7 +321,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Polynomial', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Polynomial(
+        const distributionFunction = wasm.DistributionFunction.Polynomial(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -345,7 +345,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Exponential', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Exponential(
+        const distributionFunction = wasm.DistributionFunction.Exponential(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -369,7 +369,7 @@ describe('DistributionFunction', function () {
       })
 
       it('Logarithmic', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.Logarithmic(
+        const distributionFunction = wasm.DistributionFunction.Logarithmic(
           BigInt(111),
           BigInt(113),
           BigInt(113),
@@ -393,7 +393,7 @@ describe('DistributionFunction', function () {
       })
 
       it('InvertedLogarithmic', () => {
-        const distributionFunction = wasm.DistributionFunctionWASM.InvertedLogarithmic(
+        const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
           BigInt(111),
           BigInt(113),
           BigInt(113),

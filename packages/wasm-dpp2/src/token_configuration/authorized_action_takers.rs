@@ -6,7 +6,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "AuthorizedActionTakersWASM")]
+#[wasm_bindgen(js_name = "AuthorizedActionTakers")]
 pub struct AuthorizedActionTakersWASM(AuthorizedActionTakers);
 
 impl From<AuthorizedActionTakers> for AuthorizedActionTakersWASM {
@@ -21,16 +21,16 @@ impl From<AuthorizedActionTakersWASM> for AuthorizedActionTakers {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = AuthorizedActionTakers)]
 impl AuthorizedActionTakersWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "AuthorizedActionTakersWASM".to_string()
+        "AuthorizedActionTakers".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "AuthorizedActionTakersWASM".to_string()
+        "AuthorizedActionTakers".to_string()
     }
 
     #[wasm_bindgen(js_name = "NoOne")]

@@ -9,7 +9,7 @@ before(async () => {
 describe('InstantLock', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create from values', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -23,7 +23,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to create from values and convert to identity public key', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -36,13 +36,13 @@ describe('InstantLock', () => {
       const publicKey = publicKeyInCreation.toIdentityPublicKey();
 
       expect(publicKeyInCreation.__wbg_ptr).to.not.equal(0);
-      expect(publicKey.constructor.name).to.equal('IdentityPublicKeyWASM');
+      expect(publicKey.constructor.name).to.equal('IdentityPublicKey');
     });
   });
 
   describe('getters', () => {
     it('should allow to get key id', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -56,7 +56,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get purpose', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -70,7 +70,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get security level', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -84,7 +84,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get key type', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -98,7 +98,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get read only', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -112,7 +112,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get data', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -126,7 +126,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get signature', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -142,7 +142,7 @@ describe('InstantLock', () => {
 
   describe('setters', () => {
     it('should allow to set key id', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -158,7 +158,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set purpose', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -174,7 +174,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set security level', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -190,7 +190,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set key type', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -206,7 +206,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set read only', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -222,7 +222,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set data', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',
@@ -238,7 +238,7 @@ describe('InstantLock', () => {
     });
 
     it('should allow to set signature', () => {
-      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreationWASM(
+      const publicKeyInCreation = new wasm.IdentityPublicKeyInCreation(
         0,
         'AUTHENTICATION',
         'master',

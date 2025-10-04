@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = VotePollWASM)]
+#[wasm_bindgen(js_name = VotePoll)]
 pub struct VotePollWASM(VotePoll);
 
 impl From<VotePoll> for VotePollWASM {
@@ -23,16 +23,16 @@ impl From<VotePollWASM> for VotePoll {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = VotePoll)]
 impl VotePollWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "VotePollWASM".to_string()
+        "VotePoll".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "VotePollWASM".to_string()
+        "VotePoll".to_string()
     }
 
     #[wasm_bindgen(constructor)]

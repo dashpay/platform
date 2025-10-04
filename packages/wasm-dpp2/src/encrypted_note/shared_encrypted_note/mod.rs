@@ -3,7 +3,7 @@ use dpp::tokens::SharedEncryptedNote;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "SharedEncryptedNoteWASM")]
+#[wasm_bindgen(js_name = "SharedEncryptedNote")]
 pub struct SharedEncryptedNoteWASM(SharedEncryptedNote);
 
 impl From<SharedEncryptedNote> for SharedEncryptedNoteWASM {
@@ -18,16 +18,16 @@ impl From<SharedEncryptedNoteWASM> for SharedEncryptedNote {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = SharedEncryptedNote)]
 impl SharedEncryptedNoteWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "SharedEncryptedNoteWASM".to_string()
+        "SharedEncryptedNote".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "SharedEncryptedNoteWASM".to_string()
+        "SharedEncryptedNote".to_string()
     }
 
     #[wasm_bindgen(constructor)]

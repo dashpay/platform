@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "PartialIdentityWASM")]
+#[wasm_bindgen(js_name = "PartialIdentity")]
 pub struct PartialIdentityWASM(PartialIdentity);
 
 impl From<PartialIdentity> for PartialIdentityWASM {
@@ -19,7 +19,7 @@ impl From<PartialIdentity> for PartialIdentityWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PartialIdentity)]
 impl PartialIdentityWASM {
     #[wasm_bindgen(constructor)]
     pub fn new(
@@ -143,7 +143,7 @@ pub fn js_value_to_loaded_public_keys(
                 let js_key = Reflect::get(&pub_keys_object, &key)?;
 
                 let key = js_key
-                    .to_wasm::<IdentityPublicKeyWASM>("IdentityPublicKeyWASM")?
+                    .to_wasm::<IdentityPublicKeyWASM>("IdentityPublicKey")?
                     .clone();
 
                 map.insert(key_id, IdentityPublicKey::from(key));

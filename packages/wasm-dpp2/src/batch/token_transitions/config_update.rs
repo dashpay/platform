@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "TokenConfigUpdateTransitionWASM")]
+#[wasm_bindgen(js_name = "TokenConfigUpdateTransition")]
 pub struct TokenConfigUpdateTransitionWASM(TokenConfigUpdateTransition);
 
 impl From<TokenConfigUpdateTransitionWASM> for TokenConfigUpdateTransition {
@@ -23,16 +23,16 @@ impl From<TokenConfigUpdateTransition> for TokenConfigUpdateTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigUpdateTransition)]
 impl TokenConfigUpdateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenConfigUpdateTransitionWASM".to_string()
+        "TokenConfigUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenConfigUpdateTransitionWASM".to_string()
+        "TokenConfigUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

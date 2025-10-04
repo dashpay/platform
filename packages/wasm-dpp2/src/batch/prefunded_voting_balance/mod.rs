@@ -1,7 +1,7 @@
 use dpp::fee::Credits;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "PrefundedVotingBalanceWASM")]
+#[wasm_bindgen(js_name = "PrefundedVotingBalance")]
 #[derive(Clone)]
 pub struct PrefundedVotingBalanceWASM {
     index_name: String,
@@ -23,16 +23,16 @@ impl From<PrefundedVotingBalanceWASM> for (String, Credits) {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PrefundedVotingBalance)]
 impl PrefundedVotingBalanceWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "PrefundedVotingBalanceWASM".to_string()
+        "PrefundedVotingBalance".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "PrefundedVotingBalanceWASM".to_string()
+        "PrefundedVotingBalance".to_string()
     }
 
     #[wasm_bindgen(constructor)]

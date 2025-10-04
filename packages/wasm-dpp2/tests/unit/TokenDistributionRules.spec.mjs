@@ -10,9 +10,9 @@ before(async () => {
 describe('TokenDistributionRules', () => {
   describe('serialization / deserialization', () => {
     it('shoulda allow to create with undefined values', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -20,7 +20,7 @@ describe('TokenDistributionRules', () => {
         true,
       );
 
-      const distributionRules = new wasm.TokenDistributionRulesWASM(
+      const distributionRules = new wasm.TokenDistributionRules(
         undefined,
         changeRules,
         undefined,
@@ -36,9 +36,9 @@ describe('TokenDistributionRules', () => {
     });
 
     it('shoulda allow to create without undefined values', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -46,7 +46,7 @@ describe('TokenDistributionRules', () => {
         true,
       );
 
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
@@ -54,23 +54,23 @@ describe('TokenDistributionRules', () => {
         },
       );
 
-      const recipient = wasm.TokenDistributionRecipientWASM.ContractOwner();
+      const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.BlockBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
 
-      const perpetualDistribution = new wasm.TokenPerpetualDistributionWASM(
+      const perpetualDistribution = new wasm.TokenPerpetualDistribution(
         distributionType,
         recipient,
       );
 
-      const distributionRules = new wasm.TokenDistributionRulesWASM(
+      const distributionRules = new wasm.TokenDistributionRules(
         perpetualDistribution,
         changeRules,
         preProgrammedDistribution,
@@ -90,9 +90,9 @@ describe('TokenDistributionRules', () => {
 
   describe('getters', () => {
     it('shoulda allow to get values', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -100,7 +100,7 @@ describe('TokenDistributionRules', () => {
         true,
       );
 
-      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
@@ -108,23 +108,23 @@ describe('TokenDistributionRules', () => {
         },
       );
 
-      const recipient = wasm.TokenDistributionRecipientWASM.ContractOwner();
+      const recipient = wasm.TokenDistributionRecipient.ContractOwner();
 
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.BlockBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
 
-      const perpetualDistribution = new wasm.TokenPerpetualDistributionWASM(
+      const perpetualDistribution = new wasm.TokenPerpetualDistribution(
         distributionType,
         recipient,
       );
 
-      const distributionRules = new wasm.TokenDistributionRulesWASM(
+      const distributionRules = new wasm.TokenDistributionRules(
         perpetualDistribution,
         changeRules,
         preProgrammedDistribution,
@@ -135,14 +135,14 @@ describe('TokenDistributionRules', () => {
         changeRules,
       );
 
-      expect(distributionRules.perpetualDistribution.constructor.name).to.deep.equal('TokenPerpetualDistributionWASM');
-      expect(distributionRules.perpetualDistributionRules.constructor.name).to.deep.equal('ChangeControlRulesWASM');
-      expect(distributionRules.preProgrammedDistribution.constructor.name).to.deep.equal('TokenPreProgrammedDistributionWASM');
-      expect(distributionRules.newTokenDestinationIdentity.constructor.name).to.deep.equal('IdentifierWASM');
-      expect(distributionRules.newTokenDestinationIdentityRules.constructor.name).to.deep.equal('ChangeControlRulesWASM');
+      expect(distributionRules.perpetualDistribution.constructor.name).to.deep.equal('TokenPerpetualDistribution');
+      expect(distributionRules.perpetualDistributionRules.constructor.name).to.deep.equal('ChangeControlRules');
+      expect(distributionRules.preProgrammedDistribution.constructor.name).to.deep.equal('TokenPreProgrammedDistribution');
+      expect(distributionRules.newTokenDestinationIdentity.constructor.name).to.deep.equal('Identifier');
+      expect(distributionRules.newTokenDestinationIdentityRules.constructor.name).to.deep.equal('ChangeControlRules');
       expect(distributionRules.mintingAllowChoosingDestination).to.deep.equal(true);
-      expect(distributionRules.mintingAllowChoosingDestinationRules.constructor.name).to.deep.equal('ChangeControlRulesWASM');
-      expect(distributionRules.changeDirectPurchasePricingRules.constructor.name).to.deep.equal('ChangeControlRulesWASM');
+      expect(distributionRules.mintingAllowChoosingDestinationRules.constructor.name).to.deep.equal('ChangeControlRules');
+      expect(distributionRules.changeDirectPurchasePricingRules.constructor.name).to.deep.equal('ChangeControlRules');
     });
   });
 
@@ -164,34 +164,34 @@ describe('TokenDistributionRules', () => {
     let distributionRules;
 
     before(() => {
-      noOne = wasm.AuthorizedActionTakersWASM.NoOne();
-      changeRules = new wasm.ChangeControlRulesWASM(
+      noOne = wasm.AuthorizedActionTakers.NoOne();
+      changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
         true,
         true,
       );
-      preProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      preProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416485: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10000),
           },
         },
       );
-      recipient = wasm.TokenDistributionRecipientWASM.ContractOwner();
-      distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      recipient = wasm.TokenDistributionRecipient.ContractOwner();
+      distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
-      distributionType = wasm.RewardDistributionTypeWASM.BlockBasedDistribution(
+      distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
-      perpetualDistribution = new wasm.TokenPerpetualDistributionWASM(
+      perpetualDistribution = new wasm.TokenPerpetualDistribution(
         distributionType,
         recipient,
       );
-      distributionRules = new wasm.TokenDistributionRulesWASM(
+      distributionRules = new wasm.TokenDistributionRules(
         perpetualDistribution,
         changeRules,
         preProgrammedDistribution,
@@ -210,7 +210,7 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set changeDirectPurchasePricingRules', () => {
-      const newRules = new wasm.ChangeControlRulesWASM(
+      const newRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         false,
@@ -227,7 +227,7 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set mintingAllowChoosingDestinationRules', () => {
-      const newRules = new wasm.ChangeControlRulesWASM(
+      const newRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         false,
@@ -244,7 +244,7 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set newTokenDestinationIdentityRules', () => {
-      const newRules = new wasm.ChangeControlRulesWASM(
+      const newRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         false,
@@ -267,7 +267,7 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set preProgrammedDistribution', () => {
-      const newPreProgrammedDistribution = new wasm.TokenPreProgrammedDistributionWASM(
+      const newPreProgrammedDistribution = new wasm.TokenPreProgrammedDistribution(
         {
           1750140416411: {
             PJUBWbXWmzEYCs99rAAbnCiHRzrnhKLQrXbmSsuPBYB: BigInt(10011120),
@@ -286,7 +286,7 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set perpetualDistributionRules', () => {
-      const newPerpetualDistributionRules = new wasm.ChangeControlRulesWASM(
+      const newPerpetualDistributionRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         false,
@@ -301,9 +301,9 @@ describe('TokenDistributionRules', () => {
     });
 
     it('should allow to set perpetualDistribution', () => {
-      const newRecipient = wasm.TokenDistributionRecipientWASM.EvonodesByParticipation();
+      const newRecipient = wasm.TokenDistributionRecipient.EvonodesByParticipation();
 
-      const newPerpetualDistribution = new wasm.TokenPerpetualDistributionWASM(
+      const newPerpetualDistribution = new wasm.TokenPerpetualDistribution(
         distributionType,
         newRecipient,
       );

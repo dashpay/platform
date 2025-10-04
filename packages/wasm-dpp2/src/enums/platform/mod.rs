@@ -11,7 +11,7 @@ use dpp::version::v9::PLATFORM_V9;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "PlatformVersionWASM")]
+#[wasm_bindgen(js_name = "PlatformVersion")]
 #[derive(Default)]
 #[allow(non_camel_case_types)]
 pub enum PlatformVersionWASM {

@@ -3,11 +3,11 @@ import { value, id, ownerId } from './mocks/DataContract/index.js';
 import { fromHexString } from './utils/hex.js';
 
 let wasm;
-let PlatformVersionWASM;
+let PlatformVersion;
 
 before(async () => {
   wasm = await getWasm();
-  ({ PlatformVersionWASM } = wasm);
+  ({ PlatformVersion } = wasm);
 });
 
 let dataContractsBytes;
@@ -19,23 +19,23 @@ describe('DataContract', () => {
 
   describe('serialization / deserialization', () => {
     it('should allows to create DataContract from schema without full validation', () => {
-      const identifier = new wasm.IdentifierWASM(value.ownerId);
+      const identifier = new wasm.Identifier(value.ownerId);
 
-      const dataContract = new wasm.DataContractWASM(identifier, BigInt(2), value.documentSchemas, null, false);
+      const dataContract = new wasm.DataContract(identifier, BigInt(2), value.documentSchemas, null, false);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create DataContract from schema with full validation', () => {
-      const identifier = new wasm.IdentifierWASM(value.ownerId);
+      const identifier = new wasm.Identifier(value.ownerId);
 
-      const dataContract = new wasm.DataContractWASM(identifier, BigInt(2), value.documentSchemas, null, true);
+      const dataContract = new wasm.DataContract(identifier, BigInt(2), value.documentSchemas, null, true);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allows to create DataContract from value with full validation and without platform version', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
@@ -43,11 +43,11 @@ describe('DataContract', () => {
     it('should allows to convert DataContract to bytes and from bytes', () => {
       const [dataContractBytes] = dataContractsBytes;
 
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.bytes()).to.deep.equal(fromHexString(dataContractBytes));
 
-      const dataContractFromBytes = wasm.DataContractWASM.fromBytes(dataContract.bytes(), false, PlatformVersionWASM.PLATFORM_V1);
+      const dataContractFromBytes = wasm.DataContract.fromBytes(dataContract.bytes(), false, PlatformVersion.PLATFORM_V1);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
 
@@ -57,8 +57,8 @@ describe('DataContract', () => {
     it('should allows to create DataContract from bytes without full validation', () => {
       const [dataContractBytes] = dataContractsBytes;
 
-      const dataContractFromBytes = wasm.DataContractWASM.fromBytes(fromHexString(dataContractBytes), false, PlatformVersionWASM.PLATFORM_V1);
-      const dataContractFromValue = wasm.DataContractWASM.fromValue(value, true);
+      const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), false, PlatformVersion.PLATFORM_V1);
+      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
 
       expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
     });
@@ -66,14 +66,14 @@ describe('DataContract', () => {
     it('should allows to create DataContract from bytes with full validation and without version', () => {
       const [dataContractBytes] = dataContractsBytes;
 
-      const dataContractFromBytes = wasm.DataContractWASM.fromBytes(fromHexString(dataContractBytes), true);
-      const dataContractFromValue = wasm.DataContractWASM.fromValue(value, true);
+      const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true);
+      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
 
       expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
     });
 
     it('should allow to get json', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.toJson()).to.deep.equal(value);
     });
@@ -81,31 +81,31 @@ describe('DataContract', () => {
 
   describe('getters', () => {
     it('should allow to get schemas', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.getSchemas()).to.deep.equal(value.documentSchemas);
     });
 
     it('should allow to get version', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.version).to.deep.equal(value.version);
     });
 
     it('should allow to get id', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.id.base58()).to.deep.equal(id);
     });
 
     it('should allow to get owner id', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.ownerId.base58()).to.deep.equal(ownerId);
     });
 
     it('should allow to get config', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       expect(dataContract.getConfig()).to.deep.equal(value.config);
     });
@@ -113,23 +113,23 @@ describe('DataContract', () => {
 
   describe('setters', () => {
     it('should allow to set id', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
-      dataContract.id = new wasm.IdentifierWASM('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+      dataContract.id = new wasm.Identifier('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
 
       expect(dataContract.id.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });
 
     it('should allow to set owner id', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
-      dataContract.ownerId = new wasm.IdentifierWASM('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
+      dataContract.ownerId = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 
       expect(dataContract.ownerId.base58()).to.deep.equal('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
     });
 
     it('should allow to set version', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       dataContract.version = 20;
 
@@ -137,7 +137,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set config', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       const oldConfig = dataContract.getConfig();
 
@@ -149,7 +149,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set schema', () => {
-      const dataContract = wasm.DataContractWASM.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromValue(value, true);
 
       const oldSchema = dataContract.getSchemas();
 
@@ -165,9 +165,9 @@ describe('DataContract', () => {
 
   describe('static', () => {
     it('should allow to generate id', () => {
-      const identifier = new wasm.IdentifierWASM('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
+      const identifier = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 
-      const generatedId = wasm.DataContractWASM.generateId(identifier, BigInt(4));
+      const generatedId = wasm.DataContract.generateId(identifier, BigInt(4));
 
       expect(generatedId.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });

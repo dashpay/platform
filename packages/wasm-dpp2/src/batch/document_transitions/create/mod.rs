@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWASM;
 use crate::batch::token_payment_info::TokenPaymentInfoWASM;
 
-#[wasm_bindgen(js_name = "DocumentCreateTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentCreateTransition")]
 #[derive(Clone)]
 pub struct DocumentCreateTransitionWASM(DocumentCreateTransition);
 
@@ -30,16 +30,16 @@ impl From<DocumentCreateTransition> for DocumentCreateTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentCreateTransition)]
 impl DocumentCreateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentCreateTransitionWASM".to_string()
+        "DocumentCreateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentCreateTransitionWASM".to_string()
+        "DocumentCreateTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -55,7 +55,7 @@ impl DocumentCreateTransitionWASM {
             true => None,
             false => Some(
                 js_prefunded_voting_balance
-                    .to_wasm::<PrefundedVotingBalanceWASM>("PrefundedVotingBalanceWASM")?
+                    .to_wasm::<PrefundedVotingBalanceWASM>("PrefundedVotingBalance")?
                     .clone(),
             ),
         };
@@ -65,7 +65,7 @@ impl DocumentCreateTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfoWASM")?
+                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };

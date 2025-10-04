@@ -6,7 +6,7 @@ use dpp::prelude::Identifier;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
 impl TokenConfigurationChangeItemWASM {
     #[wasm_bindgen(js_name = "NewTokensDestinationIdentityItem")]
     pub fn new_tokens_destination_identity_item(

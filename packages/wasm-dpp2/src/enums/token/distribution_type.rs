@@ -2,7 +2,7 @@ use dpp::data_contract::associated_token::token_distribution_key::TokenDistribut
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "TokenDistributionTypeWASM")]
+#[wasm_bindgen(js_name = "TokenDistributionType")]
 #[allow(non_camel_case_types)]
 #[derive(Default)]
 pub enum TokenDistributionTypeWASM {

@@ -9,7 +9,7 @@ use crate::identifier::IdentifierWASM;
 use crate::batch::token_base_transition::TokenBaseTransitionWASM;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenFreezeTransitionWASM)]
+#[wasm_bindgen(js_name=TokenFreezeTransition)]
 pub struct TokenFreezeTransitionWASM(TokenFreezeTransition);
 
 impl From<TokenFreezeTransitionWASM> for TokenFreezeTransition {
@@ -24,16 +24,16 @@ impl From<TokenFreezeTransition> for TokenFreezeTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenFreezeTransition)]
 impl TokenFreezeTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenFreezeTransitionWASM".to_string()
+        "TokenFreezeTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenFreezeTransitionWASM".to_string()
+        "TokenFreezeTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

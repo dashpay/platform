@@ -13,7 +13,7 @@ use crate::batch::document_transition::DocumentTransitionWASM;
 use crate::batch::generators::generate_update_price_transition;
 use crate::batch::token_payment_info::TokenPaymentInfoWASM;
 
-#[wasm_bindgen(js_name = "DocumentUpdatePriceTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentUpdatePriceTransition")]
 pub struct DocumentUpdatePriceTransitionWASM(DocumentUpdatePriceTransition);
 
 impl From<DocumentUpdatePriceTransition> for DocumentUpdatePriceTransitionWASM {
@@ -22,16 +22,16 @@ impl From<DocumentUpdatePriceTransition> for DocumentUpdatePriceTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentUpdatePriceTransition)]
 impl DocumentUpdatePriceTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentUpdatePriceTransitionWASM".to_string()
+        "DocumentUpdatePriceTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentUpdatePriceTransitionWASM".to_string()
+        "DocumentUpdatePriceTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -46,7 +46,7 @@ impl DocumentUpdatePriceTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfoWASM")?
+                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };

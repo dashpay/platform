@@ -15,17 +15,17 @@ before(async () => {
 describe('Identity', () => {
   describe('serialization / deserialization', () => {
     it('should generate identity from identifier', async () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       expect(identity.__wbg_ptr).to.not.equal(0);
     });
 
     it('should generate identity from identifier and return bytes', async () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       expect(Array.from(identity.bytes())).to.deep.equal(identityBytesWithoutKeys);
 
-      const newIdentity = wasm.IdentityWASM.fromBytes(identity.bytes());
+      const newIdentity = wasm.Identity.fromBytes(identity.bytes());
 
       expect(identity.__wbg_ptr).to.not.equal(0);
       expect(newIdentity.__wbg_ptr).to.not.equal(0);
@@ -34,27 +34,27 @@ describe('Identity', () => {
 
   describe('getters', () => {
     it('should get id buffer', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       expect(identity.id.bytes()).to.deep.equal(Uint8Array.from(identifierBytes));
     });
 
     it('should get balance', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       expect(identity.balance).to.deep.equal(BigInt(0));
     });
 
     it('should get revision', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       expect(identity.revision).to.deep.equal(BigInt(0));
     });
 
     it('should get public keys', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -63,7 +63,7 @@ describe('Identity', () => {
         binaryData,
       );
 
-      const pubKey2 = new wasm.IdentityPublicKeyWASM(
+      const pubKey2 = new wasm.IdentityPublicKey(
         keyId + 1,
         purpose,
         securityLevel,
@@ -81,7 +81,7 @@ describe('Identity', () => {
 
   describe('setters', () => {
     it('should allows to set public key', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -90,7 +90,7 @@ describe('Identity', () => {
         binaryData,
       );
 
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       identity.addPublicKey(pubKey);
 
@@ -100,7 +100,7 @@ describe('Identity', () => {
     });
 
     it('should allows to set balance', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       identity.balance = balance;
 
@@ -108,7 +108,7 @@ describe('Identity', () => {
     });
 
     it('should allows to set revision', () => {
-      const identity = new wasm.IdentityWASM(identifier);
+      const identity = new wasm.Identity(identifier);
 
       identity.revision = revision;
 

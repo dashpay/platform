@@ -4,7 +4,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=GroupStateTransitionInfoWASM)]
+#[wasm_bindgen(js_name=GroupStateTransitionInfo)]
 pub struct GroupStateTransitionInfoWASM(GroupStateTransitionInfo);
 
 impl From<GroupStateTransitionInfoWASM> for GroupStateTransitionInfo {
@@ -19,16 +19,16 @@ impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = GroupStateTransitionInfo)]
 impl GroupStateTransitionInfoWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "GroupStateTransitionInfoWASM".to_string()
+        "GroupStateTransitionInfo".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "GroupStateTransitionInfoWASM".to_string()
+        "GroupStateTransitionInfo".to_string()
     }
 
     #[wasm_bindgen(constructor)]

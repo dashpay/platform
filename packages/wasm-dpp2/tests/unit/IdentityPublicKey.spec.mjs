@@ -14,7 +14,7 @@ before(async () => {
 describe('PublicKey', () => {
   describe('serialization / deserialization', () => {
     it('should generate public key from values with type ECDSA_SECP256K1', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -27,7 +27,7 @@ describe('PublicKey', () => {
     });
 
     it('should generate public key from values with type ECDSA_SECP256K1 and generate new from self bytes', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -38,7 +38,7 @@ describe('PublicKey', () => {
 
       const bytes = pubKey.bytes();
 
-      const newPubKey = wasm.IdentityPublicKeyWASM.fromBytes(Array.from(bytes));
+      const newPubKey = wasm.IdentityPublicKey.fromBytes(Array.from(bytes));
 
       expect(pubKey.__wbg_ptr).to.not.equal(0);
       expect(newPubKey.__wbg_ptr).to.not.equal(0);
@@ -57,7 +57,7 @@ describe('PublicKey', () => {
     });
 
     it('should return hash of key', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -73,7 +73,7 @@ describe('PublicKey', () => {
   });
   describe('getters', () => {
     it('should generate public key from values with type ECDSA_SECP256K1 and return all fields', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -91,7 +91,7 @@ describe('PublicKey', () => {
     });
 
     it('should allow to validate private key', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,
@@ -100,15 +100,15 @@ describe('PublicKey', () => {
         binaryData,
       );
 
-      const privateKey = wasm.PrivateKeyWASM.fromWIF(wif);
+      const privateKey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pubKey.validatePrivateKey(privateKey.bytes(), wasm.NetworkWASM.Mainnet)).to.equal(false);
+      expect(pubKey.validatePrivateKey(privateKey.bytes(), wasm.Network.Mainnet)).to.equal(false);
     });
   });
 
   describe('setters', () => {
     it('should generate public key from values with type ECDSA_SECP256K1 and return all fields and set another fields', () => {
-      const pubKey = new wasm.IdentityPublicKeyWASM(
+      const pubKey = new wasm.IdentityPublicKey(
         keyId,
         purpose,
         securityLevel,

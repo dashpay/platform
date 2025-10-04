@@ -20,19 +20,19 @@ use dpp::version::{
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "DataContractCreateTransitionWASM")]
+#[wasm_bindgen(js_name = "DataContractCreateTransition")]
 pub struct DataContractCreateTransitionWASM(DataContractCreateTransition);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DataContractCreateTransition)]
 impl DataContractCreateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DataContractCreateTransitionWASM".to_string()
+        "DataContractCreateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DataContractCreateTransitionWASM".to_string()
+        "DataContractCreateTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

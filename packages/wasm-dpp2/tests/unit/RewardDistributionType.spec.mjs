@@ -9,11 +9,11 @@ before(async () => {
 describe('RewardDistributionType', () => {
   describe('serialization / deserialization', () => {
     it('shoulda allow to create BlockBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.BlockBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
@@ -23,11 +23,11 @@ describe('RewardDistributionType', () => {
     });
 
     it('shoulda allow to create TimeBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.TimeBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.TimeBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
@@ -37,11 +37,11 @@ describe('RewardDistributionType', () => {
     });
 
     it('shoulda allow to create EpochBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.EpochBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.EpochBasedDistribution(
         111,
         distributionFunction,
       );
@@ -53,42 +53,42 @@ describe('RewardDistributionType', () => {
 
   describe('getters', () => {
     it('shoulda allow return value BlockBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.BlockBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.BlockBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('BlockBasedDistributionWASM');
+      expect(distributionType.getDistribution().constructor.name).to.equal('BlockBasedDistribution');
     });
 
     it('shoulda allow return value TimeBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.TimeBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.TimeBasedDistribution(
         BigInt(111),
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('TimeBasedDistributionWASM');
+      expect(distributionType.getDistribution().constructor.name).to.equal('TimeBasedDistribution');
     });
 
     it('shoulda allow return value EpochBasedDistribution', () => {
-      const distributionFunction = wasm.DistributionFunctionWASM.FixedAmountDistribution(
+      const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111),
       );
 
-      const distributionType = wasm.RewardDistributionTypeWASM.EpochBasedDistribution(
+      const distributionType = wasm.RewardDistributionType.EpochBasedDistribution(
         111,
         distributionFunction,
       );
 
-      expect(distributionType.getDistribution().constructor.name).to.equal('EpochBasedDistributionWASM');
+      expect(distributionType.getDistribution().constructor.name).to.equal('EpochBasedDistribution');
     });
   });
 });

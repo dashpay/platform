@@ -1,7 +1,7 @@
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "VoteStateResultTypeWASM")]
+#[wasm_bindgen(js_name = "VoteStateResultType")]
 #[allow(non_camel_case_types)]
 #[derive(Default, Clone)]
 pub enum VoteStateResultTypeWASM {

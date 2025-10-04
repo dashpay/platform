@@ -13,7 +13,7 @@ use crate::batch::document_transition::DocumentTransitionWASM;
 use crate::batch::generators::generate_purchase_transition;
 use crate::batch::token_payment_info::TokenPaymentInfoWASM;
 
-#[wasm_bindgen(js_name = "DocumentPurchaseTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentPurchaseTransition")]
 pub struct DocumentPurchaseTransitionWASM(DocumentPurchaseTransition);
 
 impl From<DocumentPurchaseTransitionWASM> for DocumentPurchaseTransition {
@@ -28,16 +28,16 @@ impl From<DocumentPurchaseTransition> for DocumentPurchaseTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentPurchaseTransition)]
 impl DocumentPurchaseTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentPurchaseTransitionWASM".to_string()
+        "DocumentPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentPurchaseTransitionWASM".to_string()
+        "DocumentPurchaseTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -52,7 +52,7 @@ impl DocumentPurchaseTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfoWASM")?
+                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };

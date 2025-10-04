@@ -8,13 +8,13 @@ before(async () => {
 describe('IdentityCreateTransition', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create transition', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to serialize to bytes', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       const bytes = transition.bytes();
 
@@ -24,7 +24,7 @@ describe('IdentityCreateTransition', () => {
     it('should allow to deserialize to bytes', () => {
       const bytes = [0, 0, 0, 162, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 60, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 255, 255, 255, 255, 0, 255, 255, 255, 255, 1, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
 
-      const transition = wasm.IdentityCreateTransitionWASM.fromBytes(bytes);
+      const transition = wasm.IdentityCreateTransition.fromBytes(bytes);
 
       expect(transition.__wbg_ptr).to.not.equal(0);
     });
@@ -32,37 +32,37 @@ describe('IdentityCreateTransition', () => {
 
   describe('getters', () => {
     it('should allow to get userFeeIncrease', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.userFeeIncrease).to.equal(0);
     });
 
     it('should allow to get AssetLock', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.assetLock.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to get Identifier', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.getIdentifier().base58()).to.equal('11111111111111111111111111111111');
     });
 
     it('should allow to get PublicKeys', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.publicKeys.length).to.equal(0);
     });
 
     it('should allow to get signature', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.signature).to.deep.equal(Uint8Array.from([]));
     });
 
     it('should allow to get signable bytes', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       expect(transition.getSignableBytes().length).to.equal(229);
     });
@@ -70,7 +70,7 @@ describe('IdentityCreateTransition', () => {
 
   describe('setters', () => {
     it('should allow to set the userFeeIncrease', () => {
-      const transition = wasm.IdentityCreateTransitionWASM.default(1);
+      const transition = wasm.IdentityCreateTransition.default(1);
 
       transition.userFeeIncrease = 100;
 

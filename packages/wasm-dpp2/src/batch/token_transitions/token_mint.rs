@@ -11,7 +11,7 @@ use crate::token_configuration::TokenConfigurationWASM;
 use crate::utils::WithJsError;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenMintTransitionWASM)]
+#[wasm_bindgen(js_name=TokenMintTransition)]
 pub struct TokenMintTransitionWASM(TokenMintTransition);
 
 impl From<TokenMintTransition> for TokenMintTransitionWASM {
@@ -26,16 +26,16 @@ impl From<TokenMintTransitionWASM> for TokenMintTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenMintTransition)]
 impl TokenMintTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenMintTransitionWASM".to_string()
+        "TokenMintTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenMintTransitionWASM".to_string()
+        "TokenMintTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

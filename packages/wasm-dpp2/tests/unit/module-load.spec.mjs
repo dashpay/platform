@@ -1,6 +1,6 @@
 import init, {
-  StateTransitionWASM,
-  ConsensusErrorWASM,
+  StateTransition,
+  ConsensusError,
 } from '../../dist/dpp.compressed.js';
 
 describe('wasm-dpp2 module', () => {
@@ -9,11 +9,11 @@ describe('wasm-dpp2 module', () => {
   });
 
   it('exposes state transition bindings', () => {
-    expect(StateTransitionWASM).to.be.a('function');
+    expect(StateTransition).to.be.a('function');
   });
 
   it('exposes consensus error helpers', () => {
-    expect(ConsensusErrorWASM).to.be.a('function');
-    expect(ConsensusErrorWASM.deserialize).to.be.a('function');
+    expect(ConsensusError).to.be.a('function');
+    expect(ConsensusError.deserialize).to.be.a('function');
   });
 });

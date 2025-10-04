@@ -11,7 +11,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::utils::IntoWasm;
 use crate::batch::token_payment_info::TokenPaymentInfoWASM;
 
-#[wasm_bindgen(js_name = "DocumentDeleteTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentDeleteTransition")]
 pub struct DocumentDeleteTransitionWASM(DocumentDeleteTransition);
 
 impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWASM {
@@ -20,16 +20,16 @@ impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentDeleteTransition)]
 impl DocumentDeleteTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentDeleteTransitionWASM".to_string()
+        "DocumentDeleteTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentDeleteTransitionWASM".to_string()
+        "DocumentDeleteTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -43,7 +43,7 @@ impl DocumentDeleteTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfoWASM")?
+                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };

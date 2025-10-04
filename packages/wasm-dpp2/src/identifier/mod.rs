@@ -5,7 +5,7 @@ use dpp::prelude::Identifier;
 use wasm_bindgen::prelude::*;
 
 #[derive(Copy, Clone)]
-#[wasm_bindgen(js_name = "IdentifierWASM")]
+#[wasm_bindgen(js_name = "Identifier")]
 pub struct IdentifierWASM(Identifier);
 
 impl From<IdentifierWASM> for Identifier {
@@ -53,8 +53,8 @@ impl TryFrom<JsValue> for IdentifierWASM {
         match value.is_object() {
             true => match get_class_type(&value) {
                 Ok(class_type) => match class_type.as_str() {
-                    "IdentifierWASM" => {
-                        Ok(value.to_wasm::<IdentifierWASM>("IdentifierWASM")?.clone())
+                    "Identifier" => {
+                        Ok(value.to_wasm::<IdentifierWASM>("Identifier")?.clone())
                     }
                     "" => Ok(identifier_from_js_value(&value)?.into()),
                     _ => Err(Self::Error::from_str(&format!(
@@ -90,16 +90,16 @@ impl TryFrom<&JsValue> for IdentifierWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentifierWASM".to_string()
+        "Identifier".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentifierWASM".to_string()
+        "Identifier".to_string()
     }
 
     #[wasm_bindgen(constructor)]

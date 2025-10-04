@@ -34,7 +34,7 @@ pub mod token_transition;
 pub mod token_transitions;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=BatchTransitionWASM)]
+#[wasm_bindgen(js_name=BatchTransition)]
 pub struct BatchTransitionWASM(BatchTransition);
 
 impl From<BatchTransition> for BatchTransitionWASM {
@@ -55,7 +55,7 @@ fn convert_array_to_vec_batched(js_batched_transitions: &js_sys::Array) -> Vec<B
         .iter()
         .map(|js_batched_transition| {
             let batched_transition: BatchedTransitionWASM = js_batched_transition
-                .to_wasm::<BatchedTransitionWASM>("BatchedTransitionWASM")
+                .to_wasm::<BatchedTransitionWASM>("BatchedTransition")
                 .unwrap()
                 .clone();
             BatchedTransition::from(batched_transition)
@@ -63,16 +63,16 @@ fn convert_array_to_vec_batched(js_batched_transitions: &js_sys::Array) -> Vec<B
         .collect()
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = BatchTransition)]
 impl BatchTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "BatchTransitionWASM".to_string()
+        "BatchTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "BatchTransitionWASM".to_string()
+        "BatchTransition".to_string()
     }
 
     #[wasm_bindgen(js_name = "fromV1BatchedTransitions")]
@@ -111,7 +111,7 @@ impl BatchTransitionWASM {
             .iter()
             .map(|js_document_transition| {
                 let document_transition: DocumentTransitionWASM = js_document_transition
-                    .to_wasm::<DocumentTransitionWASM>("DocumentTransitionWASM")
+                    .to_wasm::<DocumentTransitionWASM>("DocumentTransition")
                     .unwrap()
                     .clone();
 

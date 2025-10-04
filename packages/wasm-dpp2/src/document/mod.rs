@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = DocumentWASM)]
+#[wasm_bindgen(js_name = Document)]
 pub struct DocumentWASM {
     id: IdentifierWASM,
     owner_id: IdentifierWASM,

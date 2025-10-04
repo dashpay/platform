@@ -7,19 +7,19 @@ use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "PrivateKeyWASM")]
+#[wasm_bindgen(js_name = "PrivateKey")]
 pub struct PrivateKeyWASM(PrivateKey);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "PrivateKeyWASM".to_string()
+        "PrivateKey".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "PrivateKeyWASM".to_string()
+        "PrivateKey".to_string()
     }
 
     #[wasm_bindgen(js_name = "fromWIF")]
@@ -64,7 +64,7 @@ impl PrivateKeyWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PrivateKey)]
 impl PrivateKeyWASM {
     #[wasm_bindgen(js_name = "WIF")]
     pub fn get_wif(&self) -> String {

@@ -4,7 +4,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = ResourceVoteChoiceWASM)]
+#[wasm_bindgen(js_name = ResourceVoteChoice)]
 pub struct ResourceVoteChoiceWASM(ResourceVoteChoice);
 
 impl From<ResourceVoteChoice> for ResourceVoteChoiceWASM {
@@ -19,16 +19,16 @@ impl From<ResourceVoteChoiceWASM> for ResourceVoteChoice {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = ResourceVoteChoice)]
 impl ResourceVoteChoiceWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "ResourceVoteChoiceWASM".to_string()
+        "ResourceVoteChoice".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "ResourceVoteChoiceWASM".to_string()
+        "ResourceVoteChoice".to_string()
     }
 
     #[wasm_bindgen(js_name = "TowardsIdentity")]

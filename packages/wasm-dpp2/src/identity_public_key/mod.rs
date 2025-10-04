@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = IdentityPublicKeyWASM)]
+#[wasm_bindgen(js_name = IdentityPublicKey)]
 pub struct IdentityPublicKeyWASM(IdentityPublicKey);
 
 impl From<IdentityPublicKey> for IdentityPublicKeyWASM {
@@ -36,16 +36,16 @@ impl From<IdentityPublicKeyWASM> for IdentityPublicKey {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityPublicKeyWASM".to_string()
+        "IdentityPublicKey".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityPublicKeyWASM".to_string()
+        "IdentityPublicKey".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -67,7 +67,7 @@ impl IdentityPublicKeyWASM {
                 true => None,
                 false => Some(
                     js_contract_bounds
-                        .to_wasm::<ContractBoundsWASM>("ContractBoundsWASM")?
+                        .to_wasm::<ContractBoundsWASM>("ContractBounds")?
                         .clone()
                         .into(),
                 ),
@@ -88,7 +88,7 @@ impl IdentityPublicKeyWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityPublicKey)]
 impl IdentityPublicKeyWASM {
     #[wasm_bindgen(js_name = "validatePrivateKey")]
     pub fn validate_private_key(

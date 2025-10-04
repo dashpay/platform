@@ -9,7 +9,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::identifier::IdentifierWASM;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenDestroyFrozenFundsTransitionWASM)]
+#[wasm_bindgen(js_name=TokenDestroyFrozenFundsTransition)]
 pub struct TokenDestroyFrozenFundsTransitionWASM(TokenDestroyFrozenFundsTransition);
 
 impl From<TokenDestroyFrozenFundsTransition> for TokenDestroyFrozenFundsTransitionWASM {
@@ -24,16 +24,16 @@ impl From<TokenDestroyFrozenFundsTransitionWASM> for TokenDestroyFrozenFundsTran
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenDestroyFrozenFundsTransition)]
 impl TokenDestroyFrozenFundsTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenDestroyFrozenFundsTransitionWASM".to_string()
+        "TokenDestroyFrozenFundsTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenDestroyFrozenFundsTransitionWASM".to_string()
+        "TokenDestroyFrozenFundsTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

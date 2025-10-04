@@ -11,7 +11,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, PartialEq, Debug)]
-#[wasm_bindgen(js_name = "GroupWASM")]
+#[wasm_bindgen(js_name = "Group")]
 pub struct GroupWASM(Group);
 
 impl From<Group> for GroupWASM {
@@ -53,16 +53,16 @@ pub fn js_members_to_map(
     Ok(members)
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = Group)]
 impl GroupWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "GroupWASM".to_string()
+        "Group".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "GroupWASM".to_string()
+        "Group".to_string()
     }
 
     #[wasm_bindgen(constructor)]

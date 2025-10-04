@@ -1,18 +1,18 @@
 use dpp::balances::credits::TokenAmount;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "DistributionFixedAmountWASM")]
+#[wasm_bindgen(js_name = "DistributionFixedAmount")]
 pub struct DistributionFixedAmountWASM {
     pub amount: TokenAmount,
 }
 
-#[wasm_bindgen(js_name = "DistributionRandomWASM")]
+#[wasm_bindgen(js_name = "DistributionRandom")]
 pub struct DistributionRandomWASM {
     pub min: TokenAmount,
     pub max: TokenAmount,
 }
 
-#[wasm_bindgen(js_name = "DistributionStepDecreasingAmountWASM")]
+#[wasm_bindgen(js_name = "DistributionStepDecreasingAmount")]
 pub struct DistributionStepDecreasingAmountWASM {
     #[wasm_bindgen(js_name = "stepCount")]
     pub step_count: u32,
@@ -32,7 +32,7 @@ pub struct DistributionStepDecreasingAmountWASM {
     pub min_value: Option<u64>,
 }
 
-#[wasm_bindgen(js_name = "DistributionLinearWASM")]
+#[wasm_bindgen(js_name = "DistributionLinear")]
 pub struct DistributionLinearWASM {
     pub a: i64,
     pub d: u64,
@@ -46,7 +46,7 @@ pub struct DistributionLinearWASM {
     pub max_value: Option<u64>,
 }
 
-#[wasm_bindgen(js_name = "DistributionPolynomialWASM")]
+#[wasm_bindgen(js_name = "DistributionPolynomial")]
 pub struct DistributionPolynomialWASM {
     pub a: i64,
     pub d: u64,
@@ -62,7 +62,7 @@ pub struct DistributionPolynomialWASM {
     pub max_value: Option<u64>,
 }
 
-#[wasm_bindgen(js_name = "DistributionExponentialWASM")]
+#[wasm_bindgen(js_name = "DistributionExponential")]
 pub struct DistributionExponentialWASM {
     pub a: u64,
     pub d: u64,
@@ -78,7 +78,7 @@ pub struct DistributionExponentialWASM {
     pub max_value: Option<u64>,
 }
 
-#[wasm_bindgen(js_name = "DistributionLogarithmicWASM")]
+#[wasm_bindgen(js_name = "DistributionLogarithmic")]
 pub struct DistributionLogarithmicWASM {
     pub a: i64,
     pub d: u64,
@@ -94,7 +94,7 @@ pub struct DistributionLogarithmicWASM {
     pub max_value: Option<u64>,
 }
 
-#[wasm_bindgen(js_name = "DistributionInvertedLogarithmicWASM")]
+#[wasm_bindgen(js_name = "DistributionInvertedLogarithmic")]
 pub struct DistributionInvertedLogarithmicWASM {
     pub a: i64,
     pub d: u64,

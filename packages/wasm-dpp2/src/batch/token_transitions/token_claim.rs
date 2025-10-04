@@ -8,7 +8,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::enums::token::distribution_type::TokenDistributionTypeWASM;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "TokenClaimTransitionWASM")]
+#[wasm_bindgen(js_name = "TokenClaimTransition")]
 pub struct TokenClaimTransitionWASM(TokenClaimTransition);
 
 impl From<TokenClaimTransition> for TokenClaimTransitionWASM {
@@ -23,16 +23,16 @@ impl From<TokenClaimTransitionWASM> for TokenClaimTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenClaimTransition)]
 impl TokenClaimTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenClaimTransitionWASM".to_string()
+        "TokenClaimTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenClaimTransitionWASM".to_string()
+        "TokenClaimTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

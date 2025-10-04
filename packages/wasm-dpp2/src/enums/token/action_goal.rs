@@ -2,7 +2,7 @@ use dpp::group::action_taker::ActionGoal;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "ActionGoalWASM")]
+#[wasm_bindgen(js_name = "ActionGoal")]
 #[allow(non_camel_case_types)]
 #[derive(Default, Clone)]
 pub enum ActionGoalWASM {

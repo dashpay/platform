@@ -9,9 +9,9 @@ before(async () => {
 describe('ChangeControlRules', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create rules from values', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -26,9 +26,9 @@ describe('ChangeControlRules', () => {
 
   describe('getters', () => {
     it('should allow to get authorizedToMakeChange', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -36,13 +36,13 @@ describe('ChangeControlRules', () => {
         true,
       );
 
-      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakersWASM');
+      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakers');
     });
 
     it('should allow to get adminActionTakers', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -50,13 +50,13 @@ describe('ChangeControlRules', () => {
         true,
       );
 
-      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakersWASM');
+      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakers');
     });
 
     it('should allow to get changingAuthorizedActionTakersToNoOneAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -68,9 +68,9 @@ describe('ChangeControlRules', () => {
     });
 
     it('should allow to get changingAdminActionTakersToNoOneAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -82,9 +82,9 @@ describe('ChangeControlRules', () => {
     });
 
     it('should allow to get selfChangingAdminActionTakersAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -98,9 +98,9 @@ describe('ChangeControlRules', () => {
 
   describe('setters', () => {
     it('should allow to set authorizedToMakeChange', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -108,19 +108,19 @@ describe('ChangeControlRules', () => {
         true,
       );
 
-      const newActionTaker = wasm.AuthorizedActionTakersWASM.ContractOwner();
+      const newActionTaker = wasm.AuthorizedActionTakers.ContractOwner();
 
       changeRules.authorizedToMakeChange = newActionTaker;
 
-      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakersWASM');
+      expect(changeRules.authorizedToMakeChange.constructor.name).to.deep.equal('AuthorizedActionTakers');
       expect(changeRules.authorizedToMakeChange.getTakerType()).to.deep.equal('ContractOwner');
       expect(newActionTaker.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to set adminActionTakers', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -128,19 +128,19 @@ describe('ChangeControlRules', () => {
         true,
       );
 
-      const newActionTaker = wasm.AuthorizedActionTakersWASM.ContractOwner();
+      const newActionTaker = wasm.AuthorizedActionTakers.ContractOwner();
 
       changeRules.adminActionTakers = newActionTaker;
 
-      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakersWASM');
+      expect(changeRules.adminActionTakers.constructor.name).to.deep.equal('AuthorizedActionTakers');
       expect(changeRules.adminActionTakers.getTakerType()).to.deep.equal('ContractOwner');
       expect(newActionTaker.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to set changingAuthorizedActionTakersToNoOneAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -154,9 +154,9 @@ describe('ChangeControlRules', () => {
     });
 
     it('should allow to set changingAdminActionTakersToNoOneAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,
@@ -170,9 +170,9 @@ describe('ChangeControlRules', () => {
     });
 
     it('should allow to set selfChangingAdminActionTakersAllowed', () => {
-      const noOne = wasm.AuthorizedActionTakersWASM.NoOne();
+      const noOne = wasm.AuthorizedActionTakers.NoOne();
 
-      const changeRules = new wasm.ChangeControlRulesWASM(
+      const changeRules = new wasm.ChangeControlRules(
         noOne,
         noOne,
         true,

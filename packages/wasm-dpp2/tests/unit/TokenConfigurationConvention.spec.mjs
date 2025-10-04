@@ -10,7 +10,7 @@ before(async () => {
 describe('TokenConfigurationConvention', () => {
   describe('serialization / deserialization', () => {
     it('Should allow to create from object', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
@@ -23,7 +23,7 @@ describe('TokenConfigurationConvention', () => {
 
   describe('getters', () => {
     it('Should allow to get object of convention in JSON', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
@@ -34,7 +34,7 @@ describe('TokenConfigurationConvention', () => {
     });
 
     it('Should allow to get object of convention in wasm instance', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
@@ -42,11 +42,11 @@ describe('TokenConfigurationConvention', () => {
       );
 
       expect(convention.localizations.constructor.name).to.deep.equal('Object');
-      expect(convention.localizations.ru.constructor.name).to.deep.equal('TokenConfigurationLocalizationWASM');
+      expect(convention.localizations.ru.constructor.name).to.deep.equal('TokenConfigurationLocalization');
     });
 
     it('Should allow to get decimals', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
@@ -59,7 +59,7 @@ describe('TokenConfigurationConvention', () => {
 
   describe('setters', () => {
     it('Should allow to set localizations object ', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
@@ -72,18 +72,18 @@ describe('TokenConfigurationConvention', () => {
 
       expect(convention.localizations.constructor.name).to.deep.equal('Object');
       expect(convention.localizations.ru).to.deep.equal(undefined);
-      expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalizationWASM');
+      expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalization');
     });
 
     it('Should allow to set localizations object with wasm ', () => {
-      const convention = new wasm.TokenConfigurationConventionWASM(
+      const convention = new wasm.TokenConfigurationConvention(
         {
           ru: tokenLocalization,
         },
         1,
       );
 
-      const localization = new wasm.TokenConfigurationLocalizationWASM(false, 'singularForm', 'pluralForm');
+      const localization = new wasm.TokenConfigurationLocalization(false, 'singularForm', 'pluralForm');
 
       convention.localizations = {
         en: localization,
@@ -91,7 +91,7 @@ describe('TokenConfigurationConvention', () => {
 
       expect(convention.localizations.constructor.name).to.deep.equal('Object');
       expect(convention.localizations.ru).to.deep.equal(undefined);
-      expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalizationWASM');
+      expect(convention.localizations.en.constructor.name).to.deep.equal('TokenConfigurationLocalization');
       expect(convention.localizations.en.toJSON()).to.deep.equal({
         shouldCapitalize: false,
         singularForm: 'singularForm',

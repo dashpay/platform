@@ -3,7 +3,7 @@ use dpp::tokens::PrivateEncryptedNote;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "PrivateEncryptedNoteWASM")]
+#[wasm_bindgen(js_name = "PrivateEncryptedNote")]
 pub struct PrivateEncryptedNoteWASM(PrivateEncryptedNote);
 
 impl From<PrivateEncryptedNote> for PrivateEncryptedNoteWASM {
@@ -18,16 +18,16 @@ impl From<PrivateEncryptedNoteWASM> for PrivateEncryptedNote {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = PrivateEncryptedNote)]
 impl PrivateEncryptedNoteWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "PrivateEncryptedNoteWASM".to_string()
+        "PrivateEncryptedNote".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "PrivateEncryptedNoteWASM".to_string()
+        "PrivateEncryptedNote".to_string()
     }
 
     #[wasm_bindgen(constructor)]

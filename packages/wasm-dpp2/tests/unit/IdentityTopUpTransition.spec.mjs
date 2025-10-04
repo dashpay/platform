@@ -9,7 +9,7 @@ before(async () => {
 describe('IdentityTopUpTransition', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create IdentityTopUpTransition', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -18,7 +18,7 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       expect(transition.__wbg_ptr).to.not.equal(0);
       expect(assetLockProof.__wbg_ptr).to.not.equal(0);
@@ -27,7 +27,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('getters', () => {
     it('should allow to return userFeeIncrease', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -36,13 +36,13 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       expect(transition.userFeeIncrease).to.deep.equal(11);
     });
 
     it('should allow to return identityIdentifier', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -51,13 +51,13 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       expect(transition.identityIdentifier.base58()).to.deep.equal('B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH');
     });
 
     it('should allow to return signature', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -66,7 +66,7 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       expect(transition.signature).to.deep.equal(Uint8Array.from([]));
     });
@@ -74,7 +74,7 @@ describe('IdentityTopUpTransition', () => {
 
   describe('setters', () => {
     it('should allow to set userFeeIncrease', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -83,7 +83,7 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       transition.userFeeIncrease = 21;
 
@@ -91,7 +91,7 @@ describe('IdentityTopUpTransition', () => {
     });
 
     it('should allow to set identityIdentifier', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -100,9 +100,9 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
-      const identifier = new wasm.IdentifierWASM('777cE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH');
+      const identifier = new wasm.Identifier('777cE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH');
 
       transition.identityIdentifier = identifier;
 
@@ -110,7 +110,7 @@ describe('IdentityTopUpTransition', () => {
     });
 
     it('should allow to set signature', () => {
-      const assetLockProof = wasm.AssetLockProofWASM.createInstantAssetLockProof(
+      const assetLockProof = wasm.AssetLockProof.createInstantAssetLockProof(
         // instant lock
         [1, 1, 193, 219, 244, 102, 77, 20, 251, 187, 201, 109, 168, 125, 7, 244, 118, 119, 210, 53, 238, 105, 138, 31, 7, 73, 30, 128, 131, 175, 114, 76, 187, 37, 0, 0, 0, 0, 177, 215, 65, 96, 204, 228, 86, 13, 14, 185, 46, 65, 241, 38, 226, 172, 59, 96, 158, 15, 126, 90, 225, 3, 140, 221, 96, 131, 254, 12, 236, 26, 48, 124, 31, 23, 184, 202, 122, 231, 123, 59, 43, 118, 27, 214, 225, 58, 44, 191, 232, 10, 33, 35, 8, 113, 145, 159, 158, 88, 80, 0, 0, 0, 173, 103, 128, 160, 29, 226, 161, 219, 167, 194, 158, 38, 19, 51, 143, 248, 161, 87, 126, 32, 143, 209, 152, 44, 174, 6, 25, 210, 101, 127, 131, 65, 202, 241, 47, 166, 132, 10, 199, 15, 187, 136, 11, 217, 237, 13, 173, 64, 11, 6, 112, 188, 234, 239, 204, 29, 3, 6, 35, 154, 44, 106, 44, 183, 171, 126, 146, 240, 153, 210, 187, 56, 133, 161, 11, 4, 151, 63, 89, 20, 44, 66, 153, 242, 97, 207, 44, 110, 208, 51, 198, 113, 104, 79, 154, 19],
         // transaction
@@ -119,7 +119,7 @@ describe('IdentityTopUpTransition', () => {
         0,
       );
 
-      const transition = new wasm.IdentityTopUpTransitionWASM(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
+      const transition = new wasm.IdentityTopUpTransition(assetLockProof, 'B7kcE1juMBWEWkuYRJhVdAE2e6RaevrGxRsa1DrLCpQH', 11);
 
       transition.signature = Uint8Array.from([1, 1, 1]);
 

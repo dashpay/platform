@@ -10,7 +10,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone, PartialEq, Debug)]
-#[wasm_bindgen(js_name = "TokenPreProgrammedDistributionWASM")]
+#[wasm_bindgen(js_name = "TokenPreProgrammedDistribution")]
 pub struct TokenPreProgrammedDistributionWASM(TokenPreProgrammedDistribution);
 
 impl From<TokenPreProgrammedDistributionWASM> for TokenPreProgrammedDistribution {
@@ -66,16 +66,16 @@ pub fn js_distributions_to_distributions(
     Ok(distributions)
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]
 impl TokenPreProgrammedDistributionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenPreProgrammedDistributionWASM".to_string()
+        "TokenPreProgrammedDistribution".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenPreProgrammedDistributionWASM".to_string()
+        "TokenPreProgrammedDistribution".to_string()
     }
 
     #[wasm_bindgen(constructor)]

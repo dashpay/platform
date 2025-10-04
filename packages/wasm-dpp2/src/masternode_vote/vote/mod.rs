@@ -7,7 +7,7 @@ use dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name=VoteWASM)]
+#[wasm_bindgen(js_name=Vote)]
 pub struct VoteWASM(Vote);
 
 impl From<Vote> for VoteWASM {
@@ -22,16 +22,16 @@ impl From<VoteWASM> for Vote {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = Vote)]
 impl VoteWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "VoteWASM".to_string()
+        "Vote".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "VoteWASM".to_string()
+        "Vote".to_string()
     }
 
     #[wasm_bindgen(constructor)]

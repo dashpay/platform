@@ -13,7 +13,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "DistributionFunctionWASM")]
+#[wasm_bindgen(js_name = "DistributionFunction")]
 pub struct DistributionFunctionWASM(DistributionFunction);
 
 impl From<DistributionFunctionWASM> for DistributionFunction {
@@ -28,16 +28,16 @@ impl From<DistributionFunction> for DistributionFunctionWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DistributionFunction)]
 impl DistributionFunctionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DistributionFunctionWASM".to_string()
+        "DistributionFunction".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DistributionFunctionWASM".to_string()
+        "DistributionFunction".to_string()
     }
 
     #[wasm_bindgen(js_name = "FixedAmountDistribution")]

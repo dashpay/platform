@@ -7,7 +7,7 @@ use crate::enums::token::emergency_action::TokenEmergencyActionWASM;
 use crate::batch::token_base_transition::TokenBaseTransitionWASM;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "TokenEmergencyActionTransitionWASM")]
+#[wasm_bindgen(js_name = "TokenEmergencyActionTransition")]
 pub struct TokenEmergencyActionTransitionWASM(TokenEmergencyActionTransition);
 
 impl From<TokenEmergencyActionTransitionWASM> for TokenEmergencyActionTransition {
@@ -22,16 +22,16 @@ impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWASM
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenEmergencyActionTransition)]
 impl TokenEmergencyActionTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenEmergencyActionTransitionWASM".to_string()
+        "TokenEmergencyActionTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenEmergencyActionTransitionWASM".to_string()
+        "TokenEmergencyActionTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

@@ -9,15 +9,15 @@ before(async () => {
 describe('InstantLock', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create chain lock proof from values', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = new wasm.ChainAssetLockProofWASM(11, outpoint);
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
       expect(chainlock.__wbg_ptr).to.not.equal(0);
     });
 
     it('should allow to create chain lock proof from object', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = wasm.ChainAssetLockProofWASM.fromRawObject({
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = wasm.ChainAssetLockProof.fromRawObject({
         coreChainLockedHeight: 11,
         outPoint: Array.from(outpoint.bytes()),
       });
@@ -28,24 +28,24 @@ describe('InstantLock', () => {
 
   describe('getters', () => {
     it('should allow to get coreChainLockedHeight', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = new wasm.ChainAssetLockProofWASM(11, outpoint);
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
       expect(chainlock.coreChainLockedHeight).to.equal(11);
     });
 
     it('should allow to get outPoint', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = new wasm.ChainAssetLockProofWASM(11, outpoint);
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
-      expect(chainlock.outPoint.constructor.name).to.equal('OutPointWASM');
+      expect(chainlock.outPoint.constructor.name).to.equal('OutPoint');
     });
   });
 
   describe('setters', () => {
     it('should allow to set coreChainLockedHeight', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = new wasm.ChainAssetLockProofWASM(11, outpoint);
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
       chainlock.coreChainLockedHeight = 33;
 
@@ -53,10 +53,10 @@ describe('InstantLock', () => {
     });
 
     it('should allow to get outPoint', () => {
-      const outpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
-      const chainlock = new wasm.ChainAssetLockProofWASM(11, outpoint);
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainlock = new wasm.ChainAssetLockProof(11, outpoint);
 
-      const newOutpoint = new wasm.OutPointWASM('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 222);
+      const newOutpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 222);
 
       chainlock.outPoint = newOutpoint;
 

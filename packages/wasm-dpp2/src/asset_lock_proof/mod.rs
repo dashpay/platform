@@ -15,7 +15,7 @@ use serde::Serialize;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "AssetLockProofWASM")]
+#[wasm_bindgen(js_name = "AssetLockProof")]
 #[derive(Clone)]
 pub struct AssetLockProofWASM(AssetLockProof);
 
@@ -61,31 +61,31 @@ impl From<AssetLockProof> for InstantAssetLockProofWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = AssetLockProof)]
 impl AssetLockProofWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "AssetLockProofWASM".to_string()
+        "AssetLockProof".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "AssetLockProofWASM".to_string()
+        "AssetLockProof".to_string()
     }
 
     #[wasm_bindgen(constructor)]
     pub fn new(js_asset_lock_proof: &JsValue) -> Result<AssetLockProofWASM, JsValue> {
         match get_class_type(js_asset_lock_proof)?.as_str() {
-            "ChainAssetLockProofWASM" => {
+            "ChainAssetLockProof" => {
                 let chain_lock = js_asset_lock_proof
-                    .to_wasm::<ChainAssetLockProofWASM>("ChainAssetLockProofWASM")?
+                    .to_wasm::<ChainAssetLockProofWASM>("ChainAssetLockProof")?
                     .clone();
 
                 Ok(AssetLockProofWASM::from(chain_lock))
             }
-            "InstantAssetLockProofWASM" => {
+            "InstantAssetLockProof" => {
                 let instant_lock = js_asset_lock_proof
-                    .to_wasm::<InstantAssetLockProofWASM>("InstantAssetLockProofWASM")?
+                    .to_wasm::<InstantAssetLockProofWASM>("InstantAssetLockProof")?
                     .clone();
 
                 Ok(AssetLockProofWASM::from(instant_lock))

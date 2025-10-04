@@ -2,7 +2,7 @@ use dpp::tokens::emergency_action::TokenEmergencyAction;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "TokenEmergencyActionWASM")]
+#[wasm_bindgen(js_name = "TokenEmergencyAction")]
 #[allow(non_camel_case_types)]
 #[derive(Default)]
 pub enum TokenEmergencyActionWASM {

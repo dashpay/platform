@@ -15,7 +15,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "TokenDistributionRulesWASM")]
+#[wasm_bindgen(js_name = "TokenDistributionRules")]
 pub struct TokenDistributionRulesWASM(TokenDistributionRules);
 
 impl From<TokenDistributionRulesWASM> for TokenDistributionRules {
@@ -30,16 +30,16 @@ impl From<TokenDistributionRules> for TokenDistributionRulesWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenDistributionRules)]
 impl TokenDistributionRulesWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenDistributionRulesWASM".to_string()
+        "TokenDistributionRules".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenDistributionRulesWASM".to_string()
+        "TokenDistributionRules".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -57,7 +57,7 @@ impl TokenDistributionRulesWASM {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
                 js_perpetual_distribution
-                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistributionWASM")?
+                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")?
                     .clone(),
             )),
         };
@@ -67,7 +67,7 @@ impl TokenDistributionRulesWASM {
             false => Some(TokenPreProgrammedDistribution::from(
                 js_pre_programmed_distribution
                     .to_wasm::<TokenPreProgrammedDistributionWASM>(
-                        "TokenPreProgrammedDistributionWASM",
+                        "TokenPreProgrammedDistribution",
                     )?
                     .clone(),
             )),
@@ -165,7 +165,7 @@ impl TokenDistributionRulesWASM {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
                 js_perpetual_distribution
-                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistributionWASM")?
+                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")?
                     .clone(),
             )),
         };
@@ -189,7 +189,7 @@ impl TokenDistributionRulesWASM {
             false => Some(TokenPreProgrammedDistribution::from(
                 js_distribution
                     .to_wasm::<TokenPreProgrammedDistributionWASM>(
-                        "TokenPreProgrammedDistributionWASM",
+                        "TokenPreProgrammedDistribution",
                     )?
                     .clone(),
             )),

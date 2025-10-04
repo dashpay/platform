@@ -13,7 +13,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name = "TokenConfigurationConventionWASM")]
+#[wasm_bindgen(js_name = "TokenConfigurationConvention")]
 pub struct TokenConfigurationConventionWASM(TokenConfigurationConvention);
 
 impl From<TokenConfigurationConvention> for TokenConfigurationConventionWASM {
@@ -28,16 +28,16 @@ impl From<TokenConfigurationConventionWASM> for TokenConfigurationConvention {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigurationConvention)]
 impl TokenConfigurationConventionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenConfigurationConventionWASM".to_string()
+        "TokenConfigurationConvention".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenConfigurationConventionWASM".to_string()
+        "TokenConfigurationConvention".to_string()
     }
 
     #[wasm_bindgen(constructor)]

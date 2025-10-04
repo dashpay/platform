@@ -41,7 +41,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "StateTransitionWASM")]
+#[wasm_bindgen(js_name = "StateTransition")]
 pub struct StateTransitionWASM(StateTransition);
 
 impl From<StateTransition> for StateTransitionWASM {
@@ -56,16 +56,16 @@ impl From<StateTransitionWASM> for StateTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = StateTransition)]
 impl StateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "StateTransitionWASM".to_string()
+        "StateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "StateTransitionWASM".to_string()
+        "StateTransition".to_string()
     }
 
     #[wasm_bindgen(js_name = "sign")]

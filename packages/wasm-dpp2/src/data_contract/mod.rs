@@ -30,7 +30,7 @@ use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "DataContractWASM")]
+#[wasm_bindgen(js_name = "DataContract")]
 #[derive(Clone)]
 pub struct DataContractWASM(DataContract);
 
@@ -63,7 +63,7 @@ pub fn tokens_configuration_from_js_value(
         }?;
 
         let js_config = Reflect::get(&js_configuration, &key)?
-            .to_wasm::<TokenConfigurationWASM>("TokenConfigurationWASM")?
+            .to_wasm::<TokenConfigurationWASM>("TokenConfiguration")?
             .clone();
 
         configuration.insert(contract_position, js_config.into());
@@ -72,16 +72,16 @@ pub fn tokens_configuration_from_js_value(
     Ok(configuration)
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DataContract)]
 impl DataContractWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DataContractWASM".to_string()
+        "DataContract".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DataContractWASM".to_string()
+        "DataContract".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -456,7 +456,7 @@ impl DataContractWASM {
 
             let js_group = Reflect::get(&groups_object, &js_position)?;
 
-            let group = js_group.to_wasm::<GroupWASM>("GroupWASM")?.clone();
+            let group = js_group.to_wasm::<GroupWASM>("Group")?.clone();
 
             groups.insert(position, group.into());
         }

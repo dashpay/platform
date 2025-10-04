@@ -15,7 +15,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "DocumentTransitionWASM")]
+#[wasm_bindgen(js_name = "DocumentTransition")]
 pub struct DocumentTransitionWASM(DocumentTransition);
 
 impl From<DocumentTransition> for DocumentTransitionWASM {
@@ -30,16 +30,16 @@ impl From<DocumentTransitionWASM> for DocumentTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DocumentTransition)]
 impl DocumentTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DocumentTransitionWASM".to_string()
+        "DocumentTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DocumentTransitionWASM".to_string()
+        "DocumentTransition".to_string()
     }
 
     #[wasm_bindgen(getter = "actionType")]

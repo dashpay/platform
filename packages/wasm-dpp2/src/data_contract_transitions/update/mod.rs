@@ -15,19 +15,19 @@ use dpp::version::{FeatureVersion, ProtocolVersion, TryFromPlatformVersioned};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "DataContractUpdateTransitionWASM")]
+#[wasm_bindgen(js_name = "DataContractUpdateTransition")]
 pub struct DataContractUpdateTransitionWASM(DataContractUpdateTransition);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = DataContractUpdateTransition)]
 impl DataContractUpdateTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "DataContractUpdateTransitionWASM".to_string()
+        "DataContractUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "DataContractUpdateTransitionWASM".to_string()
+        "DataContractUpdateTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

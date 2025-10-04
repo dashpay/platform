@@ -21,7 +21,7 @@ struct InstantAssetLockProofRAW {
 }
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "InstantAssetLockProofWASM")]
+#[wasm_bindgen(js_name = "InstantAssetLockProof")]
 pub struct InstantAssetLockProofWASM(InstantAssetLockProof);
 
 impl From<InstantAssetLockProofWASM> for InstantAssetLockProof {
@@ -36,16 +36,16 @@ impl From<InstantAssetLockProof> for InstantAssetLockProofWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = InstantAssetLockProof)]
 impl InstantAssetLockProofWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "InstantAssetLockProofWASM".to_string()
+        "InstantAssetLockProof".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "InstantAssetLockProofWASM".to_string()
+        "InstantAssetLockProof".to_string()
     }
 
     #[wasm_bindgen(constructor)]

@@ -25,7 +25,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenTransitionWASM)]
+#[wasm_bindgen(js_name=TokenTransition)]
 pub struct TokenTransitionWASM(TokenTransition);
 
 impl From<TokenTransition> for TokenTransitionWASM {
@@ -40,101 +40,101 @@ impl From<TokenTransitionWASM> for TokenTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenTransition)]
 impl TokenTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenTransitionWASM".to_string()
+        "TokenTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenTransitionWASM".to_string()
+        "TokenTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
     pub fn new(js_transition: &JsValue) -> Result<TokenTransitionWASM, JsValue> {
         let transition = match js_transition.is_object() {
             true => match get_class_type(js_transition)?.as_str() {
-                "TokenMintTransitionWASM" => Ok(TokenTransition::from(TokenMintTransition::from(
+                "TokenMintTransition" => Ok(TokenTransition::from(TokenMintTransition::from(
                     js_transition
-                        .to_wasm::<TokenMintTransitionWASM>("TokenMintTransitionWASM")?
+                        .to_wasm::<TokenMintTransitionWASM>("TokenMintTransition")?
                         .clone(),
                 ))),
-                "TokenUnFreezeTransitionWASM" => {
+                "TokenUnFreezeTransition" => {
                     Ok(TokenTransition::from(TokenUnfreezeTransition::from(
                         js_transition
-                            .to_wasm::<TokenUnFreezeTransitionWASM>("TokenUnFreezeTransitionWASM")?
+                            .to_wasm::<TokenUnFreezeTransitionWASM>("TokenUnFreezeTransition")?
                             .clone(),
                     )))
                 }
-                "TokenTransferTransitionWASM" => {
+                "TokenTransferTransition" => {
                     Ok(TokenTransition::from(TokenTransferTransition::from(
                         js_transition
-                            .to_wasm::<TokenTransferTransitionWASM>("TokenTransferTransitionWASM")?
+                            .to_wasm::<TokenTransferTransitionWASM>("TokenTransferTransition")?
                             .clone(),
                     )))
                 }
-                "TokenFreezeTransitionWASM" => {
+                "TokenFreezeTransition" => {
                     Ok(TokenTransition::from(TokenFreezeTransition::from(
                         js_transition
-                            .to_wasm::<TokenFreezeTransitionWASM>("TokenFreezeTransitionWASM")?
+                            .to_wasm::<TokenFreezeTransitionWASM>("TokenFreezeTransition")?
                             .clone(),
                     )))
                 }
-                "TokenDestroyFrozenFundsTransitionWASM" => Ok(TokenTransition::from(
+                "TokenDestroyFrozenFundsTransition" => Ok(TokenTransition::from(
                     TokenDestroyFrozenFundsTransition::from(
                         js_transition
                             .to_wasm::<TokenDestroyFrozenFundsTransitionWASM>(
-                                "TokenDestroyFrozenFundsTransitionWASM",
+                                "TokenDestroyFrozenFundsTransition",
                             )?
                             .clone(),
                     ),
                 )),
-                "TokenClaimTransitionWASM" => {
+                "TokenClaimTransition" => {
                     Ok(TokenTransition::from(TokenClaimTransition::from(
                         js_transition
-                            .to_wasm::<TokenClaimTransitionWASM>("TokenClaimTransitionWASM")?
+                            .to_wasm::<TokenClaimTransitionWASM>("TokenClaimTransition")?
                             .clone(),
                     )))
                 }
-                "TokenBurnTransitionWASM" => Ok(TokenTransition::from(TokenBurnTransition::from(
+                "TokenBurnTransition" => Ok(TokenTransition::from(TokenBurnTransition::from(
                     js_transition
-                        .to_wasm::<TokenBurnTransitionWASM>("TokenBurnTransitionWASM")?
+                        .to_wasm::<TokenBurnTransitionWASM>("TokenBurnTransition")?
                         .clone(),
                 ))),
-                "TokenSetPriceForDirectPurchaseTransitionWASM" => Ok(TokenTransition::from(
+                "TokenSetPriceForDirectPurchaseTransition" => Ok(TokenTransition::from(
                     TokenSetPriceForDirectPurchaseTransition::from(
                         js_transition
                             .to_wasm::<TokenSetPriceForDirectPurchaseTransitionWASM>(
-                                "TokenSetPriceForDirectPurchaseTransitionWASM",
+                                "TokenSetPriceForDirectPurchaseTransition",
                             )?
                             .clone(),
                     ),
                 )),
-                "TokenDirectPurchaseTransitionWASM" => {
+                "TokenDirectPurchaseTransition" => {
                     Ok(TokenTransition::from(TokenDirectPurchaseTransition::from(
                         js_transition
                             .to_wasm::<TokenDirectPurchaseTransitionWASM>(
-                                "TokenDirectPurchaseTransitionWASM",
+                                "TokenDirectPurchaseTransition",
                             )?
                             .clone(),
                     )))
                 }
-                "TokenConfigUpdateTransitionWASM" => {
+                "TokenConfigUpdateTransition" => {
                     Ok(TokenTransition::from(TokenConfigUpdateTransition::from(
                         js_transition
                             .to_wasm::<TokenConfigUpdateTransitionWASM>(
-                                "TokenConfigUpdateTransitionWASM",
+                                "TokenConfigUpdateTransition",
                             )?
                             .clone(),
                     )))
                 }
-                "TokenEmergencyActionTransitionWASM" => {
+                "TokenEmergencyActionTransition" => {
                     Ok(TokenTransition::from(TokenEmergencyActionTransition::from(
                         js_transition
                             .to_wasm::<TokenEmergencyActionTransitionWASM>(
-                                "TokenEmergencyActionTransitionWASM",
+                                "TokenEmergencyActionTransition",
                             )?
                             .clone(),
                     )))

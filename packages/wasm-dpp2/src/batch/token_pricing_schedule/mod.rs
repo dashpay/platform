@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = "TokenPricingScheduleWASM")]
+#[wasm_bindgen(js_name = "TokenPricingSchedule")]
 pub struct TokenPricingScheduleWASM(TokenPricingSchedule);
 
 impl From<TokenPricingScheduleWASM> for TokenPricingSchedule {
@@ -23,16 +23,16 @@ impl From<TokenPricingSchedule> for TokenPricingScheduleWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenPricingSchedule)]
 impl TokenPricingScheduleWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenPricingScheduleWASM".to_string()
+        "TokenPricingSchedule".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenPricingScheduleWASM".to_string()
+        "TokenPricingSchedule".to_string()
     }
 
     #[wasm_bindgen(js_name = "SinglePrice")]

@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
-#[wasm_bindgen(js_name = TokenConfigurationLocalizationWASM)]
+#[wasm_bindgen(js_name = TokenConfigurationLocalization)]
 pub struct TokenConfigurationLocalizationWASM(TokenConfigurationLocalization);
 
 impl From<TokenConfigurationLocalization> for TokenConfigurationLocalizationWASM {
@@ -23,16 +23,16 @@ impl From<TokenConfigurationLocalizationWASM> for TokenConfigurationLocalization
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenConfigurationLocalization)]
 impl TokenConfigurationLocalizationWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenConfigurationLocalizationWASM".to_string()
+        "TokenConfigurationLocalization".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenConfigurationLocalizationWASM".to_string()
+        "TokenConfigurationLocalization".to_string()
     }
 
     #[wasm_bindgen(constructor)]

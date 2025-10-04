@@ -15,20 +15,20 @@ use dpp::state_transition::{StateTransition, StateTransitionLike};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "IdentityTopUpTransitionWASM")]
+#[wasm_bindgen(js_name = "IdentityTopUpTransition")]
 #[derive(Clone)]
 pub struct IdentityTopUpTransitionWASM(IdentityTopUpTransition);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityTopUpTransition)]
 impl IdentityTopUpTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityTopUpTransitionWASM".to_string()
+        "IdentityTopUpTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityTopUpTransitionWASM".to_string()
+        "IdentityTopUpTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]

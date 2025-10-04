@@ -1,7 +1,7 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "AssetLockProofTypeWASM")]
+#[wasm_bindgen(js_name = "AssetLockProofType")]
 pub enum AssetLockProofTypeWASM {
     Instant = 0,
     Chain = 1,

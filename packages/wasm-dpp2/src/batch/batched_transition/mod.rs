@@ -13,7 +13,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=BatchedTransitionWASM)]
+#[wasm_bindgen(js_name=BatchedTransition)]
 pub struct BatchedTransitionWASM(BatchedTransition);
 
 impl From<BatchedTransition> for BatchedTransitionWASM {
@@ -28,16 +28,16 @@ impl From<BatchedTransitionWASM> for BatchedTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = BatchedTransition)]
 impl BatchedTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "BatchedTransitionWASM".to_string()
+        "BatchedTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "BatchedTransitionWASM".to_string()
+        "BatchedTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -45,17 +45,17 @@ impl BatchedTransitionWASM {
         match js_transition.is_undefined() && js_transition.is_object() {
             true => Err(JsValue::from_str("transition is undefined")),
             false => match get_class_type(js_transition)?.as_str() {
-                "TokenTransitionWASM" => Ok(BatchedTransitionWASM::from(BatchedTransition::from(
+                "TokenTransition" => Ok(BatchedTransitionWASM::from(BatchedTransition::from(
                     TokenTransition::from(
                         js_transition
-                            .to_wasm::<TokenTransitionWASM>("TokenTransitionWASM")?
+                            .to_wasm::<TokenTransitionWASM>("TokenTransition")?
                             .clone(),
                     ),
                 ))),
-                "DocumentTransitionWASM" => Ok(BatchedTransitionWASM(BatchedTransition::Document(
+                "DocumentTransition" => Ok(BatchedTransitionWASM(BatchedTransition::Document(
                     DocumentTransition::from(
                         js_transition
-                            .to_wasm::<DocumentTransitionWASM>("DocumentTransitionWASM")?
+                            .to_wasm::<DocumentTransitionWASM>("DocumentTransition")?
                             .clone(),
                     ),
                 ))),

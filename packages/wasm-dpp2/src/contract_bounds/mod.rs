@@ -3,7 +3,7 @@ use dpp::identity::contract_bounds::ContractBounds;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "ContractBoundsWASM")]
+#[wasm_bindgen(js_name = "ContractBounds")]
 #[derive(Clone)]
 pub struct ContractBoundsWASM(ContractBounds);
 
@@ -19,16 +19,16 @@ impl From<ContractBoundsWASM> for ContractBounds {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = ContractBounds)]
 impl ContractBoundsWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "ContractBoundsWASM".to_string()
+        "ContractBounds".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "ContractBoundsWASM".to_string()
+        "ContractBounds".to_string()
     }
 
     #[wasm_bindgen(constructor)]

@@ -1,7 +1,7 @@
 use dpp::dashcore::network::constants::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-#[wasm_bindgen(js_name = "NetworkWASM")]
+#[wasm_bindgen(js_name = "Network")]
 #[allow(non_camel_case_types)]
 pub enum NetworkWASM {
     Mainnet = 0,

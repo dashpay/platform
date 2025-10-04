@@ -7,7 +7,7 @@ use dpp::platform_value::string_encoding::encode;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-#[wasm_bindgen(js_name = "CoreScriptWASM")]
+#[wasm_bindgen(js_name = "CoreScript")]
 #[derive(Clone)]
 pub struct CoreScriptWASM(CoreScript);
 
@@ -23,16 +23,16 @@ impl From<CoreScript> for CoreScriptWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = CoreScript)]
 impl CoreScriptWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "CoreScriptWASM".to_string()
+        "CoreScript".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "CoreScriptWASM".to_string()
+        "CoreScript".to_string()
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]

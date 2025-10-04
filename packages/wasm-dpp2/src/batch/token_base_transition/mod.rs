@@ -10,7 +10,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenBaseTransitionWASM)]
+#[wasm_bindgen(js_name=TokenBaseTransition)]
 pub struct TokenBaseTransitionWASM(TokenBaseTransition);
 
 impl From<TokenBaseTransition> for TokenBaseTransitionWASM {
@@ -25,16 +25,16 @@ impl From<TokenBaseTransitionWASM> for TokenBaseTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenBaseTransition)]
 impl TokenBaseTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenBaseTransitionWASM".to_string()
+        "TokenBaseTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenBaseTransitionWASM".to_string()
+        "TokenBaseTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -49,7 +49,7 @@ impl TokenBaseTransitionWASM {
             match js_using_group_info.is_undefined() {
                 false => Some(
                     js_using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfoWASM")?
+                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfo")?
                         .clone()
                         .into(),
                 ),
@@ -126,7 +126,7 @@ impl TokenBaseTransitionWASM {
             match js_using_group_info.is_undefined() {
                 false => Some(
                     js_using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfoWASM")?
+                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfo")?
                         .clone()
                         .into(),
                 ),

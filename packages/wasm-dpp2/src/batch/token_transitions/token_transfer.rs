@@ -13,7 +13,7 @@ use crate::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWASM;
 use crate::utils::IntoWasm;
 
 #[derive(Debug, Clone, PartialEq)]
-#[wasm_bindgen(js_name=TokenTransferTransitionWASM)]
+#[wasm_bindgen(js_name=TokenTransferTransition)]
 pub struct TokenTransferTransitionWASM(TokenTransferTransition);
 
 impl From<TokenTransferTransition> for TokenTransferTransitionWASM {
@@ -28,16 +28,16 @@ impl From<TokenTransferTransitionWASM> for TokenTransferTransition {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenTransferTransition)]
 impl TokenTransferTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenTransferTransitionWASM".to_string()
+        "TokenTransferTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenTransferTransitionWASM".to_string()
+        "TokenTransferTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -56,7 +56,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNoteWASM")?
+                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNote")?
                         .clone()
                         .into(),
                 ),
@@ -67,7 +67,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNoteWASM")?
+                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
                 ),
@@ -155,7 +155,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNoteWASM")?
+                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNote")?
                         .clone()
                         .into(),
                 ),
@@ -174,7 +174,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNoteWASM")?
+                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
                 ),

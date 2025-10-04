@@ -20,19 +20,19 @@ use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, Stat
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
-#[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransitionWASM")]
+#[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
 pub struct IdentityCreditWithdrawalTransitionWASM(IdentityCreditWithdrawalTransition);
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = IdentityCreditWithdrawalTransition)]
 impl IdentityCreditWithdrawalTransitionWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "IdentityCreditWithdrawalTransitionWASM".to_string()
+        "IdentityCreditWithdrawalTransition".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "IdentityCreditWithdrawalTransitionWASM".to_string()
+        "IdentityCreditWithdrawalTransition".to_string()
     }
 
     #[wasm_bindgen(constructor)]
@@ -52,7 +52,7 @@ impl IdentityCreditWithdrawalTransitionWASM {
             true => None,
             false => Some(
                 js_output_script
-                    .to_wasm::<CoreScriptWASM>("CoreScriptWASM")?
+                    .to_wasm::<CoreScriptWASM>("CoreScript")?
                     .clone()
                     .into(),
             ),
@@ -138,7 +138,7 @@ impl IdentityCreditWithdrawalTransitionWASM {
             true => self.0.set_output_script(None),
             false => {
                 let script: CoreScriptWASM = js_script
-                    .to_wasm::<CoreScriptWASM>("CoreScriptWASM")?
+                    .to_wasm::<CoreScriptWASM>("CoreScript")?
                     .clone();
                 self.0.set_output_script(Some(script.clone().into()))
             }

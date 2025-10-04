@@ -6,7 +6,7 @@ use dpp::data_contract::associated_token::token_keeps_history_rules::v0::TokenKe
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
-#[wasm_bindgen(js_name = "TokenKeepsHistoryRulesWASM")]
+#[wasm_bindgen(js_name = "TokenKeepsHistoryRules")]
 pub struct TokenKeepsHistoryRulesWASM(TokenKeepsHistoryRules);
 
 impl From<TokenKeepsHistoryRulesWASM> for TokenKeepsHistoryRules {
@@ -21,16 +21,16 @@ impl From<TokenKeepsHistoryRules> for TokenKeepsHistoryRulesWASM {
     }
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_class = TokenKeepsHistoryRules)]
 impl TokenKeepsHistoryRulesWASM {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
-        "TokenKeepsHistoryRulesWASM".to_string()
+        "TokenKeepsHistoryRules".to_string()
     }
 
     #[wasm_bindgen(getter = __struct)]
     pub fn struct_name() -> String {
-        "TokenKeepsHistoryRulesWASM".to_string()
+        "TokenKeepsHistoryRules".to_string()
     }
 
     #[wasm_bindgen(constructor)]
