@@ -1,5 +1,5 @@
-use crate::enums::network::NetworkWASM;
-use crate::public_key::PublicKeyWASM;
+use crate::enums::network::NetworkWasm;
+use crate::public_key::PublicKeyWasm;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
 use dpp::dashcore::key::Secp256k1;
@@ -8,10 +8,10 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrivateKey")]
-pub struct PrivateKeyWASM(PrivateKey);
+pub struct PrivateKeyWasm(PrivateKey);
 
 #[wasm_bindgen(js_class = PrivateKey)]
-impl PrivateKeyWASM {
+impl PrivateKeyWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "PrivateKey".to_string()
@@ -27,35 +27,35 @@ impl PrivateKeyWASM {
         let pk = PrivateKey::from_wif(wif).map_err(|err| JsValue::from_str(&*err.to_string()));
 
         match pk {
-            Ok(pk) => Ok(PrivateKeyWASM(pk)),
+            Ok(pk) => Ok(PrivateKeyWasm(pk)),
             Err(err) => Err(err),
         }
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>, js_network: JsValue) -> Result<Self, JsValue> {
-        let network = NetworkWASM::try_from(js_network)?;
+        let network = NetworkWasm::try_from(js_network)?;
 
         let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
             .map_err(|err| JsValue::from_str(&*err.to_string()))?;
 
-        Ok(PrivateKeyWASM(pk))
+        Ok(PrivateKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(hex_key: &str, js_network: JsValue) -> Result<Self, JsValue> {
-        let network = NetworkWASM::try_from(js_network)?;
+        let network = NetworkWasm::try_from(js_network)?;
 
         let bytes = Vec::from_hex(hex_key).map_err(|err| JsValue::from(err.to_string()))?;
 
         let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
             .map_err(|err| JsValue::from_str(&*err.to_string()))?;
 
-        Ok(PrivateKeyWASM(pk))
+        Ok(PrivateKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name = "getPublicKey")]
-    pub fn get_public_key(&self) -> PublicKeyWASM {
+    pub fn get_public_key(&self) -> PublicKeyWasm {
         let secp = Secp256k1::new();
 
         let public_key = self.0.public_key(&secp);
@@ -65,7 +65,7 @@ impl PrivateKeyWASM {
 }
 
 #[wasm_bindgen(js_class = PrivateKey)]
-impl PrivateKeyWASM {
+impl PrivateKeyWasm {
     #[wasm_bindgen(js_name = "WIF")]
     pub fn get_wif(&self) -> String {
         self.0.to_wif()

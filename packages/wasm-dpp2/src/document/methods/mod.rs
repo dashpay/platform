@@ -1,7 +1,7 @@
-use crate::data_contract::DataContractWASM;
-use crate::document::DocumentWASM;
-use crate::enums::platform::PlatformVersionWASM;
-use crate::identifier::IdentifierWASM;
+use crate::data_contract::DataContractWasm;
+use crate::document::DocumentWasm;
+use crate::enums::platform::PlatformVersionWasm;
+use crate::identifier::IdentifierWasm;
 use crate::utils::{ToSerdeJSONExt, WithJsError};
 use dpp::ProtocolError;
 use dpp::dashcore::hashes::serde::Serialize;
@@ -21,7 +21,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_class = Document)]
-impl DocumentWASM {
+impl DocumentWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "Document".to_string()
@@ -40,9 +40,9 @@ impl DocumentWASM {
         js_data_contract_id: &JsValue,
         js_owner_id: &JsValue,
         js_document_id: &JsValue,
-    ) -> Result<DocumentWASM, JsValue> {
-        let data_contract_id = IdentifierWASM::try_from(js_data_contract_id)?;
-        let owner_id = IdentifierWASM::try_from(js_owner_id)?;
+    ) -> Result<DocumentWasm, JsValue> {
+        let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
+        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
 
         let revision = Revision::from(js_revision);
 
@@ -56,7 +56,7 @@ impl DocumentWASM {
             .generate()
             .map_err(|err| JsValue::from(err.to_string()))?;
 
-        let document_id: IdentifierWASM = match js_document_id.is_undefined() {
+        let document_id: IdentifierWasm = match js_document_id.is_undefined() {
             true => crate::utils::generate_document_id_v0(
                 &data_contract_id.into(),
                 &owner_id.into(),
@@ -67,7 +67,7 @@ impl DocumentWASM {
             false => js_document_id.try_into()?,
         };
 
-        Ok(DocumentWASM {
+        Ok(DocumentWasm {
             owner_id,
             entropy: Some(entropy),
             id: document_id,
@@ -88,7 +88,7 @@ impl DocumentWASM {
     }
 
     #[wasm_bindgen(getter=id)]
-    pub fn get_id(&self) -> IdentifierWASM {
+    pub fn get_id(&self) -> IdentifierWasm {
         self.id
     }
 
@@ -101,12 +101,12 @@ impl DocumentWASM {
     }
 
     #[wasm_bindgen(getter=dataContractId)]
-    pub fn get_data_contract_id(&self) -> IdentifierWASM {
+    pub fn get_data_contract_id(&self) -> IdentifierWasm {
         self.data_contract_id
     }
 
     #[wasm_bindgen(getter=ownerId)]
-    pub fn get_owner_id(&self) -> IdentifierWASM {
+    pub fn get_owner_id(&self) -> IdentifierWasm {
         self.owner_id
     }
 
@@ -180,7 +180,7 @@ impl DocumentWASM {
 
     #[wasm_bindgen(setter=id)]
     pub fn set_id(&mut self, id: &JsValue) -> Result<(), JsValue> {
-        self.id = IdentifierWASM::try_from(id)?.clone();
+        self.id = IdentifierWasm::try_from(id)?.clone();
         Ok(())
     }
 
@@ -202,14 +202,14 @@ impl DocumentWASM {
 
     #[wasm_bindgen(setter=dataContractId)]
     pub fn set_js_data_contract_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
-        self.data_contract_id = IdentifierWASM::try_from(js_contract_id.clone())?;
+        self.data_contract_id = IdentifierWasm::try_from(js_contract_id.clone())?;
 
         Ok(())
     }
 
     #[wasm_bindgen(setter=ownerId)]
     pub fn set_owner_id(&mut self, id: &JsValue) -> Result<(), JsValue> {
-        self.owner_id = IdentifierWASM::try_from(id)?.clone();
+        self.owner_id = IdentifierWasm::try_from(id)?.clone();
         Ok(())
     }
 
@@ -279,12 +279,12 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=bytes)]
     pub fn to_bytes(
         &self,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         js_platform_version: JsValue,
     ) -> Result<Vec<u8>, JsValue> {
         let platform_version = match js_platform_version.is_undefined() {
-            true => PlatformVersionWASM::default(),
-            false => PlatformVersionWASM::try_from(js_platform_version)?,
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
         let rs_document: Document = Document::from(self.clone());
@@ -305,7 +305,7 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=hex)]
     pub fn to_hex(
         &self,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         js_platform_version: JsValue,
     ) -> Result<String, JsValue> {
         Ok(encode(
@@ -318,7 +318,7 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=base64)]
     pub fn to_base64(
         &self,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         js_platform_version: JsValue,
     ) -> Result<String, JsValue> {
         Ok(encode(
@@ -331,13 +331,13 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=fromBytes)]
     pub fn from_bytes(
         bytes: Vec<u8>,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWASM, JsValue> {
+    ) -> Result<DocumentWasm, JsValue> {
         let platform_version = match js_platform_version.is_undefined() {
-            true => PlatformVersionWASM::default(),
-            false => PlatformVersionWASM::try_from(js_platform_version)?,
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
         let document_type_ref = match data_contract.get_document_type_ref_by_name(type_name.clone())
@@ -353,7 +353,7 @@ impl DocumentWASM {
         )
         .with_js_error()?;
 
-        let mut js_document = DocumentWASM::from(rs_document);
+        let mut js_document = DocumentWasm::from(rs_document);
 
         js_document.set_document_type_name(type_name.clone().as_str());
         js_document.set_data_contract_id(&data_contract.get_id());
@@ -364,11 +364,11 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=fromHex)]
     pub fn from_hex(
         hex: String,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWASM, JsValue> {
-        DocumentWASM::from_bytes(
+    ) -> Result<DocumentWasm, JsValue> {
+        DocumentWasm::from_bytes(
             decode(hex.as_str(), Hex).map_err(JsError::from)?,
             data_contract,
             type_name,
@@ -379,11 +379,11 @@ impl DocumentWASM {
     #[wasm_bindgen(js_name=fromBase64)]
     pub fn from_base64(
         base64: String,
-        data_contract: &DataContractWASM,
+        data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWASM, JsValue> {
-        DocumentWASM::from_bytes(
+    ) -> Result<DocumentWasm, JsValue> {
+        DocumentWasm::from_bytes(
             decode(base64.as_str(), Base64).map_err(JsError::from)?,
             data_contract,
             type_name,
@@ -398,8 +398,8 @@ impl DocumentWASM {
         js_data_contract_id: &JsValue,
         opt_entropy: Option<Vec<u8>>,
     ) -> Result<Vec<u8>, JsValue> {
-        let owner_id = IdentifierWASM::try_from(js_owner_id)?;
-        let data_contract_id = IdentifierWASM::try_from(js_data_contract_id)?;
+        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
+        let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
 
         let entropy: [u8; 32] = match opt_entropy {
             Some(entropy_vec) => {
@@ -428,7 +428,7 @@ impl DocumentWASM {
     }
 }
 
-impl DocumentWASM {
+impl DocumentWasm {
     pub fn rs_get_owner_id(&self) -> Identifier {
         self.owner_id.into()
     }
@@ -449,7 +449,7 @@ impl DocumentWASM {
         self.clone().properties
     }
 
-    fn set_data_contract_id(&mut self, data_contract_id: &IdentifierWASM) {
+    fn set_data_contract_id(&mut self, data_contract_id: &IdentifierWasm) {
         self.data_contract_id = data_contract_id.clone();
     }
 }

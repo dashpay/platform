@@ -1,4 +1,4 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
@@ -11,17 +11,17 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "TokenPreProgrammedDistribution")]
-pub struct TokenPreProgrammedDistributionWASM(TokenPreProgrammedDistribution);
+pub struct TokenPreProgrammedDistributionWasm(TokenPreProgrammedDistribution);
 
-impl From<TokenPreProgrammedDistributionWASM> for TokenPreProgrammedDistribution {
-    fn from(value: TokenPreProgrammedDistributionWASM) -> Self {
+impl From<TokenPreProgrammedDistributionWasm> for TokenPreProgrammedDistribution {
+    fn from(value: TokenPreProgrammedDistributionWasm) -> Self {
         value.0
     }
 }
 
-impl From<TokenPreProgrammedDistribution> for TokenPreProgrammedDistributionWASM {
+impl From<TokenPreProgrammedDistribution> for TokenPreProgrammedDistributionWasm {
     fn from(value: TokenPreProgrammedDistribution) -> Self {
-        TokenPreProgrammedDistributionWASM(value)
+        TokenPreProgrammedDistributionWasm(value)
     }
 }
 
@@ -47,7 +47,7 @@ pub fn js_distributions_to_distributions(
         let mut ids = BTreeMap::new();
 
         for id_key in identifiers_keys.iter() {
-            let identifier = Identifier::from(IdentifierWASM::try_from(id_key.clone())?);
+            let identifier = Identifier::from(IdentifierWasm::try_from(id_key.clone())?);
 
             let token_amount = BigInt::new(&Reflect::get(&identifiers_object, &id_key.clone())?)?
                 .to_string(10)
@@ -67,7 +67,7 @@ pub fn js_distributions_to_distributions(
 }
 
 #[wasm_bindgen(js_class = TokenPreProgrammedDistribution)]
-impl TokenPreProgrammedDistributionWASM {
+impl TokenPreProgrammedDistributionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenPreProgrammedDistribution".to_string()
@@ -79,10 +79,10 @@ impl TokenPreProgrammedDistributionWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_distributions: &JsValue) -> Result<TokenPreProgrammedDistributionWASM, JsValue> {
+    pub fn new(js_distributions: &JsValue) -> Result<TokenPreProgrammedDistributionWasm, JsValue> {
         let distributions = js_distributions_to_distributions(js_distributions)?;
 
-        Ok(TokenPreProgrammedDistributionWASM(
+        Ok(TokenPreProgrammedDistributionWasm(
             TokenPreProgrammedDistribution::V0(TokenPreProgrammedDistributionV0 { distributions }),
         ))
     }
@@ -98,7 +98,7 @@ impl TokenPreProgrammedDistributionWASM {
             for (identifiers_key, identifiers_value) in value {
                 Reflect::set(
                     &identifiers_obj,
-                    &IdentifierWASM::from(identifiers_key.clone())
+                    &IdentifierWasm::from(identifiers_key.clone())
                         .get_base58()
                         .into(),
                     &BigInt::from(identifiers_value.clone()).into(),

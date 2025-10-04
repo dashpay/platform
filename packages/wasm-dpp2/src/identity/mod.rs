@@ -1,5 +1,5 @@
-use crate::identifier::IdentifierWASM;
-use crate::identity_public_key::IdentityPublicKeyWASM;
+use crate::identifier::IdentifierWasm;
+use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::WithJsError;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{Identity, KeyID};
@@ -14,16 +14,16 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "Identity")]
-pub struct IdentityWASM(Identity);
+pub struct IdentityWasm(Identity);
 
-impl From<Identity> for IdentityWASM {
+impl From<Identity> for IdentityWasm {
     fn from(identity: Identity) -> Self {
         Self(identity)
     }
 }
 
 #[wasm_bindgen(js_class = Identity)]
-impl IdentityWASM {
+impl IdentityWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "Identity".to_string()
@@ -35,20 +35,20 @@ impl IdentityWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> Result<IdentityWASM, JsValue> {
-        let identifier: IdentifierWASM = js_identifier.try_into()?;
+    pub fn new(js_identifier: &JsValue) -> Result<IdentityWasm, JsValue> {
+        let identifier: IdentifierWasm = js_identifier.try_into()?;
 
         let identity = Identity::create_basic_identity(identifier.into(), PlatformVersion::first())
             .with_js_error()?;
 
-        Ok(IdentityWASM(identity))
+        Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
         Ok(self
             .0
-            .set_id(IdentifierWASM::try_from(js_identifier)?.into()))
+            .set_id(IdentifierWasm::try_from(js_identifier)?.into()))
     }
 
     #[wasm_bindgen(setter = "balance")]
@@ -62,14 +62,14 @@ impl IdentityWASM {
     }
 
     #[wasm_bindgen(js_name = "addPublicKey")]
-    pub fn add_public_key(&mut self, public_key: &IdentityPublicKeyWASM) {
+    pub fn add_public_key(&mut self, public_key: &IdentityPublicKeyWasm) {
         self.0.add_public_key(public_key.clone().into());
     }
 
     // GETTERS
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWASM {
+    pub fn get_id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
@@ -84,35 +84,35 @@ impl IdentityWASM {
     }
 
     #[wasm_bindgen(js_name = "getPublicKeyById")]
-    pub fn get_public_key_by_id(&self, key_id: KeyID) -> IdentityPublicKeyWASM {
+    pub fn get_public_key_by_id(&self, key_id: KeyID) -> IdentityPublicKeyWasm {
         let identity_public_key = self.0.get_public_key_by_id(key_id);
-        IdentityPublicKeyWASM::from(identity_public_key.unwrap().clone())
+        IdentityPublicKeyWasm::from(identity_public_key.unwrap().clone())
     }
 
     #[wasm_bindgen(js_name = "getPublicKeys")]
-    pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyWASM> {
+    pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
         let keys = self
             .0
             .public_keys()
             .iter()
-            .map(|(_index, key)| IdentityPublicKeyWASM::from(key.clone()))
+            .map(|(_index, key)| IdentityPublicKeyWasm::from(key.clone()))
             .collect();
 
         keys
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<IdentityWasm, JsValue> {
         let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
 
-        IdentityWASM::from_bytes(bytes)
+        IdentityWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityWASM, JsValue> {
+    pub fn from_base64(base64: String) -> Result<IdentityWasm, JsValue> {
         let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
 
-        IdentityWASM::from_bytes(bytes)
+        IdentityWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "bytes")]
@@ -137,15 +137,15 @@ impl IdentityWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityWasm, JsValue> {
         match Identity::deserialize_from_bytes(bytes.as_slice()).with_js_error() {
-            Ok(identity) => Ok(IdentityWASM(identity)),
+            Ok(identity) => Ok(IdentityWasm(identity)),
             Err(err) => Err(err),
         }
     }
 }
 
-impl IdentityWASM {
+impl IdentityWasm {
     pub fn get_rs_public_keys(&self) -> BTreeMap<KeyID, IdentityPublicKey> {
         self.0.public_keys().clone()
     }

@@ -5,13 +5,13 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "ConsensusError")]
-pub struct ConsensusErrorWASM(ConsensusError);
+pub struct ConsensusErrorWasm(ConsensusError);
 
 #[wasm_bindgen(js_class = ConsensusError)]
-impl ConsensusErrorWASM {
+impl ConsensusErrorWasm {
     #[wasm_bindgen(js_name = "deserialize")]
     pub fn deserialize(error: Vec<u8>) -> Result<Self, JsValue> {
-        Ok(ConsensusErrorWASM(
+        Ok(ConsensusErrorWasm(
             ConsensusError::deserialize_from_bytes(error.as_slice()).with_js_error()?,
         ))
     }

@@ -2,18 +2,18 @@ use dpp::balances::credits::TokenAmount;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "DistributionFixedAmount")]
-pub struct DistributionFixedAmountWASM {
+pub struct DistributionFixedAmountWasm {
     pub amount: TokenAmount,
 }
 
 #[wasm_bindgen(js_name = "DistributionRandom")]
-pub struct DistributionRandomWASM {
+pub struct DistributionRandomWasm {
     pub min: TokenAmount,
     pub max: TokenAmount,
 }
 
 #[wasm_bindgen(js_name = "DistributionStepDecreasingAmount")]
-pub struct DistributionStepDecreasingAmountWASM {
+pub struct DistributionStepDecreasingAmountWasm {
     #[wasm_bindgen(js_name = "stepCount")]
     pub step_count: u32,
     #[wasm_bindgen(js_name = "decreasePerIntervalNumerator")]
@@ -33,7 +33,7 @@ pub struct DistributionStepDecreasingAmountWASM {
 }
 
 #[wasm_bindgen(js_name = "DistributionLinear")]
-pub struct DistributionLinearWASM {
+pub struct DistributionLinearWasm {
     pub a: i64,
     pub d: u64,
     #[wasm_bindgen(js_name = "startStep")]
@@ -47,7 +47,7 @@ pub struct DistributionLinearWASM {
 }
 
 #[wasm_bindgen(js_name = "DistributionPolynomial")]
-pub struct DistributionPolynomialWASM {
+pub struct DistributionPolynomialWasm {
     pub a: i64,
     pub d: u64,
     pub m: i64,
@@ -63,7 +63,7 @@ pub struct DistributionPolynomialWASM {
 }
 
 #[wasm_bindgen(js_name = "DistributionExponential")]
-pub struct DistributionExponentialWASM {
+pub struct DistributionExponentialWasm {
     pub a: u64,
     pub d: u64,
     pub m: i64,
@@ -79,7 +79,7 @@ pub struct DistributionExponentialWASM {
 }
 
 #[wasm_bindgen(js_name = "DistributionLogarithmic")]
-pub struct DistributionLogarithmicWASM {
+pub struct DistributionLogarithmicWasm {
     pub a: i64,
     pub d: u64,
     pub m: u64,
@@ -95,7 +95,7 @@ pub struct DistributionLogarithmicWASM {
 }
 
 #[wasm_bindgen(js_name = "DistributionInvertedLogarithmic")]
-pub struct DistributionInvertedLogarithmicWASM {
+pub struct DistributionInvertedLogarithmicWasm {
     pub a: i64,
     pub d: u64,
     pub m: u64,

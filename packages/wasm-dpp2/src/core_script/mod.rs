@@ -1,4 +1,4 @@
-use crate::enums::network::NetworkWASM;
+use crate::enums::network::NetworkWasm;
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -9,22 +9,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "CoreScript")]
 #[derive(Clone)]
-pub struct CoreScriptWASM(CoreScript);
+pub struct CoreScriptWasm(CoreScript);
 
-impl From<CoreScriptWASM> for CoreScript {
-    fn from(value: CoreScriptWASM) -> Self {
+impl From<CoreScriptWasm> for CoreScript {
+    fn from(value: CoreScriptWasm) -> Self {
         value.0
     }
 }
 
-impl From<CoreScript> for CoreScriptWASM {
+impl From<CoreScript> for CoreScriptWasm {
     fn from(value: CoreScript) -> Self {
-        CoreScriptWASM(value)
+        CoreScriptWasm(value)
     }
 }
 
 #[wasm_bindgen(js_class = CoreScript)]
-impl CoreScriptWASM {
+impl CoreScriptWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "CoreScript".to_string()
@@ -37,7 +37,7 @@ impl CoreScriptWASM {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> Self {
-        CoreScriptWASM(CoreScript::from_bytes(bytes))
+        CoreScriptWasm(CoreScript::from_bytes(bytes))
     }
 
     #[wasm_bindgen(js_name = "newP2PKH")]
@@ -47,7 +47,7 @@ impl CoreScriptWASM {
         let len = bytes.len().min(32);
         key_hash[..len].copy_from_slice(&bytes[..len]);
 
-        CoreScriptWASM(CoreScript::new_p2pkh(key_hash))
+        CoreScriptWasm(CoreScript::new_p2pkh(key_hash))
     }
 
     #[wasm_bindgen(js_name = "newP2SH")]
@@ -68,7 +68,7 @@ impl CoreScriptWASM {
 
     #[wasm_bindgen(js_name = "toAddress")]
     pub fn to_address(&self, js_network: &JsValue) -> Result<String, JsValue> {
-        let network = NetworkWASM::try_from(js_network.clone())?;
+        let network = NetworkWasm::try_from(js_network.clone())?;
 
         let payload =
             Payload::from_script(self.0.as_script()).map_err(|e| JsValue::from(e.to_string()))?;

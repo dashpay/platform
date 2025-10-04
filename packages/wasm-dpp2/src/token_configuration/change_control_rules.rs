@@ -1,8 +1,8 @@
-use crate::enums::token::action_goal::ActionGoalWASM;
-use crate::identifier::IdentifierWASM;
-use crate::token_configuration::action_taker::ActionTakerWASM;
-use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWASM;
-use crate::token_configuration::group::GroupWASM;
+use crate::enums::token::action_goal::ActionGoalWasm;
+use crate::identifier::IdentifierWasm;
+use crate::token_configuration::action_taker::ActionTakerWasm;
+use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
+use crate::token_configuration::group::GroupWasm;
 use crate::utils::IntoWasm;
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
@@ -15,22 +15,22 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ChangeControlRules")]
-pub struct ChangeControlRulesWASM(ChangeControlRules);
+pub struct ChangeControlRulesWasm(ChangeControlRules);
 
-impl From<ChangeControlRules> for ChangeControlRulesWASM {
+impl From<ChangeControlRules> for ChangeControlRulesWasm {
     fn from(value: ChangeControlRules) -> Self {
         Self(value)
     }
 }
 
-impl From<ChangeControlRulesWASM> for ChangeControlRules {
-    fn from(value: ChangeControlRulesWASM) -> Self {
+impl From<ChangeControlRulesWasm> for ChangeControlRules {
+    fn from(value: ChangeControlRulesWasm) -> Self {
         value.0
     }
 }
 
 #[wasm_bindgen(js_class = ChangeControlRules)]
-impl ChangeControlRulesWASM {
+impl ChangeControlRulesWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "ChangeControlRules".to_string()
@@ -43,13 +43,13 @@ impl ChangeControlRulesWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        authorized_to_make_change: &AuthorizedActionTakersWASM,
-        admin_action_takers: &AuthorizedActionTakersWASM,
+        authorized_to_make_change: &AuthorizedActionTakersWasm,
+        admin_action_takers: &AuthorizedActionTakersWasm,
         changing_authorized_action_takers_to_no_one_allowed: bool,
         changing_admin_action_takers_to_no_one_allowed: bool,
         self_changing_admin_action_takers_allowed: bool,
     ) -> Self {
-        ChangeControlRulesWASM(ChangeControlRules::V0(ChangeControlRulesV0 {
+        ChangeControlRulesWasm(ChangeControlRules::V0(ChangeControlRulesV0 {
             authorized_to_make_change: authorized_to_make_change.clone().into(),
             admin_action_takers: admin_action_takers.clone().into(),
             changing_authorized_action_takers_to_no_one_allowed,
@@ -59,7 +59,7 @@ impl ChangeControlRulesWASM {
     }
 
     #[wasm_bindgen(getter = "authorizedToMakeChange")]
-    pub fn get_authorized_to_make_change(&self) -> AuthorizedActionTakersWASM {
+    pub fn get_authorized_to_make_change(&self) -> AuthorizedActionTakersWasm {
         self.0
             .authorized_to_make_change_action_takers()
             .clone()
@@ -67,7 +67,7 @@ impl ChangeControlRulesWASM {
     }
 
     #[wasm_bindgen(getter = "adminActionTakers")]
-    pub fn get_admin_action_takers(&self) -> AuthorizedActionTakersWASM {
+    pub fn get_admin_action_takers(&self) -> AuthorizedActionTakersWasm {
         self.0.admin_action_takers().clone().into()
     }
 
@@ -95,14 +95,14 @@ impl ChangeControlRulesWASM {
     #[wasm_bindgen(setter = "authorizedToMakeChange")]
     pub fn set_authorized_to_make_change(
         &mut self,
-        authorized_to_make_change: &AuthorizedActionTakersWASM,
+        authorized_to_make_change: &AuthorizedActionTakersWasm,
     ) {
         self.0
             .set_authorized_to_make_change_action_takers(authorized_to_make_change.clone().into());
     }
 
     #[wasm_bindgen(setter = "adminActionTakers")]
-    pub fn set_admin_action_takers(&mut self, admin_action_takers: &AuthorizedActionTakersWASM) {
+    pub fn set_admin_action_takers(&mut self, admin_action_takers: &AuthorizedActionTakersWasm) {
         self.0
             .set_admin_action_takers(admin_action_takers.clone().into());
     }
@@ -158,15 +158,15 @@ impl ChangeControlRulesWASM {
     #[wasm_bindgen(js_name = "canChangeAdminActionTakers")]
     pub fn can_change_admin_action_takers(
         &self,
-        admin_action_takers: &AuthorizedActionTakersWASM,
+        admin_action_takers: &AuthorizedActionTakersWasm,
         js_contract_owner_id: &JsValue,
         main_group: Option<GroupContractPosition>,
         js_groups: &JsValue,
-        action_taker: &ActionTakerWASM,
+        action_taker: &ActionTakerWasm,
         js_goal: &JsValue,
     ) -> Result<bool, JsValue> {
-        let contract_owner_id = IdentifierWASM::try_from(js_contract_owner_id)?;
-        let goal = ActionGoalWASM::try_from(js_goal.clone())?;
+        let contract_owner_id = IdentifierWasm::try_from(js_contract_owner_id)?;
+        let goal = ActionGoalWasm::try_from(js_goal.clone())?;
 
         let groups_object = Object::from(js_groups.clone());
         let groups_keys = Object::keys(&groups_object);
@@ -183,7 +183,7 @@ impl ChangeControlRulesWASM {
 
             let group_value = Reflect::get(js_groups, &key)?;
 
-            let group = group_value.to_wasm::<GroupWASM>("Group")?.clone();
+            let group = group_value.to_wasm::<GroupWasm>("Group")?.clone();
 
             groups.insert(contract_position, group.into());
         }

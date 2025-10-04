@@ -7,31 +7,31 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Clone)]
-pub struct OutPointWASM(OutPoint);
+pub struct OutPointWasm(OutPoint);
 
-impl From<OutPoint> for OutPointWASM {
+impl From<OutPoint> for OutPointWasm {
     fn from(outpoint: OutPoint) -> Self {
-        OutPointWASM(outpoint)
+        OutPointWasm(outpoint)
     }
 }
 
-impl From<OutPointWASM> for OutPoint {
-    fn from(outpoint: OutPointWASM) -> Self {
+impl From<OutPointWasm> for OutPoint {
+    fn from(outpoint: OutPointWasm) -> Self {
         outpoint.0
     }
 }
 
-impl TryFrom<JsValue> for OutPointWASM {
+impl TryFrom<JsValue> for OutPointWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        let value = value.to_wasm::<OutPointWASM>("OutPoint")?;
+        let value = value.to_wasm::<OutPointWasm>("OutPoint")?;
 
         Ok(value.clone())
     }
 }
 
 #[wasm_bindgen(js_class = OutPoint)]
-impl OutPointWASM {
+impl OutPointWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "OutPoint".to_string()
@@ -43,10 +43,10 @@ impl OutPointWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(txid_hex: String, vout: u32) -> Result<OutPointWASM, JsValue> {
+    pub fn new(txid_hex: String, vout: u32) -> Result<OutPointWasm, JsValue> {
         let out_point = Txid::from_hex(&txid_hex).map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(OutPointWASM(OutPoint {
+        Ok(OutPointWasm(OutPoint {
             txid: out_point,
             vout,
         }))
@@ -83,36 +83,36 @@ impl OutPointWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(js_buffer: Vec<u8>) -> OutPointWASM {
+    pub fn from_bytes(js_buffer: Vec<u8>) -> OutPointWasm {
         let mut buffer = [0u8; 36];
         let bytes = js_buffer.as_slice();
         let len = bytes.len();
         buffer[..len].copy_from_slice(bytes);
 
-        OutPointWASM(OutPoint::from(buffer))
+        OutPointWasm(OutPoint::from(buffer))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<OutPointWASM, JsValue> {
-        Ok(OutPointWASM::from_bytes(
+    pub fn from_hex(hex: String) -> Result<OutPointWasm, JsValue> {
+        Ok(OutPointWasm::from_bytes(
             decode(hex.as_str(), Hex).map_err(JsError::from)?,
         ))
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<OutPointWASM, JsValue> {
-        Ok(OutPointWASM::from_bytes(
+    pub fn from_base64(base64: String) -> Result<OutPointWasm, JsValue> {
+        Ok(OutPointWasm::from_bytes(
             decode(base64.as_str(), Base64).map_err(JsError::from)?,
         ))
     }
 }
 
-impl OutPointWASM {
-    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> Result<Vec<OutPointWASM>, JsValue> {
-        let outpoints: Vec<OutPointWASM> = js_outpoints
+impl OutPointWasm {
+    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> Result<Vec<OutPointWasm>, JsValue> {
+        let outpoints: Vec<OutPointWasm> = js_outpoints
             .iter()
-            .map(|key| OutPointWASM::try_from(key))
-            .collect::<Result<Vec<OutPointWASM>, JsValue>>()?;
+            .map(|key| OutPointWasm::try_from(key))
+            .collect::<Result<Vec<OutPointWasm>, JsValue>>()?;
 
         Ok(outpoints)
     }

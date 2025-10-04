@@ -1,9 +1,9 @@
-use crate::asset_lock_proof::AssetLockProofWASM;
-use crate::core_script::CoreScriptWASM;
-use crate::enums::keys::purpose::PurposeWASM;
-use crate::enums::withdrawal::PoolingWASM;
-use crate::identifier::IdentifierWASM;
-use crate::state_transition::StateTransitionWASM;
+use crate::asset_lock_proof::AssetLockProofWasm;
+use crate::core_script::CoreScriptWasm;
+use crate::enums::keys::purpose::PurposeWasm;
+use crate::enums::withdrawal::PoolingWasm;
+use crate::identifier::IdentifierWasm;
+use crate::state_transition::StateTransitionWasm;
 use crate::utils::{IntoWasm, WithJsError};
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
@@ -21,10 +21,10 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
-pub struct IdentityCreditWithdrawalTransitionWASM(IdentityCreditWithdrawalTransition);
+pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditWithdrawalTransition)]
-impl IdentityCreditWithdrawalTransitionWASM {
+impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityCreditWithdrawalTransition".to_string()
@@ -44,21 +44,21 @@ impl IdentityCreditWithdrawalTransitionWASM {
         js_output_script: &JsValue,
         nonce: Option<IdentityNonce>,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityCreditWithdrawalTransitionWASM, JsValue> {
-        let pooling = PoolingWASM::try_from(js_pooling)?;
-        let identity_id: Identifier = IdentifierWASM::try_from(js_identity_id)?.into();
+    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+        let pooling = PoolingWasm::try_from(js_pooling)?;
+        let identity_id: Identifier = IdentifierWasm::try_from(js_identity_id)?.into();
 
         let output_script: Option<CoreScript> = match js_output_script.is_undefined() {
             true => None,
             false => Some(
                 js_output_script
-                    .to_wasm::<CoreScriptWASM>("CoreScript")?
+                    .to_wasm::<CoreScriptWasm>("CoreScript")?
                     .clone()
                     .into(),
             ),
         };
 
-        Ok(IdentityCreditWithdrawalTransitionWASM(
+        Ok(IdentityCreditWithdrawalTransitionWasm(
             IdentityCreditWithdrawalTransition::V1(IdentityCreditWithdrawalTransitionV1 {
                 amount,
                 identity_id,
@@ -74,7 +74,7 @@ impl IdentityCreditWithdrawalTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "outputScript")]
-    pub fn get_output_script(&self) -> Option<CoreScriptWASM> {
+    pub fn get_output_script(&self) -> Option<CoreScriptWasm> {
         match self.0.output_script() {
             None => None,
             Some(script) => Some(script.into()),
@@ -83,12 +83,12 @@ impl IdentityCreditWithdrawalTransitionWASM {
 
     #[wasm_bindgen(getter = "pooling")]
     pub fn get_pooling(&self) -> String {
-        PoolingWASM::from(self.0.pooling()).into()
+        PoolingWasm::from(self.0.pooling()).into()
     }
 
     #[wasm_bindgen(getter = "identityId")]
-    pub fn get_identity_id(&self) -> IdentifierWASM {
-        IdentifierWASM::from(self.0.identity_id())
+    pub fn get_identity_id(&self) -> IdentifierWasm {
+        IdentifierWasm::from(self.0.identity_id())
     }
 
     #[wasm_bindgen(getter = "userFeeIncrease")]
@@ -111,12 +111,12 @@ impl IdentityCreditWithdrawalTransitionWASM {
         self.0
             .purpose_requirement()
             .iter()
-            .map(|purpose| PurposeWASM::from(purpose.clone()).into())
+            .map(|purpose| PurposeWasm::from(purpose.clone()).into())
             .collect()
     }
 
     #[wasm_bindgen(js_name = "getModifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWASM> {
+    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -127,7 +127,7 @@ impl IdentityCreditWithdrawalTransitionWASM {
     #[wasm_bindgen(js_name = "getOptionalAssetLockProof")]
     pub fn get_optional_asset_lock_proof(&self) -> JsValue {
         match self.0.optional_asset_lock_proof() {
-            Some(asset_lock) => JsValue::from(AssetLockProofWASM::from(asset_lock.clone())),
+            Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
             None => JsValue::null(),
         }
     }
@@ -137,8 +137,8 @@ impl IdentityCreditWithdrawalTransitionWASM {
         match js_script.is_undefined() {
             true => self.0.set_output_script(None),
             false => {
-                let script: CoreScriptWASM = js_script
-                    .to_wasm::<CoreScriptWASM>("CoreScript")?
+                let script: CoreScriptWasm = js_script
+                    .to_wasm::<CoreScriptWasm>("CoreScript")?
                     .clone();
                 self.0.set_output_script(Some(script.clone().into()))
             }
@@ -149,13 +149,13 @@ impl IdentityCreditWithdrawalTransitionWASM {
 
     #[wasm_bindgen(setter = "pooling")]
     pub fn set_pooling(&mut self, js_pooling: JsValue) -> Result<(), JsValue> {
-        let pooling: PoolingWASM = PoolingWASM::try_from(js_pooling)?;
+        let pooling: PoolingWasm = PoolingWasm::try_from(js_pooling)?;
         Ok(self.0.set_pooling(pooling.into()))
     }
 
     #[wasm_bindgen(setter = "identityId")]
     pub fn set_identity_id(&mut self, js_identity_id: JsValue) -> Result<(), JsValue> {
-        let identity_id = IdentifierWASM::try_from(js_identity_id)?;
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
         Ok(self.0.set_identity_id(identity_id.into()))
     }
@@ -211,17 +211,17 @@ impl IdentityCreditWithdrawalTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityCreditWithdrawalTransitionWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
 
-        IdentityCreditWithdrawalTransitionWASM::from_bytes(bytes)
+        IdentityCreditWithdrawalTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityCreditWithdrawalTransitionWASM, JsValue> {
+    pub fn from_base64(base64: String) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
 
-        IdentityCreditWithdrawalTransitionWASM::from_bytes(bytes)
+        IdentityCreditWithdrawalTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "bytes")]
@@ -246,28 +246,28 @@ impl IdentityCreditWithdrawalTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreditWithdrawalTransitionWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let rs_transition =
             IdentityCreditWithdrawalTransition::deserialize_from_bytes(bytes.as_slice())
                 .with_js_error()?;
 
-        Ok(IdentityCreditWithdrawalTransitionWASM(rs_transition))
+        Ok(IdentityCreditWithdrawalTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
-    pub fn to_state_transition(&self) -> StateTransitionWASM {
-        StateTransitionWASM::from(StateTransition::from(self.0.clone()))
+    pub fn to_state_transition(&self) -> StateTransitionWasm {
+        StateTransitionWasm::from(StateTransition::from(self.0.clone()))
     }
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        st: &StateTransitionWASM,
-    ) -> Result<IdentityCreditWithdrawalTransitionWASM, JsValue> {
+        st: &StateTransitionWasm,
+    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::IdentityCreditWithdrawal(st) => {
-                Ok(IdentityCreditWithdrawalTransitionWASM(st))
+                Ok(IdentityCreditWithdrawalTransitionWasm(st))
             }
             _ => Err(JsValue::from_str(&"Invalid state transition type)")),
         }

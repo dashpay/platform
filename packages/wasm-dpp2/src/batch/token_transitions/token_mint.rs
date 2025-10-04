@@ -1,33 +1,33 @@
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::TokenMintTransition;
 use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::token_configuration::TokenConfigurationWASM;
+use crate::token_configuration::TokenConfigurationWasm;
 use crate::utils::WithJsError;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenMintTransition)]
-pub struct TokenMintTransitionWASM(TokenMintTransition);
+pub struct TokenMintTransitionWasm(TokenMintTransition);
 
-impl From<TokenMintTransition> for TokenMintTransitionWASM {
+impl From<TokenMintTransition> for TokenMintTransitionWasm {
     fn from(transition: TokenMintTransition) -> Self {
         Self(transition)
     }
 }
 
-impl From<TokenMintTransitionWASM> for TokenMintTransition {
-    fn from(transition: TokenMintTransitionWASM) -> Self {
+impl From<TokenMintTransitionWasm> for TokenMintTransition {
+    fn from(transition: TokenMintTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenMintTransition)]
-impl TokenMintTransitionWASM {
+impl TokenMintTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenMintTransition".to_string()
@@ -40,18 +40,18 @@ impl TokenMintTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         js_issued_to_identity_id: &JsValue,
         amount: u64,
         public_note: Option<String>,
-    ) -> Result<TokenMintTransitionWASM, JsValue> {
+    ) -> Result<TokenMintTransitionWasm, JsValue> {
         let issued_to_identity_id: Option<Identifier> =
             match js_issued_to_identity_id.is_undefined() {
-                false => Some(IdentifierWASM::try_from(js_issued_to_identity_id)?.into()),
+                false => Some(IdentifierWasm::try_from(js_issued_to_identity_id)?.into()),
                 true => None,
             };
 
-        Ok(TokenMintTransitionWASM(TokenMintTransition::V0(
+        Ok(TokenMintTransitionWasm(TokenMintTransition::V0(
             TokenMintTransitionV0 {
                 base: base.clone().into(),
                 issued_to_identity_id,
@@ -62,7 +62,7 @@ impl TokenMintTransitionWASM {
     }
 
     #[wasm_bindgen(getter = issuedToIdentityId)]
-    pub fn issued_to_identity_id(&self) -> Option<IdentifierWASM> {
+    pub fn issued_to_identity_id(&self) -> Option<IdentifierWasm> {
         match self.0.issued_to_identity_id() {
             None => None,
             Some(id) => Some(id.into()),
@@ -75,7 +75,7 @@ impl TokenMintTransitionWASM {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -85,7 +85,7 @@ impl TokenMintTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = getRecipitnId)]
-    pub fn recipient_id(&self, config: &TokenConfigurationWASM) -> Result<IdentifierWASM, JsValue> {
+    pub fn recipient_id(&self, config: &TokenConfigurationWasm) -> Result<IdentifierWasm, JsValue> {
         Ok(self
             .0
             .recipient_id(&config.clone().into())
@@ -100,7 +100,7 @@ impl TokenMintTransitionWASM {
                 self.0.set_issued_to_identity_id(None);
             }
             false => {
-                let id = IdentifierWASM::try_from(js_id)?;
+                let id = IdentifierWasm::try_from(js_id)?;
 
                 self.0.set_issued_to_identity_id(Some(id.into()));
             }
@@ -115,7 +115,7 @@ impl TokenMintTransitionWASM {
     }
 
     #[wasm_bindgen(setter = base)]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 

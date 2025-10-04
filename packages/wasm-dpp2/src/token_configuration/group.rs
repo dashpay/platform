@@ -1,4 +1,4 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
@@ -12,16 +12,16 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, PartialEq, Debug)]
 #[wasm_bindgen(js_name = "Group")]
-pub struct GroupWASM(Group);
+pub struct GroupWasm(Group);
 
-impl From<Group> for GroupWASM {
+impl From<Group> for GroupWasm {
     fn from(group: Group) -> Self {
-        GroupWASM(group)
+        GroupWasm(group)
     }
 }
 
-impl From<GroupWASM> for Group {
-    fn from(group: GroupWASM) -> Self {
+impl From<GroupWasm> for Group {
+    fn from(group: GroupWasm) -> Self {
         group.0
     }
 }
@@ -39,7 +39,7 @@ pub fn js_members_to_map(
             .as_string()
             .ok_or_else(|| JsValue::from_str("cannot convert key to string"))?;
 
-        let id_wasm = IdentifierWASM::try_from(key.clone())
+        let id_wasm = IdentifierWasm::try_from(key.clone())
             .map_err(|_| JsValue::from_str(&format!("Invalid identifier: {}", key_str)))?;
 
         let val = Reflect::get(js_members, &key)
@@ -54,7 +54,7 @@ pub fn js_members_to_map(
 }
 
 #[wasm_bindgen(js_class = Group)]
-impl GroupWASM {
+impl GroupWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "Group".to_string()
@@ -69,10 +69,10 @@ impl GroupWASM {
     pub fn new(
         js_members: &JsValue,
         required_power: GroupRequiredPower,
-    ) -> Result<GroupWASM, JsValue> {
+    ) -> Result<GroupWasm, JsValue> {
         let members = js_members_to_map(js_members)?;
 
-        Ok(GroupWASM(Group::V0(GroupV0 {
+        Ok(GroupWasm(Group::V0(GroupV0 {
             members,
             required_power,
         })))
@@ -120,7 +120,7 @@ impl GroupWASM {
         js_member: &JsValue,
         member_required_power: GroupRequiredPower,
     ) -> Result<(), JsValue> {
-        let member = IdentifierWASM::try_from(js_member.clone())?;
+        let member = IdentifierWasm::try_from(js_member.clone())?;
 
         self.0
             .set_member_power(member.into(), member_required_power);

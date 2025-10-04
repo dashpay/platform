@@ -1,26 +1,26 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenDistributionRecipient")]
-pub struct TokenDistributionRecipientWASM(TokenDistributionRecipient);
+pub struct TokenDistributionRecipientWasm(TokenDistributionRecipient);
 
-impl From<TokenDistributionRecipient> for TokenDistributionRecipientWASM {
+impl From<TokenDistributionRecipient> for TokenDistributionRecipientWasm {
     fn from(distribution_recipient: TokenDistributionRecipient) -> Self {
-        TokenDistributionRecipientWASM(distribution_recipient)
+        TokenDistributionRecipientWasm(distribution_recipient)
     }
 }
 
-impl From<TokenDistributionRecipientWASM> for TokenDistributionRecipient {
-    fn from(distribution_recipient: TokenDistributionRecipientWASM) -> Self {
+impl From<TokenDistributionRecipientWasm> for TokenDistributionRecipient {
+    fn from(distribution_recipient: TokenDistributionRecipientWasm) -> Self {
         distribution_recipient.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenDistributionRecipient)]
-impl TokenDistributionRecipientWASM {
+impl TokenDistributionRecipientWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenDistributionRecipient".to_string()
@@ -32,22 +32,22 @@ impl TokenDistributionRecipientWASM {
     }
 
     #[wasm_bindgen(js_name = "ContractOwner")]
-    pub fn contract_owner() -> TokenDistributionRecipientWASM {
-        TokenDistributionRecipientWASM(TokenDistributionRecipient::ContractOwner)
+    pub fn contract_owner() -> TokenDistributionRecipientWasm {
+        TokenDistributionRecipientWasm(TokenDistributionRecipient::ContractOwner)
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(js_identity_id: &JsValue) -> Result<TokenDistributionRecipientWASM, JsValue> {
-        let identity_id = IdentifierWASM::try_from(js_identity_id)?;
+    pub fn identity(js_identity_id: &JsValue) -> Result<TokenDistributionRecipientWasm, JsValue> {
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
-        Ok(TokenDistributionRecipientWASM(
+        Ok(TokenDistributionRecipientWasm(
             TokenDistributionRecipient::Identity(identity_id.into()),
         ))
     }
 
     #[wasm_bindgen(js_name = "EvonodesByParticipation")]
-    pub fn evonodes_by_participation() -> TokenDistributionRecipientWASM {
-        TokenDistributionRecipientWASM(TokenDistributionRecipient::EvonodesByParticipation)
+    pub fn evonodes_by_participation() -> TokenDistributionRecipientWasm {
+        TokenDistributionRecipientWasm(TokenDistributionRecipient::EvonodesByParticipation)
     }
 
     #[wasm_bindgen(js_name = "getType")]
@@ -59,7 +59,7 @@ impl TokenDistributionRecipientWASM {
             TokenDistributionRecipient::ContractOwner => String::from("ContractOwner"),
             TokenDistributionRecipient::Identity(identity) => String::from(format!(
                 "Identity({})",
-                IdentifierWASM::from(identity).get_base58()
+                IdentifierWasm::from(identity).get_base58()
             )),
         }
     }
@@ -70,7 +70,7 @@ impl TokenDistributionRecipientWASM {
             TokenDistributionRecipient::EvonodesByParticipation => JsValue::undefined(),
             TokenDistributionRecipient::ContractOwner => JsValue::undefined(),
             TokenDistributionRecipient::Identity(identifier) => {
-                IdentifierWASM::from(identifier).into()
+                IdentifierWasm::from(identifier).into()
             }
         }
     }

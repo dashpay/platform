@@ -1,4 +1,4 @@
-use crate::token_configuration::localization::TokenConfigurationLocalizationWASM;
+use crate::token_configuration::localization::TokenConfigurationLocalizationWasm;
 use crate::utils::ToSerdeJSONExt;
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
@@ -14,22 +14,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenConfigurationConvention")]
-pub struct TokenConfigurationConventionWASM(TokenConfigurationConvention);
+pub struct TokenConfigurationConventionWasm(TokenConfigurationConvention);
 
-impl From<TokenConfigurationConvention> for TokenConfigurationConventionWASM {
+impl From<TokenConfigurationConvention> for TokenConfigurationConventionWasm {
     fn from(convention: TokenConfigurationConvention) -> Self {
-        TokenConfigurationConventionWASM(convention)
+        TokenConfigurationConventionWasm(convention)
     }
 }
 
-impl From<TokenConfigurationConventionWASM> for TokenConfigurationConvention {
-    fn from(convention: TokenConfigurationConventionWASM) -> Self {
+impl From<TokenConfigurationConventionWasm> for TokenConfigurationConvention {
+    fn from(convention: TokenConfigurationConventionWasm) -> Self {
         convention.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenConfigurationConvention)]
-impl TokenConfigurationConventionWASM {
+impl TokenConfigurationConventionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenConfigurationConvention".to_string()
@@ -44,11 +44,11 @@ impl TokenConfigurationConventionWASM {
     pub fn new(
         js_localizations: &JsValue,
         decimals: u8,
-    ) -> Result<TokenConfigurationConventionWASM, JsValue> {
+    ) -> Result<TokenConfigurationConventionWasm, JsValue> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
             js_value_to_localizations(js_localizations)?;
 
-        Ok(TokenConfigurationConventionWASM(
+        Ok(TokenConfigurationConventionWasm(
             TokenConfigurationConvention::V0(TokenConfigurationConventionV0 {
                 localizations,
                 decimals,
@@ -69,7 +69,7 @@ impl TokenConfigurationConventionWASM {
             Reflect::set(
                 &object,
                 &JsValue::from(key.clone()),
-                &TokenConfigurationLocalizationWASM::from(value.clone()).into(),
+                &TokenConfigurationLocalizationWasm::from(value.clone()).into(),
             )?;
         }
 

@@ -1,26 +1,26 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::identity::contract_bounds::ContractBounds;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "ContractBounds")]
 #[derive(Clone)]
-pub struct ContractBoundsWASM(ContractBounds);
+pub struct ContractBoundsWasm(ContractBounds);
 
-impl From<ContractBounds> for ContractBoundsWASM {
+impl From<ContractBounds> for ContractBoundsWasm {
     fn from(bounds: ContractBounds) -> Self {
-        ContractBoundsWASM(bounds)
+        ContractBoundsWasm(bounds)
     }
 }
 
-impl From<ContractBoundsWASM> for ContractBounds {
-    fn from(bounds: ContractBoundsWASM) -> Self {
+impl From<ContractBoundsWasm> for ContractBounds {
+    fn from(bounds: ContractBoundsWasm) -> Self {
         bounds.0
     }
 }
 
 #[wasm_bindgen(js_class = ContractBounds)]
-impl ContractBoundsWASM {
+impl ContractBoundsWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "ContractBounds".to_string()
@@ -35,10 +35,10 @@ impl ContractBoundsWASM {
     pub fn new(
         js_contract_id: &JsValue,
         document_type_name: Option<String>,
-    ) -> Result<ContractBoundsWASM, JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+    ) -> Result<ContractBoundsWasm, JsValue> {
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
-        Ok(ContractBoundsWASM(match document_type_name {
+        Ok(ContractBoundsWasm(match document_type_name {
             Some(document_type_name) => ContractBounds::SingleContractDocumentType {
                 id: contract_id.into(),
                 document_type_name,
@@ -50,10 +50,10 @@ impl ContractBoundsWASM {
     }
 
     #[wasm_bindgen(js_name = "SingleContract")]
-    pub fn single_contract(js_contract_id: &JsValue) -> Result<ContractBoundsWASM, JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+    pub fn single_contract(js_contract_id: &JsValue) -> Result<ContractBoundsWasm, JsValue> {
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
-        Ok(ContractBoundsWASM(ContractBounds::SingleContract {
+        Ok(ContractBoundsWasm(ContractBounds::SingleContract {
             id: contract_id.into(),
         }))
     }
@@ -62,10 +62,10 @@ impl ContractBoundsWASM {
     pub fn single_contract_document_type_name(
         js_contract_id: &JsValue,
         document_type_name: String,
-    ) -> Result<ContractBoundsWASM, JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+    ) -> Result<ContractBoundsWasm, JsValue> {
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
-        Ok(ContractBoundsWASM(
+        Ok(ContractBoundsWasm(
             ContractBounds::SingleContractDocumentType {
                 id: contract_id.into(),
                 document_type_name,
@@ -74,7 +74,7 @@ impl ContractBoundsWASM {
     }
 
     #[wasm_bindgen(getter = "identifier")]
-    pub fn id(&self) -> IdentifierWASM {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.identifier().clone().into()
     }
 
@@ -98,7 +98,7 @@ impl ContractBoundsWASM {
 
     #[wasm_bindgen(setter = "identifier")]
     pub fn set_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => ContractBounds::SingleContract {

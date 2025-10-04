@@ -1,5 +1,5 @@
-use crate::group_state_transition_info::GroupStateTransitionInfoWASM;
-use crate::identifier::IdentifierWASM;
+use crate::group_state_transition_info::GroupStateTransitionInfoWasm;
+use crate::identifier::IdentifierWasm;
 use crate::utils::IntoWasm;
 use dpp::group::GroupStateTransitionInfo;
 use dpp::prelude::IdentityNonce;
@@ -11,22 +11,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenBaseTransition)]
-pub struct TokenBaseTransitionWASM(TokenBaseTransition);
+pub struct TokenBaseTransitionWasm(TokenBaseTransition);
 
-impl From<TokenBaseTransition> for TokenBaseTransitionWASM {
+impl From<TokenBaseTransition> for TokenBaseTransitionWasm {
     fn from(t: TokenBaseTransition) -> Self {
-        TokenBaseTransitionWASM(t)
+        TokenBaseTransitionWasm(t)
     }
 }
 
-impl From<TokenBaseTransitionWASM> for TokenBaseTransition {
-    fn from(t: TokenBaseTransitionWASM) -> Self {
+impl From<TokenBaseTransitionWasm> for TokenBaseTransition {
+    fn from(t: TokenBaseTransitionWasm) -> Self {
         t.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenBaseTransition)]
-impl TokenBaseTransitionWASM {
+impl TokenBaseTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenBaseTransition".to_string()
@@ -44,24 +44,24 @@ impl TokenBaseTransitionWASM {
         js_data_contract_id: &JsValue,
         js_token_id: &JsValue,
         js_using_group_info: &JsValue,
-    ) -> Result<TokenBaseTransitionWASM, JsValue> {
+    ) -> Result<TokenBaseTransitionWasm, JsValue> {
         let using_group_info: Option<GroupStateTransitionInfo> =
             match js_using_group_info.is_undefined() {
                 false => Some(
                     js_using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfo")?
+                        .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
                         .clone()
                         .into(),
                 ),
                 true => None,
             };
 
-        Ok(TokenBaseTransitionWASM(TokenBaseTransition::V0(
+        Ok(TokenBaseTransitionWasm(TokenBaseTransition::V0(
             TokenBaseTransitionV0 {
                 identity_contract_nonce,
                 token_contract_position,
-                data_contract_id: IdentifierWASM::try_from(js_data_contract_id)?.into(),
-                token_id: IdentifierWASM::try_from(js_token_id)?.into(),
+                data_contract_id: IdentifierWasm::try_from(js_data_contract_id)?.into(),
+                token_id: IdentifierWasm::try_from(js_token_id)?.into(),
                 using_group_info,
             },
         )))
@@ -78,17 +78,17 @@ impl TokenBaseTransitionWASM {
     }
 
     #[wasm_bindgen(getter = dataContractId)]
-    pub fn get_data_contract_id(&self) -> IdentifierWASM {
+    pub fn get_data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(getter = tokenId)]
-    pub fn get_token_id(&self) -> IdentifierWASM {
+    pub fn get_token_id(&self) -> IdentifierWasm {
         self.0.token_id().into()
     }
 
     #[wasm_bindgen(getter = usingGroupInfo)]
-    pub fn get_using_group_info(&self) -> Option<GroupStateTransitionInfoWASM> {
+    pub fn get_using_group_info(&self) -> Option<GroupStateTransitionInfoWasm> {
         match self.0.using_group_info() {
             Some(using_group_info) => Some(using_group_info.clone().into()),
             None => None,
@@ -108,14 +108,14 @@ impl TokenBaseTransitionWASM {
     #[wasm_bindgen(setter = dataContractId)]
     pub fn set_data_contract_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
         self.0
-            .set_data_contract_id(IdentifierWASM::try_from(js_identifier)?.into());
+            .set_data_contract_id(IdentifierWasm::try_from(js_identifier)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(setter = tokenId)]
     pub fn set_token_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
         self.0
-            .set_token_id(IdentifierWASM::try_from(js_identifier)?.into());
+            .set_token_id(IdentifierWasm::try_from(js_identifier)?.into());
 
         Ok(())
     }
@@ -126,7 +126,7 @@ impl TokenBaseTransitionWASM {
             match js_using_group_info.is_undefined() {
                 false => Some(
                     js_using_group_info
-                        .to_wasm::<GroupStateTransitionInfoWASM>("GroupStateTransitionInfo")?
+                        .to_wasm::<GroupStateTransitionInfoWasm>("GroupStateTransitionInfo")?
                         .clone()
                         .into(),
                 ),

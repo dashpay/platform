@@ -6,30 +6,30 @@ use dpp::state_transition::batch_transition::document_replace_transition::v0::v0
 use dpp::state_transition::batch_transition::DocumentReplaceTransition;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::document::DocumentWASM;
+use crate::document::DocumentWasm;
 use crate::utils::{IntoWasm, ToSerdeJSONExt};
-use crate::batch::document_base_transition::DocumentBaseTransitionWASM;
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::batch::generators::generate_replace_transition;
-use crate::batch::document_transition::DocumentTransitionWASM;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
+use crate::batch::document_transition::DocumentTransitionWasm;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
 
 #[wasm_bindgen(js_name = "DocumentReplaceTransition")]
-pub struct DocumentReplaceTransitionWASM(DocumentReplaceTransition);
+pub struct DocumentReplaceTransitionWasm(DocumentReplaceTransition);
 
-impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWASM {
+impl From<DocumentReplaceTransition> for DocumentReplaceTransitionWasm {
     fn from(document_replace: DocumentReplaceTransition) -> Self {
-        DocumentReplaceTransitionWASM(document_replace)
+        DocumentReplaceTransitionWasm(document_replace)
     }
 }
 
-impl From<DocumentReplaceTransitionWASM> for DocumentReplaceTransition {
-    fn from(document_replace: DocumentReplaceTransitionWASM) -> Self {
+impl From<DocumentReplaceTransitionWasm> for DocumentReplaceTransition {
+    fn from(document_replace: DocumentReplaceTransitionWasm) -> Self {
         document_replace.0
     }
 }
 
 #[wasm_bindgen(js_class = DocumentReplaceTransition)]
-impl DocumentReplaceTransitionWASM {
+impl DocumentReplaceTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentReplaceTransition".to_string()
@@ -42,16 +42,16 @@ impl DocumentReplaceTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        document: &DocumentWASM,
+        document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentReplaceTransitionWASM, JsValue> {
+    ) -> Result<DocumentReplaceTransitionWasm, JsValue> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };
@@ -63,7 +63,7 @@ impl DocumentReplaceTransitionWASM {
             token_payment_info,
         );
 
-        Ok(DocumentReplaceTransitionWASM(rs_update_transition))
+        Ok(DocumentReplaceTransitionWasm(rs_update_transition))
     }
 
     #[wasm_bindgen(getter = "data")]
@@ -74,7 +74,7 @@ impl DocumentReplaceTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWASM {
+    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -91,7 +91,7 @@ impl DocumentReplaceTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: &DocumentBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: &DocumentBaseTransitionWasm) {
         self.0.set_base(base.clone().into())
     }
 
@@ -101,16 +101,16 @@ impl DocumentReplaceTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
-    pub fn to_document_transition(&self) -> DocumentTransitionWASM {
+    pub fn to_document_transition(&self) -> DocumentTransitionWasm {
         let rs_transition = DocumentTransition::from(self.0.clone());
 
-        DocumentTransitionWASM::from(rs_transition)
+        DocumentTransitionWasm::from(rs_transition)
     }
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWASM,
-    ) -> Result<DocumentReplaceTransitionWASM, JsValue> {
+        js_transition: DocumentTransitionWasm,
+    ) -> Result<DocumentReplaceTransitionWasm, JsValue> {
         js_transition.get_replace_transition()
     }
 }

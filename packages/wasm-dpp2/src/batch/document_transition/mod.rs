@@ -1,37 +1,37 @@
-use crate::batch::document_transitions::create::DocumentCreateTransitionWASM;
-use crate::batch::document_transitions::delete::DocumentDeleteTransitionWASM;
-use crate::batch::document_transitions::purchase::DocumentPurchaseTransitionWASM;
-use crate::batch::document_transitions::replace::DocumentReplaceTransitionWASM;
-use crate::batch::document_transitions::transfer::DocumentTransferTransitionWASM;
-use crate::batch::document_transitions::update_price::DocumentUpdatePriceTransitionWASM;
+use crate::batch::document_transitions::create::DocumentCreateTransitionWasm;
+use crate::batch::document_transitions::delete::DocumentDeleteTransitionWasm;
+use crate::batch::document_transitions::purchase::DocumentPurchaseTransitionWasm;
+use crate::batch::document_transitions::replace::DocumentReplaceTransitionWasm;
+use crate::batch::document_transitions::transfer::DocumentTransferTransitionWasm;
+use crate::batch::document_transitions::update_price::DocumentUpdatePriceTransitionWasm;
 use dpp::prelude::{Identifier, IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::{DocumentTransitionActionType, DocumentTransitionActionTypeGetter};
-use crate::enums::batch::batch_enum::BatchTypeWASM;
-use crate::identifier::IdentifierWASM;
+use crate::enums::batch::batch_enum::BatchTypeWasm;
+use crate::identifier::IdentifierWasm;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentTransition")]
-pub struct DocumentTransitionWASM(DocumentTransition);
+pub struct DocumentTransitionWasm(DocumentTransition);
 
-impl From<DocumentTransition> for DocumentTransitionWASM {
+impl From<DocumentTransition> for DocumentTransitionWasm {
     fn from(transition: DocumentTransition) -> Self {
-        DocumentTransitionWASM(transition)
+        DocumentTransitionWasm(transition)
     }
 }
 
-impl From<DocumentTransitionWASM> for DocumentTransition {
-    fn from(transition: DocumentTransitionWASM) -> Self {
+impl From<DocumentTransitionWasm> for DocumentTransition {
+    fn from(transition: DocumentTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = DocumentTransition)]
-impl DocumentTransitionWASM {
+impl DocumentTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentTransition".to_string()
@@ -44,7 +44,7 @@ impl DocumentTransitionWASM {
 
     #[wasm_bindgen(getter = "actionType")]
     pub fn get_action_type(&self) -> String {
-        BatchTypeWASM::from(self.0.action_type()).into()
+        BatchTypeWasm::from(self.0.action_type()).into()
     }
 
     #[wasm_bindgen(getter = "actionTypeNumber")]
@@ -61,12 +61,12 @@ impl DocumentTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "dataContractId")]
-    pub fn get_data_contract_id(&self) -> IdentifierWASM {
+    pub fn get_data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWASM {
+    pub fn get_id(&self) -> IdentifierWasm {
         self.0.get_id().into()
     }
 
@@ -91,46 +91,46 @@ impl DocumentTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "createTransition")]
-    pub fn get_create_transition(&self) -> Result<DocumentCreateTransitionWASM, JsValue> {
+    pub fn get_create_transition(&self) -> Result<DocumentCreateTransitionWasm, JsValue> {
         match self.0.clone() {
-            DocumentTransition::Create(create) => Ok(DocumentCreateTransitionWASM::from(create)),
+            DocumentTransition::Create(create) => Ok(DocumentCreateTransitionWasm::from(create)),
             _ => Err(JsValue::undefined()),
         }
     }
 
     #[wasm_bindgen(getter = "replaceTransition")]
-    pub fn get_replace_transition(&self) -> Result<DocumentReplaceTransitionWASM, JsValue> {
+    pub fn get_replace_transition(&self) -> Result<DocumentReplaceTransitionWasm, JsValue> {
         match self.0.clone() {
             DocumentTransition::Replace(replace) => {
-                Ok(DocumentReplaceTransitionWASM::from(replace))
+                Ok(DocumentReplaceTransitionWasm::from(replace))
             }
             _ => Err(JsValue::undefined()),
         }
     }
 
     #[wasm_bindgen(getter = "deleteTransition")]
-    pub fn get_delete_transition(&self) -> Result<DocumentDeleteTransitionWASM, JsValue> {
+    pub fn get_delete_transition(&self) -> Result<DocumentDeleteTransitionWasm, JsValue> {
         match self.0.clone() {
-            DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWASM::from(delete)),
+            DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
             _ => Err(JsValue::undefined()),
         }
     }
 
     #[wasm_bindgen(getter = "purchaseTransition")]
-    pub fn get_purchase_transition(&self) -> Result<DocumentPurchaseTransitionWASM, JsValue> {
+    pub fn get_purchase_transition(&self) -> Result<DocumentPurchaseTransitionWasm, JsValue> {
         match self.0.clone() {
             DocumentTransition::Purchase(purchase) => {
-                Ok(DocumentPurchaseTransitionWASM::from(purchase))
+                Ok(DocumentPurchaseTransitionWasm::from(purchase))
             }
             _ => Err(JsValue::undefined()),
         }
     }
 
     #[wasm_bindgen(getter = "transferTransition")]
-    pub fn get_transfer_transition(&self) -> Result<DocumentTransferTransitionWASM, JsValue> {
+    pub fn get_transfer_transition(&self) -> Result<DocumentTransferTransitionWasm, JsValue> {
         match self.0.clone() {
             DocumentTransition::Transfer(transfer) => {
-                Ok(DocumentTransferTransitionWASM::from(transfer))
+                Ok(DocumentTransferTransitionWasm::from(transfer))
             }
             _ => Err(JsValue::undefined()),
         }
@@ -139,10 +139,10 @@ impl DocumentTransitionWASM {
     #[wasm_bindgen(getter = "updatePriceTransition")]
     pub fn get_update_price_transition(
         &self,
-    ) -> Result<DocumentUpdatePriceTransitionWASM, JsValue> {
+    ) -> Result<DocumentUpdatePriceTransitionWasm, JsValue> {
         match self.0.clone() {
             DocumentTransition::UpdatePrice(update_price) => {
-                Ok(DocumentUpdatePriceTransitionWASM::from(update_price))
+                Ok(DocumentUpdatePriceTransitionWasm::from(update_price))
             }
             _ => Err(JsValue::undefined()),
         }
@@ -152,7 +152,7 @@ impl DocumentTransitionWASM {
     pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
         Ok(self
             .0
-            .set_data_contract_id(IdentifierWASM::try_from(js_data_contract_id)?.into()))
+            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into()))
     }
 
     #[wasm_bindgen(setter = "revision")]
@@ -166,7 +166,7 @@ impl DocumentTransitionWASM {
     }
 }
 
-impl DocumentTransitionWASM {
+impl DocumentTransitionWasm {
     pub fn rs_get_data_contract_id(&self) -> Identifier {
         self.0.data_contract_id()
     }

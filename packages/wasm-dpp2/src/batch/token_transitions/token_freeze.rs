@@ -5,27 +5,27 @@ use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_met
 use dpp::state_transition::batch_transition::TokenFreezeTransition;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::identifier::IdentifierWASM;
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::identifier::IdentifierWasm;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenFreezeTransition)]
-pub struct TokenFreezeTransitionWASM(TokenFreezeTransition);
+pub struct TokenFreezeTransitionWasm(TokenFreezeTransition);
 
-impl From<TokenFreezeTransitionWASM> for TokenFreezeTransition {
-    fn from(transition: TokenFreezeTransitionWASM) -> Self {
+impl From<TokenFreezeTransitionWasm> for TokenFreezeTransition {
+    fn from(transition: TokenFreezeTransitionWasm) -> Self {
         transition.0
     }
 }
 
-impl From<TokenFreezeTransition> for TokenFreezeTransitionWASM {
+impl From<TokenFreezeTransition> for TokenFreezeTransitionWasm {
     fn from(transition: TokenFreezeTransition) -> Self {
         Self(transition)
     }
 }
 
 #[wasm_bindgen(js_class = TokenFreezeTransition)]
-impl TokenFreezeTransitionWASM {
+impl TokenFreezeTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenFreezeTransition".to_string()
@@ -38,14 +38,14 @@ impl TokenFreezeTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         js_identity_to_freeze_id: &JsValue,
         public_note: Option<String>,
-    ) -> Result<TokenFreezeTransitionWASM, JsValue> {
+    ) -> Result<TokenFreezeTransitionWasm, JsValue> {
         let identity_to_freeze_id: Identifier =
-            IdentifierWASM::try_from(js_identity_to_freeze_id)?.into();
+            IdentifierWasm::try_from(js_identity_to_freeze_id)?.into();
 
-        Ok(TokenFreezeTransitionWASM(TokenFreezeTransition::V0(
+        Ok(TokenFreezeTransitionWasm(TokenFreezeTransition::V0(
             TokenFreezeTransitionV0 {
                 base: base.clone().into(),
                 identity_to_freeze_id,
@@ -55,7 +55,7 @@ impl TokenFreezeTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -65,12 +65,12 @@ impl TokenFreezeTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "frozenIdentityId")]
-    pub fn get_frozen_identity_id(&self) -> IdentifierWASM {
+    pub fn get_frozen_identity_id(&self) -> IdentifierWasm {
         self.0.frozen_identity_id().into()
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 
@@ -85,7 +85,7 @@ impl TokenFreezeTransitionWASM {
         js_frozen_identity_id: &JsValue,
     ) -> Result<(), JsValue> {
         self.0
-            .set_frozen_identity_id(IdentifierWASM::try_from(js_frozen_identity_id)?.into());
+            .set_frozen_identity_id(IdentifierWasm::try_from(js_frozen_identity_id)?.into());
         Ok(())
     }
 }

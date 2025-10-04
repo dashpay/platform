@@ -6,30 +6,30 @@ use dpp::state_transition::batch_transition::batched_transition::DocumentPurchas
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::document::DocumentWASM;
+use crate::document::DocumentWasm;
 use crate::utils::IntoWasm;
-use crate::batch::document_base_transition::DocumentBaseTransitionWASM;
-use crate::batch::document_transition::DocumentTransitionWASM;
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_purchase_transition;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
 
 #[wasm_bindgen(js_name = "DocumentPurchaseTransition")]
-pub struct DocumentPurchaseTransitionWASM(DocumentPurchaseTransition);
+pub struct DocumentPurchaseTransitionWasm(DocumentPurchaseTransition);
 
-impl From<DocumentPurchaseTransitionWASM> for DocumentPurchaseTransition {
-    fn from(transition: DocumentPurchaseTransitionWASM) -> Self {
+impl From<DocumentPurchaseTransitionWasm> for DocumentPurchaseTransition {
+    fn from(transition: DocumentPurchaseTransitionWasm) -> Self {
         transition.0
     }
 }
 
-impl From<DocumentPurchaseTransition> for DocumentPurchaseTransitionWASM {
+impl From<DocumentPurchaseTransition> for DocumentPurchaseTransitionWasm {
     fn from(transition: DocumentPurchaseTransition) -> Self {
-        DocumentPurchaseTransitionWASM(transition)
+        DocumentPurchaseTransitionWasm(transition)
     }
 }
 
 #[wasm_bindgen(js_class = DocumentPurchaseTransition)]
-impl DocumentPurchaseTransitionWASM {
+impl DocumentPurchaseTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentPurchaseTransition".to_string()
@@ -42,17 +42,17 @@ impl DocumentPurchaseTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        document: &DocumentWASM,
+        document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         amount: Credits,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentPurchaseTransitionWASM, JsValue> {
+    ) -> Result<DocumentPurchaseTransitionWasm, JsValue> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };
@@ -65,11 +65,11 @@ impl DocumentPurchaseTransitionWASM {
             token_payment_info,
         );
 
-        Ok(DocumentPurchaseTransitionWASM(rs_purchase_transition))
+        Ok(DocumentPurchaseTransitionWasm(rs_purchase_transition))
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWASM {
+    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -84,7 +84,7 @@ impl DocumentPurchaseTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: &DocumentBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: &DocumentBaseTransitionWasm) {
         self.0.set_base(base.clone().into())
     }
 
@@ -101,16 +101,16 @@ impl DocumentPurchaseTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
-    pub fn to_document_transition(&self) -> DocumentTransitionWASM {
+    pub fn to_document_transition(&self) -> DocumentTransitionWasm {
         let rs_transition = DocumentTransition::from(self.0.clone());
 
-        DocumentTransitionWASM::from(rs_transition)
+        DocumentTransitionWasm::from(rs_transition)
     }
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWASM,
-    ) -> Result<DocumentPurchaseTransitionWASM, JsValue> {
+        js_transition: DocumentTransitionWasm,
+    ) -> Result<DocumentPurchaseTransitionWasm, JsValue> {
         js_transition.get_purchase_transition()
     }
 }

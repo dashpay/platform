@@ -1,8 +1,8 @@
-use crate::contract_bounds::ContractBoundsWASM;
-use crate::enums::keys::key_type::KeyTypeWASM;
-use crate::enums::keys::purpose::PurposeWASM;
-use crate::enums::keys::security_level::SecurityLevelWASM;
-use crate::identity_public_key::IdentityPublicKeyWASM;
+use crate::contract_bounds::ContractBoundsWasm;
+use crate::enums::keys::key_type::KeyTypeWasm;
+use crate::enums::keys::purpose::PurposeWasm;
+use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::{IntoWasm, WithJsError};
 use dpp::identity::contract_bounds::ContractBounds;
 use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
@@ -19,32 +19,32 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "IdentityPublicKeyInCreation")]
-pub struct IdentityPublicKeyInCreationWASM(IdentityPublicKeyInCreation);
+pub struct IdentityPublicKeyInCreationWasm(IdentityPublicKeyInCreation);
 
-impl From<IdentityPublicKeyInCreation> for IdentityPublicKeyInCreationWASM {
+impl From<IdentityPublicKeyInCreation> for IdentityPublicKeyInCreationWasm {
     fn from(value: IdentityPublicKeyInCreation) -> Self {
-        IdentityPublicKeyInCreationWASM(value)
+        IdentityPublicKeyInCreationWasm(value)
     }
 }
 
-impl From<IdentityPublicKeyInCreationWASM> for IdentityPublicKeyInCreation {
-    fn from(value: IdentityPublicKeyInCreationWASM) -> Self {
+impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
+    fn from(value: IdentityPublicKeyInCreationWasm) -> Self {
         value.0
     }
 }
 
-impl TryFrom<JsValue> for IdentityPublicKeyInCreationWASM {
+impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let value =
-            value.to_wasm::<IdentityPublicKeyInCreationWASM>("IdentityPublicKeyInCreation")?;
+            value.to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?;
 
         Ok(value.clone())
     }
 }
 
-impl From<IdentityPublicKeyInCreationWASM> for IdentityPublicKey {
-    fn from(value: IdentityPublicKeyInCreationWASM) -> Self {
+impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
+    fn from(value: IdentityPublicKeyInCreationWasm) -> Self {
         let contract_bounds = match value.0.contract_bounds() {
             None => None,
             Some(bounds) => Some(bounds.clone()),
@@ -64,7 +64,7 @@ impl From<IdentityPublicKeyInCreationWASM> for IdentityPublicKey {
 }
 
 #[wasm_bindgen(js_class = IdentityPublicKeyInCreation)]
-impl IdentityPublicKeyInCreationWASM {
+impl IdentityPublicKeyInCreationWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityPublicKeyInCreation".to_string()
@@ -85,22 +85,22 @@ impl IdentityPublicKeyInCreationWASM {
         binary_data: Vec<u8>,
         signature: Option<Vec<u8>>,
         js_contract_bounds: &JsValue,
-    ) -> Result<IdentityPublicKeyInCreationWASM, JsValue> {
-        let purpose = PurposeWASM::try_from(js_purpose)?;
-        let security_level = SecurityLevelWASM::try_from(js_security_level)?;
-        let key_type = KeyTypeWASM::try_from(js_key_type)?;
+    ) -> Result<IdentityPublicKeyInCreationWasm, JsValue> {
+        let purpose = PurposeWasm::try_from(js_purpose)?;
+        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+        let key_type = KeyTypeWasm::try_from(js_key_type)?;
         let contract_bounds: Option<ContractBounds> =
             match js_contract_bounds.is_undefined() | js_contract_bounds.is_null() {
                 true => None,
                 false => Some(
                     js_contract_bounds
-                        .to_wasm::<ContractBoundsWASM>("ContractBounds")?
+                        .to_wasm::<ContractBoundsWasm>("ContractBounds")?
                         .clone()
                         .into(),
                 ),
             };
 
-        Ok(IdentityPublicKeyInCreationWASM(
+        Ok(IdentityPublicKeyInCreationWasm(
             IdentityPublicKeyInCreation::V0(IdentityPublicKeyInCreationV0 {
                 id,
                 key_type: KeyType::from(key_type),
@@ -115,12 +115,12 @@ impl IdentityPublicKeyInCreationWASM {
     }
 
     #[wasm_bindgen(js_name = toIdentityPublicKey)]
-    pub fn to_identity_public_key(&self) -> Result<IdentityPublicKeyWASM, JsValue> {
-        IdentityPublicKeyWASM::new(
+    pub fn to_identity_public_key(&self) -> Result<IdentityPublicKeyWasm, JsValue> {
+        IdentityPublicKeyWasm::new(
             self.0.id(),
-            JsValue::from(PurposeWASM::from(self.0.purpose())),
-            JsValue::from(SecurityLevelWASM::from(self.0.security_level())),
-            JsValue::from(KeyTypeWASM::from(self.0.key_type())),
+            JsValue::from(PurposeWasm::from(self.0.purpose())),
+            JsValue::from(SecurityLevelWasm::from(self.0.security_level())),
+            JsValue::from(KeyTypeWasm::from(self.0.key_type())),
             self.0.read_only(),
             self.0.data().to_string(Hex).as_str(),
             None,
@@ -137,9 +137,9 @@ impl IdentityPublicKeyInCreationWASM {
     }
 
     #[wasm_bindgen(getter = "contractBounds")]
-    pub fn get_contract_bounds(&self) -> Option<ContractBoundsWASM> {
+    pub fn get_contract_bounds(&self) -> Option<ContractBoundsWasm> {
         match self.0.contract_bounds() {
-            Some(bounds) => Some(ContractBoundsWASM::from(bounds.clone())),
+            Some(bounds) => Some(ContractBoundsWasm::from(bounds.clone())),
             None => None,
         }
     }
@@ -151,17 +151,17 @@ impl IdentityPublicKeyInCreationWASM {
 
     #[wasm_bindgen(getter = purpose)]
     pub fn get_purpose(&self) -> String {
-        PurposeWASM::from(self.0.purpose()).into()
+        PurposeWasm::from(self.0.purpose()).into()
     }
 
     #[wasm_bindgen(getter = securityLevel)]
     pub fn get_security_level(&self) -> String {
-        SecurityLevelWASM::from(self.0.security_level()).into()
+        SecurityLevelWasm::from(self.0.security_level()).into()
     }
 
     #[wasm_bindgen(getter = keyType)]
     pub fn get_key_type(&self) -> String {
-        KeyTypeWASM::from(self.0.key_type()).into()
+        KeyTypeWasm::from(self.0.key_type()).into()
     }
 
     #[wasm_bindgen(getter = readOnly)]
@@ -186,13 +186,13 @@ impl IdentityPublicKeyInCreationWASM {
 
     #[wasm_bindgen(setter = purpose)]
     pub fn set_purpose(&mut self, js_purpose: JsValue) -> Result<(), JsValue> {
-        let purpose = PurposeWASM::try_from(js_purpose)?;
+        let purpose = PurposeWasm::try_from(js_purpose)?;
         Ok(self.0.set_purpose(Purpose::from(purpose)))
     }
 
     #[wasm_bindgen(setter = securityLevel)]
     pub fn set_security_level(&mut self, js_security_level: JsValue) -> Result<(), JsValue> {
-        let security_level = SecurityLevelWASM::try_from(js_security_level)?;
+        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
         Ok(self
             .0
             .set_security_level(SecurityLevel::from(security_level)))
@@ -200,7 +200,7 @@ impl IdentityPublicKeyInCreationWASM {
 
     #[wasm_bindgen(setter = keyType)]
     pub fn set_key_type(&mut self, key_type: JsValue) -> Result<(), JsValue> {
-        let key_type = KeyTypeWASM::try_from(key_type)?;
+        let key_type = KeyTypeWasm::try_from(key_type)?;
         self.0.set_type(key_type.into());
         Ok(())
     }
@@ -228,7 +228,7 @@ impl IdentityPublicKeyInCreationWASM {
             true => self.0.set_contract_bounds(None),
             false => {
                 let bounds = js_bounds
-                    .to_wasm::<ContractBoundsWASM>("ContractBounds")?
+                    .to_wasm::<ContractBoundsWasm>("ContractBounds")?
                     .clone();
 
                 self.0.set_contract_bounds(Some(bounds.into()))
@@ -239,14 +239,14 @@ impl IdentityPublicKeyInCreationWASM {
     }
 }
 
-impl IdentityPublicKeyInCreationWASM {
+impl IdentityPublicKeyInCreationWasm {
     pub fn vec_from_js_value(
         js_add_public_keys: &js_sys::Array,
-    ) -> Result<Vec<IdentityPublicKeyInCreationWASM>, JsValue> {
-        let add_public_keys: Vec<IdentityPublicKeyInCreationWASM> = js_add_public_keys
+    ) -> Result<Vec<IdentityPublicKeyInCreationWasm>, JsValue> {
+        let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> = js_add_public_keys
             .iter()
-            .map(|key| IdentityPublicKeyInCreationWASM::try_from(key))
-            .collect::<Result<Vec<IdentityPublicKeyInCreationWASM>, JsValue>>()?;
+            .map(|key| IdentityPublicKeyInCreationWasm::try_from(key))
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWasm>, JsValue>>()?;
 
         Ok(add_public_keys)
     }

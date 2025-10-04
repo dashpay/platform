@@ -1,5 +1,5 @@
-use crate::asset_lock_proof::outpoint::OutPointWASM;
-use crate::identifier::IdentifierWASM;
+use crate::asset_lock_proof::outpoint::OutPointWasm;
+use crate::identifier::IdentifierWasm;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -14,22 +14,22 @@ struct ChainAssetLockProofParams {
 
 #[wasm_bindgen(js_name = "ChainAssetLockProof")]
 #[derive(Clone)]
-pub struct ChainAssetLockProofWASM(ChainAssetLockProof);
+pub struct ChainAssetLockProofWasm(ChainAssetLockProof);
 
-impl From<ChainAssetLockProofWASM> for ChainAssetLockProof {
-    fn from(chain_lock: ChainAssetLockProofWASM) -> Self {
+impl From<ChainAssetLockProofWasm> for ChainAssetLockProof {
+    fn from(chain_lock: ChainAssetLockProofWasm) -> Self {
         chain_lock.0
     }
 }
 
-impl From<ChainAssetLockProof> for ChainAssetLockProofWASM {
+impl From<ChainAssetLockProof> for ChainAssetLockProofWasm {
     fn from(chain_lock: ChainAssetLockProof) -> Self {
-        ChainAssetLockProofWASM(chain_lock)
+        ChainAssetLockProofWasm(chain_lock)
     }
 }
 
 #[wasm_bindgen(js_class = ChainAssetLockProof)]
-impl ChainAssetLockProofWASM {
+impl ChainAssetLockProofWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "ChainAssetLockProof".to_string()
@@ -43,9 +43,9 @@ impl ChainAssetLockProofWASM {
     #[wasm_bindgen(constructor)]
     pub fn new(
         core_chain_locked_height: u32,
-        out_point: &OutPointWASM,
-    ) -> Result<ChainAssetLockProofWASM, JsValue> {
-        Ok(ChainAssetLockProofWASM(ChainAssetLockProof {
+        out_point: &OutPointWasm,
+    ) -> Result<ChainAssetLockProofWasm, JsValue> {
+        Ok(ChainAssetLockProofWasm(ChainAssetLockProof {
             core_chain_locked_height,
             out_point: out_point.clone().into(),
         }))
@@ -54,7 +54,7 @@ impl ChainAssetLockProofWASM {
     #[wasm_bindgen(js_name = "fromRawObject")]
     pub fn from_raw_value(
         raw_asset_lock_proof: JsValue,
-    ) -> Result<ChainAssetLockProofWASM, JsValue> {
+    ) -> Result<ChainAssetLockProofWasm, JsValue> {
         let parameters: ChainAssetLockProofParams =
             serde_wasm_bindgen::from_value(raw_asset_lock_proof)
                 .map_err(|err| JsError::from(err))?;
@@ -66,7 +66,7 @@ impl ChainAssetLockProofWASM {
 
         let rs_proof = ChainAssetLockProof::new(parameters.core_chain_locked_height, out_point);
 
-        Ok(ChainAssetLockProofWASM(rs_proof))
+        Ok(ChainAssetLockProofWasm(rs_proof))
     }
 
     #[wasm_bindgen(setter = "coreChainLockedHeight")]
@@ -75,7 +75,7 @@ impl ChainAssetLockProofWASM {
     }
 
     #[wasm_bindgen(setter = "outPoint")]
-    pub fn set_out_point(&mut self, outpoint: &OutPointWASM) {
+    pub fn set_out_point(&mut self, outpoint: &OutPointWasm) {
         self.0.out_point = outpoint.clone().into();
     }
 
@@ -85,12 +85,12 @@ impl ChainAssetLockProofWASM {
     }
 
     #[wasm_bindgen(getter = "outPoint")]
-    pub fn get_out_point(self) -> OutPointWASM {
+    pub fn get_out_point(self) -> OutPointWasm {
         self.0.out_point.into()
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]
-    pub fn create_identifier(&self) -> IdentifierWASM {
+    pub fn create_identifier(&self) -> IdentifierWasm {
         let identifier = self.0.create_identifier();
 
         identifier.into()

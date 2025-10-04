@@ -1,5 +1,5 @@
-use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWASM;
-use crate::identifier::IdentifierWASM;
+use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWasm;
+use crate::identifier::IdentifierWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
 use dpp::prelude::Identifier;
@@ -12,22 +12,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "TokenPaymentInfo")]
-pub struct TokenPaymentInfoWASM(TokenPaymentInfo);
+pub struct TokenPaymentInfoWasm(TokenPaymentInfo);
 
-impl From<TokenPaymentInfo> for TokenPaymentInfoWASM {
+impl From<TokenPaymentInfo> for TokenPaymentInfoWasm {
     fn from(info: TokenPaymentInfo) -> Self {
-        TokenPaymentInfoWASM(info)
+        TokenPaymentInfoWasm(info)
     }
 }
 
-impl From<TokenPaymentInfoWASM> for TokenPaymentInfo {
-    fn from(info: TokenPaymentInfoWASM) -> Self {
+impl From<TokenPaymentInfoWasm> for TokenPaymentInfo {
+    fn from(info: TokenPaymentInfoWasm) -> Self {
         info.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenPaymentInfo)]
-impl TokenPaymentInfoWASM {
+impl TokenPaymentInfoWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenPaymentInfo".to_string()
@@ -51,18 +51,18 @@ impl TokenPaymentInfoWASM {
             | js_payment_token_contract_id.is_undefined()
         {
             true => None,
-            false => Some(IdentifierWASM::try_from(js_payment_token_contract_id.clone())?.into()),
+            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id.clone())?.into()),
         };
 
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWASM::try_from(js_gas_fees_paid_by.clone())?
+                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by.clone())?
                     .clone()
                     .into(),
             };
 
-        Ok(TokenPaymentInfoWASM(TokenPaymentInfo::V0(
+        Ok(TokenPaymentInfoWasm(TokenPaymentInfo::V0(
             TokenPaymentInfoV0 {
                 payment_token_contract_id,
                 token_contract_position,
@@ -74,7 +74,7 @@ impl TokenPaymentInfoWASM {
     }
 
     #[wasm_bindgen(getter = "paymentTokenContractId")]
-    pub fn payment_token_contract_id(&self) -> Option<IdentifierWASM> {
+    pub fn payment_token_contract_id(&self) -> Option<IdentifierWasm> {
         self.0.payment_token_contract_id().map(|id| id.into())
     }
 
@@ -95,7 +95,7 @@ impl TokenPaymentInfoWASM {
 
     #[wasm_bindgen(getter = "gasFeesPaidBy")]
     pub fn gas_fees_paid_by(&self) -> String {
-        GasFeesPaidByWASM::from(self.0.gas_fees_paid_by()).into()
+        GasFeesPaidByWasm::from(self.0.gas_fees_paid_by()).into()
     }
 
     #[wasm_bindgen(setter = "paymentTokenContractId")]
@@ -108,7 +108,7 @@ impl TokenPaymentInfoWASM {
             | js_payment_token_contract_id.is_undefined()
         {
             true => None,
-            false => Some(IdentifierWASM::try_from(js_payment_token_contract_id.clone())?.into()),
+            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id.clone())?.into()),
         };
 
         self.0
@@ -137,7 +137,7 @@ impl TokenPaymentInfoWASM {
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),
-                false => GasFeesPaidByWASM::try_from(js_gas_fees_paid_by.clone())?
+                false => GasFeesPaidByWasm::try_from(js_gas_fees_paid_by.clone())?
                     .clone()
                     .into(),
             };

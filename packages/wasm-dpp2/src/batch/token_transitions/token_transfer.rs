@@ -1,35 +1,35 @@
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::TokenTransferTransition;
 use dpp::state_transition::batch_transition::token_transfer_transition::TokenTransferTransitionV0;
 use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_methods::TokenTransferTransitionV0Methods;
 use dpp::tokens::{PrivateEncryptedNote, SharedEncryptedNote};
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWASM;
-use crate::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWASM;
+use crate::encrypted_note::private_encrypted_note::PrivateEncryptedNoteWasm;
+use crate::encrypted_note::shared_encrypted_note::SharedEncryptedNoteWasm;
 use crate::utils::IntoWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenTransferTransition)]
-pub struct TokenTransferTransitionWASM(TokenTransferTransition);
+pub struct TokenTransferTransitionWasm(TokenTransferTransition);
 
-impl From<TokenTransferTransition> for TokenTransferTransitionWASM {
+impl From<TokenTransferTransition> for TokenTransferTransitionWasm {
     fn from(transition: TokenTransferTransition) -> Self {
         Self(transition)
     }
 }
 
-impl From<TokenTransferTransitionWASM> for TokenTransferTransition {
-    fn from(transition: TokenTransferTransitionWASM) -> Self {
+impl From<TokenTransferTransitionWasm> for TokenTransferTransition {
+    fn from(transition: TokenTransferTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenTransferTransition)]
-impl TokenTransferTransitionWASM {
+impl TokenTransferTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenTransferTransition".to_string()
@@ -42,21 +42,21 @@ impl TokenTransferTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         js_recipient_id: &JsValue,
         amount: u64,
         public_note: Option<String>,
         js_shared_encrypted_note: &JsValue,
         js_private_encrypted_note: &JsValue,
-    ) -> Result<TokenTransferTransitionWASM, JsValue> {
-        let recipient_id: Identifier = IdentifierWASM::try_from(js_recipient_id)?.into();
+    ) -> Result<TokenTransferTransitionWasm, JsValue> {
+        let recipient_id: Identifier = IdentifierWasm::try_from(js_recipient_id)?.into();
 
         let shared_encrypted_note: Option<SharedEncryptedNote> =
             match js_shared_encrypted_note.is_undefined() {
                 true => None,
                 false => Some(
                     js_shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNote")?
+                        .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
                         .clone()
                         .into(),
                 ),
@@ -67,13 +67,13 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNote")?
+                        .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
                 ),
             };
 
-        Ok(TokenTransferTransitionWASM(TokenTransferTransition::V0(
+        Ok(TokenTransferTransitionWasm(TokenTransferTransition::V0(
             TokenTransferTransitionV0 {
                 base: base.clone().into(),
                 recipient_id,
@@ -91,7 +91,7 @@ impl TokenTransferTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -101,7 +101,7 @@ impl TokenTransferTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "sharedEncryptedNote")]
-    pub fn get_shared_encrypted_note(&self) -> Option<SharedEncryptedNoteWASM> {
+    pub fn get_shared_encrypted_note(&self) -> Option<SharedEncryptedNoteWasm> {
         match self.clone().0.shared_encrypted_note_owned() {
             Some(shared_encrypted_note) => Some(shared_encrypted_note.into()),
             None => None,
@@ -109,7 +109,7 @@ impl TokenTransferTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "privateEncryptedNote")]
-    pub fn get_private_encrypted_note(&self) -> Option<PrivateEncryptedNoteWASM> {
+    pub fn get_private_encrypted_note(&self) -> Option<PrivateEncryptedNoteWasm> {
         match self.clone().0.private_encrypted_note_owned() {
             Some(private_encrypted_note) => Some(private_encrypted_note.into()),
             None => None,
@@ -117,13 +117,13 @@ impl TokenTransferTransitionWASM {
     }
 
     #[wasm_bindgen(getter = recipientId)]
-    pub fn recipient_id(&self) -> IdentifierWASM {
+    pub fn recipient_id(&self) -> IdentifierWasm {
         self.0.recipient_id().into()
     }
 
     #[wasm_bindgen(setter = recipientId)]
     pub fn set_recipient_id(&mut self, js_recipient: &JsValue) -> Result<(), JsValue> {
-        let recipient = IdentifierWASM::try_from(js_recipient)?;
+        let recipient = IdentifierWasm::try_from(js_recipient)?;
 
         self.0.set_recipient_id(recipient.into());
 
@@ -136,7 +136,7 @@ impl TokenTransferTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 
@@ -155,7 +155,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_shared_encrypted_note
-                        .to_wasm::<SharedEncryptedNoteWASM>("SharedEncryptedNote")?
+                        .to_wasm::<SharedEncryptedNoteWasm>("SharedEncryptedNote")?
                         .clone()
                         .into(),
                 ),
@@ -174,7 +174,7 @@ impl TokenTransferTransitionWASM {
                 true => None,
                 false => Some(
                     js_private_encrypted_note
-                        .to_wasm::<PrivateEncryptedNoteWASM>("PrivateEncryptedNote")?
+                        .to_wasm::<PrivateEncryptedNoteWasm>("PrivateEncryptedNote")?
                         .clone()
                         .into(),
                 ),

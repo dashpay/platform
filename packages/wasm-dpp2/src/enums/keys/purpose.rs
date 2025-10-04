@@ -3,7 +3,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "Purpose")]
-pub enum PurposeWASM {
+pub enum PurposeWasm {
     AUTHENTICATION = 0,
     ENCRYPTION = 1,
     DECRYPTION = 2,
@@ -13,20 +13,20 @@ pub enum PurposeWASM {
     OWNER = 6,
 }
 
-impl TryFrom<JsValue> for PurposeWASM {
+impl TryFrom<JsValue> for PurposeWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "authentication" => Ok(PurposeWASM::AUTHENTICATION),
-                    "encryption" => Ok(PurposeWASM::ENCRYPTION),
-                    "decryption" => Ok(PurposeWASM::DECRYPTION),
-                    "transfer" => Ok(PurposeWASM::TRANSFER),
-                    "system" => Ok(PurposeWASM::SYSTEM),
-                    "voting" => Ok(PurposeWASM::VOTING),
-                    "owner" => Ok(PurposeWASM::OWNER),
+                    "authentication" => Ok(PurposeWasm::AUTHENTICATION),
+                    "encryption" => Ok(PurposeWasm::ENCRYPTION),
+                    "decryption" => Ok(PurposeWasm::DECRYPTION),
+                    "transfer" => Ok(PurposeWasm::TRANSFER),
+                    "system" => Ok(PurposeWasm::SYSTEM),
+                    "voting" => Ok(PurposeWasm::VOTING),
+                    "owner" => Ok(PurposeWasm::OWNER),
                     _ => Err(JsValue::from(format!(
                         "unsupported purpose value ({})",
                         enum_val
@@ -36,13 +36,13 @@ impl TryFrom<JsValue> for PurposeWASM {
             false => match value.as_f64() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(PurposeWASM::AUTHENTICATION),
-                    1 => Ok(PurposeWASM::ENCRYPTION),
-                    2 => Ok(PurposeWASM::DECRYPTION),
-                    3 => Ok(PurposeWASM::TRANSFER),
-                    4 => Ok(PurposeWASM::SYSTEM),
-                    5 => Ok(PurposeWASM::VOTING),
-                    6 => Ok(PurposeWASM::OWNER),
+                    0 => Ok(PurposeWasm::AUTHENTICATION),
+                    1 => Ok(PurposeWasm::ENCRYPTION),
+                    2 => Ok(PurposeWasm::DECRYPTION),
+                    3 => Ok(PurposeWasm::TRANSFER),
+                    4 => Ok(PurposeWasm::SYSTEM),
+                    5 => Ok(PurposeWasm::VOTING),
+                    6 => Ok(PurposeWasm::OWNER),
                     _ => Err(JsValue::from(format!(
                         "unsupported purpose value ({})",
                         enum_val
@@ -53,44 +53,44 @@ impl TryFrom<JsValue> for PurposeWASM {
     }
 }
 
-impl From<PurposeWASM> for String {
-    fn from(value: PurposeWASM) -> Self {
+impl From<PurposeWasm> for String {
+    fn from(value: PurposeWasm) -> Self {
         match value {
-            PurposeWASM::AUTHENTICATION => String::from("AUTHENTICATION"),
-            PurposeWASM::ENCRYPTION => String::from("ENCRYPTION"),
-            PurposeWASM::DECRYPTION => String::from("DECRYPTION"),
-            PurposeWASM::TRANSFER => String::from("TRANSFER"),
-            PurposeWASM::SYSTEM => String::from("SYSTEM"),
-            PurposeWASM::VOTING => String::from("VOTING"),
-            PurposeWASM::OWNER => String::from("OWNER"),
+            PurposeWasm::AUTHENTICATION => String::from("AUTHENTICATION"),
+            PurposeWasm::ENCRYPTION => String::from("ENCRYPTION"),
+            PurposeWasm::DECRYPTION => String::from("DECRYPTION"),
+            PurposeWasm::TRANSFER => String::from("TRANSFER"),
+            PurposeWasm::SYSTEM => String::from("SYSTEM"),
+            PurposeWasm::VOTING => String::from("VOTING"),
+            PurposeWasm::OWNER => String::from("OWNER"),
         }
     }
 }
 
-impl From<PurposeWASM> for Purpose {
-    fn from(purpose: PurposeWASM) -> Self {
+impl From<PurposeWasm> for Purpose {
+    fn from(purpose: PurposeWasm) -> Self {
         match purpose {
-            PurposeWASM::AUTHENTICATION => Purpose::AUTHENTICATION,
-            PurposeWASM::ENCRYPTION => Purpose::ENCRYPTION,
-            PurposeWASM::DECRYPTION => Purpose::DECRYPTION,
-            PurposeWASM::TRANSFER => Purpose::TRANSFER,
-            PurposeWASM::SYSTEM => Purpose::SYSTEM,
-            PurposeWASM::VOTING => Purpose::VOTING,
-            PurposeWASM::OWNER => Purpose::OWNER,
+            PurposeWasm::AUTHENTICATION => Purpose::AUTHENTICATION,
+            PurposeWasm::ENCRYPTION => Purpose::ENCRYPTION,
+            PurposeWasm::DECRYPTION => Purpose::DECRYPTION,
+            PurposeWasm::TRANSFER => Purpose::TRANSFER,
+            PurposeWasm::SYSTEM => Purpose::SYSTEM,
+            PurposeWasm::VOTING => Purpose::VOTING,
+            PurposeWasm::OWNER => Purpose::OWNER,
         }
     }
 }
 
-impl From<Purpose> for PurposeWASM {
+impl From<Purpose> for PurposeWasm {
     fn from(purpose: Purpose) -> Self {
         match purpose {
-            Purpose::AUTHENTICATION => PurposeWASM::AUTHENTICATION,
-            Purpose::ENCRYPTION => PurposeWASM::ENCRYPTION,
-            Purpose::DECRYPTION => PurposeWASM::DECRYPTION,
-            Purpose::TRANSFER => PurposeWASM::TRANSFER,
-            Purpose::SYSTEM => PurposeWASM::SYSTEM,
-            Purpose::VOTING => PurposeWASM::VOTING,
-            Purpose::OWNER => PurposeWASM::OWNER,
+            Purpose::AUTHENTICATION => PurposeWasm::AUTHENTICATION,
+            Purpose::ENCRYPTION => PurposeWasm::ENCRYPTION,
+            Purpose::DECRYPTION => PurposeWasm::DECRYPTION,
+            Purpose::TRANSFER => PurposeWasm::TRANSFER,
+            Purpose::SYSTEM => PurposeWasm::SYSTEM,
+            Purpose::VOTING => PurposeWasm::VOTING,
+            Purpose::OWNER => PurposeWasm::OWNER,
         }
     }
 }

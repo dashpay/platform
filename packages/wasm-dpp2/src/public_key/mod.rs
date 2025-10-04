@@ -4,22 +4,22 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PublicKey")]
-pub struct PublicKeyWASM(PublicKey);
+pub struct PublicKeyWasm(PublicKey);
 
-impl From<PublicKey> for PublicKeyWASM {
+impl From<PublicKey> for PublicKeyWasm {
     fn from(pk: PublicKey) -> Self {
         Self(pk)
     }
 }
 
-impl From<PublicKeyWASM> for PublicKey {
-    fn from(pk: PublicKeyWASM) -> Self {
+impl From<PublicKeyWasm> for PublicKey {
+    fn from(pk: PublicKeyWasm) -> Self {
         pk.0
     }
 }
 
 #[wasm_bindgen(js_class = PublicKey)]
-impl PublicKeyWASM {
+impl PublicKeyWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "PublicKey".to_string()
@@ -31,7 +31,7 @@ impl PublicKeyWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> Result<PublicKeyWASM, JsValue> {
+    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> Result<PublicKeyWasm, JsValue> {
         let inner = match compressed {
             true => {
                 if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {
@@ -56,7 +56,7 @@ impl PublicKeyWASM {
         }
         .map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(PublicKeyWASM(PublicKey { compressed, inner }))
+        Ok(PublicKeyWasm(PublicKey { compressed, inner }))
     }
 
     #[wasm_bindgen(getter = "compressed")]
@@ -114,8 +114,8 @@ impl PublicKeyWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<PublicKeyWASM, JsValue> {
-        Ok(PublicKeyWASM(
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<PublicKeyWasm, JsValue> {
+        Ok(PublicKeyWasm(
             PublicKey::from_slice(bytes.as_slice())
                 .map_err(|err| JsValue::from(err.to_string()))?,
         ))

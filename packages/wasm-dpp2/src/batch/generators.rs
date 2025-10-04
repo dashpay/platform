@@ -1,6 +1,6 @@
-use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWASM;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
-use crate::document::DocumentWASM;
+use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::document::DocumentWasm;
 use dpp::fee::Credits;
 use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::state_transition::batch_transition::batched_transition::document_purchase_transition::DocumentPurchaseTransitionV0;
@@ -20,11 +20,11 @@ use dpp::state_transition::batch_transition::{
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 pub fn generate_create_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
-    prefunded_voting_balance: Option<PrefundedVotingBalanceWASM>,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    prefunded_voting_balance: Option<PrefundedVotingBalanceWasm>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentCreateTransition {
     DocumentCreateTransition::V0(DocumentCreateTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -41,10 +41,10 @@ pub fn generate_create_transition(
 }
 
 pub fn generate_delete_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentDeleteTransition {
     DocumentDeleteTransition::V0(DocumentDeleteTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -58,10 +58,10 @@ pub fn generate_delete_transition(
 }
 
 pub fn generate_replace_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentReplaceTransition {
     DocumentReplaceTransition::V0(DocumentReplaceTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -77,11 +77,11 @@ pub fn generate_replace_transition(
 }
 
 pub fn generate_transfer_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     recipient_owner_id: Identifier,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentTransferTransition {
     DocumentTransferTransition::V0(DocumentTransferTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -97,11 +97,11 @@ pub fn generate_transfer_transition(
 }
 
 pub fn generate_update_price_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     price: Credits,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentUpdatePriceTransition {
     DocumentUpdatePriceTransition::V0(DocumentUpdatePriceTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {
@@ -117,11 +117,11 @@ pub fn generate_update_price_transition(
 }
 
 pub fn generate_purchase_transition(
-    document: DocumentWASM,
+    document: DocumentWasm,
     identity_contract_nonce: IdentityNonce,
     document_type_name: String,
     price: Credits,
-    token_payment_info: Option<TokenPaymentInfoWASM>,
+    token_payment_info: Option<TokenPaymentInfoWasm>,
 ) -> DocumentPurchaseTransition {
     DocumentPurchaseTransition::V0(DocumentPurchaseTransitionV0 {
         base: DocumentBaseTransition::V1(DocumentBaseTransitionV1 {

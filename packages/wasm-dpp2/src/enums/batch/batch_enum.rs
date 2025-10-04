@@ -3,7 +3,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "BatchType")]
-pub enum BatchTypeWASM {
+pub enum BatchTypeWasm {
     Create,
     Replace,
     Delete,
@@ -13,20 +13,20 @@ pub enum BatchTypeWASM {
     IgnoreWhileBumpingRevision,
 }
 
-impl TryFrom<JsValue> for BatchTypeWASM {
+impl TryFrom<JsValue> for BatchTypeWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "create" => Ok(BatchTypeWASM::Create),
-                    "replace" => Ok(BatchTypeWASM::Replace),
-                    "delete" => Ok(BatchTypeWASM::Delete),
-                    "transfer" => Ok(BatchTypeWASM::Transfer),
-                    "purchase" => Ok(BatchTypeWASM::Purchase),
-                    "updateprice" => Ok(BatchTypeWASM::UpdatePrice),
-                    "ignorewhilebumpingrevision" => Ok(BatchTypeWASM::IgnoreWhileBumpingRevision),
+                    "create" => Ok(BatchTypeWasm::Create),
+                    "replace" => Ok(BatchTypeWasm::Replace),
+                    "delete" => Ok(BatchTypeWasm::Delete),
+                    "transfer" => Ok(BatchTypeWasm::Transfer),
+                    "purchase" => Ok(BatchTypeWasm::Purchase),
+                    "updateprice" => Ok(BatchTypeWasm::UpdatePrice),
+                    "ignorewhilebumpingrevision" => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     _ => Err(JsValue::from(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -36,13 +36,13 @@ impl TryFrom<JsValue> for BatchTypeWASM {
             false => match value.as_f64() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(BatchTypeWASM::Create),
-                    1 => Ok(BatchTypeWASM::Replace),
-                    2 => Ok(BatchTypeWASM::Delete),
-                    3 => Ok(BatchTypeWASM::Transfer),
-                    4 => Ok(BatchTypeWASM::Purchase),
-                    5 => Ok(BatchTypeWASM::UpdatePrice),
-                    6 => Ok(BatchTypeWASM::IgnoreWhileBumpingRevision),
+                    0 => Ok(BatchTypeWasm::Create),
+                    1 => Ok(BatchTypeWasm::Replace),
+                    2 => Ok(BatchTypeWasm::Delete),
+                    3 => Ok(BatchTypeWasm::Transfer),
+                    4 => Ok(BatchTypeWasm::Purchase),
+                    5 => Ok(BatchTypeWasm::UpdatePrice),
+                    6 => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
                     _ => Err(JsValue::from(format!(
                         "unknown batch type value: {}",
                         enum_val
@@ -53,31 +53,31 @@ impl TryFrom<JsValue> for BatchTypeWASM {
     }
 }
 
-impl From<BatchTypeWASM> for String {
-    fn from(value: BatchTypeWASM) -> Self {
+impl From<BatchTypeWasm> for String {
+    fn from(value: BatchTypeWasm) -> Self {
         match value {
-            BatchTypeWASM::Create => String::from("create"),
-            BatchTypeWASM::Replace => String::from("replace"),
-            BatchTypeWASM::Delete => String::from("delete"),
-            BatchTypeWASM::Transfer => String::from("transfer"),
-            BatchTypeWASM::Purchase => String::from("purchase"),
-            BatchTypeWASM::UpdatePrice => String::from("updatePrice"),
-            BatchTypeWASM::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
+            BatchTypeWasm::Create => String::from("create"),
+            BatchTypeWasm::Replace => String::from("replace"),
+            BatchTypeWasm::Delete => String::from("delete"),
+            BatchTypeWasm::Transfer => String::from("transfer"),
+            BatchTypeWasm::Purchase => String::from("purchase"),
+            BatchTypeWasm::UpdatePrice => String::from("updatePrice"),
+            BatchTypeWasm::IgnoreWhileBumpingRevision => String::from("ignoreWhileBumpingRevision"),
         }
     }
 }
 
-impl From<DocumentTransitionActionType> for BatchTypeWASM {
+impl From<DocumentTransitionActionType> for BatchTypeWasm {
     fn from(action_type: DocumentTransitionActionType) -> Self {
         match action_type {
-            DocumentTransitionActionType::Create => BatchTypeWASM::Create,
-            DocumentTransitionActionType::Replace => BatchTypeWASM::Replace,
-            DocumentTransitionActionType::Delete => BatchTypeWASM::Delete,
-            DocumentTransitionActionType::Transfer => BatchTypeWASM::Transfer,
-            DocumentTransitionActionType::Purchase => BatchTypeWASM::Purchase,
-            DocumentTransitionActionType::UpdatePrice => BatchTypeWASM::UpdatePrice,
+            DocumentTransitionActionType::Create => BatchTypeWasm::Create,
+            DocumentTransitionActionType::Replace => BatchTypeWasm::Replace,
+            DocumentTransitionActionType::Delete => BatchTypeWasm::Delete,
+            DocumentTransitionActionType::Transfer => BatchTypeWasm::Transfer,
+            DocumentTransitionActionType::Purchase => BatchTypeWasm::Purchase,
+            DocumentTransitionActionType::UpdatePrice => BatchTypeWasm::UpdatePrice,
             DocumentTransitionActionType::IgnoreWhileBumpingRevision => {
-                BatchTypeWASM::IgnoreWhileBumpingRevision
+                BatchTypeWasm::IgnoreWhileBumpingRevision
             }
         }
     }

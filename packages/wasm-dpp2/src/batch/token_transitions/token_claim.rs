@@ -1,30 +1,30 @@
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::TokenClaimTransition;
 use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
 use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::enums::token::distribution_type::TokenDistributionTypeWASM;
+use crate::enums::token::distribution_type::TokenDistributionTypeWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenClaimTransition")]
-pub struct TokenClaimTransitionWASM(TokenClaimTransition);
+pub struct TokenClaimTransitionWasm(TokenClaimTransition);
 
-impl From<TokenClaimTransition> for TokenClaimTransitionWASM {
+impl From<TokenClaimTransition> for TokenClaimTransitionWasm {
     fn from(transition: TokenClaimTransition) -> Self {
         Self(transition)
     }
 }
 
-impl From<TokenClaimTransitionWASM> for TokenClaimTransition {
-    fn from(transition: TokenClaimTransitionWASM) -> Self {
+impl From<TokenClaimTransitionWasm> for TokenClaimTransition {
+    fn from(transition: TokenClaimTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenClaimTransition)]
-impl TokenClaimTransitionWASM {
+impl TokenClaimTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenClaimTransition".to_string()
@@ -37,16 +37,16 @@ impl TokenClaimTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         js_distribution_type: &JsValue,
         public_note: Option<String>,
-    ) -> Result<TokenClaimTransitionWASM, JsValue> {
+    ) -> Result<TokenClaimTransitionWasm, JsValue> {
         let distribution_type = match js_distribution_type.is_undefined() {
-            true => TokenDistributionTypeWASM::default(),
-            false => TokenDistributionTypeWASM::try_from(js_distribution_type.clone())?,
+            true => TokenDistributionTypeWasm::default(),
+            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
         };
 
-        Ok(TokenClaimTransitionWASM(TokenClaimTransition::V0(
+        Ok(TokenClaimTransitionWasm(TokenClaimTransition::V0(
             TokenClaimTransitionV0 {
                 base: base.clone().into(),
                 distribution_type: distribution_type.into(),
@@ -56,7 +56,7 @@ impl TokenClaimTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -67,11 +67,11 @@ impl TokenClaimTransitionWASM {
 
     #[wasm_bindgen(getter = "distributionType")]
     pub fn get_distribution_type(&self) -> String {
-        TokenDistributionTypeWASM::from(self.0.distribution_type()).into()
+        TokenDistributionTypeWasm::from(self.0.distribution_type()).into()
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 
@@ -83,8 +83,8 @@ impl TokenClaimTransitionWASM {
     #[wasm_bindgen(setter = "distributionType")]
     pub fn set_distribution_type(&mut self, js_distribution_type: &JsValue) -> Result<(), JsValue> {
         let distribution_type = match js_distribution_type.is_undefined() {
-            true => TokenDistributionTypeWASM::default(),
-            false => TokenDistributionTypeWASM::try_from(js_distribution_type.clone())?,
+            true => TokenDistributionTypeWasm::default(),
+            false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
         };
 
         Ok(self.0.set_distribution_type(distribution_type.into()))

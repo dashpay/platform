@@ -3,27 +3,27 @@ use dpp::state_transition::batch_transition::token_emergency_action_transition::
 use dpp::state_transition::batch_transition::token_emergency_action_transition::v0::v0_methods::TokenEmergencyActionTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenEmergencyActionTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::enums::token::emergency_action::TokenEmergencyActionWASM;
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::enums::token::emergency_action::TokenEmergencyActionWasm;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenEmergencyActionTransition")]
-pub struct TokenEmergencyActionTransitionWASM(TokenEmergencyActionTransition);
+pub struct TokenEmergencyActionTransitionWasm(TokenEmergencyActionTransition);
 
-impl From<TokenEmergencyActionTransitionWASM> for TokenEmergencyActionTransition {
-    fn from(transition: TokenEmergencyActionTransitionWASM) -> Self {
+impl From<TokenEmergencyActionTransitionWasm> for TokenEmergencyActionTransition {
+    fn from(transition: TokenEmergencyActionTransitionWasm) -> Self {
         transition.0
     }
 }
 
-impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWASM {
+impl From<TokenEmergencyActionTransition> for TokenEmergencyActionTransitionWasm {
     fn from(transition: TokenEmergencyActionTransition) -> Self {
-        TokenEmergencyActionTransitionWASM(transition)
+        TokenEmergencyActionTransitionWasm(transition)
     }
 }
 
 #[wasm_bindgen(js_class = TokenEmergencyActionTransition)]
-impl TokenEmergencyActionTransitionWASM {
+impl TokenEmergencyActionTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenEmergencyActionTransition".to_string()
@@ -36,11 +36,11 @@ impl TokenEmergencyActionTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
-        emergency_action: TokenEmergencyActionWASM,
+        base: &TokenBaseTransitionWasm,
+        emergency_action: TokenEmergencyActionWasm,
         public_note: Option<String>,
-    ) -> TokenEmergencyActionTransitionWASM {
-        TokenEmergencyActionTransitionWASM(TokenEmergencyActionTransition::V0(
+    ) -> TokenEmergencyActionTransitionWasm {
+        TokenEmergencyActionTransitionWasm(TokenEmergencyActionTransition::V0(
             TokenEmergencyActionTransitionV0 {
                 base: base.clone().into(),
                 emergency_action: emergency_action.into(),
@@ -50,7 +50,7 @@ impl TokenEmergencyActionTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -61,11 +61,11 @@ impl TokenEmergencyActionTransitionWASM {
 
     #[wasm_bindgen(getter = "emergencyAction")]
     pub fn get_emergency_action(&self) -> String {
-        TokenEmergencyActionWASM::from(self.0.emergency_action()).into()
+        TokenEmergencyActionWasm::from(self.0.emergency_action()).into()
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 
@@ -75,7 +75,7 @@ impl TokenEmergencyActionTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "emergencyAction")]
-    pub fn set_emergency_action(&mut self, action: TokenEmergencyActionWASM) {
+    pub fn set_emergency_action(&mut self, action: TokenEmergencyActionWasm) {
         self.0.set_emergency_action(action.into())
     }
 }

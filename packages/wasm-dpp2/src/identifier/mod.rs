@@ -6,33 +6,33 @@ use wasm_bindgen::prelude::*;
 
 #[derive(Copy, Clone)]
 #[wasm_bindgen(js_name = "Identifier")]
-pub struct IdentifierWASM(Identifier);
+pub struct IdentifierWasm(Identifier);
 
-impl From<IdentifierWASM> for Identifier {
-    fn from(identifier: IdentifierWASM) -> Self {
+impl From<IdentifierWasm> for Identifier {
+    fn from(identifier: IdentifierWasm) -> Self {
         identifier.0
     }
 }
 
-impl From<Identifier> for IdentifierWASM {
+impl From<Identifier> for IdentifierWasm {
     fn from(identifier: Identifier) -> Self {
-        IdentifierWASM(identifier)
+        IdentifierWasm(identifier)
     }
 }
 
-impl From<[u8; 32]> for IdentifierWASM {
+impl From<[u8; 32]> for IdentifierWasm {
     fn from(identifier: [u8; 32]) -> Self {
-        IdentifierWASM(Identifier::new(identifier))
+        IdentifierWasm(Identifier::new(identifier))
     }
 }
 
-impl From<&IdentifierWASM> for Identifier {
-    fn from(identifier: &IdentifierWASM) -> Self {
+impl From<&IdentifierWasm> for Identifier {
+    fn from(identifier: &IdentifierWasm) -> Self {
         identifier.clone().into()
     }
 }
 
-impl TryFrom<&[u8]> for IdentifierWASM {
+impl TryFrom<&[u8]> for IdentifierWasm {
     type Error = JsValue;
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != 32 {
@@ -43,18 +43,18 @@ impl TryFrom<&[u8]> for IdentifierWASM {
             .try_into()
             .map_err(|_| JsValue::from("Cannot parse identifier"))?;
 
-        Ok(IdentifierWASM(Identifier::new(norm_slice)))
+        Ok(IdentifierWasm(Identifier::new(norm_slice)))
     }
 }
 
-impl TryFrom<JsValue> for IdentifierWASM {
+impl TryFrom<JsValue> for IdentifierWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_object() {
             true => match get_class_type(&value) {
                 Ok(class_type) => match class_type.as_str() {
                     "Identifier" => {
-                        Ok(value.to_wasm::<IdentifierWASM>("Identifier")?.clone())
+                        Ok(value.to_wasm::<IdentifierWasm>("Identifier")?.clone())
                     }
                     "" => Ok(identifier_from_js_value(&value)?.into()),
                     _ => Err(Self::Error::from_str(&format!(
@@ -73,7 +73,7 @@ impl TryFrom<JsValue> for IdentifierWASM {
                             let bytes = decode(value.as_string().unwrap().as_str(), Hex)
                                 .map_err(|err| JsValue::from(err.to_string()))?;
 
-                            Ok(IdentifierWASM::try_from(bytes.as_slice())?)
+                            Ok(IdentifierWasm::try_from(bytes.as_slice())?)
                         }
                         false => Ok(identifier_from_js_value(&value)?.into()),
                     }
@@ -83,15 +83,15 @@ impl TryFrom<JsValue> for IdentifierWASM {
     }
 }
 
-impl TryFrom<&JsValue> for IdentifierWASM {
+impl TryFrom<&JsValue> for IdentifierWasm {
     type Error = JsValue;
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
-        IdentifierWASM::try_from(value.clone())
+        IdentifierWasm::try_from(value.clone())
     }
 }
 
 #[wasm_bindgen(js_class = Identifier)]
-impl IdentifierWASM {
+impl IdentifierWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "Identifier".to_string()
@@ -103,8 +103,8 @@ impl IdentifierWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> Result<IdentifierWASM, JsValue> {
-        IdentifierWASM::try_from(js_identifier)
+    pub fn new(js_identifier: &JsValue) -> Result<IdentifierWasm, JsValue> {
+        IdentifierWasm::try_from(js_identifier)
     }
 
     #[wasm_bindgen(js_name = "base58")]
@@ -128,39 +128,39 @@ impl IdentifierWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBase58")]
-    pub fn from_base58(base58: String) -> Result<IdentifierWASM, JsValue> {
+    pub fn from_base58(base58: String) -> Result<IdentifierWasm, JsValue> {
         let identitfier = Identifier::from_string(base58.as_str(), Base58)
             .map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(IdentifierWASM(identitfier))
+        Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentifierWASM, JsValue> {
+    pub fn from_base64(base64: String) -> Result<IdentifierWasm, JsValue> {
         let identitfier = Identifier::from_string(base64.as_str(), Base64)
             .map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(IdentifierWASM(identitfier))
+        Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentifierWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<IdentifierWasm, JsValue> {
         let identitfier = Identifier::from_string(hex.as_str(), Hex)
             .map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(IdentifierWASM(identitfier))
+        Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentifierWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentifierWasm, JsValue> {
         let identifier =
             Identifier::from_vec(bytes).map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(IdentifierWASM(identifier))
+        Ok(IdentifierWasm(identifier))
     }
 }
 
-impl IdentifierWASM {
+impl IdentifierWasm {
     pub fn to_slice(&self) -> [u8; 32] {
         self.0.as_bytes().clone()
     }

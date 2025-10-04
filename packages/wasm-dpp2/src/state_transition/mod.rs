@@ -1,10 +1,10 @@
-use crate::enums::keys::key_type::KeyTypeWASM;
-use crate::enums::keys::purpose::PurposeWASM;
-use crate::enums::keys::security_level::SecurityLevelWASM;
-use crate::identifier::IdentifierWASM;
-use crate::identity_public_key::IdentityPublicKeyWASM;
+use crate::enums::keys::key_type::KeyTypeWasm;
+use crate::enums::keys::purpose::PurposeWasm;
+use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::identifier::IdentifierWasm;
+use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::mock_bls::MockBLS;
-use crate::private_key::PrivateKeyWASM;
+use crate::private_key::PrivateKeyWasm;
 use crate::utils::WithJsError;
 use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
@@ -42,22 +42,22 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "StateTransition")]
-pub struct StateTransitionWASM(StateTransition);
+pub struct StateTransitionWasm(StateTransition);
 
-impl From<StateTransition> for StateTransitionWASM {
+impl From<StateTransition> for StateTransitionWasm {
     fn from(transition: StateTransition) -> Self {
-        StateTransitionWASM(transition)
+        StateTransitionWasm(transition)
     }
 }
 
-impl From<StateTransitionWASM> for StateTransition {
-    fn from(transition: StateTransitionWASM) -> Self {
+impl From<StateTransitionWasm> for StateTransition {
+    fn from(transition: StateTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = StateTransition)]
-impl StateTransitionWASM {
+impl StateTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "StateTransition".to_string()
@@ -71,8 +71,8 @@ impl StateTransitionWASM {
     #[wasm_bindgen(js_name = "sign")]
     pub fn sign(
         &mut self,
-        private_key: &PrivateKeyWASM,
-        public_key: &IdentityPublicKeyWASM,
+        private_key: &PrivateKeyWasm,
+        public_key: &IdentityPublicKeyWasm,
     ) -> Result<Vec<u8>, JsValue> {
         self.0
             .sign(
@@ -92,13 +92,13 @@ impl StateTransitionWASM {
     #[wasm_bindgen(js_name = "signByPrivateKey")]
     pub fn sign_by_private_key(
         &mut self,
-        private_key: &PrivateKeyWASM,
+        private_key: &PrivateKeyWasm,
         key_id: Option<KeyID>,
         js_key_type: JsValue,
     ) -> Result<Vec<u8>, JsValue> {
         let key_type = match js_key_type.is_undefined() {
-            true => KeyTypeWASM::ECDSA_SECP256K1,
-            false => KeyTypeWASM::try_from(js_key_type)?,
+            true => KeyTypeWasm::ECDSA_SECP256K1,
+            false => KeyTypeWasm::try_from(js_key_type)?,
         };
 
         let _sig = self
@@ -120,7 +120,7 @@ impl StateTransitionWASM {
     #[wasm_bindgen(js_name = "verifyPublicKey")]
     pub fn verify_public_key(
         &self,
-        public_key: &IdentityPublicKeyWASM,
+        public_key: &IdentityPublicKeyWasm,
         js_allow_signing_with_any_security_level: Option<bool>,
         js_allow_signing_with_any_purpose: Option<bool>,
     ) -> Result<(), JsValue> {
@@ -248,14 +248,14 @@ impl StateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<StateTransitionWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<StateTransitionWasm, JsValue> {
         let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
         Ok(st.into())
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<StateTransitionWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<StateTransitionWasm, JsValue> {
         let bytes = decode(&hex, Encoding::Hex).map_err(JsError::from)?;
 
         let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
@@ -264,7 +264,7 @@ impl StateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<StateTransitionWASM, JsValue> {
+    pub fn from_base64(base64: String) -> Result<StateTransitionWasm, JsValue> {
         let bytes = decode(&base64, Encoding::Base64).map_err(JsError::from)?;
 
         let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
@@ -307,7 +307,7 @@ impl StateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "getOwnerId")]
-    pub fn get_owner_id(&self) -> IdentifierWASM {
+    pub fn get_owner_id(&self) -> IdentifierWasm {
         self.0.owner_id().into()
     }
 
@@ -334,7 +334,7 @@ impl StateTransitionWASM {
             None => None,
             Some(req) => Some(
                 req.iter()
-                    .map(|purpose| PurposeWASM::from(purpose.clone()))
+                    .map(|purpose| PurposeWasm::from(purpose.clone()))
                     .map(String::from)
                     .collect(),
             ),
@@ -346,7 +346,7 @@ impl StateTransitionWASM {
         &self,
         js_purpose: &JsValue,
     ) -> Result<Option<Vec<String>>, JsValue> {
-        let purpose = PurposeWASM::try_from(js_purpose.clone())?;
+        let purpose = PurposeWasm::try_from(js_purpose.clone())?;
 
         let requirements = self.0.security_level_requirement(purpose.into());
 
@@ -354,7 +354,7 @@ impl StateTransitionWASM {
             None => Ok(None),
             Some(req) => Ok(Some(
                 req.iter()
-                    .map(|security_level| SecurityLevelWASM::from(security_level.clone()))
+                    .map(|security_level| SecurityLevelWasm::from(security_level.clone()))
                     .map(String::from)
                     .collect(),
             )),
@@ -418,7 +418,7 @@ impl StateTransitionWASM {
 
     #[wasm_bindgen(js_name = "setOwnerId")]
     pub fn set_owner_id(&mut self, js_owner_id: &JsValue) -> Result<(), JsValue> {
-        let owner_id = IdentifierWASM::try_from(js_owner_id.clone())?;
+        let owner_id = IdentifierWasm::try_from(js_owner_id.clone())?;
 
         match self.0.clone() {
             DataContractCreate(mut contract_create) => {

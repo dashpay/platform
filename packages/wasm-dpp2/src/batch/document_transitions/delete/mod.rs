@@ -1,27 +1,27 @@
-use crate::batch::document_base_transition::DocumentBaseTransitionWASM;
-use crate::batch::document_transition::DocumentTransitionWASM;
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_delete_transition;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::DocumentDeleteTransition;
-use crate::document::DocumentWASM;
+use crate::document::DocumentWasm;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use crate::utils::IntoWasm;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
 
 #[wasm_bindgen(js_name = "DocumentDeleteTransition")]
-pub struct DocumentDeleteTransitionWASM(DocumentDeleteTransition);
+pub struct DocumentDeleteTransitionWasm(DocumentDeleteTransition);
 
-impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWASM {
+impl From<DocumentDeleteTransition> for DocumentDeleteTransitionWasm {
     fn from(document_delete_transition: DocumentDeleteTransition) -> Self {
-        DocumentDeleteTransitionWASM(document_delete_transition)
+        DocumentDeleteTransitionWasm(document_delete_transition)
     }
 }
 
 #[wasm_bindgen(js_class = DocumentDeleteTransition)]
-impl DocumentDeleteTransitionWASM {
+impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentDeleteTransition".to_string()
@@ -34,16 +34,16 @@ impl DocumentDeleteTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        document: &DocumentWASM,
+        document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentDeleteTransitionWASM, JsValue> {
+    ) -> Result<DocumentDeleteTransitionWasm, JsValue> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };
@@ -55,36 +55,36 @@ impl DocumentDeleteTransitionWASM {
             token_payment_info,
         );
 
-        Ok(DocumentDeleteTransitionWASM(rs_delete_transition))
+        Ok(DocumentDeleteTransitionWasm(rs_delete_transition))
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWASM {
+    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: &DocumentBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: &DocumentBaseTransitionWasm) {
         self.0.set_base(base.clone().into())
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
-    pub fn to_document_transition(&self) -> DocumentTransitionWASM {
+    pub fn to_document_transition(&self) -> DocumentTransitionWasm {
         let rs_transition = DocumentTransition::from(self.0.clone());
 
-        DocumentTransitionWASM::from(rs_transition)
+        DocumentTransitionWasm::from(rs_transition)
     }
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWASM,
-    ) -> Result<DocumentDeleteTransitionWASM, JsValue> {
+        js_transition: DocumentTransitionWasm,
+    ) -> Result<DocumentDeleteTransitionWasm, JsValue> {
         js_transition.get_delete_transition()
     }
 }
 
-impl From<DocumentDeleteTransitionWASM> for DocumentDeleteTransition {
-    fn from(document_delete_transition: DocumentDeleteTransitionWASM) -> Self {
+impl From<DocumentDeleteTransitionWasm> for DocumentDeleteTransition {
+    fn from(document_delete_transition: DocumentDeleteTransitionWasm) -> Self {
         document_delete_transition.0
     }
 }

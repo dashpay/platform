@@ -5,31 +5,31 @@ use dpp::state_transition::batch_transition::batched_transition::DocumentTransfe
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::document::DocumentWASM;
-use crate::identifier::IdentifierWASM;
+use crate::document::DocumentWasm;
+use crate::identifier::IdentifierWasm;
 use crate::utils::IntoWasm;
-use crate::batch::document_base_transition::DocumentBaseTransitionWASM;
-use crate::batch::document_transition::DocumentTransitionWASM;
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_transfer_transition;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
 
 #[wasm_bindgen(js_name = "DocumentTransferTransition")]
-pub struct DocumentTransferTransitionWASM(DocumentTransferTransition);
+pub struct DocumentTransferTransitionWasm(DocumentTransferTransition);
 
-impl From<DocumentTransferTransition> for DocumentTransferTransitionWASM {
+impl From<DocumentTransferTransition> for DocumentTransferTransitionWasm {
     fn from(transition: DocumentTransferTransition) -> Self {
-        DocumentTransferTransitionWASM(transition)
+        DocumentTransferTransitionWasm(transition)
     }
 }
 
-impl From<DocumentTransferTransitionWASM> for DocumentTransferTransition {
-    fn from(transition: DocumentTransferTransitionWASM) -> Self {
+impl From<DocumentTransferTransitionWasm> for DocumentTransferTransition {
+    fn from(transition: DocumentTransferTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = DocumentTransferTransition)]
-impl DocumentTransferTransitionWASM {
+impl DocumentTransferTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentTransferTransition".to_string()
@@ -42,17 +42,17 @@ impl DocumentTransferTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        document: &DocumentWASM,
+        document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_recipient_owner_id: &JsValue,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentTransferTransitionWASM, JsValue> {
+    ) -> Result<DocumentTransferTransitionWasm, JsValue> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };
@@ -61,25 +61,25 @@ impl DocumentTransferTransitionWASM {
             document.clone(),
             identity_contract_nonce,
             document.get_document_type_name().to_string(),
-            IdentifierWASM::try_from(js_recipient_owner_id)?.into(),
+            IdentifierWasm::try_from(js_recipient_owner_id)?.into(),
             token_payment_info,
         );
 
-        Ok(DocumentTransferTransitionWASM(rs_transfer_transition))
+        Ok(DocumentTransferTransitionWasm(rs_transfer_transition))
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWASM {
+    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_owner_id(&self) -> IdentifierWASM {
+    pub fn get_recipient_owner_id(&self) -> IdentifierWasm {
         self.0.recipient_owner_id().into()
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: &DocumentBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: &DocumentBaseTransitionWasm) {
         self.0.set_base(base.clone().into())
     }
 
@@ -89,21 +89,21 @@ impl DocumentTransferTransitionWASM {
         js_recipient_owner_id: &JsValue,
     ) -> Result<(), JsValue> {
         self.0
-            .set_recipient_owner_id(IdentifierWASM::try_from(js_recipient_owner_id)?.into());
+            .set_recipient_owner_id(IdentifierWasm::try_from(js_recipient_owner_id)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
-    pub fn to_document_transition(&self) -> DocumentTransitionWASM {
+    pub fn to_document_transition(&self) -> DocumentTransitionWasm {
         let rs_transition = DocumentTransition::from(self.0.clone());
 
-        DocumentTransitionWASM::from(rs_transition)
+        DocumentTransitionWasm::from(rs_transition)
     }
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWASM,
-    ) -> Result<DocumentTransferTransitionWASM, JsValue> {
+        js_transition: DocumentTransitionWasm,
+    ) -> Result<DocumentTransferTransitionWasm, JsValue> {
         js_transition.get_transfer_transition()
     }
 }

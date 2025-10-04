@@ -1,26 +1,26 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::group::GroupStateTransitionInfo;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=GroupStateTransitionInfo)]
-pub struct GroupStateTransitionInfoWASM(GroupStateTransitionInfo);
+pub struct GroupStateTransitionInfoWasm(GroupStateTransitionInfo);
 
-impl From<GroupStateTransitionInfoWASM> for GroupStateTransitionInfo {
-    fn from(info: GroupStateTransitionInfoWASM) -> Self {
+impl From<GroupStateTransitionInfoWasm> for GroupStateTransitionInfo {
+    fn from(info: GroupStateTransitionInfoWasm) -> Self {
         info.0
     }
 }
 
-impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWASM {
+impl From<GroupStateTransitionInfo> for GroupStateTransitionInfoWasm {
     fn from(info: GroupStateTransitionInfo) -> Self {
-        GroupStateTransitionInfoWASM(info)
+        GroupStateTransitionInfoWasm(info)
     }
 }
 
 #[wasm_bindgen(js_class = GroupStateTransitionInfo)]
-impl GroupStateTransitionInfoWASM {
+impl GroupStateTransitionInfoWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "GroupStateTransitionInfo".to_string()
@@ -36,10 +36,10 @@ impl GroupStateTransitionInfoWASM {
         group_contract_position: u16,
         action_id: &JsValue,
         action_is_proposer: bool,
-    ) -> Result<GroupStateTransitionInfoWASM, JsValue> {
-        Ok(GroupStateTransitionInfoWASM(GroupStateTransitionInfo {
+    ) -> Result<GroupStateTransitionInfoWasm, JsValue> {
+        Ok(GroupStateTransitionInfoWasm(GroupStateTransitionInfo {
             group_contract_position,
-            action_id: IdentifierWASM::try_from(action_id)?.into(),
+            action_id: IdentifierWasm::try_from(action_id)?.into(),
             action_is_proposer,
         }))
     }
@@ -51,7 +51,7 @@ impl GroupStateTransitionInfoWASM {
 
     #[wasm_bindgen(setter = "actionId")]
     pub fn set_action_id(&mut self, action_id: &JsValue) -> Result<(), JsValue> {
-        self.0.action_id = IdentifierWASM::try_from(action_id)?.into();
+        self.0.action_id = IdentifierWasm::try_from(action_id)?.into();
         Ok(())
     }
 
@@ -66,7 +66,7 @@ impl GroupStateTransitionInfoWASM {
     }
 
     #[wasm_bindgen(getter = "actionId")]
-    pub fn get_action_id(&self) -> IdentifierWASM {
+    pub fn get_action_id(&self) -> IdentifierWasm {
         self.0.action_id.into()
     }
 

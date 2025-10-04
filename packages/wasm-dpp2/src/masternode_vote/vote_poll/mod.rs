@@ -1,4 +1,4 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use crate::utils::ToSerdeJSONExt;
 use dpp::bincode;
 use dpp::voting::vote_polls::VotePoll;
@@ -9,22 +9,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = VotePoll)]
-pub struct VotePollWASM(VotePoll);
+pub struct VotePollWasm(VotePoll);
 
-impl From<VotePoll> for VotePollWASM {
+impl From<VotePoll> for VotePollWasm {
     fn from(poll: VotePoll) -> Self {
-        VotePollWASM(poll)
+        VotePollWasm(poll)
     }
 }
 
-impl From<VotePollWASM> for VotePoll {
-    fn from(poll: VotePollWASM) -> Self {
+impl From<VotePollWasm> for VotePoll {
+    fn from(poll: VotePollWasm) -> Self {
         poll.0
     }
 }
 
 #[wasm_bindgen(js_class = VotePoll)]
-impl VotePollWASM {
+impl VotePollWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "VotePoll".to_string()
@@ -41,8 +41,8 @@ impl VotePollWASM {
         document_type_name: String,
         index_name: String,
         js_index_values: JsValue,
-    ) -> Result<VotePollWASM, JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+    ) -> Result<VotePollWasm, JsValue> {
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         let index_values = js_index_values
             .with_serde_to_platform_value()?
@@ -50,7 +50,7 @@ impl VotePollWASM {
             .unwrap()
             .clone();
 
-        Ok(VotePollWASM(VotePoll::ContestedDocumentResourceVotePoll(
+        Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(
             ContestedDocumentResourceVotePoll {
                 contract_id: contract_id.into(),
                 document_type_name,
@@ -66,7 +66,7 @@ impl VotePollWASM {
     }
 
     #[wasm_bindgen(getter = "contractId")]
-    pub fn contract_id(&self) -> IdentifierWASM {
+    pub fn contract_id(&self) -> IdentifierWasm {
         match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.contract_id.into(),
         }
@@ -116,7 +116,7 @@ impl VotePollWASM {
 
     #[wasm_bindgen(setter = "contractId")]
     pub fn set_contract_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
-        let contract_id = IdentifierWASM::try_from(js_contract_id)?;
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {

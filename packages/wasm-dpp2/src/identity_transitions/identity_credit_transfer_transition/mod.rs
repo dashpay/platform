@@ -1,5 +1,5 @@
-use crate::identifier::IdentifierWASM;
-use crate::state_transition::StateTransitionWASM;
+use crate::identifier::IdentifierWasm;
+use crate::state_transition::StateTransitionWasm;
 use crate::utils::WithJsError;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -15,10 +15,10 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = IdentityCreditTransfer)]
 #[derive(Clone)]
-pub struct IdentityCreditTransferWASM(IdentityCreditTransferTransition);
+pub struct IdentityCreditTransferWasm(IdentityCreditTransferTransition);
 
 #[wasm_bindgen(js_class = IdentityCreditTransfer)]
-impl IdentityCreditTransferWASM {
+impl IdentityCreditTransferWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityCreditTransfer".to_string()
@@ -36,12 +36,12 @@ impl IdentityCreditTransferWASM {
         js_recipient: &JsValue,
         nonce: u64,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityCreditTransferWASM, JsValue> {
-        let sender: Identifier = IdentifierWASM::try_from(js_sender)?.into();
+    ) -> Result<IdentityCreditTransferWasm, JsValue> {
+        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
 
-        let recipient: Identifier = IdentifierWASM::try_from(js_recipient)?.into();
+        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
 
-        Ok(IdentityCreditTransferWASM(
+        Ok(IdentityCreditTransferWasm(
             IdentityCreditTransferTransition::V0(IdentityCreditTransferTransitionV0 {
                 identity_id: sender,
                 recipient_id: recipient,
@@ -76,34 +76,34 @@ impl IdentityCreditTransferWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreditTransferWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreditTransferWasm, JsValue> {
         let rs_transition =
             IdentityCreditTransferTransition::deserialize_from_bytes(bytes.as_slice())
                 .with_js_error()?;
 
-        Ok(IdentityCreditTransferWASM(rs_transition))
+        Ok(IdentityCreditTransferWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityCreditTransferWASM, JsValue> {
-        IdentityCreditTransferWASM::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
+    pub fn from_hex(hex: String) -> Result<IdentityCreditTransferWasm, JsValue> {
+        IdentityCreditTransferWasm::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(hex: String) -> Result<IdentityCreditTransferWASM, JsValue> {
-        IdentityCreditTransferWASM::from_bytes(decode(hex.as_str(), Base64).map_err(JsError::from)?)
+    pub fn from_base64(hex: String) -> Result<IdentityCreditTransferWasm, JsValue> {
+        IdentityCreditTransferWasm::from_bytes(decode(hex.as_str(), Base64).map_err(JsError::from)?)
     }
 
     #[wasm_bindgen(setter = "recipientId")]
     pub fn set_recipient_id(&mut self, js_recipient: &JsValue) -> Result<(), JsValue> {
-        let recipient: Identifier = IdentifierWASM::try_from(js_recipient)?.into();
+        let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
 
         Ok(self.0.set_recipient_id(recipient))
     }
 
     #[wasm_bindgen(setter = "senderId")]
     pub fn set_sender_id(&mut self, js_sender: &JsValue) -> Result<(), JsValue> {
-        let sender: Identifier = IdentifierWASM::try_from(js_sender)?.into();
+        let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
 
         Ok(self.0.set_identity_id(sender))
     }
@@ -154,12 +154,12 @@ impl IdentityCreditTransferWASM {
     }
 
     #[wasm_bindgen(getter = "recipientId")]
-    pub fn get_recipient_id(&self) -> IdentifierWASM {
+    pub fn get_recipient_id(&self) -> IdentifierWasm {
         self.0.recipient_id().into()
     }
 
     #[wasm_bindgen(getter = "senderId")]
-    pub fn get_identity_id(&self) -> IdentifierWASM {
+    pub fn get_identity_id(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
@@ -174,24 +174,24 @@ impl IdentityCreditTransferWASM {
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
-    pub fn to_state_transition(&self) -> StateTransitionWASM {
-        StateTransitionWASM::from(StateTransition::from(self.0.clone()))
+    pub fn to_state_transition(&self) -> StateTransitionWasm {
+        StateTransitionWasm::from(StateTransition::from(self.0.clone()))
     }
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        st: &StateTransitionWASM,
-    ) -> Result<IdentityCreditTransferWASM, JsValue> {
+        st: &StateTransitionWasm,
+    ) -> Result<IdentityCreditTransferWasm, JsValue> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
-            StateTransition::IdentityCreditTransfer(st) => Ok(IdentityCreditTransferWASM(st)),
+            StateTransition::IdentityCreditTransfer(st) => Ok(IdentityCreditTransferWasm(st)),
             _ => Err(JsValue::from_str(&"Invalid state transition type)")),
         }
     }
 }
 
-impl IdentityCreditTransferWASM {
+impl IdentityCreditTransferWasm {
     pub fn set_signature_binary_data(&mut self, data: BinaryData) {
         self.0.set_signature(data)
     }

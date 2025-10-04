@@ -14,7 +14,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(js_name = "PlatformVersion")]
 #[derive(Default)]
 #[allow(non_camel_case_types)]
-pub enum PlatformVersionWASM {
+pub enum PlatformVersionWasm {
     #[default]
     PLATFORM_V1 = 1,
     PLATFORM_V2 = 2,
@@ -27,22 +27,22 @@ pub enum PlatformVersionWASM {
     PLATFORM_V9 = 9,
 }
 
-impl TryFrom<JsValue> for PlatformVersionWASM {
+impl TryFrom<JsValue> for PlatformVersionWasm {
     type Error = JsValue;
-    fn try_from(value: JsValue) -> Result<PlatformVersionWASM, Self::Error> {
+    fn try_from(value: JsValue) -> Result<PlatformVersionWasm, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "platform_v1" => Ok(PlatformVersionWASM::PLATFORM_V1),
-                    "platform_v2" => Ok(PlatformVersionWASM::PLATFORM_V2),
-                    "platform_v3" => Ok(PlatformVersionWASM::PLATFORM_V3),
-                    "platform_v4" => Ok(PlatformVersionWASM::PLATFORM_V4),
-                    "platform_v5" => Ok(PlatformVersionWASM::PLATFORM_V5),
-                    "platform_v6" => Ok(PlatformVersionWASM::PLATFORM_V6),
-                    "platform_v7" => Ok(PlatformVersionWASM::PLATFORM_V7),
-                    "platform_v8" => Ok(PlatformVersionWASM::PLATFORM_V8),
-                    "platform_v9" => Ok(PlatformVersionWASM::PLATFORM_V9),
+                    "platform_v1" => Ok(PlatformVersionWasm::PLATFORM_V1),
+                    "platform_v2" => Ok(PlatformVersionWasm::PLATFORM_V2),
+                    "platform_v3" => Ok(PlatformVersionWasm::PLATFORM_V3),
+                    "platform_v4" => Ok(PlatformVersionWasm::PLATFORM_V4),
+                    "platform_v5" => Ok(PlatformVersionWasm::PLATFORM_V5),
+                    "platform_v6" => Ok(PlatformVersionWasm::PLATFORM_V6),
+                    "platform_v7" => Ok(PlatformVersionWasm::PLATFORM_V7),
+                    "platform_v8" => Ok(PlatformVersionWasm::PLATFORM_V8),
+                    "platform_v9" => Ok(PlatformVersionWasm::PLATFORM_V9),
                     _ => Err(JsValue::from(format!(
                         "unknown platform version value: {}",
                         enum_val
@@ -52,15 +52,15 @@ impl TryFrom<JsValue> for PlatformVersionWASM {
             false => match value.as_f64() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val as u8 {
-                    1 => Ok(PlatformVersionWASM::PLATFORM_V1),
-                    2 => Ok(PlatformVersionWASM::PLATFORM_V2),
-                    3 => Ok(PlatformVersionWASM::PLATFORM_V3),
-                    4 => Ok(PlatformVersionWASM::PLATFORM_V4),
-                    5 => Ok(PlatformVersionWASM::PLATFORM_V5),
-                    6 => Ok(PlatformVersionWASM::PLATFORM_V6),
-                    7 => Ok(PlatformVersionWASM::PLATFORM_V7),
-                    8 => Ok(PlatformVersionWASM::PLATFORM_V8),
-                    9 => Ok(PlatformVersionWASM::PLATFORM_V9),
+                    1 => Ok(PlatformVersionWasm::PLATFORM_V1),
+                    2 => Ok(PlatformVersionWasm::PLATFORM_V2),
+                    3 => Ok(PlatformVersionWasm::PLATFORM_V3),
+                    4 => Ok(PlatformVersionWasm::PLATFORM_V4),
+                    5 => Ok(PlatformVersionWasm::PLATFORM_V5),
+                    6 => Ok(PlatformVersionWasm::PLATFORM_V6),
+                    7 => Ok(PlatformVersionWasm::PLATFORM_V7),
+                    8 => Ok(PlatformVersionWasm::PLATFORM_V8),
+                    9 => Ok(PlatformVersionWasm::PLATFORM_V9),
                     _ => Err(JsValue::from(format!(
                         "unknown platform version value: {}",
                         enum_val
@@ -71,34 +71,34 @@ impl TryFrom<JsValue> for PlatformVersionWASM {
     }
 }
 
-impl From<PlatformVersionWASM> for String {
-    fn from(version: PlatformVersionWASM) -> String {
+impl From<PlatformVersionWasm> for String {
+    fn from(version: PlatformVersionWasm) -> String {
         match version {
-            PlatformVersionWASM::PLATFORM_V1 => String::from("PLATFORM_V1"),
-            PlatformVersionWASM::PLATFORM_V2 => String::from("PLATFORM_V2"),
-            PlatformVersionWASM::PLATFORM_V3 => String::from("PLATFORM_V3"),
-            PlatformVersionWASM::PLATFORM_V4 => String::from("PLATFORM_V4"),
-            PlatformVersionWASM::PLATFORM_V5 => String::from("PLATFORM_V5"),
-            PlatformVersionWASM::PLATFORM_V6 => String::from("PLATFORM_V6"),
-            PlatformVersionWASM::PLATFORM_V7 => String::from("PLATFORM_V7"),
-            PlatformVersionWASM::PLATFORM_V8 => String::from("PLATFORM_V8"),
-            PlatformVersionWASM::PLATFORM_V9 => String::from("PLATFORM_V9"),
+            PlatformVersionWasm::PLATFORM_V1 => String::from("PLATFORM_V1"),
+            PlatformVersionWasm::PLATFORM_V2 => String::from("PLATFORM_V2"),
+            PlatformVersionWasm::PLATFORM_V3 => String::from("PLATFORM_V3"),
+            PlatformVersionWasm::PLATFORM_V4 => String::from("PLATFORM_V4"),
+            PlatformVersionWasm::PLATFORM_V5 => String::from("PLATFORM_V5"),
+            PlatformVersionWasm::PLATFORM_V6 => String::from("PLATFORM_V6"),
+            PlatformVersionWasm::PLATFORM_V7 => String::from("PLATFORM_V7"),
+            PlatformVersionWasm::PLATFORM_V8 => String::from("PLATFORM_V8"),
+            PlatformVersionWasm::PLATFORM_V9 => String::from("PLATFORM_V9"),
         }
     }
 }
 
-impl From<PlatformVersionWASM> for PlatformVersion {
-    fn from(value: PlatformVersionWASM) -> Self {
+impl From<PlatformVersionWasm> for PlatformVersion {
+    fn from(value: PlatformVersionWasm) -> Self {
         match value {
-            PlatformVersionWASM::PLATFORM_V1 => PLATFORM_V1,
-            PlatformVersionWASM::PLATFORM_V2 => PLATFORM_V2,
-            PlatformVersionWASM::PLATFORM_V3 => PLATFORM_V3,
-            PlatformVersionWASM::PLATFORM_V4 => PLATFORM_V4,
-            PlatformVersionWASM::PLATFORM_V5 => PLATFORM_V5,
-            PlatformVersionWASM::PLATFORM_V6 => PLATFORM_V6,
-            PlatformVersionWASM::PLATFORM_V7 => PLATFORM_V7,
-            PlatformVersionWASM::PLATFORM_V8 => PLATFORM_V8,
-            PlatformVersionWASM::PLATFORM_V9 => PLATFORM_V9,
+            PlatformVersionWasm::PLATFORM_V1 => PLATFORM_V1,
+            PlatformVersionWasm::PLATFORM_V2 => PLATFORM_V2,
+            PlatformVersionWasm::PLATFORM_V3 => PLATFORM_V3,
+            PlatformVersionWasm::PLATFORM_V4 => PLATFORM_V4,
+            PlatformVersionWasm::PLATFORM_V5 => PLATFORM_V5,
+            PlatformVersionWasm::PLATFORM_V6 => PLATFORM_V6,
+            PlatformVersionWasm::PLATFORM_V7 => PLATFORM_V7,
+            PlatformVersionWasm::PLATFORM_V8 => PLATFORM_V8,
+            PlatformVersionWasm::PLATFORM_V9 => PLATFORM_V9,
         }
     }
 }

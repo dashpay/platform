@@ -1,6 +1,6 @@
-use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWASM;
-use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWASM;
-use crate::token_configuration_change_item::TokenConfigurationChangeItemWASM;
+use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
+use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
+use crate::token_configuration_change_item::TokenConfigurationChangeItemWasm;
 use crate::utils::IntoWasm;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
@@ -8,7 +8,7 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
-impl TokenConfigurationChangeItemWASM {
+impl TokenConfigurationChangeItemWasm {
     #[wasm_bindgen(js_name = "PerpetualDistributionConfigurationItem")]
     pub fn perpetual_distribution_item(js_perpetual_distribution_value: JsValue) -> Self {
         let perpetual_distribution_value: Option<TokenPerpetualDistribution> =
@@ -16,23 +16,23 @@ impl TokenConfigurationChangeItemWASM {
                 true => None,
                 false => Some(
                     js_perpetual_distribution_value
-                        .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")
+                        .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")
                         .unwrap()
                         .clone()
                         .into(),
                 ),
             };
 
-        TokenConfigurationChangeItemWASM(TokenConfigurationChangeItem::PerpetualDistribution(
+        TokenConfigurationChangeItemWasm(TokenConfigurationChangeItem::PerpetualDistribution(
             perpetual_distribution_value,
         ))
     }
 
     #[wasm_bindgen(js_name = "PerpetualDistributionControlGroupItem")]
     pub fn perpetual_distribution_control_group_item(
-        action_taker: &AuthorizedActionTakersWASM,
+        action_taker: &AuthorizedActionTakersWasm,
     ) -> Self {
-        TokenConfigurationChangeItemWASM(
+        TokenConfigurationChangeItemWasm(
             TokenConfigurationChangeItem::PerpetualDistributionControlGroup(
                 action_taker.clone().into(),
             ),
@@ -41,9 +41,9 @@ impl TokenConfigurationChangeItemWASM {
 
     #[wasm_bindgen(js_name = "PerpetualDistributionAdminGroupItem")]
     pub fn perpetual_distribution_admin_group_item(
-        action_taker: &AuthorizedActionTakersWASM,
+        action_taker: &AuthorizedActionTakersWasm,
     ) -> Self {
-        TokenConfigurationChangeItemWASM(
+        TokenConfigurationChangeItemWasm(
             TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(
                 action_taker.clone().into(),
             ),

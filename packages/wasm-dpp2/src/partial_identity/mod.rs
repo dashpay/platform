@@ -1,5 +1,5 @@
-use crate::identifier::IdentifierWASM;
-use crate::identity_public_key::IdentityPublicKeyWASM;
+use crate::identifier::IdentifierWasm;
+use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
@@ -11,16 +11,16 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "PartialIdentity")]
-pub struct PartialIdentityWASM(PartialIdentity);
+pub struct PartialIdentityWasm(PartialIdentity);
 
-impl From<PartialIdentity> for PartialIdentityWASM {
+impl From<PartialIdentity> for PartialIdentityWasm {
     fn from(value: PartialIdentity) -> Self {
         Self(value)
     }
 }
 
 #[wasm_bindgen(js_class = PartialIdentity)]
-impl PartialIdentityWASM {
+impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         js_id: &JsValue,
@@ -29,13 +29,13 @@ impl PartialIdentityWASM {
         revision: Option<Revision>,
         js_not_found_public_keys: Option<Array>,
     ) -> Result<Self, JsValue> {
-        let id = IdentifierWASM::try_from(js_id)?;
+        let id = IdentifierWasm::try_from(js_id)?;
         let loaded_public_keys = js_value_to_loaded_public_keys(js_loaded_public_keys)?;
 
         let not_found_public_keys: BTreeSet<KeyID> =
             option_array_to_not_found(js_not_found_public_keys)?;
 
-        Ok(PartialIdentityWASM(PartialIdentity {
+        Ok(PartialIdentityWasm(PartialIdentity {
             id: id.into(),
             loaded_public_keys,
             balance,
@@ -45,7 +45,7 @@ impl PartialIdentityWASM {
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn id(&self) -> IdentifierWASM {
+    pub fn id(&self) -> IdentifierWasm {
         self.0.id.into()
     }
 
@@ -57,7 +57,7 @@ impl PartialIdentityWASM {
             Reflect::set(
                 &obj,
                 &k.to_string().into(),
-                &IdentityPublicKeyWASM::from(v).into(),
+                &IdentityPublicKeyWasm::from(v).into(),
             )?;
         }
 
@@ -87,7 +87,7 @@ impl PartialIdentityWASM {
 
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(&mut self, js_id: &JsValue) -> Result<(), JsValue> {
-        let identifier: IdentifierWASM = IdentifierWASM::try_from(js_id)?;
+        let identifier: IdentifierWasm = IdentifierWasm::try_from(js_id)?;
 
         self.0.id = identifier.into();
 
@@ -143,7 +143,7 @@ pub fn js_value_to_loaded_public_keys(
                 let js_key = Reflect::get(&pub_keys_object, &key)?;
 
                 let key = js_key
-                    .to_wasm::<IdentityPublicKeyWASM>("IdentityPublicKey")?
+                    .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
                     .clone();
 
                 map.insert(key_id, IdentityPublicKey::from(key));

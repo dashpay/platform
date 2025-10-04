@@ -5,26 +5,26 @@ use dpp::state_transition::batch_transition::token_direct_purchase_transition::T
 use dpp::state_transition::batch_transition::token_direct_purchase_transition::v0::v0_methods::TokenDirectPurchaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::TokenDirectPurchaseTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenDirectPurchaseTransition)]
-pub struct TokenDirectPurchaseTransitionWASM(TokenDirectPurchaseTransition);
+pub struct TokenDirectPurchaseTransitionWasm(TokenDirectPurchaseTransition);
 
-impl From<TokenDirectPurchaseTransitionWASM> for TokenDirectPurchaseTransition {
-    fn from(transition: TokenDirectPurchaseTransitionWASM) -> Self {
+impl From<TokenDirectPurchaseTransitionWasm> for TokenDirectPurchaseTransition {
+    fn from(transition: TokenDirectPurchaseTransitionWasm) -> Self {
         transition.0
     }
 }
 
-impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWASM {
+impl From<TokenDirectPurchaseTransition> for TokenDirectPurchaseTransitionWasm {
     fn from(transition: TokenDirectPurchaseTransition) -> Self {
-        TokenDirectPurchaseTransitionWASM(transition)
+        TokenDirectPurchaseTransitionWasm(transition)
     }
 }
 
 #[wasm_bindgen(js_class = TokenDirectPurchaseTransition)]
-impl TokenDirectPurchaseTransitionWASM {
+impl TokenDirectPurchaseTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenDirectPurchaseTransition".to_string()
@@ -37,11 +37,11 @@ impl TokenDirectPurchaseTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         token_count: TokenAmount,
         total_agreed_price: Credits,
     ) -> Self {
-        TokenDirectPurchaseTransitionWASM(TokenDirectPurchaseTransition::V0(
+        TokenDirectPurchaseTransitionWasm(TokenDirectPurchaseTransition::V0(
             TokenDirectPurchaseTransitionV0 {
                 base: base.clone().into(),
                 token_count,
@@ -51,7 +51,7 @@ impl TokenDirectPurchaseTransitionWASM {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -66,7 +66,7 @@ impl TokenDirectPurchaseTransitionWASM {
     }
 
     #[wasm_bindgen(setter = base)]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 

@@ -1,4 +1,4 @@
-use crate::batch::token_base_transition::TokenBaseTransitionWASM;
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::TokenBurnTransition;
 use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
@@ -8,22 +8,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenBurnTransition)]
-pub struct TokenBurnTransitionWASM(TokenBurnTransition);
+pub struct TokenBurnTransitionWasm(TokenBurnTransition);
 
-impl From<TokenBurnTransition> for TokenBurnTransitionWASM {
+impl From<TokenBurnTransition> for TokenBurnTransitionWasm {
     fn from(transition: TokenBurnTransition) -> Self {
         Self(transition)
     }
 }
 
-impl From<TokenBurnTransitionWASM> for TokenBurnTransition {
-    fn from(transition: TokenBurnTransitionWASM) -> Self {
+impl From<TokenBurnTransitionWasm> for TokenBurnTransition {
+    fn from(transition: TokenBurnTransitionWasm) -> Self {
         transition.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenBurnTransition)]
-impl TokenBurnTransitionWASM {
+impl TokenBurnTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenBurnTransition".to_string()
@@ -36,11 +36,11 @@ impl TokenBurnTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        base: &TokenBaseTransitionWASM,
+        base: &TokenBaseTransitionWasm,
         burn_amount: u64,
         public_note: Option<String>,
-    ) -> Result<TokenBurnTransitionWASM, JsValue> {
-        Ok(TokenBurnTransitionWASM(TokenBurnTransition::V0(
+    ) -> Result<TokenBurnTransitionWasm, JsValue> {
+        Ok(TokenBurnTransitionWasm(TokenBurnTransition::V0(
             TokenBurnTransitionV0 {
                 base: base.clone().into(),
                 burn_amount,
@@ -55,7 +55,7 @@ impl TokenBurnTransitionWASM {
     }
 
     #[wasm_bindgen(getter = base)]
-    pub fn get_base(&self) -> TokenBaseTransitionWASM {
+    pub fn get_base(&self) -> TokenBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -70,7 +70,7 @@ impl TokenBurnTransitionWASM {
     }
 
     #[wasm_bindgen(setter = base)]
-    pub fn set_base(&mut self, base: TokenBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: TokenBaseTransitionWasm) {
         self.0.set_base(base.into())
     }
 

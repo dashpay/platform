@@ -1,8 +1,8 @@
-use crate::asset_lock_proof::AssetLockProofWASM;
-use crate::enums::keys::purpose::PurposeWASM;
-use crate::identifier::IdentifierWASM;
-use crate::identity_transitions::public_key_in_creation::IdentityPublicKeyInCreationWASM;
-use crate::state_transition::StateTransitionWASM;
+use crate::asset_lock_proof::AssetLockProofWasm;
+use crate::enums::keys::purpose::PurposeWasm;
+use crate::identifier::IdentifierWasm;
+use crate::identity_transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
+use crate::state_transition::StateTransitionWasm;
 use crate::utils::WithJsError;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -20,10 +20,10 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
 #[derive(Clone)]
-pub struct IdentityUpdateTransitionWASM(IdentityUpdateTransition);
+pub struct IdentityUpdateTransitionWasm(IdentityUpdateTransition);
 
 #[wasm_bindgen(js_class = IdentityUpdateTransition)]
-impl IdentityUpdateTransitionWASM {
+impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityUpdateTransition".to_string()
@@ -42,13 +42,13 @@ impl IdentityUpdateTransitionWASM {
         js_add_public_keys: &js_sys::Array,
         disable_public_keys: Vec<KeyID>,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityUpdateTransitionWASM, JsValue> {
-        let identity_id = IdentifierWASM::try_from(js_identity_id)?;
+    ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
-        let add_public_keys: Vec<IdentityPublicKeyInCreationWASM> =
-            IdentityPublicKeyInCreationWASM::vec_from_js_value(js_add_public_keys)?;
+        let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
 
-        Ok(IdentityUpdateTransitionWASM(IdentityUpdateTransition::V0(
+        Ok(IdentityUpdateTransitionWasm(IdentityUpdateTransition::V0(
             IdentityUpdateTransitionV0 {
                 identity_id: identity_id.into(),
                 revision,
@@ -77,7 +77,7 @@ impl IdentityUpdateTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "identityIdentifier")]
-    pub fn get_identity_identifier(&self) -> IdentifierWASM {
+    pub fn get_identity_identifier(&self) -> IdentifierWasm {
         self.0.identity_id().into()
     }
 
@@ -86,12 +86,12 @@ impl IdentityUpdateTransitionWASM {
         self.0
             .purpose_requirement()
             .iter()
-            .map(|purpose| PurposeWASM::from(purpose.clone()).into())
+            .map(|purpose| PurposeWasm::from(purpose.clone()).into())
             .collect()
     }
 
     #[wasm_bindgen(js_name = "getModifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWASM> {
+    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -102,7 +102,7 @@ impl IdentityUpdateTransitionWASM {
     #[wasm_bindgen(js_name = "getOptionalAssetLockProof")]
     pub fn get_optional_asset_lock_proof(&self) -> JsValue {
         match self.0.optional_asset_lock_proof() {
-            Some(asset_lock) => JsValue::from(AssetLockProofWASM::from(asset_lock.clone())),
+            Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
             None => JsValue::null(),
         }
     }
@@ -113,7 +113,7 @@ impl IdentityUpdateTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "publicKeyIdsToAdd")]
-    pub fn get_public_key_ids_to_add(&self) -> Vec<IdentityPublicKeyInCreationWASM> {
+    pub fn get_public_key_ids_to_add(&self) -> Vec<IdentityPublicKeyInCreationWasm> {
         self.0
             .public_keys_to_add()
             .to_vec()
@@ -139,7 +139,7 @@ impl IdentityUpdateTransitionWASM {
 
     #[wasm_bindgen(setter = "identityIdentifier")]
     pub fn set_identity_identifier(&mut self, js_identity_id: &JsValue) -> Result<(), JsValue> {
-        let identity_id = IdentifierWASM::try_from(js_identity_id)?;
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
         self.0.set_identity_id(identity_id.clone().into());
         Ok(())
     }
@@ -149,8 +149,8 @@ impl IdentityUpdateTransitionWASM {
         &mut self,
         js_add_public_keys: &js_sys::Array,
     ) -> Result<(), JsValue> {
-        let add_public_keys: Vec<IdentityPublicKeyInCreationWASM> =
-            IdentityPublicKeyInCreationWASM::vec_from_js_value(js_add_public_keys)?;
+        let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
+            IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
 
         let keys: Vec<IdentityPublicKeyInCreation> =
             add_public_keys.iter().map(|id| id.clone().into()).collect();
@@ -194,17 +194,17 @@ impl IdentityUpdateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityUpdateTransitionWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
 
-        IdentityUpdateTransitionWASM::from_bytes(bytes)
+        IdentityUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityUpdateTransitionWASM, JsValue> {
+    pub fn from_base64(base64: String) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
 
-        IdentityUpdateTransitionWASM::from_bytes(bytes)
+        IdentityUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "bytes")]
@@ -229,26 +229,26 @@ impl IdentityUpdateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityUpdateTransitionWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let rs_transition =
             IdentityUpdateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(IdentityUpdateTransitionWASM(rs_transition))
+        Ok(IdentityUpdateTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
-    pub fn to_state_transition(&self) -> StateTransitionWASM {
-        StateTransitionWASM::from(StateTransition::from(self.0.clone()))
+    pub fn to_state_transition(&self) -> StateTransitionWasm {
+        StateTransitionWasm::from(StateTransition::from(self.0.clone()))
     }
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        st: &StateTransitionWASM,
-    ) -> Result<IdentityUpdateTransitionWASM, JsValue> {
+        st: &StateTransitionWasm,
+    ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
-            StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateTransitionWASM(st)),
+            StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateTransitionWasm(st)),
             _ => Err(JsValue::from_str(&"Invalid state transition type)")),
         }
     }

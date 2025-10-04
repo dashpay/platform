@@ -1,6 +1,6 @@
-use crate::asset_lock_proof::AssetLockProofWASM;
-use crate::identifier::IdentifierWASM;
-use crate::state_transition::StateTransitionWASM;
+use crate::asset_lock_proof::AssetLockProofWasm;
+use crate::identifier::IdentifierWasm;
+use crate::state_transition::StateTransitionWasm;
 use crate::utils::WithJsError;
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
@@ -17,10 +17,10 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityTopUpTransition")]
 #[derive(Clone)]
-pub struct IdentityTopUpTransitionWASM(IdentityTopUpTransition);
+pub struct IdentityTopUpTransitionWasm(IdentityTopUpTransition);
 
 #[wasm_bindgen(js_class = IdentityTopUpTransition)]
-impl IdentityTopUpTransitionWASM {
+impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityTopUpTransition".to_string()
@@ -33,13 +33,13 @@ impl IdentityTopUpTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        asset_lock_proof: &AssetLockProofWASM,
+        asset_lock_proof: &AssetLockProofWasm,
         js_identity_id: JsValue,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityTopUpTransitionWASM, JsValue> {
-        let identity_id: Identifier = IdentifierWASM::try_from(js_identity_id)?.into();
+    ) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+        let identity_id: Identifier = IdentifierWasm::try_from(js_identity_id)?.into();
 
-        Ok(IdentityTopUpTransitionWASM(IdentityTopUpTransition::V0(
+        Ok(IdentityTopUpTransitionWasm(IdentityTopUpTransition::V0(
             IdentityTopUpTransitionV0 {
                 asset_lock_proof: asset_lock_proof.clone().into(),
                 identity_id,
@@ -50,7 +50,7 @@ impl IdentityTopUpTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "getModifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWASM> {
+    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -61,7 +61,7 @@ impl IdentityTopUpTransitionWASM {
     #[wasm_bindgen(js_name = "getOptionalAssetLockProof")]
     pub fn get_optional_asset_lock_proof(&self) -> JsValue {
         match self.0.optional_asset_lock_proof() {
-            Some(asset_lock) => JsValue::from(AssetLockProofWASM::from(asset_lock.clone())),
+            Some(asset_lock) => JsValue::from(AssetLockProofWasm::from(asset_lock.clone())),
             None => JsValue::null(),
         }
     }
@@ -72,12 +72,12 @@ impl IdentityTopUpTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "identityIdentifier")]
-    pub fn get_identity_identifier(&self) -> IdentifierWASM {
+    pub fn get_identity_identifier(&self) -> IdentifierWasm {
         self.0.identity_id().clone().into()
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]
-    pub fn get_asset_lock_proof(&self) -> AssetLockProofWASM {
+    pub fn get_asset_lock_proof(&self) -> AssetLockProofWasm {
         self.0.asset_lock_proof().clone().into()
     }
 
@@ -92,14 +92,14 @@ impl IdentityTopUpTransitionWASM {
         js_identity_identifier: &JsValue,
     ) -> Result<(), JsValue> {
         let identity_identifier: Identifier =
-            IdentifierWASM::try_from(js_identity_identifier)?.into();
+            IdentifierWasm::try_from(js_identity_identifier)?.into();
         Ok(self.0.set_identity_id(identity_identifier.clone().into()))
     }
 
     #[wasm_bindgen(setter = "assetLockProof")]
     pub fn set_asset_lock_proof(
         &mut self,
-        asset_lock_proof: &AssetLockProofWASM,
+        asset_lock_proof: &AssetLockProofWasm,
     ) -> Result<(), JsValue> {
         self.0
             .set_asset_lock_proof(asset_lock_proof.clone().into())
@@ -143,38 +143,38 @@ impl IdentityTopUpTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityTopUpTransitionWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityTopUpTransitionWasm, JsValue> {
         let rs_transition =
             IdentityTopUpTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(IdentityTopUpTransitionWASM(rs_transition))
+        Ok(IdentityTopUpTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityTopUpTransitionWASM, JsValue> {
-        IdentityTopUpTransitionWASM::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
+    pub fn from_hex(hex: String) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+        IdentityTopUpTransitionWasm::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityTopUpTransitionWASM, JsValue> {
-        IdentityTopUpTransitionWASM::from_bytes(
+    pub fn from_base64(base64: String) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+        IdentityTopUpTransitionWasm::from_bytes(
             decode(base64.as_str(), Base64).map_err(JsError::from)?,
         )
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
-    pub fn to_state_transition(&self) -> StateTransitionWASM {
-        StateTransitionWASM::from(StateTransition::from(self.0.clone()))
+    pub fn to_state_transition(&self) -> StateTransitionWasm {
+        StateTransitionWasm::from(StateTransition::from(self.0.clone()))
     }
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        st: &StateTransitionWASM,
-    ) -> Result<IdentityTopUpTransitionWASM, JsValue> {
+        st: &StateTransitionWasm,
+    ) -> Result<IdentityTopUpTransitionWasm, JsValue> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
-            StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpTransitionWASM(st)),
+            StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpTransitionWasm(st)),
             _ => Err(JsValue::from_str(&"Invalid state transition type)")),
         }
     }

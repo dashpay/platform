@@ -1,4 +1,4 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::platform_value::string_encoding::encode;
@@ -7,22 +7,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "AuthorizedActionTakers")]
-pub struct AuthorizedActionTakersWASM(AuthorizedActionTakers);
+pub struct AuthorizedActionTakersWasm(AuthorizedActionTakers);
 
-impl From<AuthorizedActionTakers> for AuthorizedActionTakersWASM {
+impl From<AuthorizedActionTakers> for AuthorizedActionTakersWasm {
     fn from(action: AuthorizedActionTakers) -> Self {
-        AuthorizedActionTakersWASM(action)
+        AuthorizedActionTakersWasm(action)
     }
 }
 
-impl From<AuthorizedActionTakersWASM> for AuthorizedActionTakers {
-    fn from(action: AuthorizedActionTakersWASM) -> Self {
+impl From<AuthorizedActionTakersWasm> for AuthorizedActionTakers {
+    fn from(action: AuthorizedActionTakersWasm) -> Self {
         action.0
     }
 }
 
 #[wasm_bindgen(js_class = AuthorizedActionTakers)]
-impl AuthorizedActionTakersWASM {
+impl AuthorizedActionTakersWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "AuthorizedActionTakers".to_string()
@@ -35,31 +35,31 @@ impl AuthorizedActionTakersWASM {
 
     #[wasm_bindgen(js_name = "NoOne")]
     pub fn no_one() -> Self {
-        AuthorizedActionTakersWASM(AuthorizedActionTakers::NoOne)
+        AuthorizedActionTakersWasm(AuthorizedActionTakers::NoOne)
     }
 
     #[wasm_bindgen(js_name = "ContractOwner")]
     pub fn contract_owner() -> Self {
-        AuthorizedActionTakersWASM(AuthorizedActionTakers::ContractOwner)
+        AuthorizedActionTakersWasm(AuthorizedActionTakers::ContractOwner)
     }
 
     #[wasm_bindgen(js_name = "Identity")]
     pub fn identity(js_identity_id: &JsValue) -> Result<Self, JsValue> {
-        let identity_id = IdentifierWASM::try_from(js_identity_id)?;
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
-        Ok(AuthorizedActionTakersWASM(
+        Ok(AuthorizedActionTakersWasm(
             AuthorizedActionTakers::Identity(identity_id.into()),
         ))
     }
 
     #[wasm_bindgen(js_name = "MainGroup")]
     pub fn main_group() -> Self {
-        AuthorizedActionTakersWASM(AuthorizedActionTakers::MainGroup)
+        AuthorizedActionTakersWasm(AuthorizedActionTakers::MainGroup)
     }
 
     #[wasm_bindgen(js_name = "Group")]
     pub fn group(group_contract_position: u16) -> Self {
-        AuthorizedActionTakersWASM(AuthorizedActionTakers::Group(group_contract_position))
+        AuthorizedActionTakersWasm(AuthorizedActionTakers::Group(group_contract_position))
     }
 
     #[wasm_bindgen(js_name = "getTakerType")]
@@ -81,7 +81,7 @@ impl AuthorizedActionTakersWASM {
             AuthorizedActionTakers::NoOne => JsValue::undefined(),
             AuthorizedActionTakers::ContractOwner => JsValue::undefined(),
             AuthorizedActionTakers::Identity(identifier) => {
-                JsValue::from(IdentifierWASM::from(identifier))
+                JsValue::from(IdentifierWasm::from(identifier))
             }
             AuthorizedActionTakers::MainGroup => JsValue::undefined(),
             AuthorizedActionTakers::Group(position) => JsValue::from(position),

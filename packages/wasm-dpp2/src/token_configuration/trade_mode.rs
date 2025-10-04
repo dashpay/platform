@@ -3,22 +3,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenTradeMode")]
-pub struct TokenTradeModeWASM(TokenTradeMode);
+pub struct TokenTradeModeWasm(TokenTradeMode);
 
-impl From<TokenTradeMode> for TokenTradeModeWASM {
+impl From<TokenTradeMode> for TokenTradeModeWasm {
     fn from(trade_mode: TokenTradeMode) -> Self {
-        TokenTradeModeWASM(trade_mode)
+        TokenTradeModeWasm(trade_mode)
     }
 }
 
-impl From<TokenTradeModeWASM> for TokenTradeMode {
-    fn from(trade_mode: TokenTradeModeWASM) -> Self {
+impl From<TokenTradeModeWasm> for TokenTradeMode {
+    fn from(trade_mode: TokenTradeModeWasm) -> Self {
         trade_mode.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenTradeMode)]
-impl TokenTradeModeWASM {
+impl TokenTradeModeWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenTradeMode".to_string()
@@ -30,8 +30,8 @@ impl TokenTradeModeWASM {
     }
 
     #[wasm_bindgen(js_name = "NotTradeable")]
-    pub fn not_tradeable() -> TokenTradeModeWASM {
-        TokenTradeModeWASM(TokenTradeMode::NotTradeable)
+    pub fn not_tradeable() -> TokenTradeModeWasm {
+        TokenTradeModeWasm(TokenTradeMode::NotTradeable)
     }
 
     #[wasm_bindgen(js_name = "getValue")]

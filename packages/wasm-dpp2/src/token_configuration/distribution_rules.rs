@@ -1,7 +1,7 @@
-use crate::identifier::IdentifierWASM;
-use crate::token_configuration::change_control_rules::ChangeControlRulesWASM;
-use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWASM;
-use crate::token_configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWASM;
+use crate::identifier::IdentifierWasm;
+use crate::token_configuration::change_control_rules::ChangeControlRulesWasm;
+use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
+use crate::token_configuration::pre_programmed_distribution::TokenPreProgrammedDistributionWasm;
 use crate::utils::IntoWasm;
 use dpp::data_contract::associated_token::token_distribution_rules::TokenDistributionRules;
 use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::{
@@ -16,22 +16,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenDistributionRules")]
-pub struct TokenDistributionRulesWASM(TokenDistributionRules);
+pub struct TokenDistributionRulesWasm(TokenDistributionRules);
 
-impl From<TokenDistributionRulesWASM> for TokenDistributionRules {
-    fn from(rules: TokenDistributionRulesWASM) -> Self {
+impl From<TokenDistributionRulesWasm> for TokenDistributionRules {
+    fn from(rules: TokenDistributionRulesWasm) -> Self {
         rules.0
     }
 }
 
-impl From<TokenDistributionRules> for TokenDistributionRulesWASM {
+impl From<TokenDistributionRules> for TokenDistributionRulesWasm {
     fn from(rules: TokenDistributionRules) -> Self {
         Self(rules)
     }
 }
 
 #[wasm_bindgen(js_class = TokenDistributionRules)]
-impl TokenDistributionRulesWASM {
+impl TokenDistributionRulesWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenDistributionRules".to_string()
@@ -45,19 +45,19 @@ impl TokenDistributionRulesWASM {
     #[wasm_bindgen(constructor)]
     pub fn new(
         js_perpetual_distribution: &JsValue,
-        perpetual_distribution_rules: &ChangeControlRulesWASM,
+        perpetual_distribution_rules: &ChangeControlRulesWasm,
         js_pre_programmed_distribution: &JsValue,
         js_new_tokens_destination_identity: &JsValue,
-        new_tokens_destination_identity_rules: &ChangeControlRulesWASM,
+        new_tokens_destination_identity_rules: &ChangeControlRulesWasm,
         minting_allow_choosing_destination: bool,
-        minting_allow_choosing_destination_rules: &ChangeControlRulesWASM,
-        change_direct_purchase_pricing_rules: &ChangeControlRulesWASM,
-    ) -> Result<TokenDistributionRulesWASM, JsValue> {
+        minting_allow_choosing_destination_rules: &ChangeControlRulesWasm,
+        change_direct_purchase_pricing_rules: &ChangeControlRulesWasm,
+    ) -> Result<TokenDistributionRulesWasm, JsValue> {
         let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
                 js_perpetual_distribution
-                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")?
+                    .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
                     .clone(),
             )),
         };
@@ -66,7 +66,7 @@ impl TokenDistributionRulesWASM {
             true => None,
             false => Some(TokenPreProgrammedDistribution::from(
                 js_pre_programmed_distribution
-                    .to_wasm::<TokenPreProgrammedDistributionWASM>(
+                    .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
                     .clone(),
@@ -76,12 +76,12 @@ impl TokenDistributionRulesWASM {
         let new_tokens_destination_identity =
             match js_new_tokens_destination_identity.is_undefined() {
                 true => None,
-                false => Some(Identifier::from(IdentifierWASM::try_from(
+                false => Some(Identifier::from(IdentifierWasm::try_from(
                     js_new_tokens_destination_identity,
                 )?)),
             };
 
-        Ok(TokenDistributionRulesWASM(TokenDistributionRules::V0(
+        Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
             TokenDistributionRulesV0 {
                 perpetual_distribution,
                 perpetual_distribution_rules: perpetual_distribution_rules.clone().into(),
@@ -102,7 +102,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "perpetualDistribution")]
-    pub fn get_perpetual_distribution(&self) -> Option<TokenPerpetualDistributionWASM> {
+    pub fn get_perpetual_distribution(&self) -> Option<TokenPerpetualDistributionWasm> {
         match self.0.perpetual_distribution() {
             Some(perp) => Some(perp.clone().into()),
             None => None,
@@ -110,12 +110,12 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "perpetualDistributionRules")]
-    pub fn get_perpetual_distribution_rules(&self) -> ChangeControlRulesWASM {
+    pub fn get_perpetual_distribution_rules(&self) -> ChangeControlRulesWasm {
         self.0.perpetual_distribution_rules().clone().into()
     }
 
     #[wasm_bindgen(getter = "preProgrammedDistribution")]
-    pub fn get_pre_programmed_distribution(&self) -> Option<TokenPreProgrammedDistributionWASM> {
+    pub fn get_pre_programmed_distribution(&self) -> Option<TokenPreProgrammedDistributionWasm> {
         match self.0.pre_programmed_distribution() {
             Some(pre) => Some(pre.clone().into()),
             None => None,
@@ -123,7 +123,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentity")]
-    pub fn get_new_tokens_destination_identity(&self) -> Option<IdentifierWASM> {
+    pub fn get_new_tokens_destination_identity(&self) -> Option<IdentifierWasm> {
         match self.0.new_tokens_destination_identity().clone() {
             Some(id) => Some(id.clone().into()),
             None => None,
@@ -131,7 +131,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentityRules")]
-    pub fn get_new_tokens_destination_identity_rules(&self) -> ChangeControlRulesWASM {
+    pub fn get_new_tokens_destination_identity_rules(&self) -> ChangeControlRulesWasm {
         self.0
             .new_tokens_destination_identity_rules()
             .clone()
@@ -144,7 +144,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "mintingAllowChoosingDestinationRules")]
-    pub fn get_minting_allow_choosing_destination_rules(&self) -> ChangeControlRulesWASM {
+    pub fn get_minting_allow_choosing_destination_rules(&self) -> ChangeControlRulesWasm {
         self.0
             .minting_allow_choosing_destination_rules()
             .clone()
@@ -152,7 +152,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(getter = "changeDirectPurchasePricingRules")]
-    pub fn get_change_direct_purchase_pricing_rules(&self) -> ChangeControlRulesWASM {
+    pub fn get_change_direct_purchase_pricing_rules(&self) -> ChangeControlRulesWasm {
         self.0.change_direct_purchase_pricing_rules().clone().into()
     }
 
@@ -165,7 +165,7 @@ impl TokenDistributionRulesWASM {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
                 js_perpetual_distribution
-                    .to_wasm::<TokenPerpetualDistributionWASM>("TokenPerpetualDistribution")?
+                    .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
                     .clone(),
             )),
         };
@@ -174,7 +174,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(setter = "perpetualDistributionRules")]
-    pub fn set_perpetual_distribution_rules(&mut self, rules: &ChangeControlRulesWASM) {
+    pub fn set_perpetual_distribution_rules(&mut self, rules: &ChangeControlRulesWasm) {
         self.0
             .set_perpetual_distribution_rules(rules.clone().into())
     }
@@ -188,7 +188,7 @@ impl TokenDistributionRulesWASM {
             true => None,
             false => Some(TokenPreProgrammedDistribution::from(
                 js_distribution
-                    .to_wasm::<TokenPreProgrammedDistributionWASM>(
+                    .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
                     .clone(),
@@ -206,7 +206,7 @@ impl TokenDistributionRulesWASM {
         let identifier = match js_identifier.is_undefined() {
             true => None,
             false => Some(Identifier::from(
-                IdentifierWASM::try_from(js_identifier)?.clone(),
+                IdentifierWasm::try_from(js_identifier)?.clone(),
             )),
         };
 
@@ -214,7 +214,7 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(setter = "newTokenDestinationIdentityRules")]
-    pub fn set_new_tokens_destination_identity_rules(&mut self, rules: &ChangeControlRulesWASM) {
+    pub fn set_new_tokens_destination_identity_rules(&mut self, rules: &ChangeControlRulesWasm) {
         self.0
             .set_new_tokens_destination_identity_rules(rules.clone().into());
     }
@@ -225,13 +225,13 @@ impl TokenDistributionRulesWASM {
     }
 
     #[wasm_bindgen(setter = "mintingAllowChoosingDestinationRules")]
-    pub fn set_minting_allow_choosing_destination_rules(&mut self, rules: &ChangeControlRulesWASM) {
+    pub fn set_minting_allow_choosing_destination_rules(&mut self, rules: &ChangeControlRulesWasm) {
         self.0
             .set_minting_allow_choosing_destination_rules(rules.clone().into());
     }
 
     #[wasm_bindgen(setter = "changeDirectPurchasePricingRules")]
-    pub fn set_change_direct_purchase_pricing_rules(&mut self, rules: &ChangeControlRulesWASM) {
+    pub fn set_change_direct_purchase_pricing_rules(&mut self, rules: &ChangeControlRulesWasm) {
         self.0
             .set_change_direct_purchase_pricing_rules(rules.clone().into());
     }

@@ -1,4 +1,4 @@
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
 use js_sys::Array;
@@ -8,22 +8,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ActionTaker")]
-pub struct ActionTakerWASM(ActionTaker);
+pub struct ActionTakerWasm(ActionTaker);
 
-impl From<ActionTaker> for ActionTakerWASM {
+impl From<ActionTaker> for ActionTakerWasm {
     fn from(action_taker: ActionTaker) -> Self {
-        ActionTakerWASM(action_taker)
+        ActionTakerWasm(action_taker)
     }
 }
 
-impl From<ActionTakerWASM> for ActionTaker {
-    fn from(action_taker: ActionTakerWASM) -> Self {
+impl From<ActionTakerWasm> for ActionTaker {
+    fn from(action_taker: ActionTakerWasm) -> Self {
         action_taker.0
     }
 }
 
 #[wasm_bindgen(js_class = ActionTaker)]
-impl ActionTakerWASM {
+impl ActionTakerWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "ActionTaker".to_string()
@@ -35,23 +35,23 @@ impl ActionTakerWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(value: &JsValue) -> Result<ActionTakerWASM, JsValue> {
-        let identifier = IdentifierWASM::try_from(value);
+    pub fn new(value: &JsValue) -> Result<ActionTakerWasm, JsValue> {
+        let identifier = IdentifierWasm::try_from(value);
 
         if identifier.is_err() {
             let set_of_identifiers: Vec<Identifier> = Array::from(value)
                 .to_vec()
                 .iter()
                 .map(|js_value: &JsValue| {
-                    Identifier::from(IdentifierWASM::try_from(js_value).expect("err"))
+                    Identifier::from(IdentifierWasm::try_from(js_value).expect("err"))
                 })
                 .collect();
 
-            Ok(ActionTakerWASM(ActionTaker::SpecifiedIdentities(
+            Ok(ActionTakerWasm(ActionTaker::SpecifiedIdentities(
                 BTreeSet::from_iter(set_of_identifiers),
             )))
         } else {
-            Ok(ActionTakerWASM(ActionTaker::SingleIdentity(
+            Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
                 identifier?.into(),
             )))
         }
@@ -69,12 +69,12 @@ impl ActionTakerWASM {
     pub fn get_value(&self) -> JsValue {
         match &self.0 {
             ActionTaker::SingleIdentity(value) => {
-                JsValue::from(IdentifierWASM::from(value.clone()))
+                JsValue::from(IdentifierWasm::from(value.clone()))
             }
             ActionTaker::SpecifiedIdentities(value) => {
-                let identifiers: Vec<IdentifierWASM> = value
+                let identifiers: Vec<IdentifierWasm> = value
                     .iter()
-                    .map(|identifier: &Identifier| IdentifierWASM::from(identifier.clone()))
+                    .map(|identifier: &Identifier| IdentifierWasm::from(identifier.clone()))
                     .collect();
 
                 JsValue::from(identifiers)

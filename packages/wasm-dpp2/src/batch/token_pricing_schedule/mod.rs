@@ -9,22 +9,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "TokenPricingSchedule")]
-pub struct TokenPricingScheduleWASM(TokenPricingSchedule);
+pub struct TokenPricingScheduleWasm(TokenPricingSchedule);
 
-impl From<TokenPricingScheduleWASM> for TokenPricingSchedule {
-    fn from(schedule: TokenPricingScheduleWASM) -> Self {
+impl From<TokenPricingScheduleWasm> for TokenPricingSchedule {
+    fn from(schedule: TokenPricingScheduleWasm) -> Self {
         schedule.0
     }
 }
 
-impl From<TokenPricingSchedule> for TokenPricingScheduleWASM {
+impl From<TokenPricingSchedule> for TokenPricingScheduleWasm {
     fn from(schedule: TokenPricingSchedule) -> Self {
-        TokenPricingScheduleWASM(schedule)
+        TokenPricingScheduleWasm(schedule)
     }
 }
 
 #[wasm_bindgen(js_class = TokenPricingSchedule)]
-impl TokenPricingScheduleWASM {
+impl TokenPricingScheduleWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenPricingSchedule".to_string()
@@ -41,7 +41,7 @@ impl TokenPricingScheduleWASM {
     }
 
     #[wasm_bindgen(js_name = "SetPrices")]
-    pub fn set_prices(js_prices: &JsValue) -> Result<TokenPricingScheduleWASM, JsValue> {
+    pub fn set_prices(js_prices: &JsValue) -> Result<TokenPricingScheduleWasm, JsValue> {
         let prices: BTreeMap<TokenAmount, Credits> = js_prices
             .with_serde_to_platform_value_map()?
             .iter()

@@ -1,6 +1,6 @@
 pub mod methods;
 
-use crate::identifier::IdentifierWASM;
+use crate::identifier::IdentifierWasm;
 use dpp::document::{Document, DocumentV0, DocumentV0Getters};
 use dpp::identifier::Identifier;
 use dpp::identity::TimestampMillis;
@@ -11,11 +11,11 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = Document)]
-pub struct DocumentWASM {
-    id: IdentifierWASM,
-    owner_id: IdentifierWASM,
+pub struct DocumentWasm {
+    id: IdentifierWasm,
+    owner_id: IdentifierWasm,
     revision: Option<Revision>,
-    data_contract_id: IdentifierWASM,
+    data_contract_id: IdentifierWasm,
     document_type_name: String,
     properties: BTreeMap<String, Value>,
     created_at: Option<TimestampMillis>,
@@ -30,8 +30,8 @@ pub struct DocumentWASM {
     entropy: Option<[u8; 32]>,
 }
 
-impl From<DocumentWASM> for Document {
-    fn from(wasm_doc: DocumentWASM) -> Self {
+impl From<DocumentWasm> for Document {
+    fn from(wasm_doc: DocumentWasm) -> Self {
         Document::V0(DocumentV0 {
             id: wasm_doc.id.into(),
             owner_id: wasm_doc.owner_id.into(),
@@ -50,9 +50,9 @@ impl From<DocumentWASM> for Document {
     }
 }
 
-impl From<Document> for DocumentWASM {
+impl From<Document> for DocumentWasm {
     fn from(doc: Document) -> Self {
-        DocumentWASM {
+        DocumentWasm {
             id: doc.id().into(),
             owner_id: doc.owner_id().into(),
             revision: doc.revision(),
@@ -73,14 +73,14 @@ impl From<Document> for DocumentWASM {
     }
 }
 
-impl DocumentWASM {
+impl DocumentWasm {
     pub fn from_batch(
         document: Document,
         data_contract_id: Identifier,
         document_type_name: String,
         entropy: Option<[u8; 32]>,
     ) -> Self {
-        DocumentWASM {
+        DocumentWasm {
             id: document.id().into(),
             owner_id: document.owner_id().into(),
             revision: document.revision(),

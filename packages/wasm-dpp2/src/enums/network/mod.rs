@@ -3,24 +3,24 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(js_name = "Network")]
 #[allow(non_camel_case_types)]
-pub enum NetworkWASM {
+pub enum NetworkWasm {
     Mainnet = 0,
     Testnet = 1,
     Devnet = 2,
     Regtest = 3,
 }
 
-impl TryFrom<JsValue> for NetworkWASM {
+impl TryFrom<JsValue> for NetworkWasm {
     type Error = JsValue;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "mainnet" => Ok(NetworkWASM::Mainnet),
-                    "testnet" => Ok(NetworkWASM::Testnet),
-                    "devnet" => Ok(NetworkWASM::Devnet),
-                    "regtest" => Ok(NetworkWASM::Regtest),
+                    "mainnet" => Ok(NetworkWasm::Mainnet),
+                    "testnet" => Ok(NetworkWasm::Testnet),
+                    "devnet" => Ok(NetworkWasm::Devnet),
+                    "regtest" => Ok(NetworkWasm::Regtest),
                     _ => Err(JsValue::from(format!(
                         "unsupported network name ({})",
                         enum_val
@@ -30,10 +30,10 @@ impl TryFrom<JsValue> for NetworkWASM {
             false => match value.as_f64() {
                 None => Err(JsValue::from("cannot read value from enum")),
                 Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(NetworkWASM::Mainnet),
-                    1 => Ok(NetworkWASM::Testnet),
-                    2 => Ok(NetworkWASM::Devnet),
-                    3 => Ok(NetworkWASM::Regtest),
+                    0 => Ok(NetworkWasm::Mainnet),
+                    1 => Ok(NetworkWasm::Testnet),
+                    2 => Ok(NetworkWasm::Devnet),
+                    3 => Ok(NetworkWasm::Regtest),
                     _ => Err(JsValue::from(format!(
                         "unsupported network name ({})",
                         enum_val
@@ -44,24 +44,24 @@ impl TryFrom<JsValue> for NetworkWASM {
     }
 }
 
-impl From<NetworkWASM> for String {
-    fn from(value: NetworkWASM) -> Self {
+impl From<NetworkWasm> for String {
+    fn from(value: NetworkWasm) -> Self {
         match value {
-            NetworkWASM::Mainnet => "Mainnet".to_string(),
-            NetworkWASM::Testnet => "Testnet".to_string(),
-            NetworkWASM::Devnet => "Devnet".to_string(),
-            NetworkWASM::Regtest => "Regtest".to_string(),
+            NetworkWasm::Mainnet => "Mainnet".to_string(),
+            NetworkWasm::Testnet => "Testnet".to_string(),
+            NetworkWasm::Devnet => "Devnet".to_string(),
+            NetworkWasm::Regtest => "Regtest".to_string(),
         }
     }
 }
 
-impl From<NetworkWASM> for Network {
-    fn from(network: NetworkWASM) -> Self {
+impl From<NetworkWasm> for Network {
+    fn from(network: NetworkWasm) -> Self {
         match network {
-            NetworkWASM::Mainnet => Network::Dash,
-            NetworkWASM::Testnet => Network::Testnet,
-            NetworkWASM::Devnet => Network::Devnet,
-            NetworkWASM::Regtest => Network::Regtest,
+            NetworkWasm::Mainnet => Network::Dash,
+            NetworkWasm::Testnet => Network::Testnet,
+            NetworkWasm::Devnet => Network::Devnet,
+            NetworkWasm::Regtest => Network::Regtest,
         }
     }
 }

@@ -1,5 +1,5 @@
-use crate::batch::document_base_transition::DocumentBaseTransitionWASM;
-use crate::batch::document_transition::DocumentTransitionWASM;
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_create_transition;
 use dpp::dashcore::hashes::serde::Serialize;
 use dpp::prelude::IdentityNonce;
@@ -7,31 +7,31 @@ use dpp::state_transition::batch_transition::batched_transition::document_transi
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::DocumentCreateTransition;
-use crate::document::DocumentWASM;
+use crate::document::DocumentWasm;
 use crate::utils::{IntoWasm, ToSerdeJSONExt};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWASM;
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
+use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
 
 #[wasm_bindgen(js_name = "DocumentCreateTransition")]
 #[derive(Clone)]
-pub struct DocumentCreateTransitionWASM(DocumentCreateTransition);
+pub struct DocumentCreateTransitionWasm(DocumentCreateTransition);
 
-impl From<DocumentCreateTransitionWASM> for DocumentCreateTransition {
-    fn from(transition: DocumentCreateTransitionWASM) -> Self {
+impl From<DocumentCreateTransitionWasm> for DocumentCreateTransition {
+    fn from(transition: DocumentCreateTransitionWasm) -> Self {
         transition.0
     }
 }
 
-impl From<DocumentCreateTransition> for DocumentCreateTransitionWASM {
+impl From<DocumentCreateTransition> for DocumentCreateTransitionWasm {
     fn from(transition: DocumentCreateTransition) -> Self {
-        DocumentCreateTransitionWASM(transition)
+        DocumentCreateTransitionWasm(transition)
     }
 }
 
 #[wasm_bindgen(js_class = DocumentCreateTransition)]
-impl DocumentCreateTransitionWASM {
+impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentCreateTransition".to_string()
@@ -44,18 +44,18 @@ impl DocumentCreateTransitionWASM {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
-        document: &DocumentWASM,
+        document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_prefunded_voting_balance: &JsValue,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentCreateTransitionWASM, JsValue> {
+    ) -> Result<DocumentCreateTransitionWasm, JsValue> {
         let prefunded_voting_balance = match js_prefunded_voting_balance.is_undefined()
             | js_prefunded_voting_balance.is_null()
         {
             true => None,
             false => Some(
                 js_prefunded_voting_balance
-                    .to_wasm::<PrefundedVotingBalanceWASM>("PrefundedVotingBalance")?
+                    .to_wasm::<PrefundedVotingBalanceWasm>("PrefundedVotingBalance")?
                     .clone(),
             ),
         };
@@ -65,7 +65,7 @@ impl DocumentCreateTransitionWASM {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone(),
                 ),
             };
@@ -78,7 +78,7 @@ impl DocumentCreateTransitionWASM {
             token_payment_info,
         );
 
-        Ok(DocumentCreateTransitionWASM(rs_create_transition))
+        Ok(DocumentCreateTransitionWasm(rs_create_transition))
     }
 
     #[wasm_bindgen(getter = "data")]
@@ -89,7 +89,7 @@ impl DocumentCreateTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "base")]
-    pub fn get_base(&self) -> DocumentBaseTransitionWASM {
+    pub fn get_base(&self) -> DocumentBaseTransitionWasm {
         self.0.base().clone().into()
     }
 
@@ -106,7 +106,7 @@ impl DocumentCreateTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "base")]
-    pub fn set_base(&mut self, base: &DocumentBaseTransitionWASM) {
+    pub fn set_base(&mut self, base: &DocumentBaseTransitionWasm) {
         self.0.set_base(base.clone().into())
     }
 
@@ -121,7 +121,7 @@ impl DocumentCreateTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "prefundedVotingBalance")]
-    pub fn get_prefunded_voting_balance(&self) -> Option<PrefundedVotingBalanceWASM> {
+    pub fn get_prefunded_voting_balance(&self) -> Option<PrefundedVotingBalanceWasm> {
         let rs_balance = self.0.prefunded_voting_balance();
 
         match rs_balance {
@@ -133,7 +133,7 @@ impl DocumentCreateTransitionWASM {
     #[wasm_bindgen(setter = "prefundedVotingBalance")]
     pub fn set_prefunded_voting_balance(
         &mut self,
-        prefunded_voting_balance: &PrefundedVotingBalanceWASM,
+        prefunded_voting_balance: &PrefundedVotingBalanceWasm,
     ) {
         self.0.set_prefunded_voting_balance(
             prefunded_voting_balance.index_name(),
@@ -147,16 +147,16 @@ impl DocumentCreateTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "toDocumentTransition")]
-    pub fn to_document_transition(&self) -> DocumentTransitionWASM {
+    pub fn to_document_transition(&self) -> DocumentTransitionWasm {
         let rs_transition = DocumentTransition::from(self.0.clone());
 
-        DocumentTransitionWASM::from(rs_transition)
+        DocumentTransitionWasm::from(rs_transition)
     }
 
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
-        js_transition: DocumentTransitionWASM,
-    ) -> Result<DocumentCreateTransitionWASM, JsValue> {
+        js_transition: DocumentTransitionWasm,
+    ) -> Result<DocumentCreateTransitionWasm, JsValue> {
         js_transition.get_create_transition()
     }
 }

@@ -4,22 +4,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "SharedEncryptedNote")]
-pub struct SharedEncryptedNoteWASM(SharedEncryptedNote);
+pub struct SharedEncryptedNoteWasm(SharedEncryptedNote);
 
-impl From<SharedEncryptedNote> for SharedEncryptedNoteWASM {
+impl From<SharedEncryptedNote> for SharedEncryptedNoteWasm {
     fn from(note: SharedEncryptedNote) -> Self {
         Self(note)
     }
 }
 
-impl From<SharedEncryptedNoteWASM> for SharedEncryptedNote {
-    fn from(note: SharedEncryptedNoteWASM) -> Self {
+impl From<SharedEncryptedNoteWasm> for SharedEncryptedNote {
+    fn from(note: SharedEncryptedNoteWasm) -> Self {
         note.0
     }
 }
 
 #[wasm_bindgen(js_class = SharedEncryptedNote)]
-impl SharedEncryptedNoteWASM {
+impl SharedEncryptedNoteWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "SharedEncryptedNote".to_string()
@@ -36,7 +36,7 @@ impl SharedEncryptedNoteWASM {
         recipient_key_index: RecipientKeyIndex,
         value: Vec<u8>,
     ) -> Self {
-        SharedEncryptedNoteWASM((sender_key_index, recipient_key_index, value))
+        SharedEncryptedNoteWasm((sender_key_index, recipient_key_index, value))
     }
 
     #[wasm_bindgen(getter = "senderKeyIndex")]

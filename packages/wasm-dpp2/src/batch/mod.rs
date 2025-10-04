@@ -1,7 +1,7 @@
-use crate::batch::batched_transition::BatchedTransitionWASM;
-use crate::batch::document_transition::DocumentTransitionWASM;
-use crate::identifier::IdentifierWASM;
-use crate::state_transition::StateTransitionWASM;
+use crate::batch::batched_transition::BatchedTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
+use crate::identifier::IdentifierWasm;
+use crate::state_transition::StateTransitionWasm;
 use crate::utils::{IntoWasm, WithJsError};
 use dpp::fee::Credits;
 use dpp::identity::KeyID;
@@ -35,16 +35,16 @@ pub mod token_transitions;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=BatchTransition)]
-pub struct BatchTransitionWASM(BatchTransition);
+pub struct BatchTransitionWasm(BatchTransition);
 
-impl From<BatchTransition> for BatchTransitionWASM {
+impl From<BatchTransition> for BatchTransitionWasm {
     fn from(batch: BatchTransition) -> Self {
-        BatchTransitionWASM(batch)
+        BatchTransitionWasm(batch)
     }
 }
 
-impl From<BatchTransitionWASM> for BatchTransition {
-    fn from(batch: BatchTransitionWASM) -> Self {
+impl From<BatchTransitionWasm> for BatchTransition {
+    fn from(batch: BatchTransitionWasm) -> Self {
         batch.0
     }
 }
@@ -54,8 +54,8 @@ fn convert_array_to_vec_batched(js_batched_transitions: &js_sys::Array) -> Vec<B
         .clone()
         .iter()
         .map(|js_batched_transition| {
-            let batched_transition: BatchedTransitionWASM = js_batched_transition
-                .to_wasm::<BatchedTransitionWASM>("BatchedTransition")
+            let batched_transition: BatchedTransitionWasm = js_batched_transition
+                .to_wasm::<BatchedTransitionWasm>("BatchedTransition")
                 .unwrap()
                 .clone();
             BatchedTransition::from(batched_transition)
@@ -64,7 +64,7 @@ fn convert_array_to_vec_batched(js_batched_transitions: &js_sys::Array) -> Vec<B
 }
 
 #[wasm_bindgen(js_class = BatchTransition)]
-impl BatchTransitionWASM {
+impl BatchTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "BatchTransition".to_string()
@@ -82,12 +82,12 @@ impl BatchTransitionWASM {
         user_fee_increase: UserFeeIncrease,
         signature_public_key_id: Option<u32>,
         signature: Option<Vec<u8>>,
-    ) -> Result<BatchTransitionWASM, JsValue> {
+    ) -> Result<BatchTransitionWasm, JsValue> {
         let transitions = convert_array_to_vec_batched(&js_batched_transitions);
 
-        Ok(BatchTransitionWASM(BatchTransition::V1(
+        Ok(BatchTransitionWasm(BatchTransition::V1(
             BatchTransitionV1 {
-                owner_id: IdentifierWASM::try_from(owner_id)?.into(),
+                owner_id: IdentifierWasm::try_from(owner_id)?.into(),
                 transitions,
                 user_fee_increase,
                 signature_public_key_id: signature_public_key_id.unwrap_or(0u32),
@@ -103,15 +103,15 @@ impl BatchTransitionWASM {
         user_fee_increase: Option<UserFeeIncrease>,
         signature_public_key_id: Option<KeyID>,
         signature: Option<Vec<u8>>,
-    ) -> Result<BatchTransitionWASM, JsValue> {
-        let owner_id = IdentifierWASM::try_from(js_owner_id)?;
+    ) -> Result<BatchTransitionWasm, JsValue> {
+        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
 
         let transitions: Vec<DocumentTransition> = document_transitions
             .clone()
             .iter()
             .map(|js_document_transition| {
-                let document_transition: DocumentTransitionWASM = js_document_transition
-                    .to_wasm::<DocumentTransitionWASM>("DocumentTransition")
+                let document_transition: DocumentTransitionWasm = js_document_transition
+                    .to_wasm::<DocumentTransitionWasm>("DocumentTransition")
                     .unwrap()
                     .clone();
 
@@ -119,7 +119,7 @@ impl BatchTransitionWASM {
             })
             .collect();
 
-        Ok(BatchTransitionWASM(BatchTransition::V0(
+        Ok(BatchTransitionWasm(BatchTransition::V0(
             BatchTransitionV0 {
                 owner_id: owner_id.into(),
                 transitions,
@@ -131,10 +131,10 @@ impl BatchTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "transitions")]
-    pub fn get_transitions(&self) -> Vec<BatchedTransitionWASM> {
+    pub fn get_transitions(&self) -> Vec<BatchedTransitionWasm> {
         self.0
             .transitions_iter()
-            .map(|transition| BatchedTransitionWASM::from(transition.to_owned_transition()))
+            .map(|transition| BatchedTransitionWasm::from(transition.to_owned_transition()))
             .collect()
     }
 
@@ -161,12 +161,12 @@ impl BatchTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "ownerId")]
-    pub fn get_owner_id(&self) -> IdentifierWASM {
+    pub fn get_owner_id(&self) -> IdentifierWasm {
         self.0.owner_id().into()
     }
 
     #[wasm_bindgen(getter = "modifiedDataIds")]
-    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWASM> {
+    pub fn get_modified_data_ids(&self) -> Vec<IdentifierWasm> {
         self.0
             .modified_data_ids()
             .iter()
@@ -199,20 +199,20 @@ impl BatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
-    pub fn to_state_transition(&self) -> StateTransitionWASM {
+    pub fn to_state_transition(&self) -> StateTransitionWasm {
         let st = StateTransition::from(self.0.clone());
 
-        StateTransitionWASM::from(st)
+        StateTransitionWasm::from(st)
     }
 
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
-        state_transition: &StateTransitionWASM,
-    ) -> Result<BatchTransitionWASM, JsValue> {
+        state_transition: &StateTransitionWasm,
+    ) -> Result<BatchTransitionWasm, JsValue> {
         let rs_transition: StateTransition = StateTransition::from(state_transition.clone());
 
         match rs_transition {
-            StateTransition::Batch(batch) => Ok(BatchTransitionWASM(batch)),
+            StateTransition::Batch(batch) => Ok(BatchTransitionWasm(batch)),
             _ => Err(JsValue::from("invalid state document_transition content")),
         }
     }
@@ -241,19 +241,19 @@ impl BatchTransitionWASM {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<BatchTransitionWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<BatchTransitionWasm, JsValue> {
         let rs_batch = BatchTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(BatchTransitionWASM::from(rs_batch))
+        Ok(BatchTransitionWasm::from(rs_batch))
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<BatchTransitionWASM, JsValue> {
-        BatchTransitionWASM::from_bytes(decode(base64.as_str(), Base64).map_err(JsError::from)?)
+    pub fn from_base64(base64: String) -> Result<BatchTransitionWasm, JsValue> {
+        BatchTransitionWasm::from_bytes(decode(base64.as_str(), Base64).map_err(JsError::from)?)
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<BatchTransitionWASM, JsValue> {
-        BatchTransitionWASM::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
+    pub fn from_hex(hex: String) -> Result<BatchTransitionWasm, JsValue> {
+        BatchTransitionWasm::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
     }
 }

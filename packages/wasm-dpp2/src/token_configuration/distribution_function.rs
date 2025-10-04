@@ -1,7 +1,7 @@
 use crate::token_configuration::distribution_structs::{
-    DistributionExponentialWASM, DistributionFixedAmountWASM, DistributionInvertedLogarithmicWASM,
-    DistributionLinearWASM, DistributionLogarithmicWASM, DistributionPolynomialWASM,
-    DistributionRandomWASM, DistributionStepDecreasingAmountWASM,
+    DistributionExponentialWasm, DistributionFixedAmountWasm, DistributionInvertedLogarithmicWasm,
+    DistributionLinearWasm, DistributionLogarithmicWasm, DistributionPolynomialWasm,
+    DistributionRandomWasm, DistributionStepDecreasingAmountWasm,
 };
 use crate::utils::try_to_u64;
 use dpp::balances::credits::TokenAmount;
@@ -14,22 +14,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "DistributionFunction")]
-pub struct DistributionFunctionWASM(DistributionFunction);
+pub struct DistributionFunctionWasm(DistributionFunction);
 
-impl From<DistributionFunctionWASM> for DistributionFunction {
-    fn from(function: DistributionFunctionWASM) -> Self {
+impl From<DistributionFunctionWasm> for DistributionFunction {
+    fn from(function: DistributionFunctionWasm) -> Self {
         function.0
     }
 }
 
-impl From<DistributionFunction> for DistributionFunctionWASM {
+impl From<DistributionFunction> for DistributionFunctionWasm {
     fn from(function: DistributionFunction) -> Self {
         Self(function)
     }
 }
 
 #[wasm_bindgen(js_class = DistributionFunction)]
-impl DistributionFunctionWASM {
+impl DistributionFunctionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DistributionFunction".to_string()
@@ -41,13 +41,13 @@ impl DistributionFunctionWASM {
     }
 
     #[wasm_bindgen(js_name = "FixedAmountDistribution")]
-    pub fn fixed_amount_distribution(amount: TokenAmount) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::FixedAmount { amount })
+    pub fn fixed_amount_distribution(amount: TokenAmount) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::FixedAmount { amount })
     }
 
     #[wasm_bindgen(js_name = "Random")]
     pub fn random(min: TokenAmount, max: TokenAmount) -> Self {
-        DistributionFunctionWASM(DistributionFunction::Random { min, max })
+        DistributionFunctionWasm(DistributionFunction::Random { min, max })
     }
 
     #[wasm_bindgen(js_name = "StepDecreasingAmount")]
@@ -61,7 +61,7 @@ impl DistributionFunctionWASM {
         trailing_distribution_interval_amount: TokenAmount,
         min_value: Option<u64>,
     ) -> Self {
-        DistributionFunctionWASM(DistributionFunction::StepDecreasingAmount {
+        DistributionFunctionWasm(DistributionFunction::StepDecreasingAmount {
             step_count,
             decrease_per_interval_numerator,
             decrease_per_interval_denominator,
@@ -74,7 +74,7 @@ impl DistributionFunctionWASM {
     }
 
     #[wasm_bindgen(js_name = "Stepwise")]
-    pub fn stepwise(js_steps_with_amount: JsValue) -> Result<DistributionFunctionWASM, JsValue> {
+    pub fn stepwise(js_steps_with_amount: JsValue) -> Result<DistributionFunctionWasm, JsValue> {
         let obj = Object::from(js_steps_with_amount);
 
         let mut steps_with_amount: BTreeMap<u64, TokenAmount> = BTreeMap::new();
@@ -88,7 +88,7 @@ impl DistributionFunctionWASM {
             );
         }
 
-        Ok(DistributionFunctionWASM(DistributionFunction::Stepwise(
+        Ok(DistributionFunctionWasm(DistributionFunction::Stepwise(
             steps_with_amount,
         )))
     }
@@ -101,8 +101,8 @@ impl DistributionFunctionWASM {
         starting_amount: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
-    ) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::Linear {
+    ) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::Linear {
             a,
             d,
             start_step,
@@ -123,8 +123,8 @@ impl DistributionFunctionWASM {
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
-    ) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::Polynomial {
+    ) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::Polynomial {
             a,
             d,
             m,
@@ -148,8 +148,8 @@ impl DistributionFunctionWASM {
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
-    ) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::Exponential {
+    ) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::Exponential {
             a,
             d,
             m,
@@ -173,8 +173,8 @@ impl DistributionFunctionWASM {
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
-    ) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::Logarithmic {
+    ) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::Logarithmic {
             a,
             d,
             m,
@@ -198,8 +198,8 @@ impl DistributionFunctionWASM {
         b: TokenAmount,
         min_value: Option<u64>,
         max_value: Option<u64>,
-    ) -> DistributionFunctionWASM {
-        DistributionFunctionWASM(DistributionFunction::InvertedLogarithmic {
+    ) -> DistributionFunctionWasm {
+        DistributionFunctionWasm(DistributionFunction::InvertedLogarithmic {
             a,
             d,
             m,
@@ -233,10 +233,10 @@ impl DistributionFunctionWASM {
     pub fn get_function_values(&self) -> Result<JsValue, JsValue> {
         match self.0.clone() {
             DistributionFunction::FixedAmount { amount } => {
-                Ok(JsValue::from(DistributionFixedAmountWASM { amount }))
+                Ok(JsValue::from(DistributionFixedAmountWasm { amount }))
             }
             DistributionFunction::Random { min, max } => {
-                Ok(JsValue::from(DistributionRandomWASM { min, max }))
+                Ok(JsValue::from(DistributionRandomWasm { min, max }))
             }
             DistributionFunction::StepDecreasingAmount {
                 step_count,
@@ -247,7 +247,7 @@ impl DistributionFunctionWASM {
                 distribution_start_amount,
                 trailing_distribution_interval_amount,
                 min_value,
-            } => Ok(JsValue::from(DistributionStepDecreasingAmountWASM {
+            } => Ok(JsValue::from(DistributionStepDecreasingAmountWasm {
                 step_count,
                 decrease_per_interval_numerator,
                 decrease_per_interval_denominator,
@@ -277,7 +277,7 @@ impl DistributionFunctionWASM {
                 starting_amount,
                 min_value,
                 max_value,
-            } => Ok(JsValue::from(DistributionLinearWASM {
+            } => Ok(JsValue::from(DistributionLinearWasm {
                 a,
                 d,
                 start_step,
@@ -295,7 +295,7 @@ impl DistributionFunctionWASM {
                 b,
                 min_value,
                 max_value,
-            } => Ok(JsValue::from(DistributionPolynomialWASM {
+            } => Ok(JsValue::from(DistributionPolynomialWasm {
                 a,
                 d,
                 m,
@@ -316,7 +316,7 @@ impl DistributionFunctionWASM {
                 b,
                 min_value,
                 max_value,
-            } => Ok(JsValue::from(DistributionExponentialWASM {
+            } => Ok(JsValue::from(DistributionExponentialWasm {
                 a,
                 d,
                 m,
@@ -337,7 +337,7 @@ impl DistributionFunctionWASM {
                 b,
                 min_value,
                 max_value,
-            } => Ok(JsValue::from(DistributionLogarithmicWASM {
+            } => Ok(JsValue::from(DistributionLogarithmicWasm {
                 a,
                 d,
                 m,
@@ -358,7 +358,7 @@ impl DistributionFunctionWASM {
                 b,
                 min_value,
                 max_value,
-            } => Ok(JsValue::from(DistributionInvertedLogarithmicWASM {
+            } => Ok(JsValue::from(DistributionInvertedLogarithmicWasm {
                 a,
                 d,
                 m,

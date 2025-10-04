@@ -1,9 +1,9 @@
 mod instant_lock;
 
-use crate::asset_lock_proof::instant::instant_lock::InstantLockWASM;
-use crate::asset_lock_proof::outpoint::OutPointWASM;
-use crate::asset_lock_proof::tx_out::TxOutWASM;
-use crate::identifier::IdentifierWASM;
+use crate::asset_lock_proof::instant::instant_lock::InstantLockWasm;
+use crate::asset_lock_proof::outpoint::OutPointWasm;
+use crate::asset_lock_proof::tx_out::TxOutWasm;
+use crate::identifier::IdentifierWasm;
 use crate::utils::WithJsError;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
@@ -22,22 +22,22 @@ struct InstantAssetLockProofRAW {
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "InstantAssetLockProof")]
-pub struct InstantAssetLockProofWASM(InstantAssetLockProof);
+pub struct InstantAssetLockProofWasm(InstantAssetLockProof);
 
-impl From<InstantAssetLockProofWASM> for InstantAssetLockProof {
-    fn from(proof: InstantAssetLockProofWASM) -> Self {
+impl From<InstantAssetLockProofWasm> for InstantAssetLockProof {
+    fn from(proof: InstantAssetLockProofWasm) -> Self {
         proof.0
     }
 }
 
-impl From<InstantAssetLockProof> for InstantAssetLockProofWASM {
+impl From<InstantAssetLockProof> for InstantAssetLockProofWasm {
     fn from(proof: InstantAssetLockProof) -> Self {
-        InstantAssetLockProofWASM(proof)
+        InstantAssetLockProofWasm(proof)
     }
 }
 
 #[wasm_bindgen(js_class = InstantAssetLockProof)]
-impl InstantAssetLockProofWASM {
+impl InstantAssetLockProofWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "InstantAssetLockProof".to_string()
@@ -53,13 +53,13 @@ impl InstantAssetLockProofWASM {
         instant_lock: Vec<u8>,
         transaction: Vec<u8>,
         output_index: u32,
-    ) -> Result<InstantAssetLockProofWASM, JsValue> {
+    ) -> Result<InstantAssetLockProofWasm, JsValue> {
         let instant_lock: InstantLock =
             deserialize(instant_lock.as_slice()).map_err(|err| JsValue::from(err.to_string()))?;
         let transaction: Transaction =
             deserialize(transaction.as_slice()).map_err(|err| JsValue::from(err.to_string()))?;
 
-        Ok(InstantAssetLockProofWASM(InstantAssetLockProof {
+        Ok(InstantAssetLockProofWasm(InstantAssetLockProof {
             instant_lock,
             transaction,
             output_index,
@@ -67,11 +67,11 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: JsValue) -> Result<InstantAssetLockProofWASM, JsValue> {
+    pub fn from_object(value: JsValue) -> Result<InstantAssetLockProofWasm, JsValue> {
         let parameters: InstantAssetLockProofRAW =
             serde_wasm_bindgen::from_value(value).map_err(|err| JsValue::from(err.to_string()))?;
 
-        InstantAssetLockProofWASM::new(
+        InstantAssetLockProofWasm::new(
             parameters.instant_lock,
             parameters.transaction,
             parameters.output_index,
@@ -90,7 +90,7 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(js_name = "getOutput")]
-    pub fn get_output(&self) -> Option<TxOutWASM> {
+    pub fn get_output(&self) -> Option<TxOutWasm> {
         match self.0.output() {
             Some(output) => Some(output.clone().into()),
             None => None,
@@ -98,7 +98,7 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(js_name = "getOutPoint")]
-    pub fn get_out_point(&self) -> Option<OutPointWASM> {
+    pub fn get_out_point(&self) -> Option<OutPointWasm> {
         match self.0.out_point() {
             Some(output) => Some(output.clone().into()),
             None => None,
@@ -111,7 +111,7 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(getter = "instantLock")]
-    pub fn get_instant_lock(&self) -> InstantLockWASM {
+    pub fn get_instant_lock(&self) -> InstantLockWasm {
         self.0.instant_lock.clone().into()
     }
 
@@ -121,7 +121,7 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(setter = "instantLock")]
-    pub fn set_instant_lock(&mut self, instant_lock: &InstantLockWASM) {
+    pub fn set_instant_lock(&mut self, instant_lock: &InstantLockWasm) {
         self.0.instant_lock = instant_lock.clone().into();
     }
 
@@ -138,7 +138,7 @@ impl InstantAssetLockProofWASM {
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]
-    pub fn create_identifier(&self) -> Result<IdentifierWASM, JsValue> {
+    pub fn create_identifier(&self) -> Result<IdentifierWasm, JsValue> {
         let identifier = self.0.create_identifier().with_js_error()?;
 
         Ok(identifier.into())

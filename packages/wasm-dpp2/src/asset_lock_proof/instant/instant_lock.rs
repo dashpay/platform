@@ -1,4 +1,4 @@
-use crate::asset_lock_proof::outpoint::OutPointWASM;
+use crate::asset_lock_proof::outpoint::OutPointWasm;
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::hash_types::CycleHash;
 use dpp::dashcore::hashes::hex::FromHex;
@@ -11,22 +11,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "InstantLock")]
 #[derive(Clone)]
-pub struct InstantLockWASM(InstantLock);
+pub struct InstantLockWasm(InstantLock);
 
-impl From<InstantLockWASM> for InstantLock {
-    fn from(value: InstantLockWASM) -> Self {
+impl From<InstantLockWasm> for InstantLock {
+    fn from(value: InstantLockWasm) -> Self {
         value.0
     }
 }
 
-impl From<InstantLock> for InstantLockWASM {
+impl From<InstantLock> for InstantLockWasm {
     fn from(value: InstantLock) -> Self {
-        InstantLockWASM(value)
+        InstantLockWasm(value)
     }
 }
 
 #[wasm_bindgen(js_class = InstantLock)]
-impl InstantLockWASM {
+impl InstantLockWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "InstantLock".to_string()
@@ -44,10 +44,10 @@ impl InstantLockWASM {
         txid: String,
         cycle_hash: String,
         bls_signature: String,
-    ) -> Result<InstantLockWASM, JsValue> {
-        let inputs = OutPointWASM::vec_from_js_value(js_inputs)?;
+    ) -> Result<InstantLockWasm, JsValue> {
+        let inputs = OutPointWasm::vec_from_js_value(js_inputs)?;
 
-        Ok(InstantLockWASM(InstantLock {
+        Ok(InstantLockWasm(InstantLock {
             version,
             inputs: inputs.iter().map(|input| input.clone().into()).collect(),
             txid: Txid::from_hex(&txid).map_err(|err| JsValue::from(err.to_string()))?,
@@ -64,7 +64,7 @@ impl InstantLockWASM {
     }
 
     #[wasm_bindgen(getter = "inputs")]
-    pub fn get_inputs(&self) -> Vec<OutPointWASM> {
+    pub fn get_inputs(&self) -> Vec<OutPointWasm> {
         self.0
             .inputs
             .iter()
@@ -94,7 +94,7 @@ impl InstantLockWASM {
 
     #[wasm_bindgen(setter = "inputs")]
     pub fn set_inputs(&mut self, inputs: &js_sys::Array) -> Result<(), JsValue> {
-        let inputs = OutPointWASM::vec_from_js_value(inputs)?;
+        let inputs = OutPointWasm::vec_from_js_value(inputs)?;
         self.0.inputs = inputs.iter().map(|input| input.clone().into()).collect();
         Ok(())
     }

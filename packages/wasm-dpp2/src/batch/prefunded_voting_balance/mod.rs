@@ -3,28 +3,28 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PrefundedVotingBalance")]
 #[derive(Clone)]
-pub struct PrefundedVotingBalanceWASM {
+pub struct PrefundedVotingBalanceWasm {
     index_name: String,
     credits: Credits,
 }
 
-impl From<(String, Credits)> for PrefundedVotingBalanceWASM {
+impl From<(String, Credits)> for PrefundedVotingBalanceWasm {
     fn from((index_name, credits): (String, Credits)) -> Self {
-        PrefundedVotingBalanceWASM {
+        PrefundedVotingBalanceWasm {
             index_name,
             credits,
         }
     }
 }
 
-impl From<PrefundedVotingBalanceWASM> for (String, Credits) {
-    fn from(value: PrefundedVotingBalanceWASM) -> Self {
+impl From<PrefundedVotingBalanceWasm> for (String, Credits) {
+    fn from(value: PrefundedVotingBalanceWasm) -> Self {
         (value.index_name, value.credits)
     }
 }
 
 #[wasm_bindgen(js_class = PrefundedVotingBalance)]
-impl PrefundedVotingBalanceWASM {
+impl PrefundedVotingBalanceWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "PrefundedVotingBalance".to_string()
@@ -36,8 +36,8 @@ impl PrefundedVotingBalanceWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(index_name: String, credits: Credits) -> PrefundedVotingBalanceWASM {
-        PrefundedVotingBalanceWASM {
+    pub fn new(index_name: String, credits: Credits) -> PrefundedVotingBalanceWasm {
+        PrefundedVotingBalanceWasm {
             index_name,
             credits,
         }

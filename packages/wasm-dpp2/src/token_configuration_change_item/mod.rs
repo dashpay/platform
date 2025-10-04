@@ -1,32 +1,32 @@
 pub mod items;
 
-use crate::identifier::IdentifierWASM;
-use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWASM;
-use crate::token_configuration::configuration_convention::TokenConfigurationConventionWASM;
-use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWASM;
-use crate::token_configuration::trade_mode::TokenTradeModeWASM;
+use crate::identifier::IdentifierWasm;
+use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
+use crate::token_configuration::configuration_convention::TokenConfigurationConventionWasm;
+use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
+use crate::token_configuration::trade_mode::TokenTradeModeWasm;
 use dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenConfigurationChangeItem")]
-pub struct TokenConfigurationChangeItemWASM(TokenConfigurationChangeItem);
+pub struct TokenConfigurationChangeItemWasm(TokenConfigurationChangeItem);
 
-impl From<TokenConfigurationChangeItemWASM> for TokenConfigurationChangeItem {
-    fn from(item: TokenConfigurationChangeItemWASM) -> Self {
+impl From<TokenConfigurationChangeItemWasm> for TokenConfigurationChangeItem {
+    fn from(item: TokenConfigurationChangeItemWasm) -> Self {
         item.0
     }
 }
 
-impl From<TokenConfigurationChangeItem> for TokenConfigurationChangeItemWASM {
+impl From<TokenConfigurationChangeItem> for TokenConfigurationChangeItemWasm {
     fn from(item: TokenConfigurationChangeItem) -> Self {
-        TokenConfigurationChangeItemWASM(item)
+        TokenConfigurationChangeItemWasm(item)
     }
 }
 
 #[wasm_bindgen(js_class = TokenConfigurationChangeItem)]
-impl TokenConfigurationChangeItemWASM {
+impl TokenConfigurationChangeItemWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenConfigurationChangeItem".to_string()
@@ -128,100 +128,100 @@ impl TokenConfigurationChangeItemWASM {
                 JsValue::from_str("TokenConfigurationNoChange")
             }
             TokenConfigurationChangeItem::Conventions(convention) => {
-                JsValue::from(TokenConfigurationConventionWASM::from(convention))
+                JsValue::from(TokenConfigurationConventionWasm::from(convention))
             }
             TokenConfigurationChangeItem::ConventionsControlGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::ConventionsAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MaxSupply(amount) => JsValue::from(amount),
             TokenConfigurationChangeItem::MaxSupplyControlGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MaxSupplyAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::PerpetualDistribution(perpetual_distribution) => {
                 match perpetual_distribution {
                     Some(token_perpetual_distribution) => JsValue::from(
-                        TokenPerpetualDistributionWASM::from(token_perpetual_distribution),
+                        TokenPerpetualDistributionWasm::from(token_perpetual_distribution),
                     ),
                     None => JsValue::null(),
                 }
             }
             TokenConfigurationChangeItem::PerpetualDistributionControlGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::PerpetualDistributionAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentity(identifier) => {
                 match identifier {
-                    Some(id) => JsValue::from(IdentifierWASM::from(id)),
+                    Some(id) => JsValue::from(IdentifierWasm::from(id)),
                     None => JsValue::null(),
                 }
             }
             TokenConfigurationChangeItem::NewTokensDestinationIdentityControlGroup(
                 action_takers,
-            ) => JsValue::from(AuthorizedActionTakersWASM::from(action_takers)),
+            ) => JsValue::from(AuthorizedActionTakersWasm::from(action_takers)),
             TokenConfigurationChangeItem::NewTokensDestinationIdentityAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestination(flag) => {
                 JsValue::from_bool(flag)
             }
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationControlGroup(
                 action_takers,
-            ) => JsValue::from(AuthorizedActionTakersWASM::from(action_takers)),
+            ) => JsValue::from(AuthorizedActionTakersWasm::from(action_takers)),
             TokenConfigurationChangeItem::MintingAllowChoosingDestinationAdminGroup(
                 action_takers,
-            ) => JsValue::from(AuthorizedActionTakersWASM::from(action_takers)),
+            ) => JsValue::from(AuthorizedActionTakersWasm::from(action_takers)),
             TokenConfigurationChangeItem::ManualMinting(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::ManualMintingAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::ManualBurning(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::ManualBurningAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::Freeze(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::FreezeAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::Unfreeze(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::UnfreezeAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::DestroyFrozenFunds(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::DestroyFrozenFundsAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::EmergencyAction(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::EmergencyActionAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MarketplaceTradeMode(trade_mode) => {
-                JsValue::from(TokenTradeModeWASM::from(trade_mode))
+                JsValue::from(TokenTradeModeWasm::from(trade_mode))
             }
             TokenConfigurationChangeItem::MarketplaceTradeModeControlGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MarketplaceTradeModeAdminGroup(action_takers) => {
-                JsValue::from(AuthorizedActionTakersWASM::from(action_takers))
+                JsValue::from(AuthorizedActionTakersWasm::from(action_takers))
             }
             TokenConfigurationChangeItem::MainControlGroup(group_contract_position) => {
                 JsValue::from(group_contract_position)

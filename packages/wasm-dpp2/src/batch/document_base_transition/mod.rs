@@ -1,5 +1,5 @@
-use crate::batch::token_payment_info::TokenPaymentInfoWASM;
-use crate::identifier::IdentifierWASM;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::identifier::IdentifierWasm;
 use crate::utils::IntoWasm;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::document_base_transition::DocumentBaseTransition;
@@ -12,22 +12,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentBaseTransition")]
-pub struct DocumentBaseTransitionWASM(DocumentBaseTransition);
+pub struct DocumentBaseTransitionWasm(DocumentBaseTransition);
 
-impl From<DocumentBaseTransition> for DocumentBaseTransitionWASM {
+impl From<DocumentBaseTransition> for DocumentBaseTransitionWasm {
     fn from(v: DocumentBaseTransition) -> Self {
-        DocumentBaseTransitionWASM(v)
+        DocumentBaseTransitionWasm(v)
     }
 }
 
-impl From<DocumentBaseTransitionWASM> for DocumentBaseTransition {
-    fn from(v: DocumentBaseTransitionWASM) -> Self {
+impl From<DocumentBaseTransitionWasm> for DocumentBaseTransition {
+    fn from(v: DocumentBaseTransitionWasm) -> Self {
         v.0
     }
 }
 
 #[wasm_bindgen(js_class = DocumentBaseTransition)]
-impl DocumentBaseTransitionWASM {
+impl DocumentBaseTransitionWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "DocumentBaseTransition".to_string()
@@ -45,33 +45,33 @@ impl DocumentBaseTransitionWASM {
         document_type_name: String,
         js_data_contract_id: &JsValue,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentBaseTransitionWASM, JsValue> {
+    ) -> Result<DocumentBaseTransitionWasm, JsValue> {
         let token_payment_info: Option<TokenPaymentInfo> =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
                 false => Some(
                     js_token_payment_info
-                        .to_wasm::<TokenPaymentInfoWASM>("TokenPaymentInfo")?
+                        .to_wasm::<TokenPaymentInfoWasm>("TokenPaymentInfo")?
                         .clone()
                         .into(),
                 ),
             };
 
         let rs_base_v1 = DocumentBaseTransitionV1 {
-            id: IdentifierWASM::try_from(js_document_id)?.into(),
+            id: IdentifierWasm::try_from(js_document_id)?.into(),
             identity_contract_nonce,
             document_type_name,
-            data_contract_id: IdentifierWASM::try_from(js_data_contract_id)?.into(),
+            data_contract_id: IdentifierWasm::try_from(js_data_contract_id)?.into(),
             token_payment_info,
         };
 
-        Ok(DocumentBaseTransitionWASM(DocumentBaseTransition::from(
+        Ok(DocumentBaseTransitionWasm(DocumentBaseTransition::from(
             rs_base_v1,
         )))
     }
 
     #[wasm_bindgen(getter = "id")]
-    pub fn get_id(&self) -> IdentifierWASM {
+    pub fn get_id(&self) -> IdentifierWasm {
         self.0.id().into()
     }
 
@@ -81,7 +81,7 @@ impl DocumentBaseTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "dataContractId")]
-    pub fn get_data_contract_id(&self) -> IdentifierWASM {
+    pub fn get_data_contract_id(&self) -> IdentifierWasm {
         self.0.data_contract_id().into()
     }
 
@@ -91,7 +91,7 @@ impl DocumentBaseTransitionWASM {
     }
 
     #[wasm_bindgen(getter = "tokenPaymentInfo")]
-    pub fn get_token_payment_info(&self) -> Option<TokenPaymentInfoWASM> {
+    pub fn get_token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
         match self.0.token_payment_info() {
             None => None,
             Some(info) => Some(info.into()),
@@ -100,7 +100,7 @@ impl DocumentBaseTransitionWASM {
 
     #[wasm_bindgen(setter = "id")]
     pub fn set_id(&mut self, js_id: &JsValue) -> Result<(), JsValue> {
-        self.0.set_id(IdentifierWASM::try_from(js_id)?.into());
+        self.0.set_id(IdentifierWasm::try_from(js_id)?.into());
         Ok(())
     }
 
@@ -112,7 +112,7 @@ impl DocumentBaseTransitionWASM {
     #[wasm_bindgen(setter = "dataContractId")]
     pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
         self.0
-            .set_data_contract_id(IdentifierWASM::try_from(js_data_contract_id)?.into());
+            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
         Ok(())
     }
 
@@ -122,7 +122,7 @@ impl DocumentBaseTransitionWASM {
     }
 
     #[wasm_bindgen(setter = "tokenPaymentInfo")]
-    pub fn set_token_payment_info(&mut self, token_payment_info: &TokenPaymentInfoWASM) {
+    pub fn set_token_payment_info(&mut self, token_payment_info: &TokenPaymentInfoWasm) {
         self.0
             .set_token_payment_info(token_payment_info.clone().into())
     }

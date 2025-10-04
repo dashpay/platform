@@ -5,22 +5,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "TxOut")]
 #[derive(Clone)]
-pub struct TxOutWASM(TxOut);
+pub struct TxOutWasm(TxOut);
 
-impl From<TxOut> for TxOutWASM {
+impl From<TxOut> for TxOutWasm {
     fn from(value: TxOut) -> Self {
-        TxOutWASM(value)
+        TxOutWasm(value)
     }
 }
 
-impl From<TxOutWASM> for TxOut {
-    fn from(value: TxOutWASM) -> Self {
+impl From<TxOutWasm> for TxOut {
+    fn from(value: TxOutWasm) -> Self {
         value.0
     }
 }
 
 #[wasm_bindgen(js_class = TxOut)]
-impl TxOutWASM {
+impl TxOutWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TxOut".to_string()
@@ -32,7 +32,7 @@ impl TxOutWASM {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(value: u64, script_pubkey: JsValue) -> Result<TxOutWASM, JsValue> {
+    pub fn new(value: u64, script_pubkey: JsValue) -> Result<TxOutWasm, JsValue> {
         let tx_out: Result<TxOut, JsValue> = match script_pubkey.is_array() {
             true => Ok(TxOut {
                 value,
@@ -48,7 +48,7 @@ impl TxOutWASM {
             },
         };
 
-        Ok(TxOutWASM(tx_out?))
+        Ok(TxOutWasm(tx_out?))
     }
 
     #[wasm_bindgen(getter = "value")]

@@ -1,8 +1,8 @@
-use crate::contract_bounds::ContractBoundsWASM;
-use crate::enums::keys::key_type::KeyTypeWASM;
-use crate::enums::keys::purpose::PurposeWASM;
-use crate::enums::keys::security_level::SecurityLevelWASM;
-use crate::enums::network::NetworkWASM;
+use crate::contract_bounds::ContractBoundsWasm;
+use crate::enums::keys::key_type::KeyTypeWasm;
+use crate::enums::keys::purpose::PurposeWasm;
+use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::enums::network::NetworkWasm;
 use crate::utils::{IntoWasm, WithJsError};
 use dpp::dashcore::Network;
 use dpp::dashcore::secp256k1::hashes::hex::{Case, DisplayHex};
@@ -22,22 +22,22 @@ use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = IdentityPublicKey)]
-pub struct IdentityPublicKeyWASM(IdentityPublicKey);
+pub struct IdentityPublicKeyWasm(IdentityPublicKey);
 
-impl From<IdentityPublicKey> for IdentityPublicKeyWASM {
+impl From<IdentityPublicKey> for IdentityPublicKeyWasm {
     fn from(value: IdentityPublicKey) -> Self {
-        IdentityPublicKeyWASM(value)
+        IdentityPublicKeyWasm(value)
     }
 }
 
-impl From<IdentityPublicKeyWASM> for IdentityPublicKey {
-    fn from(value: IdentityPublicKeyWASM) -> Self {
+impl From<IdentityPublicKeyWasm> for IdentityPublicKey {
+    fn from(value: IdentityPublicKeyWasm) -> Self {
         value.0
     }
 }
 
 #[wasm_bindgen(js_class = IdentityPublicKey)]
-impl IdentityPublicKeyWASM {
+impl IdentityPublicKeyWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "IdentityPublicKey".to_string()
@@ -59,21 +59,21 @@ impl IdentityPublicKeyWASM {
         disabled_at: Option<TimestampMillis>,
         js_contract_bounds: &JsValue,
     ) -> Result<Self, JsValue> {
-        let purpose = PurposeWASM::try_from(js_purpose)?;
-        let security_level = SecurityLevelWASM::try_from(js_security_level)?;
-        let key_type = KeyTypeWASM::try_from(js_key_type)?;
+        let purpose = PurposeWasm::try_from(js_purpose)?;
+        let security_level = SecurityLevelWasm::try_from(js_security_level)?;
+        let key_type = KeyTypeWasm::try_from(js_key_type)?;
         let contract_bounds: Option<ContractBounds> =
             match js_contract_bounds.is_undefined() | js_contract_bounds.is_null() {
                 true => None,
                 false => Some(
                     js_contract_bounds
-                        .to_wasm::<ContractBoundsWASM>("ContractBounds")?
+                        .to_wasm::<ContractBoundsWasm>("ContractBounds")?
                         .clone()
                         .into(),
                 ),
             };
 
-        Ok(IdentityPublicKeyWASM(IdentityPublicKey::from(
+        Ok(IdentityPublicKeyWasm(IdentityPublicKey::from(
             IdentityPublicKeyV0 {
                 id,
                 purpose: Purpose::from(purpose),
@@ -89,7 +89,7 @@ impl IdentityPublicKeyWASM {
 }
 
 #[wasm_bindgen(js_class = IdentityPublicKey)]
-impl IdentityPublicKeyWASM {
+impl IdentityPublicKeyWasm {
     #[wasm_bindgen(js_name = "validatePrivateKey")]
     pub fn validate_private_key(
         &self,
@@ -100,7 +100,7 @@ impl IdentityPublicKeyWASM {
         let len = js_private_key_bytes.len().min(32);
         private_key_bytes[..len].copy_from_slice(&js_private_key_bytes[..len]);
 
-        let network = Network::from(NetworkWASM::try_from(js_network)?);
+        let network = Network::from(NetworkWasm::try_from(js_network)?);
 
         self.0
             .validate_private_key_bytes(&private_key_bytes, network)
@@ -111,7 +111,7 @@ impl IdentityPublicKeyWASM {
     pub fn contract_bounds(&self) -> JsValue {
         match self.0.contract_bounds() {
             None => JsValue::undefined(),
-            Some(bounds) => JsValue::from(ContractBoundsWASM::from(bounds.clone())),
+            Some(bounds) => JsValue::from(ContractBoundsWasm::from(bounds.clone())),
         }
     }
 
@@ -122,32 +122,32 @@ impl IdentityPublicKeyWASM {
 
     #[wasm_bindgen(getter = purpose)]
     pub fn get_purpose(&self) -> String {
-        PurposeWASM::from(self.0.purpose()).into()
+        PurposeWasm::from(self.0.purpose()).into()
     }
 
     #[wasm_bindgen(getter = purposeNumber)]
-    pub fn get_purpose_number(&self) -> PurposeWASM {
-        PurposeWASM::from(self.0.purpose())
+    pub fn get_purpose_number(&self) -> PurposeWasm {
+        PurposeWasm::from(self.0.purpose())
     }
 
     #[wasm_bindgen(getter = securityLevel)]
     pub fn get_security_level(&self) -> String {
-        SecurityLevelWASM::from(self.0.security_level()).into()
+        SecurityLevelWasm::from(self.0.security_level()).into()
     }
 
     #[wasm_bindgen(getter = securityLevelNumber)]
-    pub fn get_security_level_number(&self) -> SecurityLevelWASM {
-        SecurityLevelWASM::from(self.0.security_level())
+    pub fn get_security_level_number(&self) -> SecurityLevelWasm {
+        SecurityLevelWasm::from(self.0.security_level())
     }
 
     #[wasm_bindgen(getter = keyType)]
     pub fn get_key_type(&self) -> String {
-        KeyTypeWASM::from(self.0.key_type()).into()
+        KeyTypeWasm::from(self.0.key_type()).into()
     }
 
     #[wasm_bindgen(getter = keyTypeNumber)]
-    pub fn get_key_type_number(&self) -> KeyTypeWASM {
-        KeyTypeWASM::from(self.0.key_type())
+    pub fn get_key_type_number(&self) -> KeyTypeWasm {
+        KeyTypeWasm::from(self.0.key_type())
     }
 
     #[wasm_bindgen(getter = readOnly)]
@@ -174,7 +174,7 @@ impl IdentityPublicKeyWASM {
     pub fn set_purpose(&mut self, purpose: JsValue) -> Result<(), JsValue> {
         Ok(self
             .0
-            .set_purpose(Purpose::from(PurposeWASM::try_from(purpose)?)))
+            .set_purpose(Purpose::from(PurposeWasm::try_from(purpose)?)))
     }
 
     #[wasm_bindgen(setter = purposeNumber)]
@@ -186,7 +186,7 @@ impl IdentityPublicKeyWASM {
     pub fn set_security_level(&mut self, security_level: JsValue) -> Result<(), JsValue> {
         Ok(self
             .0
-            .set_security_level(SecurityLevel::from(SecurityLevelWASM::try_from(
+            .set_security_level(SecurityLevel::from(SecurityLevelWasm::try_from(
                 security_level,
             )?)))
     }
@@ -200,7 +200,7 @@ impl IdentityPublicKeyWASM {
     pub fn set_key_type(&mut self, key_type: JsValue) -> Result<(), JsValue> {
         Ok(self
             .0
-            .set_key_type(KeyType::from(KeyTypeWASM::try_from(key_type)?)))
+            .set_key_type(KeyType::from(KeyTypeWasm::try_from(key_type)?)))
     }
 
     #[wasm_bindgen(setter = keyTypeNumber)]
@@ -264,30 +264,30 @@ impl IdentityPublicKeyWASM {
     }
 
     #[wasm_bindgen(js_name = fromBytes)]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityPublicKeyWASM, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityPublicKeyWasm, JsValue> {
         let public_key =
             IdentityPublicKey::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(IdentityPublicKeyWASM(public_key))
+        Ok(IdentityPublicKeyWasm(public_key))
     }
 
     #[wasm_bindgen(js_name = fromHex)]
-    pub fn from_hex(hex: String) -> Result<IdentityPublicKeyWASM, JsValue> {
+    pub fn from_hex(hex: String) -> Result<IdentityPublicKeyWasm, JsValue> {
         let bytes = decode(&hex, Hex).map_err(|err| JsValue::from(JsError::from(err)))?;
 
         let public_key =
             IdentityPublicKey::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(IdentityPublicKeyWASM(public_key))
+        Ok(IdentityPublicKeyWasm(public_key))
     }
 
     #[wasm_bindgen(js_name = fromBase64)]
-    pub fn from_base64(hex: String) -> Result<IdentityPublicKeyWASM, JsValue> {
+    pub fn from_base64(hex: String) -> Result<IdentityPublicKeyWasm, JsValue> {
         let bytes = decode(&hex, Base64).map_err(|err| JsValue::from(JsError::from(err)))?;
 
         let public_key =
             IdentityPublicKey::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
 
-        Ok(IdentityPublicKeyWASM(public_key))
+        Ok(IdentityPublicKeyWasm(public_key))
     }
 }

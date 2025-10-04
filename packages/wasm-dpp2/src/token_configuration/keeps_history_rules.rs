@@ -7,22 +7,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "TokenKeepsHistoryRules")]
-pub struct TokenKeepsHistoryRulesWASM(TokenKeepsHistoryRules);
+pub struct TokenKeepsHistoryRulesWasm(TokenKeepsHistoryRules);
 
-impl From<TokenKeepsHistoryRulesWASM> for TokenKeepsHistoryRules {
-    fn from(rules: TokenKeepsHistoryRulesWASM) -> Self {
+impl From<TokenKeepsHistoryRulesWasm> for TokenKeepsHistoryRules {
+    fn from(rules: TokenKeepsHistoryRulesWasm) -> Self {
         rules.0
     }
 }
 
-impl From<TokenKeepsHistoryRules> for TokenKeepsHistoryRulesWASM {
+impl From<TokenKeepsHistoryRules> for TokenKeepsHistoryRulesWasm {
     fn from(rules: TokenKeepsHistoryRules) -> Self {
         Self(rules)
     }
 }
 
 #[wasm_bindgen(js_class = TokenKeepsHistoryRules)]
-impl TokenKeepsHistoryRulesWASM {
+impl TokenKeepsHistoryRulesWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenKeepsHistoryRules".to_string()
@@ -41,8 +41,8 @@ impl TokenKeepsHistoryRulesWASM {
         keeps_burning_history: bool,
         keeps_direct_pricing_history: bool,
         keeps_direct_purchase_history: bool,
-    ) -> TokenKeepsHistoryRulesWASM {
-        TokenKeepsHistoryRulesWASM(TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
+    ) -> TokenKeepsHistoryRulesWasm {
+        TokenKeepsHistoryRulesWasm(TokenKeepsHistoryRules::V0(TokenKeepsHistoryRulesV0 {
             keeps_transfer_history,
             keeps_freezing_history,
             keeps_minting_history,

@@ -9,22 +9,22 @@ use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = TokenConfigurationLocalization)]
-pub struct TokenConfigurationLocalizationWASM(TokenConfigurationLocalization);
+pub struct TokenConfigurationLocalizationWasm(TokenConfigurationLocalization);
 
-impl From<TokenConfigurationLocalization> for TokenConfigurationLocalizationWASM {
-    fn from(configuration: TokenConfigurationLocalization) -> TokenConfigurationLocalizationWASM {
-        TokenConfigurationLocalizationWASM(configuration)
+impl From<TokenConfigurationLocalization> for TokenConfigurationLocalizationWasm {
+    fn from(configuration: TokenConfigurationLocalization) -> TokenConfigurationLocalizationWasm {
+        TokenConfigurationLocalizationWasm(configuration)
     }
 }
 
-impl From<TokenConfigurationLocalizationWASM> for TokenConfigurationLocalization {
-    fn from(configuration: TokenConfigurationLocalizationWASM) -> TokenConfigurationLocalization {
+impl From<TokenConfigurationLocalizationWasm> for TokenConfigurationLocalization {
+    fn from(configuration: TokenConfigurationLocalizationWasm) -> TokenConfigurationLocalization {
         configuration.0
     }
 }
 
 #[wasm_bindgen(js_class = TokenConfigurationLocalization)]
-impl TokenConfigurationLocalizationWASM {
+impl TokenConfigurationLocalizationWasm {
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "TokenConfigurationLocalization".to_string()
@@ -40,8 +40,8 @@ impl TokenConfigurationLocalizationWASM {
         should_capitalize: bool,
         singular_form: String,
         plural_form: String,
-    ) -> TokenConfigurationLocalizationWASM {
-        TokenConfigurationLocalizationWASM(TokenConfigurationLocalization::V0(
+    ) -> TokenConfigurationLocalizationWasm {
+        TokenConfigurationLocalizationWasm(TokenConfigurationLocalization::V0(
             TokenConfigurationLocalizationV0 {
                 should_capitalize,
                 singular_form,
