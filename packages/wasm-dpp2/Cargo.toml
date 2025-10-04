@@ -11,7 +11,7 @@ talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
 bincode = "=2.0.0-rc.3"
 bincode_derive = "=2.0.0-rc.3"
 wasm-bindgen = { version = "=0.2.100", default-features = false, features = ["serde-serialize"] }
-dpp = { git = "https://github.com/owl352/platform", branch = "v2.0.1", default-features = false, features = [
+dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-signing",
     "document-json-conversion",
     "identity-serialization",

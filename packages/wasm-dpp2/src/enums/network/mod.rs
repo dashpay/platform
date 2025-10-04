@@ -1,4 +1,4 @@
-use dpp::dashcore::network::constants::Network;
+use dpp::dashcore::Network;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 #[wasm_bindgen(js_name = "Network")]
