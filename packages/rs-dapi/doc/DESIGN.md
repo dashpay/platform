@@ -259,7 +259,7 @@ rs-dapi exposes a JSON-RPC gateway alongside gRPC. Axum powers JSON-RPC routing 
 
 Operational notes:
 - Compression: disabled at rs-dapi; Envoy handles edge compression
-- Access logging: HTTP/JSON-RPC go through an access logging layer when provided; gRPC access logging interceptor is a planned improvement
+- Access logging: HTTP/JSON-RPC and gRPC traffic share the same access logging layer when configured, so all protocols emit uniform access entries
 
 - Platform event streaming is handled via a direct upstream proxy:
   - `subscribePlatformEvents` simply forwards every inbound command stream to a single Drive connection and relays responses back without multiplexing

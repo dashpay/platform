@@ -6,6 +6,7 @@ use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
 
 use crate::error::DAPIResult;
+use crate::logging::AccessLogLayer;
 
 use super::DapiServer;
 
@@ -25,9 +26,17 @@ impl DapiServer {
 
         info!("gRPC compression: disabled (handled by Envoy)");
 
-        dapi_grpc::tonic::transport::Server::builder()
+        let builder = dapi_grpc::tonic::transport::Server::builder()
             .tcp_keepalive(Some(Duration::from_secs(25)))
-            .timeout(Duration::from_secs(120))
+            .timeout(Duration::from_secs(120));
+
+        let builder = if let Some(ref access_logger) = self.access_logger {
+            builder.layer(AccessLogLayer::new(access_logger.clone()))
+        } else {
+            builder
+        };
+
+        builder
             .add_service(
                 PlatformServer::new(
                     Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),

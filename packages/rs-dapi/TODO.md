@@ -72,7 +72,7 @@ Legend:
 
 ## P1 — Observability & Ops
 
-- [ ] gRPC access logging (interceptor) to align with HTTP access logs
+- [x] gRPC access logging (interceptor) to align with HTTP access logs
   - Files: `src/logging/middleware.rs`, gRPC server builder wiring
 - [ ] Prometheus metrics: request counts, latency, errors, subscriber counts
   - Files: `src/server.rs` (`/metrics`), metrics crate integration

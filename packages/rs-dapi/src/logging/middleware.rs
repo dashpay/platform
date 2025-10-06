@@ -7,10 +7,12 @@ use crate::logging::access_log::{AccessLogEntry, AccessLogger};
 use axum::extract::ConnectInfo;
 use axum::http::{Request, Response, Version};
 use std::future::Future;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Instant;
+use tonic::Status as TonicStatus;
+use tonic::transport::server::TcpConnectInfo;
 use tower::{Layer, Service};
 use tracing::{Instrument, debug, error, info_span};
 
@@ -69,10 +71,7 @@ where
         let protocol_type = detect_protocol_type(&req);
 
         // Extract client IP
-        let remote_addr = req
-            .extensions()
-            .get::<ConnectInfo<SocketAddr>>()
-            .map(|info| info.ip());
+        let remote_addr = extract_remote_ip(&req);
 
         // Extract user agent
         let user_agent = req
@@ -107,6 +106,7 @@ where
                 Ok(response) => {
                     let duration = start_time.elapsed();
                     let status = response.status().as_u16();
+                    let grpc_status_code = extract_grpc_status(&response, status);
 
                     // TODO: Get actual response body size
                     // This would require buffering the response which adds complexity
@@ -116,12 +116,11 @@ where
                     let entry = match protocol_type.as_str() {
                         "gRPC" => {
                             let (service, method_name) = parse_grpc_path(&uri);
-                            let grpc_status = http_status_to_grpc_status(status);
                             AccessLogEntry::new_grpc(
                                 remote_addr,
                                 service,
                                 method_name,
-                                grpc_status,
+                                grpc_status_code,
                                 body_bytes,
                                 duration.as_micros() as u64,
                             )
@@ -259,5 +258,99 @@ fn http_status_to_grpc_status(http_status: u16) -> u32 {
         503 => 14, // UNAVAILABLE
         504 => 4,  // DEADLINE_EXCEEDED
         _ => 2,    // UNKNOWN
+    }
+}
+
+fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
+    if let Some(connect_info) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
+        return Some(connect_info.ip());
+    }
+
+    if let Some(connect_info) = req.extensions().get::<TcpConnectInfo>() {
+        if let Some(addr) = connect_info.remote_addr() {
+            return Some(addr.ip());
+        }
+    }
+
+    None
+}
+
+fn extract_grpc_status<B>(response: &Response<B>, http_status: u16) -> u32 {
+    if let Some(value) = response.headers().get("grpc-status") {
+        if let Ok(as_str) = value.to_str() {
+            if let Ok(code) = as_str.parse::<u32>() {
+                return code;
+            }
+        }
+    }
+
+    if let Some(status) = response.extensions().get::<TonicStatus>() {
+        return status.code() as u32;
+    }
+
+    if http_status == 200 {
+        0
+    } else {
+        http_status_to_grpc_status(http_status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::http::HeaderValue;
+    use axum::http::{Request, Response};
+    use std::net::{Ipv4Addr, SocketAddr};
+    use tonic::Code;
+
+    #[test]
+    fn extract_remote_ip_from_connect_info() {
+        let mut req: Request<()> = Request::default();
+        let addr = SocketAddr::from((Ipv4Addr::new(10, 1, 2, 3), 8080));
+        req.extensions_mut().insert(ConnectInfo(addr));
+
+        assert_eq!(extract_remote_ip(&req), Some(addr.ip()));
+    }
+
+    #[test]
+    fn extract_remote_ip_from_tcp_connect_info() {
+        let mut req: Request<()> = Request::default();
+        let addr = SocketAddr::from((Ipv4Addr::new(192, 168, 0, 5), 9000));
+        let connect_info = TcpConnectInfo {
+            local_addr: None,
+            remote_addr: Some(addr),
+        };
+        req.extensions_mut().insert(connect_info);
+
+        assert_eq!(extract_remote_ip(&req), Some(addr.ip()));
+    }
+
+    #[test]
+    fn extract_grpc_status_reads_header() {
+        let mut response: Response<()> = Response::new(());
+        response
+            .headers_mut()
+            .insert("grpc-status", HeaderValue::from_static("7"));
+
+        assert_eq!(extract_grpc_status(&response, 200), 7);
+    }
+
+    #[test]
+    fn extract_grpc_status_reads_extension() {
+        let mut response: Response<()> = Response::new(());
+        response
+            .extensions_mut()
+            .insert(tonic::Status::new(Code::Unavailable, "server unavailable"));
+
+        assert_eq!(
+            extract_grpc_status(&response, 200),
+            Code::Unavailable as u32
+        );
+    }
+
+    #[test]
+    fn extract_grpc_status_falls_back_to_http_status() {
+        let response: Response<()> = Response::new(());
+        assert_eq!(extract_grpc_status(&response, 503), 14);
     }
 }
