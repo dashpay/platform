@@ -78,10 +78,25 @@ path = "clients/core/v0/rust/core_example.rs"
 name = "platform_example"
 path = "clients/platform/v0/rust/platform_example.rs"
 
+[[example]]
+name = "dapi-cli"
+path = "examples/dapi-cli/main.rs"
+
+[dev-dependencies]
+# dapi-cli example dependencies
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", features = [
+  "serde",
+] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = { version = "1.0.145" }
+sha2 = { version = "0.10.9" }
+hex = { version = "0.4.3" }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros"] }
+ciborium = { version = "0.2.2" }
+thiserror = { version = "2.0.17" }
+clap = { version = "4.5.48", features = ["derive"] }
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.20", features = ["env-filter", "json"] }
+
 [package.metadata.cargo-machete]
-ignored = [
-  "platform-version",
-  "serde_bytes",
-  "futures-core",
-  "dapi-grpc-macros",
-]
+ignored = ["platform-version", "futures-core", "getrandom", "tonic-prost-build"]
