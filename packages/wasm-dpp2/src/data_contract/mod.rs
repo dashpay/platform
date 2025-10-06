@@ -466,7 +466,7 @@ impl DataContractWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name = "toJson")]
+    #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self, js_platform_version: JsValue) -> Result<JsValue, JsValue> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),

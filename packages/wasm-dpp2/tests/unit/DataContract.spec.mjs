@@ -75,7 +75,7 @@ describe('DataContract', () => {
     it('should allow to get json', () => {
       const dataContract = wasm.DataContract.fromValue(value, true);
 
-      expect(dataContract.toJson()).to.deep.equal(value);
+      expect(dataContract.toJSON()).to.deep.equal(value);
     });
   });
 
