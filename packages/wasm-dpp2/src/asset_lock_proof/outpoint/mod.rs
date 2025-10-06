@@ -68,7 +68,7 @@ impl OutPointWasm {
         slice.to_vec()
     }
 
-    #[wasm_bindgen(js_name = "hex")]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self) -> String {
         let slice: [u8; 36] = self.0.into();
 

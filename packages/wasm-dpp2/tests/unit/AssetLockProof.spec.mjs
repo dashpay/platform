@@ -51,7 +51,7 @@ describe('AssetLockProof', () => {
     it('should allow to serialize and deserialize asset lock in hex', () => {
       const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
 
-      const newInstantLockProof = wasm.AssetLockProof.fromHex(instantLockProof.hex());
+      const newInstantLockProof = wasm.AssetLockProof.fromHex(instantLockProof.toHex());
 
       expect(instantLockProof.constructor.name).to.equal('AssetLockProof');
       expect(newInstantLockProof.constructor.name).to.equal('AssetLockProof');

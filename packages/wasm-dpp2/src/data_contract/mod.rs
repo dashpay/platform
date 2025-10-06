@@ -266,7 +266,7 @@ impl DataContractWasm {
             .with_js_error()
     }
 
-    #[wasm_bindgen(js_name = "hex")]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self, js_platform_version: JsValue) -> Result<String, JsValue> {
         Ok(encode(self.to_bytes(js_platform_version)?.as_slice(), Hex))
     }

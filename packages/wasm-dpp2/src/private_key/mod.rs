@@ -76,8 +76,8 @@ impl PrivateKeyWasm {
         self.0.to_bytes()
     }
 
-    #[wasm_bindgen(js_name = "hex")]
-    pub fn get_hex(&self) -> String {
+    #[wasm_bindgen(js_name = "toHex")]
+    pub fn to_hex(&self) -> String {
         self.0.to_bytes().to_hex_string(Case::Upper)
     }
 

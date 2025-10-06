@@ -88,7 +88,7 @@ impl CoreScriptWasm {
         self.0.to_bytes()
     }
 
-    #[wasm_bindgen(js_name = "hex")]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self) -> String {
         encode(self.0.to_bytes().as_slice(), Hex)
     }

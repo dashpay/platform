@@ -115,8 +115,8 @@ impl IdentifierWasm {
         self.0.to_string(Base64)
     }
 
-    #[wasm_bindgen(js_name = "hex")]
-    pub fn get_hex(&self) -> String {
+    #[wasm_bindgen(js_name = "toHex")]
+    pub fn to_hex(&self) -> String {
         self.0.to_string(Hex)
     }
 

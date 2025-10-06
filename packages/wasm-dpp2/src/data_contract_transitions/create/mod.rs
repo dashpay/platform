@@ -100,7 +100,7 @@ impl DataContractCreateTransitionWasm {
         self.0.serialize_to_bytes().with_js_error()
     }
 
-    #[wasm_bindgen(js_name = "hex")]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_hex(&self) -> Result<String, JsValue> {
         Ok(encode(
             self.0.serialize_to_bytes().with_js_error()?.as_slice(),

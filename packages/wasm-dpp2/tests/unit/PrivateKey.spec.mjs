@@ -59,7 +59,7 @@ describe('PrivateKey', () => {
     it('should allow to get key hex', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pkey.hex().toLowerCase()).to.equal(bytes);
+      expect(pkey.toHex().toLowerCase()).to.equal(bytes);
     });
 
     it('should allow to get public key hash', () => {

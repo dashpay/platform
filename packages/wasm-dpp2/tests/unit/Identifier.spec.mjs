@@ -74,7 +74,7 @@ describe('Identifier', () => {
     it('should allow to get identifier hex', () => {
       const identifier = wasm.Identifier.fromBase58('ckBqfQe7LU7vwrwXopyCB4n5phZShjA16BGhNGpsD5U');
 
-      expect(identifier.hex()).to.equal('092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313');
+      expect(identifier.toHex()).to.equal('092828edc081d3ba1a54f043259b941368f2c718881b06a9d347883b21bfe313');
     });
 
     it('should allow to get identifier bytes', () => {

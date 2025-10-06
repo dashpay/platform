@@ -151,7 +151,7 @@ impl AssetLockProofWasm {
         Ok(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?)
     }
 
-    #[wasm_bindgen(js_name = "hex")]
+    #[wasm_bindgen(js_name = "toHex")]
     pub fn to_string(&self) -> Result<String, JsValue> {
         Ok(hex::encode(
             serde_json::to_string(&self.0).map_err(|err| JsValue::from(err.to_string()))?,
