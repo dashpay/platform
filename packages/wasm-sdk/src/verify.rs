@@ -20,7 +20,7 @@ use drive_proof_verifier::FromProof;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 use crate::context_provider::WasmContext;
-use crate::dpp::{DataContractWasm, IdentityWasm};
+use crate::{DataContractWasm, IdentityWasm};
 
 #[wasm_bindgen(js_name = "verifyIdentityResponse")]
 pub async fn verify_identity_response() -> Option<IdentityWasm> {

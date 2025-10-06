@@ -1,6 +1,6 @@
-use crate::dpp::DataContractWasm;
 use crate::queries::ProofMetadataResponse;
 use crate::sdk::WasmSdk;
+use crate::DataContractWasm;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::platform::query::LimitQuery;

@@ -75,13 +75,11 @@ impl TokenTransitionWasm {
                             .clone(),
                     )))
                 }
-                "TokenFreezeTransition" => {
-                    Ok(TokenTransition::from(TokenFreezeTransition::from(
-                        js_transition
-                            .to_wasm::<TokenFreezeTransitionWasm>("TokenFreezeTransition")?
-                            .clone(),
-                    )))
-                }
+                "TokenFreezeTransition" => Ok(TokenTransition::from(TokenFreezeTransition::from(
+                    js_transition
+                        .to_wasm::<TokenFreezeTransitionWasm>("TokenFreezeTransition")?
+                        .clone(),
+                ))),
                 "TokenDestroyFrozenFundsTransition" => Ok(TokenTransition::from(
                     TokenDestroyFrozenFundsTransition::from(
                         js_transition
@@ -91,13 +89,11 @@ impl TokenTransitionWasm {
                             .clone(),
                     ),
                 )),
-                "TokenClaimTransition" => {
-                    Ok(TokenTransition::from(TokenClaimTransition::from(
-                        js_transition
-                            .to_wasm::<TokenClaimTransitionWasm>("TokenClaimTransition")?
-                            .clone(),
-                    )))
-                }
+                "TokenClaimTransition" => Ok(TokenTransition::from(TokenClaimTransition::from(
+                    js_transition
+                        .to_wasm::<TokenClaimTransitionWasm>("TokenClaimTransition")?
+                        .clone(),
+                ))),
                 "TokenBurnTransition" => Ok(TokenTransition::from(TokenBurnTransition::from(
                     js_transition
                         .to_wasm::<TokenBurnTransitionWasm>("TokenBurnTransition")?

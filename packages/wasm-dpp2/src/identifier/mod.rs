@@ -53,9 +53,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         match value.is_object() {
             true => match get_class_type(&value) {
                 Ok(class_type) => match class_type.as_str() {
-                    "Identifier" => {
-                        Ok(value.to_wasm::<IdentifierWasm>("Identifier")?.clone())
-                    }
+                    "Identifier" => Ok(value.to_wasm::<IdentifierWasm>("Identifier")?.clone()),
                     "" => Ok(identifier_from_js_value(&value)?.into()),
                     _ => Err(Self::Error::from_str(&format!(
                         "Invalid type of data for identifier (passed {})",

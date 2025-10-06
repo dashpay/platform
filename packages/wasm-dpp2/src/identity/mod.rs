@@ -2,12 +2,15 @@ use crate::identifier::IdentifierWasm;
 use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::WithJsError;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
-use dpp::identity::{Identity, KeyID};
+use dpp::identity::{self, Identity, KeyID};
+use dpp::platform_value::ReplacementType;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::prelude::IdentityPublicKey;
-use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::PlatformVersion;
+use serde_json::Value as JsonValue;
+use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
@@ -134,6 +137,45 @@ impl IdentityWasm {
             self.0.serialize_to_bytes().with_js_error()?.as_slice(),
             Base64,
         ))
+    }
+
+    fn cleaned_json_value(&self) -> Result<JsonValue, JsValue> {
+        let mut value = self.0.to_object().with_js_error()?;
+
+        value
+            .replace_at_paths(
+                identity::IDENTIFIER_FIELDS_RAW_OBJECT,
+                ReplacementType::TextBase58,
+            )
+            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+
+        if let Some(public_keys) = value
+            .get_optional_array_mut_ref(identity::property_names::PUBLIC_KEYS)
+            .map_err(|e| JsValue::from_str(&e.to_string()))?
+        {
+            for key in public_keys.iter_mut() {
+                key.replace_at_paths(
+                    identity::identity_public_key::BINARY_DATA_FIELDS,
+                    ReplacementType::TextBase64,
+                )
+                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            }
+        }
+
+        value
+            .try_into_validating_json()
+            .map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+        let json_value = self.cleaned_json_value()?;
+        to_value(&json_value).map_err(|e| JsValue::from_str(&e.to_string()))
+    }
+
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+        self.to_object()
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]

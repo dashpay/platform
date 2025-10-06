@@ -1,7 +1,7 @@
-use crate::dpp::IdentityWasm;
 use crate::error::WasmSdkError;
 use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
 use crate::sdk::WasmSdk;
+use crate::IdentityWasm;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
@@ -9,8 +9,21 @@ use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
 use js_sys::Array;
 use rs_dapi_client::IntoInner;
 use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+
+fn identity_to_js_value(identity: Identity) -> Result<JsValue, WasmSdkError> {
+    IdentityWasm::from(identity).to_object().map_err(|e| {
+        WasmSdkError::serialization(format!("Failed to convert identity to Object: {:?}", e))
+    })
+}
+
+fn identity_to_json_value(identity: Identity) -> Result<JsonValue, WasmSdkError> {
+    let identity_js = identity_to_js_value(identity)?;
+    serde_wasm_bindgen::from_value(identity_js)
+        .map_err(|e| WasmSdkError::serialization(format!("Failed to convert to JSON value: {}", e)))
+}
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -97,20 +110,7 @@ impl WasmSdk {
 
         match identity {
             Some(identity) => {
-                // Convert identity to JSON value first
-                let identity_json = IdentityWasm::from(identity).to_json().map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert identity to JSON: {:?}",
-                        e
-                    ))
-                })?;
-                let identity_value: serde_json::Value =
-                    serde_wasm_bindgen::from_value(identity_json).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert to JSON value: {}",
-                            e
-                        ))
-                    })?;
+                let identity_value = identity_to_json_value(identity)?;
 
                 let response = ProofMetadataResponse {
                     data: identity_value,
@@ -941,15 +941,10 @@ impl WasmSdk {
             vec![]
         };
 
-        // Convert results to IdentityWasm
-        let identities: Vec<IdentityWasm> = results.into_iter().map(Into::into).collect();
-
         // Create JS array directly
         let js_array = Array::new();
-        for identity in identities {
-            let json = identity.to_json().map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to convert identity to JSON: {:?}", e))
-            })?;
+        for identity in results {
+            let json = identity_to_js_value(identity)?;
             js_array.push(&json);
         }
         Ok(js_array.into())
@@ -1356,19 +1351,7 @@ impl WasmSdk {
 
         match result {
             Some(identity) => {
-                let identity_json = IdentityWasm::from(identity).to_json().map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert identity to JSON: {:?}",
-                        e
-                    ))
-                })?;
-                let identity_value: serde_json::Value =
-                    serde_wasm_bindgen::from_value(identity_json).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert to JSON value: {}",
-                            e
-                        ))
-                    })?;
+                let identity_value = identity_to_json_value(identity)?;
 
                 let response = ProofMetadataResponse {
                     data: identity_value,
@@ -1445,19 +1428,10 @@ impl WasmSdk {
         };
 
         // Convert results to JSON
-        let identities_json: Vec<serde_json::Value> = results
+        let identities_json: Vec<JsonValue> = results
             .into_iter()
-            .map(|identity| {
-                let identity_wasm: IdentityWasm = identity.into();
-                let json = identity_wasm.to_json().map_err(|_| {
-                    serde_wasm_bindgen::Error::new("Failed to convert identity to JSON")
-                })?;
-                serde_wasm_bindgen::from_value(json)
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to convert identity to JSON: {}", e))
-            })?;
+            .map(|identity| identity_to_json_value(identity))
+            .collect::<Result<Vec<_>, _>>()?;
 
         let response = ProofMetadataResponse {
             data: identities_json,

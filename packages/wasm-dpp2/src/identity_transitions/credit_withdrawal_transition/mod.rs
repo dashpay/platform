@@ -137,9 +137,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
         match js_script.is_undefined() {
             true => self.0.set_output_script(None),
             false => {
-                let script: CoreScriptWasm = js_script
-                    .to_wasm::<CoreScriptWasm>("CoreScript")?
-                    .clone();
+                let script: CoreScriptWasm =
+                    js_script.to_wasm::<CoreScriptWasm>("CoreScript")?.clone();
                 self.0.set_output_script(Some(script.clone().into()))
             }
         };
