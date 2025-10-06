@@ -7,10 +7,6 @@ edition = "2024"
 name = "rs-dapi"
 path = "src/main.rs"
 
-[[example]]
-name = "dapi_cli"
-path = "examples/dapi_cli/main.rs"
-
 [dependencies]
 # Async runtime
 tokio = { version = "1.47.0", features = ["full"] }
