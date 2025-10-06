@@ -120,8 +120,8 @@ impl IdentifierWasm {
         self.0.to_string(Hex)
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
-    pub fn get_bytes(&self) -> Vec<u8> {
+    #[wasm_bindgen(js_name = "toBytes")]
+    pub fn to_bytes(&self) -> Vec<u8> {
         self.0.to_vec()
     }
 

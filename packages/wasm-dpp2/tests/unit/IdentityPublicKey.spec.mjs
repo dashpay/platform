@@ -36,7 +36,7 @@ describe('PublicKey', () => {
         binaryData,
       );
 
-      const bytes = pubKey.bytes();
+      const bytes = pubKey.toBytes();
 
       const newPubKey = wasm.IdentityPublicKey.fromBytes(Array.from(bytes));
 
@@ -50,7 +50,7 @@ describe('PublicKey', () => {
       expect(pubKey.readOnly).to.equal(newPubKey.readOnly);
       expect(pubKey.data).to.equal(newPubKey.data);
 
-      expect(pubKey.bytes()).to.deep.equal(newPubKey.bytes());
+      expect(pubKey.toBytes()).to.deep.equal(newPubKey.toBytes());
 
       expect(pubKey.__wbg_ptr).to.not.equal(0);
       expect(newPubKey.__wbg_ptr).to.not.equal(0);
@@ -102,7 +102,7 @@ describe('PublicKey', () => {
 
       const privateKey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pubKey.validatePrivateKey(privateKey.bytes(), wasm.Network.Mainnet)).to.equal(false);
+      expect(pubKey.validatePrivateKey(privateKey.toBytes(), wasm.Network.Mainnet)).to.equal(false);
     });
   });
 

@@ -47,7 +47,7 @@ describe('OutPoint', () => {
       // 32 bytes for txId and 4 bytes for vout
       const bytes = [...txIdBytes.reverse(), ...[0, 0, 0, 1].reverse()];
 
-      expect(outpoint.bytes()).to.deep.equal(Uint8Array.from(bytes));
+      expect(outpoint.toBytes()).to.deep.equal(Uint8Array.from(bytes));
     });
   });
 });

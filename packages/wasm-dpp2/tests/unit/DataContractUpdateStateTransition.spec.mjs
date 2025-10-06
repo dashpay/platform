@@ -26,11 +26,11 @@ describe('DataContract Updatet Transition', () => {
 
       const dataContractTransition = new wasm.DataContractUpdateTransition(dataContract, BigInt(1));
 
-      const bytes = dataContractTransition.bytes();
+      const bytes = dataContractTransition.toBytes();
 
       const newDataContractTransition = wasm.DataContractUpdateTransition.fromBytes(bytes);
 
-      expect(newDataContractTransition.bytes()).to.deep.equal(bytes);
+      expect(newDataContractTransition.toBytes()).to.deep.equal(bytes);
       expect(newDataContractTransition.__wbg_ptr).to.not.equal(0);
       expect(dataContractTransition.__wbg_ptr).to.not.equal(0);
       expect(dataContract.__wbg_ptr).to.not.equal(0);
@@ -45,7 +45,7 @@ describe('DataContract Updatet Transition', () => {
 
       const newDataContractTransition = wasm.DataContractUpdateTransition.fromStateTransition(stateTransition);
 
-      expect(dataContractTransition.bytes()).to.deep.equal(newDataContractTransition.bytes());
+      expect(dataContractTransition.toBytes()).to.deep.equal(newDataContractTransition.toBytes());
     });
   });
 
@@ -86,7 +86,7 @@ describe('DataContract Updatet Transition', () => {
 
       const newDataContract = dataContractTransition.getDataContract();
 
-      expect(dataContract.bytes()).to.deep.equal(newDataContract.bytes());
+      expect(dataContract.toBytes()).to.deep.equal(newDataContract.toBytes());
     });
   });
 
@@ -102,7 +102,7 @@ describe('DataContract Updatet Transition', () => {
 
       dataContractTransition.setDataContract(newDataContract);
 
-      expect(fromHexString(dataContractBytes)).to.deep.equal(newDataContract.bytes());
+      expect(fromHexString(dataContractBytes)).to.deep.equal(newDataContract.toBytes());
     });
   });
 });

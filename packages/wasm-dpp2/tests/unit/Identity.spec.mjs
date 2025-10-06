@@ -23,9 +23,9 @@ describe('Identity', () => {
     it('should generate identity from identifier and return bytes', async () => {
       const identity = new wasm.Identity(identifier);
 
-      expect(Array.from(identity.bytes())).to.deep.equal(identityBytesWithoutKeys);
+      expect(Array.from(identity.toBytes())).to.deep.equal(identityBytesWithoutKeys);
 
-      const newIdentity = wasm.Identity.fromBytes(identity.bytes());
+      const newIdentity = wasm.Identity.fromBytes(identity.toBytes());
 
       expect(identity.__wbg_ptr).to.not.equal(0);
       expect(newIdentity.__wbg_ptr).to.not.equal(0);
@@ -36,7 +36,7 @@ describe('Identity', () => {
     it('should get id buffer', () => {
       const identity = new wasm.Identity(identifier);
 
-      expect(identity.id.bytes()).to.deep.equal(Uint8Array.from(identifierBytes));
+      expect(identity.id.toBytes()).to.deep.equal(Uint8Array.from(identifierBytes));
     });
 
     it('should get balance', () => {
@@ -96,7 +96,7 @@ describe('Identity', () => {
 
       expect(identity.__wbg_ptr).to.not.equal(0);
 
-      expect(identity.getPublicKeyById(keyId).bytes()).to.deep.equal(pubKey.bytes());
+      expect(identity.getPublicKeyById(keyId).toBytes()).to.deep.equal(pubKey.toBytes());
     });
 
     it('should allows to set balance', () => {

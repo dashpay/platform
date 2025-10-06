@@ -62,7 +62,7 @@ impl OutPointWasm {
         self.0.txid.to_hex()
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> Vec<u8> {
         let slice: [u8; 36] = self.0.into();
         slice.to_vec()

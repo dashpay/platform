@@ -78,7 +78,7 @@ describe('DocumentTransition', () => {
 
       documentTransition.dataContractId = new Uint8Array(32);
 
-      expect(documentTransition.dataContractId.bytes()).to.deep.equal(new Uint8Array(32));
+      expect(documentTransition.dataContractId.toBytes()).to.deep.equal(new Uint8Array(32));
     });
 
     it('should allow to set identityContractNonce', () => {

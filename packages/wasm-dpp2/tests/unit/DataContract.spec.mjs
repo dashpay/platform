@@ -45,13 +45,13 @@ describe('DataContract', () => {
 
       const dataContract = wasm.DataContract.fromValue(value, true);
 
-      expect(dataContract.bytes()).to.deep.equal(fromHexString(dataContractBytes));
+      expect(dataContract.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
 
-      const dataContractFromBytes = wasm.DataContract.fromBytes(dataContract.bytes(), false, PlatformVersion.PLATFORM_V1);
+      const dataContractFromBytes = wasm.DataContract.fromBytes(dataContract.toBytes(), false, PlatformVersion.PLATFORM_V1);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
 
-      expect(dataContractFromBytes.bytes()).to.deep.equal(fromHexString(dataContractBytes));
+      expect(dataContractFromBytes.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
     });
 
     it('should allows to create DataContract from bytes without full validation', () => {

@@ -77,7 +77,7 @@ impl StateTransitionWasm {
         self.0
             .sign(
                 &public_key.clone().into(),
-                private_key.get_bytes().as_slice(),
+                private_key.to_bytes().as_slice(),
                 &MockBLS {},
             )
             .with_js_error()?;
@@ -104,7 +104,7 @@ impl StateTransitionWasm {
         let _sig = self
             .0
             .sign_by_private_key(
-                &private_key.get_bytes().as_slice(),
+                &private_key.to_bytes().as_slice(),
                 KeyType::from(key_type),
                 &MockBLS {},
             )
@@ -226,7 +226,7 @@ impl StateTransitionWasm {
         Ok(())
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> Result<JsValue, JsValue> {
         let bytes = self.0.serialize_to_bytes().with_js_error()?;
 

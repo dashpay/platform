@@ -128,7 +128,7 @@ impl DataContractWasm {
         let definitions_value = Value::from(definitions);
 
         let data_contract_id =
-            DataContract::generate_data_contract_id_v0(owner_id.get_bytes(), identity_nonce);
+            DataContract::generate_data_contract_id_v0(owner_id.to_bytes(), identity_nonce);
 
         let data_contract_id_value = Value::from(data_contract_id.to_string(Base58));
 
@@ -252,7 +252,7 @@ impl DataContractWasm {
         )
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self, js_platform_version: JsValue) -> Result<Vec<u8>, JsValue> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
@@ -485,7 +485,7 @@ impl DataContractWasm {
         identity_nonce: IdentityNonce,
     ) -> Result<IdentifierWasm, JsValue> {
         Ok(DataContract::generate_data_contract_id_v0(
-            IdentifierWasm::try_from(js_owner_id)?.get_bytes(),
+            IdentifierWasm::try_from(js_owner_id)?.to_bytes(),
             identity_nonce,
         )
         .into())

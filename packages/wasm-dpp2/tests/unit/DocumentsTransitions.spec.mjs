@@ -633,7 +633,7 @@ describe('DocumentsTransitions', () => {
 
         transferTransition.recipientId = newRecipient;
 
-        expect(transferTransition.recipientId.bytes()).to.deep.equal(newRecipient);
+        expect(transferTransition.recipientId.toBytes()).to.deep.equal(newRecipient);
       });
     });
 

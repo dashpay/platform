@@ -83,7 +83,7 @@ impl CoreScriptWasm {
         self.0.to_string(Base64)
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> Vec<u8> {
         self.0.to_bytes()
     }

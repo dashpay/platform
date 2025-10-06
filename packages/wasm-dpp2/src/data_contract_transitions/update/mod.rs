@@ -78,7 +78,7 @@ impl DataContractUpdateTransitionWasm {
         DataContractUpdateTransitionWasm::from_bytes(bytes)
     }
 
-    #[wasm_bindgen(js_name = "bytes")]
+    #[wasm_bindgen(js_name = "toBytes")]
     pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
         self.0.serialize_to_bytes().with_js_error()
     }

@@ -27,7 +27,7 @@ describe('PrivateKey', () => {
 
       const pkeyFromHex = wasm.PrivateKey.fromHex(bytes, 'Mainnet');
 
-      expect(pkey.bytes()).to.deep.equal(pkeyFromHex.bytes());
+      expect(pkey.toBytes()).to.deep.equal(pkeyFromHex.toBytes());
     });
 
     it('should allow to create PrivateKey from wif and read value in wif', () => {
@@ -39,7 +39,7 @@ describe('PrivateKey', () => {
     it('should allow to create PrivateKey from wif and write value in bytes', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(pkey.bytes()).to.deep.equal(fromHexString(bytes));
+      expect(pkey.toBytes()).to.deep.equal(fromHexString(bytes));
     });
   });
 
@@ -53,7 +53,7 @@ describe('PrivateKey', () => {
     it('should allow to get key bytes', () => {
       const pkey = wasm.PrivateKey.fromWIF(wif);
 
-      expect(toHexString(pkey.bytes())).to.equal(bytes);
+      expect(toHexString(pkey.toBytes())).to.equal(bytes);
     });
 
     it('should allow to get key hex', () => {
