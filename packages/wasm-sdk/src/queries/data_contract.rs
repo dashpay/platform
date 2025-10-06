@@ -40,7 +40,10 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        Ok(DataContractWasm::from_data_contract(contract))
+        Ok(DataContractWasm::from_data_contract(
+            contract,
+            self.version(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]
