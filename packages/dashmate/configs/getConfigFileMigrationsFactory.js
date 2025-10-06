@@ -1119,8 +1119,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      // Introduce DAPI selection flag (defaults to rs-dapi)
-      '2.1.0-dev.3': (configFile) => {
+      '2.1.0-dev.8': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
@@ -1130,13 +1129,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             } else if (typeof options.platform.dapi.deprecated.enabled === 'undefined') {
               options.platform.dapi.deprecated.enabled = defaultConfig.get('platform.dapi.deprecated.enabled');
             }
-          });
-        return configFile;
-      },
-      '2.1.0-dev.6': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
 
             if (!options.platform.dapi.rsDapi) {
               options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
@@ -1161,19 +1153,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
               options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
-            }
-          });
-
-        return configFile;
-      },
-      '2.1.0-dev.7': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-              return;
             }
 
             if (!options.platform.dapi.rsDapi.logs) {
