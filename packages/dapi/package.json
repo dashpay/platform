@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/dapi",
   "private": true,
-  "version": "2.1.0-dev.7",
+  "version": "2.1.0-dev.8",
   "description": "A decentralized API for the Dash network",
   "scripts": {
     "api": "node scripts/api.js",
@@ -51,7 +51,7 @@
     "jayson": "^4.1.0",
     "lodash": "^4.17.21",
     "lru-cache": "^5.1.1",
-    "pino": "^8.16.2",
+    "pino": "^9.13.0",
     "pino-pretty": "^10.2.3",
     "ws": "^8.17.1"
   },

@@ -10,8 +10,8 @@ describe('Tokens', function tokensSuite() {
     await sdk.connect();
   });
 
-  it('calculateId() derives token ID from contract', () => {
-    const id = sdk.tokens.calculateId(TEST_IDS.tokenContractId, 0);
+  it('calculateId() derives token ID from contract', async () => {
+    const id = await sdk.tokens.calculateId(TEST_IDS.tokenContractId, 0);
     expect(id).to.equal(TEST_IDS.tokenId);
   });
 
