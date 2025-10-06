@@ -1176,25 +1176,25 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               return;
             }
 
-            if (!options.platform.dapi.rsDapi.logging) {
-              options.platform.dapi.rsDapi.logging = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logging'));
+            if (!options.platform.dapi.rsDapi.logs) {
+              options.platform.dapi.rsDapi.logs = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logs'));
               return;
             }
 
-            if (typeof options.platform.dapi.rsDapi.logging.level === 'undefined') {
-              options.platform.dapi.rsDapi.logging.level = defaultConfig.get('platform.dapi.rsDapi.logging.level');
+            if (typeof options.platform.dapi.rsDapi.logs.level === 'undefined') {
+              options.platform.dapi.rsDapi.logs.level = defaultConfig.get('platform.dapi.rsDapi.logs.level');
             }
 
-            if (typeof options.platform.dapi.rsDapi.logging.jsonFormat === 'undefined') {
-              options.platform.dapi.rsDapi.logging.jsonFormat = defaultConfig.get('platform.dapi.rsDapi.logging.jsonFormat');
+            if (typeof options.platform.dapi.rsDapi.logs.jsonFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logs.jsonFormat = defaultConfig.get('platform.dapi.rsDapi.logs.jsonFormat');
             }
 
-            if (typeof options.platform.dapi.rsDapi.logging.accessLogPath === 'undefined') {
-              options.platform.dapi.rsDapi.logging.accessLogPath = defaultConfig.get('platform.dapi.rsDapi.logging.accessLogPath');
+            if (typeof options.platform.dapi.rsDapi.logs.accessLogPath === 'undefined') {
+              options.platform.dapi.rsDapi.logs.accessLogPath = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogPath');
             }
 
-            if (typeof options.platform.dapi.rsDapi.logging.accessLogFormat === 'undefined') {
-              options.platform.dapi.rsDapi.logging.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logging.accessLogFormat');
+            if (typeof options.platform.dapi.rsDapi.logs.accessLogFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logs.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogFormat');
             }
           });
 

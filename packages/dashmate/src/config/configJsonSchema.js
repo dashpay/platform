@@ -895,7 +895,7 @@ export default {
                   required: ['host', 'port'],
                   additionalProperties: false,
                 },
-                logging: {
+                logs: {
                   type: 'object',
                   properties: {
                     level: {
@@ -921,7 +921,7 @@ export default {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'metrics', 'logging'],
+              required: ['docker', 'metrics', 'logs'],
               additionalProperties: false,
             },
           },
