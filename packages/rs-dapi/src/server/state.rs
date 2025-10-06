@@ -9,3 +9,9 @@ pub(super) struct JsonRpcAppState {
     pub core_service: CoreServiceImpl,
     pub translator: Arc<JsonRpcTranslator>,
 }
+
+#[derive(Clone)]
+pub(super) struct MetricsAppState {
+    pub platform_service: PlatformServiceImpl,
+    pub core_service: CoreServiceImpl,
+}

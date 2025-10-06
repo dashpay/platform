@@ -14,6 +14,36 @@ use crate::clients::{
 // The struct is defined in the parent platform_service.rs module
 use crate::services::platform_service::PlatformServiceImpl;
 
+/// Captures upstream health information when building the Platform status response.
+#[derive(Debug, Clone, Default)]
+pub struct PlatformStatusHealth {
+    pub drive_error: Option<String>,
+    pub tenderdash_status_error: Option<String>,
+    pub tenderdash_netinfo_error: Option<String>,
+}
+
+impl PlatformStatusHealth {
+    #[inline]
+    pub fn is_drive_healthy(&self) -> bool {
+        self.drive_error.is_none()
+    }
+
+    #[inline]
+    pub fn is_tenderdash_healthy(&self) -> bool {
+        self.tenderdash_status_error.is_none()
+    }
+
+    #[inline]
+    pub fn is_netinfo_healthy(&self) -> bool {
+        self.tenderdash_netinfo_error.is_none()
+    }
+
+    #[inline]
+    pub fn is_healthy(&self) -> bool {
+        self.is_drive_healthy() && self.is_tenderdash_healthy() && self.is_netinfo_healthy()
+    }
+}
+
 impl PlatformServiceImpl {
     /// Handle the Platform `getStatus` request with caching and cache warming logic.
     pub async fn get_status_impl(
@@ -42,8 +72,8 @@ impl PlatformServiceImpl {
         }
 
         // Build fresh response and cache it
-        match self.build_status_response().await {
-            Ok(response) => {
+        match self.build_status_response_with_health().await {
+            Ok((response, _health)) => {
                 self.platform_cache.put(key, &response).await;
                 metrics::cache_miss("get_status");
                 Ok(Response::new(response))
@@ -53,7 +83,11 @@ impl PlatformServiceImpl {
     }
 
     /// Gather Drive and Tenderdash status information and compose the unified response.
-    async fn build_status_response(&self) -> Result<GetStatusResponse, Status> {
+    pub(crate) async fn build_status_response_with_health(
+        &self,
+    ) -> Result<(GetStatusResponse, PlatformStatusHealth), Status> {
+        let mut health = PlatformStatusHealth::default();
+
         // Prepare request for Drive
         let drive_request = GetStatusRequest {
             version: Some(dapi_grpc::platform::v0::get_status_request::Version::V0(
@@ -73,6 +107,7 @@ impl PlatformServiceImpl {
             Ok(status) => status,
             Err(e) => {
                 error!(error = ?e, "Failed to fetch Drive status - technical failure, using defaults");
+                health.drive_error = Some(e.to_string());
                 DriveStatusResponse::default()
             }
         };
@@ -81,6 +116,7 @@ impl PlatformServiceImpl {
             Ok(status) => status,
             Err(e) => {
                 error!(error = ?e, "Failed to fetch Tenderdash status - technical failure, using defaults");
+                health.tenderdash_status_error = Some(e.to_string());
                 TenderdashStatusResponse::default()
             }
         };
@@ -89,12 +125,14 @@ impl PlatformServiceImpl {
             Ok(netinfo) => netinfo,
             Err(e) => {
                 error!(error = ?e, "Failed to fetch Tenderdash netinfo - technical failure, using defaults");
+                health.tenderdash_netinfo_error = Some(e.to_string());
                 NetInfoResponse::default()
             }
         };
 
         // Use standalone functions to create the response
-        build_status_response(drive_status, tenderdash_status, tenderdash_netinfo)
+        let response = build_status_response(drive_status, tenderdash_status, tenderdash_netinfo)?;
+        Ok((response, health))
     }
 }
 

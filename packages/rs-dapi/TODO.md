@@ -76,8 +76,8 @@ Legend:
   - Files: `src/logging/middleware.rs`, gRPC server builder wiring
 - [ ] Prometheus metrics: request counts, latency, errors, subscriber counts
   - Files: `src/server.rs` (`/metrics`), metrics crate integration
-- [ ] Readiness/liveness checks validate upstreams (Drive, Tenderdash RPC/WS, ZMQ, Core RPC)
-  - Files: `src/server.rs` handlers
+- [x] Health check validates upstreams (Drive, Tenderdash RPC, Core RPC) via `/health`
+  - Files: `src/server/metrics.rs`, `src/services/platform_service/get_status.rs`
 
 ## P1 — Deployment
 

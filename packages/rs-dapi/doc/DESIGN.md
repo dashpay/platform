@@ -329,7 +329,8 @@ Provides legacy HTTP endpoints for backward compatibility via protocol translati
 Built-in observability and monitoring capabilities:
 
 #### Health Check Endpoints
-- `GET /health` - Basic health status
+- `GET /health` - Aggregated health check covering rs-dapi, Drive gRPC status, Tenderdash RPC, and Core RPC. Returns `503` when any dependency is unhealthy.
+- Readiness/liveness split removed in favor of the single dependency-aware health probe.
 
 #### Metrics Endpoints
 - `GET /metrics` - Prometheus metrics
