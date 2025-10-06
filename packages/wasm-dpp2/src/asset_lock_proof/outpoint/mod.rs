@@ -1,9 +1,10 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::IntoWasm;
 use dpp::dashcore::{OutPoint, Txid};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "OutPoint")]
 #[derive(Clone)]
@@ -43,8 +44,9 @@ impl OutPointWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(txid_hex: String, vout: u32) -> Result<OutPointWasm, JsValue> {
-        let out_point = Txid::from_hex(&txid_hex).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn new(txid_hex: String, vout: u32) -> WasmDppResult<OutPointWasm> {
+        let out_point = Txid::from_hex(&txid_hex)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         Ok(OutPointWasm(OutPoint {
             txid: out_point,
@@ -93,26 +95,27 @@ impl OutPointWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<OutPointWasm, JsValue> {
-        Ok(OutPointWasm::from_bytes(
-            decode(hex.as_str(), Hex).map_err(JsError::from)?,
-        ))
+    pub fn from_hex(hex: String) -> WasmDppResult<OutPointWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(OutPointWasm::from_bytes(bytes))
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<OutPointWasm, JsValue> {
-        Ok(OutPointWasm::from_bytes(
-            decode(base64.as_str(), Base64).map_err(JsError::from)?,
-        ))
+    pub fn from_base64(base64: String) -> WasmDppResult<OutPointWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(OutPointWasm::from_bytes(bytes))
     }
 }
 
 impl OutPointWasm {
-    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> Result<Vec<OutPointWasm>, JsValue> {
+    pub fn vec_from_js_value(js_outpoints: &js_sys::Array) -> WasmDppResult<Vec<OutPointWasm>> {
         let outpoints: Vec<OutPointWasm> = js_outpoints
             .iter()
-            .map(|key| OutPointWasm::try_from(key))
-            .collect::<Result<Vec<OutPointWasm>, JsValue>>()?;
+            .map(OutPointWasm::try_from)
+            .collect::<Result<Vec<OutPointWasm>, JsValue>>()
+            .map_err(|e| WasmDppError::invalid_argument(e.as_string().unwrap_or_default()))?;
 
         Ok(outpoints)
     }

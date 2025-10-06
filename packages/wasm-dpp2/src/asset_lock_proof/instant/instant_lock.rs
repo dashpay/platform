@@ -1,4 +1,5 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::bls_sig_utils::BLSSignature;
 use dpp::dashcore::hash_types::CycleHash;
 use dpp::dashcore::hashes::hex::FromHex;
@@ -6,7 +7,6 @@ use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
 use dpp::dashcore::{InstantLock, Txid};
 use std::str::FromStr;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "InstantLock")]
@@ -44,17 +44,18 @@ impl InstantLockWasm {
         txid: String,
         cycle_hash: String,
         bls_signature: String,
-    ) -> Result<InstantLockWasm, JsValue> {
+    ) -> WasmDppResult<InstantLockWasm> {
         let inputs = OutPointWasm::vec_from_js_value(js_inputs)?;
 
         Ok(InstantLockWasm(InstantLock {
             version,
             inputs: inputs.iter().map(|input| input.clone().into()).collect(),
-            txid: Txid::from_hex(&txid).map_err(|err| JsValue::from(err.to_string()))?,
+            txid: Txid::from_hex(&txid)
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
             cyclehash: CycleHash::from_str(&cycle_hash)
-                .map_err(|err| JsValue::from(err.to_string()))?,
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
             signature: BLSSignature::from_hex(&bls_signature)
-                .map_err(|err| JsValue::from(err.to_string()))?,
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
         }))
     }
 
@@ -93,29 +94,30 @@ impl InstantLockWasm {
     }
 
     #[wasm_bindgen(setter = "inputs")]
-    pub fn set_inputs(&mut self, inputs: &js_sys::Array) -> Result<(), JsValue> {
+    pub fn set_inputs(&mut self, inputs: &js_sys::Array) -> WasmDppResult<()> {
         let inputs = OutPointWasm::vec_from_js_value(inputs)?;
         self.0.inputs = inputs.iter().map(|input| input.clone().into()).collect();
         Ok(())
     }
 
     #[wasm_bindgen(setter = "txid")]
-    pub fn set_txid(&mut self, txid: String) -> Result<(), JsValue> {
-        self.0.txid = Txid::from_hex(&txid).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn set_txid(&mut self, txid: String) -> WasmDppResult<()> {
+        self.0.txid =
+            Txid::from_hex(&txid).map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(())
     }
 
     #[wasm_bindgen(setter = "cyclehash")]
-    pub fn set_cycle_hash(&mut self, cycle_hash: String) -> Result<(), JsValue> {
-        self.0.cyclehash =
-            CycleHash::from_str(&cycle_hash).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn set_cycle_hash(&mut self, cycle_hash: String) -> WasmDppResult<()> {
+        self.0.cyclehash = CycleHash::from_str(&cycle_hash)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(())
     }
 
     #[wasm_bindgen(setter = "blsSignature")]
-    pub fn set_bls_signature(&mut self, bls_signature: String) -> Result<(), JsValue> {
-        self.0.signature =
-            BLSSignature::from_hex(&bls_signature).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn set_bls_signature(&mut self, bls_signature: String) -> WasmDppResult<()> {
+        self.0.signature = BLSSignature::from_hex(&bls_signature)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(())
     }
 }

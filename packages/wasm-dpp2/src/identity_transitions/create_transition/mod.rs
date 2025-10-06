@@ -1,9 +1,9 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::enums::platform::PlatformVersionWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::WithJsError;
 use dpp::identity::state_transition::AssetLockProved;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -15,8 +15,8 @@ use dpp::state_transition::identity_create_transition::accessors::IdentityCreate
 use dpp::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityCreateTransition")]
 #[derive(Clone)]
@@ -52,7 +52,7 @@ impl IdentityCreateTransitionWasm {
         asset_lock: &AssetLockProofWasm,
         signature: Option<Vec<u8>>,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_js_value(js_public_keys)?;
 
@@ -68,37 +68,38 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "default")]
-    pub fn default(js_platform_version: JsValue) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    pub fn default(js_platform_version: JsValue) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let platform_version = PlatformVersionWasm::try_from(js_platform_version)?;
 
         IdentityCreateTransition::default_versioned(&platform_version.into())
-            .map_err(|err| JsValue::from_str(&*err.to_string()))
+            .map_err(|err| WasmDppError::generic(err.to_string()))
             .map(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityCreateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityCreateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreateTransitionWasm, JsValue> {
-        let rs_transition =
-            IdentityCreateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreateTransitionWasm> {
+        let rs_transition = IdentityCreateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(IdentityCreateTransitionWasm(rs_transition))
     }
@@ -128,8 +129,8 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.signable_bytes().with_js_error()
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "assetLock")]
@@ -138,7 +139,7 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "publicKeys")]
-    pub fn set_public_keys(&mut self, js_public_keys: &js_sys::Array) -> Result<(), JsValue> {
+    pub fn set_public_keys(&mut self, js_public_keys: &js_sys::Array) -> WasmDppResult<()> {
         let public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_js_value(js_public_keys)?;
 
@@ -163,8 +164,9 @@ impl IdentityCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "assetLock")]
-    pub fn set_asset_lock_proof(&mut self, proof: AssetLockProofWasm) -> Result<(), JsValue> {
-        self.0.set_asset_lock_proof(proof.into()).with_js_error()
+    pub fn set_asset_lock_proof(&mut self, proof: AssetLockProofWasm) -> WasmDppResult<()> {
+        self.0.set_asset_lock_proof(proof.into())?;
+        Ok(())
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
@@ -175,13 +177,13 @@ impl IdentityCreateTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         st: &StateTransitionWasm,
-    ) -> Result<IdentityCreateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityCreateTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::IdentityCreate(st) => Ok(IdentityCreateTransitionWasm(st)),
-            _ => Err(JsValue::from_str(
-                &"Invalid state document_transition type)",
+            _ => Err(WasmDppError::invalid_argument(
+                "Invalid state transition type",
             )),
         }
     }

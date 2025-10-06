@@ -2,9 +2,10 @@ use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::core_script::CoreScriptWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::withdrawal::PoolingWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::{IntoWasm, WithJsError};
+use crate::utils::IntoWasm;
 use dpp::identity::KeyID;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
@@ -17,8 +18,8 @@ use dpp::state_transition::identity_credit_withdrawal_transition::IdentityCredit
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::v1::IdentityCreditWithdrawalTransitionV1;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityCreditWithdrawalTransition")]
 pub struct IdentityCreditWithdrawalTransitionWasm(IdentityCreditWithdrawalTransition);
@@ -44,7 +45,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         js_output_script: &JsValue,
         nonce: Option<IdentityNonce>,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let pooling = PoolingWasm::try_from(js_pooling)?;
         let identity_id: Identifier = IdentifierWasm::try_from(js_identity_id)?.into();
 
@@ -133,30 +134,30 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "outputScript")]
-    pub fn set_output_script(&mut self, js_script: &JsValue) -> Result<(), JsValue> {
-        match js_script.is_undefined() {
-            true => self.0.set_output_script(None),
-            false => {
-                let script: CoreScriptWasm =
-                    js_script.to_wasm::<CoreScriptWasm>("CoreScript")?.clone();
-                self.0.set_output_script(Some(script.clone().into()))
-            }
-        };
+    pub fn set_output_script(&mut self, js_script: &JsValue) -> WasmDppResult<()> {
+        if js_script.is_undefined() {
+            self.0.set_output_script(None);
+        } else {
+            let script: CoreScriptWasm = js_script.to_wasm::<CoreScriptWasm>("CoreScript")?.clone();
+            self.0.set_output_script(Some(script.clone().into()));
+        }
 
         Ok(())
     }
 
     #[wasm_bindgen(setter = "pooling")]
-    pub fn set_pooling(&mut self, js_pooling: JsValue) -> Result<(), JsValue> {
+    pub fn set_pooling(&mut self, js_pooling: JsValue) -> WasmDppResult<()> {
         let pooling: PoolingWasm = PoolingWasm::try_from(js_pooling)?;
-        Ok(self.0.set_pooling(pooling.into()))
+        self.0.set_pooling(pooling.into());
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "identityId")]
-    pub fn set_identity_id(&mut self, js_identity_id: JsValue) -> Result<(), JsValue> {
+    pub fn set_identity_id(&mut self, js_identity_id: JsValue) -> WasmDppResult<()> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
-        Ok(self.0.set_identity_id(identity_id.into()))
+        self.0.set_identity_id(identity_id.into());
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
@@ -190,8 +191,8 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.signable_bytes().with_js_error()
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
@@ -210,45 +211,42 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityCreditWithdrawalTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityCreditWithdrawalTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Hex,
-        ))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Base64,
-        ))
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Base64))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let rs_transition =
-            IdentityCreditWithdrawalTransition::deserialize_from_bytes(bytes.as_slice())
-                .with_js_error()?;
+            IdentityCreditWithdrawalTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(IdentityCreditWithdrawalTransitionWasm(rs_transition))
     }
@@ -261,14 +259,16 @@ impl IdentityCreditWithdrawalTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         st: &StateTransitionWasm,
-    ) -> Result<IdentityCreditWithdrawalTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::IdentityCreditWithdrawal(st) => {
                 Ok(IdentityCreditWithdrawalTransitionWasm(st))
             }
-            _ => Err(JsValue::from_str(&"Invalid state transition type)")),
+            _ => Err(WasmDppError::invalid_argument(
+                "Invalid state transition type",
+            )),
         }
     }
 }

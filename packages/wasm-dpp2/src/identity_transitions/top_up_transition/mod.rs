@@ -1,7 +1,7 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::WithJsError;
 use dpp::identifier::Identifier;
 use dpp::identity::state_transition::{AssetLockProved, OptionallyAssetLockProved};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -12,8 +12,8 @@ use dpp::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionLike};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityTopUpTransition")]
 #[derive(Clone)]
@@ -36,7 +36,7 @@ impl IdentityTopUpTransitionWasm {
         asset_lock_proof: &AssetLockProofWasm,
         js_identity_id: JsValue,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
         let identity_id: Identifier = IdentifierWasm::try_from(js_identity_id)?.into();
 
         Ok(IdentityTopUpTransitionWasm(IdentityTopUpTransition::V0(
@@ -90,20 +90,21 @@ impl IdentityTopUpTransitionWasm {
     pub fn set_identity_identifier(
         &mut self,
         js_identity_identifier: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let identity_identifier: Identifier =
             IdentifierWasm::try_from(js_identity_identifier)?.into();
-        Ok(self.0.set_identity_id(identity_identifier.clone().into()))
+        self.0.set_identity_id(identity_identifier.clone().into());
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "assetLockProof")]
     pub fn set_asset_lock_proof(
         &mut self,
         asset_lock_proof: &AssetLockProofWasm,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         self.0
-            .set_asset_lock_proof(asset_lock_proof.clone().into())
-            .with_js_error()
+            .set_asset_lock_proof(asset_lock_proof.clone().into())?;
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "signature")]
@@ -112,8 +113,8 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.signable_bytes().with_js_error()
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(setter = "signature")]
@@ -122,44 +123,41 @@ impl IdentityTopUpTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Hex,
-        ))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Base64,
-        ))
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Base64))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        let rs_transition =
-            IdentityTopUpTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityTopUpTransitionWasm> {
+        let rs_transition = IdentityTopUpTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(IdentityTopUpTransitionWasm(rs_transition))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        IdentityTopUpTransitionWasm::from_bytes(decode(hex.as_str(), Hex).map_err(JsError::from)?)
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityTopUpTransitionWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        IdentityTopUpTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityTopUpTransitionWasm, JsValue> {
-        IdentityTopUpTransitionWasm::from_bytes(
-            decode(base64.as_str(), Base64).map_err(JsError::from)?,
-        )
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityTopUpTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        IdentityTopUpTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toStateTransition")]
@@ -170,12 +168,14 @@ impl IdentityTopUpTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         st: &StateTransitionWasm,
-    ) -> Result<IdentityTopUpTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityTopUpTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::IdentityTopUp(st) => Ok(IdentityTopUpTransitionWasm(st)),
-            _ => Err(JsValue::from_str(&"Invalid state transition type)")),
+            _ => Err(WasmDppError::invalid_argument(
+                "Invalid state transition type",
+            )),
         }
     }
 }

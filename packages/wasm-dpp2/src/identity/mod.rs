@@ -1,6 +1,6 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_public_key::IdentityPublicKeyWasm;
-use crate::utils::WithJsError;
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::{self, Identity, KeyID};
 use dpp::platform_value::ReplacementType;
@@ -12,8 +12,8 @@ use dpp::version::PlatformVersion;
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::to_value;
 use std::collections::BTreeMap;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "Identity")]
@@ -38,20 +38,20 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> Result<IdentityWasm, JsValue> {
-        let identifier: IdentifierWasm = js_identifier.try_into()?;
+    pub fn new(js_identifier: &JsValue) -> WasmDppResult<IdentityWasm> {
+        let identifier = IdentifierWasm::try_from(js_identifier)?;
 
-        let identity = Identity::create_basic_identity(identifier.into(), PlatformVersion::first())
-            .with_js_error()?;
+        let identity =
+            Identity::create_basic_identity(identifier.into(), PlatformVersion::first())?;
 
         Ok(IdentityWasm(identity))
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
-        Ok(self
-            .0
-            .set_id(IdentifierWasm::try_from(js_identifier)?.into()))
+    pub fn set_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
+        let identifier = IdentifierWasm::try_from(js_identifier)?;
+        self.0.set_id(identifier.into());
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "balance")]
@@ -105,85 +105,81 @@ impl IdentityWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Hex,
-        ))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Base64,
-        ))
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Base64))
     }
 
-    fn cleaned_json_value(&self) -> Result<JsonValue, JsValue> {
-        let mut value = self.0.to_object().with_js_error()?;
+    fn cleaned_json_value(&self) -> WasmDppResult<JsonValue> {
+        let mut value = self.0.to_object()?;
 
         value
             .replace_at_paths(
                 identity::IDENTIFIER_FIELDS_RAW_OBJECT,
                 ReplacementType::TextBase58,
             )
-            .map_err(|e| JsValue::from_str(&e.to_string()))?;
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         if let Some(public_keys) = value
             .get_optional_array_mut_ref(identity::property_names::PUBLIC_KEYS)
-            .map_err(|e| JsValue::from_str(&e.to_string()))?
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
         {
             for key in public_keys.iter_mut() {
                 key.replace_at_paths(
                     identity::identity_public_key::BINARY_DATA_FIELDS,
                     ReplacementType::TextBase64,
                 )
-                .map_err(|e| JsValue::from_str(&e.to_string()))?;
+                .map_err(|e| WasmDppError::serialization(e.to_string()))?;
             }
         }
 
         value
             .try_into_validating_json()
-            .map_err(|e| JsValue::from_str(&e.to_string()))
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
         let json_value = self.cleaned_json_value()?;
-        to_value(&json_value).map_err(|e| JsValue::from_str(&e.to_string()))
+        to_value(&json_value).map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> Result<JsValue, JsValue> {
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
         self.to_object()
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityWasm, JsValue> {
-        match Identity::deserialize_from_bytes(bytes.as_slice()).with_js_error() {
-            Ok(identity) => Ok(IdentityWasm(identity)),
-            Err(err) => Err(err),
-        }
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityWasm> {
+        let identity = Identity::deserialize_from_bytes(bytes.as_slice())?;
+        Ok(IdentityWasm(identity))
     }
 }
 

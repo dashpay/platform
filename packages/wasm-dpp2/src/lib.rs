@@ -19,6 +19,7 @@ pub mod data_contract_transitions;
 pub mod document;
 pub mod encrypted_note;
 pub mod enums;
+pub mod error;
 pub mod group_state_transition_info;
 pub mod identifier;
 pub mod identity;

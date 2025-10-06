@@ -1,11 +1,11 @@
 use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::mock_bls::MockBLS;
 use crate::private_key::PrivateKeyWasm;
-use crate::utils::WithJsError;
 use dpp::dashcore::secp256k1::hashes::hex::Case::Lower;
 use dpp::dashcore::secp256k1::hashes::hex::DisplayHex;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
@@ -37,8 +37,8 @@ use dpp::state_transition::{
     StateTransition, StateTransitionIdentitySigned, StateTransitionSigningOptions,
 };
 use sha2::{Digest, Sha256};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "StateTransition")]
@@ -73,20 +73,18 @@ impl StateTransitionWasm {
         &mut self,
         private_key: &PrivateKeyWasm,
         public_key: &IdentityPublicKeyWasm,
-    ) -> Result<Vec<u8>, JsValue> {
-        self.0
-            .sign(
-                &public_key.clone().into(),
-                private_key.to_bytes().as_slice(),
-                &MockBLS {},
-            )
-            .with_js_error()?;
+    ) -> WasmDppResult<Vec<u8>> {
+        self.0.sign(
+            &public_key.clone().into(),
+            private_key.to_bytes().as_slice(),
+            &MockBLS {},
+        )?;
 
         self.0.set_signature(self.0.signature().clone());
         self.0
             .set_signature_public_key_id(self.0.signature_public_key_id().unwrap());
 
-        self.0.serialize_to_bytes().with_js_error()
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "signByPrivateKey")]
@@ -95,26 +93,24 @@ impl StateTransitionWasm {
         private_key: &PrivateKeyWasm,
         key_id: Option<KeyID>,
         js_key_type: JsValue,
-    ) -> Result<Vec<u8>, JsValue> {
-        let key_type = match js_key_type.is_undefined() {
-            true => KeyTypeWasm::ECDSA_SECP256K1,
-            false => KeyTypeWasm::try_from(js_key_type)?,
+    ) -> WasmDppResult<Vec<u8>> {
+        let key_type = if js_key_type.is_undefined() {
+            KeyTypeWasm::ECDSA_SECP256K1
+        } else {
+            KeyTypeWasm::try_from(js_key_type)?
         };
 
-        let _sig = self
-            .0
-            .sign_by_private_key(
-                &private_key.to_bytes().as_slice(),
-                KeyType::from(key_type),
-                &MockBLS {},
-            )
-            .with_js_error();
+        self.0.sign_by_private_key(
+            &private_key.to_bytes().as_slice(),
+            KeyType::from(key_type),
+            &MockBLS {},
+        )?;
 
-        if key_id.is_some() {
-            self.0.set_signature_public_key_id(key_id.unwrap());
+        if let Some(key_id) = key_id {
+            self.0.set_signature_public_key_id(key_id);
         }
 
-        self.0.serialize_to_bytes().with_js_error()
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "verifyPublicKey")]
@@ -123,7 +119,7 @@ impl StateTransitionWasm {
         public_key: &IdentityPublicKeyWasm,
         js_allow_signing_with_any_security_level: Option<bool>,
         js_allow_signing_with_any_purpose: Option<bool>,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let allow_signing_with_any_security_level =
             js_allow_signing_with_any_security_level.unwrap_or(false);
         let allow_signing_with_any_purpose = js_allow_signing_with_any_purpose.unwrap_or(false);
@@ -136,11 +132,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             DataContractUpdate(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -149,11 +143,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             Batch(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -162,11 +154,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             IdentityCreditWithdrawal(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -175,11 +165,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             IdentityUpdate(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -188,11 +176,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             IdentityCreditTransfer(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -201,11 +187,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             MasternodeVote(st) => {
                 st.verify_public_key_level_and_purpose(
@@ -214,11 +198,9 @@ impl StateTransitionWasm {
                         allow_signing_with_any_security_level,
                         allow_signing_with_any_purpose,
                     },
-                )
-                .with_js_error()?;
+                )?;
 
-                st.verify_public_key_is_enabled(&public_key.clone().into())
-                    .with_js_error()?;
+                st.verify_public_key_is_enabled(&public_key.clone().into())?;
             }
             _ => {}
         }
@@ -227,60 +209,61 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<JsValue, JsValue> {
-        let bytes = self.0.serialize_to_bytes().with_js_error()?;
+    pub fn to_bytes(&self) -> WasmDppResult<JsValue> {
+        let bytes = self.0.serialize_to_bytes()?;
 
         Ok(JsValue::from(bytes.clone()))
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<JsValue, JsValue> {
-        let bytes = self.0.serialize_to_bytes().with_js_error()?;
+    pub fn to_hex(&self) -> WasmDppResult<JsValue> {
+        let bytes = self.0.serialize_to_bytes()?;
 
         Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Hex)))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<JsValue, JsValue> {
-        let bytes = self.0.serialize_to_bytes().with_js_error()?;
+    pub fn to_base64(&self) -> WasmDppResult<JsValue> {
+        let bytes = self.0.serialize_to_bytes()?;
 
         Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Base64)))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<StateTransitionWasm, JsValue> {
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<StateTransitionWasm> {
+        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(st.into())
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<StateTransitionWasm, JsValue> {
-        let bytes = decode(&hex, Encoding::Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<StateTransitionWasm> {
+        let bytes =
+            decode(&hex, Encoding::Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(st.into())
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<StateTransitionWasm, JsValue> {
-        let bytes = decode(&base64, Encoding::Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<StateTransitionWasm> {
+        let bytes = decode(&base64, Encoding::Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
-        let st = StateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+        let st = StateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(st.into())
     }
 
     #[wasm_bindgen(js_name = "hash")]
-    pub fn get_hash(&self, skip_signature: bool) -> Result<String, JsValue> {
+    pub fn get_hash(&self, skip_signature: bool) -> WasmDppResult<String> {
         let payload: Vec<u8>;
 
         if skip_signature {
-            payload = self.0.signable_bytes().with_js_error()?;
+            payload = self.0.signable_bytes()?;
         } else {
-            payload = dpp::serialization::PlatformSerializable::serialize_to_bytes(&self.0)
-                .with_js_error()?;
+            payload = dpp::serialization::PlatformSerializable::serialize_to_bytes(&self.0)?;
         }
 
         Ok(Sha256::digest(payload).to_hex_string(Lower))
@@ -345,7 +328,7 @@ impl StateTransitionWasm {
     pub fn get_key_level_requirement(
         &self,
         js_purpose: &JsValue,
-    ) -> Result<Option<Vec<String>>, JsValue> {
+    ) -> WasmDppResult<Option<Vec<String>>> {
         let purpose = PurposeWasm::try_from(js_purpose.clone())?;
 
         let requirements = self.0.security_level_requirement(purpose.into());
@@ -417,7 +400,7 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setOwnerId")]
-    pub fn set_owner_id(&mut self, js_owner_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_owner_id(&mut self, js_owner_id: &JsValue) -> WasmDppResult<()> {
         let owner_id = IdentifierWasm::try_from(js_owner_id.clone())?;
 
         match self.0.clone() {
@@ -474,9 +457,9 @@ impl StateTransitionWasm {
                 self.0 = Batch(batch);
             }
             StateTransition::IdentityCreate(_) => {
-                Err(JsValue::from_str(
+                return Err(WasmDppError::invalid_argument(
                     "Cannot set owner for identity create transition",
-                ))?;
+                ));
             }
             IdentityTopUp(mut top_up) => {
                 top_up.set_identity_id(owner_id.into());
@@ -509,11 +492,13 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setIdentityContractNonce")]
-    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) -> Result<(), JsValue> {
+    pub fn set_identity_contract_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
-            DataContractCreate(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Data Contract Create",
-            ))?,
+            DataContractCreate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Data Contract Create",
+                ));
+            }
             DataContractUpdate(contract_update) => match contract_update {
                 DataContractUpdateTransition::V0(mut v0) => {
                     v0.identity_contract_nonce = nonce;
@@ -526,31 +511,43 @@ impl StateTransitionWasm {
 
                 batch.into()
             }
-            StateTransition::IdentityCreate(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Identity Create",
-            ))?,
-            IdentityTopUp(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Identity Top Up",
-            ))?,
-            IdentityCreditWithdrawal(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Identity Credit Withdrawal",
-            ))?,
-            IdentityUpdate(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Identity Update",
-            ))?,
-            IdentityCreditTransfer(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Identity Credit Transfer",
-            ))?,
-            MasternodeVote(_) => Err(JsValue::from_str(
-                "Cannot set identity contract nonce for Masternode Vote",
-            ))?,
+            StateTransition::IdentityCreate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Create",
+                ));
+            }
+            IdentityTopUp(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Top Up",
+                ));
+            }
+            IdentityCreditWithdrawal(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Credit Withdrawal",
+                ));
+            }
+            IdentityUpdate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Update",
+                ));
+            }
+            IdentityCreditTransfer(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Identity Credit Transfer",
+                ));
+            }
+            MasternodeVote(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity contract nonce for Masternode Vote",
+                ));
+            }
         };
 
         Ok(())
     }
 
     #[wasm_bindgen(js_name = "setIdentityNonce")]
-    pub fn set_identity_nonce(&mut self, nonce: IdentityNonce) -> Result<(), JsValue> {
+    pub fn set_identity_nonce(&mut self, nonce: IdentityNonce) -> WasmDppResult<()> {
         self.0 = match self.0.clone() {
             DataContractCreate(mut contract_create) => {
                 contract_create = match contract_create {
@@ -562,16 +559,26 @@ impl StateTransitionWasm {
 
                 contract_create.into()
             }
-            DataContractUpdate(_) => Err(JsValue::from_str(
-                "Cannot set identity nonce for Data Contract Update",
-            ))?,
-            Batch(_) => Err(JsValue::from_str("Cannot set identity nonce for Batch"))?,
-            StateTransition::IdentityCreate(_) => Err(JsValue::from_str(
-                "Cannot set identity nonce for Identity Create",
-            ))?,
-            IdentityTopUp(_) => Err(JsValue::from_str(
-                "Cannot set identity nonce for Identity Top Up",
-            ))?,
+            DataContractUpdate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Data Contract Update",
+                ));
+            }
+            Batch(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Batch",
+                ));
+            }
+            StateTransition::IdentityCreate(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Identity Create",
+                ));
+            }
+            IdentityTopUp(_) => {
+                return Err(WasmDppError::invalid_argument(
+                    "Cannot set identity nonce for Identity Top Up",
+                ));
+            }
             IdentityCreditWithdrawal(mut withdrawal) => {
                 withdrawal.set_nonce(nonce);
 

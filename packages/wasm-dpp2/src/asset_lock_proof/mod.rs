@@ -8,8 +8,9 @@ use crate::asset_lock_proof::instant::InstantAssetLockProofWasm;
 
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::enums::lock_types::AssetLockProofTypeWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{IntoWasm, WithJsError, get_class_type};
+use crate::utils::{IntoWasm, get_class_type};
 use dpp::prelude::AssetLockProof;
 use serde::Serialize;
 use wasm_bindgen::JsValue;
@@ -74,7 +75,7 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_asset_lock_proof: &JsValue) -> Result<AssetLockProofWasm, JsValue> {
+    pub fn new(js_asset_lock_proof: &JsValue) -> WasmDppResult<AssetLockProofWasm> {
         match get_class_type(js_asset_lock_proof)?.as_str() {
             "ChainAssetLockProof" => {
                 let chain_lock = js_asset_lock_proof
@@ -90,7 +91,9 @@ impl AssetLockProofWasm {
 
                 Ok(AssetLockProofWasm::from(instant_lock))
             }
-            &_ => Err(JsValue::from("Invalid asset lock proof type.")),
+            &_ => Err(WasmDppError::invalid_argument(
+                "Invalid asset lock proof type",
+            )),
         }
     }
 
@@ -99,7 +102,7 @@ impl AssetLockProofWasm {
         instant_lock: Vec<u8>,
         transaction: Vec<u8>,
         output_index: u32,
-    ) -> Result<AssetLockProofWasm, JsValue> {
+    ) -> WasmDppResult<AssetLockProofWasm> {
         Ok(InstantAssetLockProofWasm::new(instant_lock, transaction, output_index)?.into())
     }
 
@@ -107,7 +110,7 @@ impl AssetLockProofWasm {
     pub fn new_chain_asset_lock_proof(
         core_chain_locked_height: u32,
         out_point: &OutPointWasm,
-    ) -> Result<AssetLockProofWasm, JsValue> {
+    ) -> WasmDppResult<AssetLockProofWasm> {
         Ok(ChainAssetLockProofWasm::new(core_chain_locked_height, out_point)?.into())
     }
 
@@ -138,36 +141,40 @@ impl AssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]
-    pub fn create_identifier(&self) -> Result<IdentifierWasm, JsValue> {
-        let identifier = self.0.create_identifier().with_js_error()?;
+    pub fn create_identifier(&self) -> WasmDppResult<IdentifierWasm> {
+        let identifier = self.0.create_identifier()?;
 
         Ok(identifier.into())
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
-        let json_value = self.0.to_raw_object().with_js_error()?;
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
+        let json_value = self.0.to_raw_object()?;
 
-        Ok(json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?)
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_string(&self) -> Result<String, JsValue> {
-        Ok(hex::encode(
-            serde_json::to_string(&self.0).map_err(|err| JsValue::from(err.to_string()))?,
-        ))
+    pub fn to_string(&self) -> WasmDppResult<String> {
+        let json = serde_json::to_string(&self.0)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        Ok(hex::encode(json))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(asset_lock_proof: String) -> Result<AssetLockProofWasm, JsValue> {
-        let asset_lock_proof_bytes = hex::decode(&asset_lock_proof)
-            .map_err(|e| JsValue::from_str(&format!("Invalid asset lock proof hex: {}", e)))?;
+    pub fn from_hex(asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
+        let asset_lock_proof_bytes = hex::decode(&asset_lock_proof).map_err(|e| {
+            WasmDppError::serialization(format!("Invalid asset lock proof hex: {}", e))
+        })?;
 
-        let json_str = String::from_utf8(asset_lock_proof_bytes)
-            .map_err(|e| JsValue::from_str(&format!("Invalid UTF-8 in asset lock proof: {}", e)))?;
+        let json_str = String::from_utf8(asset_lock_proof_bytes).map_err(|e| {
+            WasmDppError::serialization(format!("Invalid UTF-8 in asset lock proof: {}", e))
+        })?;
 
-        let asset_lock_proof = serde_json::from_str(&json_str).map_err(|e| {
-            JsValue::from_str(&format!("Failed to parse asset lock proof JSON: {}", e))
+        let asset_lock_proof: AssetLockProof = serde_json::from_str(&json_str).map_err(|e| {
+            WasmDppError::serialization(format!("Failed to parse asset lock proof JSON: {}", e))
         })?;
 
         Ok(AssetLockProofWasm(asset_lock_proof))

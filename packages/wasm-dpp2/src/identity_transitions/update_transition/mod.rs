@@ -1,9 +1,9 @@
 use crate::asset_lock_proof::AssetLockProofWasm;
 use crate::enums::keys::purpose::PurposeWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_transitions::public_key_in_creation::IdentityPublicKeyInCreationWasm;
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::WithJsError;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
@@ -15,8 +15,8 @@ use dpp::state_transition::identity_update_transition::accessors::IdentityUpdate
 use dpp::state_transition::identity_update_transition::v0::IdentityUpdateTransitionV0;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "IdentityUpdateTransition")]
 #[derive(Clone)]
@@ -42,7 +42,7 @@ impl IdentityUpdateTransitionWasm {
         js_add_public_keys: &js_sys::Array,
         disable_public_keys: Vec<KeyID>,
         user_fee_increase: Option<UserFeeIncrease>,
-    ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
@@ -138,7 +138,7 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityIdentifier")]
-    pub fn set_identity_identifier(&mut self, js_identity_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_identity_identifier(&mut self, js_identity_id: &JsValue) -> WasmDppResult<()> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
         self.0.set_identity_id(identity_id.clone().into());
         Ok(())
@@ -148,14 +148,15 @@ impl IdentityUpdateTransitionWasm {
     pub fn set_public_key_ids_to_add(
         &mut self,
         js_add_public_keys: &js_sys::Array,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> =
             IdentityPublicKeyInCreationWasm::vec_from_js_value(js_add_public_keys)?;
 
         let keys: Vec<IdentityPublicKeyInCreation> =
             add_public_keys.iter().map(|id| id.clone().into()).collect();
 
-        Ok(self.0.set_public_keys_to_add(keys))
+        self.0.set_public_keys_to_add(keys);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "publicKeyIdsToDisable")]
@@ -174,8 +175,8 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.signable_bytes().with_js_error()
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.signable_bytes()?)
     }
 
     #[wasm_bindgen(getter = "signaturePublicKeyId")]
@@ -194,44 +195,41 @@ impl IdentityUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentityUpdateTransitionWasm> {
+        let bytes =
+            decode(hex.as_str(), Hex).map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentityUpdateTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
 
         IdentityUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        Ok(self.0.serialize_to_bytes()?)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Hex,
-        ))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Base64,
-        ))
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        let bytes = self.0.serialize_to_bytes()?;
+        Ok(encode(bytes.as_slice(), Base64))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentityUpdateTransitionWasm, JsValue> {
-        let rs_transition =
-            IdentityUpdateTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentityUpdateTransitionWasm> {
+        let rs_transition = IdentityUpdateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(IdentityUpdateTransitionWasm(rs_transition))
     }
@@ -244,12 +242,14 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         st: &StateTransitionWasm,
-    ) -> Result<IdentityUpdateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<IdentityUpdateTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::IdentityUpdate(st) => Ok(IdentityUpdateTransitionWasm(st)),
-            _ => Err(JsValue::from_str(&"Invalid state transition type)")),
+            _ => Err(WasmDppError::invalid_argument(
+                "Invalid state transition type",
+            )),
         }
     }
 }

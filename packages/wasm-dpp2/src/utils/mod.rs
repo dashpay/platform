@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use anyhow::{Context, anyhow, bail};
 use dpp::ProtocolError;
 use dpp::identifier::Identifier;
@@ -10,6 +11,31 @@ use std::collections::BTreeMap;
 use std::convert::TryInto;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
+
+pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
+    let replacer_func = Function::new_with_args(
+        "key, value",
+        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
+    );
+
+    let data_string = js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
+        .map_err(|_| WasmDppError::serialization("Failed to stringify value"))?;
+
+    Ok(data_string.into())
+}
+
+pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
+    let data = stringify_wasm(&data)?;
+    serde_json::from_str(&data).map_err(|e| {
+        WasmDppError::serialization(format!(
+            "unable to convert value to serde_json::Value: {e:#}"
+        ))
+    })
+}
+
+pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value> {
+    Ok(with_serde_to_json_value_wasm(data.clone())?.into())
+}
 
 pub trait ToSerdeJSONExt {
     fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;

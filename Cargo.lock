@@ -7109,6 +7109,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "talc",
+ "thiserror 1.0.69",
  "wasm-bindgen",
 ]
 

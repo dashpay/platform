@@ -3,8 +3,8 @@ mod instant_lock;
 use crate::asset_lock_proof::instant::instant_lock::InstantLockWasm;
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::asset_lock_proof::tx_out::TxOutWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::WithJsError;
 use dpp::dashcore::consensus::{deserialize, serialize};
 use dpp::dashcore::{InstantLock, Transaction};
 use dpp::identity::state_transition::asset_lock_proof::InstantAssetLockProof;
@@ -53,11 +53,11 @@ impl InstantAssetLockProofWasm {
         instant_lock: Vec<u8>,
         transaction: Vec<u8>,
         output_index: u32,
-    ) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let instant_lock: InstantLock =
-            deserialize(instant_lock.as_slice()).map_err(|err| JsValue::from(err.to_string()))?;
-        let transaction: Transaction =
-            deserialize(transaction.as_slice()).map_err(|err| JsValue::from(err.to_string()))?;
+    ) -> WasmDppResult<InstantAssetLockProofWasm> {
+        let instant_lock: InstantLock = deserialize(instant_lock.as_slice())
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        let transaction: Transaction = deserialize(transaction.as_slice())
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         Ok(InstantAssetLockProofWasm(InstantAssetLockProof {
             instant_lock,
@@ -67,9 +67,9 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
-    pub fn from_object(value: JsValue) -> Result<InstantAssetLockProofWasm, JsValue> {
-        let parameters: InstantAssetLockProofRAW =
-            serde_wasm_bindgen::from_value(value).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn from_object(value: JsValue) -> WasmDppResult<InstantAssetLockProofWasm> {
+        let parameters: InstantAssetLockProofRAW = serde_wasm_bindgen::from_value(value)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         InstantAssetLockProofWasm::new(
             parameters.instant_lock,
@@ -79,14 +79,13 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "toObject")]
-    pub fn to_object(&self) -> Result<JsValue, JsValue> {
+    pub fn to_object(&self) -> WasmDppResult<JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
         self.0
-            .to_object()
-            .with_js_error()?
+            .to_object()?
             .serialize(&serializer)
-            .map_err(JsValue::from)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "getOutput")]
@@ -138,8 +137,8 @@ impl InstantAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]
-    pub fn create_identifier(&self) -> Result<IdentifierWasm, JsValue> {
-        let identifier = self.0.create_identifier().with_js_error()?;
+    pub fn create_identifier(&self) -> WasmDppResult<IdentifierWasm> {
+        let identifier = self.0.create_identifier()?;
 
         Ok(identifier.into())
     }
