@@ -340,7 +340,7 @@ impl DataContractWasm {
             WasmSdkError::serialization(format!("failed to create DataContract from json: {}", e))
         })?;
 
-        Ok(data_contract.into())
+        Ok(DataContractWasm::from_data_contract(data_contract))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
