@@ -1,3 +1,27 @@
+## [2.1.0-dev.8](https://github.com/dashpay/platform/compare/v2.1.0-dev.7...v2.1.0-dev.8) (2025-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** creator id and improved verification of document uniqueness before insertion (#2790)
+
+### Features
+
+* **platform:** creator id and improved verification of document uniqueness before insertion ([#2790](https://github.com/dashpay/platform/issues/2790))
+* **sdk:** expose data contract from json ([#2791](https://github.com/dashpay/platform/issues/2791))
+
+
+### Bug Fixes
+
+* **dashmate:** consensus params in dashmate different than on testnet ([#2682](https://github.com/dashpay/platform/issues/2682))
+* **sdk:** wasm is not initialized for some methods ([#2792](https://github.com/dashpay/platform/issues/2792))
+
+
+### Miscellaneous Chores
+
+* script to backup and restore state
+
+
 ## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
 
 

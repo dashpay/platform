@@ -9,7 +9,8 @@ export class TokensFacade {
     this.sdk = sdk;
   }
 
-  calculateId(contractId: string, tokenPosition: number): string {
+  async calculateId(contractId: string, tokenPosition: number): Promise<string> {
+    await wasm.ensureInitialized();
     return wasm.WasmSdk.calculateTokenIdFromContract(contractId, tokenPosition);
   }
 
