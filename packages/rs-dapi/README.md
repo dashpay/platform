@@ -1,6 +1,6 @@
 DAPI (Distributed API) server for Dash Platform
 
-Provides gRPC, REST, and JSON-RPC endpoints for blockchain and platform data.
+Provides gRPC and JSON-RPC endpoints for blockchain and platform data.
 
 CONFIGURATION:
 Server configuration is based on environment variables that can be set in the 
@@ -11,12 +11,10 @@ Server Configuration:
   DAPI_GRPC_SERVER_PORT       - gRPC API server port (default: 3005)
   DAPI_GRPC_STREAMS_PORT      - gRPC streams server port (default: 3006)  
   DAPI_JSON_RPC_PORT          - JSON-RPC server port (default: 3004)
-  DAPI_REST_GATEWAY_PORT      - REST API server port (default: 8080)
   DAPI_METRICS_PORT           - Metrics server port (health + Prometheus, default: 9090, set to 0 to disable)
   DAPI_BIND_ADDRESS           - IP address to bind to (default: 127.0.0.1)
 
 Service Configuration:
-  DAPI_ENABLE_REST            - Enable REST API (default: false)
   DAPI_DRIVE_URI              - Drive service URI (default: http://127.0.0.1:6000)
   DAPI_TENDERDASH_URI         - Tenderdash RPC URI (default: http://127.0.0.1:26657)
   DAPI_TENDERDASH_WEBSOCKET_URI - Tenderdash WebSocket URI (default: ws://127.0.0.1:26657/websocket)

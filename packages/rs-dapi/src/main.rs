@@ -14,7 +14,7 @@ enum Commands {
     /// Start the DAPI server
     ///
     /// Starts all configured services including gRPC API, gRPC Streams,
-    /// JSON-RPC, and optionally REST Gateway and Health Check endpoints.
+    /// JSON-RPC, and Health Check/Metrics endpoints.
     /// The server will run until interrupted with Ctrl+C.
     #[command()]
     Start,
@@ -40,7 +40,7 @@ enum Commands {
 
 /// DAPI (Distributed API) server for Dash Platform
 ///
-/// Provides gRPC, REST, and JSON-RPC endpoints for blockchain and platform data.
+/// Provides gRPC and JSON-RPC endpoints for blockchain and platform data.
 #[derive(Debug, Parser)]
 #[command(
     name = "rs-dapi",

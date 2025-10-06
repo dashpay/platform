@@ -1,6 +1,6 @@
 //! Middleware for access logging across different protocols
 //!
-//! Provides Tower layers for HTTP/REST and gRPC access logging with
+//! Provides Tower layers for HTTP and gRPC access logging with
 //! structured logging.
 
 use crate::logging::access_log::{AccessLogEntry, AccessLogger};
@@ -127,7 +127,7 @@ where
                             )
                         }
                         _ => {
-                            // HTTP, REST, JSON-RPC
+                            // HTTP / JSON-RPC
                             let mut entry = AccessLogEntry::new_http(
                                 remote_addr,
                                 method.clone(),
@@ -223,8 +223,8 @@ fn detect_protocol_type<T>(req: &Request<T>) -> String {
         }
     }
 
-    // Default to REST/HTTP
-    "REST".to_string()
+    // Default to plain HTTP
+    "HTTP".to_string()
 }
 
 /// Parse gRPC service and method from request path

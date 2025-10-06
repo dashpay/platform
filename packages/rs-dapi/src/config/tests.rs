@@ -10,10 +10,8 @@ fn cleanup_env_vars() {
         "DAPI_GRPC_SERVER_PORT",
         "DAPI_GRPC_STREAMS_PORT",
         "DAPI_JSON_RPC_PORT",
-        "DAPI_REST_GATEWAY_PORT",
         "DAPI_METRICS_PORT",
         "DAPI_BIND_ADDRESS",
-        "DAPI_ENABLE_REST",
         "DAPI_DRIVE_URI",
         "DAPI_TENDERDASH_URI",
         "DAPI_TENDERDASH_WEBSOCKET_URI",
@@ -97,10 +95,8 @@ fn test_config_load_from_dotenv_file() {
 DAPI_GRPC_SERVER_PORT=4005
 DAPI_GRPC_STREAMS_PORT=4006
 DAPI_JSON_RPC_PORT=4004
-DAPI_REST_GATEWAY_PORT=9080
 DAPI_METRICS_PORT=9091
 DAPI_BIND_ADDRESS=0.0.0.0
-DAPI_ENABLE_REST=true
 DAPI_DRIVE_URI=http://test-drive:7000
 DAPI_TENDERDASH_URI=http://test-tenderdash:8000
 DAPI_TENDERDASH_WEBSOCKET_URI=ws://test-tenderdash:8000/websocket
@@ -117,10 +113,8 @@ DAPI_STATE_TRANSITION_WAIT_TIMEOUT=45000
     // Verify all values were loaded correctly
     assert_eq!(config.server.grpc_server_port, 4005);
     assert_eq!(config.server.json_rpc_port, 4004);
-    assert_eq!(config.server.rest_gateway_port, 9080);
     assert_eq!(config.server.metrics_port, 9091);
     assert_eq!(config.server.bind_address, "0.0.0.0");
-    assert!(config.dapi.enable_rest);
     assert_eq!(config.dapi.drive.uri, "http://test-drive:7000");
     assert_eq!(config.dapi.tenderdash.uri, "http://test-tenderdash:8000");
     assert_eq!(
@@ -146,7 +140,6 @@ fn test_config_load_from_dotenv_file_partial() {
 # Partial test configuration
 DAPI_GRPC_SERVER_PORT=5005
 DAPI_DRIVE_URI=http://partial-drive:8000
-DAPI_ENABLE_REST=true
 "#;
 
     fs::write(temp_file.path(), env_content).expect("Failed to write temp file");
@@ -158,7 +151,6 @@ DAPI_ENABLE_REST=true
     // Verify specified values were loaded
     assert_eq!(config.server.grpc_server_port, 5005);
     assert_eq!(config.dapi.drive.uri, "http://partial-drive:8000");
-    assert!(config.dapi.enable_rest);
 
     // Verify defaults are used for unspecified values
     assert_eq!(config.dapi.tenderdash.uri, "http://127.0.0.1:26657"); // default
@@ -257,7 +249,6 @@ fn test_config_socket_addresses() {
     // Test that socket addresses are properly formatted
     assert_eq!(config.grpc_server_addr().to_string(), "127.0.0.1:3005");
     assert_eq!(config.json_rpc_addr().to_string(), "127.0.0.1:3004");
-    assert_eq!(config.rest_gateway_addr().to_string(), "127.0.0.1:8080");
     assert_eq!(config.metrics_addr().unwrap().to_string(), "127.0.0.1:9090");
 }
 

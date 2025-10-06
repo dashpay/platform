@@ -50,9 +50,8 @@ Legend:
 - [x] Implement historical queries for `subscribeToTransactionsWithProofs`
   - Files: `src/services/streaming_service/transaction_stream.rs`
   - Notes: For `count > 0`, fetch blocks from given height/hash, filter transactions via bloom, stream `RawTransactions` plus a block boundary (`RawMerkleBlock` placeholder using raw block), then close. For `count = 0`, optionally backfill to tip then subscribe to live ZMQ.
-- [ ] Implement basic bloom filter matching + transaction parsing
-  - Files: `src/services/streaming_service/transaction_filter.rs`
-- [ ] Provide initial masternode list diff on subscription
+- [x] Implement basic bloom filter matching + transaction parsing
+- [x] Provide initial masternode list diff on subscription
   - Files: `src/services/streaming_service/masternode_list_stream.rs`
 
 ## P0 — Protocol Translation Minimums (Parity with JS DAPI)
@@ -65,23 +64,11 @@ Legend:
 
 ## P2 — Protocol Translation (Non-legacy extras)
 
-- [x] REST gateway: minimal endpoints (not present in JS DAPI)
-  - Files: `src/server.rs`, `src/protocol/rest_translator.rs`
-  - Routes implemented:
-    - `/v1/platform/status` → Platform `get_status`
-    - `/v1/core/best-block-height` → Core `get_best_block_height`
-    - `/v1/core/transaction/:id` → Core `get_transaction`
-    - `/v1/core/transaction/broadcast` → Core `broadcast_transaction`
-    - `/v1/core/block/hash/:hash` → Core `get_block` by hash
-    - `/v1/core/block/height/:height` → Core `get_block` by height
-  - Response shapes are simple JSON wrappers (hex-encoded where appropriate)
 - [x] JSON-RPC extension: `sendRawTransaction` (not in JS DAPI docs)
   - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs`
   - Accepts `hex[, allowHighFees, bypassLimits]`; returns txid string
 - [x] JSON-RPC extension: Platform `getStatus` (not in JS DAPI docs)
   - Files: `src/protocol/jsonrpc_translator.rs`, `src/server.rs`
-- [ ] REST: complete mapping for Core and Platform endpoints listed in DESIGN.md
-- [ ] Optional: REST/JSON-RPC streaming via WebSockets to mirror gRPC streams
 
 ## P1 — Observability & Ops
 
@@ -104,7 +91,7 @@ Legend:
 - [ ] Unit tests for Core and Platform handlers (success + error mapping)
 - [ ] Integration tests for Platform broadcast + wait (with/without proofs)
 - [ ] Streaming tests: bloom filtering, proofs, subscription lifecycle
-- [ ] Protocol translation tests (REST/JSON-RPC ↔ gRPC round-trips)
+- [ ] Protocol translation tests (JSON-RPC ↔ gRPC round-trips)
   - Progress: JSON-RPC translator unit tests added in `src/protocol/jsonrpc_translator.rs`
 - [ ] CI workflow to build, test, and lint
 - [ ] Drive-proxy smoke tests for all `drive_method!` endpoints
@@ -118,7 +105,6 @@ Legend:
 
 - [ ] Expand README with endpoint matrix and examples
   - Files: `packages/rs-dapi/README.md`
-- [ ] OpenAPI for REST endpoints
   - Files: `packages/rs-dapi/doc/` (spec + generation notes)
 - [ ] Migration guide from JS dapi to rs-dapi, JSON-RPC deprecation scope
 

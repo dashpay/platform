@@ -82,7 +82,6 @@ packages/rs-dapi/
 │   ├── protocol/                   # Protocol translation layer
 │   │   ├── mod.rs
 │   │   ├── grpc_native.rs         # Native gRPC protocol handler
-│   │   ├── rest_translator.rs     # REST to gRPC translation
 │   │   └── jsonrpc_translator.rs  # JSON-RPC to gRPC translation
 │   ├── services/                  # gRPC service implementations (protocol-agnostic)
 │   │   ├── mod.rs
@@ -96,7 +95,6 @@ packages/rs-dapi/
 │   │   ├── mod.rs
 │   │   ├── grpc.rs                # Unified gRPC server
 │   │   ├── jsonrpc.rs             # JSON-RPC server bridge
-│   │   ├── rest.rs                # REST gateway
 │   │   └── metrics.rs             # Metrics + health HTTP endpoints (/health, /metrics)
 │   ├── clients/                   # External API clients
 │   │   ├── mod.rs
@@ -212,11 +210,10 @@ Implements blockchain-related gRPC endpoints (protocol-agnostic via translation 
 - ZMQ notifications for real-time updates
 - Transaction validation and error handling
 - Network status aggregation
-- **Protocol-Agnostic**: Works identically for gRPC, REST, and JSON-RPC clients
+- **Protocol-Agnostic**: Works identically for gRPC and JSON-RPC clients
 
 Implementation notes:
 - Implemented in `src/services/core_service.rs`, backed by `src/clients/core_client.rs` (dashcore-rpc)
-- REST routes provided in `src/server.rs`: `/v1/core/best-block-height`, `/v1/core/transaction/:id`
 - JSON-RPC minimal parity implemented in `src/server.rs` via translator (see below)
 
 ### 5. Platform Service
@@ -253,12 +250,7 @@ Implementation notes:
 
 ### 6. Protocol Translation
 
-rs-dapi exposes REST and JSON-RPC gateways alongside gRPC. Axum powers REST/JSON-RPC routing in `src/server.rs`.
-
-- REST minimal endpoints:
-  - `/v1/platform/status` → gRPC `Platform::get_status`
-  - `/v1/core/best-block-height` → gRPC `Core::get_best_block_height`
-  - `/v1/core/transaction/:id` → gRPC `Core::get_transaction`
+rs-dapi exposes a JSON-RPC gateway alongside gRPC. Axum powers JSON-RPC routing in `src/server.rs`.
 
 - JSON-RPC translator: `src/protocol/jsonrpc_translator.rs`
   - Supported: `getStatus`, `getBestBlockHash`, `getBlockHash(height)`, `sendRawTransaction`
@@ -267,10 +259,10 @@ rs-dapi exposes REST and JSON-RPC gateways alongside gRPC. Axum powers REST/JSON
 
 Operational notes:
 - Compression: disabled at rs-dapi; Envoy handles edge compression
-- Access logging: HTTP/REST/JSON-RPC go through an access logging layer when provided; gRPC access logging interceptor is a planned improvement
+- Access logging: HTTP/JSON-RPC go through an access logging layer when provided; gRPC access logging interceptor is a planned improvement
 
 - Platform event streaming is handled via a direct upstream proxy:
- - `subscribePlatformEvents` simply forwards every inbound command stream to a single Drive connection and relays responses back without multiplexing
+  - `subscribePlatformEvents` simply forwards every inbound command stream to a single Drive connection and relays responses back without multiplexing
 
 #### Key Features
 - **Modular Organization**: Complex methods separated into dedicated modules for maintainability
@@ -330,30 +322,7 @@ Provides legacy HTTP endpoints for backward compatibility via protocol translati
 - HTTP server with JSON-RPC 2.0 compliance
 - Error format compatibility with existing clients
 - Minimal subset focused on essential operations
-- **Deprecated**: New clients should use gRPC or REST APIs
-
-### 8. REST API Gateway
-
-Provides RESTful HTTP endpoints via protocol translation layer:
-
-#### Features
-- **Protocol Translation**: Automatic REST to gRPC translation
-- **OpenAPI Documentation**: Auto-generated API documentation
-- **HTTP/JSON**: Standard REST patterns with JSON payloads
-- **CORS Support**: Cross-origin resource sharing for web applications
-- **Unified Backend**: All REST calls converted to gRPC internally
-
-#### Example Endpoints
-```
-GET  /v1/core/blockchain-status     -> getBlockchainStatus
-GET  /v1/core/best-block-height     -> getBestBlockHeight
-GET  /v1/core/transaction/{hash}    -> getTransaction
-POST /v1/core/broadcast-transaction -> broadcastTransaction
-
-POST /v1/platform/broadcast-state-transition -> broadcastStateTransition
-GET  /v1/platform/consensus-params            -> getConsensusParams
-GET  /v1/platform/status                      -> getStatus
-```
+- **Deprecated**: New clients should use gRPC APIs
 
 ### 9. Health and Monitoring Endpoints
 
@@ -390,10 +359,9 @@ rs-dapi implements a unified server with a protocol translation layer that norma
 External Client → Envoy Gateway → Protocol Translation → gRPC Services → External Services
       ↓              ↓                    ↓                  ↓               ↓
    HTTPS/WSS    SSL termination    ┌─────────────────┐   Core Service   Dash Core
-   gRPC-Web  →  Protocol xlat   →  │ REST→gRPC xlat  │→  Platform Svc →  Drive    
-   REST API     Rate limiting      │ JSON→gRPC xlat  │   Streams Svc    Tenderdash
-                Auth/CORS          │ Native gRPC     │   (unified port)
-                                   └─────────────────┘   
+   gRPC-Web  →  Protocol xlat   →  │ JSON→gRPC xlat  │→  Platform Svc →  Drive
+   JSON-RPC    Rate limiting      │ Native gRPC     │   Streams Svc    Tenderdash
+                Auth/CORS          └─────────────────┘   
                                    Protocol Translation Layer
 ```
 
@@ -405,14 +373,14 @@ External Client → Envoy Gateway → Protocol Translation → gRPC Services →
 │  ┌─────────────────────────────────────────────────────┐   │
 │  │              Protocol Translation Layer             │   │
 │  │                                                     │   │
-│  │  ┌─────────────┐ ┌─────────────┐ ┌─────────────┐   │   │
-│  │  │    REST     │ │  JSON-RPC   │ │    gRPC     │   │   │
-│  │  │ Translator  │ │ Translator  │ │   Native    │   │   │
-│  │  │             │ │             │ │             │   │   │
-│  │  │ HTTP→gRPC   │ │ JSON→gRPC   │ │ Pass-through│   │   │
-│  │  └─────────────┘ └─────────────┘ └─────────────┘   │   │
-│  │              │              │              │       │   │
-│  │              └──────────────┼──────────────┘       │   │
+│  │  ┌─────────────┐ ┌─────────────┐                   │   │
+│  │  │  JSON-RPC   │ │    gRPC     │                   │   │
+│  │  │ Translator  │ │   Native    │                   │   │
+│  │  │             │ │             │                   │   │
+│  │  │ JSON→gRPC   │ │ Pass-through│                   │   │
+│  │  └─────────────┘ └─────────────┘                   │   │
+│  │              │              │                      │   │
+│  │              └──────────────┘                      │   │
 │  │                             │                      │   │
 │  │                             ▼                      │   │
 │  │  ┌─────────────────────────────────────────────┐   │   │
@@ -432,26 +400,17 @@ External Client → Envoy Gateway → Protocol Translation → gRPC Services →
 ```
 
 #### Protocol Translation Details
-- **REST Translator**: Converts HTTP/JSON requests to gRPC messages, handles OpenAPI compliance
 - **JSON-RPC Translator**: Converts JSON-RPC 2.0 format to corresponding gRPC calls
 - **gRPC Native**: Direct pass-through for native gRPC requests (no translation)
 - **Response Translation**: Converts gRPC responses back to original protocol format
 - **Error Translation**: Maps gRPC status codes to appropriate protocol-specific errors
-- **Streaming**: gRPC streaming for real-time data, WebSocket support for REST
+- **Streaming**: gRPC streaming for real-time data with consistent semantics across protocols
 
 ### 11. Protocol Translation Layer
 
 The protocol translation layer is the key architectural component that enables unified business logic while supporting multiple client protocols:
 
 #### Translation Components
-
-##### REST to gRPC Translator
-- **HTTP Method Mapping**: GET/POST/PUT/DELETE mapped to appropriate gRPC methods
-- **Path Parameter Extraction**: REST path parameters converted to gRPC message fields
-- **JSON Body Conversion**: HTTP JSON payloads converted to protobuf messages
-- **Query Parameter Handling**: URL query parameters mapped to gRPC request fields
-- **Response Translation**: gRPC responses converted back to JSON with proper HTTP status codes
-- **Error Mapping**: gRPC status codes mapped to appropriate HTTP status codes
 
 ##### JSON-RPC to gRPC Translator  
 - **RPC Method Mapping**: JSON-RPC method names mapped to gRPC service methods
@@ -565,7 +524,6 @@ The rs-dapi binary is designed as a unified server that handles all DAPI functio
 #### Port Configuration (configurable)
 - **gRPC Server Port** (default: 3005): Unified port for Core + Platform + streaming endpoints
 - **JSON-RPC Port** (default: 3004): Legacy HTTP endpoints
-- **REST Gateway Port** (default: 8080): REST API for gRPC services
 - **Health/Metrics Port** (default: 9090): Monitoring endpoints
 
 All ports bind to internal Docker network. External access is handled by Envoy.
@@ -625,7 +583,7 @@ All ports bind to internal Docker network. External access is handled by Envoy.
 - Structured logging with `tracing`
 - Request/response logging with correlation IDs
 - Performance metrics and timing information
-- Protocol-specific logging (gRPC, REST, JSON-RPC)
+- Protocol-specific logging (gRPC, JSON-RPC)
 - Log levels:
   - info - business events, target audience: users, sysops/devops
   - error - errors that break things, need action or posses threat to service, target audience: users, sysops/devops
@@ -694,7 +652,6 @@ rs-dapi operates in a trusted environment behind Envoy Gateway, which handles al
 
 #### Unit Tests
 - Individual component testing
-- Mock external services
 - Error condition testing
 - Input validation testing
 

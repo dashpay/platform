@@ -30,12 +30,6 @@ pub struct ServerConfig {
     /// Port for JSON-RPC API server
     #[serde(rename = "dapi_json_rpc_port", deserialize_with = "from_str_or_number")]
     pub json_rpc_port: u16,
-    /// Port for REST gateway server
-    #[serde(
-        rename = "dapi_rest_gateway_port",
-        deserialize_with = "from_str_or_number"
-    )]
-    pub rest_gateway_port: u16,
     /// Port for metrics and health endpoints
     #[serde(rename = "dapi_metrics_port", deserialize_with = "from_str_or_number")]
     pub metrics_port: u16,
@@ -49,7 +43,6 @@ impl Default for ServerConfig {
         Self {
             grpc_server_port: 3005,
             json_rpc_port: 3004,
-            rest_gateway_port: 8080,
             metrics_port: 9090,
             bind_address: "127.0.0.1".to_string(),
         }
@@ -59,9 +52,6 @@ impl Default for ServerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct DapiConfig {
-    /// Whether to enable REST API endpoints
-    #[serde(rename = "dapi_enable_rest", deserialize_with = "from_str_or_bool")]
-    pub enable_rest: bool,
     /// Drive (storage layer) client configuration
     #[serde(flatten)]
     pub drive: DriveConfig,
@@ -133,7 +123,6 @@ pub struct CoreConfig {
 impl Default for DapiConfig {
     fn default() -> Self {
         Self {
-            enable_rest: false,
             drive: DriveConfig::default(),
             tenderdash: TenderdashConfig::default(),
             core: CoreConfig::default(),
@@ -267,15 +256,6 @@ impl Config {
         format!("{}:{}", self.server.bind_address, self.server.json_rpc_port)
             .parse()
             .expect("Invalid JSON-RPC address")
-    }
-
-    pub fn rest_gateway_addr(&self) -> SocketAddr {
-        format!(
-            "{}:{}",
-            self.server.bind_address, self.server.rest_gateway_port
-        )
-        .parse()
-        .expect("Invalid REST gateway address")
     }
 
     pub fn metrics_port(&self) -> u16 {

@@ -1,7 +1,6 @@
 mod grpc;
 mod jsonrpc;
 mod metrics;
-mod rest;
 mod state;
 
 use futures::FutureExt;
@@ -12,14 +11,13 @@ use crate::clients::{CoreClient, DriveClient, TenderdashClient};
 use crate::config::Config;
 use crate::error::{DAPIResult, DapiError};
 use crate::logging::AccessLogger;
-use crate::protocol::{JsonRpcTranslator, RestTranslator};
+use crate::protocol::JsonRpcTranslator;
 use crate::services::{CoreServiceImpl, PlatformServiceImpl, StreamingServiceImpl};
 
 pub struct DapiServer {
     config: Arc<Config>,
     core_service: Arc<CoreServiceImpl>,
     platform_service: Arc<PlatformServiceImpl>,
-    rest_translator: Arc<RestTranslator>,
     jsonrpc_translator: Arc<JsonRpcTranslator>,
     access_logger: Option<AccessLogger>,
 }
@@ -64,14 +62,12 @@ impl DapiServer {
         let core_service =
             CoreServiceImpl::new(streaming_service, config.clone(), core_client).await;
 
-        let rest_translator = Arc::new(RestTranslator::new());
         let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
 
         Ok(Self {
             config,
             platform_service: Arc::new(platform_service),
             core_service: Arc::new(core_service),
-            rest_translator,
             jsonrpc_translator,
             access_logger,
         })
@@ -81,7 +77,6 @@ impl DapiServer {
         info!("Starting DAPI server...");
 
         let grpc_server = self.start_unified_grpc_server();
-        let rest_server = self.start_rest_server();
         let jsonrpc_server = self.start_jsonrpc_server();
 
         let metrics_server = if self.config.metrics_enabled() {
@@ -94,10 +89,6 @@ impl DapiServer {
         tokio::select! {
             result = grpc_server => {
                 error!("gRPC server stopped: {:?}", result);
-                result
-            },
-            result = rest_server => {
-                error!("REST server stopped: {:?}", result);
                 result
             },
             result = jsonrpc_server => {

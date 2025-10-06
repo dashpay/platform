@@ -22,7 +22,7 @@ tokio-util = "0.7.15"
 tonic = "0.14.2"
 
 
-# HTTP framework for REST/JSON-RPC
+# HTTP framework for JSON-RPC and metrics endpoints
 axum = "0.8.4"
 tower = "0.5.2"
 tower-http = { version = "0.6.6", features = ["cors", "trace"] }
