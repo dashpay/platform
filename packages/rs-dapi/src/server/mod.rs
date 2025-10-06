@@ -23,6 +23,9 @@ pub struct DapiServer {
 }
 
 impl DapiServer {
+    /// Construct the DAPI server by wiring clients, services, and translators from config.
+    /// Establishes Drive, Tenderdash, and Core connections while building streaming support.
+    /// Returns an error with context when dependencies cannot be initialized.
     pub async fn new(config: Arc<Config>, access_logger: Option<AccessLogger>) -> DAPIResult<Self> {
         let drive_client = DriveClient::new(&config.dapi.drive.uri)
             .await
@@ -73,6 +76,9 @@ impl DapiServer {
         })
     }
 
+    /// Run all configured server endpoints and await until one terminates.
+    /// gRPC, JSON-RPC, and optional metrics servers are started concurrently.
+    /// The first server to exit determines the result returned to the caller.
     pub async fn run(self) -> DAPIResult<()> {
         info!("Starting DAPI server...");
 

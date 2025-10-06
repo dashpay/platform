@@ -126,6 +126,7 @@ pub struct TxResult {
 
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
+    /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
     async fn post<T>(&self, request_body: serde_json::Value) -> DAPIResult<T>
     where
         T: serde::de::DeserializeOwned + Debug,
@@ -193,6 +194,7 @@ impl TenderdashClient {
         Ok(tenderdash_client)
     }
 
+    /// Perform a lightweight status call to ensure the Tenderdash HTTP endpoint is reachable.
     async fn validate_connection(&self) -> DAPIResult<()> {
         // Validate HTTP connection by making a test status call
         trace!(
@@ -217,6 +219,8 @@ impl TenderdashClient {
         }
     }
 
+    /// Instantiate the client with an accompanying WebSocket listener for subscriptions.
+    /// Validates both HTTP and WebSocket connectivity before returning.
     pub async fn with_websocket(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
         trace!(uri, ws_uri, "Creating Tenderdash WebSocket client",);
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
@@ -249,6 +253,7 @@ impl TenderdashClient {
         Ok(tenderdash_client)
     }
 
+    /// Query Tenderdash for node and sync status information via JSON-RPC `status`.
     pub async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         trace!("Making status request to Tenderdash at: {}", self.base_url);
         let request_body = json!({
@@ -261,6 +266,7 @@ impl TenderdashClient {
         self.post(request_body).await
     }
 
+    /// Retrieve network peer statistics, falling back to defaults on transport errors.
     pub async fn net_info(&self) -> DAPIResult<NetInfoResponse> {
         match self.net_info_internal().await {
             Ok(netinfo) => {
@@ -277,6 +283,7 @@ impl TenderdashClient {
         }
     }
 
+    /// Internal helper that performs the `net_info` RPC call without error masking.
     async fn net_info_internal(&self) -> DAPIResult<NetInfoResponse> {
         let request_body = json!({
             "jsonrpc": "2.0",
@@ -347,6 +354,7 @@ impl TenderdashClient {
 
         self.post(request_body).await
     }
+    /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.subscribe()
@@ -356,6 +364,7 @@ impl TenderdashClient {
             rx
         }
     }
+    /// Subscribe to block events from Tenderdash via WebSocket.
     pub fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent> {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.subscribe_blocks()
@@ -366,6 +375,7 @@ impl TenderdashClient {
         }
     }
 
+    /// Return whether the internal WebSocket client currently maintains a connection.
     pub fn is_websocket_connected(&self) -> bool {
         if let Some(ws_client) = &self.websocket_client {
             ws_client.is_connected()

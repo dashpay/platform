@@ -156,6 +156,7 @@ impl AccessLogEntry {
         serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
     }
 
+    /// Convert the log entry into a serde `Value` preserving optional fields.
     fn to_json_value(&self) -> Value {
         let mut map = Map::new();
 

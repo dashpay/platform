@@ -43,6 +43,7 @@ pub struct StreamingServiceImpl {
 
 impl StreamingServiceImpl {
     // --- Small helpers for concise logging across submodules ---
+    /// Attempt to decode transaction bytes and return the txid as hex.
     pub(crate) fn txid_hex_from_bytes(bytes: &[u8]) -> Option<String> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -51,6 +52,7 @@ impl StreamingServiceImpl {
             .map(|tx| tx.txid().to_string())
     }
 
+    /// Decode transaction bytes and return the txid in raw byte form.
     pub(crate) fn txid_bytes_from_bytes(bytes: &[u8]) -> Option<Vec<u8>> {
         use dashcore_rpc::dashcore::Transaction as CoreTx;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -61,6 +63,7 @@ impl StreamingServiceImpl {
             .map(|tx| tx.txid().to_byte_array().to_vec())
     }
 
+    /// Decode block bytes and return the block hash in hex.
     pub(crate) fn block_hash_hex_from_block_bytes(bytes: &[u8]) -> Option<String> {
         use dashcore_rpc::dashcore::Block as CoreBlock;
         use dashcore_rpc::dashcore::consensus::encode::deserialize;
@@ -69,6 +72,7 @@ impl StreamingServiceImpl {
             .map(|b| b.block_hash().to_string())
     }
 
+    /// Return a short hexadecimal prefix of the provided bytes for logging.
     pub(crate) fn short_hex(bytes: &[u8], take: usize) -> String {
         let len = bytes.len().min(take);
         let mut s = hex::encode(&bytes[..len]);
@@ -78,6 +82,7 @@ impl StreamingServiceImpl {
         s
     }
 
+    /// Format a human-readable description of a streaming event for logs.
     pub(crate) fn summarize_streaming_event(event: &StreamingEvent) -> String {
         match event {
             StreamingEvent::CoreRawTransaction { data } => {
@@ -122,6 +127,7 @@ impl StreamingServiceImpl {
         }
     }
 
+    /// Describe a ZMQ event in a concise logging-friendly string.
     pub(crate) fn summarize_zmq_event(event: &ZmqEvent) -> String {
         match event {
             ZmqEvent::RawTransaction { data } => {
@@ -157,6 +163,7 @@ impl StreamingServiceImpl {
             }
         }
     }
+    /// Construct the streaming service with default ZMQ listener and background workers.
     pub fn new(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<TenderdashClient>,

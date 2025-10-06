@@ -54,7 +54,7 @@ struct TxEvent {
     events: Option<Vec<EventAttribute>>,
 }
 
-// Generic deserializer to handle string or integer conversion to any numeric type
+/// Generic deserializer to handle string or integer conversion to any numeric type.
 fn deserialize_string_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -106,7 +106,7 @@ where
     deserializer.deserialize_any(StringOrNumberVisitor(std::marker::PhantomData))
 }
 
-// Specialized deserializer to convert any value to string
+/// Specialized deserializer that coerces numbers and booleans into strings.
 fn deserialize_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -186,6 +186,7 @@ pub struct TenderdashWebSocketClient {
 }
 
 impl TenderdashWebSocketClient {
+    /// Create a WebSocket client with broadcast channels for transactions and blocks.
     pub fn new(ws_url: String, buffer_size: usize) -> Self {
         let (event_sender, _) = broadcast::channel(buffer_size);
         let (block_sender, _) = broadcast::channel(buffer_size);
@@ -198,14 +199,17 @@ impl TenderdashWebSocketClient {
         }
     }
 
+    /// Subscribe to transaction event updates emitted by the listener.
     pub fn subscribe(&self) -> broadcast::Receiver<TransactionEvent> {
         self.event_sender.subscribe()
     }
 
+    /// Indicate whether a WebSocket connection is currently active.
     pub fn is_connected(&self) -> bool {
         self.is_connected.load(Ordering::Relaxed)
     }
 
+    /// Subscribe to Tenderdash new-block notifications.
     pub fn subscribe_blocks(&self) -> broadcast::Receiver<BlockEvent> {
         self.block_sender.subscribe()
     }
@@ -224,6 +228,7 @@ impl TenderdashWebSocketClient {
         Ok(())
     }
 
+    /// Establish a WebSocket connection, subscribe to events, and forward messages to subscribers.
     pub async fn connect_and_listen(&self) -> DAPIResult<()> {
         tracing::trace!(ws_url = self.ws_url, "Connecting to Tenderdash WebSocket");
 
@@ -296,6 +301,7 @@ impl TenderdashWebSocketClient {
         Ok(())
     }
 
+    /// Process a raw WebSocket message, dispatching block and transaction events.
     async fn handle_message(
         &self,
         message: &str,
@@ -336,6 +342,7 @@ impl TenderdashWebSocketClient {
         Ok(())
     }
 
+    /// Convert a Tenderdash transaction event payload into broadcastable events.
     async fn handle_tx_event(
         &self,
         event_data: &serde_json::Value,
@@ -409,6 +416,7 @@ impl TenderdashWebSocketClient {
         Ok(())
     }
 
+    /// Gather unique transaction hashes from outer and inner event attribute sets.
     fn extract_all_tx_hashes(
         &self,
         inner_events: &Option<Vec<EventAttribute>>,
@@ -459,6 +467,7 @@ impl TenderdashWebSocketClient {
     }
 }
 
+/// Normalize hash strings by trimming prefixes and uppercasing hexadecimal characters.
 fn normalize_event_hash(value: &str) -> String {
     let trimmed = value.trim();
     let without_prefix = trimmed

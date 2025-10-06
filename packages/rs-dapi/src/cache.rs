@@ -18,6 +18,7 @@ pub struct LruResponseCache {
 }
 
 impl Debug for LruResponseCache {
+    /// Display cache size, total weight, and capacity for debugging output.
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
@@ -38,6 +39,7 @@ struct CachedValue {
 
 impl CachedValue {
     #[inline(always)]
+    /// Capture the current instant and serialize the provided value into bytes.
     fn new<T: serde::Serialize>(data: T) -> Self {
         Self {
             inserted_at: Instant::now(),
@@ -45,6 +47,7 @@ impl CachedValue {
         }
     }
 
+    /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
         deserialize::<T>(&self.bytes)
     }
@@ -54,6 +57,7 @@ impl CachedValue {
 struct CachedValueWeighter;
 
 impl Weighter<CacheKey, CachedValue> for CachedValueWeighter {
+    /// Estimate cache entry weight by combining struct overhead and payload size.
     fn weight(&self, _key: &CacheKey, value: &CachedValue) -> u64 {
         let structural = std::mem::size_of::<CachedValue>() as u64;
         let payload = value.bytes.len() as u64;
@@ -89,6 +93,7 @@ impl LruResponseCache {
         Self { inner, workers }
     }
 
+    /// Create the underlying cache with weighted capacity based on estimated entry size.
     fn new_cache(capacity: u64) -> Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>> {
         let capacity_bytes = capacity.max(1);
         let estimated_items_u64 = (capacity_bytes / ESTIMATED_ENTRY_SIZE_BYTES).max(1);
@@ -100,11 +105,13 @@ impl LruResponseCache {
         ))
     }
 
+    /// Remove all entries from the cache.
     pub async fn clear(&self) {
         self.inner.clear();
     }
 
     #[inline(always)]
+    /// Retrieve a cached value by key, deserializing it into the requested type.
     pub async fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
@@ -127,6 +134,7 @@ impl LruResponseCache {
         None
     }
 
+    /// Insert or replace a cached value for the given key.
     pub async fn put<T>(&self, key: CacheKey, value: &T)
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
@@ -158,6 +166,7 @@ impl LruResponseCache {
 }
 
 #[inline(always)]
+/// Combine a method name and serializable key into a stable 128-bit cache key.
 pub fn make_cache_key<M: serde::Serialize>(method: &str, key: &M) -> CacheKey {
     let mut prefix = method.as_bytes().to_vec();
     let mut serialized_request = serialize(key).expect("Key must be serializable");
@@ -172,12 +181,14 @@ pub fn make_cache_key<M: serde::Serialize>(method: &str, key: &M) -> CacheKey {
 
 const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability
 
+/// Serialize a value using bincode with a fixed configuration, logging failures.
 fn serialize<T: serde::Serialize>(value: &T) -> Option<Vec<u8>> {
     bincode::serde::encode_to_vec(value, BINCODE_CFG)
         .inspect_err(|e| tracing::warn!("Failed to serialize cache value: {}", e))
         .ok() // deterministic
 }
 
+/// Deserialize bytes produced by `serialize`, returning the value when successful.
 fn deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Option<T> {
     bincode::serde::decode_from_slice(bytes, BINCODE_CFG)
         .inspect_err(|e| tracing::warn!("Failed to deserialize cache value: {}", e))

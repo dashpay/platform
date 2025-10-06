@@ -1,5 +1,7 @@
 use serde_json::Value;
 
+/// Extract the `height` field from JSON-RPC params, validating numeric bounds.
+/// Accepts object-based params and returns friendly error strings for schema issues.
 pub fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
     let map = match params {
         Some(Value::Object(map)) => map,
@@ -32,6 +34,8 @@ pub fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
     }
 }
 
+/// Parse raw transaction parameters, supporting string or array forms with fee flags.
+/// Returns the decoded bytes plus `allow_high_fees` and `bypass_limits` toggles.
 pub fn parse_send_raw_tx_params(params: Option<Value>) -> Result<(Vec<u8>, bool, bool), String> {
     match params {
         Some(Value::Array(a)) => {

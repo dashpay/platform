@@ -18,6 +18,9 @@ use super::DapiServer;
 use super::state::JsonRpcAppState;
 
 impl DapiServer {
+    /// Start the JSON-RPC HTTP server, configuring state, CORS, and access logging.
+    /// Extracts shared services for request handling and binds the listener on the configured address.
+    /// Returns when the server stops serving.
     pub(super) async fn start_jsonrpc_server(&self) -> DAPIResult<()> {
         let addr = self.config.json_rpc_addr();
         info!("Starting JSON-RPC server on {}", addr);
@@ -51,6 +54,9 @@ impl DapiServer {
     }
 }
 
+/// Handle a JSON-RPC request by translating it and delegating to the appropriate gRPC service.
+/// Maps service responses and errors back into JSON-RPC payloads while preserving request ids.
+/// Returns JSON suitable for Axum's response wrapper.
 async fn handle_jsonrpc_request(
     State(state): State<JsonRpcAppState>,
     Json(json_rpc): Json<JsonRpcRequest>,

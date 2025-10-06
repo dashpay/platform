@@ -26,6 +26,7 @@ pub enum Metric {
 }
 
 impl Metric {
+    /// Return the Prometheus metric name associated with this enum variant.
     pub const fn name(self) -> &'static str {
         match self {
             Metric::CacheEvent => "rsdapi_cache_events_total",
@@ -45,6 +46,7 @@ impl Metric {
         }
     }
 
+    /// Return the human-readable help string for the Prometheus metric.
     pub const fn help(self) -> &'static str {
         match self {
             Metric::CacheEvent => "Cache events by method and outcome (hit|miss)",
@@ -71,6 +73,7 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    /// Convert the outcome into a label-friendly string literal.
     pub const fn as_str(self) -> &'static str {
         match self {
             Outcome::Hit => "hit",
@@ -88,6 +91,7 @@ pub enum Label {
 }
 
 impl Label {
+    /// Return the label key used in Prometheus metrics.
     pub const fn name(self) -> &'static str {
         match self {
             Label::Method => "method",
@@ -202,6 +206,7 @@ pub fn cache_miss(method: &str) {
     record_cache_event(method, Outcome::Miss);
 }
 
+/// Gather Prometheus metrics into an encoded buffer and its corresponding content type.
 pub fn gather_prometheus() -> (Vec<u8>, String) {
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();

@@ -200,6 +200,7 @@ impl Config {
             .map_err(|e| DapiError::Configuration(format!("Failed to load configuration: {}", e)))
     }
 
+    /// Populate configuration from environment variables using `envy`.
     fn from_env() -> Result<Self, envy::Error> {
         envy::from_env()
     }
@@ -242,6 +243,7 @@ impl Config {
         }
     }
 
+    /// Build the socket address for the unified gRPC endpoint.
     pub fn grpc_server_addr(&self) -> SocketAddr {
         format!(
             "{}:{}",
@@ -251,20 +253,24 @@ impl Config {
         .expect("Invalid gRPC server address")
     }
 
+    /// Build the socket address for the JSON-RPC endpoint.
     pub fn json_rpc_addr(&self) -> SocketAddr {
         format!("{}:{}", self.server.bind_address, self.server.json_rpc_port)
             .parse()
             .expect("Invalid JSON-RPC address")
     }
 
+    /// Return the configured metrics listener port.
     pub fn metrics_port(&self) -> u16 {
         self.server.metrics_port
     }
 
+    /// Determine whether metrics should be exposed (port non-zero).
     pub fn metrics_enabled(&self) -> bool {
         self.server.metrics_port != 0
     }
 
+    /// Build the metrics socket address if metrics are enabled.
     pub fn metrics_addr(&self) -> Option<SocketAddr> {
         if !self.metrics_enabled() {
             return None;

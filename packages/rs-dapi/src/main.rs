@@ -93,6 +93,9 @@ struct Cli {
 }
 
 impl Cli {
+    /// Executes the selected CLI command after loading config and logging.
+    /// Returns `Ok` on success or an error string suitable for user-facing output.
+    /// Server failures are mapped to descriptive messages for exit handling.
     async fn run(self) -> Result<(), String> {
         // Load configuration
         let config = load_config(&self.config);
@@ -145,6 +148,7 @@ impl Cli {
     }
 }
 
+/// Load configuration from the optional `.env` path, exiting on failure.
 fn load_config(path: &Option<PathBuf>) -> Config {
     match Config::load_from_dotenv(path.clone()) {
         Ok(config) => config,
@@ -155,6 +159,7 @@ fn load_config(path: &Option<PathBuf>) -> Config {
     }
 }
 
+/// Initialize structured logging and access logging based on CLI overrides.
 async fn configure_logging(
     cli: &Cli,
     logging_config: &rs_dapi::config::LoggingConfig,
@@ -168,6 +173,7 @@ async fn configure_logging(
     init_logging(logging_config, &cli_config).await
 }
 
+/// Construct and run the DAPI server until shutdown, wiring configured services.
 async fn run_server(
     config: Config,
     access_logger: Option<rs_dapi::logging::AccessLogger>,
@@ -185,6 +191,7 @@ async fn run_server(
     Ok(())
 }
 
+/// Print the current configuration as pretty JSON, warning about sensitive data.
 fn dump_config(config: &Config) -> Result<(), String> {
     println!("# rs-dapi Configuration");
     println!("# WARNING: This output may contain sensitive data!");
@@ -199,11 +206,13 @@ fn dump_config(config: &Config) -> Result<(), String> {
     }
 }
 
+/// Print the rs-dapi and Rust toolchain versions to stdout.
 fn print_version() {
     println!("rs-dapi {}", env!("CARGO_PKG_VERSION"));
     println!("Built with Rust {}", env!("CARGO_PKG_RUST_VERSION"));
 }
 
+/// Initialize a Tokio runtime and execute the CLI runner, mapping failures to exit codes.
 fn main() -> Result<(), ExitCode> {
     let rt = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(4)

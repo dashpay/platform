@@ -121,18 +121,21 @@ pub type DAPIResult<T> = std::result::Result<T, DapiError>;
 
 // Add From implementation for boxed errors
 impl From<Box<dyn std::error::Error + Send + Sync>> for DapiError {
+    /// Collapse boxed dynamic errors into an internal error variant.
     fn from(err: Box<dyn std::error::Error + Send + Sync>) -> Self {
         Self::Internal(err.to_string())
     }
 }
 
 impl From<tokio_tungstenite::tungstenite::Error> for DapiError {
+    /// Wrap tungstenite errors in the WebSocket variant.
     fn from(err: tokio_tungstenite::tungstenite::Error) -> Self {
         Self::WebSocket(Box::new(err))
     }
 }
 
 impl From<DapiError> for tonic::Status {
+    /// Convert `DapiError` directly into `tonic::Status` using `to_status`.
     fn from(err: DapiError) -> Self {
         err.to_status()
     }
@@ -160,6 +163,7 @@ impl DapiError {
         }
     }
 
+    /// Construct a `DapiError` from a raw Tenderdash JSON status response.
     pub fn from_tenderdash_error(value: Value) -> Self {
         DapiError::TenderdashClientError(TenderdashStatus::from(value))
     }
@@ -259,10 +263,12 @@ impl DapiError {
 }
 
 pub trait MapToDapiResult<T: Sized> {
+    /// Convert nested or join results into `DAPIResult<T>` for convenience APIs.
     fn to_dapi_result(self) -> DAPIResult<T>;
 }
 
 impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<Result<T, E>, JoinError> {
+    /// Flatten `Result<Result<..>>` from spawned tasks into `DAPIResult`.
     fn to_dapi_result(self) -> DAPIResult<T> {
         match self {
             Ok(Ok(inner)) => Ok(inner),
@@ -273,6 +279,7 @@ impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<Result<T, E>, J
 }
 
 impl<T: Sized> MapToDapiResult<T> for DapiResult<T> {
+    /// Identity conversion to simplify generic usage of `MapToDapiResult`.
     fn to_dapi_result(self) -> DAPIResult<T> {
         self
     }
@@ -281,6 +288,7 @@ impl<T: Sized> MapToDapiResult<T> for DapiResult<T> {
 // Provide a conversion from dashcore-rpc Error to our DapiError so callers can
 // use generic helpers like MapToDapiResult without custom closures.
 impl From<dashcore_rpc::Error> for DapiError {
+    /// Map dashcore RPC errors into rich `DapiError` variants for uniform handling.
     fn from(e: dashcore_rpc::Error) -> Self {
         match e {
             dashcore_rpc::Error::JsonRpc(jerr) => match jerr {

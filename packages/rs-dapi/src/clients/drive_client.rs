@@ -126,6 +126,7 @@ impl DriveClient {
         }
     }
 
+    /// Build a traced gRPC channel to Drive with error normalization.
     async fn create_channel(uri: &str) -> Result<DriveChannel, tonic::Status> {
         let raw_channel = dapi_grpc::tonic::transport::Endpoint::from_shared(uri.to_string())
             .map_err(|e| {
@@ -165,6 +166,7 @@ impl DriveClient {
         Ok(channel)
     }
 
+    /// Call the Drive `getStatus` endpoint and map the response into simplified structs.
     pub async fn get_drive_status(
         &self,
         request: &GetStatusRequest,
@@ -227,10 +229,12 @@ impl DriveClient {
         }
     }
 
+    /// Return a clone of the public Platform gRPC client.
     pub fn get_client(&self) -> PlatformClient<DriveChannel> {
         self.client.clone()
     }
 
+    /// Return a clone of the internal Drive gRPC client.
     pub fn get_internal_client(&self) -> DriveInternalClient<DriveChannel> {
         self.internal_client.clone()
     }

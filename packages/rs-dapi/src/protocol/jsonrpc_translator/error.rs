@@ -4,6 +4,8 @@ use dapi_grpc::tonic::Code;
 
 use crate::error::DapiError;
 
+/// Translate a `DapiError` into JSON-RPC error code, message, and optional data payload.
+/// Collapses related client-side errors into shared codes and defers gRPC statuses for finer handling.
 pub fn map_error(error: &DapiError) -> (i32, String, Option<Value>) {
     match error {
         DapiError::InvalidArgument(msg)
@@ -26,6 +28,8 @@ pub fn map_error(error: &DapiError) -> (i32, String, Option<Value>) {
     }
 }
 
+/// Map a gRPC `Status` into JSON-RPC semantics with fallback messaging.
+/// Normalizes empty status messages and groups transport vs validation failures.
 fn map_status(status: &dapi_grpc::tonic::Status) -> (i32, String, Option<Value>) {
     let raw_message = status.message().to_string();
     let normalized = if raw_message.is_empty() {

@@ -42,6 +42,7 @@ pub async fn init_logging(
     Ok(access_logger)
 }
 
+/// Configure tracing subscribers based on config and CLI overrides, initializing global logging.
 fn setup_application_logging(
     config: &LoggingConfig,
     cli_config: &LoggingCliConfig,
@@ -96,6 +97,7 @@ pub struct LoggingCliConfig {
     pub color: Option<bool>,
 }
 
+/// Derive an EnvFilter specification string from the logging config if provided.
 fn filter_from_logging_config(config: &LoggingConfig) -> Option<String> {
     let raw = config.level.trim();
 
@@ -112,6 +114,7 @@ fn filter_from_logging_config(config: &LoggingConfig) -> Option<String> {
     }
 }
 
+/// Normalize the configured access log format value into an enum variant.
 fn parse_access_log_format(raw: &str) -> Result<AccessLogFormat, String> {
     let normalized = raw.trim().to_ascii_lowercase();
 

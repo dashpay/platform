@@ -23,6 +23,7 @@ pub struct AccessLogLayer {
 }
 
 impl AccessLogLayer {
+    /// Wrap the provided access logger in a Tower layer for HTTP/gRPC services.
     pub fn new(access_logger: AccessLogger) -> Self {
         Self { access_logger }
     }
@@ -32,6 +33,7 @@ impl<S> Layer<S> for AccessLogLayer {
     type Service = AccessLogService<S>;
 
     fn layer(&self, service: S) -> Self::Service {
+        /// Wrap the inner service with an access logging capability.
         AccessLogService {
             inner: service,
             access_logger: self.access_logger.clone(),
@@ -58,9 +60,11 @@ where
     type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        // Delegate readiness checks to the inner service.
         self.inner.poll_ready(cx)
     }
 
+    /// Capture request metadata, invoke the inner service, and emit access logs.
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let start_time = Instant::now();
         let method = req.method().to_string();
@@ -261,6 +265,7 @@ fn http_status_to_grpc_status(http_status: u16) -> u32 {
     }
 }
 
+/// Retrieve the remote IP address from Axum or Tonic connection metadata.
 fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
     if let Some(connect_info) = req.extensions().get::<ConnectInfo<SocketAddr>>() {
         return Some(connect_info.ip());
@@ -275,6 +280,7 @@ fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
     None
 }
 
+/// Determine the gRPC status code from response headers, extensions, or fallback mapping.
 fn extract_grpc_status<B>(response: &Response<B>, http_status: u16) -> u32 {
     if let Some(value) = response.headers().get("grpc-status") {
         if let Ok(as_str) = value.to_str() {

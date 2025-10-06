@@ -115,6 +115,8 @@ pub struct PlatformServiceImpl {
 }
 
 impl PlatformServiceImpl {
+    /// Assemble the Platform service, wiring clients, caches, subscriptions, and workers.
+    /// Spawns background tasks for WebSocket streaming and platform event ingestion.
     pub async fn new(
         drive_client: crate::clients::drive_client::DriveClient,
         tenderdash_client: Arc<TenderdashClient>,

@@ -198,6 +198,7 @@ impl PlatformServiceImpl {
     }
 }
 
+/// Convert Tenderdash broadcast error details into a structured `DapiError`.
 fn map_broadcast_error(code: i64, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
     tracing::trace!(

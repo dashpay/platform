@@ -15,6 +15,7 @@ use tokio::time::timeout;
 use tracing::{Instrument, debug, info, trace, warn};
 
 impl PlatformServiceImpl {
+    /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
     pub async fn wait_for_state_transition_result_impl(
         &self,
         request: Request<WaitForStateTransitionResultRequest>,
@@ -124,6 +125,7 @@ impl PlatformServiceImpl {
         .await
     }
 
+    /// Build a response for a transaction already known to Tenderdash, optionally generating proofs.
     async fn build_response_from_existing_tx(
         &self,
         tx_response: crate::clients::tenderdash_client::TxResponse,
@@ -182,6 +184,7 @@ impl PlatformServiceImpl {
         Ok(body.into())
     }
 
+    /// Build a response from a streamed transaction event, handling success and error cases.
     async fn build_response_from_event(
         &self,
         transaction_event: crate::clients::TransactionEvent,
@@ -240,6 +243,7 @@ impl PlatformServiceImpl {
         }
     }
 
+    /// Fetch Drive proofs for the provided state transition bytes, returning proof and metadata.
     async fn fetch_proof_for_state_transition(
         &self,
         tx_bytes: Vec<u8>,
@@ -276,6 +280,7 @@ impl PlatformServiceImpl {
     }
 }
 
+/// Convert a `DapiError` into the gRPC error response expected by waitForStateTransitionResult callers.
 pub(super) fn build_wait_for_state_transition_error_response(
     error: &DapiError,
 ) -> Response<WaitForStateTransitionResultResponse> {

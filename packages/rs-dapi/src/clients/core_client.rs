@@ -17,6 +17,8 @@ pub struct CoreClient {
 }
 
 impl CoreClient {
+    /// Create a Core RPC client with caching and concurrency guards.
+    /// Wraps the dashcore RPC client and response cache.
     pub fn new(
         url: String,
         user: String,
@@ -32,6 +34,7 @@ impl CoreClient {
         })
     }
 
+    /// Execute a blocking Core RPC call inside a limited concurrency pool.
     async fn guarded_blocking_call<F, R, E>(
         &self,
         op: F,
@@ -51,6 +54,7 @@ impl CoreClient {
         .await
     }
 
+    /// Retrieve the current block count from Dash Core as a `u32`.
     pub async fn get_block_count(&self) -> DAPIResult<u32> {
         trace!("Core RPC: get_block_count");
         let height = self
@@ -61,6 +65,7 @@ impl CoreClient {
         Ok(height as u32)
     }
 
+    /// Fetch verbose transaction metadata by txid hex string.
     pub async fn get_transaction_info(
         &self,
         txid_hex: &str,
@@ -77,6 +82,7 @@ impl CoreClient {
         Ok(info)
     }
 
+    /// Broadcast a raw transaction byte slice and return its txid hex string.
     pub async fn send_raw_transaction(&self, raw: &[u8]) -> DAPIResult<String> {
         trace!("Core RPC: send_raw_transaction");
         let raw_vec = raw.to_vec();
@@ -173,6 +179,7 @@ impl CoreClient {
         Ok(block)
     }
 
+    /// Retrieve serialized block header bytes for the given block hash.
     pub async fn get_block_header_bytes_by_hash(
         &self,
         hash: dashcore_rpc::dashcore::BlockHash,
@@ -187,6 +194,7 @@ impl CoreClient {
         Ok(bytes)
     }
 
+    /// Convenience helper decoding a hash hex string before fetching block bytes.
     pub async fn get_block_bytes_by_hash_hex(&self, hash_hex: &str) -> DAPIResult<Vec<u8>> {
         use std::str::FromStr;
         if hash_hex.trim().is_empty() {
@@ -261,6 +269,7 @@ impl CoreClient {
         Ok(transactions)
     }
 
+    /// List txids currently present in the Core mempool.
     pub async fn get_mempool_txids(&self) -> DAPIResult<Vec<dashcore_rpc::dashcore::Txid>> {
         trace!("Core RPC: get_raw_mempool");
         self.guarded_blocking_call(|client| client.get_raw_mempool())
@@ -268,6 +277,7 @@ impl CoreClient {
             .to_dapi_result()
     }
 
+    /// Retrieve a raw transaction by txid, decoding it into a `Transaction`.
     pub async fn get_raw_transaction(
         &self,
         txid: dashcore_rpc::dashcore::Txid,
@@ -312,6 +322,7 @@ impl CoreClient {
         Ok(info)
     }
 
+    /// Obtain the latest ChainLock if available, tolerating Core's "not ready" response.
     pub async fn get_best_chain_lock(
         &self,
     ) -> DAPIResult<Option<dashcore_rpc::dashcore::ChainLock>> {
@@ -332,6 +343,7 @@ impl CoreClient {
         }
     }
 
+    /// Request a masternode list diff between two block hashes via `protx diff`.
     pub async fn mn_list_diff(
         &self,
         base_block: &dashcore_rpc::dashcore::BlockHash,
@@ -354,6 +366,7 @@ impl CoreClient {
         Ok(diff)
     }
 
+    /// Fetch general blockchain state information from Dash Core.
     pub async fn get_blockchain_info(
         &self,
     ) -> DAPIResult<dashcore_rpc::json::GetBlockchainInfoResult> {
@@ -365,6 +378,7 @@ impl CoreClient {
         Ok(info)
     }
 
+    /// Fetch network-level statistics and connection details from Dash Core.
     pub async fn get_network_info(&self) -> DAPIResult<dashcore_rpc::json::GetNetworkInfoResult> {
         trace!("Core RPC: get_network_info");
         let info = self
@@ -374,6 +388,7 @@ impl CoreClient {
         Ok(info)
     }
 
+    /// Estimate the smart fee in Dash per KB for the target confirmation window.
     pub async fn estimate_smart_fee_btc_per_kb(&self, blocks: u16) -> DAPIResult<Option<f64>> {
         trace!("Core RPC: estimatesmartfee");
         let result = self
@@ -383,6 +398,7 @@ impl CoreClient {
         Ok(result.fee_rate.map(|a| a.to_dash()))
     }
 
+    /// Query the local masternode status from Dash Core.
     pub async fn get_masternode_status(&self) -> DAPIResult<dashcore_rpc::json::MasternodeStatus> {
         trace!("Core RPC: masternode status");
         let st = self
@@ -392,6 +408,7 @@ impl CoreClient {
         Ok(st)
     }
 
+    /// Fetch the deterministic masternode synchronization status from Dash Core.
     pub async fn mnsync_status(&self) -> DAPIResult<dashcore_rpc::json::MnSyncStatus> {
         trace!("Core RPC: mnsync status");
         let st = self
@@ -401,6 +418,7 @@ impl CoreClient {
         Ok(st)
     }
 
+    /// Retrieve the PoSe penalty score for the specified masternode ProTx hash.
     pub async fn get_masternode_pos_penalty(
         &self,
         pro_tx_hash_hex: &str,
@@ -429,12 +447,14 @@ struct CoreRpcAccessGuard {
 }
 
 impl CoreRpcAccessGuard {
+    /// Construct a semaphore-backed guard limiting concurrent Core RPC calls.
     fn new(max_concurrent: usize) -> Self {
         Self {
             semaphore: Arc::new(Semaphore::new(max_concurrent.max(1))),
         }
     }
 
+    /// Acquire a permit, ensuring at most `max_concurrent` active RPC requests.
     async fn acquire(&self) -> OwnedSemaphorePermit {
         self.semaphore
             .clone()

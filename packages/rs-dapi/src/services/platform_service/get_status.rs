@@ -15,6 +15,7 @@ use crate::clients::{
 use crate::services::platform_service::PlatformServiceImpl;
 
 impl PlatformServiceImpl {
+    /// Handle the Platform `getStatus` request with caching and cache warming logic.
     pub async fn get_status_impl(
         &self,
         request: Request<GetStatusRequest>,
@@ -51,6 +52,7 @@ impl PlatformServiceImpl {
         }
     }
 
+    /// Gather Drive and Tenderdash status information and compose the unified response.
     async fn build_status_response(&self) -> Result<GetStatusResponse, Status> {
         // Prepare request for Drive
         let drive_request = GetStatusRequest {
@@ -98,6 +100,7 @@ impl PlatformServiceImpl {
 
 // Status building functions
 
+/// Assemble the full gRPC response from Drive and Tenderdash status snapshots.
 fn build_status_response(
     drive_status: DriveStatusResponse,
     tenderdash_status: TenderdashStatusResponse,
@@ -119,6 +122,7 @@ fn build_status_response(
     Ok(response)
 }
 
+/// Populate version metadata including protocol and software versions.
 fn build_version_info(
     drive_status: &DriveStatusResponse,
     tenderdash_status: &TenderdashStatusResponse,
@@ -185,6 +189,7 @@ fn build_version_info(
     version
 }
 
+/// Build node identification data from Tenderdash status, decoding hex identifiers.
 fn build_node_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::Node> {
@@ -209,6 +214,7 @@ fn build_node_info(
     }
 }
 
+/// Construct chain synchronization information combining Drive and Tenderdash fields.
 fn build_chain_info(
     drive_status: &DriveStatusResponse,
     tenderdash_status: &TenderdashStatusResponse,
@@ -282,6 +288,7 @@ fn build_chain_info(
     }
 }
 
+/// Produce state sync metrics derived from Tenderdash status response.
 fn build_state_sync_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::StateSync> {
@@ -307,6 +314,7 @@ fn build_state_sync_info(
     }
 }
 
+/// Build network-related stats such as peers and listening state.
 fn build_network_info(
     tenderdash_status: &TenderdashStatusResponse,
     tenderdash_netinfo: &NetInfoResponse,
@@ -339,6 +347,7 @@ fn build_network_info(
     }
 }
 
+/// Compose the time section using Drive status timestamps.
 fn build_time_info(drive_status: &DriveStatusResponse) -> get_status_response_v0::Time {
     let mut time = get_status_response_v0::Time::default();
 

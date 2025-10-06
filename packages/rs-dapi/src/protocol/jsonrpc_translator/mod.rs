@@ -23,10 +23,14 @@ pub enum JsonRpcCall {
 }
 
 impl JsonRpcTranslator {
+    /// Create a new translator that maps between JSON-RPC payloads and gRPC requests.
     pub fn new() -> Self {
         Self
     }
 
+    /// Interpret an incoming JSON-RPC request and produce the corresponding gRPC call marker.
+    /// Validates parameters and converts them into typed messages or structured errors.
+    /// Returns the resolved call along with the original request id.
     pub async fn translate_request(
         &self,
         json_rpc: JsonRpcRequest,
@@ -54,6 +58,9 @@ impl JsonRpcTranslator {
         }
     }
 
+    /// Convert a gRPC Platform status response into a JSON-RPC success envelope.
+    /// Serializes the message to JSON, wrapping serialization failures as internal errors.
+    /// Propagates the original request id.
     pub async fn translate_response(
         &self,
         response: GetStatusResponse,
@@ -64,15 +71,18 @@ impl JsonRpcTranslator {
         Ok(JsonRpcResponse::ok(result, id))
     }
 
+    /// Build a JSON-RPC error response from a rich `DapiError` using protocol mappings.
     pub fn error_response(&self, error: DapiError, id: Option<Value>) -> JsonRpcResponse {
         let (code, message, data) = error::map_error(&error);
         JsonRpcResponse::error(code, message, data, id)
     }
 
+    /// Build a JSON-RPC success response with the provided JSON result payload.
     pub fn ok_response(&self, result: Value, id: Option<Value>) -> JsonRpcResponse {
         JsonRpcResponse::ok(result, id)
     }
 
+    /// Construct the gRPC request variant for the `getStatus` Platform call.
     fn translate_platform_status(&self) -> JsonRpcCall {
         use dapi_grpc::platform::v0::get_status_request::GetStatusRequestV0;
 

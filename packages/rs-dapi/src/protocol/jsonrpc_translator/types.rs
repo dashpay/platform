@@ -25,6 +25,7 @@ pub struct JsonRpcError {
 }
 
 impl JsonRpcResponse {
+    /// Create a JSON-RPC 2.0 success envelope with the provided result payload.
     pub fn ok(result: Value, id: Option<Value>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),
@@ -34,6 +35,7 @@ impl JsonRpcResponse {
         }
     }
 
+    /// Create a JSON-RPC 2.0 error envelope with code, message, optional data, and id.
     pub fn error(code: i32, message: String, data: Option<Value>, id: Option<Value>) -> Self {
         Self {
             jsonrpc: "2.0".to_string(),

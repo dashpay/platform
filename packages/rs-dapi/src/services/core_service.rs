@@ -29,6 +29,8 @@ pub struct CoreServiceImpl {
 }
 
 impl CoreServiceImpl {
+    /// Build the Core service by wiring the streaming service, config, and RPC client.
+    /// Used by server startup to prepare gRPC handlers.
     pub async fn new(
         streaming_service: Arc<StreamingServiceImpl>,
         config: Arc<Config>,
@@ -50,6 +52,7 @@ impl Core for CoreServiceImpl {
         ReceiverStream<Result<TransactionsWithProofsResponse, Status>>;
     type subscribeToMasternodeListStream = ReceiverStream<Result<MasternodeListResponse, Status>>;
 
+    /// Fetch a block by height or hash, translating Core errors into gRPC statuses.
     async fn get_block(
         &self,
         request: Request<GetBlockRequest>,
@@ -109,6 +112,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(GetBlockResponse { block: block_bytes }))
     }
 
+    /// Retrieve transaction details including confirmations and lock states.
     async fn get_transaction(
         &self,
         request: Request<GetTransactionRequest>,
@@ -159,6 +163,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(response))
     }
 
+    /// Return the best block height from Dash Core for legacy clients.
     async fn get_best_block_height(
         &self,
         _request: Request<GetBestBlockHeightRequest>,
@@ -173,6 +178,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(GetBestBlockHeightResponse { height }))
     }
 
+    /// Validate and broadcast a transaction to Dash Core, returning its txid.
     async fn broadcast_transaction(
         &self,
         request: Request<BroadcastTransactionRequest>,
@@ -221,6 +227,7 @@ impl Core for CoreServiceImpl {
         }))
     }
 
+    /// Fetch blockchain status metrics (similar to `getblockchaininfo`).
     async fn get_blockchain_status(
         &self,
         _request: Request<GetBlockchainStatusRequest>,
@@ -327,6 +334,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(response))
     }
 
+    /// Return the masternode status for the current node via Dash Core.
     async fn get_masternode_status(
         &self,
         _request: Request<GetMasternodeStatusRequest>,
@@ -391,6 +399,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(response))
     }
 
+    /// Estimate smart fee rate for a confirmation target, preserving legacy units.
     async fn get_estimated_transaction_fee(
         &self,
         request: Request<GetEstimatedTransactionFeeRequest>,
@@ -407,6 +416,7 @@ impl Core for CoreServiceImpl {
         Ok(Response::new(GetEstimatedTransactionFeeResponse { fee }))
     }
 
+    /// Stream block headers with optional chain locks, selecting optimal delivery mode.
     async fn subscribe_to_block_headers_with_chain_locks(
         &self,
         request: Request<BlockHeadersWithChainLocksRequest>,
@@ -417,6 +427,7 @@ impl Core for CoreServiceImpl {
             .await
     }
 
+    /// Stream transactions accompanied by proofs via the streaming service.
     async fn subscribe_to_transactions_with_proofs(
         &self,
         request: Request<TransactionsWithProofsRequest>,
@@ -427,6 +438,7 @@ impl Core for CoreServiceImpl {
             .await
     }
 
+    /// Stream masternode list diffs using the masternode sync helper.
     async fn subscribe_to_masternode_list(
         &self,
         request: Request<MasternodeListRequest>,

@@ -9,6 +9,9 @@ use crate::logging::middleware::AccessLogLayer;
 use super::DapiServer;
 
 impl DapiServer {
+    /// Launch the health and Prometheus metrics server if configured.
+    /// Binds Axum routes and wraps them with access logging when available.
+    /// Returns early when metrics are disabled.
     pub(super) async fn start_metrics_server(&self) -> DAPIResult<()> {
         let Some(addr) = self.config.metrics_addr() else {
             info!("Metrics server disabled; skipping startup");
@@ -34,6 +37,7 @@ impl DapiServer {
     }
 }
 
+/// Report overall health along with build metadata for readiness probes.
 async fn handle_health() -> Json<Value> {
     Json(serde_json::json!({
         "status": "ok",
@@ -42,6 +46,7 @@ async fn handle_health() -> Json<Value> {
     }))
 }
 
+/// Indicate the server is ready to serve traffic with a timestamp payload.
 async fn handle_ready() -> Json<Value> {
     Json(serde_json::json!({
         "status": "ready",
@@ -49,6 +54,7 @@ async fn handle_ready() -> Json<Value> {
     }))
 }
 
+/// Indicate the server process is alive with a timestamp payload.
 async fn handle_live() -> Json<Value> {
     Json(serde_json::json!({
         "status": "alive",
@@ -56,6 +62,7 @@ async fn handle_live() -> Json<Value> {
     }))
 }
 
+/// Expose Prometheus-formatted metrics gathered from the registry.
 async fn handle_metrics() -> axum::response::Response {
     let (body, content_type) = crate::metrics::gather_prometheus();
     axum::response::Response::builder()

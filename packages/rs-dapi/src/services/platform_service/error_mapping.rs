@@ -18,6 +18,7 @@ pub struct TenderdashStatus {
 }
 
 impl TenderdashStatus {
+    /// Construct a Tenderdash status wrapper, validating consensus error payloads upfront.
     pub fn new(code: i64, message: Option<String>, consensus_error: Option<Vec<u8>>) -> Self {
         // sanity check: consensus_error must deserialize to ConsensusError if present
         if let Some(ref bytes) = consensus_error
@@ -38,6 +39,7 @@ impl TenderdashStatus {
         }
     }
 
+    /// Convert the Tenderdash status into a gRPC `tonic::Status` with enriched metadata.
     pub fn to_status(&self) -> tonic::Status {
         let status_code = self.grpc_code();
         let status_message = self.grpc_message();
@@ -49,6 +51,7 @@ impl TenderdashStatus {
         status
     }
 
+    /// Populate metadata fields expected by clients consuming Drive/Tenderdash errors.
     fn write_grpc_metadata(&self, metadata: &mut tonic::metadata::MetadataMap) {
         // drive-error-data-bin contains serialized DriveErrorDataBin structure
         let mut serialized_drive_error_data = Vec::new();
@@ -79,6 +82,7 @@ impl TenderdashStatus {
         }
     }
 
+    /// Derive an end-user message, preferring explicit message over consensus error details.
     fn grpc_message(&self) -> String {
         if let Some(message) = &self.message {
             return message.clone();
@@ -165,6 +169,7 @@ impl Debug for TenderdashStatus {
     }
 }
 
+/// Decode a potentially unpadded base64 string used by Tenderdash error payloads.
 pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
     static BASE64: engine::GeneralPurpose = {
         let b64_config = engine::GeneralPurposeConfig::new()
@@ -182,7 +187,7 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
         .ok()
 }
 
-// Iteratively parses `data` as a map, checks if it contains the sequence of keys in `keys`
+/// Walk a nested CBOR map by following the provided key path.
 fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a ciborium::Value> {
     if keys.is_empty() {
         tracing::trace!(?data, "found value, returning");
@@ -210,6 +215,7 @@ fn walk_cbor_for_key<'a>(data: &'a ciborium::Value, keys: &[&str]) -> Option<&'a
     None
 }
 
+/// Decode Tenderdash consensus error metadata from base64 CBOR into raw consensus bytes.
 pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     use ciborium::value::Value;
 
