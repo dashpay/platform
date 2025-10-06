@@ -1,6 +1,7 @@
 import os from 'os';
-import convertObjectToEnvs from './convertObjectToEnvs.js';
+import path from 'path';
 import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
+import convertObjectToEnvs from './convertObjectToEnvs.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -76,7 +77,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       driveAbciMetricsUrl = 'http://0.0.0.0:29090';
     }
 
-    return {
+    const envs = {
       DASHMATE_HOME_DIR: homeDir.getPath(),
       LOCAL_UID: uid,
       LOCAL_GID: gid,
@@ -92,6 +93,44 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
       ...convertObjectToEnvs(config.getOptions()),
     };
+
+    const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
+    const hasConfiguredPath = typeof configuredAccessLogPath === 'string'
+      && configuredAccessLogPath.trim() !== '';
+
+    const homeDirPath = homeDir.getPath();
+    let hostAccessLogPath;
+    if (hasConfiguredPath) {
+      hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
+        ? configuredAccessLogPath
+        : path.resolve(homeDirPath, configuredAccessLogPath);
+    } else {
+      hostAccessLogPath = homeDir.joinPath(
+        config.getName(),
+        'platform',
+        'rs-dapi',
+        'logs',
+        'access.log',
+      );
+    }
+
+    const hostAccessLogDir = path.dirname(hostAccessLogPath);
+    const hostAccessLogFile = path.basename(hostAccessLogPath);
+    const containerAccessLogDir = '/var/log/rs-dapi';
+    const containerAccessLogPath = path.posix.join(containerAccessLogDir, hostAccessLogFile);
+
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = hostAccessLogPath;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = hostAccessLogDir;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR = containerAccessLogDir;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_PATH = containerAccessLogPath;
+
+    if (hasConfiguredPath) {
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = containerAccessLogPath;
+    } else {
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = '';
+    }
+
+    return envs;
   }
 
   return generateEnvs;

@@ -223,6 +223,10 @@ services:
       - DAPI_LOGGING_JSON_FORMAT=${PLATFORM_DAPI_RS_DAPI_LOGS_JSON_FORMAT:-false}
       - DAPI_LOGGING_ACCESS_LOG_PATH=${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH:-}
       - DAPI_LOGGING_ACCESS_LOG_FORMAT=${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_FORMAT:-combined}
+    volumes:
+      - type: bind
+        source: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR}
+        target: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR}
     expose:
       - 3009  # JSON-RPC
       - 3010  # gRPC (different from current DAPI to avoid conflict)

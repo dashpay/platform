@@ -910,7 +910,8 @@ ARG USER_UID=1000
 ARG USER_GID=$USER_UID
 RUN addgroup -g $USER_GID $USERNAME && \
     adduser -D -u $USER_UID -G $USERNAME -h /app $USERNAME && \
-    chown -R $USER_UID:$USER_GID /app
+    mkdir -p /var/log/rs-dapi && \
+    chown -R $USER_UID:$USER_GID /app /var/log/rs-dapi
 
 USER $USERNAME
 
