@@ -3,6 +3,7 @@
 //! Supports Apache Combined Log Format for compatibility with standard log analyzers.
 
 use chrono::{DateTime, Utc};
+use serde_json::{Map, Value};
 use std::net::IpAddr;
 
 /// An access log entry containing request/response information
@@ -37,6 +38,12 @@ pub struct AccessLogEntry {
     pub grpc_method: Option<String>,
     /// gRPC status code (for gRPC requests)
     pub grpc_status: Option<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AccessLogFormat {
+    Combined,
+    Json,
 }
 
 impl AccessLogEntry {
@@ -142,6 +149,78 @@ impl AccessLogEntry {
             self.protocol
         )
     }
+
+    /// Format as JSON string suitable for structured logging pipelines
+    pub fn to_json_string(&self) -> String {
+        let value = self.to_json_value();
+        serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string())
+    }
+
+    fn to_json_value(&self) -> Value {
+        let mut map = Map::new();
+
+        map.insert(
+            "remote_addr".to_string(),
+            self.remote_addr
+                .map(|addr| Value::String(addr.to_string()))
+                .unwrap_or(Value::Null),
+        );
+        map.insert(
+            "remote_user".to_string(),
+            self.remote_user
+                .as_ref()
+                .map(|user| Value::String(user.clone()))
+                .unwrap_or(Value::Null),
+        );
+        map.insert(
+            "timestamp".to_string(),
+            Value::String(self.timestamp.to_rfc3339()),
+        );
+        map.insert("method".to_string(), Value::String(self.method.clone()));
+        map.insert("uri".to_string(), Value::String(self.uri.clone()));
+        map.insert(
+            "http_version".to_string(),
+            Value::String(self.http_version.clone()),
+        );
+        map.insert("status".to_string(), Value::Number(self.status.into()));
+        map.insert(
+            "body_bytes".to_string(),
+            Value::Number(self.body_bytes.into()),
+        );
+        map.insert(
+            "referer".to_string(),
+            self.referer
+                .as_ref()
+                .map(|referer| Value::String(referer.clone()))
+                .unwrap_or(Value::Null),
+        );
+        map.insert(
+            "user_agent".to_string(),
+            self.user_agent
+                .as_ref()
+                .map(|ua| Value::String(ua.clone()))
+                .unwrap_or(Value::Null),
+        );
+        map.insert(
+            "duration_us".to_string(),
+            Value::Number(self.duration_us.into()),
+        );
+        map.insert("protocol".to_string(), Value::String(self.protocol.clone()));
+
+        if let Some(service) = &self.grpc_service {
+            map.insert("grpc_service".to_string(), Value::String(service.clone()));
+        }
+
+        if let Some(method) = &self.grpc_method {
+            map.insert("grpc_method".to_string(), Value::String(method.clone()));
+        }
+
+        if let Some(status) = self.grpc_status {
+            map.insert("grpc_status".to_string(), Value::Number(status.into()));
+        }
+
+        Value::Object(map)
+    }
 }
 
 /// Convert gRPC status code to HTTP status code for logging
@@ -172,11 +251,12 @@ fn grpc_status_to_http_status(grpc_status: u32) -> u16 {
 #[derive(Debug, Clone)]
 pub struct AccessLogger {
     writer: std::sync::Arc<tokio::sync::Mutex<Option<tokio::fs::File>>>,
+    format: AccessLogFormat,
 }
 
 impl AccessLogger {
     /// Create a new access logger with specified file path
-    pub async fn new(file_path: String) -> Result<Self, std::io::Error> {
+    pub async fn new(file_path: String, format: AccessLogFormat) -> Result<Self, std::io::Error> {
         let file = tokio::fs::OpenOptions::new()
             .create(true)
             .append(true)
@@ -185,12 +265,16 @@ impl AccessLogger {
 
         Ok(Self {
             writer: std::sync::Arc::new(tokio::sync::Mutex::new(Some(file))),
+            format,
         })
     }
 
     /// Log an access log entry
     pub async fn log(&self, entry: &AccessLogEntry) {
-        let log_line = entry.to_combined_format() + "\n";
+        let log_line = match self.format {
+            AccessLogFormat::Combined => entry.to_combined_format(),
+            AccessLogFormat::Json => entry.to_json_string(),
+        } + "\n";
 
         let mut writer_guard = self.writer.lock().await;
         if let Some(ref mut file) = *writer_guard {
@@ -208,6 +292,7 @@ impl AccessLogger {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::Value;
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
@@ -260,5 +345,31 @@ mod tests {
         assert_eq!(grpc_status_to_http_status(5), 404); // NOT_FOUND
         assert_eq!(grpc_status_to_http_status(13), 500); // INTERNAL
         assert_eq!(grpc_status_to_http_status(16), 401); // UNAUTHENTICATED
+    }
+
+    #[test]
+    fn test_access_log_json_format() {
+        let entry = AccessLogEntry::new_http(
+            Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
+            "POST".to_string(),
+            "/rpc".to_string(),
+            "HTTP/1.1".to_string(),
+            201,
+            256,
+            2500,
+        )
+        .with_user_agent("curl/8.0".to_string())
+        .with_referer("https://example.net".to_string());
+
+        let json_line = entry.to_json_string();
+        let value: Value = serde_json::from_str(&json_line).expect("valid json");
+        assert_eq!(value["method"], "POST");
+        assert_eq!(value["status"], 201);
+        assert_eq!(value["body_bytes"], 256);
+        assert_eq!(value["duration_us"], 2500);
+        assert_eq!(value["user_agent"], "curl/8.0");
+        assert_eq!(value["referer"], "https://example.net");
+        assert_eq!(value["protocol"], "HTTP");
+        assert_eq!(value["remote_addr"], "10.0.0.1");
     }
 }

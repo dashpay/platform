@@ -270,6 +270,9 @@ export default function getBaseConfigFactory() {
             },
             logging: {
               level: 'info',
+              jsonFormat: false,
+              accessLogPath: null,
+              accessLogFormat: 'combined',
             },
           },
         },

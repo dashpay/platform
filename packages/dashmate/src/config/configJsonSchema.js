@@ -903,8 +903,21 @@ export default {
                       minLength: 1,
                       description: 'error, warn, info, debug, trace, off or logging specification string in RUST_LOG format',
                     },
+                    jsonFormat: {
+                      type: 'boolean',
+                      description: 'Emit structured JSON application logs when true',
+                    },
+                    accessLogPath: {
+                      type: ['string', 'null'],
+                      description: 'Filesystem path for access logs; leave empty or null to disable access logging',
+                    },
+                    accessLogFormat: {
+                      type: 'string',
+                      description: 'Access log format',
+                      enum: ['combined', 'json'],
+                    },
                   },
-                  required: ['level'],
+                  required: ['level', 'jsonFormat', 'accessLogPath', 'accessLogFormat'],
                   additionalProperties: false,
                 },
               },

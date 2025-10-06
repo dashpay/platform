@@ -10,7 +10,7 @@ use crate::config::LoggingConfig;
 pub mod access_log;
 pub mod middleware;
 
-pub use access_log::{AccessLogEntry, AccessLogger};
+pub use access_log::{AccessLogEntry, AccessLogFormat, AccessLogger};
 pub use middleware::AccessLogLayer;
 
 /// Initialize logging subsystem with given configuration
@@ -22,11 +22,13 @@ pub async fn init_logging(
     // Set up the main application logger
     setup_application_logging(config, cli_config)?;
 
+    let access_log_format = parse_access_log_format(&config.access_log_format)?;
+
     // Set up access logging if configured with a non-empty path
     let access_logger = if let Some(ref path) = config.access_log_path {
         if !path.trim().is_empty() {
             Some(
-                AccessLogger::new(path.clone())
+                AccessLogger::new(path.clone(), access_log_format)
                     .await
                     .map_err(|e| format!("Failed to create access logger {}: {}", path, e))?,
             )
@@ -110,6 +112,16 @@ fn filter_from_logging_config(config: &LoggingConfig) -> Option<String> {
     }
 }
 
+fn parse_access_log_format(raw: &str) -> Result<AccessLogFormat, String> {
+    let normalized = raw.trim().to_ascii_lowercase();
+
+    match normalized.as_str() {
+        "" | "combined" => Ok(AccessLogFormat::Combined),
+        "json" => Ok(AccessLogFormat::Json),
+        other => Err(format!("Unsupported access log format: {}", other)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -158,5 +170,24 @@ mod tests {
         };
 
         assert_eq!(filter_from_logging_config(&config), None);
+    }
+
+    #[test]
+    fn parse_access_log_format_accepts_supported_values() {
+        assert_eq!(
+            parse_access_log_format("combined"),
+            Ok(AccessLogFormat::Combined)
+        );
+        assert_eq!(parse_access_log_format("json"), Ok(AccessLogFormat::Json));
+        assert_eq!(
+            parse_access_log_format("   "),
+            Ok(AccessLogFormat::Combined)
+        );
+    }
+
+    #[test]
+    fn parse_access_log_format_rejects_unknown_values() {
+        let err = parse_access_log_format("xml").unwrap_err();
+        assert!(err.contains("Unsupported access log format"));
     }
 }

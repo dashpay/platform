@@ -62,3 +62,6 @@ The rs-dapi metrics server exposes `/health`, `/ready`, `/live`, and `/metrics`.
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.dapi.rsDapi.logging.level` | rs-dapi log verbosity. Accepts standard levels (`error`, `warn`, `info`, `debug`, `trace`, `off`) or a full `RUST_LOG` filter string | `info` | `debug` |
+| `platform.dapi.rsDapi.logging.jsonFormat` | Enable structured JSON application logs (`true`) or human-readable logs (`false`) | `false` | `true` |
+| `platform.dapi.rsDapi.logging.accessLogPath` | Absolute path for HTTP/gRPC access logs. Empty or `null` disables access logging | `null` | `"/var/log/rs-dapi/access.log"` |
+| `platform.dapi.rsDapi.logging.accessLogFormat` | Access log output format | `combined` | `json` |

@@ -4,6 +4,8 @@ use tracing::info;
 
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
+use tower::layer::util::Identity;
+use tower::util::Either;
 
 use crate::error::DAPIResult;
 use crate::logging::AccessLogLayer;
@@ -30,11 +32,13 @@ impl DapiServer {
             .tcp_keepalive(Some(Duration::from_secs(25)))
             .timeout(Duration::from_secs(120));
 
-        let builder = if let Some(ref access_logger) = self.access_logger {
-            builder.layer(AccessLogLayer::new(access_logger.clone()))
+        let layer = if let Some(ref access_logger) = self.access_logger {
+            Either::Left(AccessLogLayer::new(access_logger.clone()))
         } else {
-            builder
+            Either::Right(Identity::new())
         };
+
+        let mut builder = builder.layer(layer);
 
         builder
             .add_service(

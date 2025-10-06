@@ -1184,6 +1184,18 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             if (typeof options.platform.dapi.rsDapi.logging.level === 'undefined') {
               options.platform.dapi.rsDapi.logging.level = defaultConfig.get('platform.dapi.rsDapi.logging.level');
             }
+
+            if (typeof options.platform.dapi.rsDapi.logging.jsonFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logging.jsonFormat = defaultConfig.get('platform.dapi.rsDapi.logging.jsonFormat');
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logging.accessLogPath === 'undefined') {
+              options.platform.dapi.rsDapi.logging.accessLogPath = defaultConfig.get('platform.dapi.rsDapi.logging.accessLogPath');
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logging.accessLogFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logging.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logging.accessLogFormat');
+            }
           });
 
         return configFile;

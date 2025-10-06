@@ -175,7 +175,6 @@ pub struct LoggingConfig {
     )]
     pub json_format: bool,
     /// Path to access log file. If set to non-empty value, access logging is enabled.
-    /// TODO: Implement access logging
     #[serde(rename = "dapi_logging_access_log_path")]
     pub access_log_path: Option<String>,
     /// Access log format. Currently supports "combined" (Apache Common Log Format)
