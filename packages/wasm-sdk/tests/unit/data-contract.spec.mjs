@@ -66,8 +66,7 @@ describe('DataContract', () => {
       contract.free();
     });
 
-    // TODO: Re-enable following once PR 2794 or similar fixes underlying issue
-    it.skip('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
+    it('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
       const contract = sdk.DataContract.fromJSON(contractFixtureV1, PLATFORM_VERSION_CONTRACT_V1);
 
       expect(contract).to.be.ok();
