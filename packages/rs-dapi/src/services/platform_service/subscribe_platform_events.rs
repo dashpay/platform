@@ -27,14 +27,14 @@ impl PlatformServiceImpl {
         // Spawn a task to forward downlink commands -> uplink channel
         {
             let mut downlink = downlink_req_rx;
-            let workers = self.workers.clone();
-            let mut workers = workers.lock().await;
-            workers.spawn(async move {
+
+            self.workers.lock().await.spawn(async move {
                 while let Some(cmd) = downlink.next().await {
                     match cmd {
                         Ok(msg) => {
-                            if uplink_req_tx.send(msg).await.is_err() {
+                            if let Err(e) = uplink_req_tx.send(msg).await  {
                                 tracing::warn!(
+                                    error = %e,
                                     "Platform events uplink command channel closed; stopping forward"
                                 );
                                 break;
@@ -66,9 +66,7 @@ impl PlatformServiceImpl {
 
         // Spawn a task to forward uplink responses -> downlink
         {
-            let workers = self.workers.clone();
-            let mut workers = workers.lock().await;
-            workers.spawn(async move {
+            self.workers.lock().await.spawn(async move {
                 while let Some(msg) = uplink_resp_rx.next().await {
                     if downlink_resp_tx.send(msg).await.is_err() {
                         tracing::warn!(
