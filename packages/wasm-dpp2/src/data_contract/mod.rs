@@ -3,7 +3,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::token_configuration::TokenConfigurationWasm;
 use crate::token_configuration::group::GroupWasm;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
+use crate::utils::{IntoWasm, JsValueExt, ToSerdeJSONExt};
 use dpp::dashcore::hashes::serde::Serialize;
 use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 use dpp::data_contract::accessors::v1::{DataContractV1Getters, DataContractV1Setters};
@@ -66,7 +66,13 @@ pub fn tokens_configuration_from_js_value(
         }?;
 
         let js_config = Reflect::get(&configuration_object, &key)
-            .map_err(WasmDppError::from_js_value)?
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::invalid_argument(format!(
+                    "unable to read token configuration at contract position '{}': {}",
+                    contract_position, message
+                ))
+            })?
             .to_wasm::<TokenConfigurationWasm>("TokenConfiguration")?
             .clone();
 
@@ -336,7 +342,13 @@ impl DataContractWasm {
                 &JsValue::from(key.clone()),
                 &JsValue::from(TokenConfigurationWasm::from(value.clone())),
             )
-            .map_err(|e| WasmDppError::invalid_argument(e.as_string().unwrap_or_default()))?;
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "unable to serialize token configuration at position '{}': {}",
+                    key, message
+                ))
+            })?;
         }
 
         Ok(tokens_object)
@@ -352,7 +364,13 @@ impl DataContractWasm {
                 &JsValue::from(key.clone()),
                 &JsValue::from(GroupWasm::from(value.clone())),
             )
-            .map_err(|e| WasmDppError::invalid_argument(e.as_string().unwrap_or_default()))?;
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "unable to serialize group at position '{}': {}",
+                    key, message
+                ))
+            })?;
         }
 
         Ok(groups_object.into())
@@ -457,8 +475,13 @@ impl DataContractWasm {
                 ))
             })?;
 
-            let js_group = Reflect::get(&groups_object, &js_position)
-                .map_err(|e| WasmDppError::invalid_argument(e.as_string().unwrap_or_default()))?;
+            let js_group = Reflect::get(&groups_object, &js_position).map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::invalid_argument(format!(
+                    "unable to read group at position '{}': {}",
+                    position_str, message
+                ))
+            })?;
 
             let group = js_group.to_wasm::<GroupWasm>("Group")?.clone();
 

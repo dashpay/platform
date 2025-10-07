@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, JsValueExt};
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
 use dpp::data_contract::associated_token::token_configuration_localization::accessors::v0::{
     TokenConfigurationLocalizationV0Getters, TokenConfigurationLocalizationV0Setters,
@@ -91,19 +91,37 @@ impl TokenConfigurationLocalizationWasm {
             &JsValue::from("shouldCapitalize"),
             &JsValue::from(self.0.should_capitalize()),
         )
-        .map_err(|err| WasmDppError::from_js_value(err))?;
+        .map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "unable to set 'shouldCapitalize' on TokenConfigurationLocalization: {}",
+                message
+            ))
+        })?;
         Reflect::set(
             &object,
             &JsValue::from("pluralForm"),
             &JsValue::from(self.0.plural_form()),
         )
-        .map_err(WasmDppError::from_js_value)?;
+        .map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "unable to set 'pluralForm' on TokenConfigurationLocalization: {}",
+                message
+            ))
+        })?;
         Reflect::set(
             &object,
             &JsValue::from("singularForm"),
             &JsValue::from(self.0.singular_form()),
         )
-        .map_err(WasmDppError::from_js_value)?;
+        .map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::generic(format!(
+                "unable to set 'singularForm' on TokenConfigurationLocalization: {}",
+                message
+            ))
+        })?;
 
         Ok(object.into())
     }
@@ -142,23 +160,41 @@ fn localization_from_plain_js_value(
     }
 
     let should_capitalize_value = Reflect::get(js_value, &JsValue::from_str("shouldCapitalize"))
-        .map_err(WasmDppError::from_js_value)?;
+        .map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "TokenConfigurationLocalization.shouldCapitalize could not be read: {}",
+                message
+            ))
+        })?;
     let should_capitalize = should_capitalize_value.as_bool().ok_or_else(|| {
         WasmDppError::invalid_argument(
             "TokenConfigurationLocalization.shouldCapitalize must be a boolean",
         )
     })?;
 
-    let singular_form_value = Reflect::get(js_value, &JsValue::from_str("singularForm"))
-        .map_err(WasmDppError::from_js_value)?;
+    let singular_form_value =
+        Reflect::get(js_value, &JsValue::from_str("singularForm")).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "TokenConfigurationLocalization.singularForm could not be read: {}",
+                message
+            ))
+        })?;
     let singular_form = singular_form_value.as_string().ok_or_else(|| {
         WasmDppError::invalid_argument(
             "TokenConfigurationLocalization.singularForm must be a string",
         )
     })?;
 
-    let plural_form_value = Reflect::get(js_value, &JsValue::from_str("pluralForm"))
-        .map_err(WasmDppError::from_js_value)?;
+    let plural_form_value =
+        Reflect::get(js_value, &JsValue::from_str("pluralForm")).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "TokenConfigurationLocalization.pluralForm could not be read: {}",
+                message
+            ))
+        })?;
     let plural_form = plural_form_value.as_string().ok_or_else(|| {
         WasmDppError::invalid_argument("TokenConfigurationLocalization.pluralForm must be a string")
     })?;

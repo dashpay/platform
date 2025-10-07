@@ -1,5 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::ToSerdeJSONExt;
+use crate::utils::{JsValueExt, ToSerdeJSONExt};
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -91,7 +91,13 @@ impl TokenPricingScheduleWasm {
                         &JsValue::from(key.to_string()),
                         &value.clone().into(),
                     )
-                    .map_err(WasmDppError::from_js_value)?;
+                    .map_err(|err| {
+                        let message = err.error_message();
+                        WasmDppError::generic(format!(
+                            "unable to serialize price for amount '{}': {}",
+                            key, message
+                        ))
+                    })?;
                 }
 
                 Ok(price_object.into())

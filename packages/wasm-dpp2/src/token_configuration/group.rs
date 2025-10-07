@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
+use crate::utils::JsValueExt;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
 use dpp::data_contract::group::{Group, GroupMemberPower, GroupRequiredPower};
@@ -94,7 +95,14 @@ impl GroupWasm {
                 &JsValue::from(k.to_string(Encoding::Base58)),
                 &JsValue::from(v.clone()),
             )
-            .map_err(|err| WasmDppError::from_js_value(err))?;
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "unable to write group member '{}' into JS object: {}",
+                    k.to_string(Encoding::Base58),
+                    message
+                ))
+            })?;
         }
 
         Ok(js_members.into())

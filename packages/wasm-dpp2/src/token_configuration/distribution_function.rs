@@ -4,7 +4,7 @@ use crate::token_configuration::distribution_structs::{
     DistributionLinearWasm, DistributionLogarithmicWasm, DistributionPolynomialWasm,
     DistributionRandomWasm, DistributionStepDecreasingAmountWasm,
 };
-use crate::utils::try_to_u64;
+use crate::utils::{JsValueExt, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use js_sys::{BigInt, Object, Reflect};
@@ -88,8 +88,13 @@ impl DistributionFunctionWasm {
                 WasmDppError::invalid_argument(format!("Invalid step key '{}': {}", key_str, err))
             })?;
 
-            let amount_js =
-                Reflect::get(&obj, &key).map_err(|err| WasmDppError::from_js_value(err))?;
+            let amount_js = Reflect::get(&obj, &key).map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::invalid_argument(format!(
+                    "unable to read distribution step '{}': {}",
+                    key_str, message
+                ))
+            })?;
 
             let amount = try_to_u64(amount_js)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -275,7 +280,13 @@ impl DistributionFunctionWasm {
                         &key.to_string().into(),
                         &BigInt::from(value).into(),
                     )
-                    .map_err(WasmDppError::from_js_value)?;
+                    .map_err(|err| {
+                        let message = err.error_message();
+                        WasmDppError::generic(format!(
+                            "unable to serialize distribution function step '{}': {}",
+                            key, message
+                        ))
+                    })?;
                 }
 
                 Ok(object.into())

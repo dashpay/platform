@@ -1,6 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::try_to_u64;
+use crate::utils::{JsValueExt, try_to_u64};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::data_contract::associated_token::token_pre_programmed_distribution::accessors::v0::TokenPreProgrammedDistributionV0Methods;
@@ -47,8 +47,13 @@ pub fn js_distributions_to_distributions(
             ))
         })?;
 
-        let identifiers_js = Reflect::get(&distributions_object, &key)
-            .map_err(|err| WasmDppError::from_js_value(err))?;
+        let identifiers_js = Reflect::get(&distributions_object, &key).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "unable to access distribution entry for timestamp '{}': {}",
+                timestamp_str, message
+            ))
+        })?;
         let identifiers_object = Object::from(identifiers_js);
         let identifiers_keys = Object::keys(&identifiers_object);
 
@@ -57,8 +62,13 @@ pub fn js_distributions_to_distributions(
         for id_key in identifiers_keys.iter() {
             let identifier = Identifier::from(IdentifierWasm::try_from(id_key.clone())?);
 
-            let amount_js =
-                Reflect::get(&identifiers_object, &id_key).map_err(WasmDppError::from_js_value)?;
+            let amount_js = Reflect::get(&identifiers_object, &id_key).map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::invalid_argument(format!(
+                    "unable to access distribution amount for identity '{}' at '{}': {}",
+                    identifier, timestamp, message
+                ))
+            })?;
 
             let token_amount = try_to_u64(amount_js)
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
@@ -109,11 +119,24 @@ impl TokenPreProgrammedDistributionWasm {
                         .into(),
                     &BigInt::from(identifiers_value.clone()).into(),
                 )
-                .map_err(WasmDppError::from_js_value)?;
+                .map_err(|err| {
+                    let message = err.error_message();
+                    WasmDppError::generic(format!(
+                        "unable to serialize distribution amount for identity '{}' at '{}': {}",
+                        identifiers_key, key, message
+                    ))
+                })?;
             }
 
-            Reflect::set(&obj, &key.to_string().into(), &identifiers_obj.into())
-                .map_err(WasmDppError::from_js_value)?;
+            Reflect::set(&obj, &key.to_string().into(), &identifiers_obj.into()).map_err(
+                |err| {
+                    let message = err.error_message();
+                    WasmDppError::generic(format!(
+                        "unable to serialize distribution for timestamp '{}': {}",
+                        key, message
+                    ))
+                },
+            )?;
         }
 
         Ok(obj.into())

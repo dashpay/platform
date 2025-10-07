@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_public_key::IdentityPublicKeyWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, JsValueExt};
 use dpp::fee::Credits;
 use dpp::identity::{IdentityPublicKey, KeyID, PartialIdentity};
 use dpp::prelude::Revision;
@@ -60,7 +60,13 @@ impl PartialIdentityWasm {
                 &k.to_string().into(),
                 &IdentityPublicKeyWasm::from(v).into(),
             )
-            .map_err(|err| WasmDppError::from_js_value(err))?;
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "failed to write loaded public key '{}' into JS object: {}",
+                    k, message
+                ))
+            })?;
         }
 
         Ok(obj)
@@ -148,8 +154,13 @@ pub fn js_value_to_loaded_public_keys(
 
                 let key_id = KeyID::from(key_val as u32);
 
-                let js_key =
-                    Reflect::get(&pub_keys_object, &key).map_err(WasmDppError::from_js_value)?;
+                let js_key = Reflect::get(&pub_keys_object, &key).map_err(|err| {
+                    let message = err.error_message();
+                    WasmDppError::invalid_argument(format!(
+                        "unable to access loaded public key '{}': {}",
+                        key_val as u32, message
+                    ))
+                })?;
 
                 let key = js_key
                     .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?

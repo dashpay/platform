@@ -4,12 +4,12 @@ use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::platform_value::string_encoding::Encoding::Base58;
 use dpp::util::hash::hash_double_to_vec;
-use js_sys::{Function, Uint8Array};
+use js_sys::{Error as JsError, Function, Uint8Array};
 use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::convert::RefFromWasmAbi;
+use wasm_bindgen::{JsCast, JsValue};
 
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
     let replacer_func = Function::new_with_args(
@@ -21,6 +21,31 @@ pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
         .map_err(|_| WasmDppError::serialization("Failed to stringify value"))?;
 
     Ok(data_string.into())
+}
+
+pub trait JsValueExt {
+    fn error_message(&self) -> String;
+}
+
+impl JsValueExt for JsValue {
+    fn error_message(&self) -> String {
+        if self.is_null() || self.is_undefined() {
+            return "JavaScript error: value is null or undefined".to_string();
+        }
+
+        if let Some(js_error) = self.dyn_ref::<JsError>() {
+            return js_error.message().into();
+        }
+
+        if let Some(message) = self.as_string() {
+            return message;
+        }
+
+        js_sys::JSON::stringify(self)
+            .ok()
+            .and_then(|v| v.as_string())
+            .unwrap_or_else(|| "Unknown JavaScript error".to_string())
+    }
 }
 
 pub fn with_serde_to_json_value_wasm(data: JsValue) -> WasmDppResult<JsonValue> {
@@ -114,7 +139,13 @@ pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
 
     let data_string: String =
         js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
-            .map_err(|err| WasmDppError::from_js_value(err))?
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::serialization(format!(
+                    "unable to stringify value to JSON: {}",
+                    message
+                ))
+            })?
             .into();
 
     Ok(data_string)
@@ -144,8 +175,14 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     let ctor_name = get_class_type(js_value)?;
 
     if ctor_name == class_name {
-        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr"))
-            .map_err(WasmDppError::from_js_value)?;
+        let ptr =
+            js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr")).map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "failed to read internal pointer from JS object '{}': {}",
+                    class_name, message
+                ))
+            })?;
         let ptr_u32: u32 = ptr
             .as_f64()
             .ok_or_else(|| WasmDppError::invalid_argument("Invalid JS object pointer"))?
@@ -162,8 +199,13 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
 }
 
 pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
-    let class_type = js_sys::Reflect::get(&value, &JsValue::from_str("__type"))
-        .map_err(WasmDppError::from_js_value)?;
+    let class_type = js_sys::Reflect::get(&value, &JsValue::from_str("__type")).map_err(|err| {
+        let message = err.error_message();
+        WasmDppError::generic(format!(
+            "failed to read '__type' property from JS value: {}",
+            message
+        ))
+    })?;
 
     Ok(class_type.as_string().unwrap_or_default())
 }

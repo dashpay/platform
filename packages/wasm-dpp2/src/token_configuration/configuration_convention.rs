@@ -1,5 +1,6 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::token_configuration::localization::TokenConfigurationLocalizationWasm;
+use crate::utils::JsValueExt;
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
@@ -70,7 +71,13 @@ impl TokenConfigurationConventionWasm {
                 &JsValue::from(key.clone()),
                 &TokenConfigurationLocalizationWasm::from(value.clone()).into(),
             )
-            .map_err(|err| WasmDppError::from_js_value(err))?;
+            .map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::generic(format!(
+                    "unable to serialize localization '{}': {}",
+                    key, message
+                ))
+            })?;
         }
 
         Ok(object.into())
@@ -102,7 +109,13 @@ fn js_value_to_localizations(
             .as_string()
             .ok_or_else(|| WasmDppError::invalid_argument("Localization key must be string"))?;
 
-        let js_value = Reflect::get(&js_object, &key).map_err(WasmDppError::from_js_value)?;
+        let js_value = Reflect::get(&js_object, &key).map_err(|err| {
+            let message = err.error_message();
+            WasmDppError::invalid_argument(format!(
+                "unable to read localization '{}': {}",
+                key_str, message
+            ))
+        })?;
 
         let localization = TokenConfigurationLocalizationWasm::from_js_value(&js_value)?;
 

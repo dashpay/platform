@@ -4,7 +4,7 @@ use crate::identifier::IdentifierWasm;
 use crate::token_configuration::action_taker::ActionTakerWasm;
 use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::token_configuration::group::GroupWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, JsValueExt};
 use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
@@ -186,8 +186,13 @@ impl ChangeControlRulesWasm {
                 ))
             })?;
 
-            let group_value =
-                Reflect::get(js_groups, &key).map_err(|err| WasmDppError::from_js_value(err))?;
+            let group_value = Reflect::get(js_groups, &key).map_err(|err| {
+                let message = err.error_message();
+                WasmDppError::invalid_argument(format!(
+                    "unable to read group at contract position '{}': {}",
+                    key_str, message
+                ))
+            })?;
 
             let group = group_value.to_wasm::<GroupWasm>("Group")?.clone();
 

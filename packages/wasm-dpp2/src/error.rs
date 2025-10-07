@@ -1,8 +1,9 @@
 use anyhow::Error as AnyhowError;
 use dpp::ProtocolError;
-use js_sys::Error as JsError;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+
+use crate::utils::JsValueExt;
 
 /// Structured error returned by wasm-dpp2 APIs.
 #[wasm_bindgen]
@@ -64,27 +65,6 @@ impl WasmDppError {
 
     pub(crate) fn generic(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Generic, message, None)
-    }
-
-    pub(crate) fn from_js_value(value: JsValue) -> Self {
-        if value.is_null() || value.is_undefined() {
-            return WasmDppError::invalid_argument("JavaScript error: value is null or undefined");
-        }
-
-        if let Some(js_error) = value.dyn_ref::<JsError>() {
-            return WasmDppError::invalid_argument(js_error.message());
-        }
-
-        if let Some(message) = value.as_string() {
-            return WasmDppError::invalid_argument(message);
-        }
-
-        let message = js_sys::JSON::stringify(&value)
-            .ok()
-            .and_then(|v| v.as_string())
-            .unwrap_or_else(|| "Unknown JavaScript error".to_string());
-
-        WasmDppError::invalid_argument(message)
     }
 }
 
