@@ -1,7 +1,8 @@
 use once_cell::sync::Lazy;
 use prometheus::{
-    Encoder, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder, register_int_counter,
-    register_int_counter_vec, register_int_gauge, register_int_gauge_vec,
+    Encoder, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder,
+    register_histogram_vec, register_int_counter, register_int_counter_vec, register_int_gauge,
+    register_int_gauge_vec,
 };
 
 /// Enum for all metric names used in rs-dapi
@@ -15,6 +16,10 @@ pub enum Metric {
     CacheMemoryCapacity,
     /// Cache entries gauge
     CacheEntries,
+    /// Requests counter: labels [protocol, endpoint, status]
+    RequestCount,
+    /// Request duration histogram: labels [protocol, endpoint, status]
+    RequestDuration,
     /// Platform events: active sessions gauge
     PlatformEventsActiveSessions,
     /// Platform events: commands processed, labels [op]
@@ -39,6 +44,8 @@ impl Metric {
             Metric::CacheMemoryUsage => "rsdapi_cache_memory_usage_bytes",
             Metric::CacheMemoryCapacity => "rsdapi_cache_memory_capacity_bytes",
             Metric::CacheEntries => "rsdapi_cache_entries",
+            Metric::RequestCount => "rsdapi_requests_total",
+            Metric::RequestDuration => "rsdapi_request_duration_seconds",
             Metric::PlatformEventsActiveSessions => "rsdapi_platform_events_active_sessions",
             Metric::PlatformEventsCommands => "rsdapi_platform_events_commands_total",
             Metric::PlatformEventsForwardedEvents => {
@@ -62,6 +69,10 @@ impl Metric {
             Metric::CacheMemoryUsage => "Approximate cache memory usage in bytes",
             Metric::CacheMemoryCapacity => "Configured cache memory capacity in bytes",
             Metric::CacheEntries => "Number of items currently stored in the cache",
+            Metric::RequestCount => "Requests received by protocol, endpoint, and status",
+            Metric::RequestDuration => {
+                "Request latency in seconds by protocol, endpoint, and status"
+            }
             Metric::PlatformEventsActiveSessions => {
                 "Current number of active Platform events sessions"
             }
@@ -100,6 +111,9 @@ pub enum Label {
     Cache,
     Method,
     Outcome,
+    Protocol,
+    Endpoint,
+    Status,
     Op,
 }
 
@@ -110,6 +124,9 @@ impl Label {
             Label::Cache => "cache",
             Label::Method => "method",
             Label::Outcome => "outcome",
+            Label::Protocol => "protocol",
+            Label::Endpoint => "endpoint",
+            Label::Status => "status",
             Label::Op => "op",
         }
     }
@@ -161,6 +178,32 @@ pub static PLATFORM_EVENTS_ACTIVE_SESSIONS: Lazy<IntGauge> = Lazy::new(|| {
         Metric::PlatformEventsActiveSessions.help()
     )
     .expect("create gauge")
+});
+
+pub static REQUEST_COUNTER: Lazy<IntCounterVec> = Lazy::new(|| {
+    register_int_counter_vec!(
+        Metric::RequestCount.name(),
+        Metric::RequestCount.help(),
+        &[
+            Label::Protocol.name(),
+            Label::Endpoint.name(),
+            Label::Status.name()
+        ]
+    )
+    .expect("create counter vec")
+});
+
+pub static REQUEST_DURATION_SECONDS: Lazy<HistogramVec> = Lazy::new(|| {
+    register_histogram_vec!(
+        Metric::RequestDuration.name(),
+        Metric::RequestDuration.help(),
+        &[
+            Label::Protocol.name(),
+            Label::Endpoint.name(),
+            Label::Status.name()
+        ]
+    )
+    .expect("create histogram vec")
 });
 
 pub static PLATFORM_EVENTS_COMMANDS: Lazy<IntCounterVec> = Lazy::new(|| {
@@ -275,6 +318,20 @@ pub fn cache_entries(cache: &str, entries: usize) {
     CACHE_ENTRIES
         .with_label_values(&[cache])
         .set(clamp_to_i64(entries as u64));
+}
+
+#[inline]
+pub fn requests_inc(protocol: &str, endpoint: &str, status: &str) {
+    REQUEST_COUNTER
+        .with_label_values(&[protocol, endpoint, status])
+        .inc();
+}
+
+#[inline]
+pub fn request_duration_observe(protocol: &str, endpoint: &str, status: &str, seconds: f64) {
+    REQUEST_DURATION_SECONDS
+        .with_label_values(&[protocol, endpoint, status])
+        .observe(seconds);
 }
 
 /// Gather Prometheus metrics into an encoded buffer and its corresponding content type.

@@ -3,7 +3,10 @@
 //! Provides Tower layers for HTTP and gRPC access logging with
 //! structured logging.
 
-use crate::logging::access_log::{AccessLogEntry, AccessLogger};
+use crate::{
+    logging::access_log::{AccessLogEntry, AccessLogger},
+    metrics,
+};
 use axum::extract::ConnectInfo;
 use axum::http::{Request, Response, Version};
 use std::future::Future;
@@ -70,6 +73,7 @@ where
         let method = req.method().to_string();
         let uri = req.uri().clone();
         let uri_display = uri.to_string();
+        let endpoint_path = uri.path().to_string();
         let request_target = uri
             .path_and_query()
             .map(|pq| pq.as_str())
@@ -159,6 +163,20 @@ where
 
                     access_logger.log(&entry).await;
 
+                    let metrics_status = if protocol_type == "gRPC" {
+                        grpc_status_code
+                    } else {
+                        http_status_to_grpc_status(status)
+                    };
+                    let metrics_status_label = metrics_status.to_string();
+                    metrics::requests_inc(&protocol_type, &endpoint_path, &metrics_status_label);
+                    metrics::request_duration_observe(
+                        &protocol_type,
+                        &endpoint_path,
+                        &metrics_status_label,
+                        duration.as_secs_f64(),
+                    );
+
                     // Log to structured logging
                     debug!(
                         method = %method,
@@ -176,10 +194,19 @@ where
 
                     error!(
                         method = %method,
-                        uri = %uri,
+                        uri = %uri_display,
                         protocol = %protocol_type,
                         duration_us = duration.as_micros() as u64,
                         "Request failed"
+                    );
+
+                    let metrics_status_label = http_status_to_grpc_status(500).to_string();
+                    metrics::requests_inc(&protocol_type, &endpoint_path, &metrics_status_label);
+                    metrics::request_duration_observe(
+                        &protocol_type,
+                        &endpoint_path,
+                        &metrics_status_label,
+                        duration.as_secs_f64(),
                     );
 
                     Err(err)
