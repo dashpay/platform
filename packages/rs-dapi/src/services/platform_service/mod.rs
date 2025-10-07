@@ -49,7 +49,6 @@ macro_rules! drive_method {
             Self: 'async_trait,
         {
             use crate::cache::make_cache_key;
-            use crate::metrics;
             use tokio::time::timeout;
             let mut client = self.drive_client.get_client();
             let cache = self.platform_cache.clone();
@@ -60,7 +59,6 @@ macro_rules! drive_method {
 
                 // Try cache
                 if let Some(decoded) = cache.get(&key) as Option<$response_type> {
-                    metrics::cache_hit(method);
                     return Ok(Response::new(decoded));
                 }
 
@@ -83,8 +81,6 @@ macro_rules! drive_method {
                 } else {
                     drive_call.await?
                 };
-                metrics::cache_miss(method);
-
                 // Store in cache using inner message
                 tracing::trace!(method, "Caching response");
                 cache.put(key, resp.get_ref());

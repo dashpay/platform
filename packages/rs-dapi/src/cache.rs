@@ -5,6 +5,7 @@ use std::time::{Duration, Instant};
 use tokio_util::bytes::Bytes;
 
 use crate::DapiError;
+use crate::metrics;
 use crate::services::streaming_service::SubscriptionHandle;
 use crate::sync::Workers;
 
@@ -30,7 +31,23 @@ impl Debug for LruResponseCache {
     }
 }
 
-pub type CacheKey = u128;
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
+pub struct CacheKey {
+    method: &'static str,
+    digest: u128,
+}
+
+impl CacheKey {
+    #[inline(always)]
+    pub const fn method(self) -> &'static str {
+        self.method
+    }
+
+    #[inline(always)]
+    pub const fn digest(self) -> u128 {
+        self.digest
+    }
+}
 #[derive(Clone)]
 struct CachedValue {
     inserted_at: Instant,
@@ -70,10 +87,12 @@ impl LruResponseCache {
     /// Use this when caching immutable responses (e.g., blocks by hash).
     /// `capacity` is expressed in bytes.
     pub fn with_capacity(capacity: u64) -> Self {
-        Self {
+        let cache = Self {
             inner: Self::new_cache(capacity),
             workers: Workers::new(),
-        }
+        };
+        observe_memory(&cache.inner);
+        cache
     }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
@@ -85,12 +104,17 @@ impl LruResponseCache {
         workers.spawn(async move {
             while receiver.recv().await.is_some() {
                 inner_clone.clear();
+                metrics::cache_memory_usage_bytes(inner_clone.weight());
+                metrics::cache_memory_capacity_bytes(inner_clone.capacity());
+                metrics::cache_entries(inner_clone.len());
             }
             tracing::debug!("Cache invalidation task exiting");
             Result::<(), DapiError>::Ok(())
         });
 
-        Self { inner, workers }
+        let cache = Self { inner, workers };
+        observe_memory(&cache.inner);
+        cache
     }
 
     /// Create the underlying cache with weighted capacity based on estimated entry size.
@@ -108,6 +132,7 @@ impl LruResponseCache {
     /// Remove all entries from the cache.
     pub fn clear(&self) {
         self.inner.clear();
+        observe_memory(&self.inner);
     }
 
     #[inline(always)]
@@ -116,7 +141,16 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        self.inner.get(key).and_then(|cv| cv.value())
+        match self.inner.get(key) {
+            Some(cv) => {
+                metrics::cache_hit(key.method());
+                cv.value()
+            }
+            None => {
+                metrics::cache_miss(key.method());
+                None
+            }
+        }
     }
 
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
@@ -126,11 +160,16 @@ impl LruResponseCache {
     {
         if let Some(cv) = self.inner.get(key) {
             if cv.inserted_at.elapsed() <= ttl {
+                metrics::cache_hit(key.method());
                 return cv.value();
             }
             // expired, drop it
             self.inner.remove(key);
+            observe_memory(&self.inner);
+            metrics::cache_miss(key.method());
+            return None;
         }
+        metrics::cache_miss(key.method());
         None
     }
 
@@ -141,6 +180,7 @@ impl LruResponseCache {
     {
         let cv = CachedValue::new(value);
         self.inner.insert(key, cv);
+        observe_memory(&self.inner);
     }
 
     /// Get a cached value or compute it using `producer` and insert into cache.
@@ -153,6 +193,10 @@ impl LruResponseCache {
     {
         use futures::future::FutureExt;
 
+        if let Some(value) = self.get::<T>(&key) {
+            return Ok(value);
+        }
+
         self.inner
             .get_or_insert_async(&key, async move {
                 // wrapped in async block to not execute producer immediately
@@ -161,13 +205,23 @@ impl LruResponseCache {
                     .await
             })
             .await
-            .map(|cv| cv.value().expect("Deserialization must succeed"))
+            .map(|cv| {
+                observe_memory(&self.inner);
+                cv.value().expect("Deserialization must succeed")
+            })
     }
 }
 
 #[inline(always)]
+fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>) {
+    metrics::cache_memory_usage_bytes(cache.weight());
+    metrics::cache_memory_capacity_bytes(cache.capacity());
+    metrics::cache_entries(cache.len());
+}
+
+#[inline(always)]
 /// Combine a method name and serializable key into a stable 128-bit cache key.
-pub fn make_cache_key<M: serde::Serialize>(method: &str, key: &M) -> CacheKey {
+pub fn make_cache_key<M: serde::Serialize>(method: &'static str, key: &M) -> CacheKey {
     let mut prefix = method.as_bytes().to_vec();
     let mut serialized_request = serialize(key).expect("Key must be serializable");
 
@@ -176,7 +230,10 @@ pub fn make_cache_key<M: serde::Serialize>(method: &str, key: &M) -> CacheKey {
     data.push(0);
     data.append(&mut serialized_request);
 
-    xxhash_rust::xxh3::xxh3_128(&data)
+    CacheKey {
+        method,
+        digest: xxhash_rust::xxh3::xxh3_128(&data),
+    }
 }
 
 const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability

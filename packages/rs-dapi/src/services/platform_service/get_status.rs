@@ -51,7 +51,6 @@ impl PlatformServiceImpl {
         request: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
         use crate::cache::make_cache_key;
-        use crate::metrics;
         use std::time::Duration;
 
         // Build cache key and try TTL cache first (3 minutes)
@@ -66,7 +65,6 @@ impl PlatformServiceImpl {
             {
                 time.local = chrono::Utc::now().timestamp() as u64;
             }
-            metrics::cache_hit("get_status");
             return Ok(Response::new(cached));
         }
 
@@ -74,7 +72,6 @@ impl PlatformServiceImpl {
         match self.build_status_response_with_health().await {
             Ok((response, _health)) => {
                 self.platform_cache.put(key, &response);
-                metrics::cache_miss("get_status");
                 Ok(Response::new(response))
             }
             Err(status) => Err(status),

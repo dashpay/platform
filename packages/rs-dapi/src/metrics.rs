@@ -9,6 +9,12 @@ use prometheus::{
 pub enum Metric {
     /// Cache events counter: labels [method, outcome]
     CacheEvent,
+    /// Cache memory usage gauge
+    CacheMemoryUsage,
+    /// Cache memory capacity gauge
+    CacheMemoryCapacity,
+    /// Cache entries gauge
+    CacheEntries,
     /// Platform events: active sessions gauge
     PlatformEventsActiveSessions,
     /// Platform events: commands processed, labels [op]
@@ -30,6 +36,9 @@ impl Metric {
     pub const fn name(self) -> &'static str {
         match self {
             Metric::CacheEvent => "rsdapi_cache_events_total",
+            Metric::CacheMemoryUsage => "rsdapi_cache_memory_usage_bytes",
+            Metric::CacheMemoryCapacity => "rsdapi_cache_memory_capacity_bytes",
+            Metric::CacheEntries => "rsdapi_cache_entries",
             Metric::PlatformEventsActiveSessions => "rsdapi_platform_events_active_sessions",
             Metric::PlatformEventsCommands => "rsdapi_platform_events_commands_total",
             Metric::PlatformEventsForwardedEvents => {
@@ -50,6 +59,9 @@ impl Metric {
     pub const fn help(self) -> &'static str {
         match self {
             Metric::CacheEvent => "Cache events by method and outcome (hit|miss)",
+            Metric::CacheMemoryUsage => "Approximate cache memory usage in bytes",
+            Metric::CacheMemoryCapacity => "Configured cache memory capacity in bytes",
+            Metric::CacheEntries => "Number of items currently stored in the cache",
             Metric::PlatformEventsActiveSessions => {
                 "Current number of active Platform events sessions"
             }
@@ -108,6 +120,27 @@ pub static CACHE_EVENTS: Lazy<IntCounterVec> = Lazy::new(|| {
         &[Label::Method.name(), Label::Outcome.name()]
     )
     .expect("create counter")
+});
+
+pub static CACHE_MEMORY_USAGE: Lazy<IntGauge> = Lazy::new(|| {
+    register_int_gauge!(
+        Metric::CacheMemoryUsage.name(),
+        Metric::CacheMemoryUsage.help()
+    )
+    .expect("create gauge")
+});
+
+pub static CACHE_MEMORY_CAPACITY: Lazy<IntGauge> = Lazy::new(|| {
+    register_int_gauge!(
+        Metric::CacheMemoryCapacity.name(),
+        Metric::CacheMemoryCapacity.help()
+    )
+    .expect("create gauge")
+});
+
+pub static CACHE_ENTRIES: Lazy<IntGauge> = Lazy::new(|| {
+    register_int_gauge!(Metric::CacheEntries.name(), Metric::CacheEntries.help())
+        .expect("create gauge")
 });
 
 pub static PLATFORM_EVENTS_ACTIVE_SESSIONS: Lazy<IntGauge> = Lazy::new(|| {
@@ -204,6 +237,26 @@ pub fn cache_hit(method: &str) {
 #[inline]
 pub fn cache_miss(method: &str) {
     record_cache_event(method, Outcome::Miss);
+}
+
+#[inline]
+fn clamp_to_i64(value: u64) -> i64 {
+    value.min(i64::MAX as u64) as i64
+}
+
+#[inline]
+pub fn cache_memory_usage_bytes(bytes: u64) {
+    CACHE_MEMORY_USAGE.set(clamp_to_i64(bytes));
+}
+
+#[inline]
+pub fn cache_memory_capacity_bytes(bytes: u64) {
+    CACHE_MEMORY_CAPACITY.set(clamp_to_i64(bytes));
+}
+
+#[inline]
+pub fn cache_entries(entries: usize) {
+    CACHE_ENTRIES.set(clamp_to_i64(entries as u64));
 }
 
 /// Gather Prometheus metrics into an encoded buffer and its corresponding content type.
