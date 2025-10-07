@@ -1,6 +1,6 @@
 use crate::{
-    utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
     DAPIResult, DapiError,
+    utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
 };
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};

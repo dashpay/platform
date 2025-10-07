@@ -1,13 +1,13 @@
 use once_cell::sync::Lazy;
 use prometheus::{
-    Encoder, IntCounter, IntCounterVec, IntGauge, TextEncoder, register_int_counter,
-    register_int_counter_vec, register_int_gauge,
+    Encoder, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder, register_int_counter,
+    register_int_counter_vec, register_int_gauge, register_int_gauge_vec,
 };
 
 /// Enum for all metric names used in rs-dapi
 #[derive(Copy, Clone, Debug)]
 pub enum Metric {
-    /// Cache events counter: labels [method, outcome]
+    /// Cache events counter: labels [cache, method, outcome]
     CacheEvent,
     /// Cache memory usage gauge
     CacheMemoryUsage,
@@ -97,6 +97,7 @@ impl Outcome {
 /// Label keys used across metrics
 #[derive(Copy, Clone, Debug)]
 pub enum Label {
+    Cache,
     Method,
     Outcome,
     Op,
@@ -106,6 +107,7 @@ impl Label {
     /// Return the label key used in Prometheus metrics.
     pub const fn name(self) -> &'static str {
         match self {
+            Label::Cache => "cache",
             Label::Method => "method",
             Label::Outcome => "outcome",
             Label::Op => "op",
@@ -117,30 +119,40 @@ pub static CACHE_EVENTS: Lazy<IntCounterVec> = Lazy::new(|| {
     register_int_counter_vec!(
         Metric::CacheEvent.name(),
         Metric::CacheEvent.help(),
-        &[Label::Method.name(), Label::Outcome.name()]
+        &[
+            Label::Cache.name(),
+            Label::Method.name(),
+            Label::Outcome.name()
+        ]
     )
     .expect("create counter")
 });
 
-pub static CACHE_MEMORY_USAGE: Lazy<IntGauge> = Lazy::new(|| {
-    register_int_gauge!(
+pub static CACHE_MEMORY_USAGE: Lazy<IntGaugeVec> = Lazy::new(|| {
+    register_int_gauge_vec!(
         Metric::CacheMemoryUsage.name(),
-        Metric::CacheMemoryUsage.help()
+        Metric::CacheMemoryUsage.help(),
+        &[Label::Cache.name()]
     )
     .expect("create gauge")
 });
 
-pub static CACHE_MEMORY_CAPACITY: Lazy<IntGauge> = Lazy::new(|| {
-    register_int_gauge!(
+pub static CACHE_MEMORY_CAPACITY: Lazy<IntGaugeVec> = Lazy::new(|| {
+    register_int_gauge_vec!(
         Metric::CacheMemoryCapacity.name(),
-        Metric::CacheMemoryCapacity.help()
+        Metric::CacheMemoryCapacity.help(),
+        &[Label::Cache.name()]
     )
     .expect("create gauge")
 });
 
-pub static CACHE_ENTRIES: Lazy<IntGauge> = Lazy::new(|| {
-    register_int_gauge!(Metric::CacheEntries.name(), Metric::CacheEntries.help())
-        .expect("create gauge")
+pub static CACHE_ENTRIES: Lazy<IntGaugeVec> = Lazy::new(|| {
+    register_int_gauge_vec!(
+        Metric::CacheEntries.name(),
+        Metric::CacheEntries.help(),
+        &[Label::Cache.name()]
+    )
+    .expect("create gauge")
 });
 
 pub static PLATFORM_EVENTS_ACTIVE_SESSIONS: Lazy<IntGauge> = Lazy::new(|| {
@@ -203,40 +215,40 @@ pub struct Metrics;
 impl Metrics {
     /// Increment cache events counter with explicit outcome
     #[inline]
-    pub fn cache_events_inc(method: &str, outcome: Outcome) {
+    pub fn cache_events_inc(cache: &str, method: &str, outcome: Outcome) {
         CACHE_EVENTS
-            .with_label_values(&[method, outcome.as_str()])
+            .with_label_values(&[cache, method, outcome.as_str()])
             .inc();
     }
 
     /// Mark cache hit for method
     #[inline]
-    pub fn cache_events_hit(method: &str) {
-        Self::cache_events_inc(method, Outcome::Hit);
+    pub fn cache_events_hit(cache: &str, method: &str) {
+        Self::cache_events_inc(cache, method, Outcome::Hit);
     }
 
     /// Mark cache miss for method
     #[inline]
-    pub fn cache_events_miss(method: &str) {
-        Self::cache_events_inc(method, Outcome::Miss);
+    pub fn cache_events_miss(cache: &str, method: &str) {
+        Self::cache_events_inc(cache, method, Outcome::Miss);
     }
 }
 
 #[inline]
-pub fn record_cache_event(method: &str, outcome: Outcome) {
+pub fn record_cache_event(cache: &str, method: &str, outcome: Outcome) {
     CACHE_EVENTS
-        .with_label_values(&[method, outcome.as_str()])
+        .with_label_values(&[cache, method, outcome.as_str()])
         .inc();
 }
 
 #[inline]
-pub fn cache_hit(method: &str) {
-    record_cache_event(method, Outcome::Hit);
+pub fn cache_hit(cache: &str, method: &str) {
+    record_cache_event(cache, method, Outcome::Hit);
 }
 
 #[inline]
-pub fn cache_miss(method: &str) {
-    record_cache_event(method, Outcome::Miss);
+pub fn cache_miss(cache: &str, method: &str) {
+    record_cache_event(cache, method, Outcome::Miss);
 }
 
 #[inline]
@@ -245,18 +257,24 @@ fn clamp_to_i64(value: u64) -> i64 {
 }
 
 #[inline]
-pub fn cache_memory_usage_bytes(bytes: u64) {
-    CACHE_MEMORY_USAGE.set(clamp_to_i64(bytes));
+pub fn cache_memory_usage_bytes(cache: &str, bytes: u64) {
+    CACHE_MEMORY_USAGE
+        .with_label_values(&[cache])
+        .set(clamp_to_i64(bytes));
 }
 
 #[inline]
-pub fn cache_memory_capacity_bytes(bytes: u64) {
-    CACHE_MEMORY_CAPACITY.set(clamp_to_i64(bytes));
+pub fn cache_memory_capacity_bytes(cache: &str, bytes: u64) {
+    CACHE_MEMORY_CAPACITY
+        .with_label_values(&[cache])
+        .set(clamp_to_i64(bytes));
 }
 
 #[inline]
-pub fn cache_entries(entries: usize) {
-    CACHE_ENTRIES.set(clamp_to_i64(entries as u64));
+pub fn cache_entries(cache: &str, entries: usize) {
+    CACHE_ENTRIES
+        .with_label_values(&[cache])
+        .set(clamp_to_i64(entries as u64));
 }
 
 /// Gather Prometheus metrics into an encoded buffer and its corresponding content type.

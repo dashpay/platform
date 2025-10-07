@@ -29,7 +29,7 @@ impl CoreClient {
             .map_err(|e| DapiError::client(format!("Failed to create Core RPC client: {}", e)))?;
         Ok(Self {
             client: Arc::new(client),
-            cache: LruResponseCache::with_capacity(cache_capacity_bytes),
+            cache: LruResponseCache::with_capacity("core_client", cache_capacity_bytes),
             access_guard: Arc::new(CoreRpcAccessGuard::new(CORE_RPC_GUARD_PERMITS)),
         })
     }

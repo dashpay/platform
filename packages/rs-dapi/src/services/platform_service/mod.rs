@@ -164,6 +164,7 @@ impl PlatformServiceImpl {
             websocket_client,
             config,
             platform_cache: crate::cache::LruResponseCache::new(
+                "platform_service",
                 platform_cache_bytes,
                 invalidation_subscription,
             ),

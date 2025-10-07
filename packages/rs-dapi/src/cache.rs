@@ -27,6 +27,7 @@ const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard();
 /// Panics if serialization of keys or values fails.
 pub struct LruResponseCache {
     inner: Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>,
+    label: Arc<str>,
     #[allow(dead_code)]
     workers: Workers,
 }
@@ -114,32 +115,40 @@ impl LruResponseCache {
     /// Create a cache with a fixed capacity and without any external invalidation.
     /// Use this when caching immutable responses (e.g., blocks by hash).
     /// `capacity` is expressed in bytes.
-    pub fn with_capacity(capacity: u64) -> Self {
+    pub fn with_capacity(label: impl Into<Arc<str>>, capacity: u64) -> Self {
+        let label = label.into();
         let cache = Self {
             inner: Self::new_cache(capacity),
+            label: label.clone(),
             workers: Workers::new(),
         };
-        observe_memory(&cache.inner);
+        observe_memory(&cache.inner, cache.label.as_ref());
         cache
     }
     /// Create a cache and start a background worker that clears the cache
     /// whenever a signal is received on the provided receiver.
     /// `capacity` is expressed in bytes.
-    pub fn new(capacity: u64, receiver: SubscriptionHandle) -> Self {
+    pub fn new(label: impl Into<Arc<str>>, capacity: u64, receiver: SubscriptionHandle) -> Self {
+        let label = label.into();
         let inner = Self::new_cache(capacity);
         let inner_clone = inner.clone();
+        let label_clone = label.clone();
         let workers = Workers::new();
         workers.spawn(async move {
             while receiver.recv().await.is_some() {
                 inner_clone.clear();
-                observe_memory(&inner_clone);
+                observe_memory(&inner_clone, label_clone.as_ref());
             }
             tracing::debug!("Cache invalidation task exiting");
             Result::<(), DapiError>::Ok(())
         });
 
-        let cache = Self { inner, workers };
-        observe_memory(&cache.inner);
+        let cache = Self {
+            inner,
+            label,
+            workers,
+        };
+        observe_memory(&cache.inner, cache.label.as_ref());
         cache
     }
 
@@ -158,7 +167,7 @@ impl LruResponseCache {
     /// Remove all entries from the cache.
     pub fn clear(&self) {
         self.inner.clear();
-        observe_memory(&self.inner);
+        observe_memory(&self.inner, self.label.as_ref());
     }
 
     #[inline(always)]
@@ -169,11 +178,11 @@ impl LruResponseCache {
     {
         match self.inner.get(key).and_then(|cv| cv.value()) {
             Some(cv) => {
-                metrics::cache_hit(key.method());
+                metrics::cache_hit(self.label.as_ref(), key.method());
                 Some(cv)
             }
             None => {
-                metrics::cache_miss(key.method());
+                metrics::cache_miss(self.label.as_ref(), key.method());
                 None
             }
         }
@@ -186,16 +195,16 @@ impl LruResponseCache {
     {
         if let Some(cv) = self.inner.get(key) {
             if cv.inserted_at.elapsed() <= ttl {
-                metrics::cache_hit(key.method());
+                metrics::cache_hit(self.label.as_ref(), key.method());
                 return cv.value();
             }
 
             // expired, drop it
             self.inner.remove(key);
-            observe_memory(&self.inner);
+            observe_memory(&self.inner, self.label.as_ref());
         }
 
-        metrics::cache_miss(key.method());
+        metrics::cache_miss(self.label.as_ref(), key.method());
         None
     }
 
@@ -209,7 +218,7 @@ impl LruResponseCache {
     {
         let cv = CachedValue::new(value);
         self.inner.insert(key, cv);
-        observe_memory(&self.inner);
+        observe_memory(&self.inner, self.label.as_ref());
     }
 
     /// Get a cached value or compute it using `producer` and insert into cache.
@@ -238,15 +247,15 @@ impl LruResponseCache {
             })
             .await
             .map(|cv| {
-                observe_memory(&self.inner);
+                observe_memory(&self.inner, self.label.as_ref());
                 cv.value().expect("Deserialization must succeed")
             });
 
         if cache_hit.load(Ordering::SeqCst) {
-            metrics::cache_hit(key.method());
+            metrics::cache_hit(self.label.as_ref(), key.method());
         } else {
-            metrics::cache_miss(key.method());
-            observe_memory(&self.inner);
+            metrics::cache_miss(self.label.as_ref(), key.method());
+            observe_memory(&self.inner, self.label.as_ref());
         }
 
         item
@@ -254,10 +263,10 @@ impl LruResponseCache {
 }
 
 #[inline(always)]
-fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>) {
-    metrics::cache_memory_usage_bytes(cache.weight());
-    metrics::cache_memory_capacity_bytes(cache.capacity());
-    metrics::cache_entries(cache.len());
+fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>, label: &str) {
+    metrics::cache_memory_usage_bytes(label, cache.weight());
+    metrics::cache_memory_capacity_bytes(label, cache.capacity());
+    metrics::cache_entries(label, cache.len());
 }
 
 #[inline(always)]
