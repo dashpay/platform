@@ -11,7 +11,7 @@ const contract = {
     documentsCanBeDeletedContractDefault: true,
     requiresIdentityEncryptionBoundedKey: null,
     requiresIdentityDecryptionBoundedKey: null,
-    sizedIntegerTypes: true
+    sizedIntegerTypes: true,
   },
   version: 1,
   ownerId: '7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC',
@@ -30,59 +30,59 @@ const contract = {
           description: 'Name of the card',
           minLength: 0,
           maxLength: 63,
-          position: 0
+          position: 0,
         },
         description: {
           type: 'string',
           description: 'Description of the card',
           minLength: 0,
           maxLength: 256,
-          position: 1
+          position: 1,
         },
         attack: {
           type: 'integer',
           description: 'Attack power of the card',
-          position: 2
+          position: 2,
         },
         defense: {
           type: 'integer',
           description: 'Defense level of the card',
-          position: 3
-        }
+          position: 3,
+        },
       },
       indices: [
         {
           name: 'owner',
           properties: [
             {
-              $ownerId: 'asc'
-            }
-          ]
+              $ownerId: 'asc',
+            },
+          ],
         },
         {
           name: 'attack',
           properties: [
             {
-              attack: 'asc'
-            }
-          ]
+              attack: 'asc',
+            },
+          ],
         },
         {
           name: 'defense',
           properties: [
             {
-              defense: 'asc'
-            }
-          ]
-        }
+              defense: 'asc',
+            },
+          ],
+        },
       ],
       required: [
         'name',
         'attack',
-        'defense'
+        'defense',
       ],
-      additionalProperties: false
-    }
+      additionalProperties: false,
+    },
   },
   createdAt: 1756237255149,
   updatedAt: null,
@@ -91,17 +91,17 @@ const contract = {
   createdAtEpoch: 9690,
   updatedAtEpoch: null,
   groups: {
-    '0': {
+    0: {
       $format_version: '0',
       members: {
         '7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC': 1,
-        'HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG': 1
+        HJDxtN6FJF3U3T9TMLWCqudfJ5VRkaUrxTsRp36djXAG: 1,
       },
-      required_power: 2
-    }
+      required_power: 2,
+    },
   },
   tokens: {
-    '0': {
+    0: {
       $format_version: '0',
       conventions: {
         $format_version: '0',
@@ -110,10 +110,10 @@ const contract = {
             $format_version: '0',
             shouldCapitalize: true,
             singularForm: 'stt-99',
-            pluralForm: 'stt-99s'
-          }
+            pluralForm: 'stt-99s',
+          },
         },
-        decimals: 0
+        decimals: 0,
       },
       conventionsChangeRules: {
         V0: {
@@ -121,8 +121,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       baseSupply: 100,
       maxSupply: null,
@@ -133,7 +133,7 @@ const contract = {
         keepsMintingHistory: true,
         keepsBurningHistory: true,
         keepsDirectPricingHistory: true,
-        keepsDirectPurchaseHistory: true
+        keepsDirectPurchaseHistory: true,
       },
       startAsPaused: false,
       allowTransferToFrozenBalance: true,
@@ -143,8 +143,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       distributionRules: {
         $format_version: '0',
@@ -155,12 +155,12 @@ const contract = {
               interval: 100,
               function: {
                 FixedAmount: {
-                  amount: 1
-                }
-              }
-            }
+                  amount: 1,
+                },
+              },
+            },
           },
-          distributionRecipient: 'ContractOwner'
+          distributionRecipient: 'ContractOwner',
         },
         perpetualDistributionRules: {
           V0: {
@@ -168,8 +168,8 @@ const contract = {
             admin_action_takers: 'ContractOwner',
             changing_authorized_action_takers_to_no_one_allowed: true,
             changing_admin_action_takers_to_no_one_allowed: true,
-            self_changing_admin_action_takers_allowed: true
-          }
+            self_changing_admin_action_takers_allowed: true,
+          },
         },
         preProgrammedDistribution: null,
         newTokensDestinationIdentity: '7XcruVSsGQVSgTcmPewaE4tXLutnW1F6PXxwMbo8GYQC',
@@ -179,8 +179,8 @@ const contract = {
             admin_action_takers: 'ContractOwner',
             changing_authorized_action_takers_to_no_one_allowed: true,
             changing_admin_action_takers_to_no_one_allowed: true,
-            self_changing_admin_action_takers_allowed: true
-          }
+            self_changing_admin_action_takers_allowed: true,
+          },
         },
         mintingAllowChoosingDestination: false,
         mintingAllowChoosingDestinationRules: {
@@ -189,8 +189,8 @@ const contract = {
             admin_action_takers: 'ContractOwner',
             changing_authorized_action_takers_to_no_one_allowed: true,
             changing_admin_action_takers_to_no_one_allowed: true,
-            self_changing_admin_action_takers_allowed: true
-          }
+            self_changing_admin_action_takers_allowed: true,
+          },
         },
         changeDirectPurchasePricingRules: {
           V0: {
@@ -198,9 +198,9 @@ const contract = {
             admin_action_takers: 'ContractOwner',
             changing_authorized_action_takers_to_no_one_allowed: true,
             changing_admin_action_takers_to_no_one_allowed: true,
-            self_changing_admin_action_takers_allowed: true
-          }
-        }
+            self_changing_admin_action_takers_allowed: true,
+          },
+        },
       },
       marketplaceRules: {
         $format_version: '0',
@@ -211,9 +211,9 @@ const contract = {
             admin_action_takers: 'ContractOwner',
             changing_authorized_action_takers_to_no_one_allowed: true,
             changing_admin_action_takers_to_no_one_allowed: true,
-            self_changing_admin_action_takers_allowed: true
-          }
-        }
+            self_changing_admin_action_takers_allowed: true,
+          },
+        },
       },
       manualMintingRules: {
         V0: {
@@ -221,8 +221,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       manualBurningRules: {
         V0: {
@@ -230,8 +230,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       freezeRules: {
         V0: {
@@ -239,8 +239,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       unfreezeRules: {
         V0: {
@@ -248,8 +248,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       destroyFrozenFundsRules: {
         V0: {
@@ -257,8 +257,8 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       emergencyActionRules: {
         V0: {
@@ -266,18 +266,18 @@ const contract = {
           admin_action_takers: 'ContractOwner',
           changing_authorized_action_takers_to_no_one_allowed: true,
           changing_admin_action_takers_to_no_one_allowed: true,
-          self_changing_admin_action_takers_allowed: true
-        }
+          self_changing_admin_action_takers_allowed: true,
+        },
       },
       mainControlGroup: 0,
       mainControlGroupCanBeModified: 'ContractOwner',
-      description: null
-    }
+      description: null,
+    },
   },
   keywords: [
-    'stt-99'
+    'stt-99',
   ],
-  description: null
-}
+  description: null,
+};
 
 export default contract;

@@ -10,11 +10,16 @@ const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v
 const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 works across all versions
 const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 only works from version 9+
 const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
-const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS); // Dynamically determine latest version
+const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS);
 
 // Helper function for testing contract compatibility across versions
-const testContractAcrossVersions = (contractFixture, contractName, compatibleVersions, incompatibleVersions = []) => {
-  compatibleVersions.forEach(version => {
+const testContractAcrossVersions = (
+  contractFixture,
+  contractName,
+  compatibleVersions,
+  incompatibleVersions = [],
+) => {
+  compatibleVersions.forEach((version) => {
     it(`should work with platform version ${version}`, () => {
       const contract = sdk.DataContract.fromJSON(contractFixture, version);
       expect(contract).to.be.ok();
@@ -27,7 +32,7 @@ const testContractAcrossVersions = (contractFixture, contractName, compatibleVer
     });
   });
 
-  incompatibleVersions.forEach(version => {
+  incompatibleVersions.forEach((version) => {
     it(`should fail with platform version ${version}`, () => {
       expect(() => {
         sdk.DataContract.fromJSON(contractFixture, version);
@@ -58,9 +63,10 @@ describe('DataContract', () => {
       expect(roundTripped.documentSchemas).to.deep.equal(contractFixtureV0.documentSchemas);
 
       // Verify document schema structure
-      expect(roundTripped.documentSchemas.card).to.exist;
-      expect(roundTripped.documentSchemas.card.properties.name).to.exist;
-      expect(roundTripped.documentSchemas.card.properties.rarity.enum).to.deep.equal(['common', 'uncommon', 'rare', 'legendary']);
+      expect(roundTripped.documentSchemas.card).to.exist();
+      expect(roundTripped.documentSchemas.card.properties.name).to.exist();
+      expect(roundTripped.documentSchemas.card.properties.rarity.enum)
+        .to.deep.equal(['common', 'uncommon', 'rare', 'legendary']);
       expect(roundTripped.documentSchemas.card.indices).to.have.length(2);
 
       contract.free();
@@ -78,17 +84,17 @@ describe('DataContract', () => {
       expect(roundTripped.ownerId).to.equal(contractFixtureV1.ownerId);
       expect(roundTripped.version).to.equal(contractFixtureV1.version);
       expect(roundTripped.$format_version).to.equal(contractFixtureV1.$format_version);
-      expect(roundTripped.config.sizedIntegerTypes).to.be.true;
+      expect(roundTripped.config.sizedIntegerTypes).to.be.true();
       expect(roundTripped.documentSchemas).to.deep.equal(contractFixtureV1.documentSchemas);
 
       // Verify V1-specific features
-      expect(roundTripped.tokens).to.exist;
-      expect(roundTripped.tokens['0']).to.exist;
+      expect(roundTripped.tokens).to.exist();
+      expect(roundTripped.tokens['0']).to.exist();
       expect(roundTripped.tokens['0'].baseSupply).to.equal(100);
       expect(roundTripped.tokens['0'].conventions.decimals).to.equal(0);
 
-      expect(roundTripped.groups).to.exist;
-      expect(roundTripped.groups['0']).to.exist;
+      expect(roundTripped.groups).to.exist();
+      expect(roundTripped.groups['0']).to.exist();
       expect(roundTripped.groups['0'].required_power).to.equal(2);
 
       expect(roundTripped.keywords).to.deep.equal(contractFixtureV1.keywords);
@@ -101,8 +107,8 @@ describe('DataContract', () => {
       const contract = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
       const roundTripped = contract.toJSON();
 
-      expect(roundTripped.documentSchemas.card).to.exist;
-      expect(roundTripped.tokens).to.be.undefined;
+      expect(roundTripped.documentSchemas.card).to.exist();
+      expect(roundTripped.tokens).to.equal(undefined);
 
       contract.free();
     });
@@ -111,10 +117,13 @@ describe('DataContract', () => {
       // Use V1 fixture but remove documentSchemas
       const contractWithOnlyTokens = {
         ...contractFixtureV1,
-        documentSchemas: {}
+        documentSchemas: {},
       };
 
-      const contract = sdk.DataContract.fromJSON(contractWithOnlyTokens, PLATFORM_VERSION_CONTRACT_V1);
+      const contract = sdk.DataContract.fromJSON(
+        contractWithOnlyTokens,
+        PLATFORM_VERSION_CONTRACT_V1,
+      );
       const roundTripped = contract.toJSON();
 
       expect(roundTripped.documentSchemas).to.deep.equal({});
@@ -151,7 +160,7 @@ describe('DataContract', () => {
       expect(() => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
-          id: 'invalid-not-base58!'
+          id: 'invalid-not-base58!',
         }, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
 
@@ -159,7 +168,7 @@ describe('DataContract', () => {
       expect(() => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
-          version: -1
+          version: -1,
         }, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
 
@@ -167,7 +176,7 @@ describe('DataContract', () => {
       expect(() => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
-          ownerId: 'not-a-valid-id'
+          ownerId: 'not-a-valid-id',
         }, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
     });
@@ -179,7 +188,7 @@ describe('DataContract', () => {
         ownerId: contractFixtureV0.ownerId,
         version: 1,
         config: contractFixtureV0.config,
-        documentSchemas: {}
+        documentSchemas: {},
       };
 
       expect(() => {
@@ -243,13 +252,13 @@ describe('DataContract', () => {
     describe('Edge Cases', () => {
       it('should fail with invalid version numbers', () => {
         const invalidVersions = [
-          0,                              // Zero version
-          -1,                             // Negative version
-          LATEST_KNOWN_VERSION + 1,       // One beyond latest known
-          LATEST_KNOWN_VERSION * 10       // Far beyond reasonable range
+          0, // Zero version
+          -1, // Negative version
+          LATEST_KNOWN_VERSION + 1, // One beyond latest known
+          LATEST_KNOWN_VERSION * 10, // Far beyond reasonable range
         ];
 
-        invalidVersions.forEach(version => {
+        invalidVersions.forEach((version) => {
           expect(() => {
             sdk.DataContract.fromJSON(contractFixtureV0, version);
           }).to.throw(/unknown version/);
