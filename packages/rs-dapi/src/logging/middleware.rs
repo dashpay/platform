@@ -262,7 +262,18 @@ fn detect_protocol_type<T>(req: &Request<T>) -> String {
 /// Parse gRPC service and method from request path
 /// Path format: /<package>.<service>/<method>
 fn parse_grpc_path(path: &str) -> (String, String) {
-    let normalized = path
+    let path_component = if let Some(scheme_pos) = path.find("://") {
+        let after_scheme = &path[scheme_pos + 3..];
+        if let Some(path_start) = after_scheme.find('/') {
+            &after_scheme[path_start..]
+        } else {
+            ""
+        }
+    } else {
+        path
+    };
+
+    let normalized = path_component
         .trim_start_matches('/')
         .split('?')
         .next()

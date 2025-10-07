@@ -26,6 +26,8 @@ use tracing::debug;
 
 pub use error_mapping::TenderdashStatus;
 
+const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
+
 /// Macro to generate Platform trait method implementations that delegate to DriveClient
 ///
 /// Usage: `drive_method!(method_name, RequestType, ResponseType);`
@@ -64,7 +66,7 @@ macro_rules! drive_method {
 
                 // Determine request deadline from inbound metadata (grpc-timeout header)
                 let budget = parse_inbound_grpc_timeout(request.metadata())
-                    .and_then(|d| d.checked_sub(Duration::from_millis(50))); // safety margin
+                    .and_then(|d| d.checked_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN)); // safety margin
 
                 // Fetch from Drive with optional timeout budget
                 tracing::trace!(method, ?budget, ?request, "Calling Drive method");
