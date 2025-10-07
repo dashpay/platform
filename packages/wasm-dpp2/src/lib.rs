@@ -10,27 +10,35 @@
 // };
 
 pub mod asset_lock_proof;
-pub mod batch;
 pub mod consensus_error;
-pub mod contract_bounds;
 pub mod core_script;
 pub mod data_contract;
-pub mod data_contract_transitions;
-pub mod document;
-pub mod encrypted_note;
 pub mod enums;
 pub mod error;
-pub mod group_state_transition_info;
 pub mod identifier;
 pub mod identity;
-pub mod identity_public_key;
-pub mod identity_transitions;
-pub mod masternode_vote;
 pub mod mock_bls;
-pub mod partial_identity;
 pub mod private_key;
 pub mod public_key;
-pub mod state_transition;
-pub mod token_configuration;
-pub mod token_configuration_change_item;
+pub mod state_transitions;
+pub mod tokens;
 pub mod utils;
+
+pub use data_contract::{
+    ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    DataContractWasm, DocumentWasm,
+};
+
+pub use identity::{
+    IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, MasternodeVoteTransitionWasm,
+    PartialIdentityWasm, ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,
+};
+
+pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
+
+pub use tokens::{
+    AuthorizedActionTakersWasm, GroupWasm, PrivateEncryptedNoteWasm, SharedEncryptedNoteWasm,
+    TokenConfigurationChangeItemWasm, TokenConfigurationLocalizationWasm, TokenConfigurationWasm,
+};
