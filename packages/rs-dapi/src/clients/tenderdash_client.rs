@@ -1,6 +1,7 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::error::{DAPIResult, DapiError};
+use crate::utils::generate_jsonrpc_id;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use serde::{Deserialize, Serialize};
@@ -32,7 +33,7 @@ pub struct TenderdashClient {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TenderdashResponse<T> {
     pub jsonrpc: String,
-    pub id: i32,
+    pub id: Value,
     pub result: Option<T>,
     pub error: Option<Value>,
 }
@@ -260,7 +261,7 @@ impl TenderdashClient {
             "jsonrpc": "2.0",
             "method": "status",
             "params": {},
-            "id": 1
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await
@@ -289,7 +290,7 @@ impl TenderdashClient {
             "jsonrpc": "2.0",
             "method": "net_info",
             "params": {},
-            "id": 2
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await
@@ -304,7 +305,7 @@ impl TenderdashClient {
             "params": {
                 "tx": tx
             },
-            "id": 3
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await
@@ -318,7 +319,7 @@ impl TenderdashClient {
             "params": {
                 "tx": tx
             },
-            "id": 4
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await
@@ -335,7 +336,7 @@ impl TenderdashClient {
             "jsonrpc": "2.0",
             "method": "unconfirmed_txs",
             "params": params,
-            "id": 5
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await
@@ -349,7 +350,7 @@ impl TenderdashClient {
             "params": {
                 "hash": hash
             },
-            "id": 6
+            "id": generate_jsonrpc_id()
         });
 
         self.post(request_body).await

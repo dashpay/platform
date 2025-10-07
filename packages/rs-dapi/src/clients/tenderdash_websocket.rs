@@ -1,4 +1,4 @@
-use crate::{DAPIResult, DapiError};
+use crate::{DAPIResult, DapiError, utils::generate_jsonrpc_id};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -245,7 +245,7 @@ impl TenderdashWebSocketClient {
         let subscribe_msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "subscribe",
-            "id": 1,
+            "id": generate_jsonrpc_id(),
             "params": {
                 "query": "tm.event = 'Tx'"
             }
@@ -259,7 +259,7 @@ impl TenderdashWebSocketClient {
         let subscribe_block_msg = serde_json::json!({
             "jsonrpc": "2.0",
             "method": "subscribe",
-            "id": 2,
+            "id": generate_jsonrpc_id(),
             "params": {
                 "query": "tm.event = 'NewBlock'"
             }

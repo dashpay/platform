@@ -12,6 +12,7 @@ pub mod protocol;
 pub mod server;
 pub mod services;
 pub mod sync;
+pub mod utils;
 
 // Re-export main error types for convenience
 pub use error::{DAPIResult, DapiError};
