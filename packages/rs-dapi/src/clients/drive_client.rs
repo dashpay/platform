@@ -191,15 +191,15 @@ impl DriveClient {
                     });
                 }
 
-                if let Some(protocol) = version.protocol {
-                    if let Some(drive_proto) = protocol.drive {
-                        drive_version.protocol = Some(DriveProtocol {
-                            drive: Some(DriveProtocolVersion {
-                                current: Some(drive_proto.current as u64),
-                                latest: Some(drive_proto.latest as u64),
-                            }),
-                        });
-                    }
+                if let Some(protocol) = version.protocol
+                    && let Some(drive_proto) = protocol.drive
+                {
+                    drive_version.protocol = Some(DriveProtocol {
+                        drive: Some(DriveProtocolVersion {
+                            current: Some(drive_proto.current as u64),
+                            latest: Some(drive_proto.latest as u64),
+                        }),
+                    });
                 }
 
                 drive_status.version = Some(drive_version);

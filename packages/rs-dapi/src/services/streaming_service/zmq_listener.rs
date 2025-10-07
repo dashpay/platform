@@ -27,8 +27,8 @@ use zeromq::prelude::*;
 
 #[derive(Debug, Clone)]
 pub struct ZmqTopics {
-    pub hashtx: String,
-    pub hashtxlock: String,
+    // pub hashtx: String, -- not used
+    // pub hashtxlock: String, -- not used
     pub hashblock: String,
     pub rawblock: String,
     pub rawtx: String,
@@ -41,8 +41,8 @@ pub struct ZmqTopics {
 impl Default for ZmqTopics {
     fn default() -> Self {
         Self {
-            hashtx: "hashtx".to_string(),
-            hashtxlock: "hashtxlock".to_string(),
+            // hashtx: "hashtx".to_string(),
+            // hashtxlock: "hashtxlock".to_string(),
             hashblock: "hashblock".to_string(),
             rawblock: "rawblock".to_string(),
             rawtx: "rawtx".to_string(),

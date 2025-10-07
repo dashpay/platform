@@ -167,34 +167,33 @@ fn build_version_info(
     let mut protocol = get_status_response_v0::version::Protocol::default();
 
     // Tenderdash protocol version
-    if let Some(node_info) = &tenderdash_status.node_info {
-        if let Some(protocol_version) = &node_info.protocol_version {
-            let mut tenderdash_protocol =
-                get_status_response_v0::version::protocol::Tenderdash::default();
+    if let Some(node_info) = &tenderdash_status.node_info
+        && let Some(protocol_version) = &node_info.protocol_version
+    {
+        let mut tenderdash_protocol =
+            get_status_response_v0::version::protocol::Tenderdash::default();
 
-            if let Some(block) = &protocol_version.block {
-                tenderdash_protocol.block = block.parse().unwrap_or(0);
-            }
-            if let Some(p2p) = &protocol_version.p2p {
-                tenderdash_protocol.p2p = p2p.parse().unwrap_or(0);
-            }
-
-            protocol.tenderdash = Some(tenderdash_protocol);
+        if let Some(block) = &protocol_version.block {
+            tenderdash_protocol.block = block.parse().unwrap_or(0);
         }
+        if let Some(p2p) = &protocol_version.p2p {
+            tenderdash_protocol.p2p = p2p.parse().unwrap_or(0);
+        }
+
+        protocol.tenderdash = Some(tenderdash_protocol);
     }
 
     // Drive protocol version
-    if let Some(version_info) = &drive_status.version {
-        if let Some(protocol_info) = &version_info.protocol {
-            if let Some(drive_protocol) = &protocol_info.drive {
-                let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
-                    current: drive_protocol.current.unwrap_or(0) as u32,
-                    latest: drive_protocol.latest.unwrap_or(0) as u32,
-                };
+    if let Some(version_info) = &drive_status.version
+        && let Some(protocol_info) = &version_info.protocol
+        && let Some(drive_protocol) = &protocol_info.drive
+    {
+        let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
+            current: drive_protocol.current.unwrap_or(0) as u32,
+            latest: drive_protocol.latest.unwrap_or(0) as u32,
+        };
 
-                protocol.drive = Some(drive_protocol_version);
-            }
-        }
+        protocol.drive = Some(drive_protocol_version);
     }
 
     version.protocol = Some(protocol);
@@ -230,16 +229,16 @@ fn build_node_info(
     if let Some(node_info) = &tenderdash_status.node_info {
         let mut node = get_status_response_v0::Node::default();
 
-        if let Some(id) = &node_info.id {
-            if let Ok(id_bytes) = hex::decode(id) {
-                node.id = id_bytes;
-            }
+        if let Some(id) = &node_info.id
+            && let Ok(id_bytes) = hex::decode(id)
+        {
+            node.id = id_bytes;
         }
 
-        if let Some(pro_tx_hash) = &node_info.pro_tx_hash {
-            if let Ok(pro_tx_hash_bytes) = hex::decode(pro_tx_hash) {
-                node.pro_tx_hash = Some(pro_tx_hash_bytes);
-            }
+        if let Some(pro_tx_hash) = &node_info.pro_tx_hash
+            && let Ok(pro_tx_hash_bytes) = hex::decode(pro_tx_hash)
+        {
+            node.pro_tx_hash = Some(pro_tx_hash_bytes);
         }
 
         Some(node)

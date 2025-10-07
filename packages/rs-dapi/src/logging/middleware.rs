@@ -33,7 +33,7 @@ impl<S> Layer<S> for AccessLogLayer {
     type Service = AccessLogService<S>;
 
     fn layer(&self, service: S) -> Self::Service {
-        /// Wrap the inner service with an access logging capability.
+        // Wrap the inner service with an access logging capability.
         AccessLogService {
             inner: service,
             access_logger: self.access_logger.clone(),
@@ -188,24 +188,22 @@ where
 /// Detect protocol type from HTTP request
 fn detect_protocol_type<T>(req: &Request<T>) -> String {
     // Check Content-Type header for JSON-RPC
-    if let Some(content_type) = req.headers().get("content-type") {
-        if let Ok(ct_str) = content_type.to_str() {
-            if ct_str.contains("application/json") {
-                // Could be JSON-RPC, but we need to check the path or method
-                return "JSON-RPC".to_string();
-            }
-        }
+    if let Some(content_type) = req.headers().get("content-type")
+        && let Ok(ct_str) = content_type.to_str()
+        && ct_str.contains("application/json")
+    {
+        // Could be JSON-RPC, but we need to check the path or method
+        return "JSON-RPC".to_string();
     }
 
     // Check if this is a gRPC request
     // gRPC requests typically have content-type: application/grpc
     // or use HTTP/2 and have specific headers
-    if let Some(content_type) = req.headers().get("content-type") {
-        if let Ok(ct_str) = content_type.to_str() {
-            if ct_str.starts_with("application/grpc") {
-                return "gRPC".to_string();
-            }
-        }
+    if let Some(content_type) = req.headers().get("content-type")
+        && let Ok(ct_str) = content_type.to_str()
+        && ct_str.starts_with("application/grpc")
+    {
+        return "gRPC".to_string();
     }
 
     // Check for gRPC-specific headers
@@ -233,12 +231,12 @@ fn detect_protocol_type<T>(req: &Request<T>) -> String {
 /// Parse gRPC service and method from request path
 /// Path format: /<package>.<service>/<method>
 fn parse_grpc_path(path: &str) -> (String, String) {
-    if let Some(path) = path.strip_prefix('/') {
-        if let Some(slash_pos) = path.rfind('/') {
-            let service_path = &path[..slash_pos];
-            let method = &path[slash_pos + 1..];
-            return (service_path.to_string(), method.to_string());
-        }
+    if let Some(path) = path.strip_prefix('/')
+        && let Some(slash_pos) = path.rfind('/')
+    {
+        let service_path = &path[..slash_pos];
+        let method = &path[slash_pos + 1..];
+        return (service_path.to_string(), method.to_string());
     }
 
     // Fallback for unparseable paths
@@ -271,10 +269,10 @@ fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
         return Some(connect_info.ip());
     }
 
-    if let Some(connect_info) = req.extensions().get::<TcpConnectInfo>() {
-        if let Some(addr) = connect_info.remote_addr() {
-            return Some(addr.ip());
-        }
+    if let Some(connect_info) = req.extensions().get::<TcpConnectInfo>()
+        && let Some(addr) = connect_info.remote_addr()
+    {
+        return Some(addr.ip());
     }
 
     None
@@ -282,12 +280,11 @@ fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
 
 /// Determine the gRPC status code from response headers, extensions, or fallback mapping.
 fn extract_grpc_status<B>(response: &Response<B>, http_status: u16) -> u32 {
-    if let Some(value) = response.headers().get("grpc-status") {
-        if let Ok(as_str) = value.to_str() {
-            if let Ok(code) = as_str.parse::<u32>() {
-                return code;
-            }
-        }
+    if let Some(value) = response.headers().get("grpc-status")
+        && let Ok(as_str) = value.to_str()
+        && let Ok(code) = as_str.parse::<u32>()
+    {
+        return code;
     }
 
     if let Some(status) = response.extensions().get::<TonicStatus>() {

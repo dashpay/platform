@@ -97,15 +97,14 @@ impl PlatformServiceImpl {
                 DapiError::AlreadyExists(_) => self.handle_duplicate_transaction(&tx, &txid).await,
                 e => Err(e),
             };
-            let response = response.inspect_err(|e| {
+
+            response.inspect_err(|e| {
                 error!(
                     error = %e,
                     st_hash = %txid_hex,
                     "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
                 );
-            });
-
-            response
+            })
         }
         .instrument(span)
         .await

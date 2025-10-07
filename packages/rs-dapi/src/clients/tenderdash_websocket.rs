@@ -227,20 +227,19 @@ impl TenderdashWebSocketClient {
         let result = ws_message.result.unwrap();
 
         // NewBlock notifications include a query matching NewBlock
-        if let Some(query) = result.get("query").and_then(|q| q.as_str()) {
-            if query.contains("NewBlock") {
-                let _ = self.block_sender.send(BlockEvent {});
-                return Ok(());
-            }
+        if let Some(query) = result.get("query").and_then(|q| q.as_str())
+            && query.contains("NewBlock")
+        {
+            let _ = self.block_sender.send(BlockEvent {});
+            return Ok(());
         }
 
         // Check if this is a tx event message
-        if result.get("events").is_some() {
-            if let Some(data) = result.get("data") {
-                if let Some(value) = data.get("value") {
-                    return self.handle_tx_event(value, event_sender, &result).await;
-                }
-            }
+        if result.get("events").is_some()
+            && let Some(data) = result.get("data")
+            && let Some(value) = data.get("value")
+        {
+            return self.handle_tx_event(value, event_sender, &result).await;
         }
 
         Ok(())
@@ -331,20 +330,17 @@ impl TenderdashWebSocketClient {
         // First extract from outer events (result.events) - this is the primary location
         if let Some(outer_events) = outer_result.get("events").and_then(|e| e.as_array()) {
             for event in outer_events {
-                if let Some(event_type) = event.get("type").and_then(|t| t.as_str()) {
-                    if event_type == "tx" {
-                        if let Some(attributes) = event.get("attributes").and_then(|a| a.as_array())
+                if let Some(event_type) = event.get("type").and_then(|t| t.as_str())
+                    && event_type == "tx"
+                    && let Some(attributes) = event.get("attributes").and_then(|a| a.as_array())
+                {
+                    for attr in attributes {
+                        if let (Some(key), Some(value)) = (
+                            attr.get("key").and_then(|k| k.as_str()),
+                            attr.get("value").and_then(|v| v.as_str()),
+                        ) && key == "hash"
                         {
-                            for attr in attributes {
-                                if let (Some(key), Some(value)) = (
-                                    attr.get("key").and_then(|k| k.as_str()),
-                                    attr.get("value").and_then(|v| v.as_str()),
-                                ) {
-                                    if key == "hash" {
-                                        hashes.push(normalize_event_hash(value));
-                                    }
-                                }
-                            }
+                            hashes.push(normalize_event_hash(value));
                         }
                     }
                 }
