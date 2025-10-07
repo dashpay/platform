@@ -256,11 +256,11 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
 
 #[async_trait]
 impl PlatformService for QueryService {
-    type subscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
+    type SubscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
     async fn subscribe_platform_events(
         &self,
         _request: Request<Streaming<PlatformEventsCommand>>,
-    ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
+    ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
         respond_with_unimplemented("subscribe_platform_events")
     }
 

@@ -192,7 +192,7 @@ service Platform {
       returns (GetGroupActionSignersResponse);
 
   // Bi-directional stream for multiplexed platform events subscriptions
-  rpc subscribePlatformEvents(stream PlatformEventsCommand)
+  rpc SubscribePlatformEvents(stream PlatformEventsCommand)
       returns (stream PlatformEventsResponse);
 }
 
