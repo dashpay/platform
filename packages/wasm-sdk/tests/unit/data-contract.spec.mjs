@@ -108,5 +108,86 @@ describe('DataContract', () => {
 
     contract.free();
     contract2.free();
-  });  
+  });
+
+  it('should handle invalid JSON input gracefully', () => {
+    expect(() => {
+      sdk.DataContract.fromJSON(null, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+
+    expect(() => {
+      sdk.DataContract.fromJSON({}, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+
+    expect(() => {
+      sdk.DataContract.fromJSON({ id: 'invalid' }, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+  });
+
+  it('should require at least one document type or token', () => {
+    const contractWithEmptySchemas = {
+      $format_version: '0',
+      id: contractFixtureV0.id,
+      ownerId: contractFixtureV0.ownerId,
+      version: 1,
+      config: contractFixtureV0.config,
+      documentSchemas: {}
+    };
+
+    expect(() => {
+      sdk.DataContract.fromJSON(contractWithEmptySchemas, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw(/must have at least one document type or token defined/);
+  });
+
+  it('should create a contract with only document schemas (no tokens)', () => {
+    // V0 fixture already has only documents
+    const contract = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
+    const roundTripped = contract.toJSON();
+
+    expect(roundTripped.documentSchemas.card).to.exist;
+    expect(roundTripped.tokens).to.be.undefined;
+
+    contract.free();
+  });
+
+  it('should create a contract with only tokens (no documents)', () => {
+    // Use V1 fixture but remove documentSchemas
+    const contractWithOnlyTokens = {
+      ...contractFixtureV1,
+      documentSchemas: {}
+    };
+
+    const contract = sdk.DataContract.fromJSON(contractWithOnlyTokens, PLATFORM_VERSION_CONTRACT_V1);
+    const roundTripped = contract.toJSON();
+
+    expect(roundTripped.documentSchemas).to.deep.equal({});
+
+    contract.free();
+  });
+
+  it('should reject contracts with invalid property values', () => {
+    // Test invalid Base58 ID
+    expect(() => {
+      sdk.DataContract.fromJSON({
+        ...contractFixtureV0,
+        id: 'invalid-not-base58!'
+      }, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+
+    // Test negative version number
+    expect(() => {
+      sdk.DataContract.fromJSON({
+        ...contractFixtureV0,
+        version: -1
+      }, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+
+    // Test invalid ownerId
+    expect(() => {
+      sdk.DataContract.fromJSON({
+        ...contractFixtureV0,
+        ownerId: 'not-a-valid-id'
+      }, PLATFORM_VERSION_CONTRACT_V0);
+    }).to.throw();
+  });
 });
