@@ -1,7 +1,7 @@
 use crate::event_bus::{EventBus, SubscriptionHandle};
 use crate::event_mux::EventMux;
-use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
 use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
+use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
 use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 // already imported below
 use dapi_grpc::platform::v0::platform_events_response::{
