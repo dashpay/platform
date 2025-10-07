@@ -182,19 +182,20 @@ impl EventMux {
                             .map(|info| {
                                 (info.subscriber_id, info.handle.id(), info.assigned_producer)
                             })
-                        }
-                            && prev_sub_id == subscriber_id {
-                                tracing::warn!(
-                                    subscriber_id,
-                                    subscription_id = %id,
-                                    "event_mux: duplicate Add detected, removing previous subscription first"
-                                );
-                                // Remove previous bus subscription
-                                self.bus.remove_subscription(prev_handle_id).await;
-                                // Notify previously assigned producer about removal
-                                if let Some(prev_idx) = prev_assigned
-                                    && let Some(tx) = self.get_producer_tx(prev_idx).await {
-                                        let remove_cmd = PlatformEventsCommand {
+                        } && prev_sub_id == subscriber_id
+                        {
+                            tracing::warn!(
+                                subscriber_id,
+                                subscription_id = %id,
+                                "event_mux: duplicate Add detected, removing previous subscription first"
+                            );
+                            // Remove previous bus subscription
+                            self.bus.remove_subscription(prev_handle_id).await;
+                            // Notify previously assigned producer about removal
+                            if let Some(prev_idx) = prev_assigned
+                                && let Some(tx) = self.get_producer_tx(prev_idx).await
+                            {
+                                let remove_cmd = PlatformEventsCommand {
                                             version: Some(CmdVersion::V0(
                                                 dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
                                                     command: Some(Cmd::Remove(
@@ -205,21 +206,21 @@ impl EventMux {
                                                 },
                                             )),
                                         };
-                                        if tx.send(Ok(remove_cmd)).await.is_err() {
-                                            tracing::debug!(
-                                                subscription_id = %id,
-                                                "event_mux: failed to send duplicate Remove to producer"
-                                            );
-                                        }
-                                    }
-                                // Drop previous mapping entry (it will be replaced below)
-                                let _ = {
-                                    self.subscriptions.lock().unwrap().remove(&SubscriptionKey {
-                                        subscriber_id,
-                                        id: id.clone(),
-                                    })
-                                };
+                                if tx.send(Ok(remove_cmd)).await.is_err() {
+                                    tracing::debug!(
+                                        subscription_id = %id,
+                                        "event_mux: failed to send duplicate Remove to producer"
+                                    );
+                                }
                             }
+                            // Drop previous mapping entry (it will be replaced below)
+                            let _ = {
+                                self.subscriptions.lock().unwrap().remove(&SubscriptionKey {
+                                    subscriber_id,
+                                    id: id.clone(),
+                                })
+                            };
+                        }
 
                         // Create subscription filtered by client_subscription_id and forward events
                         let handle = self
@@ -302,10 +303,11 @@ impl EventMux {
 
                         if let Some(idx) = assigned
                             && let Some(tx) = self.get_producer_tx(idx).await
-                                && tx.send(Ok(cmd)).await.is_err() {
-                                    tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
-                                    self.handle_subscriber_disconnect(subscriber_id).await;
-                                }
+                            && tx.send(Ok(cmd)).await.is_err()
+                        {
+                            tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
+                            self.handle_subscriber_disconnect(subscriber_id).await;
+                        }
                     }
                     _ => {}
                 }
@@ -355,24 +357,25 @@ impl EventMux {
 
             // Send remove command to assigned producer
             if let Some(idx) = assigned
-                && let Some(tx) = self.get_producer_tx(idx).await {
-                    let cmd = PlatformEventsCommand {
-                        version: Some(CmdVersion::V0(
-                            dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
-                                command: Some(Cmd::Remove(
-                                    dapi_grpc::platform::v0::RemoveSubscriptionV0 {
-                                        client_subscription_id: id.clone(),
-                                    },
-                                )),
-                            },
-                        )),
-                    };
-                    if tx.send(Ok(cmd)).await.is_err() {
-                        tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
-                    } else {
-                        tracing::debug!(subscription_id = %id, "event_mux: sent Remove command to producer");
-                    }
+                && let Some(tx) = self.get_producer_tx(idx).await
+            {
+                let cmd = PlatformEventsCommand {
+                    version: Some(CmdVersion::V0(
+                        dapi_grpc::platform::v0::platform_events_command::PlatformEventsCommandV0 {
+                            command: Some(Cmd::Remove(
+                                dapi_grpc::platform::v0::RemoveSubscriptionV0 {
+                                    client_subscription_id: id.clone(),
+                                },
+                            )),
+                        },
+                    )),
+                };
+                if tx.send(Ok(cmd)).await.is_err() {
+                    tracing::debug!(subscription_id = %id, "event_mux: failed to send Remove to producer - channel closed");
+                } else {
+                    tracing::debug!(subscription_id = %id, "event_mux: sent Remove command to producer");
                 }
+            }
         }
 
         tracing::debug!(subscriber_id, "event_mux: subscriber removed");
@@ -393,11 +396,11 @@ impl EventMux {
             if let Some(info) = subs.get(&SubscriptionKey {
                 subscriber_id,
                 id: subscription_id.to_string(),
-            })
-                && let Some(idx) = info.assigned_producer
-                    && let Some(Some(tx)) = prods_guard.get(idx) {
-                        return Some((idx, tx.clone()));
-                    }
+            }) && let Some(idx) = info.assigned_producer
+                && let Some(Some(tx)) = prods_guard.get(idx)
+            {
+                return Some((idx, tx.clone()));
+            }
         }
         // Use round-robin assignment for new subscriptions
         let idx = self.rr_counter.fetch_add(1, Ordering::Relaxed) % prods_guard.len();
