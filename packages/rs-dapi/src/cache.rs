@@ -132,9 +132,7 @@ impl LruResponseCache {
         workers.spawn(async move {
             while receiver.recv().await.is_some() {
                 inner_clone.clear();
-                metrics::cache_memory_usage_bytes(inner_clone.weight());
-                metrics::cache_memory_capacity_bytes(inner_clone.capacity());
-                metrics::cache_entries(inner_clone.len());
+                observe_memory(&inner_clone);
             }
             tracing::debug!("Cache invalidation task exiting");
             Result::<(), DapiError>::Ok(())
@@ -248,6 +246,7 @@ impl LruResponseCache {
             metrics::cache_hit(key.method());
         } else {
             metrics::cache_miss(key.method());
+            observe_memory(&self.inner);
         }
 
         item

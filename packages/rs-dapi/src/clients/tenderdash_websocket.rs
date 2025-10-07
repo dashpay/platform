@@ -1,4 +1,7 @@
-use crate::{DAPIResult, DapiError, utils::generate_jsonrpc_id};
+use crate::{
+    utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
+    DAPIResult, DapiError,
+};
 use futures::{SinkExt, StreamExt};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -54,105 +57,6 @@ struct TxEvent {
     events: Option<Vec<EventAttribute>>,
 }
 
-/// Generic deserializer to handle string or integer conversion to any numeric type.
-fn deserialize_string_or_number<'de, D, T>(deserializer: D) -> Result<T, D::Error>
-where
-    D: serde::Deserializer<'de>,
-    T: TryFrom<i128> + TryFrom<u128> + std::str::FromStr,
-    <T as TryFrom<i128>>::Error: std::fmt::Display,
-    <T as TryFrom<u128>>::Error: std::fmt::Display,
-    <T as std::str::FromStr>::Err: std::fmt::Display,
-{
-    use serde::de::{Error, Visitor};
-
-    struct StringOrNumberVisitor<T>(std::marker::PhantomData<T>);
-
-    impl<T> Visitor<'_> for StringOrNumberVisitor<T>
-    where
-        T: TryFrom<i128> + TryFrom<u128> + std::str::FromStr,
-        <T as TryFrom<i128>>::Error: std::fmt::Display,
-        <T as TryFrom<u128>>::Error: std::fmt::Display,
-        <T as std::str::FromStr>::Err: std::fmt::Display,
-    {
-        type Value = T;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a string or integer")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            v.parse()
-                .map_err(|e| Error::custom(format!("invalid number string: {}", e)))
-        }
-
-        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            T::try_from(v as u128).map_err(|e| Error::custom(format!("number out of range: {}", e)))
-        }
-
-        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            T::try_from(v as i128).map_err(|e| Error::custom(format!("number out of range: {}", e)))
-        }
-    }
-
-    deserializer.deserialize_any(StringOrNumberVisitor(std::marker::PhantomData))
-}
-
-/// Specialized deserializer that coerces numbers and booleans into strings.
-fn deserialize_to_string<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::de::{Error, Visitor};
-
-    struct ToStringVisitor;
-
-    impl Visitor<'_> for ToStringVisitor {
-        type Value = String;
-
-        fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
-            formatter.write_str("a string, integer, or boolean")
-        }
-
-        fn visit_str<E>(self, v: &str) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(v.to_string())
-        }
-
-        fn visit_bool<E>(self, v: bool) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(v.to_string())
-        }
-    }
-
-    deserializer.deserialize_any(ToStringVisitor)
-}
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct TxResult {
     #[serde(
