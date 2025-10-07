@@ -1,17 +1,30 @@
 use quick_cache::{Weighter, sync::Cache};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use tokio_util::bytes::Bytes;
 
 use crate::DapiError;
-use crate::metrics;
+use crate::metrics::{self};
 use crate::services::streaming_service::SubscriptionHandle;
 use crate::sync::Workers;
 
+/// Estimated average size of a cache entry in bytes, used for initial capacity planning.
 const ESTIMATED_ENTRY_SIZE_BYTES: u64 = 1024;
+/// Fixed bincode configuration for stable serialization.
+const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability
 
 #[derive(Clone)]
+/// An LRU cache for storing serialized responses, keyed by method name and request parameters.
+/// Uses a background worker to invalidate the cache on demand.
+///
+/// Entries are weighted by their estimated memory usage to better utilize the configured capacity.
+///
+/// The cache is thread-safe, cheaply cloneable, and can be shared across multiple threads.
+///
+/// # Panics
+///
+/// Panics if serialization of keys or values fails.
 pub struct LruResponseCache {
     inner: Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>,
     #[allow(dead_code)]
@@ -39,6 +52,11 @@ pub struct CacheKey {
 
 impl CacheKey {
     #[inline(always)]
+    pub fn new<M: serde::Serialize>(method: &'static str, key: &M) -> CacheKey {
+        make_cache_key(method, key)
+    }
+
+    #[inline(always)]
     pub const fn method(self) -> &'static str {
         self.method
     }
@@ -51,22 +69,32 @@ impl CacheKey {
 #[derive(Clone)]
 struct CachedValue {
     inserted_at: Instant,
-    bytes: Bytes,
+    data: Vec<u8>,
 }
 
 impl CachedValue {
     #[inline(always)]
     /// Capture the current instant and serialize the provided value into bytes.
+    ///
+    /// Panics if serialization fails.
     fn new<T: serde::Serialize>(data: T) -> Self {
+        let data = bincode::serde::encode_to_vec(&data, BINCODE_CFG)
+            .expect("Failed to serialize cache value");
+
         Self {
             inserted_at: Instant::now(),
-            bytes: Bytes::from(serialize(&data).unwrap()),
+            data,
         }
     }
 
+    #[inline(always)]
     /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
-        deserialize::<T>(&self.bytes)
+        if let Ok((v, _)) = bincode::serde::decode_from_slice(&self.data, BINCODE_CFG) {
+            Some(v)
+        } else {
+            None
+        }
     }
 }
 
@@ -77,7 +105,7 @@ impl Weighter<CacheKey, CachedValue> for CachedValueWeighter {
     /// Estimate cache entry weight by combining struct overhead and payload size.
     fn weight(&self, _key: &CacheKey, value: &CachedValue) -> u64 {
         let structural = std::mem::size_of::<CachedValue>() as u64;
-        let payload = value.bytes.len() as u64;
+        let payload = value.data.len() as u64;
         (structural + payload).max(1)
     }
 }
@@ -141,10 +169,10 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        match self.inner.get(key) {
+        match self.inner.get(key).and_then(|cv| cv.value()) {
             Some(cv) => {
                 metrics::cache_hit(key.method());
-                cv.value()
+                Some(cv)
             }
             None => {
                 metrics::cache_miss(key.method());
@@ -163,17 +191,20 @@ impl LruResponseCache {
                 metrics::cache_hit(key.method());
                 return cv.value();
             }
+
             // expired, drop it
             self.inner.remove(key);
             observe_memory(&self.inner);
-            metrics::cache_miss(key.method());
-            return None;
         }
+
         metrics::cache_miss(key.method());
         None
     }
 
     /// Insert or replace a cached value for the given key.
+    ///
+    /// On error during serialization, the value is not cached.
+    #[inline]
     pub fn put<T>(&self, key: CacheKey, value: &T)
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
@@ -193,13 +224,16 @@ impl LruResponseCache {
     {
         use futures::future::FutureExt;
 
-        if let Some(value) = self.get::<T>(&key) {
-            return Ok(value);
-        }
+        let cache_hit = Arc::new(AtomicBool::new(true));
+        let inner_hit = cache_hit.clone();
 
-        self.inner
+        let item = self
+            .inner
             .get_or_insert_async(&key, async move {
                 // wrapped in async block to not execute producer immediately
+                // executed only on cache miss
+                inner_hit.store(false, Ordering::SeqCst);
+
                 producer()
                     .map(|result| result.map(|value| CachedValue::new(value)))
                     .await
@@ -208,7 +242,15 @@ impl LruResponseCache {
             .map(|cv| {
                 observe_memory(&self.inner);
                 cv.value().expect("Deserialization must succeed")
-            })
+            });
+
+        if cache_hit.load(Ordering::SeqCst) {
+            metrics::cache_hit(key.method());
+        } else {
+            metrics::cache_miss(key.method());
+        }
+
+        item
     }
 }
 
@@ -221,34 +263,17 @@ fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>
 
 #[inline(always)]
 /// Combine a method name and serializable key into a stable 128-bit cache key.
+///
+/// Panics if serialization fails.
 pub fn make_cache_key<M: serde::Serialize>(method: &'static str, key: &M) -> CacheKey {
-    let mut prefix = method.as_bytes().to_vec();
-    let mut serialized_request = serialize(key).expect("Key must be serializable");
-
-    let mut data = Vec::with_capacity(prefix.len() + 1 + serialized_request.len());
-    data.append(&mut prefix);
-    data.push(0);
-    data.append(&mut serialized_request);
+    let mut data = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize); // preallocate some space
+    bincode::serde::encode_into_std_write(key, &mut data, BINCODE_CFG)
+        .expect("Failed to serialize cache key");
+    data.push(0); // separator
+    data.extend(method.as_bytes());
 
     CacheKey {
         method,
         digest: xxhash_rust::xxh3::xxh3_128(&data),
     }
-}
-
-const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability
-
-/// Serialize a value using bincode with a fixed configuration, logging failures.
-fn serialize<T: serde::Serialize>(value: &T) -> Option<Vec<u8>> {
-    bincode::serde::encode_to_vec(value, BINCODE_CFG)
-        .inspect_err(|e| tracing::warn!("Failed to serialize cache value: {}", e))
-        .ok() // deterministic
-}
-
-/// Deserialize bytes produced by `serialize`, returning the value when successful.
-fn deserialize<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Option<T> {
-    bincode::serde::decode_from_slice(bytes, BINCODE_CFG)
-        .inspect_err(|e| tracing::warn!("Failed to deserialize cache value: {}", e))
-        .ok()
-        .map(|(v, _)| v) // deterministic
 }
