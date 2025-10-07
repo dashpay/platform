@@ -2,8 +2,39 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
 import contractFixtureV0 from './fixtures/data-contract-v0-crypto-card-game.mjs';
 import contractFixtureV1 from './fixtures/data-contract-v1-with-docs-tokens-groups.mjs';
 
+// Platform version constants
 const PLATFORM_VERSION_CONTRACT_V0 = 1;
 const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
+
+// Platform version compatibility ranges
+const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 works across all versions
+const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 only works from version 9+
+const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
+const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS); // Dynamically determine latest version
+
+// Helper function for testing contract compatibility across versions
+const testContractAcrossVersions = (contractFixture, contractName, compatibleVersions, incompatibleVersions = []) => {
+  compatibleVersions.forEach(version => {
+    it(`should work with platform version ${version}`, () => {
+      const contract = sdk.DataContract.fromJSON(contractFixture, version);
+      expect(contract).to.be.ok();
+      expect(contract.id()).to.equal(contractFixture.id);
+
+      const roundTripped = contract.toJSON();
+      expect(roundTripped.id).to.equal(contractFixture.id);
+
+      contract.free();
+    });
+  });
+
+  incompatibleVersions.forEach(version => {
+    it(`should fail with platform version ${version}`, () => {
+      expect(() => {
+        sdk.DataContract.fromJSON(contractFixture, version);
+      }).to.throw(/unknown version|dpp unknown version/);
+    });
+  });
+};
 
 describe('DataContract', () => {
   before(async () => {
@@ -198,6 +229,50 @@ describe('DataContract', () => {
 
       contract1.free();
       contract2.free();
+    });
+  });
+
+  describe('Platform Version Compatibility Matrix', () => {
+    describe('V0 Contract Compatibility', () => {
+      testContractAcrossVersions(contractFixtureV0, 'V0', V0_COMPATIBLE_VERSIONS);
+    });
+
+    describe('V1 Contract Compatibility', () => {
+      testContractAcrossVersions(contractFixtureV1, 'V1', V1_COMPATIBLE_VERSIONS, V0_ONLY_VERSIONS);
+    });
+
+    describe('Edge Cases', () => {
+      it('should fail with invalid version numbers', () => {
+        const invalidVersions = [
+          0,                              // Zero version
+          -1,                             // Negative version
+          LATEST_KNOWN_VERSION + 1,       // One beyond latest known
+          LATEST_KNOWN_VERSION * 10       // Far beyond reasonable range
+        ];
+
+        invalidVersions.forEach(version => {
+          expect(() => {
+            sdk.DataContract.fromJSON(contractFixtureV0, version);
+          }).to.throw(/unknown version/);
+        });
+      });
+
+      it('should handle version boundary correctly at V9 transition', () => {
+        // V0 contract should work in V9 (backward compatibility)
+        const contract = sdk.DataContract.fromJSON(contractFixtureV0, 9);
+        expect(contract.id()).to.equal(contractFixtureV0.id);
+        contract.free();
+
+        // V1 contract should work in V9 (first supported version)
+        const contractV1 = sdk.DataContract.fromJSON(contractFixtureV1, 9);
+        expect(contractV1.id()).to.equal(contractFixtureV1.id);
+        contractV1.free();
+
+        // V1 contract should fail in V8 (last unsupported version)
+        expect(() => {
+          sdk.DataContract.fromJSON(contractFixtureV1, 8);
+        }).to.throw(/dpp unknown version/);
+      });
     });
   });
 });
