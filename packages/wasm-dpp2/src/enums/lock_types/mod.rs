@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::{JsError, JsValue};
 
@@ -17,24 +18,34 @@ impl From<AssetLockProofTypeWasm> for String {
 }
 
 impl TryFrom<JsValue> for AssetLockProofTypeWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
 
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
                     "instant" => Ok(AssetLockProofTypeWasm::Instant),
                     "chain" => Ok(AssetLockProofTypeWasm::Chain),
-                    _ => Err(JsValue::from(format!("unsupported lock type {}", enum_val))),
+                    _ => Err(WasmDppError::invalid_argument(format!(
+                        "unsupported lock type {}",
+                        enum_val
+                    ))),
                 },
             },
             false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val as u8 {
                     0 => Ok(AssetLockProofTypeWasm::Instant),
                     1 => Ok(AssetLockProofTypeWasm::Chain),
-                    _ => Err(JsValue::from(format!("unsupported lock type {}", enum_val))),
+                    _ => Err(WasmDppError::invalid_argument(format!(
+                        "unsupported lock type {}",
+                        enum_val
+                    ))),
                 },
             },
         }

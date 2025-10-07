@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::utils::ToSerdeJSONExt;
 use dpp::bincode;
@@ -41,14 +42,13 @@ impl VotePollWasm {
         document_type_name: String,
         index_name: String,
         js_index_values: JsValue,
-    ) -> Result<VotePollWasm, JsValue> {
+    ) -> WasmDppResult<VotePollWasm> {
         let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
-        let index_values = js_index_values
-            .with_serde_to_platform_value()?
-            .as_array()
-            .unwrap()
-            .clone();
+        let index_values_value = js_index_values.with_serde_to_platform_value()?;
+        let index_values = index_values_value
+            .into_array()
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(
             ContestedDocumentResourceVotePoll {
@@ -87,19 +87,19 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(getter = "indexValues")]
-    pub fn index_values(&self) -> Result<Array, JsValue> {
+    pub fn index_values(&self) -> WasmDppResult<Array> {
         let config = bincode::config::standard()
             .with_big_endian()
             .with_no_limit();
 
         match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {
-                let encoded: Result<Vec<Vec<u8>>, JsValue> = poll
+                let encoded: WasmDppResult<Vec<Vec<u8>>> = poll
                     .index_values
                     .iter()
                     .map(|value| {
                         bincode::encode_to_vec(value, config)
-                            .map_err(|err| JsValue::from(err.to_string()))
+                            .map_err(|err| WasmDppError::serialization(err.to_string()))
                     })
                     .collect();
 
@@ -115,7 +115,7 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
         let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         self.0 = match self.0.clone() {
@@ -152,12 +152,11 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "indexValues")]
-    pub fn set_index_values(&mut self, js_index_values: JsValue) -> Result<(), JsValue> {
+    pub fn set_index_values(&mut self, js_index_values: JsValue) -> WasmDppResult<()> {
         let index_values = js_index_values
             .with_serde_to_platform_value()?
-            .as_array()
-            .unwrap()
-            .clone();
+            .into_array()
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {

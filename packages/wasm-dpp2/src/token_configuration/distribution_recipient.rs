@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_recipient::TokenDistributionRecipient;
 use wasm_bindgen::JsValue;
@@ -37,7 +38,7 @@ impl TokenDistributionRecipientWasm {
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(js_identity_id: &JsValue) -> Result<TokenDistributionRecipientWasm, JsValue> {
+    pub fn identity(js_identity_id: &JsValue) -> WasmDppResult<TokenDistributionRecipientWasm> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
         Ok(TokenDistributionRecipientWasm(

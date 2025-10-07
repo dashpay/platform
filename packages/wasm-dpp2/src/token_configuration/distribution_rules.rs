@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use crate::token_configuration::change_control_rules::ChangeControlRulesWasm;
 use crate::token_configuration::perpetual_distribution::TokenPerpetualDistributionWasm;
@@ -52,7 +53,7 @@ impl TokenDistributionRulesWasm {
         minting_allow_choosing_destination: bool,
         minting_allow_choosing_destination_rules: &ChangeControlRulesWasm,
         change_direct_purchase_pricing_rules: &ChangeControlRulesWasm,
-    ) -> Result<TokenDistributionRulesWasm, JsValue> {
+    ) -> WasmDppResult<TokenDistributionRulesWasm> {
         let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
@@ -160,7 +161,7 @@ impl TokenDistributionRulesWasm {
     pub fn set_perpetual_distribution(
         &mut self,
         js_perpetual_distribution: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
             true => None,
             false => Some(TokenPerpetualDistribution::from(
@@ -170,7 +171,8 @@ impl TokenDistributionRulesWasm {
             )),
         };
 
-        Ok(self.0.set_perpetual_distribution(perpetual_distribution))
+        self.0.set_perpetual_distribution(perpetual_distribution);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "perpetualDistributionRules")]
@@ -183,7 +185,7 @@ impl TokenDistributionRulesWasm {
     pub fn set_pre_programmed_distribution(
         &mut self,
         js_distribution: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let distribution = match js_distribution.is_undefined() {
             true => None,
             false => Some(TokenPreProgrammedDistribution::from(
@@ -195,14 +197,15 @@ impl TokenDistributionRulesWasm {
             )),
         };
 
-        Ok(self.0.set_pre_programmed_distribution(distribution))
+        self.0.set_pre_programmed_distribution(distribution);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "newTokenDestinationIdentity")]
     pub fn set_new_tokens_destination_identity(
         &mut self,
         js_identifier: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let identifier = match js_identifier.is_undefined() {
             true => None,
             false => Some(Identifier::from(
@@ -210,7 +213,9 @@ impl TokenDistributionRulesWasm {
             )),
         };
 
-        Ok(self.0.set_new_tokens_destination_identity(identifier))
+        self.0.set_new_tokens_destination_identity(identifier);
+
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "newTokenDestinationIdentityRules")]

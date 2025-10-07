@@ -65,22 +65,8 @@ impl WasmDppError {
     pub(crate) fn generic(message: impl Into<String>) -> Self {
         Self::new(WasmDppErrorKind::Generic, message, None)
     }
-}
 
-impl From<ProtocolError> for WasmDppError {
-    fn from(error: ProtocolError) -> Self {
-        Self::protocol(error.to_string())
-    }
-}
-
-impl From<AnyhowError> for WasmDppError {
-    fn from(error: AnyhowError) -> Self {
-        Self::generic(error.to_string())
-    }
-}
-
-impl From<JsValue> for WasmDppError {
-    fn from(value: JsValue) -> Self {
+    pub(crate) fn from_js_value(value: JsValue) -> Self {
         if value.is_null() || value.is_undefined() {
             return WasmDppError::invalid_argument("JavaScript error: value is null or undefined");
         }
@@ -99,6 +85,18 @@ impl From<JsValue> for WasmDppError {
             .unwrap_or_else(|| "Unknown JavaScript error".to_string());
 
         WasmDppError::invalid_argument(message)
+    }
+}
+
+impl From<ProtocolError> for WasmDppError {
+    fn from(error: ProtocolError) -> Self {
+        Self::protocol(error.to_string())
+    }
+}
+
+impl From<AnyhowError> for WasmDppError {
+    fn from(error: AnyhowError) -> Self {
+        Self::generic(error.to_string())
     }
 }
 

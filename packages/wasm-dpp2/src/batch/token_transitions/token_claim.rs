@@ -1,11 +1,12 @@
-use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::batch::token_base_transition::TokenBaseTransitionWasm;
-use dpp::state_transition::batch_transition::TokenClaimTransition;
-use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
-use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
-use wasm_bindgen::JsValue;
-use wasm_bindgen::prelude::wasm_bindgen;
 use crate::enums::token::distribution_type::TokenDistributionTypeWasm;
+use crate::error::WasmDppResult;
+use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use dpp::state_transition::batch_transition::token_claim_transition::v0::v0_methods::TokenClaimTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_claim_transition::TokenClaimTransitionV0;
+use dpp::state_transition::batch_transition::TokenClaimTransition;
+use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name = "TokenClaimTransition")]
@@ -40,7 +41,7 @@ impl TokenClaimTransitionWasm {
         base: &TokenBaseTransitionWasm,
         js_distribution_type: &JsValue,
         public_note: Option<String>,
-    ) -> Result<TokenClaimTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenClaimTransitionWasm> {
         let distribution_type = match js_distribution_type.is_undefined() {
             true => TokenDistributionTypeWasm::default(),
             false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
@@ -81,12 +82,13 @@ impl TokenClaimTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "distributionType")]
-    pub fn set_distribution_type(&mut self, js_distribution_type: &JsValue) -> Result<(), JsValue> {
+    pub fn set_distribution_type(&mut self, js_distribution_type: &JsValue) -> WasmDppResult<()> {
         let distribution_type = match js_distribution_type.is_undefined() {
             true => TokenDistributionTypeWasm::default(),
             false => TokenDistributionTypeWasm::try_from(js_distribution_type.clone())?,
         };
 
-        Ok(self.0.set_distribution_type(distribution_type.into()))
+        self.0.set_distribution_type(distribution_type.into());
+        Ok(())
     }
 }

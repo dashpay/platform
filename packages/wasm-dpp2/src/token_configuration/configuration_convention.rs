@@ -1,12 +1,11 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::token_configuration::localization::TokenConfigurationLocalizationWasm;
-use crate::utils::ToSerdeJSONExt;
 use dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
 use dpp::data_contract::associated_token::token_configuration_convention::accessors::v0::{
     TokenConfigurationConventionV0Getters, TokenConfigurationConventionV0Setters,
 };
 use dpp::data_contract::associated_token::token_configuration_convention::v0::TokenConfigurationConventionV0;
 use dpp::data_contract::associated_token::token_configuration_localization::TokenConfigurationLocalization;
-use dpp::data_contract::associated_token::token_configuration_localization::v0::TokenConfigurationLocalizationV0;
 use js_sys::{Object, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
@@ -44,7 +43,7 @@ impl TokenConfigurationConventionWasm {
     pub fn new(
         js_localizations: &JsValue,
         decimals: u8,
-    ) -> Result<TokenConfigurationConventionWasm, JsValue> {
+    ) -> WasmDppResult<TokenConfigurationConventionWasm> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
             js_value_to_localizations(js_localizations)?;
 
@@ -62,7 +61,7 @@ impl TokenConfigurationConventionWasm {
     }
 
     #[wasm_bindgen(getter = "localizations")]
-    pub fn localizations(&self) -> Result<JsValue, JsValue> {
+    pub fn localizations(&self) -> WasmDppResult<JsValue> {
         let object = Object::new();
 
         for (key, value) in &self.0.localizations().clone() {
@@ -70,7 +69,8 @@ impl TokenConfigurationConventionWasm {
                 &object,
                 &JsValue::from(key.clone()),
                 &TokenConfigurationLocalizationWasm::from(value.clone()).into(),
-            )?;
+            )
+            .map_err(|err| WasmDppError::from_js_value(err))?;
         }
 
         Ok(object.into())
@@ -82,46 +82,32 @@ impl TokenConfigurationConventionWasm {
     }
 
     #[wasm_bindgen(setter = "localizations")]
-    pub fn set_localizations(&mut self, js_localizations: &JsValue) -> Result<(), JsValue> {
+    pub fn set_localizations(&mut self, js_localizations: &JsValue) -> WasmDppResult<()> {
         let localizations: BTreeMap<String, TokenConfigurationLocalization> =
             js_value_to_localizations(js_localizations)?;
 
-        Ok(self.0.set_localizations(localizations))
+        self.0.set_localizations(localizations);
+        Ok(())
     }
 }
 
 fn js_value_to_localizations(
     js_localizations: &JsValue,
-) -> Result<BTreeMap<String, TokenConfigurationLocalization>, JsValue> {
-    let localizations: BTreeMap<String, TokenConfigurationLocalization> = js_localizations
-        .clone()
-        .with_serde_to_platform_value_map()?
-        .iter()
-        .map(|(key, value)| {
-            (
-                key.clone(),
-                TokenConfigurationLocalization::V0(TokenConfigurationLocalizationV0 {
-                    should_capitalize: value
-                        .get_value("shouldCapitalize")
-                        .unwrap()
-                        .as_bool()
-                        .unwrap(),
-                    singular_form: value
-                        .get_value("singularForm")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
-                    plural_form: value
-                        .get_value("pluralForm")
-                        .unwrap()
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
-                }),
-            )
-        })
-        .collect();
+) -> WasmDppResult<BTreeMap<String, TokenConfigurationLocalization>> {
+    let js_object = Object::from(js_localizations.clone());
+    let mut localizations = BTreeMap::new();
+
+    for key in Object::keys(&js_object) {
+        let key_str = key
+            .as_string()
+            .ok_or_else(|| WasmDppError::invalid_argument("Localization key must be string"))?;
+
+        let js_value = Reflect::get(&js_object, &key).map_err(WasmDppError::from_js_value)?;
+
+        let localization = TokenConfigurationLocalizationWasm::from_js_value(&js_value)?;
+
+        localizations.insert(key_str, localization);
+    }
 
     Ok(localizations)
 }

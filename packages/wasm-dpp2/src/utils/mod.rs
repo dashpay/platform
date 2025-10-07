@@ -1,6 +1,5 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use anyhow::{Context, anyhow, bail};
-use dpp::ProtocolError;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::platform_value::string_encoding::Encoding::Base58;
@@ -10,7 +9,7 @@ use serde_json::Value as JsonValue;
 use std::collections::BTreeMap;
 use std::convert::TryInto;
 use wasm_bindgen::JsValue;
-use wasm_bindgen::{convert::RefFromWasmAbi, prelude::*};
+use wasm_bindgen::convert::RefFromWasmAbi;
 
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
     let replacer_func = Function::new_with_args(
@@ -38,33 +37,32 @@ pub fn with_serde_to_platform_value_wasm(data: &JsValue) -> WasmDppResult<Value>
 }
 
 pub trait ToSerdeJSONExt {
-    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue>;
-    fn with_serde_to_platform_value(&self) -> Result<Value, JsValue>;
+    fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue>;
+    fn with_serde_to_platform_value(&self) -> WasmDppResult<Value>;
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue>;
+    fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>>;
 }
 
 impl ToSerdeJSONExt for JsValue {
     /// Converts the `JsValue` into `serde_json::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_json_value(&self) -> Result<JsonValue, JsValue> {
+    fn with_serde_to_json_value(&self) -> WasmDppResult<JsonValue> {
         with_serde_to_json_value(self.clone())
     }
 
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_platform_value(&self) -> Result<Value, JsValue> {
+    fn with_serde_to_platform_value(&self) -> WasmDppResult<Value> {
         with_serde_to_platform_value(self)
     }
 
     /// Converts the `JsValue` into `platform::Value`. It's an expensive conversion,
     /// as `JsValue` must be stringified first
-    fn with_serde_to_platform_value_map(&self) -> Result<BTreeMap<String, Value>, JsValue> {
+    fn with_serde_to_platform_value_map(&self) -> WasmDppResult<BTreeMap<String, Value>> {
         self.with_serde_to_platform_value()?
             .into_btree_string_map()
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
     }
 }
 
@@ -80,7 +78,7 @@ where
 #[allow(deprecated)]
 pub fn to_vec_of_serde_values(
     values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> Result<Vec<JsonValue>, JsValue> {
+) -> WasmDppResult<Vec<JsonValue>> {
     values
         .into_iter()
         .map(|v| v.as_ref().with_serde_to_json_value())
@@ -89,70 +87,45 @@ pub fn to_vec_of_serde_values(
 
 pub fn to_vec_of_platform_values(
     values: impl IntoIterator<Item = impl AsRef<JsValue>>,
-) -> Result<Vec<Value>, JsValue> {
+) -> WasmDppResult<Vec<Value>> {
     values
         .into_iter()
         .map(|v| v.as_ref().with_serde_to_platform_value())
         .collect()
 }
 
-pub fn with_serde_to_json_value(data: JsValue) -> Result<JsonValue, JsValue> {
+pub fn with_serde_to_json_value(data: JsValue) -> WasmDppResult<JsonValue> {
     let data = stringify(&data)?;
     let value: JsonValue = serde_json::from_str(&data)
         .with_context(|| format!("cant convert {data:#?} to serde json value"))
-        .map_err(|e| format!("{e:#}"))?;
+        .map_err(|e| WasmDppError::serialization(format!("{e:#}")))?;
     Ok(value)
 }
 
-pub fn with_serde_to_platform_value(data: &JsValue) -> Result<Value, JsValue> {
+pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
     Ok(with_serde_to_json_value(data.clone())?.into())
 }
 
-pub fn stringify(data: &JsValue) -> Result<String, JsValue> {
+pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
     let replacer_func = Function::new_with_args(
         "key, value",
         "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
     );
 
     let data_string: String =
-        js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))?.into();
+        js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
+            .map_err(|err| WasmDppError::from_js_value(err))?
+            .into();
 
     Ok(data_string)
 }
 
-pub trait WithJsError<T> {
-    /// Converts the error into JsValue
-    fn with_js_error(self) -> Result<T, JsValue>;
-}
-
-impl<T> WithJsError<T> for Result<T, anyhow::Error> {
-    fn with_js_error(self) -> Result<T, JsValue> {
-        match self {
-            Ok(ok) => Ok(ok),
-            Err(error) => Err(format!("{error:#}").into()),
-        }
-    }
-}
-
-impl<T> WithJsError<T> for Result<T, ProtocolError> {
-    fn with_js_error(self) -> Result<T, JsValue> {
-        match self {
-            Ok(ok) => Ok(ok),
-            Err(error) => Err(JsValue::from_str(&error.to_string())),
-        }
-    }
-}
-
 pub trait IntoWasm {
-    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str)
-    -> Result<T::Anchor, JsValue>;
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str) -> WasmDppResult<T::Anchor>;
 }
 
 impl IntoWasm for JsValue {
-    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(
-        &self,
-        class_name: &str,
-    ) -> Result<T::Anchor, JsValue> {
+    fn to_wasm<T: RefFromWasmAbi<Abi = u32>>(&self, class_name: &str) -> WasmDppResult<T::Anchor> {
         generic_of_js_val::<T>(self, class_name)
     }
 }
@@ -160,21 +133,22 @@ impl IntoWasm for JsValue {
 pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
     js_value: &JsValue,
     class_name: &str,
-) -> Result<T::Anchor, JsValue> {
+) -> WasmDppResult<T::Anchor> {
     if !js_value.is_object() {
-        return Err(JsError::new(
-            format!("Value supplied as {} is not an object", class_name).as_str(),
-        )
-        .into());
+        return Err(WasmDppError::invalid_argument(format!(
+            "Value supplied as {} is not an object",
+            class_name
+        )));
     }
 
     let ctor_name = get_class_type(js_value)?;
 
     if ctor_name == class_name {
-        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr"))?;
+        let ptr = js_sys::Reflect::get(js_value, &JsValue::from_str("__wbg_ptr"))
+            .map_err(WasmDppError::from_js_value)?;
         let ptr_u32: u32 = ptr
             .as_f64()
-            .ok_or_else(|| JsValue::from(JsError::new("Invalid JS object pointer")))?
+            .ok_or_else(|| WasmDppError::invalid_argument("Invalid JS object pointer"))?
             as u32;
         let reference = unsafe { T::ref_from_abi(ptr_u32) };
         Ok(reference)
@@ -183,17 +157,15 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
             "JS object constructor name mismatch. Expected {}, provided {}.",
             class_name, ctor_name
         );
-        Err(JsError::new(&error_string).into())
+        Err(WasmDppError::invalid_argument(error_string))
     }
 }
 
-pub fn get_class_type(value: &JsValue) -> Result<String, JsValue> {
-    let class_type = js_sys::Reflect::get(&value, &JsValue::from_str("__type"));
+pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
+    let class_type = js_sys::Reflect::get(&value, &JsValue::from_str("__type"))
+        .map_err(WasmDppError::from_js_value)?;
 
-    match class_type {
-        Ok(class_type) => Ok(class_type.as_string().unwrap_or("".to_string())),
-        Err(_) => Err(JsValue::from_str(&"")),
-    }
+    Ok(class_type.as_string().unwrap_or_default())
 }
 
 pub fn try_to_u64(value: JsValue) -> Result<u64, anyhow::Error> {
@@ -235,7 +207,7 @@ pub fn generate_document_id_v0(
     owner_id: &Identifier,
     document_type_name: &str,
     entropy: &[u8],
-) -> Result<Identifier, JsValue> {
+) -> WasmDppResult<Identifier> {
     let mut buf: Vec<u8> = vec![];
 
     buf.extend_from_slice(&contract_id.to_buffer());
@@ -243,32 +215,33 @@ pub fn generate_document_id_v0(
     buf.extend_from_slice(document_type_name.as_bytes());
     buf.extend_from_slice(entropy);
 
-    Identifier::from_bytes(&hash_double_to_vec(&buf)).map_err(|e| JsValue::from(e.to_string()))
+    Identifier::from_bytes(&hash_double_to_vec(&buf))
+        .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
 }
 
 // Try to extract Identifier from **stringified** identifier_utils.
 // The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
-pub fn identifier_from_js_value(js_value: &JsValue) -> Result<Identifier, JsValue> {
+pub fn identifier_from_js_value(js_value: &JsValue) -> WasmDppResult<Identifier> {
     if js_value.is_undefined() || js_value.is_null() {
-        wasm_bindgen::throw_val(JsValue::from_str(
+        return Err(WasmDppError::invalid_argument(
             "the identifier cannot be null or undefined",
         ));
     }
 
     match js_value.is_string() {
         true => Identifier::from_string(js_value.as_string().unwrap_or("".into()).as_str(), Base58)
-            .map_err(ProtocolError::ValueError)
-            .with_js_error(),
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string())),
         false => match js_value.is_object() || js_value.is_array() {
             true => {
                 let uint8_array = Uint8Array::from(js_value.clone());
                 let bytes = uint8_array.to_vec();
 
                 Identifier::from_bytes(&bytes)
-                    .map_err(ProtocolError::ValueError)
-                    .with_js_error()
+                    .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
             }
-            false => Err(JsValue::from_str("Invalid ID. Expected array or string")),
+            false => Err(WasmDppError::invalid_argument(
+                "Invalid ID. Expected array or string",
+            )),
         },
     }
 }

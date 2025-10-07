@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use wasm_bindgen::JsValue;
@@ -32,7 +33,7 @@ impl ResourceVoteChoiceWasm {
     }
 
     #[wasm_bindgen(js_name = "TowardsIdentity")]
-    pub fn towards_identity(js_id: &JsValue) -> Result<Self, JsValue> {
+    pub fn towards_identity(js_id: &JsValue) -> WasmDppResult<Self> {
         let id = IdentifierWasm::try_from(js_id)?;
 
         Ok(ResourceVoteChoiceWasm(ResourceVoteChoice::TowardsIdentity(

@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::group::action_taker::ActionTaker;
 use dpp::prelude::Identifier;
@@ -35,26 +36,36 @@ impl ActionTakerWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(value: &JsValue) -> Result<ActionTakerWasm, JsValue> {
-        let identifier = IdentifierWasm::try_from(value);
-
-        if identifier.is_err() {
-            let set_of_identifiers: Vec<Identifier> = Array::from(value)
-                .to_vec()
-                .iter()
-                .map(|js_value: &JsValue| {
-                    Identifier::from(IdentifierWasm::try_from(js_value).expect("err"))
-                })
-                .collect();
-
-            Ok(ActionTakerWasm(ActionTaker::SpecifiedIdentities(
-                BTreeSet::from_iter(set_of_identifiers),
-            )))
-        } else {
-            Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
-                identifier?.into(),
-            )))
+    pub fn new(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
+        if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
+            return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
+                identifier.into(),
+            )));
         }
+
+        if !value.is_object() && !value.is_array() {
+            return Err(WasmDppError::invalid_argument(
+                "ActionTaker value must be an Identifier or array of Identifiers",
+            ));
+        }
+
+        let array = Array::from(value);
+        let mut identifiers = BTreeSet::new();
+
+        for js_value in array.to_vec() {
+            let identifier = IdentifierWasm::try_from(js_value)?;
+            identifiers.insert(Identifier::from(identifier));
+        }
+
+        if identifiers.is_empty() {
+            return Err(WasmDppError::invalid_argument(
+                "ActionTaker array must contain at least one identifier",
+            ));
+        }
+
+        Ok(ActionTakerWasm(ActionTaker::SpecifiedIdentities(
+            identifiers,
+        )))
     }
 
     #[wasm_bindgen(js_name = "getType")]
@@ -72,18 +83,17 @@ impl ActionTakerWasm {
                 JsValue::from(IdentifierWasm::from(value.clone()))
             }
             ActionTaker::SpecifiedIdentities(value) => {
-                let identifiers: Vec<IdentifierWasm> = value
-                    .iter()
-                    .map(|identifier: &Identifier| IdentifierWasm::from(identifier.clone()))
-                    .collect();
-
-                JsValue::from(identifiers)
+                let array = Array::new();
+                for identifier in value.iter() {
+                    array.push(&IdentifierWasm::from(identifier.clone()).into());
+                }
+                array.into()
             }
         }
     }
 
     #[wasm_bindgen(setter = "value")]
-    pub fn set_value(&mut self, value: &JsValue) -> Result<(), JsValue> {
+    pub fn set_value(&mut self, value: &JsValue) -> WasmDppResult<()> {
         self.0 = Self::new(value)?.0;
 
         Ok(())

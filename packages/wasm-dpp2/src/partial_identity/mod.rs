@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::IntoWasm;
@@ -28,7 +29,7 @@ impl PartialIdentityWasm {
         balance: Option<Credits>,
         revision: Option<Revision>,
         js_not_found_public_keys: Option<Array>,
-    ) -> Result<Self, JsValue> {
+    ) -> WasmDppResult<Self> {
         let id = IdentifierWasm::try_from(js_id)?;
         let loaded_public_keys = js_value_to_loaded_public_keys(js_loaded_public_keys)?;
 
@@ -50,7 +51,7 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(getter = "loadedPublicKeys")]
-    pub fn loaded_public_keys(&self) -> Result<Object, JsValue> {
+    pub fn loaded_public_keys(&self) -> WasmDppResult<Object> {
         let obj = Object::new();
 
         for (k, v) in self.0.loaded_public_keys.clone() {
@@ -58,7 +59,8 @@ impl PartialIdentityWasm {
                 &obj,
                 &k.to_string().into(),
                 &IdentityPublicKeyWasm::from(v).into(),
-            )?;
+            )
+            .map_err(|err| WasmDppError::from_js_value(err))?;
         }
 
         Ok(obj)
@@ -86,7 +88,7 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
         let identifier: IdentifierWasm = IdentifierWasm::try_from(js_id)?;
 
         self.0.id = identifier.into();
@@ -95,7 +97,7 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "loadedPublicKeys")]
-    pub fn set_loaded_public_keys(&mut self, loaded_public_keys: &JsValue) -> Result<(), JsValue> {
+    pub fn set_loaded_public_keys(&mut self, loaded_public_keys: &JsValue) -> WasmDppResult<()> {
         self.0.loaded_public_keys = js_value_to_loaded_public_keys(loaded_public_keys)?;
 
         Ok(())
@@ -112,7 +114,7 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "notFoundPublicKeys")]
-    pub fn set_not_found_public_keys(&mut self, keys: Option<Array>) -> Result<(), JsValue> {
+    pub fn set_not_found_public_keys(&mut self, keys: Option<Array>) -> WasmDppResult<()> {
         self.0.not_found_public_keys = option_array_to_not_found(keys)?;
 
         Ok(())
@@ -121,9 +123,11 @@ impl PartialIdentityWasm {
 
 pub fn js_value_to_loaded_public_keys(
     js_loaded_public_keys: &JsValue,
-) -> Result<BTreeMap<KeyID, IdentityPublicKey>, JsValue> {
+) -> WasmDppResult<BTreeMap<KeyID, IdentityPublicKey>> {
     match js_loaded_public_keys.is_object() {
-        false => Err(JsValue::from("loaded_public_keys must be an object")),
+        false => Err(WasmDppError::invalid_argument(
+            "loaded_public_keys must be an object",
+        )),
         true => {
             let mut map = BTreeMap::new();
 
@@ -131,16 +135,21 @@ pub fn js_value_to_loaded_public_keys(
             let keys = Object::keys(&pub_keys_object);
 
             for key in keys.iter() {
-                if key.as_f64().unwrap() > u32::MAX as f64 {
-                    return Err(JsValue::from_str(&format!(
+                let key_val = key.as_f64().ok_or_else(|| {
+                    WasmDppError::invalid_argument("Key identifier must be numeric")
+                })?;
+
+                if key_val > u32::MAX as f64 {
+                    return Err(WasmDppError::invalid_argument(format!(
                         "Key id '{:?}' exceeds the maximum limit for u32.",
                         key.as_string()
                     )));
                 }
 
-                let key_id = KeyID::from(key.as_f64().unwrap() as u32);
+                let key_id = KeyID::from(key_val as u32);
 
-                let js_key = Reflect::get(&pub_keys_object, &key)?;
+                let js_key =
+                    Reflect::get(&pub_keys_object, &key).map_err(WasmDppError::from_js_value)?;
 
                 let key = js_key
                     .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")?
@@ -156,29 +165,30 @@ pub fn js_value_to_loaded_public_keys(
 
 pub fn option_array_to_not_found(
     js_not_found_public_keys: Option<Array>,
-) -> Result<BTreeSet<KeyID>, JsValue> {
+) -> WasmDppResult<BTreeSet<KeyID>> {
     match js_not_found_public_keys {
-        None => Ok::<BTreeSet<KeyID>, JsValue>(BTreeSet::new()),
+        None => Ok(BTreeSet::new()),
         Some(keys) => {
             let keys_iter: Vec<KeyID> = keys
                 .to_vec()
                 .iter()
                 .map(|key| {
-                    if key.as_f64().unwrap() > u32::MAX as f64 {
-                        return Err(JsValue::from_str(&format!(
+                    let key_val = key.as_f64().ok_or_else(|| {
+                        WasmDppError::invalid_argument("Key id must be a numeric value")
+                    })?;
+
+                    if key_val > u32::MAX as f64 {
+                        return Err(WasmDppError::invalid_argument(format!(
                             "Key id '{:?}' exceeds the maximum limit for u32.",
                             key.as_string()
-                        )))?;
+                        )));
                     }
 
-                    Ok(key.as_f64().unwrap() as KeyID)
+                    Ok(key_val as KeyID)
                 })
-                .collect::<Result<Vec<KeyID>, JsValue>>()?;
+                .collect::<WasmDppResult<Vec<KeyID>>>()?;
 
-            Ok(BTreeSet::from_iter(keys_iter.iter().map(|id| id.clone()))
-                .iter()
-                .map(|key| key.clone())
-                .collect())
+            Ok(keys_iter.into_iter().collect())
         }
     }
 }

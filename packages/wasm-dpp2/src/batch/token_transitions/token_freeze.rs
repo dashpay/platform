@@ -1,12 +1,13 @@
+use crate::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::error::WasmDppResult;
+use crate::identifier::IdentifierWasm;
 use dpp::identifier::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 use dpp::state_transition::batch_transition::token_freeze_transition::v0::v0_methods::TokenFreezeTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_freeze_transition::TokenFreezeTransitionV0;
 use dpp::state_transition::batch_transition::TokenFreezeTransition;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::identifier::IdentifierWasm;
-use crate::batch::token_base_transition::TokenBaseTransitionWasm;
+use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenFreezeTransition)]
@@ -41,7 +42,7 @@ impl TokenFreezeTransitionWasm {
         base: &TokenBaseTransitionWasm,
         js_identity_to_freeze_id: &JsValue,
         public_note: Option<String>,
-    ) -> Result<TokenFreezeTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenFreezeTransitionWasm> {
         let identity_to_freeze_id: Identifier =
             IdentifierWasm::try_from(js_identity_to_freeze_id)?.into();
 
@@ -80,10 +81,7 @@ impl TokenFreezeTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "frozenIdentityId")]
-    pub fn set_frozen_identity_id(
-        &mut self,
-        js_frozen_identity_id: &JsValue,
-    ) -> Result<(), JsValue> {
+    pub fn set_frozen_identity_id(&mut self, js_frozen_identity_id: &JsValue) -> WasmDppResult<()> {
         self.0
             .set_frozen_identity_id(IdentifierWasm::try_from(js_frozen_identity_id)?.into());
         Ok(())

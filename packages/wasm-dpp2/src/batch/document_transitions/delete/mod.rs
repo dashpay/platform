@@ -1,15 +1,16 @@
 use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_delete_transition;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::document::DocumentWasm;
+use crate::error::WasmDppResult;
+use crate::utils::IntoWasm;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::DocumentDeleteTransition;
-use crate::document::DocumentWasm;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::utils::IntoWasm;
-use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "DocumentDeleteTransition")]
 pub struct DocumentDeleteTransitionWasm(DocumentDeleteTransition);
@@ -37,7 +38,7 @@ impl DocumentDeleteTransitionWasm {
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentDeleteTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
@@ -78,7 +79,7 @@ impl DocumentDeleteTransitionWasm {
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
         js_transition: DocumentTransitionWasm,
-    ) -> Result<DocumentDeleteTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         js_transition.get_delete_transition()
     }
 }

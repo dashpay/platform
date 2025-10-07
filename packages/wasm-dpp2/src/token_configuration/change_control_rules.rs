@@ -1,4 +1,5 @@
 use crate::enums::token::action_goal::ActionGoalWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::token_configuration::action_taker::ActionTakerWasm;
 use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
@@ -10,8 +11,8 @@ use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::group::Group;
 use js_sys::{Object, Reflect};
 use std::collections::BTreeMap;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Clone, Debug, PartialEq)]
 #[wasm_bindgen(js_name = "ChangeControlRules")]
@@ -164,7 +165,7 @@ impl ChangeControlRulesWasm {
         js_groups: &JsValue,
         action_taker: &ActionTakerWasm,
         js_goal: &JsValue,
-    ) -> Result<bool, JsValue> {
+    ) -> WasmDppResult<bool> {
         let contract_owner_id = IdentifierWasm::try_from(js_contract_owner_id)?;
         let goal = ActionGoalWasm::try_from(js_goal.clone())?;
 
@@ -174,14 +175,19 @@ impl ChangeControlRulesWasm {
         let mut groups: BTreeMap<GroupContractPosition, Group> = BTreeMap::new();
 
         for key in groups_keys.iter() {
-            let contract_position = match key.as_string() {
-                None => Err(JsValue::from("Cannot read timestamp in distribution rules")),
-                Some(contract_position) => Ok(contract_position
-                    .parse::<GroupContractPosition>()
-                    .map_err(JsError::from)?),
-            }?;
+            let key_str = key.as_string().ok_or_else(|| {
+                WasmDppError::invalid_argument("Cannot read group contract position")
+            })?;
 
-            let group_value = Reflect::get(js_groups, &key)?;
+            let contract_position = key_str.parse::<GroupContractPosition>().map_err(|err| {
+                WasmDppError::invalid_argument(format!(
+                    "Invalid group contract position '{}': {}",
+                    key_str, err
+                ))
+            })?;
+
+            let group_value =
+                Reflect::get(js_groups, &key).map_err(|err| WasmDppError::from_js_value(err))?;
 
             let group = group_value.to_wasm::<GroupWasm>("Group")?.clone();
 

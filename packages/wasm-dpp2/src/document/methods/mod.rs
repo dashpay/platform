@@ -1,9 +1,9 @@
 use crate::data_contract::DataContractWasm;
 use crate::document::DocumentWasm;
 use crate::enums::platform::PlatformVersionWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{ToSerdeJSONExt, WithJsError};
-use dpp::ProtocolError;
+use crate::utils::ToSerdeJSONExt;
 use dpp::dashcore::hashes::serde::Serialize;
 use dpp::data_contract::JsonValue;
 use dpp::document::Document;
@@ -17,8 +17,8 @@ use dpp::prelude::Revision;
 use dpp::util::entropy_generator;
 use dpp::util::entropy_generator::EntropyGenerator;
 use std::collections::BTreeMap;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_class = Document)]
 impl DocumentWasm {
@@ -40,21 +40,19 @@ impl DocumentWasm {
         js_data_contract_id: &JsValue,
         js_owner_id: &JsValue,
         js_document_id: &JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> WasmDppResult<DocumentWasm> {
         let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
         let owner_id = IdentifierWasm::try_from(js_owner_id)?;
 
         let revision = Revision::from(js_revision);
 
-        let document = js_raw_document
-            .with_serde_to_platform_value_map()
-            .expect("cannot convert document to platform value map");
+        let document = js_raw_document.with_serde_to_platform_value_map()?;
 
         let revision = Revision::from(revision);
 
         let entropy = entropy_generator::DefaultEntropyGenerator
             .generate()
-            .map_err(|err| JsValue::from(err.to_string()))?;
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let document_id: IdentifierWasm = match js_document_id.is_undefined() {
             true => crate::utils::generate_document_id_v0(
@@ -112,15 +110,16 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(getter=properties)]
-    pub fn get_properties(&self) -> Result<JsValue, JsValue> {
+    pub fn get_properties(&self) -> WasmDppResult<JsValue> {
         let json_value: JsonValue = self
             .properties
             .clone()
             .to_json_value()
-            .map_err(ProtocolError::ValueError)
-            .with_js_error()?;
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let js_value = json_value.serialize(&serde_wasm_bindgen::Serializer::json_compatible())?;
+        let js_value = json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(js_value)
     }
 
@@ -180,43 +179,49 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=id)]
-    pub fn set_id(&mut self, id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
         self.id = IdentifierWasm::try_from(id)?.clone();
         Ok(())
     }
 
     #[wasm_bindgen(setter=entropy)]
-    pub fn set_entropy(&mut self, entropy: JsValue) {
-        match entropy.is_undefined() {
-            false => {
-                let value = entropy.with_serde_to_platform_value().unwrap();
-
-                let mut entropy = [0u8; 32];
-                let bytes = value.as_bytes().unwrap();
-                let len = bytes.len().min(32);
-                entropy[..len].copy_from_slice(&bytes[..len]);
-                self.entropy = Some(entropy);
-            }
-            true => self.entropy = None,
+    pub fn set_entropy(&mut self, entropy: JsValue) -> WasmDppResult<()> {
+        if entropy.is_undefined() {
+            self.entropy = None;
+            return Ok(());
         }
+
+        let value = entropy.with_serde_to_platform_value()?;
+
+        let bytes = value.as_bytes().ok_or_else(|| {
+            WasmDppError::invalid_argument("Entropy must be provided as a byte array")
+        })?;
+
+        let mut entropy_bytes = [0u8; 32];
+        let len = bytes.len().min(32);
+        entropy_bytes[..len].copy_from_slice(&bytes[..len]);
+        self.entropy = Some(entropy_bytes);
+
+        Ok(())
     }
 
     #[wasm_bindgen(setter=dataContractId)]
-    pub fn set_js_data_contract_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_js_data_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
         self.data_contract_id = IdentifierWasm::try_from(js_contract_id.clone())?;
 
         Ok(())
     }
 
     #[wasm_bindgen(setter=ownerId)]
-    pub fn set_owner_id(&mut self, id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_owner_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
         self.owner_id = IdentifierWasm::try_from(id)?.clone();
         Ok(())
     }
 
     #[wasm_bindgen(setter=properties)]
-    pub fn set_properties(&mut self, properties: JsValue) {
-        self.properties = properties.with_serde_to_platform_value_map().unwrap()
+    pub fn set_properties(&mut self, properties: JsValue) -> WasmDppResult<()> {
+        self.properties = properties.with_serde_to_platform_value_map()?;
+        Ok(())
     }
 
     #[wasm_bindgen(setter=revision)]
@@ -282,7 +287,7 @@ impl DocumentWasm {
         &self,
         data_contract: &DataContractWasm,
         js_platform_version: JsValue,
-    ) -> Result<Vec<u8>, JsValue> {
+    ) -> WasmDppResult<Vec<u8>> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
@@ -292,7 +297,7 @@ impl DocumentWasm {
 
         let document_type_ref = data_contract
             .get_document_type_ref_by_name(self.get_document_type_name())
-            .map_err(|err| JsValue::from_str(err.to_string().as_str()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         DocumentPlatformConversionMethodsV0::serialize(
             &rs_document,
@@ -300,7 +305,7 @@ impl DocumentWasm {
             &data_contract.clone().into(),
             &platform_version.into(),
         )
-        .with_js_error()
+        .map_err(Into::into)
     }
 
     #[wasm_bindgen(js_name=hex)]
@@ -308,7 +313,7 @@ impl DocumentWasm {
         &self,
         data_contract: &DataContractWasm,
         js_platform_version: JsValue,
-    ) -> Result<String, JsValue> {
+    ) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes(data_contract, js_platform_version)?
                 .as_slice(),
@@ -321,7 +326,7 @@ impl DocumentWasm {
         &self,
         data_contract: &DataContractWasm,
         js_platform_version: JsValue,
-    ) -> Result<String, JsValue> {
+    ) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes(data_contract, js_platform_version)?
                 .as_slice(),
@@ -335,7 +340,7 @@ impl DocumentWasm {
         data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> WasmDppResult<DocumentWasm> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
@@ -344,15 +349,14 @@ impl DocumentWasm {
         let document_type_ref = match data_contract.get_document_type_ref_by_name(type_name.clone())
         {
             Ok(type_ref) => Ok(type_ref),
-            Err(err) => Err(JsValue::from_str(err.to_string().as_str())),
+            Err(err) => Err(WasmDppError::invalid_argument(err.to_string())),
         }?;
 
         let rs_document = Document::from_bytes(
             bytes.as_slice(),
             document_type_ref,
             &platform_version.into(),
-        )
-        .with_js_error()?;
+        )?;
 
         let mut js_document = DocumentWasm::from(rs_document);
 
@@ -368,9 +372,10 @@ impl DocumentWasm {
         data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> WasmDppResult<DocumentWasm> {
         DocumentWasm::from_bytes(
-            decode(hex.as_str(), Hex).map_err(JsError::from)?,
+            decode(hex.as_str(), Hex)
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
             data_contract,
             type_name,
             js_platform_version,
@@ -383,9 +388,10 @@ impl DocumentWasm {
         data_contract: &DataContractWasm,
         type_name: String,
         js_platform_version: JsValue,
-    ) -> Result<DocumentWasm, JsValue> {
+    ) -> WasmDppResult<DocumentWasm> {
         DocumentWasm::from_bytes(
-            decode(base64.as_str(), Base64).map_err(JsError::from)?,
+            decode(base64.as_str(), Base64)
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
             data_contract,
             type_name,
             js_platform_version,
@@ -398,7 +404,7 @@ impl DocumentWasm {
         js_owner_id: &JsValue,
         js_data_contract_id: &JsValue,
         opt_entropy: Option<Vec<u8>>,
-    ) -> Result<Vec<u8>, JsValue> {
+    ) -> WasmDppResult<Vec<u8>> {
         let owner_id = IdentifierWasm::try_from(js_owner_id)?;
         let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
 
@@ -412,7 +418,7 @@ impl DocumentWasm {
             }
             None => entropy_generator::DefaultEntropyGenerator
                 .generate()
-                .with_js_error()?,
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?,
         };
 
         let identifier = crate::utils::generate_document_id_v0(
@@ -420,12 +426,9 @@ impl DocumentWasm {
             &owner_id.into(),
             js_document_type_name,
             &entropy,
-        );
+        )?;
 
-        match identifier {
-            Ok(identifier) => Ok(identifier.to_vec()),
-            Err(err) => Err(err),
-        }
+        Ok(identifier.to_vec())
     }
 }
 

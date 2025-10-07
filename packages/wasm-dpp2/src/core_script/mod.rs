@@ -1,4 +1,5 @@
 use crate::enums::network::NetworkWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::address::Payload;
 use dpp::dashcore::{Address, opcodes};
 use dpp::identity::core_script::CoreScript;
@@ -67,11 +68,11 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "toAddress")]
-    pub fn to_address(&self, js_network: &JsValue) -> Result<String, JsValue> {
+    pub fn to_address(&self, js_network: &JsValue) -> WasmDppResult<String> {
         let network = NetworkWasm::try_from(js_network.clone())?;
 
-        let payload =
-            Payload::from_script(self.0.as_script()).map_err(|e| JsValue::from(e.to_string()))?;
+        let payload = Payload::from_script(self.0.as_script())
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         let address = Address::new(network.into(), payload);
 

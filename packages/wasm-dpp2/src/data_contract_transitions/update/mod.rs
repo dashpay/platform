@@ -1,7 +1,7 @@
 use crate::data_contract::DataContractWasm;
 use crate::enums::platform::PlatformVersionWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::WithJsError;
 use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
@@ -12,8 +12,8 @@ use dpp::state_transition::data_contract_update_transition::DataContractUpdateTr
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::validation::operations::ProtocolValidationOperation;
 use dpp::version::{FeatureVersion, ProtocolVersion, TryFromPlatformVersioned};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "DataContractUpdateTransition")]
 pub struct DataContractUpdateTransitionWasm(DataContractUpdateTransition);
@@ -35,7 +35,7 @@ impl DataContractUpdateTransitionWasm {
         data_contract: &DataContractWasm,
         identity_nonce: IdentityNonce,
         js_platform_version: JsValue,
-    ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
@@ -45,8 +45,7 @@ impl DataContractUpdateTransitionWasm {
             DataContractUpdateTransition::try_from_platform_versioned(
                 (DataContract::from(data_contract.clone()), identity_nonce),
                 &platform_version.into(),
-            )
-            .with_js_error()?;
+            )?;
 
         Ok(DataContractUpdateTransitionWasm(
             rs_data_contract_update_transition,
@@ -54,10 +53,9 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<DataContractUpdateTransitionWasm, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let rs_data_contract_update_transition: DataContractUpdateTransition =
-            DataContractUpdateTransition::deserialize_from_bytes(bytes.as_slice())
-                .with_js_error()?;
+            DataContractUpdateTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(DataContractUpdateTransitionWasm(
             rs_data_contract_update_transition,
@@ -65,38 +63,34 @@ impl DataContractUpdateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<DataContractUpdateTransitionWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<DataContractUpdateTransitionWasm> {
+        let bytes = decode(hex.as_str(), Hex)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         DataContractUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<DataContractUpdateTransitionWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<DataContractUpdateTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         DataContractUpdateTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        self.0.serialize_to_bytes().map_err(Into::into)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_hex(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Hex,
-        ))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Hex))
     }
 
     #[wasm_bindgen(js_name = "base64")]
-    pub fn to_base64(&self) -> Result<String, JsValue> {
-        Ok(encode(
-            self.0.serialize_to_bytes().with_js_error()?.as_slice(),
-            Base64,
-        ))
+    pub fn to_base64(&self) -> WasmDppResult<String> {
+        Ok(encode(self.to_bytes()?.as_slice(), Base64))
     }
 
     #[wasm_bindgen(getter = "featureVersion")]
@@ -108,10 +102,10 @@ impl DataContractUpdateTransitionWasm {
     pub fn verify_protocol_version(
         &self,
         protocol_version: ProtocolVersion,
-    ) -> Result<bool, JsValue> {
+    ) -> WasmDppResult<bool> {
         self.0
             .verify_protocol_version(protocol_version)
-            .with_js_error()
+            .map_err(Into::into)
     }
 
     #[wasm_bindgen(js_name = "setDataContract")]
@@ -119,7 +113,7 @@ impl DataContractUpdateTransitionWasm {
         &mut self,
         data_contract: &DataContractWasm,
         js_platform_version: JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
@@ -129,8 +123,7 @@ impl DataContractUpdateTransitionWasm {
             DataContractInSerializationFormat::try_from_platform_versioned(
                 DataContract::from(data_contract.clone()),
                 &platform_version.into(),
-            )
-            .with_js_error()?;
+            )?;
 
         self.0.set_data_contract(data_contract_serialization_format);
 
@@ -147,7 +140,7 @@ impl DataContractUpdateTransitionWasm {
         &self,
         full_validation: Option<bool>,
         js_platform_version: JsValue,
-    ) -> Result<DataContractWasm, JsValue> {
+    ) -> WasmDppResult<DataContractWasm> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
@@ -162,8 +155,7 @@ impl DataContractUpdateTransitionWasm {
             full_validation.unwrap_or(false),
             &mut validation_operations,
             &platform_version.into(),
-        )
-        .with_js_error()?;
+        )?;
 
         Ok(DataContractWasm::from(rs_data_contract))
     }
@@ -178,14 +170,14 @@ impl DataContractUpdateTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         state_transition: &StateTransitionWasm,
-    ) -> Result<DataContractUpdateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DataContractUpdateTransitionWasm> {
         let rs_transition = StateTransition::from(state_transition.clone());
 
         match rs_transition {
             StateTransition::DataContractUpdate(state_transition) => {
                 Ok(DataContractUpdateTransitionWasm(state_transition))
             }
-            _ => Err(JsValue::from("Incorrect transition type")),
+            _ => Err(WasmDppError::invalid_argument("Incorrect transition type")),
         }
     }
 }

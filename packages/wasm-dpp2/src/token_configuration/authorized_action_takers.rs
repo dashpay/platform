@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::change_control_rules::authorized_action_takers::AuthorizedActionTakers;
 use dpp::platform_value::string_encoding::Encoding::Base58;
@@ -44,7 +45,7 @@ impl AuthorizedActionTakersWasm {
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(js_identity_id: &JsValue) -> Result<Self, JsValue> {
+    pub fn identity(js_identity_id: &JsValue) -> WasmDppResult<Self> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
 
         Ok(AuthorizedActionTakersWasm(

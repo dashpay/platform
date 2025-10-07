@@ -1,18 +1,19 @@
 use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
 use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::generators::generate_create_transition;
+use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::document::DocumentWasm;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::{IntoWasm, ToSerdeJSONExt};
 use dpp::dashcore::hashes::serde::Serialize;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
 use dpp::state_transition::batch_transition::DocumentCreateTransition;
-use crate::document::DocumentWasm;
-use crate::utils::{IntoWasm, ToSerdeJSONExt};
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::batch::prefunded_voting_balance::PrefundedVotingBalanceWasm;
-use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "DocumentCreateTransition")]
 #[derive(Clone)]
@@ -48,7 +49,7 @@ impl DocumentCreateTransitionWasm {
         identity_contract_nonce: IdentityNonce,
         js_prefunded_voting_balance: &JsValue,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentCreateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentCreateTransitionWasm> {
         let prefunded_voting_balance = match js_prefunded_voting_balance.is_undefined()
             | js_prefunded_voting_balance.is_null()
         {
@@ -82,10 +83,13 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "data")]
-    pub fn get_data(&self) -> Result<JsValue, JsValue> {
+    pub fn get_data(&self) -> WasmDppResult<JsValue> {
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
 
-        self.0.data().serialize(&serializer).map_err(JsValue::from)
+        self.0
+            .data()
+            .serialize(&serializer)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))
     }
 
     #[wasm_bindgen(getter = "base")]
@@ -99,10 +103,11 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "data")]
-    pub fn set_data(&mut self, js_data: JsValue) -> Result<(), JsValue> {
+    pub fn set_data(&mut self, js_data: JsValue) -> WasmDppResult<()> {
         let data = js_data.with_serde_to_platform_value_map()?;
 
-        Ok(self.0.set_data(data))
+        self.0.set_data(data);
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "base")]
@@ -111,13 +116,14 @@ impl DocumentCreateTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "entropy")]
-    pub fn set_entropy(&mut self, js_entropy: Vec<u8>) -> Result<(), JsValue> {
+    pub fn set_entropy(&mut self, js_entropy: Vec<u8>) -> WasmDppResult<()> {
         let mut entropy = [0u8; 32];
         let bytes = js_entropy.as_slice();
         let len = bytes.len().min(32);
         entropy[..len].copy_from_slice(&bytes[..len]);
 
-        Ok(self.0.set_entropy(entropy))
+        self.0.set_entropy(entropy);
+        Ok(())
     }
 
     #[wasm_bindgen(getter = "prefundedVotingBalance")]
@@ -156,7 +162,7 @@ impl DocumentCreateTransitionWasm {
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
         js_transition: DocumentTransitionWasm,
-    ) -> Result<DocumentCreateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentCreateTransitionWasm> {
         js_transition.get_create_transition()
     }
 }

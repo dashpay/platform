@@ -1,4 +1,5 @@
 use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use crate::utils::IntoWasm;
 use dpp::prelude::IdentityNonce;
@@ -45,7 +46,7 @@ impl DocumentBaseTransitionWasm {
         document_type_name: String,
         js_data_contract_id: &JsValue,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentBaseTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentBaseTransitionWasm> {
         let token_payment_info: Option<TokenPaymentInfo> =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
@@ -99,7 +100,7 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
         self.0.set_id(IdentifierWasm::try_from(js_id)?.into());
         Ok(())
     }
@@ -110,7 +111,7 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> WasmDppResult<()> {
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
         Ok(())

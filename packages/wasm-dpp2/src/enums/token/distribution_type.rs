@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -30,27 +31,28 @@ impl From<TokenDistributionType> for TokenDistributionTypeWasm {
 }
 
 impl TryFrom<JsValue> for TokenDistributionTypeWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
 
     fn try_from(value: JsValue) -> Result<TokenDistributionTypeWasm, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "preprogrammed" => Ok(TokenDistributionTypeWasm::PreProgrammed),
-                    "perpetual" => Ok(TokenDistributionTypeWasm::Perpetual),
-                    _ => Err(JsValue::from("unknown distribution type")),
-                },
-            },
-            false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(TokenDistributionTypeWasm::PreProgrammed),
-                    1 => Ok(TokenDistributionTypeWasm::Perpetual),
-                    _ => Err(JsValue::from("unknown distribution type")),
-                },
-            },
+        if let Some(enum_val) = value.as_string() {
+            return match enum_val.to_lowercase().as_str() {
+                "preprogrammed" => Ok(TokenDistributionTypeWasm::PreProgrammed),
+                "perpetual" => Ok(TokenDistributionTypeWasm::Perpetual),
+                _ => Err(WasmDppError::invalid_argument("unknown distribution type")),
+            };
         }
+
+        if let Some(enum_val) = value.as_f64() {
+            return match enum_val as u8 {
+                0 => Ok(TokenDistributionTypeWasm::PreProgrammed),
+                1 => Ok(TokenDistributionTypeWasm::Perpetual),
+                _ => Err(WasmDppError::invalid_argument("unknown distribution type")),
+            };
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "cannot read value from distribution type enum",
+        ))
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::version::PlatformVersion;
 use dpp::version::v1::PLATFORM_V1;
 use dpp::version::v2::PLATFORM_V2;
@@ -28,11 +29,13 @@ pub enum PlatformVersionWasm {
 }
 
 impl TryFrom<JsValue> for PlatformVersionWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<PlatformVersionWasm, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
                     "platform_v1" => Ok(PlatformVersionWasm::PLATFORM_V1),
                     "platform_v2" => Ok(PlatformVersionWasm::PLATFORM_V2),
@@ -43,14 +46,16 @@ impl TryFrom<JsValue> for PlatformVersionWasm {
                     "platform_v7" => Ok(PlatformVersionWasm::PLATFORM_V7),
                     "platform_v8" => Ok(PlatformVersionWasm::PLATFORM_V8),
                     "platform_v9" => Ok(PlatformVersionWasm::PLATFORM_V9),
-                    _ => Err(JsValue::from(format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown platform version value: {}",
                         enum_val
                     ))),
                 },
             },
             false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val as u8 {
                     1 => Ok(PlatformVersionWasm::PLATFORM_V1),
                     2 => Ok(PlatformVersionWasm::PLATFORM_V2),
@@ -61,7 +66,7 @@ impl TryFrom<JsValue> for PlatformVersionWasm {
                     7 => Ok(PlatformVersionWasm::PLATFORM_V7),
                     8 => Ok(PlatformVersionWasm::PLATFORM_V8),
                     9 => Ok(PlatformVersionWasm::PLATFORM_V9),
-                    _ => Err(JsValue::from(format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown platform version value: {}",
                         enum_val
                     ))),

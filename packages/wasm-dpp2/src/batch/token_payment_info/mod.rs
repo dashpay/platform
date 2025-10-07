@@ -1,4 +1,5 @@
 use crate::enums::batch::gas_fees_paid_by::GasFeesPaidByWasm;
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::TokenContractPosition;
@@ -45,7 +46,7 @@ impl TokenPaymentInfoWasm {
         minimum_token_cost: Option<TokenAmount>,
         maximum_token_cost: Option<TokenAmount>,
         js_gas_fees_paid_by: &JsValue,
-    ) -> Result<Self, JsValue> {
+    ) -> WasmDppResult<Self> {
         let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
             .is_null()
             | js_payment_token_contract_id.is_undefined()
@@ -102,7 +103,7 @@ impl TokenPaymentInfoWasm {
     pub fn set_payment_token_contract_id(
         &mut self,
         js_payment_token_contract_id: &JsValue,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
             .is_null()
             | js_payment_token_contract_id.is_undefined()
@@ -133,7 +134,7 @@ impl TokenPaymentInfoWasm {
     }
 
     #[wasm_bindgen(setter = "gasFeesPaidBy")]
-    pub fn set_gas_fees_paid_by(&mut self, js_gas_fees_paid_by: &JsValue) -> Result<(), JsValue> {
+    pub fn set_gas_fees_paid_by(&mut self, js_gas_fees_paid_by: &JsValue) -> WasmDppResult<()> {
         let gas_fees_paid_by =
             match js_gas_fees_paid_by.is_undefined() | js_gas_fees_paid_by.is_null() {
                 true => GasFeesPaidBy::default(),

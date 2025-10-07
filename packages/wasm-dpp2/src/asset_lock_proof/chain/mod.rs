@@ -1,9 +1,10 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
 use serde::Deserialize;
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,7 +45,7 @@ impl ChainAssetLockProofWasm {
     pub fn new(
         core_chain_locked_height: u32,
         out_point: &OutPointWasm,
-    ) -> Result<ChainAssetLockProofWasm, JsValue> {
+    ) -> WasmDppResult<ChainAssetLockProofWasm> {
         Ok(ChainAssetLockProofWasm(ChainAssetLockProof {
             core_chain_locked_height,
             out_point: out_point.clone().into(),
@@ -52,17 +53,15 @@ impl ChainAssetLockProofWasm {
     }
 
     #[wasm_bindgen(js_name = "fromRawObject")]
-    pub fn from_raw_value(
-        raw_asset_lock_proof: JsValue,
-    ) -> Result<ChainAssetLockProofWasm, JsValue> {
+    pub fn from_raw_value(raw_asset_lock_proof: JsValue) -> WasmDppResult<ChainAssetLockProofWasm> {
         let parameters: ChainAssetLockProofParams =
             serde_wasm_bindgen::from_value(raw_asset_lock_proof)
-                .map_err(|err| JsError::from(err))?;
+                .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let out_point: [u8; 36] = parameters
             .out_point
             .try_into()
-            .map_err(|_| JsError::new("outPoint must be a 36 byte array"))?;
+            .map_err(|_| WasmDppError::invalid_argument("outPoint must be a 36 byte array"))?;
 
         let rs_proof = ChainAssetLockProof::new(parameters.core_chain_locked_height, out_point);
 

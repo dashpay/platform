@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::identity::Purpose;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -14,42 +15,43 @@ pub enum PurposeWasm {
 }
 
 impl TryFrom<JsValue> for PurposeWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "authentication" => Ok(PurposeWasm::AUTHENTICATION),
-                    "encryption" => Ok(PurposeWasm::ENCRYPTION),
-                    "decryption" => Ok(PurposeWasm::DECRYPTION),
-                    "transfer" => Ok(PurposeWasm::TRANSFER),
-                    "system" => Ok(PurposeWasm::SYSTEM),
-                    "voting" => Ok(PurposeWasm::VOTING),
-                    "owner" => Ok(PurposeWasm::OWNER),
-                    _ => Err(JsValue::from(format!(
-                        "unsupported purpose value ({})",
-                        enum_val
-                    ))),
-                },
-            },
-            false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(PurposeWasm::AUTHENTICATION),
-                    1 => Ok(PurposeWasm::ENCRYPTION),
-                    2 => Ok(PurposeWasm::DECRYPTION),
-                    3 => Ok(PurposeWasm::TRANSFER),
-                    4 => Ok(PurposeWasm::SYSTEM),
-                    5 => Ok(PurposeWasm::VOTING),
-                    6 => Ok(PurposeWasm::OWNER),
-                    _ => Err(JsValue::from(format!(
-                        "unsupported purpose value ({})",
-                        enum_val
-                    ))),
-                },
-            },
+        if let Some(enum_val) = value.as_string() {
+            return match enum_val.to_lowercase().as_str() {
+                "authentication" => Ok(PurposeWasm::AUTHENTICATION),
+                "encryption" => Ok(PurposeWasm::ENCRYPTION),
+                "decryption" => Ok(PurposeWasm::DECRYPTION),
+                "transfer" => Ok(PurposeWasm::TRANSFER),
+                "system" => Ok(PurposeWasm::SYSTEM),
+                "voting" => Ok(PurposeWasm::VOTING),
+                "owner" => Ok(PurposeWasm::OWNER),
+                _ => Err(WasmDppError::invalid_argument(format!(
+                    "unsupported purpose value ({})",
+                    enum_val
+                ))),
+            };
         }
+
+        if let Some(enum_val) = value.as_f64() {
+            return match enum_val as u8 {
+                0 => Ok(PurposeWasm::AUTHENTICATION),
+                1 => Ok(PurposeWasm::ENCRYPTION),
+                2 => Ok(PurposeWasm::DECRYPTION),
+                3 => Ok(PurposeWasm::TRANSFER),
+                4 => Ok(PurposeWasm::SYSTEM),
+                5 => Ok(PurposeWasm::VOTING),
+                6 => Ok(PurposeWasm::OWNER),
+                _ => Err(WasmDppError::invalid_argument(format!(
+                    "unsupported purpose value ({})",
+                    enum_val
+                ))),
+            };
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "cannot read value from purpose enum",
+        ))
     }
 }
 

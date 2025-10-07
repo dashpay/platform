@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::group::accessors::v0::{GroupV0Getters, GroupV0Setters};
 use dpp::data_contract::group::v0::GroupV0;
@@ -28,7 +29,7 @@ impl From<GroupWasm> for Group {
 
 pub fn js_members_to_map(
     js_members: &JsValue,
-) -> Result<BTreeMap<Identifier, GroupMemberPower>, JsValue> {
+) -> WasmDppResult<BTreeMap<Identifier, GroupMemberPower>> {
     let members_object = Object::from(js_members.clone());
     let members_keys = Object::keys(&members_object);
 
@@ -37,15 +38,18 @@ pub fn js_members_to_map(
     for key in members_keys.iter() {
         let key_str = key
             .as_string()
-            .ok_or_else(|| JsValue::from_str("cannot convert key to string"))?;
+            .ok_or_else(|| WasmDppError::invalid_argument("cannot convert key to string"))?;
 
-        let id_wasm = IdentifierWasm::try_from(key.clone())
-            .map_err(|_| JsValue::from_str(&format!("Invalid identifier: {}", key_str)))?;
+        let id_wasm = IdentifierWasm::try_from(key.clone()).map_err(|_| {
+            WasmDppError::invalid_argument(format!("Invalid identifier: {}", key_str))
+        })?;
 
-        let val = Reflect::get(js_members, &key)
-            .map_err(|_| JsValue::from_str(&format!("Invalid value at key '{}'", key_str)))?;
+        let val = Reflect::get(js_members, &key).map_err(|_| {
+            WasmDppError::invalid_argument(format!("Invalid value at key '{}'", key_str))
+        })?;
 
-        let power: GroupMemberPower = serde_wasm_bindgen::from_value(val)?;
+        let power: GroupMemberPower = serde_wasm_bindgen::from_value(val)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         members.insert(Identifier::from(id_wasm), power);
     }
@@ -69,7 +73,7 @@ impl GroupWasm {
     pub fn new(
         js_members: &JsValue,
         required_power: GroupRequiredPower,
-    ) -> Result<GroupWasm, JsValue> {
+    ) -> WasmDppResult<GroupWasm> {
         let members = js_members_to_map(js_members)?;
 
         Ok(GroupWasm(Group::V0(GroupV0 {
@@ -79,7 +83,7 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(getter = "members")]
-    pub fn get_members(&self) -> Result<JsValue, JsValue> {
+    pub fn get_members(&self) -> WasmDppResult<JsValue> {
         let members = self.0.members();
 
         let js_members = Object::new();
@@ -89,7 +93,8 @@ impl GroupWasm {
                 &js_members,
                 &JsValue::from(k.to_string(Encoding::Base58)),
                 &JsValue::from(v.clone()),
-            )?;
+            )
+            .map_err(|err| WasmDppError::from_js_value(err))?;
         }
 
         Ok(js_members.into())
@@ -101,7 +106,7 @@ impl GroupWasm {
     }
 
     #[wasm_bindgen(setter = "members")]
-    pub fn set_members(&mut self, js_members: &JsValue) -> Result<(), JsValue> {
+    pub fn set_members(&mut self, js_members: &JsValue) -> WasmDppResult<()> {
         let members = js_members_to_map(js_members)?;
 
         self.0.set_members(members);
@@ -119,7 +124,7 @@ impl GroupWasm {
         &mut self,
         js_member: &JsValue,
         member_required_power: GroupRequiredPower,
-    ) -> Result<(), JsValue> {
+    ) -> WasmDppResult<()> {
         let member = IdentifierWasm::try_from(js_member.clone())?;
 
         self.0

@@ -4,15 +4,18 @@ use crate::batch::document_transitions::purchase::DocumentPurchaseTransitionWasm
 use crate::batch::document_transitions::replace::DocumentReplaceTransitionWasm;
 use crate::batch::document_transitions::transfer::DocumentTransferTransitionWasm;
 use crate::batch::document_transitions::update_price::DocumentUpdatePriceTransitionWasm;
+use crate::enums::batch::batch_enum::BatchTypeWasm;
+use crate::error::{WasmDppError, WasmDppResult};
+use crate::identifier::IdentifierWasm;
 use dpp::prelude::{Identifier, IdentityNonce, Revision};
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
 };
-use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::{DocumentTransitionActionType, DocumentTransitionActionTypeGetter};
-use crate::enums::batch::batch_enum::BatchTypeWasm;
-use crate::identifier::IdentifierWasm;
-use wasm_bindgen::JsValue;
+use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::{
+    DocumentTransitionActionType, DocumentTransitionActionTypeGetter,
+};
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "DocumentTransition")]
@@ -91,68 +94,78 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(getter = "createTransition")]
-    pub fn get_create_transition(&self) -> Result<DocumentCreateTransitionWasm, JsValue> {
+    pub fn get_create_transition(&self) -> WasmDppResult<DocumentCreateTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Create(create) => Ok(DocumentCreateTransitionWasm::from(create)),
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not a create transition",
+            )),
         }
     }
 
     #[wasm_bindgen(getter = "replaceTransition")]
-    pub fn get_replace_transition(&self) -> Result<DocumentReplaceTransitionWasm, JsValue> {
+    pub fn get_replace_transition(&self) -> WasmDppResult<DocumentReplaceTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Replace(replace) => {
                 Ok(DocumentReplaceTransitionWasm::from(replace))
             }
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not a replace transition",
+            )),
         }
     }
 
     #[wasm_bindgen(getter = "deleteTransition")]
-    pub fn get_delete_transition(&self) -> Result<DocumentDeleteTransitionWasm, JsValue> {
+    pub fn get_delete_transition(&self) -> WasmDppResult<DocumentDeleteTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Delete(delete) => Ok(DocumentDeleteTransitionWasm::from(delete)),
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not a delete transition",
+            )),
         }
     }
 
     #[wasm_bindgen(getter = "purchaseTransition")]
-    pub fn get_purchase_transition(&self) -> Result<DocumentPurchaseTransitionWasm, JsValue> {
+    pub fn get_purchase_transition(&self) -> WasmDppResult<DocumentPurchaseTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Purchase(purchase) => {
                 Ok(DocumentPurchaseTransitionWasm::from(purchase))
             }
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not a purchase transition",
+            )),
         }
     }
 
     #[wasm_bindgen(getter = "transferTransition")]
-    pub fn get_transfer_transition(&self) -> Result<DocumentTransferTransitionWasm, JsValue> {
+    pub fn get_transfer_transition(&self) -> WasmDppResult<DocumentTransferTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::Transfer(transfer) => {
                 Ok(DocumentTransferTransitionWasm::from(transfer))
             }
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not a transfer transition",
+            )),
         }
     }
 
     #[wasm_bindgen(getter = "updatePriceTransition")]
-    pub fn get_update_price_transition(
-        &self,
-    ) -> Result<DocumentUpdatePriceTransitionWasm, JsValue> {
+    pub fn get_update_price_transition(&self) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         match self.0.clone() {
             DocumentTransition::UpdatePrice(update_price) => {
                 Ok(DocumentUpdatePriceTransitionWasm::from(update_price))
             }
-            _ => Err(JsValue::undefined()),
+            _ => Err(WasmDppError::invalid_argument(
+                "Document transition is not an update price transition",
+            )),
         }
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> Result<(), JsValue> {
-        Ok(self
-            .0
-            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into()))
+    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> WasmDppResult<()> {
+        self.0
+            .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
+        Ok(())
     }
 
     #[wasm_bindgen(setter = "revision")]

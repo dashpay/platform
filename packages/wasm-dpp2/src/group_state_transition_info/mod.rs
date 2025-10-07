@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use dpp::group::GroupStateTransitionInfo;
 use wasm_bindgen::JsValue;
@@ -36,7 +37,7 @@ impl GroupStateTransitionInfoWasm {
         group_contract_position: u16,
         action_id: &JsValue,
         action_is_proposer: bool,
-    ) -> Result<GroupStateTransitionInfoWasm, JsValue> {
+    ) -> WasmDppResult<GroupStateTransitionInfoWasm> {
         Ok(GroupStateTransitionInfoWasm(GroupStateTransitionInfo {
             group_contract_position,
             action_id: IdentifierWasm::try_from(action_id)?.into(),
@@ -50,7 +51,7 @@ impl GroupStateTransitionInfoWasm {
     }
 
     #[wasm_bindgen(setter = "actionId")]
-    pub fn set_action_id(&mut self, action_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_action_id(&mut self, action_id: &JsValue) -> WasmDppResult<()> {
         self.0.action_id = IdentifierWasm::try_from(action_id)?.into();
         Ok(())
     }

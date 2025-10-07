@@ -23,7 +23,7 @@ impl From<OutPointWasm> for OutPoint {
 }
 
 impl TryFrom<JsValue> for OutPointWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let value = value.to_wasm::<OutPointWasm>("OutPoint")?;
 
@@ -114,8 +114,7 @@ impl OutPointWasm {
         let outpoints: Vec<OutPointWasm> = js_outpoints
             .iter()
             .map(OutPointWasm::try_from)
-            .collect::<Result<Vec<OutPointWasm>, JsValue>>()
-            .map_err(|e| WasmDppError::invalid_argument(e.as_string().unwrap_or_default()))?;
+            .collect::<Result<Vec<OutPointWasm>, WasmDppError>>()?;
 
         Ok(outpoints)
     }

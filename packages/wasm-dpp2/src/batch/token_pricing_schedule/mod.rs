@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::ToSerdeJSONExt;
 use dpp::balances::credits::TokenAmount;
 use dpp::fee::Credits;
@@ -41,12 +42,28 @@ impl TokenPricingScheduleWasm {
     }
 
     #[wasm_bindgen(js_name = "SetPrices")]
-    pub fn set_prices(js_prices: &JsValue) -> Result<TokenPricingScheduleWasm, JsValue> {
-        let prices: BTreeMap<TokenAmount, Credits> = js_prices
-            .with_serde_to_platform_value_map()?
-            .iter()
-            .map(|(k, v)| (k.clone().parse().unwrap(), v.clone().as_integer().unwrap()))
-            .collect();
+    pub fn set_prices(js_prices: &JsValue) -> WasmDppResult<TokenPricingScheduleWasm> {
+        let raw_prices = js_prices.with_serde_to_platform_value_map()?;
+
+        let mut prices: BTreeMap<TokenAmount, Credits> = BTreeMap::new();
+
+        for (amount_str, value) in raw_prices.iter() {
+            let amount = amount_str.parse::<TokenAmount>().map_err(|err| {
+                WasmDppError::invalid_argument(format!(
+                    "Invalid token amount '{}': {}",
+                    amount_str, err
+                ))
+            })?;
+
+            let credits_value = value.as_integer::<u64>().ok_or_else(|| {
+                WasmDppError::invalid_argument(format!(
+                    "Price for amount '{}' must be an integer",
+                    amount_str
+                ))
+            })?;
+
+            prices.insert(amount, credits_value);
+        }
 
         Ok(Self(TokenPricingSchedule::SetPrices(prices)))
     }
@@ -60,7 +77,7 @@ impl TokenPricingScheduleWasm {
     }
 
     #[wasm_bindgen(js_name = "getValue")]
-    pub fn get_value(&self) -> Result<JsValue, JsValue> {
+    pub fn get_value(&self) -> WasmDppResult<JsValue> {
         match &self.0 {
             TokenPricingSchedule::SinglePrice(credits) => {
                 Ok(JsValue::bigint_from_str(&credits.to_string()))
@@ -73,7 +90,8 @@ impl TokenPricingScheduleWasm {
                         &price_object,
                         &JsValue::from(key.to_string()),
                         &value.clone().into(),
-                    )?;
+                    )
+                    .map_err(WasmDppError::from_js_value)?;
                 }
 
                 Ok(price_object.into())

@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::identity::KeyType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -13,29 +14,36 @@ pub enum KeyTypeWasm {
 }
 
 impl TryFrom<JsValue> for KeyTypeWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
                     "ecdsa_secp256k1" => Ok(KeyTypeWasm::ECDSA_SECP256K1),
                     "bls12_381" => Ok(KeyTypeWasm::BLS12_381),
                     "ecdsa_hash160" => Ok(KeyTypeWasm::ECDSA_HASH160),
                     "bip13_script_hash" => Ok(KeyTypeWasm::BIP13_SCRIPT_HASH),
                     "eddsa_25519_hash160" => Ok(KeyTypeWasm::EDDSA_25519_HASH160),
-                    _ => Err(JsValue::from(format!("unsupported key type {}", enum_val))),
+                    _ => Err(WasmDppError::invalid_argument(format!(
+                        "unsupported key type {}",
+                        enum_val
+                    ))),
                 },
             },
             false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val as u8 {
                     0 => Ok(KeyTypeWasm::ECDSA_SECP256K1),
                     1 => Ok(KeyTypeWasm::BLS12_381),
                     2 => Ok(KeyTypeWasm::ECDSA_HASH160),
                     3 => Ok(KeyTypeWasm::BIP13_SCRIPT_HASH),
                     4 => Ok(KeyTypeWasm::EDDSA_25519_HASH160),
-                    _ => Err(JsValue::from(format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "unsupported key type ({})",
                         enum_val
                     ))),

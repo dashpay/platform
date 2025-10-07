@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::utils::{IntoWasm, get_class_type, identifier_from_js_value};
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
@@ -33,29 +34,31 @@ impl From<&IdentifierWasm> for Identifier {
 }
 
 impl TryFrom<&[u8]> for IdentifierWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: &[u8]) -> Result<Self, Self::Error> {
         if value.len() != 32 {
-            return Err(JsValue::from("Identifier must be 32 bytes length"));
+            return Err(WasmDppError::invalid_argument(
+                "Identifier must be 32 bytes length",
+            ));
         }
 
         let norm_slice: [u8; 32] = value
             .try_into()
-            .map_err(|_| JsValue::from("Cannot parse identifier"))?;
+            .map_err(|_| WasmDppError::invalid_argument("Cannot parse identifier"))?;
 
         Ok(IdentifierWasm(Identifier::new(norm_slice)))
     }
 }
 
 impl TryFrom<JsValue> for IdentifierWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_object() {
             true => match get_class_type(&value) {
                 Ok(class_type) => match class_type.as_str() {
                     "Identifier" => Ok(value.to_wasm::<IdentifierWasm>("Identifier")?.clone()),
                     "" => Ok(identifier_from_js_value(&value)?.into()),
-                    _ => Err(Self::Error::from_str(&format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "Invalid type of data for identifier (passed {})",
                         class_type
                     ))),
@@ -69,7 +72,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
                     match id_str.len() == 64 {
                         true => {
                             let bytes = decode(value.as_string().unwrap().as_str(), Hex)
-                                .map_err(|err| JsValue::from(err.to_string()))?;
+                                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
                             Ok(IdentifierWasm::try_from(bytes.as_slice())?)
                         }
@@ -82,7 +85,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
 }
 
 impl TryFrom<&JsValue> for IdentifierWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         IdentifierWasm::try_from(value.clone())
     }
@@ -101,7 +104,7 @@ impl IdentifierWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> Result<IdentifierWasm, JsValue> {
+    pub fn new(js_identifier: &JsValue) -> WasmDppResult<IdentifierWasm> {
         IdentifierWasm::try_from(js_identifier)
     }
 
@@ -126,33 +129,33 @@ impl IdentifierWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBase58")]
-    pub fn from_base58(base58: String) -> Result<IdentifierWasm, JsValue> {
+    pub fn from_base58(base58: String) -> WasmDppResult<IdentifierWasm> {
         let identitfier = Identifier::from_string(base58.as_str(), Base58)
-            .map_err(|err| JsValue::from(err.to_string()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<IdentifierWasm, JsValue> {
+    pub fn from_base64(base64: String) -> WasmDppResult<IdentifierWasm> {
         let identitfier = Identifier::from_string(base64.as_str(), Base64)
-            .map_err(|err| JsValue::from(err.to_string()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<IdentifierWasm, JsValue> {
+    pub fn from_hex(hex: String) -> WasmDppResult<IdentifierWasm> {
         let identitfier = Identifier::from_string(hex.as_str(), Hex)
-            .map_err(|err| JsValue::from(err.to_string()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(IdentifierWasm(identitfier))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<IdentifierWasm, JsValue> {
-        let identifier =
-            Identifier::from_vec(bytes).map_err(|err| JsValue::from(err.to_string()))?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<IdentifierWasm> {
+        let identifier = Identifier::from_vec(bytes)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(IdentifierWasm(identifier))
     }

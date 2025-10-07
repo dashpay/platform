@@ -1,6 +1,7 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::key::constants;
 use dpp::dashcore::{PublicKey, secp256k1};
-use wasm_bindgen::JsValue;
+use std::convert::TryInto;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "PublicKey")]
@@ -31,30 +32,43 @@ impl PublicKeyWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> Result<PublicKeyWasm, JsValue> {
+    pub fn new(compressed: bool, public_key_bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
         let inner = match compressed {
             true => {
                 if public_key_bytes.len() != constants::PUBLIC_KEY_SIZE {
-                    return Err(JsValue::from(String::from(format!(
+                    return Err(WasmDppError::invalid_argument(format!(
                         "compressed public key size must be equal to {}",
                         constants::PUBLIC_KEY_SIZE
-                    ))));
+                    )));
                 }
 
-                secp256k1::PublicKey::from_byte_array_compressed(&public_key_bytes.try_into()?)
+                let bytes: [u8; constants::PUBLIC_KEY_SIZE] =
+                    public_key_bytes.try_into().map_err(|_| {
+                        WasmDppError::invalid_argument(
+                            "compressed public key must contain 33 bytes",
+                        )
+                    })?;
+                secp256k1::PublicKey::from_byte_array_compressed(&bytes)
             }
             false => {
                 if public_key_bytes.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
-                    return Err(JsValue::from(String::from(format!(
+                    return Err(WasmDppError::invalid_argument(format!(
                         "uncompressed public key size must be equal to {}",
                         constants::UNCOMPRESSED_PUBLIC_KEY_SIZE
-                    ))));
+                    )));
                 }
 
-                secp256k1::PublicKey::from_byte_array_uncompressed(&public_key_bytes.try_into()?)
+                let bytes: [u8; constants::UNCOMPRESSED_PUBLIC_KEY_SIZE] =
+                    public_key_bytes.try_into().map_err(|_| {
+                        WasmDppError::invalid_argument(
+                            "uncompressed public key must contain 65 bytes",
+                        )
+                    })?;
+
+                secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
             }
         }
-        .map_err(|err| JsValue::from(err.to_string()))?;
+        .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PublicKeyWasm(PublicKey { compressed, inner }))
     }
@@ -78,27 +92,32 @@ impl PublicKeyWasm {
     }
 
     #[wasm_bindgen(setter = "inner")]
-    pub fn set_inner(&mut self, inner: Vec<u8>) -> Result<(), JsValue> {
-        match inner.len() == constants::PUBLIC_KEY_SIZE {
-            true => {
-                self.0.compressed = true;
-                self.0.inner = secp256k1::PublicKey::from_byte_array_compressed(&inner.try_into()?)
-                    .map_err(|err| JsValue::from(err.to_string()))?
-            }
-            false => {
-                if inner.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
-                    return Err(JsValue::from(String::from(format!(
-                        "uncompressed public key size must be equal to {}",
-                        constants::UNCOMPRESSED_PUBLIC_KEY_SIZE
-                    ))));
-                }
+    pub fn set_inner(&mut self, inner: Vec<u8>) -> WasmDppResult<()> {
+        if inner.len() == constants::PUBLIC_KEY_SIZE {
+            let bytes: [u8; constants::PUBLIC_KEY_SIZE] = inner.try_into().map_err(|_| {
+                WasmDppError::invalid_argument("compressed public key must contain 33 bytes")
+            })?;
 
-                self.0.compressed = false;
-                self.0.inner =
-                    secp256k1::PublicKey::from_byte_array_uncompressed(&inner.try_into()?)
-                        .map_err(|err| JsValue::from(err.to_string()))?
+            self.0.compressed = true;
+            self.0.inner = secp256k1::PublicKey::from_byte_array_compressed(&bytes)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        } else {
+            if inner.len() != constants::UNCOMPRESSED_PUBLIC_KEY_SIZE {
+                return Err(WasmDppError::invalid_argument(format!(
+                    "uncompressed public key size must be equal to {}",
+                    constants::UNCOMPRESSED_PUBLIC_KEY_SIZE
+                )));
             }
-        };
+
+            let bytes: [u8; constants::UNCOMPRESSED_PUBLIC_KEY_SIZE] =
+                inner.try_into().map_err(|_| {
+                    WasmDppError::invalid_argument("uncompressed public key must contain 65 bytes")
+                })?;
+
+            self.0.compressed = false;
+            self.0.inner = secp256k1::PublicKey::from_byte_array_uncompressed(&bytes)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+        }
 
         Ok(())
     }
@@ -114,10 +133,10 @@ impl PublicKeyWasm {
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<PublicKeyWasm, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<PublicKeyWasm> {
         Ok(PublicKeyWasm(
             PublicKey::from_slice(bytes.as_slice())
-                .map_err(|err| JsValue::from(err.to_string()))?,
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?,
         ))
     }
 }

@@ -65,7 +65,8 @@ pub fn tokens_configuration_from_js_value(
                 .map_err(|e| WasmDppError::serialization(e.to_string()))?),
         }?;
 
-        let js_config = Reflect::get(&js_configuration, &key)?
+        let js_config = Reflect::get(&configuration_object, &key)
+            .map_err(WasmDppError::from_js_value)?
             .to_wasm::<TokenConfigurationWasm>("TokenConfiguration")?
             .clone();
 

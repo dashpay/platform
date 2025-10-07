@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::state_transition::batch_transition::batched_transition::document_transition_action_type::DocumentTransitionActionType;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -14,11 +15,13 @@ pub enum BatchTypeWasm {
 }
 
 impl TryFrom<JsValue> for BatchTypeWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         match value.is_string() {
             true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val.to_lowercase().as_str() {
                     "create" => Ok(BatchTypeWasm::Create),
                     "replace" => Ok(BatchTypeWasm::Replace),
@@ -27,14 +30,16 @@ impl TryFrom<JsValue> for BatchTypeWasm {
                     "purchase" => Ok(BatchTypeWasm::Purchase),
                     "updateprice" => Ok(BatchTypeWasm::UpdatePrice),
                     "ignorewhilebumpingrevision" => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
-                    _ => Err(JsValue::from(format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
                     ))),
                 },
             },
             false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
+                None => Err(WasmDppError::invalid_argument(
+                    "cannot read value from enum",
+                )),
                 Some(enum_val) => match enum_val as u8 {
                     0 => Ok(BatchTypeWasm::Create),
                     1 => Ok(BatchTypeWasm::Replace),
@@ -43,7 +48,7 @@ impl TryFrom<JsValue> for BatchTypeWasm {
                     4 => Ok(BatchTypeWasm::Purchase),
                     5 => Ok(BatchTypeWasm::UpdatePrice),
                     6 => Ok(BatchTypeWasm::IgnoreWhileBumpingRevision),
-                    _ => Err(JsValue::from(format!(
+                    _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown batch type value: {}",
                         enum_val
                     ))),

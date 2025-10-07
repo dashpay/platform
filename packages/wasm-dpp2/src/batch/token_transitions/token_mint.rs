@@ -1,14 +1,14 @@
 use crate::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::error::WasmDppResult;
+use crate::identifier::IdentifierWasm;
+use crate::token_configuration::TokenConfigurationWasm;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::TokenMintTransition;
-use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
 use dpp::state_transition::batch_transition::token_mint_transition::v0::v0_methods::TokenMintTransitionV0Methods;
-use crate::identifier::IdentifierWasm;
-use wasm_bindgen::JsValue;
+use dpp::state_transition::batch_transition::token_mint_transition::TokenMintTransitionV0;
+use dpp::state_transition::batch_transition::TokenMintTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::token_configuration::TokenConfigurationWasm;
-use crate::utils::WithJsError;
+use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenMintTransition)]
@@ -44,7 +44,7 @@ impl TokenMintTransitionWasm {
         js_issued_to_identity_id: &JsValue,
         amount: u64,
         public_note: Option<String>,
-    ) -> Result<TokenMintTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenMintTransitionWasm> {
         let issued_to_identity_id: Option<Identifier> =
             match js_issued_to_identity_id.is_undefined() {
                 false => Some(IdentifierWasm::try_from(js_issued_to_identity_id)?.into()),
@@ -85,16 +85,12 @@ impl TokenMintTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = getRecipitnId)]
-    pub fn recipient_id(&self, config: &TokenConfigurationWasm) -> Result<IdentifierWasm, JsValue> {
-        Ok(self
-            .0
-            .recipient_id(&config.clone().into())
-            .with_js_error()?
-            .into())
+    pub fn recipient_id(&self, config: &TokenConfigurationWasm) -> WasmDppResult<IdentifierWasm> {
+        Ok(self.0.recipient_id(&config.clone().into())?.into())
     }
 
     #[wasm_bindgen(setter = issuedToIdentityId)]
-    pub fn set_issued_to_identity_id(&mut self, js_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_issued_to_identity_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
         match js_id.is_undefined() {
             true => {
                 self.0.set_issued_to_identity_id(None);

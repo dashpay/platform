@@ -1,13 +1,14 @@
 use crate::batch::token_base_transition::TokenBaseTransitionWasm;
 use crate::batch::token_pricing_schedule::TokenPricingScheduleWasm;
-use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
-use dpp::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTransition;
+use crate::error::WasmDppResult;
+use crate::utils::IntoWasm;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::v0::v0_methods::TokenSetPriceForDirectPurchaseTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_set_price_for_direct_purchase_transition::TokenSetPriceForDirectPurchaseTransitionV0;
+use dpp::state_transition::batch_transition::TokenSetPriceForDirectPurchaseTransition;
 use dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use crate::utils::IntoWasm;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_bindgen::JsValue;
 
 #[derive(Debug, Clone, PartialEq)]
 #[wasm_bindgen(js_name=TokenSetPriceForDirectPurchaseTransition)]
@@ -46,7 +47,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
         base: &TokenBaseTransitionWasm,
         js_price: &JsValue,
         public_note: Option<String>,
-    ) -> Result<TokenSetPriceForDirectPurchaseTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenSetPriceForDirectPurchaseTransitionWasm> {
         let price: Option<TokenPricingSchedule> = match js_price.is_undefined() {
             true => None,
             false => Some(
@@ -97,7 +98,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "price")]
-    pub fn set_price(&mut self, js_price: &JsValue) -> Result<(), JsValue> {
+    pub fn set_price(&mut self, js_price: &JsValue) -> WasmDppResult<()> {
         let price: Option<TokenPricingSchedule> = match js_price.is_undefined() {
             true => None,
             false => Some(
@@ -108,6 +109,7 @@ impl TokenSetPriceForDirectPurchaseTransitionWasm {
             ),
         };
 
-        Ok(self.0.set_price(price))
+        self.0.set_price(price);
+        Ok(())
     }
 }

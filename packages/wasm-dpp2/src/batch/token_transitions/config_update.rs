@@ -1,10 +1,10 @@
-use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
 use crate::batch::token_base_transition::TokenBaseTransitionWasm;
-use dpp::state_transition::batch_transition::TokenConfigUpdateTransition;
-use dpp::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
-use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
+use crate::error::WasmDppResult;
 use crate::token_configuration_change_item::TokenConfigurationChangeItemWasm;
-use wasm_bindgen::JsValue;
+use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
+use dpp::state_transition::batch_transition::token_config_update_transition::v0::v0_methods::TokenConfigUpdateTransitionV0Methods;
+use dpp::state_transition::batch_transition::token_config_update_transition::TokenConfigUpdateTransitionV0;
+use dpp::state_transition::batch_transition::TokenConfigUpdateTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -40,7 +40,7 @@ impl TokenConfigUpdateTransitionWasm {
         base: &TokenBaseTransitionWasm,
         update_token_configuration_item: &TokenConfigurationChangeItemWasm,
         public_note: Option<String>,
-    ) -> Result<TokenConfigUpdateTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenConfigUpdateTransitionWasm> {
         Ok(TokenConfigUpdateTransitionWasm(
             TokenConfigUpdateTransition::V0(TokenConfigUpdateTransitionV0 {
                 base: base.clone().into(),

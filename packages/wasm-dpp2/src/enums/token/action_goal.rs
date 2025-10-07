@@ -1,3 +1,4 @@
+use crate::error::WasmDppError;
 use dpp::group::action_taker::ActionGoal;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -30,27 +31,28 @@ impl From<ActionGoal> for ActionGoalWasm {
 }
 
 impl TryFrom<JsValue> for ActionGoalWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
 
     fn try_from(value: JsValue) -> Result<ActionGoalWasm, Self::Error> {
-        match value.is_string() {
-            true => match value.as_string() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val.to_lowercase().as_str() {
-                    "actioncompletion" => Ok(ActionGoalWasm::ActionCompletion),
-                    "actionparticipation" => Ok(ActionGoalWasm::ActionParticipation),
-                    _ => Err(JsValue::from("unknown action type")),
-                },
-            },
-            false => match value.as_f64() {
-                None => Err(JsValue::from("cannot read value from enum")),
-                Some(enum_val) => match enum_val as u8 {
-                    0 => Ok(ActionGoalWasm::ActionCompletion),
-                    1 => Ok(ActionGoalWasm::ActionParticipation),
-                    _ => Err(JsValue::from("unknown action type")),
-                },
-            },
+        if let Some(enum_val) = value.as_string() {
+            return match enum_val.to_lowercase().as_str() {
+                "actioncompletion" => Ok(ActionGoalWasm::ActionCompletion),
+                "actionparticipation" => Ok(ActionGoalWasm::ActionParticipation),
+                _ => Err(WasmDppError::invalid_argument("unknown action type")),
+            };
         }
+
+        if let Some(enum_val) = value.as_f64() {
+            return match enum_val as u8 {
+                0 => Ok(ActionGoalWasm::ActionCompletion),
+                1 => Ok(ActionGoalWasm::ActionParticipation),
+                _ => Err(WasmDppError::invalid_argument("unknown action type")),
+            };
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "cannot read value from action goal enum",
+        ))
     }
 }
 

@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
 use crate::token_configuration::authorized_action_takers::AuthorizedActionTakersWasm;
 use crate::token_configuration::change_control_rules::ChangeControlRulesWasm;
@@ -321,7 +322,7 @@ impl TokenConfigurationWasm {
     pub fn calculate_token_id(
         js_contract_id: &JsValue,
         token_pos: TokenContractPosition,
-    ) -> Result<IdentifierWasm, JsValue> {
+    ) -> WasmDppResult<IdentifierWasm> {
         let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         Ok(IdentifierWasm::from(calculate_token_id(

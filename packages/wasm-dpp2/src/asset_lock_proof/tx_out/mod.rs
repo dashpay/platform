@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use dpp::dashcore::{ScriptBuf, TxOut};
 use js_sys::Uint8Array;
 use wasm_bindgen::JsValue;
@@ -32,19 +33,27 @@ impl TxOutWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(value: u64, script_pubkey: JsValue) -> Result<TxOutWasm, JsValue> {
-        let tx_out: Result<TxOut, JsValue> = match script_pubkey.is_array() {
+    pub fn new(value: u64, script_pubkey: JsValue) -> WasmDppResult<TxOutWasm> {
+        let tx_out: WasmDppResult<TxOut> = match script_pubkey.is_array() {
             true => Ok(TxOut {
                 value,
                 script_pubkey: ScriptBuf::from_bytes(Uint8Array::from(script_pubkey).to_vec()),
             }),
             false => match script_pubkey.is_string() {
-                true => Ok(TxOut {
-                    value,
-                    script_pubkey: ScriptBuf::from_hex(&script_pubkey.as_string().unwrap())
-                        .map_err(|err| JsValue::from(err.to_string()))?,
-                }),
-                false => Err(JsValue::from("Invalid script pubkey")),
+                true => {
+                    let hex = script_pubkey.as_string().ok_or_else(|| {
+                        WasmDppError::invalid_argument("Script pubkey must be string")
+                    })?;
+
+                    let script = ScriptBuf::from_hex(&hex)
+                        .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+
+                    Ok(TxOut {
+                        value,
+                        script_pubkey: script,
+                    })
+                }
+                false => Err(WasmDppError::invalid_argument("Invalid script pubkey")),
             },
         };
 
@@ -72,9 +81,9 @@ impl TxOutWasm {
     }
 
     #[wasm_bindgen(setter = "scriptPubKeyHex")]
-    pub fn set_script_pubkey_hex(&mut self, script_pubkey_hex: String) -> Result<(), JsValue> {
+    pub fn set_script_pubkey_hex(&mut self, script_pubkey_hex: String) -> WasmDppResult<()> {
         self.0.script_pubkey = ScriptBuf::from_hex(&script_pubkey_hex)
-            .map_err(|err| JsValue::from(err.to_string()))?;
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
         Ok(())
     }
 

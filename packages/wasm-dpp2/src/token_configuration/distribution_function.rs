@@ -1,3 +1,4 @@
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::token_configuration::distribution_structs::{
     DistributionExponentialWasm, DistributionFixedAmountWasm, DistributionInvertedLogarithmicWasm,
     DistributionLinearWasm, DistributionLogarithmicWasm, DistributionPolynomialWasm,
@@ -8,7 +9,6 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::associated_token::token_perpetual_distribution::distribution_function::DistributionFunction;
 use js_sys::{BigInt, Object, Reflect};
 use std::collections::BTreeMap;
-use std::str::FromStr;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -74,18 +74,27 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "Stepwise")]
-    pub fn stepwise(js_steps_with_amount: JsValue) -> Result<DistributionFunctionWasm, JsValue> {
+    pub fn stepwise(js_steps_with_amount: JsValue) -> WasmDppResult<DistributionFunctionWasm> {
         let obj = Object::from(js_steps_with_amount);
 
         let mut steps_with_amount: BTreeMap<u64, TokenAmount> = BTreeMap::new();
 
         for key in Object::keys(&obj) {
-            steps_with_amount.insert(
-                try_to_u64(BigInt::from_str(key.as_string().unwrap().as_str())?.into())
-                    .map_err(|err| JsValue::from(err.to_string()))?,
-                try_to_u64(Reflect::get(&obj, &key)?)
-                    .map_err(|err| JsValue::from(err.to_string()))?,
-            );
+            let key_str = key
+                .as_string()
+                .ok_or_else(|| WasmDppError::invalid_argument("step key must be string"))?;
+
+            let step = key_str.parse::<u64>().map_err(|err| {
+                WasmDppError::invalid_argument(format!("Invalid step key '{}': {}", key_str, err))
+            })?;
+
+            let amount_js =
+                Reflect::get(&obj, &key).map_err(|err| WasmDppError::from_js_value(err))?;
+
+            let amount = try_to_u64(amount_js)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+
+            steps_with_amount.insert(step, amount);
         }
 
         Ok(DistributionFunctionWasm(DistributionFunction::Stepwise(
@@ -230,7 +239,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "getFunctionValue")]
-    pub fn get_function_values(&self) -> Result<JsValue, JsValue> {
+    pub fn get_function_values(&self) -> WasmDppResult<JsValue> {
         match self.0.clone() {
             DistributionFunction::FixedAmount { amount } => {
                 Ok(JsValue::from(DistributionFixedAmountWasm { amount }))
@@ -265,7 +274,8 @@ impl DistributionFunctionWasm {
                         &object,
                         &key.to_string().into(),
                         &BigInt::from(value).into(),
-                    )?;
+                    )
+                    .map_err(WasmDppError::from_js_value)?;
                 }
 
                 Ok(object.into())

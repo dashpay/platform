@@ -1,4 +1,5 @@
 use crate::enums::network::NetworkWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::public_key::PublicKeyWasm;
 use dpp::dashcore::PrivateKey;
 use dpp::dashcore::hashes::hex::FromHex;
@@ -23,33 +24,32 @@ impl PrivateKeyWasm {
     }
 
     #[wasm_bindgen(js_name = "fromWIF")]
-    pub fn from_wif(wif: &str) -> Result<Self, JsValue> {
-        let pk = PrivateKey::from_wif(wif).map_err(|err| JsValue::from_str(&*err.to_string()));
+    pub fn from_wif(wif: &str) -> WasmDppResult<Self> {
+        let pk = PrivateKey::from_wif(wif)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        match pk {
-            Ok(pk) => Ok(PrivateKeyWasm(pk)),
-            Err(err) => Err(err),
-        }
+        Ok(PrivateKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>, js_network: JsValue) -> Result<Self, JsValue> {
+    pub fn from_bytes(bytes: Vec<u8>, js_network: JsValue) -> WasmDppResult<Self> {
         let network = NetworkWasm::try_from(js_network)?;
 
         let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
-            .map_err(|err| JsValue::from_str(&*err.to_string()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex_key: &str, js_network: JsValue) -> Result<Self, JsValue> {
+    pub fn from_hex(hex_key: &str, js_network: JsValue) -> WasmDppResult<Self> {
         let network = NetworkWasm::try_from(js_network)?;
 
-        let bytes = Vec::from_hex(hex_key).map_err(|err| JsValue::from(err.to_string()))?;
+        let bytes = Vec::from_hex(hex_key)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
-            .map_err(|err| JsValue::from_str(&*err.to_string()))?;
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))
     }

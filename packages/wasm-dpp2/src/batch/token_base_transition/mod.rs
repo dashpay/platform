@@ -1,3 +1,4 @@
+use crate::error::WasmDppResult;
 use crate::group_state_transition_info::GroupStateTransitionInfoWasm;
 use crate::identifier::IdentifierWasm;
 use crate::utils::IntoWasm;
@@ -44,7 +45,7 @@ impl TokenBaseTransitionWasm {
         js_data_contract_id: &JsValue,
         js_token_id: &JsValue,
         js_using_group_info: &JsValue,
-    ) -> Result<TokenBaseTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenBaseTransitionWasm> {
         let using_group_info: Option<GroupStateTransitionInfo> =
             match js_using_group_info.is_undefined() {
                 false => Some(
@@ -106,14 +107,14 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = dataContractId)]
-    pub fn set_data_contract_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
+    pub fn set_data_contract_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(js_identifier)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(setter = tokenId)]
-    pub fn set_token_id(&mut self, js_identifier: &JsValue) -> Result<(), JsValue> {
+    pub fn set_token_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
         self.0
             .set_token_id(IdentifierWasm::try_from(js_identifier)?.into());
 
@@ -121,7 +122,7 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = usingGroupInfo)]
-    pub fn set_using_group_info(&mut self, js_using_group_info: &JsValue) -> Result<(), JsValue> {
+    pub fn set_using_group_info(&mut self, js_using_group_info: &JsValue) -> WasmDppResult<()> {
         let using_group_info: Option<GroupStateTransitionInfo> =
             match js_using_group_info.is_undefined() {
                 false => Some(

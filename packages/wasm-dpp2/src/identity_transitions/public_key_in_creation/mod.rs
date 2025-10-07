@@ -2,7 +2,7 @@ use crate::contract_bounds::ContractBoundsWasm;
 use crate::enums::keys::key_type::KeyTypeWasm;
 use crate::enums::keys::purpose::PurposeWasm;
 use crate::enums::keys::security_level::SecurityLevelWasm;
-use crate::error::WasmDppResult;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identity_public_key::IdentityPublicKeyWasm;
 use crate::utils::IntoWasm;
 use dpp::identity::contract_bounds::ContractBounds;
@@ -35,7 +35,7 @@ impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKeyInCreation {
 }
 
 impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
-    type Error = JsValue;
+    type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
         let value =
             value.to_wasm::<IdentityPublicKeyInCreationWasm>("IdentityPublicKeyInCreation")?;
@@ -246,7 +246,7 @@ impl IdentityPublicKeyInCreationWasm {
         let add_public_keys: Vec<IdentityPublicKeyInCreationWasm> = js_add_public_keys
             .iter()
             .map(IdentityPublicKeyInCreationWasm::try_from)
-            .collect::<Result<Vec<IdentityPublicKeyInCreationWasm>, JsValue>>()?;
+            .collect::<Result<Vec<IdentityPublicKeyInCreationWasm>, WasmDppError>>()?;
 
         Ok(add_public_keys)
     }

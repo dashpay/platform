@@ -1,17 +1,18 @@
+use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
+use crate::batch::document_transition::DocumentTransitionWasm;
+use crate::batch::generators::generate_update_price_transition;
+use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use crate::document::DocumentWasm;
+use crate::error::WasmDppResult;
+use crate::utils::IntoWasm;
 use dpp::fee::Credits;
 use dpp::prelude::IdentityNonce;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::DocumentTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_update_price_transition::v0::v0_methods::DocumentUpdatePriceTransitionV0Methods;
 use dpp::state_transition::batch_transition::batched_transition::DocumentUpdatePriceTransition;
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use crate::document::DocumentWasm;
-use crate::utils::IntoWasm;
-use crate::batch::document_base_transition::DocumentBaseTransitionWasm;
-use crate::batch::document_transition::DocumentTransitionWasm;
-use crate::batch::generators::generate_update_price_transition;
-use crate::batch::token_payment_info::TokenPaymentInfoWasm;
+use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "DocumentUpdatePriceTransition")]
 pub struct DocumentUpdatePriceTransitionWasm(DocumentUpdatePriceTransition);
@@ -40,7 +41,7 @@ impl DocumentUpdatePriceTransitionWasm {
         identity_contract_nonce: IdentityNonce,
         price: Credits,
         js_token_payment_info: &JsValue,
-    ) -> Result<DocumentUpdatePriceTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         let token_payment_info =
             match js_token_payment_info.is_null() | js_token_payment_info.is_undefined() {
                 true => None,
@@ -94,7 +95,7 @@ impl DocumentUpdatePriceTransitionWasm {
     #[wasm_bindgen(js_name = "fromDocumentTransition")]
     pub fn from_document_transition(
         js_transition: DocumentTransitionWasm,
-    ) -> Result<DocumentUpdatePriceTransitionWasm, JsValue> {
+    ) -> WasmDppResult<DocumentUpdatePriceTransitionWasm> {
         js_transition.get_update_price_transition()
     }
 }

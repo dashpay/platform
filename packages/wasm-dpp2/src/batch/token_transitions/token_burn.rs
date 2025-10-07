@@ -1,9 +1,9 @@
 use crate::batch::token_base_transition::TokenBaseTransitionWasm;
+use crate::error::WasmDppResult;
 use dpp::state_transition::batch_transition::token_base_transition::token_base_transition_accessors::TokenBaseTransitionAccessors;
-use dpp::state_transition::batch_transition::TokenBurnTransition;
-use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
 use dpp::state_transition::batch_transition::token_burn_transition::v0::v0_methods::TokenBurnTransitionV0Methods;
-use wasm_bindgen::JsValue;
+use dpp::state_transition::batch_transition::token_burn_transition::TokenBurnTransitionV0;
+use dpp::state_transition::batch_transition::TokenBurnTransition;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -39,7 +39,7 @@ impl TokenBurnTransitionWasm {
         base: &TokenBaseTransitionWasm,
         burn_amount: u64,
         public_note: Option<String>,
-    ) -> Result<TokenBurnTransitionWasm, JsValue> {
+    ) -> WasmDppResult<TokenBurnTransitionWasm> {
         Ok(TokenBurnTransitionWasm(TokenBurnTransition::V0(
             TokenBurnTransitionV0 {
                 base: base.clone().into(),

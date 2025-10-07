@@ -1,5 +1,6 @@
 use crate::batch::document_transition::DocumentTransitionWasm;
 use crate::batch::token_transition::TokenTransitionWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::utils::{IntoWasm, get_class_type};
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
@@ -41,26 +42,27 @@ impl BatchedTransitionWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_transition: &JsValue) -> Result<BatchedTransitionWasm, JsValue> {
-        match js_transition.is_undefined() && js_transition.is_object() {
-            true => Err(JsValue::from_str("transition is undefined")),
-            false => match get_class_type(js_transition)?.as_str() {
-                "TokenTransition" => Ok(BatchedTransitionWasm::from(BatchedTransition::from(
-                    TokenTransition::from(
-                        js_transition
-                            .to_wasm::<TokenTransitionWasm>("TokenTransition")?
-                            .clone(),
-                    ),
-                ))),
-                "DocumentTransition" => Ok(BatchedTransitionWasm(BatchedTransition::Document(
-                    DocumentTransition::from(
-                        js_transition
-                            .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
-                            .clone(),
-                    ),
-                ))),
-                _ => Err(JsValue::from_str("Invalid transition type")),
-            },
+    pub fn new(js_transition: &JsValue) -> WasmDppResult<BatchedTransitionWasm> {
+        if js_transition.is_undefined() || !js_transition.is_object() {
+            return Err(WasmDppError::invalid_argument("transition is undefined"));
+        }
+
+        match get_class_type(js_transition)?.as_str() {
+            "TokenTransition" => Ok(BatchedTransitionWasm::from(BatchedTransition::from(
+                TokenTransition::from(
+                    js_transition
+                        .to_wasm::<TokenTransitionWasm>("TokenTransition")?
+                        .clone(),
+                ),
+            ))),
+            "DocumentTransition" => Ok(BatchedTransitionWasm(BatchedTransition::Document(
+                DocumentTransition::from(
+                    js_transition
+                        .to_wasm::<DocumentTransitionWasm>("DocumentTransition")?
+                        .clone(),
+                ),
+            ))),
+            _ => Err(WasmDppError::invalid_argument("Invalid transition type")),
         }
     }
 
@@ -89,7 +91,7 @@ impl BatchedTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_contract_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_data_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
         let contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         self.0 = match self.0.clone() {

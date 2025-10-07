@@ -3,10 +3,10 @@ pub mod vote;
 pub mod vote_poll;
 
 use crate::asset_lock_proof::AssetLockProofWasm;
+use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::masternode_vote::vote::VoteWasm;
 use crate::state_transition::StateTransitionWasm;
-use crate::utils::WithJsError;
 use dpp::identity::KeyID;
 use dpp::identity::state_transition::OptionallyAssetLockProved;
 use dpp::platform_value::BinaryData;
@@ -18,8 +18,8 @@ use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
+use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsError, JsValue};
 
 #[wasm_bindgen(js_name = "MasternodeVoteTransition")]
 #[derive(Clone)]
@@ -57,7 +57,7 @@ impl MasternodeVoteTransitionWasm {
         nonce: IdentityNonce,
         signature_public_key: Option<KeyID>,
         signature: Option<Vec<u8>>,
-    ) -> Result<MasternodeVoteTransitionWasm, JsValue> {
+    ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
         let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?;
         let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?;
 
@@ -104,7 +104,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = proTxHash)]
-    pub fn set_pro_tx_hash(&mut self, js_pro_tx_hash: &JsValue) -> Result<(), JsValue> {
+    pub fn set_pro_tx_hash(&mut self, js_pro_tx_hash: &JsValue) -> WasmDppResult<()> {
         let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?;
 
         self.0.set_pro_tx_hash(pro_tx_hash.into());
@@ -113,7 +113,7 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = voterIdentityId)]
-    pub fn set_voter_identity_id(&mut self, js_voter_identity_id: &JsValue) -> Result<(), JsValue> {
+    pub fn set_voter_identity_id(&mut self, js_voter_identity_id: &JsValue) -> WasmDppResult<()> {
         let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?;
 
         self.0.set_voter_identity_id(voter_identity_id.into());
@@ -148,28 +148,29 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
-    pub fn from_hex(hex: String) -> Result<MasternodeVoteTransitionWasm, JsValue> {
-        let bytes = decode(hex.as_str(), Hex).map_err(JsError::from)?;
+    pub fn from_hex(hex: String) -> WasmDppResult<MasternodeVoteTransitionWasm> {
+        let bytes = decode(hex.as_str(), Hex)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         MasternodeVoteTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "fromBase64")]
-    pub fn from_base64(base64: String) -> Result<MasternodeVoteTransitionWasm, JsValue> {
-        let bytes = decode(base64.as_str(), Base64).map_err(JsError::from)?;
+    pub fn from_base64(base64: String) -> WasmDppResult<MasternodeVoteTransitionWasm> {
+        let bytes = decode(base64.as_str(), Base64)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         MasternodeVoteTransitionWasm::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toBytes")]
-    pub fn to_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.serialize_to_bytes().with_js_error()
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        self.0.serialize_to_bytes().map_err(Into::into)
     }
 
     #[wasm_bindgen(js_name = "fromBytes")]
-    pub fn from_bytes(bytes: Vec<u8>) -> Result<MasternodeVoteTransitionWasm, JsValue> {
-        let rs_transition =
-            MasternodeVoteTransition::deserialize_from_bytes(bytes.as_slice()).with_js_error()?;
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<MasternodeVoteTransitionWasm> {
+        let rs_transition = MasternodeVoteTransition::deserialize_from_bytes(bytes.as_slice())?;
 
         Ok(MasternodeVoteTransitionWasm(rs_transition))
     }
@@ -180,8 +181,8 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "getSignableBytes")]
-    pub fn get_signable_bytes(&self) -> Result<Vec<u8>, JsValue> {
-        self.0.signable_bytes().with_js_error()
+    pub fn get_signable_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        self.0.signable_bytes().map_err(Into::into)
     }
 
     #[wasm_bindgen(getter = "assetLock")]
@@ -214,13 +215,13 @@ impl MasternodeVoteTransitionWasm {
     #[wasm_bindgen(js_name = "fromStateTransition")]
     pub fn from_state_transition(
         st: &StateTransitionWasm,
-    ) -> Result<MasternodeVoteTransitionWasm, JsValue> {
+    ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
         let rs_st: StateTransition = st.clone().into();
 
         match rs_st {
             StateTransition::MasternodeVote(st) => Ok(MasternodeVoteTransitionWasm(st)),
-            _ => Err(JsValue::from_str(
-                &"Invalid state document_transition type)",
+            _ => Err(WasmDppError::invalid_argument(
+                "Invalid state document_transition type",
             )),
         }
     }
