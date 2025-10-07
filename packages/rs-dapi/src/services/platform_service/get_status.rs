@@ -59,13 +59,12 @@ impl PlatformServiceImpl {
         if let Some(mut cached) = self
             .platform_cache
             .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(180))
-            .await
         {
             // Refresh local time to current instant like JS implementation
-            if let Some(get_status_response::Version::V0(ref mut v0)) = cached.version {
-                if let Some(ref mut time) = v0.time {
-                    time.local = chrono::Utc::now().timestamp() as u64;
-                }
+            if let Some(get_status_response::Version::V0(ref mut v0)) = cached.version
+                && let Some(ref mut time) = v0.time
+            {
+                time.local = chrono::Utc::now().timestamp() as u64;
             }
             metrics::cache_hit("get_status");
             return Ok(Response::new(cached));
@@ -74,7 +73,7 @@ impl PlatformServiceImpl {
         // Build fresh response and cache it
         match self.build_status_response_with_health().await {
             Ok((response, _health)) => {
-                self.platform_cache.put(key, &response).await;
+                self.platform_cache.put(key, &response);
                 metrics::cache_miss("get_status");
                 Ok(Response::new(response))
             }

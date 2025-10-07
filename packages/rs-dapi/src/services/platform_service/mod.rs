@@ -59,7 +59,7 @@ macro_rules! drive_method {
                 let key = make_cache_key(method, request.get_ref());
 
                 // Try cache
-                if let Some(decoded) = cache.get(&key).await as Option<$response_type> {
+                if let Some(decoded) = cache.get(&key) as Option<$response_type> {
                     metrics::cache_hit(method);
                     return Ok(Response::new(decoded));
                 }
@@ -87,7 +87,7 @@ macro_rules! drive_method {
 
                 // Store in cache using inner message
                 tracing::trace!(method, "Caching response");
-                cache.put(key, resp.get_ref()).await;
+                cache.put(key, resp.get_ref());
                 tracing::trace!(method, "Response cached");
 
                 Ok(resp)

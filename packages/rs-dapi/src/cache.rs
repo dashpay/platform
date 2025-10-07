@@ -106,13 +106,13 @@ impl LruResponseCache {
     }
 
     /// Remove all entries from the cache.
-    pub async fn clear(&self) {
+    pub fn clear(&self) {
         self.inner.clear();
     }
 
     #[inline(always)]
     /// Retrieve a cached value by key, deserializing it into the requested type.
-    pub async fn get<T>(&self, key: &CacheKey) -> Option<T>
+    pub fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -120,7 +120,7 @@ impl LruResponseCache {
     }
 
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
-    pub async fn get_with_ttl<T>(&self, key: &CacheKey, ttl: Duration) -> Option<T>
+    pub fn get_with_ttl<T>(&self, key: &CacheKey, ttl: Duration) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
@@ -135,7 +135,7 @@ impl LruResponseCache {
     }
 
     /// Insert or replace a cached value for the given key.
-    pub async fn put<T>(&self, key: CacheKey, value: &T)
+    pub fn put<T>(&self, key: CacheKey, value: &T)
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
