@@ -13,7 +13,6 @@ use dapi_grpc::platform::v0::{
     GetStatusResponse, WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dash_event_bus::EventMux;
 use futures::FutureExt;
 use std::future::Future;
 use std::pin::Pin;
@@ -21,7 +20,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
-use tokio::time::timeout;
 use tracing::debug;
 
 pub use error_mapping::TenderdashStatus;
@@ -108,7 +106,6 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
-    pub platform_events_mux: EventMux,
     workers: Arc<Mutex<JoinSet<()>>>,
 }
 
@@ -134,29 +131,10 @@ impl PlatformServiceImpl {
             });
         }
 
+        // Cache dropped on each new block
         let invalidation_subscription = subscriber_manager
             .add_subscription(FilterType::PlatformAllBlocks)
             .await;
-        let event_mux = EventMux::new();
-
-        let mux_client = drive_client.get_client().clone();
-        let worker_mux = event_mux.clone();
-
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        workers.spawn(async {
-            if let Err(e) =
-                dash_event_bus::GrpcPlatformEventsProducer::run(worker_mux, mux_client, ready_tx)
-                    .await
-            {
-                tracing::error!("platform events producer terminated: {}", e);
-            }
-        });
-
-        if timeout(Duration::from_secs(5), ready_rx).await.is_err() {
-            tracing::warn!(
-                "timeout waiting for platform events producer to be ready; contonuing anyway"
-            );
-        }
 
         let platform_cache_bytes = config.dapi.platform_cache_bytes;
 
@@ -171,7 +149,6 @@ impl PlatformServiceImpl {
                 invalidation_subscription,
             ),
             subscriber_manager,
-            platform_events_mux: event_mux,
             workers: Arc::new(Mutex::new(workers)),
         }
     }
