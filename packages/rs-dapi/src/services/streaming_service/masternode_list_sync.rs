@@ -4,7 +4,7 @@ use ciborium::ser::into_writer;
 use dashcore_rpc::dashcore::BlockHash;
 use dashcore_rpc::dashcore::hashes::Hash as HashTrait;
 use tokio::sync::{Mutex, Notify, RwLock};
-use tracing::{debug, info, trace, warn};
+use tracing::{debug, trace};
 
 use crate::clients::CoreClient;
 use crate::error::{DAPIResult, DapiError};
@@ -47,13 +47,13 @@ impl MasternodeListSync {
             let result = this.sync_best_chain_lock().await;
             match &result {
                 Ok(true) => {
-                    info!("masternode_sync=initial completed");
+                    trace!("masternode_sync=initial completed");
                 }
                 Ok(false) => {
                     debug!("masternode_sync=initial no_chain_lock");
                 }
                 Err(err) => {
-                    warn!(error = %err, "masternode_sync=initial failed");
+                    debug!(error = %err, "masternode_sync=initial failed");
                 }
             };
             result
@@ -108,7 +108,7 @@ impl MasternodeListSync {
                 debug!("masternode_sync=chain_lock no_best_lock");
             }
             Err(err) => {
-                warn!(error = %err, "masternode_sync=chain_lock failed");
+                debug!(error = %err, "masternode_sync=chain_lock failed");
             }
         }
     }
@@ -185,7 +185,7 @@ impl MasternodeListSync {
 
         self.ready_notify.notify_waiters();
 
-        info!(
+        trace!(
             %block_hash,
             height,
             "Masternode list synchronized"

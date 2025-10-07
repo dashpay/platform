@@ -12,7 +12,7 @@ use dashcore_rpc::dashcore::consensus::encode::{
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use crate::DapiError;
 use crate::services::streaming_service::{
@@ -45,18 +45,18 @@ impl StreamingServiceImpl {
         let from_block = match req.from_block {
             Some(FromBlock::FromBlockHeight(height)) => {
                 if height == 0 {
-                    warn!(height, "block_headers=invalid_starting_height");
+                    debug!(height, "block_headers=invalid_starting_height");
                     return Err(Status::invalid_argument(validation_error));
                 }
                 FromBlock::FromBlockHeight(height)
             }
             Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
-                warn!("block_headers=empty_from_block_hash");
+                debug!("block_headers=empty_from_block_hash");
                 return Err(Status::invalid_argument(validation_error));
             }
             Some(from_block) => from_block,
             None => {
-                warn!("block_headers=missing_from_block");
+                debug!("block_headers=missing_from_block");
                 return Err(Status::invalid_argument(validation_error));
             }
         };
@@ -159,9 +159,9 @@ impl StreamingServiceImpl {
                 }
                 Err(status) => {
                     if let Some(ref id) = subscriber_id {
-                        warn!(subscriber_id = id.as_str(), error = %status, "block_headers=historical_fetch_failed");
+                        debug!(subscriber_id = id.as_str(), error = %status, "block_headers=historical_fetch_failed");
                     } else {
-                        warn!(error = %status, "block_headers=historical_fetch_failed");
+                        debug!(error = %status, "block_headers=historical_fetch_failed");
                     }
                     let _ = tx.send(Err(status.clone())).await;
                     Err(DapiError::from(status))
@@ -341,7 +341,7 @@ impl StreamingServiceImpl {
                         hashes.insert(hash_bytes);
                     }
                 } else {
-                    warn!(
+                    debug!(
                         subscriber_id,
                         block_hash = %block_hash_hex,
                         "block_headers=forward_block_invalid_hash"
@@ -353,7 +353,7 @@ impl StreamingServiceImpl {
                 }
 
                 if data.len() < 80 {
-                    warn!(
+                    debug!(
                         subscriber_id,
                         payload_size = data.len(),
                         "block_headers=forward_block_short_payload"
@@ -482,7 +482,7 @@ impl StreamingServiceImpl {
         }
 
         if start_height >= best_height.saturating_add(1) {
-            warn!(start_height, best_height, "block_headers=start_beyond_tip");
+            debug!(start_height, best_height, "block_headers=start_beyond_tip");
             return Err(Status::not_found(format!(
                 "Block {} not found",
                 start_height
@@ -494,7 +494,7 @@ impl StreamingServiceImpl {
         }
 
         if desired > available {
-            warn!(
+            debug!(
                 start_height,
                 requested = desired,
                 max_available = available,

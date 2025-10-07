@@ -13,9 +13,8 @@ use tokio::sync::broadcast;
 use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep};
 use tokio_util::sync::CancellationToken;
-use tracing::debug;
 use tracing::span;
-use tracing::{error, info, warn};
+use tracing::{debug, trace};
 use zeromq::SocketEvent;
 use zeromq::SubSocket;
 use zeromq::ZmqError;
@@ -174,10 +173,10 @@ impl ZmqConnection {
             while let Some(event) = monitor.next().await {
                 if let Err(e) = Self::monitor_event(event, connected.clone(), cancel.clone()).await
                 {
-                    error!("ZMQ monitor event error: {}", e);
+                    debug!(error = %e, "ZMQ monitor event error");
                 }
             }
-            error!("ZMQ monitor channel closed, stopping monitor");
+            debug!("ZMQ monitor channel closed, stopping monitor");
             Err::<(), _>(DapiError::ConnectionClosed)
         }));
     }
@@ -194,11 +193,11 @@ impl ZmqConnection {
 
         match event {
             zeromq::SocketEvent::Connected(endpoint, peer) => {
-                info!(endpoint = %endpoint, peer = hex::encode(peer), "ZMQ socket connected");
+                trace!(endpoint = %endpoint, peer = hex::encode(peer), "ZMQ socket connected");
                 connected.store(true, Ordering::SeqCst);
             }
             zeromq::SocketEvent::Disconnected(peer) => {
-                warn!(
+                debug!(
                     peer = hex::encode(peer),
                     "ZMQ socket disconnected, requesting restart"
                 );
@@ -208,12 +207,12 @@ impl ZmqConnection {
                 cancel.cancel();
             }
             zeromq::SocketEvent::Closed => {
-                error!("ZMQ socket closed, requesting restart");
+                debug!("ZMQ socket closed, requesting restart");
                 connected.store(false, Ordering::SeqCst);
                 cancel.cancel();
             }
             zeromq::SocketEvent::ConnectRetried => {
-                warn!("ZMQ connection retry attempt");
+                debug!("ZMQ connection retry attempt");
             }
             _ => {
                 // Log other events for debugging
@@ -280,7 +279,7 @@ impl ZmqListener {
             if let Err(e) =
                 Self::zmq_listener_task(zmq_uri, topics, sender, cancel.child_token()).await
             {
-                error!("ZMQ listener task error: {}", e);
+                debug!(error = %e, "ZMQ listener task error");
                 // we cancel parent task to stop all spawned threads
                 cancel.cancel();
             }
@@ -318,25 +317,25 @@ impl ZmqListener {
                 Ok(mut connection) => {
                     retry_count = 0; // Reset retry count on successful connection
                     delay = Duration::from_millis(1000); // Reset delay
-                    info!("ZMQ connected to {}", zmq_uri);
+                    trace!("ZMQ connected to {}", zmq_uri);
 
                     // Listen for messages with connection recovery
 
                     match Self::process_messages(&mut connection, sender.clone()).await {
                         Ok(_) => {
-                            info!("ZMQ message processing ended normally");
+                            trace!("ZMQ message processing ended normally");
                         }
                         Err(e) => {
-                            error!("ZMQ message processing failed: {}", e);
+                            debug!(error = %e, "ZMQ message processing failed");
                             continue; // Restart connection
                         }
                     }
                 }
                 Err(e) => {
-                    error!("ZMQ connection failed: {}", e);
+                    debug!(error = %e, "ZMQ connection failed");
                     retry_count += 1;
 
-                    warn!(
+                    debug!(
                         "ZMQ connection attempt {} failed: {}. Retrying in {:?}",
                         retry_count, e, delay
                     );
@@ -378,11 +377,11 @@ impl ZmqListener {
                 }
                 Err(ZmqError::NoMessage) => {
                     // No message received
-                    tracing::warn!("No ZMQ message received, connection closed? Exiting worker");
+                    tracing::debug!("No ZMQ message received, connection closed? Exiting worker");
                     return Err(DapiError::ConnectionClosed);
                 }
                 Err(e) => {
-                    error!("Error receiving ZMQ message: {}", e);
+                    debug!(error = %e, "Error receiving ZMQ message");
                     return Err(DapiError::ZmqConnection(e));
                 }
             }
@@ -409,7 +408,7 @@ impl ZmqListener {
             "rawchainlock" => Some(ZmqEvent::RawChainLock { data }),
             "hashblock" => Some(ZmqEvent::HashBlock { hash: data }),
             _ => {
-                warn!("Unknown ZMQ topic: {}", topic);
+                debug!("Unknown ZMQ topic: {}", topic);
                 None
             }
         }
@@ -442,14 +441,14 @@ impl ZmqDispatcher {
                 msg = self.socket.recv() => {
                     match msg {
                         Ok(msg) => if let Err(e) = self.zmq_tx.send(msg).await {
-                            error!("Error sending ZMQ event to receiver: {}, receiver may have exited", e);
+                            debug!(error = %e, "Error sending ZMQ event to receiver, receiver may have exited");
                             // receiver exited? I think it is fatal, we exit as it makes no sense to continue
                             self.connected.store(false, Ordering::SeqCst);
                             self.cancel.cancel();
                             return Err(DapiError::ClientGone("ZMQ receiver exited".to_string()));
                         },
                         Err(e) => {
-                            warn!("Error receiving ZMQ message: {}, restarting connection", e);
+                            debug!(error = %e, "Error receiving ZMQ message, restarting connection");
                             // most likely the connection is lost, we exit as this will abort the task anyway
                             self.connected.store(false, Ordering::SeqCst);
                             self.cancel.cancel();
@@ -477,7 +476,7 @@ impl ZmqDispatcher {
             if current_status {
                 debug!("ZMQ connection recovered");
             } else {
-                error!("ZMQ connection is lost, connection will be restarted");
+                debug!("ZMQ connection is lost, connection will be restarted");
                 // disconnect the socket
                 self.cancel.cancel();
             }
@@ -492,7 +491,7 @@ async fn with_cancel<T>(
 ) -> DAPIResult<T> {
     select! {
         _ = cancel.cancelled() => {
-            warn!("Cancelled before future completed");
+            debug!("Cancelled before future completed");
             Err(DapiError::ConnectionClosed)
         }
         result = future => result,

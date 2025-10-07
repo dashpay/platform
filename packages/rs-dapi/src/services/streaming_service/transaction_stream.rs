@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_util::bytes::Buf;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use crate::DapiError;
 use crate::clients::{CoreClient, core_client};
@@ -90,7 +90,7 @@ impl TransactionStreamState {
         };
 
         if let Err(e) = timeout(GATE_MAX_TIMEOUT, wait_future).await {
-            warn!(
+            debug!(
                 timeout = GATE_MAX_TIMEOUT.as_secs(),
                 "transactions_with_proofs=gate_open_timeout error: {}, forcibly opening gate", e
             );
@@ -391,7 +391,7 @@ impl StreamingServiceImpl {
                 let txid_bytes = match InstantLock::consensus_decode(&mut data.reader()) {
                     Ok(instant_lock) => *instant_lock.txid.as_byte_array(),
                     Err(e) => {
-                        warn!(
+                        debug!(
                             subscriber_id,
                             handle_id,
                             error = %e,
@@ -483,7 +483,7 @@ impl StreamingServiceImpl {
                 if let Ok(block) = deserialize::<Block>(raw_block) {
                     let match_flags = vec![true; block.txdata.len()];
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
-                        warn!(
+                        debug!(
                             handle_id,
                             block_hash = %block.block_hash(),
                             error = %e,
@@ -516,7 +516,7 @@ impl StreamingServiceImpl {
                         match_flags.push(matches);
                     }
                     let bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
-                        warn!(
+                        debug!(
                             handle_id,
                             block_hash = %block.block_hash(),
                             error = %e,
@@ -630,14 +630,14 @@ impl StreamingServiceImpl {
             match result {
                 Ok(Ok(())) => { /* task completed successfully */ }
                 Ok(Err(e)) => {
-                    warn!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
+                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_failed");
                     // return error back to caller
                     let status =  e.to_status();
                     let _ = tx.send(Err(status)).await; // ignore returned value
                     return Err(e);
                 }
                 Err(e) => {
-                    warn!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
+                    debug!(error = %e, subscriber_id=&sub_id, "transactions_with_proofs=worker_task_join_failed");
                     return Err(DapiError::TaskJoin(e));
                 }
             }
@@ -768,7 +768,7 @@ impl StreamingServiceImpl {
             let tx = match core_client.get_raw_transaction(txid).await {
                 Ok(tx) => tx,
                 Err(err) => {
-                    warn!(error = %err, "transactions_with_proofs=mempool_tx_fetch_failed");
+                    debug!(error = %err, "transactions_with_proofs=mempool_tx_fetch_failed");
                     continue;
                 }
             };
@@ -867,7 +867,7 @@ impl StreamingServiceImpl {
             let txs_bytes = match core_client.get_block_transactions_bytes_by_hash(hash).await {
                 Ok(t) => t,
                 Err(e) => {
-                    warn!(
+                    debug!(
                         height,
                         block_hash = %hash,
                         error = ?e,
@@ -899,7 +899,7 @@ impl StreamingServiceImpl {
                                 matches
                             }
                             Err(e) => {
-                                warn!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, checking raw-bytes contains()");
+                                debug!(height, error = %e, "transactions_with_proofs=tx_deserialize_failed, checking raw-bytes contains()");
                                 let guard = bloom.read().unwrap();
                                 guard.contains(tx_bytes)
                             }
@@ -953,7 +953,7 @@ impl StreamingServiceImpl {
 
             let merkle_block_bytes = build_merkle_block_bytes(&block, &match_flags).unwrap_or_else(|e| {
                     let bh = block.block_hash();
-                    warn!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
+                    debug!(height, block_hash = %bh, error = %e, "transactions_with_proofs=merkle_build_failed_fallback_raw_block");
                     dashcore_rpc::dashcore::consensus::encode::serialize(&block)
                 });
 
@@ -1019,14 +1019,14 @@ fn parse_bloom_filter(
 
     // Validate bloom filter parameters
     if bloom_filter.v_data.is_empty() {
-        warn!("transactions_with_proofs=bloom_filter_empty");
+        debug!("transactions_with_proofs=bloom_filter_empty");
         return Err(Status::invalid_argument(
             "bloom filter data cannot be empty",
         ));
     }
 
     if bloom_filter.n_hash_funcs == 0 {
-        warn!("transactions_with_proofs=bloom_filter_no_hash_funcs");
+        debug!("transactions_with_proofs=bloom_filter_no_hash_funcs");
         return Err(Status::invalid_argument(
             "number of hash functions must be greater than 0",
         ));

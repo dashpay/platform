@@ -1,6 +1,6 @@
 use std::fmt::Debug;
 use std::sync::Arc;
-use tracing::{error, trace, warn};
+use tracing::{debug, trace};
 
 use crate::clients::tenderdash_websocket::{BlockEvent, TransactionEvent};
 use dash_event_bus::event_bus::{
@@ -39,14 +39,14 @@ impl FilterType {
                 Ok(tx) => super::bloom::matches_transaction(Arc::clone(bloom), &tx, *flags),
 
                 Err(e) => {
-                    warn!(
+                    debug!(
                         error = %e,
                         "Failed to deserialize core transaction for bloom filter matching, falling back to contains()"
                     );
                     match bloom.read() {
                         Ok(guard) => guard.contains(raw_tx),
                         Err(_) => {
-                            error!("Failed to acquire read lock for bloom filter");
+                            debug!("Failed to acquire read lock for bloom filter");
                             false
                         }
                     }

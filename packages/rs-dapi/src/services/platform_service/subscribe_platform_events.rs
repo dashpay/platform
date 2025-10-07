@@ -33,7 +33,7 @@ impl PlatformServiceImpl {
                     match cmd {
                         Ok(msg) => {
                             if let Err(e) = uplink_req_tx.send(msg).await  {
-                                tracing::warn!(
+                                tracing::debug!(
                                     error = %e,
                                     "Platform events uplink command channel closed; stopping forward"
                                 );
@@ -41,7 +41,7 @@ impl PlatformServiceImpl {
                             }
                         }
                         Err(e) => {
-                            tracing::warn!(
+                            tracing::debug!(
                                 error = %e,
                                 "Error receiving platform event command from downlink"
                             );
@@ -69,7 +69,7 @@ impl PlatformServiceImpl {
             self.workers.lock().await.spawn(async move {
                 while let Some(msg) = uplink_resp_rx.next().await {
                     if downlink_resp_tx.send(msg).await.is_err() {
-                        tracing::warn!(
+                        tracing::debug!(
                             "Platform events downlink response channel closed; stopping forward"
                         );
                         break;

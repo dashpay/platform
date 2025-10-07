@@ -14,7 +14,7 @@ use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};
 use tonic::Request;
-use tracing::{Instrument, debug, error, info, warn};
+use tracing::{Instrument, debug, trace};
 
 impl PlatformServiceImpl {
     /// Complex implementation of broadcastStateTransition
@@ -40,7 +40,7 @@ impl PlatformServiceImpl {
 
         // Validate that state transition is provided
         if tx.is_empty() {
-            error!("State transition is empty");
+            debug!("State transition is empty");
             return Err(DapiError::InvalidArgument(
                 "State Transition is not specified".to_string(),
             ));
@@ -49,7 +49,7 @@ impl PlatformServiceImpl {
         let txid = Sha256::digest(&tx).to_vec();
         let txid_hex = hex::encode(&txid);
 
-        let span = tracing::info_span!("broadcast_state_transition_impl", tx = %txid_hex);
+        let span = tracing::trace_span!("broadcast_state_transition_impl", tx = %txid_hex);
 
         async move {
             // Convert to base64 for Tenderdash RPC
@@ -60,7 +60,10 @@ impl PlatformServiceImpl {
             let error_result = match self.tenderdash_client.broadcast_tx(tx_base64.clone()).await {
                 Ok(broadcast_result) => {
                     if broadcast_result.code == 0 {
-                        info!(st_hash = %txid_hex, "broadcast_state_transition: State transition broadcasted successfully");
+                        trace!(
+                            st_hash = %txid_hex,
+                            "broadcast_state_transition: state transition broadcasted successfully"
+                        );
                         // we are good, no need to return anything specific
                         return Ok(BroadcastStateTransitionResponse {});
                     } else {
@@ -99,7 +102,7 @@ impl PlatformServiceImpl {
             };
 
             response.inspect_err(|e| {
-                error!(
+                debug!(
                     error = %e,
                     st_hash = %txid_hex,
                     "broadcast_state_transition: failed to broadcast state transition to Tenderdash"
@@ -167,7 +170,7 @@ impl PlatformServiceImpl {
                 }
 
                 // CheckTx passes but ST was removed from block - this is a bug
-                warn!(
+                debug!(
                     tx_bytes = hex::encode(st_bytes),
                     "State transition is passing CheckTx but removed from the block by proposer; potential bug, please report",
                 );

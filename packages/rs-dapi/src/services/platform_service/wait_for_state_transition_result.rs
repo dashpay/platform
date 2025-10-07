@@ -12,7 +12,7 @@ use dapi_grpc::platform::v0::{
 use dapi_grpc::tonic::{Request, Response};
 use std::time::Duration;
 use tokio::time::timeout;
-use tracing::{Instrument, debug, info, trace, warn};
+use tracing::{Instrument, debug, trace};
 
 impl PlatformServiceImpl {
     /// Wait for a state transition result by subscribing to platform events and returning proofs when requested.
@@ -42,10 +42,10 @@ impl PlatformServiceImpl {
         let hash_hex = hex::encode(&state_transition_hash).to_uppercase();
         let hash_base64 = base64::prelude::BASE64_STANDARD.encode(&state_transition_hash);
 
-        let span = tracing::info_span!("wait_for_state_transition_result", tx = %hash_hex);
+        let span = tracing::trace_span!("wait_for_state_transition_result", tx = %hash_hex);
 
         async move {
-            info!("waitForStateTransitionResult called for hash: {}", hash_hex);
+            trace!("waitForStateTransitionResult called for hash: {}", hash_hex);
 
             // Check if WebSocket is connected
             if !self.websocket_client.is_connected() {
@@ -96,14 +96,14 @@ impl PlatformServiceImpl {
                         }
                         Some(message) => {
                             // Ignore other message types
-                            warn!(
+                            trace!(
                                 ?message,
                                 "Received non-matching message, ignoring; this should not happen due to filtering"
                             );
                             continue;
                         }
                         None => {
-                            warn!("Platform tx subscription channel closed unexpectedly");
+                            debug!("Platform tx subscription channel closed unexpectedly");
                             return Err(DapiError::Unavailable(
                                 "Platform tx subscription channel closed unexpectedly".to_string(),
                             ));
@@ -114,7 +114,7 @@ impl PlatformServiceImpl {
             .await
             .map_err(|msg| DapiError::Timeout(msg.to_string()))
             .inspect_err(|e| {
-                tracing::warn!(
+                tracing::debug!(
                     error = %e,
                     tx = %hash_hex,
                     "wait_for_state_transition_result: timed out"
@@ -169,7 +169,7 @@ impl PlatformServiceImpl {
                     response_v0.metadata = Some(metadata);
                 }
                 Err(e) => {
-                    warn!("Failed to fetch proof: {}", e);
+                    debug!("Failed to fetch proof: {}", e);
                     // Continue without proof
                 }
             }
@@ -208,7 +208,7 @@ impl PlatformServiceImpl {
                             response_v0.metadata = Some(metadata);
                         }
                         Err(e) => {
-                            warn!("Failed to fetch proof: {}", e);
+                            debug!("Failed to fetch proof: {}", e);
                             // Continue without proof
                         }
                     }
@@ -270,7 +270,7 @@ impl PlatformServiceImpl {
                 Ok((proof, metadata))
             }
             Err(e) => {
-                warn!("Failed to fetch proof from Drive: {}", e);
+                debug!("Failed to fetch proof from Drive: {}", e);
                 Err(crate::DapiError::Client(format!(
                     "Failed to fetch proof: {}",
                     e

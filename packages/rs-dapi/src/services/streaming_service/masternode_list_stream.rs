@@ -2,7 +2,7 @@ use dapi_grpc::core::v0::{MasternodeListRequest, MasternodeListResponse};
 use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::DapiError;
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
@@ -63,7 +63,7 @@ impl StreamingServiceImpl {
         });
 
         if let Err(err) = self.masternode_list_sync.ensure_ready().await {
-            warn!(
+            debug!(
                 subscriber_id,
                 error = %err,
                 "masternode_list_stream=ensure_ready_failed"

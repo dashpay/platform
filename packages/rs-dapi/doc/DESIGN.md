@@ -134,6 +134,8 @@ rs-dapi implements a modular service architecture that separates simple proxy op
 - **Scalability**: New complex methods can be added as separate modules
 - **Minimal Macros**: A small `drive_method!` macro is used to generate simple proxy methods with caching to reduce boilerplate; all complex logic remains in regular `impl` blocks
 
+
+
 #### Service Organization Pattern
 ```
 services/
@@ -581,18 +583,16 @@ All ports bind to internal Docker network. External access is handled by Envoy.
 ### 18. Monitoring and Observability
 
 #### Logging
-- Structured logging with `tracing`
-- Request/response logging with correlation IDs
-- Performance metrics and timing information
-- Protocol-specific logging (gRPC, JSON-RPC)
+- Structured logging with `tracing`, including correlation IDs, timing, and protocol metadata when useful
+- Each gRPC/streaming handler emits exactly one `info!` on success and a single `warn!` on failure, capturing mapped `Status` and identifying context
+- Background workers and helper paths stay at `debug!` for exceptional branches and `trace!` for steady-state loops; reserve spans similarly (`trace_span!`/`debug_span!`) so higher levels remain quiet
 - Log levels:
   - info - business events, target audience: users, sysops/devops
-  - error - errors that break things, need action or posses threat to service, target audience: users, sysops/devops
+  - error - errors that break things, need action or pose threat to service, target audience: users, sysops/devops
   - warn - other issues that need attention, target audience: users, sysops/devops
-  - debug - non-verbose debugging information adding much value to understanding of system operations; target audience: developers
-  - trace - other debugging information that is either quite verbose, or adds little value to understanding of system operations;    
-    target audience: developers
-  - Prefer logging information about whole logical blocks of code, not individual operations, to limit verbosity (even on trace level)
+  - debug - non-verbose debugging information adding much value to understanding system operations; target audience: developers
+  - trace - other debugging information that is either quite verbose, or adds little value to understanding system operations; target audience: developers
+- Prefer logging at logical block boundaries instead of every operation to keep even `trace` output digestible
 
 #### Built-in Metrics
 - **Request Metrics**: Counts, latency histograms per protocol

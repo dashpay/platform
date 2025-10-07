@@ -46,7 +46,7 @@ pub fn matches_transaction(
     flags: BloomFlags,
 ) -> bool {
     let filter = match filter_lock.read().inspect_err(|e| {
-        tracing::error!("Failed to acquire read lock for bloom filter: {}", e);
+        tracing::debug!("Failed to acquire read lock for bloom filter: {}", e);
     }) {
         Ok(guard) => guard,
         Err(_) => return false,
@@ -68,7 +68,7 @@ pub fn matches_transaction(
                 outpoint.extend_from_slice(&(index as u32).to_le_bytes());
                 drop(filter);
                 if let Ok(mut f) = filter_lock.write().inspect_err(|e| {
-                    tracing::error!("Failed to acquire write lock for bloom filter: {}", e);
+                    tracing::debug!("Failed to acquire write lock for bloom filter: {}", e);
                 }) {
                     f.insert(&outpoint);
                 }
@@ -97,7 +97,7 @@ pub(crate) fn bloom_flags_from_int<I: TryInto<u8>>(flags: I) -> BloomFlags {
         1 => BloomFlags::All,
         2 => BloomFlags::PubkeyOnly,
         _ => {
-            tracing::error!("invalid bloom flags value {flag}");
+            tracing::debug!("invalid bloom flags value {flag}");
             BloomFlags::None
         }
     }
@@ -289,7 +289,6 @@ mod tests {
         opret_bytes.push(0x6a);
         opret_bytes.push(8u8);
         opret_bytes.extend([0xAB; 8]);
-        let op_return = ScriptBuf::from_bytes(opret_bytes);
         let mut filter =
             CoreBloomFilter::from_bytes(vec![0; 1024], 5, 789, BloomFlags::PubkeyOnly).unwrap();
         filter.insert(&sh.to_byte_array());
@@ -313,16 +312,6 @@ mod tests {
         let mut outpoint = super::txid_to_be_bytes(&tx_sh.txid());
         outpoint.extend_from_slice(&(0u32).to_le_bytes());
         assert!(!filter_lock.read().unwrap().contains(&outpoint));
-        let tx_or = CoreTx {
-            version: 2,
-            lock_time: 0,
-            input: vec![],
-            output: vec![TxOut {
-                value: 0,
-                script_pubkey: ScriptBuf::from_bytes(ScriptBuf::new().to_bytes()),
-            }],
-            special_transaction_payload: None,
-        };
         let mut opret_bytes2 = Vec::new();
         opret_bytes2.push(0x6a);
         opret_bytes2.push(8u8);

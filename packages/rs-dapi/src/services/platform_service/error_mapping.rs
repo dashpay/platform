@@ -24,7 +24,7 @@ impl TenderdashStatus {
         if let Some(ref bytes) = consensus_error
             && ConsensusError::deserialize_from_bytes(bytes).is_err()
         {
-            tracing::warn!(
+            tracing::debug!(
                 data = hex::encode(bytes),
                 "TenderdashStatus consensus_error failed to deserialize to ConsensusError"
             );
@@ -57,7 +57,7 @@ impl TenderdashStatus {
         let mut serialized_drive_error_data = Vec::new();
         ciborium::ser::into_writer(&self, &mut serialized_drive_error_data)
             .inspect_err(|e| {
-                tracing::warn!("Failed to serialize drive error data bin: {}", e);
+                tracing::debug!("Failed to serialize drive error data bin: {}", e);
             })
             .ok();
 
@@ -91,7 +91,7 @@ impl TenderdashStatus {
         if let Some(consensus_error_bytes) = &self.consensus_error
             && let Ok(consensus_error) =
                 ConsensusError::deserialize_from_bytes(consensus_error_bytes).inspect_err(|e| {
-                    tracing::warn!("Failed to deserialize consensus error: {}", e);
+                    tracing::debug!("Failed to deserialize consensus error: {}", e);
                 })
         {
             return consensus_error.to_string();
@@ -182,7 +182,7 @@ pub(crate) fn base64_decode(input: &str) -> Option<Vec<u8>> {
     BASE64
         .decode(input)
         .inspect_err(|e| {
-            tracing::warn!("Failed to decode base64: {}", e);
+            tracing::debug!("Failed to decode base64: {}", e);
         })
         .ok()
 }
@@ -225,7 +225,7 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
     // CBOR-decode decoded_bytes
     let raw_value: Value = ciborium::de::from_reader(decoded_bytes.as_slice())
         .inspect_err(|e| {
-            tracing::warn!("Failed to decode drive error info from CBOR: {}", e);
+            tracing::debug!("Failed to decode drive error info from CBOR: {}", e);
         })
         .ok()?;
 
@@ -238,20 +238,20 @@ pub(super) fn decode_consensus_error(info_base64: String) -> Option<Vec<u8>> {
             v.as_integer().and_then(|n| {
                 u8::try_from(n)
                     .inspect_err(|e| {
-                        tracing::warn!("Non-u8 value in serializedError array: {}", e);
+                        tracing::debug!("Non-u8 value in serializedError array: {}", e);
                     })
                     .ok()
             })
         })
         .collect::<Option<Vec<u8>>>()
         .or_else(|| {
-            tracing::warn!("serializedError is not an array of integers");
+            tracing::debug!("serializedError is not an array of integers");
             None
         })?;
 
     // sanity check: serialized error must deserialize to ConsensusError
     if ConsensusError::deserialize_from_bytes(&serialized_error).is_err() {
-        tracing::warn!(
+        tracing::debug!(
             data = hex::encode(&serialized_error),
             "Drive error info 'serializedError' failed to deserialize to ConsensusError"
         );
@@ -295,7 +295,7 @@ impl From<serde_json::Value> for TenderdashStatus {
                 consensus_error,
             }
         } else {
-            tracing::warn!("Tenderdash error is not an object: {:?}", value);
+            tracing::debug!("Tenderdash error is not an object: {:?}", value);
             Self {
                 code: u32::MAX as i64,
                 message: Some("Invalid error object from Tenderdash".to_string()),

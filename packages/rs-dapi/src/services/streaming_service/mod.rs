@@ -16,7 +16,7 @@ use crate::sync::Workers;
 use std::sync::Arc;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, sleep};
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, trace};
 
 pub(crate) use masternode_list_sync::MasternodeListSync;
 pub(crate) use subscriber_manager::{
@@ -230,7 +230,7 @@ impl StreamingServiceImpl {
             Ok::<(), DapiError>(())
         });
 
-        info!(
+        trace!(
             zmq_url = %config.dapi.core.zmq_url,
             drive = %config.dapi.drive.uri,
             tenderdash_http = %config.dapi.tenderdash.uri,
@@ -273,14 +273,14 @@ impl StreamingServiceImpl {
                     forwarded_events = forwarded_events.saturating_add(1);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                    warn!(
+                    debug!(
                         "Tenderdash event receiver lagged, skipped {} events",
                         skipped
                     );
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    warn!(
+                    debug!(
                         forwarded = forwarded_events,
                         "Tenderdash transaction event receiver closed"
                     );
@@ -315,14 +315,14 @@ impl StreamingServiceImpl {
                     forwarded_events = forwarded_events.saturating_add(1);
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
-                    warn!(
+                    debug!(
                         "Tenderdash block event receiver lagged, skipped {} events",
                         skipped
                     );
                     continue;
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Closed) => {
-                    warn!(
+                    debug!(
                         forwarded = forwarded_events,
                         "Tenderdash block event receiver closed"
                     );
@@ -350,13 +350,13 @@ impl StreamingServiceImpl {
                     trace!("ZMQ listener started successfully, processing events");
                     Self::process_zmq_events(zmq_events, subscriber_manager.clone()).await;
                     // processing ended; mark unhealthy and retry after short delay
-                    warn!("ZMQ event processing ended; restarting after {:?}", backoff);
+                    debug!("ZMQ event processing ended; restarting after {:?}", backoff);
                     sleep(backoff).await;
                     backoff = (backoff * 2).min(max_backoff);
                 }
                 Err(e) => {
-                    error!("ZMQ subscribe failed: {}", e);
-                    warn!("Retrying ZMQ subscribe in {:?}", backoff);
+                    debug!("ZMQ subscribe failed: {}", e);
+                    debug!("Retrying ZMQ subscribe in {:?}", backoff);
                     sleep(backoff).await;
                     backoff = (backoff * 2).min(max_backoff);
                 }

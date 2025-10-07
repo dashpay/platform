@@ -14,13 +14,14 @@ use dapi_grpc::platform::v0::{
 };
 use dapi_grpc::tonic::{Request, Response, Status};
 use futures::FutureExt;
+use std::any::type_name_of_val;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::task::JoinSet;
-use tracing::debug;
+use tracing::{debug, info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
 
@@ -52,41 +53,51 @@ macro_rules! drive_method {
             use tokio::time::timeout;
             let mut client = self.drive_client.get_client();
             let cache = self.platform_cache.clone();
-            let method = stringify!($method_name);
+            let method = type_name_of_val(request.get_ref());
             async move {
+                let result_with_meta: Result<(Response<$response_type>, bool), Status> = async {
                 // Build cache key from method + request bytes
-                let key = make_cache_key(method, request.get_ref());
+                    let key = make_cache_key(method, request.get_ref());
 
-                // Try cache
-                if let Some(decoded) = cache.get(&key) as Option<$response_type> {
-                    return Ok(Response::new(decoded));
+                    // Try cache
+                    if let Some(decoded) = cache.get(&key) as Option<$response_type> {
+                        return Ok((Response::new(decoded), true));
+                    }
+
+                    // Determine request deadline from inbound metadata (grpc-timeout header)
+                    let budget = parse_inbound_grpc_timeout(request.metadata())
+                        .and_then(|d| d.checked_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN)); // safety margin
+
+                    // Fetch from Drive with optional timeout budget
+                    trace!(method, ?budget, "Calling Drive method");
+                    let drive_call = client.$method_name(request);
+                    let resp = if let Some(budget) = budget {
+                        match timeout(budget, drive_call).await {
+                            Ok(Ok(r)) => r,
+                            Ok(Err(status)) => return Err(status),
+                            Err(_) => {
+                        debug!("{} call timed out after {:?}", method, budget);
+                                return Err(Status::deadline_exceeded("Deadline exceeded"));
+                            }
+                        }
+                    } else {
+                        drive_call.await?
+                    };
+                    // Store in cache using inner message
+                    trace!(method, "Caching response");
+                    cache.put(key, resp.get_ref());
+                    trace!(method, "Response cached");
+
+                    Ok((resp, false))
+                }
+                .await;
+
+                match &result_with_meta {
+                    Ok((_, cache_hit)) => info!(method, cache_hit = *cache_hit, "request succeeded"),
+                    Err(status) => warn!(method, error = %status, "request failed"),
                 }
 
-                // Determine request deadline from inbound metadata (grpc-timeout header)
-                let budget = parse_inbound_grpc_timeout(request.metadata())
-                    .and_then(|d| d.checked_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN)); // safety margin
-
-                // Fetch from Drive with optional timeout budget
-                tracing::trace!(method, ?budget, ?request, "Calling Drive method");
-                let drive_call = client.$method_name(request);
-                let resp = if let Some(budget) = budget {
-                    match timeout(budget, drive_call).await {
-                        Ok(Ok(r)) => r,
-                        Ok(Err(status)) => return Err(status),
-                        Err(_) => {
-                            tracing::warn!("{} call timed out after {:?}", method, budget);
-                            return Err(Status::deadline_exceeded("Deadline exceeded"));
-                        }
-                    }
-                } else {
-                    drive_call.await?
-                };
-                // Store in cache using inner message
-                tracing::trace!(method, "Caching response");
-                cache.put(key, resp.get_ref());
-                tracing::trace!(method, "Response cached");
-
-                Ok(resp)
+                result_with_meta.map(|(resp, _)| resp)
             }
             .boxed()
         }
@@ -187,8 +198,16 @@ impl Platform for PlatformServiceImpl {
         &self,
         request: Request<GetStatusRequest>,
     ) -> Result<Response<GetStatusResponse>, Status> {
-        tracing::trace!(?request, "Received get_status request");
-        self.get_status_impl(request).await
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received get_status request");
+        let result = self.get_status_impl(request).await;
+
+        match &result {
+            Ok(_) => info!(method, "request succeeded"),
+            Err(status) => warn!(method, error = %status, "request failed"),
+        }
+
+        result
     }
 
     // State transition methods
@@ -204,24 +223,20 @@ impl Platform for PlatformServiceImpl {
         &self,
         request: Request<BroadcastStateTransitionRequest>,
     ) -> Result<Response<BroadcastStateTransitionResponse>, Status> {
-        tracing::trace!(?request, "Received broadcast_state_transition request");
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received broadcast_state_transition request");
         let result = self.broadcast_state_transition_impl(request).await;
 
         match result {
             Ok(response) => {
-                debug!(response=?response, "broadcast_state_transition succeeded");
+                info!(method, "request succeeded");
                 Ok(response.into())
             }
 
             Err(e) => {
                 let status = e.to_status();
                 let metadata = status.metadata();
-                tracing::warn!(
-                    error = %e,
-                    %status,
-                    ?metadata,
-                    "broadcast_state_transition failed; returning error"
-                );
+                warn!(method, error = %status, source = %e, ?metadata, "request failed");
                 Err(status)
             }
         }
@@ -235,17 +250,15 @@ impl Platform for PlatformServiceImpl {
         &self,
         request: Request<WaitForStateTransitionResultRequest>,
     ) -> Result<Response<WaitForStateTransitionResultResponse>, Status> {
-        tracing::trace!(
-            ?request,
-            "Received wait_for_state_transition_result request"
-        );
+        let method = type_name_of_val(request.get_ref());
+        trace!(method, "Received wait_for_state_transition_result request");
         match self.wait_for_state_transition_result_impl(request).await {
-            Ok(response) => Ok(response),
+            Ok(response) => {
+                info!(method, "request succeeded");
+                Ok(response)
+            }
             Err(error) => {
-                tracing::warn!(
-                    error = %error,
-                    "wait_for_state_transition_result failed; returning broadcast error response"
-                );
+                warn!(method, error = %error, "request failed");
                 let response =
                     wait_for_state_transition_result::build_wait_for_state_transition_error_response(
                         &error,
