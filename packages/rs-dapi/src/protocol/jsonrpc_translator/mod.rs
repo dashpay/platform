@@ -10,7 +10,7 @@ use crate::error::{DapiError, DapiResult};
 
 pub use types::{JsonRpcError, JsonRpcRequest, JsonRpcResponse};
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct JsonRpcTranslator;
 
 /// Supported JSON-RPC calls handled by the gateway
@@ -103,7 +103,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_get_status_request() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getStatus".to_string(),
@@ -120,7 +120,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_get_best_block_hash_request() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getBestBlockHash".to_string(),
@@ -137,7 +137,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_get_block_hash_with_height() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getBlockHash".to_string(),
@@ -154,7 +154,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_get_block_hash_missing_param_errors() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "getBlockHash".to_string(),
@@ -205,7 +205,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_response_wraps_result() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let resp = GetStatusResponse { version: None };
         let out = t
             .translate_response(resp, Some(json!(5)))
@@ -219,7 +219,7 @@ mod tests {
 
     #[test]
     fn error_response_codes_match() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let r = t.error_response(DapiError::InvalidArgument("bad".into()), Some(json!(1)));
         assert_eq!(r.error.as_ref().unwrap().code, -32602);
         let r = t.error_response(DapiError::NotFound("nope".into()), None);
@@ -232,7 +232,7 @@ mod tests {
 
     #[tokio::test]
     async fn translate_send_raw_transaction_basic() {
-        let t = JsonRpcTranslator::default();
+        let t = JsonRpcTranslator::new();
         let req = JsonRpcRequest {
             jsonrpc: "2.0".to_string(),
             method: "sendRawTransaction".to_string(),

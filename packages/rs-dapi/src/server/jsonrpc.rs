@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use axum::{Router, extract::State, response::Json, routing::post};
 use serde_json::Value;
 use tokio::net::TcpListener;
@@ -26,10 +24,8 @@ impl DapiServer {
         info!("Starting JSON-RPC server on {}", addr);
 
         let app_state = JsonRpcAppState {
-            platform_service: Arc::try_unwrap(self.platform_service.clone())
-                .unwrap_or_else(|arc| (*arc).clone()),
-            core_service: Arc::try_unwrap(self.core_service.clone())
-                .unwrap_or_else(|arc| (*arc).clone()),
+            platform_service: self.platform_service.clone(),
+            core_service: self.core_service.clone(),
             translator: self.jsonrpc_translator.clone(),
         };
 

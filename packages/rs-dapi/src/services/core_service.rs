@@ -20,7 +20,9 @@ use std::sync::Arc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::{error, trace};
 
-/// Core service implementation that handles blockchain and streaming operations
+/// Core service implementation that handles blockchain and streaming operations.
+///
+/// Supports cheap Clone operation, no need to put it into Arc.
 #[derive(Clone)]
 pub struct CoreServiceImpl {
     pub streaming_service: Arc<StreamingServiceImpl>,

@@ -23,8 +23,8 @@ impl DapiServer {
         info!("Starting metrics server (health + Prometheus) on {}", addr);
 
         let app_state = MetricsAppState {
-            platform_service: self.platform_service.as_ref().clone(),
-            core_service: self.core_service.as_ref().clone(),
+            platform_service: self.platform_service.clone(),
+            core_service: self.core_service.clone(),
         };
 
         let mut app = Router::new()

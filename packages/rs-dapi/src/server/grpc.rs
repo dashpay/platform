@@ -1,4 +1,3 @@
-use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
 
@@ -45,14 +44,12 @@ impl DapiServer {
 
         builder
             .add_service(
-                PlatformServer::new(
-                    Arc::try_unwrap(platform_service).unwrap_or_else(|arc| (*arc).clone()),
-                )
-                .max_decoding_message_size(MAX_DECODING_BYTES)
-                .max_encoding_message_size(MAX_ENCODING_BYTES),
+                PlatformServer::new(platform_service)
+                    .max_decoding_message_size(MAX_DECODING_BYTES)
+                    .max_encoding_message_size(MAX_ENCODING_BYTES),
             )
             .add_service(
-                CoreServer::new(Arc::try_unwrap(core_service).unwrap_or_else(|arc| (*arc).clone()))
+                CoreServer::new(core_service)
                     .max_decoding_message_size(MAX_DECODING_BYTES)
                     .max_encoding_message_size(MAX_ENCODING_BYTES),
             )

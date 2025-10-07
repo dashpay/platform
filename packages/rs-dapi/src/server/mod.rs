@@ -16,9 +16,9 @@ use crate::services::{CoreServiceImpl, PlatformServiceImpl, StreamingServiceImpl
 
 pub struct DapiServer {
     config: Arc<Config>,
-    core_service: Arc<CoreServiceImpl>,
-    platform_service: Arc<PlatformServiceImpl>,
-    jsonrpc_translator: Arc<JsonRpcTranslator>,
+    core_service: CoreServiceImpl,
+    platform_service: PlatformServiceImpl,
+    jsonrpc_translator: JsonRpcTranslator,
     access_logger: Option<AccessLogger>,
 }
 
@@ -65,12 +65,12 @@ impl DapiServer {
         let core_service =
             CoreServiceImpl::new(streaming_service, config.clone(), core_client).await;
 
-        let jsonrpc_translator = Arc::new(JsonRpcTranslator::new());
+        let jsonrpc_translator = JsonRpcTranslator::new();
 
         Ok(Self {
             config,
-            platform_service: Arc::new(platform_service),
-            core_service: Arc::new(core_service),
+            platform_service,
+            core_service,
             jsonrpc_translator,
             access_logger,
         })
