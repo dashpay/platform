@@ -68,7 +68,13 @@ where
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let start_time = Instant::now();
         let method = req.method().to_string();
-        let uri = req.uri().to_string();
+        let uri = req.uri().clone();
+        let uri_display = uri.to_string();
+        let request_target = uri
+            .path_and_query()
+            .map(|pq| pq.as_str())
+            .unwrap_or_else(|| uri.path())
+            .to_string();
         let version = format!("{:?}", req.version());
 
         // Detect protocol type
@@ -99,7 +105,7 @@ where
             let span = info_span!(
                 "request",
                 method = %method,
-                uri = %uri,
+                uri = %uri_display,
                 protocol = %protocol_type,
                 remote_addr = ?remote_addr
             );
@@ -119,9 +125,10 @@ where
                     // Create appropriate access log entry based on protocol
                     let entry = match protocol_type.as_str() {
                         "gRPC" => {
-                            let (service, method_name) = parse_grpc_path(&uri);
+                            let (service, method_name) = parse_grpc_path(&request_target);
                             AccessLogEntry::new_grpc(
                                 remote_addr,
+                                request_target.clone(),
                                 service,
                                 method_name,
                                 grpc_status_code,
@@ -129,36 +136,33 @@ where
                                 duration.as_micros() as u64,
                             )
                         }
-                        _ => {
-                            // HTTP / JSON-RPC
-                            let mut entry = AccessLogEntry::new_http(
-                                remote_addr,
-                                method.clone(),
-                                uri.clone(),
-                                version,
-                                status,
-                                body_bytes,
-                                duration.as_micros() as u64,
-                            );
-
-                            if let Some(ua) = user_agent {
-                                entry = entry.with_user_agent(ua);
-                            }
-
-                            if let Some(ref_) = referer {
-                                entry = entry.with_referer(ref_);
-                            }
-
-                            entry
-                        }
+                        _ => AccessLogEntry::new_http(
+                            remote_addr,
+                            method.clone(),
+                            request_target.clone(),
+                            version,
+                            status,
+                            body_bytes,
+                            duration.as_micros() as u64,
+                        ),
                     };
+
+                    let mut entry = entry;
+
+                    if let Some(ref ua) = user_agent {
+                        entry = entry.with_user_agent(ua.clone());
+                    }
+
+                    if let Some(ref ref_) = referer {
+                        entry = entry.with_referer(ref_.clone());
+                    }
 
                     access_logger.log(&entry).await;
 
                     // Log to structured logging
                     debug!(
                         method = %method,
-                        uri = %uri,
+                        uri = %uri_display,
                         protocol = %protocol_type,
                         status = status,
                         duration_us = duration.as_micros() as u64,
@@ -231,16 +235,25 @@ fn detect_protocol_type<T>(req: &Request<T>) -> String {
 /// Parse gRPC service and method from request path
 /// Path format: /<package>.<service>/<method>
 fn parse_grpc_path(path: &str) -> (String, String) {
-    if let Some(path) = path.strip_prefix('/')
-        && let Some(slash_pos) = path.rfind('/')
-    {
-        let service_path = &path[..slash_pos];
-        let method = &path[slash_pos + 1..];
-        return (service_path.to_string(), method.to_string());
+    let normalized = path
+        .trim_start_matches('/')
+        .split('?')
+        .next()
+        .unwrap_or_default();
+
+    if normalized.is_empty() {
+        return ("unknown".to_string(), "unknown".to_string());
     }
 
-    // Fallback for unparseable paths
-    (path.to_string(), "unknown".to_string())
+    if let Some((service, method)) = normalized.rsplit_once('/') {
+        if service.is_empty() || method.is_empty() {
+            ("unknown".to_string(), "unknown".to_string())
+        } else {
+            (service.to_string(), method.to_string())
+        }
+    } else {
+        ("unknown".to_string(), normalized.to_string())
+    }
 }
 
 /// Convert HTTP status code to gRPC status code
@@ -355,5 +368,28 @@ mod tests {
     fn extract_grpc_status_falls_back_to_http_status() {
         let response: Response<()> = Response::new(());
         assert_eq!(extract_grpc_status(&response, 503), 14);
+    }
+
+    #[test]
+    fn parse_grpc_path_handles_standard_path() {
+        let (service, method) = parse_grpc_path("/org.dash.platform.dapi.v0.Platform/getStatus");
+        assert_eq!(service, "org.dash.platform.dapi.v0.Platform");
+        assert_eq!(method, "getStatus");
+    }
+
+    #[test]
+    fn parse_grpc_path_handles_absolute_uri() {
+        let (service, method) = parse_grpc_path(
+            "http://127.0.0.1:2443/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult",
+        );
+        assert_eq!(service, "org.dash.platform.dapi.v0.Platform");
+        assert_eq!(method, "waitForStateTransitionResult");
+    }
+
+    #[test]
+    fn parse_grpc_path_missing_segments() {
+        let (service, method) = parse_grpc_path("/");
+        assert_eq!(service, "unknown");
+        assert_eq!(method, "unknown");
     }
 }

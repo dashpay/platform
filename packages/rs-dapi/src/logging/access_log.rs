@@ -79,6 +79,7 @@ impl AccessLogEntry {
     /// Create a new access log entry for gRPC requests
     pub fn new_grpc(
         remote_addr: Option<IpAddr>,
+        uri: String,
         service: String,
         method: String,
         grpc_status: u32,
@@ -90,7 +91,7 @@ impl AccessLogEntry {
             remote_user: None,
             timestamp: Utc::now(),
             method: "POST".to_string(), // gRPC always uses POST
-            uri: format!("/{}/{}", service, method),
+            uri,
             http_version: "HTTP/2.0".to_string(), // gRPC uses HTTP/2
             status: grpc_status_to_http_status(grpc_status),
             body_bytes,
@@ -323,6 +324,7 @@ mod tests {
     fn test_grpc_access_log_format() {
         let entry = AccessLogEntry::new_grpc(
             Some(IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1))),
+            "/org.dash.platform.dapi.v0.Platform/getStatus".to_string(),
             "org.dash.platform.dapi.v0.Platform".to_string(),
             "getStatus".to_string(),
             0, // OK
