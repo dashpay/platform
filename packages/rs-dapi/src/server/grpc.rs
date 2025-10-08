@@ -16,7 +16,7 @@ impl DapiServer {
     /// Configures timeouts, message limits, optional access logging, and then awaits completion.
     /// Returns when the server stops serving.
     pub(super) async fn start_unified_grpc_server(&self) -> DAPIResult<()> {
-        let addr = self.config.grpc_server_addr();
+        let addr = self.config.grpc_server_addr()?;
         info!(
             "Starting unified gRPC server on {} (Core + Platform services)",
             addr

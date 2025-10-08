@@ -20,7 +20,7 @@ impl DapiServer {
     /// Extracts shared services for request handling and binds the listener on the configured address.
     /// Returns when the server stops serving.
     pub(super) async fn start_jsonrpc_server(&self) -> DAPIResult<()> {
-        let addr = self.config.json_rpc_addr();
+        let addr = self.config.json_rpc_addr()?;
         info!("Starting JSON-RPC server on {}", addr);
 
         let app_state = JsonRpcAppState {

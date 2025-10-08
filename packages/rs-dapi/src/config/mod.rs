@@ -196,8 +196,11 @@ impl Default for LoggingConfig {
 impl Config {
     /// Load configuration from environment variables and .env file
     pub fn load() -> DAPIResult<Self> {
-        Self::from_env()
-            .map_err(|e| DapiError::Configuration(format!("Failed to load configuration: {}", e)))
+        let config = Self::from_env().map_err(|e| {
+            DapiError::Configuration(format!("Failed to load configuration: {}", e))
+        })?;
+        config.validate()?;
+        Ok(config)
     }
 
     /// Populate configuration from environment variables using `envy`.
@@ -281,9 +284,10 @@ impl Config {
             layered.insert(key.into(), value.into());
         }
 
-        match envy::from_iter(layered) {
+        match envy::from_iter::<_, Self>(layered) {
             Ok(config) => {
                 debug!("Configuration loaded successfully from layered sources");
+                config.validate()?;
                 Ok(config)
             }
             Err(e) => Err(DapiError::Configuration(format!(
@@ -294,20 +298,30 @@ impl Config {
     }
 
     /// Build the socket address for the unified gRPC endpoint.
-    pub fn grpc_server_addr(&self) -> SocketAddr {
+    pub fn grpc_server_addr(&self) -> DAPIResult<SocketAddr> {
         format!(
             "{}:{}",
             self.server.bind_address, self.server.grpc_server_port
         )
         .parse()
-        .expect("Invalid gRPC server address")
+        .map_err(|e| {
+            DapiError::Configuration(format!(
+                "Invalid gRPC server address '{}:{}': {}",
+                self.server.bind_address, self.server.grpc_server_port, e
+            ))
+        })
     }
 
     /// Build the socket address for the JSON-RPC endpoint.
-    pub fn json_rpc_addr(&self) -> SocketAddr {
+    pub fn json_rpc_addr(&self) -> DAPIResult<SocketAddr> {
         format!("{}:{}", self.server.bind_address, self.server.json_rpc_port)
             .parse()
-            .expect("Invalid JSON-RPC address")
+            .map_err(|e| {
+                DapiError::Configuration(format!(
+                    "Invalid JSON-RPC address '{}:{}': {}",
+                    self.server.bind_address, self.server.json_rpc_port, e
+                ))
+            })
     }
 
     /// Return the configured metrics listener port.
@@ -321,16 +335,28 @@ impl Config {
     }
 
     /// Build the metrics socket address if metrics are enabled.
-    pub fn metrics_addr(&self) -> Option<SocketAddr> {
+    pub fn metrics_addr(&self) -> DAPIResult<Option<SocketAddr>> {
         if !self.metrics_enabled() {
-            return None;
+            return Ok(None);
         }
 
-        Some(
-            format!("{}:{}", self.server.bind_address, self.server.metrics_port)
-                .parse()
-                .expect("Invalid metrics address"),
-        )
+        format!("{}:{}", self.server.bind_address, self.server.metrics_port)
+            .parse()
+            .map(Some)
+            .map_err(|e| {
+                DapiError::Configuration(format!(
+                    "Invalid metrics address '{}:{}': {}",
+                    self.server.bind_address, self.server.metrics_port, e
+                ))
+            })
+    }
+
+    /// Validate configuration to ensure dependent subsystems can start successfully.
+    pub fn validate(&self) -> DAPIResult<()> {
+        self.grpc_server_addr()?;
+        self.json_rpc_addr()?;
+        self.metrics_addr()?;
+        Ok(())
     }
 }
 

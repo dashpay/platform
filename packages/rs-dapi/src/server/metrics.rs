@@ -15,7 +15,7 @@ impl DapiServer {
     /// Binds Axum routes and wraps them with access logging when available.
     /// Returns early when metrics are disabled.
     pub(super) async fn start_metrics_server(&self) -> DAPIResult<()> {
-        let Some(addr) = self.config.metrics_addr() else {
+        let Some(addr) = self.config.metrics_addr()? else {
             info!("Metrics server disabled; skipping startup");
             return Ok(());
         };

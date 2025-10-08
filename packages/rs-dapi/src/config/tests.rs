@@ -236,10 +236,7 @@ DAPI_DRIVE_URI=http://dotenv-drive:9000
 
     assert_eq!(config.server.grpc_server_port, 8005); // CLI override wins
     assert_eq!(config.dapi.tenderdash.uri, "http://cli-tenderdash:11000"); // CLI override
-    assert_eq!(
-        config.dapi.drive.uri,
-        "http://dotenv-drive:9000"
-    ); // .env retains value for unset keys
+    assert_eq!(config.dapi.drive.uri, "http://dotenv-drive:9000"); // .env retains value for unset keys
 
     cleanup_env_vars();
 }
@@ -284,9 +281,28 @@ fn test_config_socket_addresses() {
     let config = Config::default();
 
     // Test that socket addresses are properly formatted
-    assert_eq!(config.grpc_server_addr().to_string(), "127.0.0.1:3005");
-    assert_eq!(config.json_rpc_addr().to_string(), "127.0.0.1:3004");
-    assert_eq!(config.metrics_addr().unwrap().to_string(), "127.0.0.1:9090");
+    assert_eq!(
+        config
+            .grpc_server_addr()
+            .expect("gRPC address should parse")
+            .to_string(),
+        "127.0.0.1:3005"
+    );
+    assert_eq!(
+        config
+            .json_rpc_addr()
+            .expect("JSON-RPC address should parse")
+            .to_string(),
+        "127.0.0.1:3004"
+    );
+    assert_eq!(
+        config
+            .metrics_addr()
+            .expect("metrics address should parse")
+            .expect("metrics address should be present")
+            .to_string(),
+        "127.0.0.1:9090"
+    );
 }
 
 #[test]
@@ -296,7 +312,13 @@ fn test_config_socket_addresses_custom_bind() {
     config.server.grpc_server_port = 4000;
 
     // Test that custom bind address and port work
-    assert_eq!(config.grpc_server_addr().to_string(), "0.0.0.0:4000");
+    assert_eq!(
+        config
+            .grpc_server_addr()
+            .expect("custom gRPC address should parse")
+            .to_string(),
+        "0.0.0.0:4000"
+    );
 }
 
 #[test]
@@ -305,5 +327,36 @@ fn test_metrics_disabled_when_port_zero() {
     config.server.metrics_port = 0;
 
     assert!(!config.metrics_enabled());
-    assert!(config.metrics_addr().is_none());
+    assert!(
+        config
+            .metrics_addr()
+            .expect("metrics address check should succeed")
+            .is_none()
+    );
+}
+
+#[test]
+fn test_validate_default_config_succeeds() {
+    let config = Config::default();
+    config
+        .validate()
+        .expect("Default configuration should be valid");
+}
+
+#[test]
+fn test_validate_fails_on_invalid_bind_address() {
+    let mut config = Config::default();
+    config.server.bind_address = "invalid-address".to_string();
+
+    let error = config
+        .validate()
+        .expect_err("Invalid bind address should fail validation");
+
+    assert!(
+        error
+            .to_string()
+            .contains("Invalid gRPC server address 'invalid-address:3005'"),
+        "unexpected error message: {}",
+        error
+    );
 }

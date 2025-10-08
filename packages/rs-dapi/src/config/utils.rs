@@ -1,6 +1,6 @@
 use crate::utils::deserialize_string_or_number;
-use serde::de::{Error as DeError, Visitor};
 use serde::Deserializer;
+use serde::de::{Error as DeError, Visitor};
 use std::fmt;
 use std::str::FromStr;
 
