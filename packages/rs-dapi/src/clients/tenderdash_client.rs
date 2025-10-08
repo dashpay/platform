@@ -1,5 +1,6 @@
 use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
+use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
 use crate::utils::generate_jsonrpc_id;
 use reqwest::Client;
@@ -9,14 +10,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt::Debug;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};
-
-/// Default timeout for all Tenderdash HTTP requests
-const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
-/// Connection timeout for establishing HTTP connections; as we do local, 1s is enough
-const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
@@ -335,7 +330,6 @@ impl TenderdashClient {
             .post(&self.base_url)
             .header("Content-Type", "application/json")
             .json(request)
-            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(|e| {

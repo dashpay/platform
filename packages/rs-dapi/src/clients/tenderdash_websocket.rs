@@ -1,5 +1,6 @@
 use crate::{
     DAPIResult, DapiError,
+    clients::REQUEST_TIMEOUT,
     utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
 };
 use futures::{SinkExt, StreamExt};
@@ -7,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::broadcast;
+use tokio::{sync::broadcast, time::timeout};
 use tokio_tungstenite::{connect_async, tungstenite::Message};
 use tracing::{debug, error, info, trace, warn};
 
@@ -126,8 +127,16 @@ impl TenderdashWebSocketClient {
         let _url = url::Url::parse(ws_url)?;
 
         // Try to connect
-        let (_ws_stream, _) = connect_async(ws_url).await?;
+        let (mut ws_stream, _) = timeout(REQUEST_TIMEOUT, connect_async(ws_url))
+            .await
+            .map_err(|e| {
+                DapiError::timeout(format!("WebSocket connection test timed out: {e}"))
+            })??;
 
+        ws_stream
+            .close(None)
+            .await
+            .map_err(|e| DapiError::Client(format!("WebSocket connection close failed: {e}")))?;
         tracing::trace!("WebSocket connection test successful");
         Ok(())
     }
