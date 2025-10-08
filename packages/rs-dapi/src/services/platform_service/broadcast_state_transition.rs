@@ -164,7 +164,8 @@ impl PlatformServiceImpl {
         }
 
         // If not in mempool and not in chain, re-validate with CheckTx
-        match self.tenderdash_client.check_tx(txid_base64).await {
+        let st_base64 = BASE64_STANDARD.encode(st_bytes);
+        match self.tenderdash_client.check_tx(st_base64).await {
             Ok(check_response) => {
                 if check_response.code != 0 {
                     let val = serde_json::to_value(check_response)?;

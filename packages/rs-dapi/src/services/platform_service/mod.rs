@@ -60,7 +60,7 @@ macro_rules! drive_method {
                     let key = make_cache_key(method, request.get_ref());
 
                     // Try cache
-                    if let Some(decoded) = cache.get(&key) as Option<$response_type> {
+                    if let Some(decoded) = cache.get(&key) {
                         return Ok((Response::new(decoded), true));
                     }
 

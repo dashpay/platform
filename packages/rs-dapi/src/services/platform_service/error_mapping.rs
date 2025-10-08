@@ -28,9 +28,6 @@ impl TenderdashStatus {
                 data = hex::encode(bytes),
                 "TenderdashStatus consensus_error failed to deserialize to ConsensusError"
             );
-
-            // TODO: remove this panic after debugging
-            panic!("TenderdashStatus consensus_error must serialize to ConsensusError");
         }
         Self {
             code,
@@ -145,7 +142,7 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
 impl From<TenderdashStatus> for StateTransitionBroadcastError {
     fn from(err: TenderdashStatus) -> Self {
         StateTransitionBroadcastError {
-            code: err.code.min(u32::MAX as i64) as u32,
+            code: err.code.clamp(0, u32::MAX as i64) as u32,
             message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
             data: err.consensus_error.clone().unwrap_or_default(),
         }
