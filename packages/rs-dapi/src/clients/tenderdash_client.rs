@@ -2,7 +2,7 @@ use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
-use crate::utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id};
+use crate::utils::{deserialize_string_or_number, generate_jsonrpc_id};
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
@@ -119,8 +119,8 @@ pub struct NodeInfo {
     pub network: String,
     #[serde(default)]
     pub version: String,
-    #[serde(default, deserialize_with = "deserialize_to_string")]
-    pub channels: String,
+    #[serde(default)]
+    pub channels: Vec<u64>,
     #[serde(default)]
     pub moniker: String,
     #[serde(default)]

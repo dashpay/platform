@@ -9,6 +9,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Enable a basic tracing subscriber if the caller did not configure one already.
     let _ = tracing_subscriber::fmt::try_init();
 
+    println!("Tenderdash Client example that tests all implemented Tenderdash methods.");
+    println!(
+        "You can use TENDERDASH_RPC_URL and TENDERDASH_WS_URL env vars to override the default connection URLs."
+    );
+
     let rpc_url =
         env::var("TENDERDASH_RPC_URL").unwrap_or_else(|_| "http://127.0.0.1:26657".to_string());
     let ws_url = env::var("TENDERDASH_WS_URL")
