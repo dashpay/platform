@@ -14,6 +14,7 @@ use dapi_grpc::platform::v0::{
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::sync::Arc;
+use tokio::task::JoinHandle;
 
 /// Runs a local producer that bridges EventMux commands to a local EventBus of Platform events.
 ///
@@ -31,7 +32,8 @@ pub async fn run_local_platform_events_producer<F>(
     let mut cmd_rx = producer.cmd_rx;
     let resp_tx = producer.resp_tx;
 
-    let mut subs: HashMap<String, SubscriptionHandle<PlatformEventV0, F>> = HashMap::new();
+    let mut subs: HashMap<String, (SubscriptionHandle<PlatformEventV0, F>, JoinHandle<_>)> =
+        HashMap::new();
 
     while let Some(cmd_res) = cmd_rx.recv().await {
         match cmd_res {
@@ -66,11 +68,11 @@ pub async fn run_local_platform_events_producer<F>(
                         let id_for = id.clone();
                         let handle_clone = handle.clone();
                         let resp_tx_clone = resp_tx.clone();
-                        tokio::spawn(async move {
+                        let worker = tokio::spawn(async move {
                             forward_local_events(handle_clone, &id_for, resp_tx_clone).await;
                         });
 
-                        subs.insert(id.clone(), handle);
+                        subs.insert(id.clone(), (handle, worker));
 
                         // Ack
                         let ack = PlatformEventsResponse {
@@ -87,7 +89,7 @@ pub async fn run_local_platform_events_producer<F>(
                     }
                     Some(Cmd::Remove(rem)) => {
                         let id = rem.client_subscription_id;
-                        if subs.remove(&id).is_some() {
+                        if let Some((subscription, worker)) = subs.remove(&id) {
                             let ack = PlatformEventsResponse {
                                 version: Some(RespVersion::V0(PlatformEventsResponseV0 {
                                     response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0 {
@@ -99,6 +101,10 @@ pub async fn run_local_platform_events_producer<F>(
                             if resp_tx.send(Ok(ack)).await.is_err() {
                                 tracing::warn!("local producer failed to send remove ack");
                             }
+
+                            // TODO: add subscription close method
+                            drop(subscription);
+                            worker.abort();
                         }
                     }
                     Some(Cmd::Ping(p)) => {
