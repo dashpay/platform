@@ -19,8 +19,8 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
 wasm-bindgen = { version = "=0.2.103" }
-js-sys = "0.3.53"
-web-sys = { version = "0.3.6", features = ["console"] }
+js-sys = "0.3.64"
+web-sys = { version = "0.3.64", features = ["console"] }
 thiserror = { version = "2.0.12" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [
