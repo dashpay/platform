@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{net::SocketAddr, path::PathBuf};
+use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
 use tracing::{debug, trace, warn};
 
 use crate::{DAPIResult, DapiError};
@@ -207,39 +207,89 @@ impl Config {
 
     /// Load configuration from specific .env file and environment variables
     pub fn load_from_dotenv(config_path: Option<PathBuf>) -> DAPIResult<Self> {
-        trace!("Loading configuration from .env file and environment");
+        Self::load_with_overrides(config_path, std::iter::empty::<(String, String)>())
+    }
 
-        // Load .env file first
+    /// Load configuration applying defaults, .env, environment variables, and CLI overrides (in that order).
+    pub fn load_with_overrides<I, K, V>(
+        config_path: Option<PathBuf>,
+        cli_overrides: I,
+    ) -> DAPIResult<Self>
+    where
+        I: IntoIterator<Item = (K, V)>,
+        K: Into<String>,
+        V: Into<String>,
+    {
+        trace!("Loading configuration from .env file, environment, and CLI overrides");
+
+        // Collect configuration values from layered sources
+        let mut layered: HashMap<String, String> = HashMap::new();
+
         if let Some(path) = config_path {
-            if let Err(e) = dotenvy::from_path(&path) {
-                return Err(DapiError::Configuration(format!(
-                    "Cannot load config file {:?}: {}",
-                    path, e
-                )));
+            match dotenvy::from_path_iter(&path) {
+                Ok(iter) => {
+                    for entry in iter {
+                        let (key, value) = entry.map_err(|e| {
+                            DapiError::Configuration(format!(
+                                "Cannot parse config file {:?}: {}",
+                                path, e
+                            ))
+                        })?;
+                        layered.insert(key, value);
+                    }
+                    debug!("Loaded .env file from: {:?}", path);
+                }
+                Err(e) => {
+                    return Err(DapiError::Configuration(format!(
+                        "Cannot load config file {:?}: {}",
+                        path, e
+                    )));
+                }
             }
-            debug!("Loaded .env file from: {:?}", path);
-        } else if let Err(e) = dotenvy::dotenv() {
-            if e.not_found() {
-                warn!("Cannot find any matching .env file");
-            } else {
-                return Err(DapiError::Configuration(format!(
-                    "Cannot load config file: {}",
-                    e
-                )));
+        } else {
+            match dotenvy::dotenv_iter() {
+                Ok(iter) => {
+                    for entry in iter {
+                        let (key, value) = entry.map_err(|e| {
+                            DapiError::Configuration(format!(
+                                "Cannot parse config file entry: {}",
+                                e
+                            ))
+                        })?;
+                        layered.insert(key, value);
+                    }
+                    debug!("Loaded .env file from default location");
+                }
+                Err(e) => {
+                    if e.not_found() {
+                        warn!("Cannot find any matching .env file");
+                    } else {
+                        return Err(DapiError::Configuration(format!(
+                            "Cannot load config file: {}",
+                            e
+                        )));
+                    }
+                }
             }
         }
 
-        // Try loading from environment with envy
-        match Self::from_env() {
+        // Environment variables override .env contents
+        layered.extend(env::vars());
+
+        // CLI overrides have the highest priority
+        for (key, value) in cli_overrides.into_iter() {
+            layered.insert(key.into(), value.into());
+        }
+
+        match envy::from_iter(layered) {
             Ok(config) => {
-                debug!("Configuration loaded successfully from environment");
+                debug!("Configuration loaded successfully from layered sources");
                 Ok(config)
             }
-            Err(e) => {
-                // Fall back to manual loading if envy fails
-                debug!("Falling back to manual configuration loading: {}", e);
-                Self::load()
-            }
+            Err(e) => Err(DapiError::Configuration(format!(
+                "Failed to load configuration: {}",
+                e
+            ))),
         }
     }
 

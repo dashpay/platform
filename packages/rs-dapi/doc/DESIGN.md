@@ -511,6 +511,7 @@ Rationale: If the server performs historical fetch first and subscribes later, a
 
 #### Configuration Files
 - .env-based configuration with environment override
+- Strict precedence: compile-time defaults < `.env` < environment variables < CLI overrides
 - Network-specific default configurations
 - Validation and error reporting for invalid configs
 

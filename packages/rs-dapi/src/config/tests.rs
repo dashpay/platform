@@ -212,6 +212,40 @@ DAPI_DRIVE_URI=http://dotenv-drive:9000
 
 #[test]
 #[serial]
+fn test_config_load_with_cli_overrides() {
+    // Ensure we start from a clean environment
+    cleanup_env_vars();
+
+    let temp_file = NamedTempFile::new().expect("Failed to create temp file");
+    let env_content = r#"
+DAPI_GRPC_SERVER_PORT=6005
+DAPI_DRIVE_URI=http://dotenv-drive:9000
+"#;
+
+    fs::write(temp_file.path(), env_content).expect("Failed to write temp file");
+
+    set_env_var("DAPI_GRPC_SERVER_PORT", "7005");
+
+    let overrides = [
+        ("DAPI_GRPC_SERVER_PORT", "8005"),
+        ("DAPI_TENDERDASH_URI", "http://cli-tenderdash:11000"),
+    ];
+
+    let config = Config::load_with_overrides(Some(temp_file.path().to_path_buf()), overrides)
+        .expect("Config should load with CLI overrides");
+
+    assert_eq!(config.server.grpc_server_port, 8005); // CLI override wins
+    assert_eq!(config.dapi.tenderdash.uri, "http://cli-tenderdash:11000"); // CLI override
+    assert_eq!(
+        config.dapi.drive.uri,
+        "http://dotenv-drive:9000"
+    ); // .env retains value for unset keys
+
+    cleanup_env_vars();
+}
+
+#[test]
+#[serial]
 fn test_config_load_from_dotenv_invalid_values() {
     // Clean up any existing environment variables first
     cleanup_env_vars();

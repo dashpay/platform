@@ -1,5 +1,7 @@
 use crate::utils::deserialize_string_or_number;
-use serde::{Deserialize, Deserializer};
+use serde::de::{Error as DeError, Visitor};
+use serde::Deserializer;
+use std::fmt;
 use std::str::FromStr;
 
 /// Custom deserializer that handles both string and numeric representations
@@ -19,12 +21,44 @@ pub fn from_str_or_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
 where
     D: Deserializer<'de>,
 {
-    use serde::de::Error;
+    struct BoolOrStringVisitor;
 
-    let s = String::deserialize(deserializer)?;
-    match s.to_lowercase().as_str() {
-        "true" | "1" | "yes" | "on" => Ok(true),
-        "false" | "0" | "no" | "off" => Ok(false),
-        _ => s.parse::<bool>().map_err(Error::custom),
+    impl<'de> Visitor<'de> for BoolOrStringVisitor {
+        type Value = bool;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a boolean or a string representing a boolean")
+        }
+
+        fn visit_bool<E>(self, value: bool) -> Result<Self::Value, E> {
+            Ok(value)
+        }
+
+        fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+        where
+            E: DeError,
+        {
+            parse_bool(value).map_err(E::custom)
+        }
+
+        fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+        where
+            E: DeError,
+        {
+            self.visit_str(&value)
+        }
     }
+
+    fn parse_bool(input: &str) -> Result<bool, String> {
+        let normalized = input.to_lowercase();
+        match normalized.as_str() {
+            "true" | "1" | "yes" | "on" => Ok(true),
+            "false" | "0" | "no" | "off" => Ok(false),
+            _ => input
+                .parse::<bool>()
+                .map_err(|err| format!("failed to parse bool '{}': {}", input, err)),
+        }
+    }
+
+    deserializer.deserialize_any(BoolOrStringVisitor)
 }
