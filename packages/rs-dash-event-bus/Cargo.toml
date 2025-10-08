@@ -19,11 +19,9 @@ tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
 futures = "0.3"
-sender-sink = { version = "0.2.1" }
 
 # Internal workspace crates
 dapi-grpc = { path = "../dapi-grpc" }
-rs-dapi-client = { path = "../rs-dapi-client" }
 
 # Optional metrics
 metrics = { version = "0.24.2", optional = true }

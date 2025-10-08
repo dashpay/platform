@@ -272,12 +272,11 @@ where
                     });
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
-                    if let Ok(mut subs) = bus.subs.try_write() {
-                        if subs.remove(&id).is_some() {
+                    if let Ok(mut subs) = bus.subs.try_write()
+                        && subs.remove(&id).is_some() {
                             metrics_unsubscribe_inc();
                             metrics_active_gauge_set(subs.len());
                         }
-                    }
                 }
             }
         }

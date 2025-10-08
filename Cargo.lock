@@ -5078,8 +5078,6 @@ dependencies = [
  "dapi-grpc",
  "futures",
  "metrics",
- "rs-dapi-client",
- "sender-sink",
  "tokio",
  "tokio-stream",
  "tokio-util",
@@ -5470,16 +5468,6 @@ name = "semver"
 version = "1.0.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d767eb0aabc880b29956c35734170f26ed551a859dbd361d140cdbeca61ab1e2"
-
-[[package]]
-name = "sender-sink"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fa84fb38012aeecea16454e88aea3f2d36cf358a702e3116448213b2e13f2181"
-dependencies = [
- "futures",
- "tokio",
-]
 
 [[package]]
 name = "serde"
