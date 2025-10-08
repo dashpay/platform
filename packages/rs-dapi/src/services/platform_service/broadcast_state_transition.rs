@@ -6,10 +6,10 @@
  * duplicate detection, following the JavaScript DAPI implementation.
  */
 
+use crate::error::DapiError;
 use crate::services::PlatformServiceImpl;
 use crate::services::platform_service::TenderdashStatus;
 use crate::services::platform_service::error_mapping::decode_consensus_error;
-use crate::{error::DapiError, services::platform_service::error_mapping::base64_decode};
 use base64::prelude::*;
 use dapi_grpc::platform::v0::{BroadcastStateTransitionRequest, BroadcastStateTransitionResponse};
 use sha2::{Digest, Sha256};
@@ -124,23 +124,25 @@ impl PlatformServiceImpl {
         debug!(tx = txid_base64, "Checking duplicate state transition",);
 
         // Check if the ST is in the mempool
-        let unconfirmed_response = self.tenderdash_client.unconfirmed_txs(Some(100)).await?;
+        match self.tenderdash_client.unconfirmed_tx(&txid_base64).await {
+            Ok(_) => {
+                return Err(DapiError::AlreadyExists(
+                    "state transition already in mempool".to_string(),
+                ));
+            }
+            Err(DapiError::TenderdashClientError(status)) => {
+                let is_not_found = status
+                    .message
+                    .as_deref()
+                    .map(|message| message.contains("not found"))
+                    .unwrap_or(false);
 
-        let found = unconfirmed_response
-            .txs
-            .unwrap_or_default()
-            .iter()
-            .filter_map(|tx| {
-                base64_decode(tx).or_else(|| {
-                    tracing::debug!(tx, "Failed to decode tx id as base64 string");
-                    None
-                })
-            })
-            .any(|f| f == txid);
-        if found {
-            return Err(DapiError::AlreadyExists(
-                "state transition already in mempool".to_string(),
-            ));
+                if !is_not_found {
+                    return Err(DapiError::TenderdashClientError(status));
+                }
+            }
+            Err(DapiError::NotFound(_)) => {}
+            Err(e) => return Err(e),
         }
 
         // Check if the ST is already committed to the blockchain

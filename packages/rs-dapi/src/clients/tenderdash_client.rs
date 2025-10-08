@@ -72,12 +72,9 @@ struct CheckTxParams<'a> {
     tx: &'a str,
 }
 
-#[derive(Debug, Serialize, Default)]
-struct UnconfirmedTxsParams {
-    #[serde(rename = "page", skip_serializing_if = "Option::is_none")]
-    page: Option<String>,
-    #[serde(rename = "per_page", skip_serializing_if = "Option::is_none")]
-    per_page: Option<String>,
+#[derive(Debug, Serialize)]
+struct UnconfirmedTxParams<'a> {
+    hash: &'a str,
 }
 
 #[derive(Debug, Serialize)]
@@ -257,18 +254,12 @@ pub struct ResultCheckTx {
 pub type CheckTxResponse = ResultCheckTx;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ResultUnconfirmedTxs {
-    #[serde(rename = "n_txs", default)]
-    pub count: Option<String>,
+pub struct ResultUnconfirmedTx {
     #[serde(default)]
-    pub total: Option<String>,
-    #[serde(rename = "total_bytes", default)]
-    pub total_bytes: Option<String>,
-    #[serde(default)]
-    pub txs: Option<Vec<String>>,
+    pub tx: Option<String>,
 }
 
-pub type UnconfirmedTxsResponse = ResultUnconfirmedTxs;
+pub type UnconfirmedTxResponse = ResultUnconfirmedTx;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultTx {
@@ -493,13 +484,10 @@ impl TenderdashClient {
         self.post(&request).await
     }
 
-    /// Get unconfirmed transactions from the mempool
-    pub async fn unconfirmed_txs(&self, limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
-        let params = UnconfirmedTxsParams {
-            page: None,
-            per_page: limit.map(|value| value.to_string()),
-        };
-        let request = JsonRpcRequest::new("unconfirmed_txs", params);
+    /// Get a single unconfirmed transaction by its hash
+    pub async fn unconfirmed_tx(&self, hash: &str) -> DAPIResult<UnconfirmedTxResponse> {
+        let params = UnconfirmedTxParams { hash };
+        let request = JsonRpcRequest::new("unconfirmed_tx", params);
 
         self.post(&request).await
     }
