@@ -13,6 +13,11 @@ use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};
 
+/// Default timeout for all Tenderdash HTTP requests
+const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+/// Connection timeout for establishing HTTP connections; as we do local, 1s is enough
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
 ///
@@ -135,14 +140,13 @@ impl TenderdashClient {
         T: serde::de::DeserializeOwned + Debug,
     {
         let start = tokio::time::Instant::now();
+
         let response: TenderdashResponse<T> = self
             .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
-            .body(serde_json::to_string(&request_body).map_err(|e| {
-                error!("Failed to serialize request body: {}", e);
-                DapiError::Client(format!("Failed to serialize request body: {}", e))
-            })?)
+            .json(&request_body)
+            .timeout(REQUEST_TIMEOUT)
             .send()
             .await
             .map_err(|e| {
@@ -186,8 +190,8 @@ impl TenderdashClient {
         );
 
         let http_client = Client::builder()
-            .connect_timeout(Duration::from_secs(5))
-            .timeout(Duration::from_secs(30))
+            .connect_timeout(CONNECT_TIMEOUT)
+            .timeout(REQUEST_TIMEOUT)
             .build()
             .map_err(|e| {
                 error!("Failed to build Tenderdash HTTP client: {}", e);
@@ -197,7 +201,8 @@ impl TenderdashClient {
         let client = ClientBuilder::new(http_client)
             .with(TracingMiddleware::default())
             .build();
-        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
+
+        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 256));
 
         let tenderdash_client = Self {
             client,

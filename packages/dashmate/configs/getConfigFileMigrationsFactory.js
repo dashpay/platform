@@ -1144,7 +1144,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (!options.platform.dapi.rsDapi.metrics) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
-              return;
             }
 
             if (typeof options.platform.dapi.rsDapi.metrics.host === 'undefined') {
@@ -1157,7 +1156,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (!options.platform.dapi.rsDapi.logs) {
               options.platform.dapi.rsDapi.logs = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logs'));
-              return;
             }
 
             if (typeof options.platform.dapi.rsDapi.logs.level === 'undefined') {
