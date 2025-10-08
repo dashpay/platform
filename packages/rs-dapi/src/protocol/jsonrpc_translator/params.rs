@@ -1,5 +1,15 @@
 use serde_json::Value;
 
+fn parse_bool_flag(value: Option<&Value>, name: &str) -> Result<bool, String> {
+    match value {
+        Some(Value::Bool(b)) => Ok(*b),
+        Some(Value::String(s)) if s == "true" => Ok(true),
+        Some(Value::String(s)) if s == "false" => Ok(false),
+        None | Some(Value::Null) => Ok(false),
+        _ => Err(format!("{name} must be boolean")),
+    }
+}
+
 /// Extract the `height` field from JSON-RPC params, validating numeric bounds.
 /// Accepts object-based params and returns friendly error strings for schema issues.
 pub fn parse_first_u32_param(params: Option<Value>) -> Result<u32, String> {
@@ -48,8 +58,9 @@ pub fn parse_send_raw_tx_params(params: Option<Value>) -> Result<(Vec<u8>, bool,
             let tx = hex::decode(raw_hex)
                 .map_err(|_| "raw transaction must be valid hex".to_string())?;
 
-            let allow_high_fees = a.get(1).and_then(|v| v.as_bool()).unwrap_or(false);
-            let bypass_limits = a.get(2).and_then(|v| v.as_bool()).unwrap_or(false);
+            let allow_high_fees = parse_bool_flag(a.get(1), "allow_high_fees")?;
+            let bypass_limits = parse_bool_flag(a.get(2), "bypass_limits")?;
+
             Ok((tx, allow_high_fees, bypass_limits))
         }
         Some(Value::String(s)) => {
