@@ -14,6 +14,7 @@ pub mod consensus_error;
 pub mod core_script;
 pub mod data_contract;
 pub mod enums;
+pub mod epoch;
 pub mod error;
 pub mod identifier;
 pub mod identity;
@@ -28,6 +29,7 @@ pub use data_contract::{
     ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
     DataContractWasm, DocumentWasm,
 };
+pub use epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
 
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,

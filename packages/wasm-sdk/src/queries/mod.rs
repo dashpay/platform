@@ -330,13 +330,7 @@ impl ProofMetadataResponseWasm {
         }
     }
 
-    pub(crate) fn into_parts(
-        self,
-    ) -> (
-        JsValue,
-        ResponseMetadataWasm,
-        ProofInfoWasm,
-    ) {
+    pub(crate) fn into_parts(self) -> (JsValue, ResponseMetadataWasm, ProofInfoWasm) {
         (self.data, self.metadata, self.proof)
     }
 }
@@ -373,7 +367,10 @@ fn serialize_to_js<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
 
 fn set_property(object: &Object, key: &str, value: &JsValue) -> Result<(), WasmSdkError> {
     js_sys::Reflect::set(object, &JsValue::from_str(key), value).map_err(|err| {
-        WasmSdkError::serialization(format!("Failed to set '{}' on proof response: {:?}", key, err))
+        WasmSdkError::serialization(format!(
+            "Failed to set '{}' on proof response: {:?}",
+            key, err
+        ))
     })?;
 
     Ok(())

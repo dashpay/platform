@@ -1,7 +1,6 @@
 use crate::error::WasmSdkError;
 use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
 use crate::sdk::WasmSdk;
-use wasm_dpp2::identity::IdentityWasm;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
@@ -12,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::identity::IdentityWasm;
 
 fn identity_to_js_value(identity: Identity) -> Result<JsValue, WasmSdkError> {
     IdentityWasm::from(identity).to_object().map_err(|e| {

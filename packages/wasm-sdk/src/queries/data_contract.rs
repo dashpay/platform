@@ -7,8 +7,8 @@ use drive_proof_verifier::types::{DataContractHistory, DataContracts};
 use js_sys::{BigInt, Map};
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-use wasm_dpp2::DataContractWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::DataContractWasm;
 
 #[wasm_bindgen(js_name = "DataContractProofResponse")]
 #[derive(Clone)]

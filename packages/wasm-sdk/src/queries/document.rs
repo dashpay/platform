@@ -7,10 +7,10 @@ use dash_sdk::dpp::platform_value::{platform_value, Value};
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::Fetch;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
+use js_sys::Map;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
-use js_sys::Map;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 
@@ -35,7 +35,6 @@ pub struct DocumentsProofResponseWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub proof: ProofInfoWasm,
 }
-
 
 /// Parse JSON where clause into WhereClause
 fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
@@ -281,18 +280,12 @@ impl WasmSdk {
         let doc_type_name = document_type.to_string();
 
         for (doc_id, doc_opt) in documents_result {
-            let key = JsValue::from(
-                IdentifierWasm::from(doc_id),
-            );
+            let key = JsValue::from(IdentifierWasm::from(doc_id));
 
             match doc_opt {
                 Some(doc) => {
-                    let wasm_doc = DocumentWasm::from_batch(
-                        doc,
-                        contract_id,
-                        doc_type_name.clone(),
-                        None,
-                    );
+                    let wasm_doc =
+                        DocumentWasm::from_batch(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
@@ -394,18 +387,12 @@ impl WasmSdk {
         let doc_type_name = document_type.to_string();
 
         for (doc_id, doc_opt) in documents_result {
-            let key = JsValue::from(
-                IdentifierWasm::from(doc_id),
-            );
+            let key = JsValue::from(IdentifierWasm::from(doc_id));
 
             match doc_opt {
                 Some(doc) => {
-                    let wasm_doc = DocumentWasm::from_batch(
-                        doc,
-                        contract_id,
-                        doc_type_name.clone(),
-                        None,
-                    );
+                    let wasm_doc =
+                        DocumentWasm::from_batch(doc, contract_id, doc_type_name.clone(), None);
                     documents_map.set(&key, &JsValue::from(wasm_doc));
                 }
                 None => {
@@ -459,12 +446,9 @@ impl WasmSdk {
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
         // Execute query
-        let document = Document::fetch(self.as_ref(), query).await?.map(|doc| DocumentWasm::from_batch(
-            doc,
-            contract_id,
-            document_type.to_string(),
-            None,
-        ));
+        let document = Document::fetch(self.as_ref(), query)
+            .await?
+            .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
 
         Ok(document)
     }
@@ -511,15 +495,11 @@ impl WasmSdk {
             Document::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         Ok(DocumentProofResponseWasm {
-            document: document_result.map(|doc| DocumentWasm::from_batch(
-                doc,
-                contract_id,
-                document_type.to_string(),
-                None,
-            )),
+            document: document_result.map(|doc| {
+                DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None)
+            }),
             metadata: metadata.into(),
             proof: proof.into(),
         })
     }
-
 }

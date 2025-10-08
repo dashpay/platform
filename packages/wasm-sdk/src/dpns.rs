@@ -82,18 +82,16 @@ impl WasmSdk {
         private_key_wif: &str,
         preorder_callback: Option<js_sys::Function>,
     ) -> Result<JsValue, WasmSdkError> {
-        let identity_id_parsed = Identifier::from_string(
-            identity_id,
-            Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
         let identity = Identity::fetch(self.as_ref(), identity_id_parsed)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
 
-        let signer = SingleKeySigner::new(private_key_wif)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e)))?;
+        let signer = SingleKeySigner::new(private_key_wif).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e))
+        })?;
 
         let identity_public_key = identity
             .get_public_key_by_id(public_key_id)
@@ -151,14 +149,8 @@ impl WasmSdk {
         });
 
         let js_result = RegisterDpnsNameResult {
-            preorder_document_id: result
-                .preorder_document
-                .id()
-                .to_string(Encoding::Base58),
-            domain_document_id: result
-                .domain_document
-                .id()
-                .to_string(Encoding::Base58),
+            preorder_document_id: result.preorder_document.id().to_string(Encoding::Base58),
+            domain_document_id: result.domain_document.id().to_string(Encoding::Base58),
             full_domain_name: result.full_domain_name,
         };
 
@@ -187,10 +179,7 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getDpnsUsernameByName")]
-    pub async fn get_dpns_username_by_name(
-        &self,
-        username: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_dpns_username_by_name(&self, username: &str) -> Result<JsValue, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
 
@@ -203,8 +192,10 @@ impl WasmSdk {
         let label = parts[0];
         let domain = parts[1];
 
-        let contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
+        let contract_id =
+            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
 
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
@@ -262,8 +253,10 @@ impl WasmSdk {
         let label = parts[0];
         let domain = parts[1];
 
-        let contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
+        let contract_id =
+            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
 
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
@@ -324,8 +317,10 @@ impl WasmSdk {
         let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        let contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
+        let contract_id =
+            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
 
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
@@ -388,8 +383,10 @@ impl WasmSdk {
         let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        let contract_id = Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
+        let contract_id =
+            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
 
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
