@@ -30,18 +30,14 @@ impl JsonRpcTranslator {
 
     /// Interpret an incoming JSON-RPC request and produce the corresponding gRPC call marker.
     /// Validates parameters and converts them into typed messages or structured errors.
-    /// Returns the resolved call along with the original request id.
-    pub async fn translate_request(
-        &self,
-        json_rpc: JsonRpcRequest,
-    ) -> DapiResult<(JsonRpcCall, Option<Value>)> {
+    pub async fn translate_request(&self, json_rpc: JsonRpcRequest) -> DapiResult<JsonRpcCall> {
         match json_rpc.method.as_str() {
-            "getStatus" => Ok((self.translate_platform_status(), json_rpc.id)),
-            "getBestBlockHash" => Ok((JsonRpcCall::CoreGetBestBlockHash, json_rpc.id)),
+            "getStatus" => Ok(self.translate_platform_status()),
+            "getBestBlockHash" => Ok(JsonRpcCall::CoreGetBestBlockHash),
             "getBlockHash" => {
                 let height = params::parse_first_u32_param(json_rpc.params)
                     .map_err(DapiError::InvalidArgument)?;
-                Ok((JsonRpcCall::CoreGetBlockHash { height }, json_rpc.id))
+                Ok(JsonRpcCall::CoreGetBlockHash { height })
             }
             "sendRawTransaction" => {
                 let (tx, allow_high_fees, bypass_limits) =
@@ -52,7 +48,7 @@ impl JsonRpcTranslator {
                     allow_high_fees,
                     bypass_limits,
                 };
-                Ok((JsonRpcCall::CoreBroadcastTransaction(req), json_rpc.id))
+                Ok(JsonRpcCall::CoreBroadcastTransaction(req))
             }
             _ => Err(DapiError::MethodNotFound("Method not found".to_string())),
         }
@@ -72,8 +68,12 @@ impl JsonRpcTranslator {
     }
 
     /// Build a JSON-RPC error response from a rich `DapiError` using protocol mappings.
-    pub fn error_response(&self, error: DapiError, id: Option<Value>) -> JsonRpcResponse {
-        let (code, message, data) = error::map_error(&error);
+    pub fn error_response<E: Into<DapiError>>(
+        &self,
+        error: E,
+        id: Option<Value>,
+    ) -> JsonRpcResponse {
+        let (code, message, data) = error::map_error(&error.into());
         JsonRpcResponse::error(code, message, data, id)
     }
 
@@ -110,12 +110,11 @@ mod tests {
             params: None,
             id: Some(json!(1)),
         };
-        let (call, id) = t.translate_request(req).await.expect("translate ok");
+        let call = t.translate_request(req).await.expect("translate ok");
         match call {
             JsonRpcCall::PlatformGetStatus(_) => {}
             _ => panic!("expected PlatformGetStatus"),
         }
-        assert_eq!(id, Some(json!(1)));
     }
 
     #[tokio::test]
@@ -127,12 +126,11 @@ mod tests {
             params: None,
             id: Some(json!(2)),
         };
-        let (call, id) = t.translate_request(req).await.expect("translate ok");
+        let call = t.translate_request(req).await.expect("translate ok");
         match call {
             JsonRpcCall::CoreGetBestBlockHash => {}
             _ => panic!("expected CoreGetBestBlockHash"),
         }
-        assert_eq!(id, Some(json!(2)));
     }
 
     #[tokio::test]
@@ -144,12 +142,11 @@ mod tests {
             params: Some(json!({"height": 12345})),
             id: Some(json!(3)),
         };
-        let (call, id) = t.translate_request(req).await.expect("translate ok");
+        let call = t.translate_request(req).await.expect("translate ok");
         match call {
             JsonRpcCall::CoreGetBlockHash { height } => assert_eq!(height, 12345),
             _ => panic!("expected CoreGetBlockHash"),
         }
-        assert_eq!(id, Some(json!(3)));
     }
 
     #[tokio::test]
@@ -239,7 +236,7 @@ mod tests {
             params: Some(json!(["deadbeef"])),
             id: Some(json!(7)),
         };
-        let (call, id) = t.translate_request(req).await.expect("translate ok");
+        let call = t.translate_request(req).await.expect("translate ok");
         match call {
             JsonRpcCall::CoreBroadcastTransaction(r) => {
                 assert_eq!(r.transaction, hex::decode("deadbeef").unwrap());
@@ -248,7 +245,6 @@ mod tests {
             }
             _ => panic!("expected CoreBroadcastTransaction"),
         }
-        assert_eq!(id, Some(json!(7)));
     }
 
     #[test]

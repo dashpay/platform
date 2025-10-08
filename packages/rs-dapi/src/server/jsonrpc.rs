@@ -59,10 +59,10 @@ async fn handle_jsonrpc_request(
 ) -> Json<Value> {
     let id = json_rpc.id.clone();
 
-    let (call, request_id) = match state.translator.translate_request(json_rpc).await {
-        Ok((req, id)) => (req, id),
+    let call = match state.translator.translate_request(json_rpc).await {
+        Ok(req) => req,
         Err(e) => {
-            let error_response = state.translator.error_response(e, id);
+            let error_response = state.translator.error_response(e, id.clone());
             return Json(serde_json::to_value(error_response).unwrap_or_default());
         }
     };
@@ -76,22 +76,21 @@ async fn handle_jsonrpc_request(
             {
                 Ok(resp) => resp.into_inner(),
                 Err(e) => {
-                    let dapi_error = DapiError::Internal(format!("gRPC error: {}", e));
-                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    let error_response = state.translator.error_response(e, id.clone());
                     return Json(serde_json::to_value(error_response).unwrap_or_default());
                 }
             };
 
             match state
                 .translator
-                .translate_response(grpc_response, request_id)
+                .translate_response(grpc_response, id.clone())
                 .await
             {
                 Ok(json_rpc_response) => {
                     Json(serde_json::to_value(json_rpc_response).unwrap_or_default())
                 }
                 Err(e) => {
-                    let error_response = state.translator.error_response(e, id);
+                    let error_response = state.translator.error_response(e, id.clone());
                     Json(serde_json::to_value(error_response).unwrap_or_default())
                 }
             }
@@ -106,12 +105,11 @@ async fn handle_jsonrpc_request(
                     let txid = resp.into_inner().transaction_id;
                     let ok = state
                         .translator
-                        .ok_response(serde_json::json!(txid), request_id);
+                        .ok_response(serde_json::json!(txid), id.clone());
                     Json(serde_json::to_value(ok).unwrap_or_default())
                 }
                 Err(e) => {
-                    let dapi_error = DapiError::Internal(format!("Core gRPC error: {}", e));
-                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    let error_response = state.translator.error_response(e, id.clone());
                     Json(serde_json::to_value(error_response).unwrap_or_default())
                 }
             }
@@ -127,8 +125,7 @@ async fn handle_jsonrpc_request(
             {
                 Ok(r) => r.into_inner(),
                 Err(e) => {
-                    let dapi_error = DapiError::Internal(format!("Core gRPC error: {}", e));
-                    let error_response = state.translator.error_response(dapi_error, request_id);
+                    let error_response = state.translator.error_response(e, id.clone());
                     return Json(serde_json::to_value(error_response).unwrap_or_default());
                 }
             };
@@ -138,7 +135,7 @@ async fn handle_jsonrpc_request(
                 .unwrap_or_default();
             let ok = state
                 .translator
-                .ok_response(serde_json::json!(best_block_hash_hex), request_id);
+                .ok_response(serde_json::json!(best_block_hash_hex), id.clone());
             Json(serde_json::to_value(ok).unwrap_or_default())
         }
         JsonRpcCall::CoreGetBlockHash { height } => {
@@ -147,11 +144,11 @@ async fn handle_jsonrpc_request(
                 Ok(hash) => {
                     let ok = state
                         .translator
-                        .ok_response(serde_json::json!(hash.to_string()), request_id);
+                        .ok_response(serde_json::json!(hash.to_string()), id.clone());
                     Json(serde_json::to_value(ok).unwrap_or_default())
                 }
                 Err(e) => {
-                    let error_response = state.translator.error_response(e, request_id);
+                    let error_response = state.translator.error_response(e, id.clone());
                     Json(serde_json::to_value(error_response).unwrap_or_default())
                 }
             }
