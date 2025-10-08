@@ -1,11 +1,11 @@
-use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::PlatformEventsCommand;
+use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::tonic::Status;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::ReceiverStream;
 
-use crate::event_mux::{result_sender_sink, EventMux};
+use crate::event_mux::{EventMux, result_sender_sink};
 
 const UPSTREAM_COMMAND_BUFFER: usize = 128;
 

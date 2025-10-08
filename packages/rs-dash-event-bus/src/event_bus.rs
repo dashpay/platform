@@ -2,11 +2,11 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use tokio::sync::mpsc::error::TrySendError;
-use tokio::sync::{mpsc, Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, mpsc};
 
 const DEFAULT_SUBSCRIPTION_CAPACITY: usize = 256;
 
@@ -414,7 +414,7 @@ fn metrics_events_dropped_inc() {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     #[derive(Clone, Debug, PartialEq)]
     enum Evt {

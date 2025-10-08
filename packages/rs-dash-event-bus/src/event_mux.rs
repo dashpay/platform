@@ -9,17 +9,17 @@
 //! - Fan-out responses to all subscribers whose filters match
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
-use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
-use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
-use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 use dapi_grpc::platform::v0::PlatformEventsCommand;
+use dapi_grpc::platform::v0::platform_events_command::Version as CmdVersion;
+use dapi_grpc::platform::v0::platform_events_command::platform_events_command_v0::Command as Cmd;
+use dapi_grpc::platform::v0::platform_events_response::platform_events_response_v0::Response as Resp;
 use dapi_grpc::tonic::Status;
 use futures::SinkExt;
 use tokio::join;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 use tokio_util::sync::PollSender;
 
 use crate::event_bus::{EventBus, Filter as EventFilter, SubscriptionHandle};
@@ -721,7 +721,7 @@ mod tests {
     use dapi_grpc::platform::v0::platform_events_response::PlatformEventsResponseV0;
     use dapi_grpc::platform::v0::{PlatformEventMessageV0, PlatformEventV0, PlatformFilterV0};
     use std::collections::HashMap;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::{Duration, timeout};
 
     fn make_add_cmd(id: &str) -> PlatformEventsCommand {
         PlatformEventsCommand {
@@ -842,12 +842,16 @@ mod tests {
         assert_eq!(extract_id(ev2), sub_id);
 
         // Ensure no duplicate deliveries per subscriber
-        assert!(timeout(Duration::from_millis(100), resp_rx1.recv())
-            .await
-            .is_err());
-        assert!(timeout(Duration::from_millis(100), resp_rx2.recv())
-            .await
-            .is_err());
+        assert!(
+            timeout(Duration::from_millis(100), resp_rx1.recv())
+                .await
+                .is_err()
+        );
+        assert!(
+            timeout(Duration::from_millis(100), resp_rx2.recv())
+                .await
+                .is_err()
+        );
 
         // Drop subscribers to trigger Remove for both
         drop(sub1_cmd_tx);
