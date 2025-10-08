@@ -6,7 +6,7 @@ use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, json};
+use serde_json::Value;
 use std::fmt::Debug;
 use std::sync::Arc;
 use std::time::Duration;
@@ -45,107 +45,296 @@ pub struct TenderdashResponse<T> {
     pub error: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct TenderdashStatusResponse {
-    pub node_info: Option<NodeInfo>,
-    pub sync_info: Option<SyncInfo>,
+#[derive(Debug, Serialize)]
+struct JsonRpcRequest<T> {
+    jsonrpc: &'static str,
+    method: &'static str,
+    params: T,
+    id: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct NodeInfo {
-    pub protocol_version: Option<ProtocolVersion>,
-    pub id: Option<String>,
-    #[serde(rename = "ProTxHash")]
-    pub pro_tx_hash: Option<String>,
-    pub network: Option<String>,
+impl<T> JsonRpcRequest<T> {
+    fn new(method: &'static str, params: T) -> Self {
+        Self {
+            jsonrpc: "2.0",
+            method,
+            params,
+            id: generate_jsonrpc_id(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Default)]
+struct EmptyParams {}
+
+#[derive(Debug, Serialize)]
+struct BroadcastTxParams<'a> {
+    tx: &'a str,
+}
+
+#[derive(Debug, Serialize)]
+struct CheckTxParams<'a> {
+    tx: &'a str,
+}
+
+#[derive(Debug, Serialize, Default)]
+struct UnconfirmedTxsParams {
+    #[serde(rename = "page", skip_serializing_if = "Option::is_none")]
+    page: Option<String>,
+    #[serde(rename = "per_page", skip_serializing_if = "Option::is_none")]
+    per_page: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct TxParams<'a> {
+    hash: &'a str,
+    prove: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultStatus {
+    #[serde(default)]
+    pub node_info: Option<NodeInfo>,
+    #[serde(default)]
+    pub application_info: Option<ApplicationInfo>,
+    #[serde(default)]
+    pub sync_info: Option<SyncInfo>,
+    #[serde(default)]
+    pub validator_info: Option<ValidatorInfo>,
+    #[serde(default)]
+    pub light_client_info: Option<Value>,
+}
+
+pub type TenderdashStatusResponse = ResultStatus;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ApplicationInfo {
+    #[serde(default)]
     pub version: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NodeInfo {
+    #[serde(default)]
+    pub protocol_version: Option<ProtocolVersion>,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(default)]
+    pub listen_addr: Option<String>,
+    #[serde(rename = "ProTxHash", default)]
+    pub pro_tx_hash: Option<String>,
+    #[serde(default)]
+    pub network: Option<String>,
+    #[serde(default)]
+    pub version: Option<String>,
+    #[serde(default)]
+    pub channels: Option<Value>,
+    #[serde(default)]
+    pub moniker: Option<String>,
+    #[serde(default)]
+    pub other: Option<NodeInfoOther>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct NodeInfoOther {
+    #[serde(default)]
+    pub tx_index: Option<String>,
+    #[serde(default)]
+    pub rpc_address: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProtocolVersion {
+    #[serde(default)]
     pub p2p: Option<String>,
+    #[serde(default)]
     pub block: Option<String>,
+    #[serde(default)]
     pub app: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SyncInfo {
+    #[serde(default)]
     pub latest_block_hash: Option<String>,
+    #[serde(default)]
     pub latest_app_hash: Option<String>,
+    #[serde(default)]
     pub latest_block_height: Option<String>,
+    #[serde(default)]
     pub latest_block_time: Option<String>,
+    #[serde(default)]
     pub earliest_block_hash: Option<String>,
+    #[serde(default)]
     pub earliest_app_hash: Option<String>,
+    #[serde(default)]
     pub earliest_block_height: Option<String>,
+    #[serde(default)]
     pub earliest_block_time: Option<String>,
+    #[serde(default)]
     pub max_peer_block_height: Option<String>,
+    #[serde(default)]
     pub catching_up: Option<bool>,
+    #[serde(default)]
     pub total_synced_time: Option<String>,
+    #[serde(default)]
     pub remaining_time: Option<String>,
+    #[serde(default)]
     pub total_snapshots: Option<String>,
+    #[serde(default)]
     pub chunk_process_avg_time: Option<String>,
+    #[serde(default)]
     pub snapshot_height: Option<String>,
+    #[serde(default)]
     pub snapshot_chunks_count: Option<String>,
+    #[serde(rename = "backfilled_blocks", default)]
     pub backfilled_blocks: Option<String>,
+    #[serde(rename = "backfill_blocks_total", default)]
     pub backfill_blocks_total: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct NetInfoResponse {
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ValidatorInfo {
+    #[serde(default)]
+    pub pro_tx_hash: Option<String>,
+    #[serde(default)]
+    pub voting_power: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultNetInfo {
+    #[serde(default)]
     pub listening: Option<bool>,
+    #[serde(default)]
+    pub listeners: Option<Vec<String>>,
+    #[serde(rename = "n_peers", default)]
     pub n_peers: Option<String>,
+    #[serde(default)]
+    pub peers: Option<Vec<Peer>>,
 }
 
-// New response types for broadcast_state_transition
-#[derive(Debug, Serialize, Deserialize)]
-pub struct BroadcastTxResponse {
-    pub code: i64,
+pub type NetInfoResponse = ResultNetInfo;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Peer {
+    #[serde(rename = "node_id", default)]
+    pub node_id: Option<String>,
+    #[serde(default)]
+    pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultBroadcastTx {
+    #[serde(default)]
+    pub code: u32,
+    #[serde(default)]
     pub data: Option<String>,
-    pub info: Option<String>,
+    #[serde(default)]
+    pub codespace: Option<String>,
+    #[serde(default)]
     pub hash: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct CheckTxResponse {
-    pub code: i64,
+    #[serde(default)]
     pub info: Option<String>,
+}
+
+pub type BroadcastTxResponse = ResultBroadcastTx;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultCheckTx {
+    #[serde(default)]
+    pub code: u32,
+    #[serde(default)]
     pub data: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct UnconfirmedTxsResponse {
-    pub txs: Option<Vec<String>>,
-    pub total: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TxResponse {
-    pub tx_result: Option<TxResult>,
-    pub tx: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub struct TxResult {
-    pub code: i64,
-    pub data: Option<String>,
-    pub info: Option<String>,
+    #[serde(default)]
     pub log: Option<String>,
+    #[serde(default)]
+    pub info: Option<String>,
+    #[serde(default)]
+    pub gas_wanted: Option<String>,
+    #[serde(default)]
+    pub gas_used: Option<String>,
+    #[serde(default)]
+    pub events: Option<Value>,
+    #[serde(default)]
+    pub codespace: Option<String>,
 }
+
+pub type CheckTxResponse = ResultCheckTx;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultUnconfirmedTxs {
+    #[serde(rename = "n_txs", default)]
+    pub count: Option<String>,
+    #[serde(default)]
+    pub total: Option<String>,
+    #[serde(rename = "total_bytes", default)]
+    pub total_bytes: Option<String>,
+    #[serde(default)]
+    pub txs: Option<Vec<String>>,
+}
+
+pub type UnconfirmedTxsResponse = ResultUnconfirmedTxs;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ResultTx {
+    #[serde(default)]
+    pub hash: Option<String>,
+    #[serde(default)]
+    pub height: Option<String>,
+    #[serde(default)]
+    pub index: Option<u32>,
+    #[serde(rename = "tx_result", default)]
+    pub tx_result: Option<ExecTxResult>,
+    #[serde(default)]
+    pub tx: Option<String>,
+    #[serde(default)]
+    pub proof: Option<Value>,
+}
+
+pub type TxResponse = ResultTx;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ExecTxResult {
+    #[serde(default)]
+    pub code: u32,
+    #[serde(default)]
+    pub data: Option<String>,
+    #[serde(default)]
+    pub info: Option<String>,
+    #[serde(default)]
+    pub log: Option<String>,
+    #[serde(default)]
+    pub gas_wanted: Option<String>,
+    #[serde(default)]
+    pub gas_used: Option<String>,
+    #[serde(default)]
+    pub codespace: Option<String>,
+    #[serde(default)]
+    pub events: Option<Value>,
+}
+
+pub type TxResult = ExecTxResult;
 
 impl TenderdashClient {
     /// Generic POST method for Tenderdash RPC calls
     /// Serializes the request, performs the call, and maps protocol errors to `DapiError`.
-    async fn post<T>(&self, request_body: serde_json::Value) -> DAPIResult<T>
+    async fn post<T, R>(&self, request: &R) -> DAPIResult<T>
     where
         T: serde::de::DeserializeOwned + Debug,
+        R: Serialize + Debug,
     {
         let start = tokio::time::Instant::now();
+
+        let request_value = serde_json::to_value(request).map_err(|e| {
+            error!("Failed to serialize Tenderdash request: {}", e);
+            DapiError::Client(format!("Failed to serialize request: {}", e))
+        })?;
 
         let response: TenderdashResponse<T> = self
             .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
-            .json(&request_body)
+            .json(request)
             .timeout(REQUEST_TIMEOUT)
             .send()
             .await
@@ -165,7 +354,7 @@ impl TenderdashClient {
 
         tracing::trace!(
             elapsed = ?start.elapsed(),
-            request = ?request_body,
+            request = ?request_value,
             response = ?response,
             "tenderdash_client request executed");
 
@@ -264,14 +453,9 @@ impl TenderdashClient {
     /// Query Tenderdash for node and sync status information via JSON-RPC `status`.
     pub async fn status(&self) -> DAPIResult<TenderdashStatusResponse> {
         trace!("Making status request to Tenderdash at: {}", self.base_url);
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "status",
-            "params": {},
-            "id": generate_jsonrpc_id()
-        });
+        let request = JsonRpcRequest::new("status", EmptyParams::default());
 
-        self.post(request_body).await
+        self.post(&request).await
     }
 
     /// Retrieve network peer statistics, falling back to defaults on transport errors.
@@ -293,74 +477,48 @@ impl TenderdashClient {
 
     /// Internal helper that performs the `net_info` RPC call without error masking.
     async fn net_info_internal(&self) -> DAPIResult<NetInfoResponse> {
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "net_info",
-            "params": {},
-            "id": generate_jsonrpc_id()
-        });
+        let request = JsonRpcRequest::new("net_info", EmptyParams::default());
 
-        self.post(request_body).await
+        self.post(&request).await
     }
 
     /// Broadcast a transaction to the Tenderdash network
     pub async fn broadcast_tx(&self, tx: String) -> DAPIResult<BroadcastTxResponse> {
         trace!("Broadcasting transaction to Tenderdash: {} bytes", tx.len());
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "broadcast_tx_sync",
-            "params": {
-                "tx": tx
-            },
-            "id": generate_jsonrpc_id()
-        });
+        let params = BroadcastTxParams { tx: tx.as_str() };
+        let request = JsonRpcRequest::new("broadcast_tx_sync", params);
 
-        self.post(request_body).await
+        self.post(&request).await
     }
 
     /// Check a transaction without adding it to the mempool
     pub async fn check_tx(&self, tx: String) -> DAPIResult<CheckTxResponse> {
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "check_tx",
-            "params": {
-                "tx": tx
-            },
-            "id": generate_jsonrpc_id()
-        });
+        let params = CheckTxParams { tx: tx.as_str() };
+        let request = JsonRpcRequest::new("check_tx", params);
 
-        self.post(request_body).await
+        self.post(&request).await
     }
 
     /// Get unconfirmed transactions from the mempool
     pub async fn unconfirmed_txs(&self, limit: Option<u32>) -> DAPIResult<UnconfirmedTxsResponse> {
-        let mut params = json!({});
-        if let Some(limit) = limit {
-            params["limit"] = json!(limit.to_string());
-        }
+        let params = UnconfirmedTxsParams {
+            page: None,
+            per_page: limit.map(|value| value.to_string()),
+        };
+        let request = JsonRpcRequest::new("unconfirmed_txs", params);
 
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "unconfirmed_txs",
-            "params": params,
-            "id": generate_jsonrpc_id()
-        });
-
-        self.post(request_body).await
+        self.post(&request).await
     }
 
     /// Get transaction by hash
     pub async fn tx(&self, hash: String) -> DAPIResult<TxResponse> {
-        let request_body = json!({
-            "jsonrpc": "2.0",
-            "method": "tx",
-            "params": {
-                "hash": hash
-            },
-            "id": generate_jsonrpc_id()
-        });
+        let params = TxParams {
+            hash: hash.as_str(),
+            prove: false,
+        };
+        let request = JsonRpcRequest::new("tx", params);
 
-        self.post(request_body).await
+        self.post(&request).await
     }
     /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {

@@ -81,8 +81,8 @@ async fn test_clients_can_be_created_with_uris() {
         &config.dapi.tenderdash.uri,
         &config.dapi.tenderdash.websocket_uri,
     )
-        .await
-        .expect_err("TenderdashClient should fail if no server is running");
+    .await
+    .expect_err("TenderdashClient should fail if no server is running");
 }
 
 #[test]

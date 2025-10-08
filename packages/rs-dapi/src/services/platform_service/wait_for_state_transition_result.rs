@@ -148,7 +148,7 @@ impl PlatformServiceImpl {
                 .and_then(|info_base64| decode_consensus_error(info_base64.clone()));
 
             let error = TenderdashStatus::new(
-                tx_result.code,
+                i64::from(tx_result.code),
                 tx_result.data.clone(),
                 consensus_error_serialized,
             );

@@ -201,7 +201,7 @@ impl PlatformServiceImpl {
 }
 
 /// Convert Tenderdash broadcast error details into a structured `DapiError`.
-fn map_broadcast_error(code: i64, error_message: &str, info: Option<&str>) -> DapiError {
+fn map_broadcast_error(code: u32, error_message: &str, info: Option<&str>) -> DapiError {
     // TODO: prefer code over message when possible
     tracing::trace!(
         "broadcast_state_transition: Classifying broadcast error {}: {}",
@@ -242,5 +242,9 @@ fn map_broadcast_error(code: i64, error_message: &str, info: Option<&str>) -> Da
     } else {
         Some(error_message.to_string())
     };
-    DapiError::TenderdashClientError(TenderdashStatus::new(code, message, consensus_error))
+    DapiError::TenderdashClientError(TenderdashStatus::new(
+        i64::from(code),
+        message,
+        consensus_error,
+    ))
 }
