@@ -3,7 +3,7 @@
 //! Implements 256-bit derivation paths for DashPay contact keys
 
 use crate::error::WasmSdkError;
-use crate::WasmSdk;
+use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
 use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};

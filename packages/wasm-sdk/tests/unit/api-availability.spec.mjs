@@ -25,13 +25,4 @@ describe('API availability (exports and methods)', () => {
       expect(typeof sdk.WasmSdk.prototype[fn]).to.be.oneOf(['function', 'undefined']);
     }
   });
-
-  it('standalone verification helpers are exported', () => {
-    const moduleFns = [
-      'verifyIdentityResponse', 'verifyDataContract', 'verifyDocuments',
-    ];
-    for (const fn of moduleFns) {
-      expect(typeof sdk[fn]).to.be.oneOf(['function', 'undefined']);
-    }
-  });
 });

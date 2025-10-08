@@ -1,92 +1,41 @@
-use crate::queries::ProofMetadataResponse;
+use crate::queries::{ProofInfoWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::document::Document;
-use dash_sdk::dpp::document::DocumentV0Getters;
 use dash_sdk::dpp::platform_value::{platform_value, Value};
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::Fetch;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
-use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::{JsCast, JsValue};
+use wasm_bindgen::JsValue;
+use js_sys::Map;
+use wasm_dpp2::data_contract::document::DocumentWasm;
+use wasm_dpp2::identifier::IdentifierWasm;
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct DocumentResponse {
-    id: String,
-    owner_id: String,
-    revision: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    transferred_at: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created_at_block_height: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at_block_height: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    transferred_at_block_height: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    created_at_core_block_height: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    updated_at_core_block_height: Option<u32>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    transferred_at_core_block_height: Option<u32>,
-    data: serde_json::Map<String, JsonValue>,
+#[wasm_bindgen(js_name = "DocumentProofResponse")]
+#[derive(Clone)]
+pub struct DocumentProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub document: Option<DocumentWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
 }
 
-impl DocumentResponse {
-    fn from_document(
-        doc: &Document,
-        _data_contract: &dash_sdk::platform::DataContract,
-        _document_type: dash_sdk::dpp::data_contract::document_type::DocumentTypeRef,
-    ) -> Result<Self, WasmSdkError> {
-        use dash_sdk::dpp::document::DocumentV0Getters;
-
-        // For now, we'll continue with the existing approach
-        // In the future, we could use the document type to better interpret the data
-
-        // Get document properties and convert each to JSON
-        let mut data = serde_json::Map::new();
-        let properties = doc.properties();
-
-        for (key, value) in properties {
-            // Convert platform Value to JSON
-            let json_value: JsonValue = value.clone().try_into().map_err(|e| {
-                WasmSdkError::generic(format!("Failed to convert value to JSON: {:?}", e))
-            })?;
-
-            data.insert(key.clone(), json_value);
-        }
-
-        let response = Self {
-            id: doc
-                .id()
-                .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-            owner_id: doc
-                .owner_id()
-                .to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-            revision: doc.revision().unwrap_or(0),
-            created_at: doc.created_at(),
-            updated_at: doc.updated_at(),
-            transferred_at: doc.transferred_at(),
-            created_at_block_height: doc.created_at_block_height(),
-            updated_at_block_height: doc.updated_at_block_height(),
-            transferred_at_block_height: doc.transferred_at_block_height(),
-            created_at_core_block_height: doc.created_at_core_block_height(),
-            updated_at_core_block_height: doc.updated_at_core_block_height(),
-            transferred_at_core_block_height: doc.transferred_at_core_block_height(),
-            data,
-        };
-
-        Ok(response)
-    }
+#[wasm_bindgen(js_name = "DocumentsProofResponse")]
+#[derive(Clone)]
+pub struct DocumentsProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub documents: Map,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
 }
+
 
 /// Parse JSON where clause into WhereClause
 fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkError> {
@@ -232,7 +181,7 @@ impl WasmSdk {
         limit: Option<u32>,
         start_after: Option<String>,
         start_at: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::Documents;
@@ -323,28 +272,36 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        // Get the document type
-        let document_type_ref = data_contract
+        // Ensure the document type exists
+        data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
-        // Convert documents to response format
-        let mut responses: Vec<DocumentResponse> = Vec::new();
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                responses.push(DocumentResponse::from_document(
-                    &doc,
-                    &data_contract,
-                    document_type_ref,
-                )?);
+        let documents_map = Map::new();
+        let doc_type_name = document_type.to_string();
+
+        for (doc_id, doc_opt) in documents_result {
+            let key = JsValue::from(
+                IdentifierWasm::from(doc_id),
+            );
+
+            match doc_opt {
+                Some(doc) => {
+                    let wasm_doc = DocumentWasm::from_batch(
+                        doc,
+                        contract_id,
+                        doc_type_name.clone(),
+                        None,
+                    );
+                    documents_map.set(&key, &JsValue::from(wasm_doc));
+                }
+                None => {
+                    documents_map.set(&key, &JsValue::NULL);
+                }
             }
         }
 
-        // Use json_compatible serializer to convert maps to objects
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        responses.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(documents_map)
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -358,7 +315,7 @@ impl WasmSdk {
         limit: Option<u32>,
         start_after: Option<String>,
         start_at: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DocumentsProofResponseWasm, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
         use dash_sdk::platform::FetchMany;
 
@@ -430,42 +387,37 @@ impl WasmSdk {
             }
         }
 
-        // Execute query with proof
         let (documents_result, metadata, proof) =
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Fetch the data contract to get the document type
-        let data_contract = dash_sdk::platform::DataContract::fetch(self.as_ref(), contract_id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+        let documents_map = Map::new();
+        let doc_type_name = document_type.to_string();
 
-        // Get the document type
-        let document_type_ref = data_contract
-            .document_type_for_name(document_type)
-            .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
+        for (doc_id, doc_opt) in documents_result {
+            let key = JsValue::from(
+                IdentifierWasm::from(doc_id),
+            );
 
-        // Convert documents to response format
-        let mut responses: Vec<DocumentResponse> = Vec::new();
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                responses.push(DocumentResponse::from_document(
-                    &doc,
-                    &data_contract,
-                    document_type_ref,
-                )?);
+            match doc_opt {
+                Some(doc) => {
+                    let wasm_doc = DocumentWasm::from_batch(
+                        doc,
+                        contract_id,
+                        doc_type_name.clone(),
+                        None,
+                    );
+                    documents_map.set(&key, &JsValue::from(wasm_doc));
+                }
+                None => {
+                    documents_map.set(&key, &JsValue::NULL);
+                }
             }
         }
 
-        let response = ProofMetadataResponse {
-            data: responses,
+        Ok(DocumentsProofResponseWasm {
+            documents: documents_map,
             metadata: metadata.into(),
             proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -475,7 +427,7 @@ impl WasmSdk {
         data_contract_id: &str,
         document_type: &str,
         document_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Option<DocumentWasm>, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
 
         // Parse IDs
@@ -502,27 +454,19 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        // Get the document type
-        let document_type = data_contract
+        data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
         // Execute query
-        let document_result: Option<Document> = Document::fetch(self.as_ref(), query).await?;
+        let document = Document::fetch(self.as_ref(), query).await?.map(|doc| DocumentWasm::from_batch(
+            doc,
+            contract_id,
+            document_type.to_string(),
+            None,
+        ));
 
-        match document_result {
-            Some(doc) => {
-                let response =
-                    DocumentResponse::from_document(&doc, &data_contract, document_type)?;
-
-                // Use json_compatible serializer to convert maps to objects
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
-            None => Ok(JsValue::NULL),
-        }
+        Ok(document)
     }
 
     #[wasm_bindgen(js_name = "getDocumentWithProofInfo")]
@@ -531,7 +475,7 @@ impl WasmSdk {
         data_contract_id: &str,
         document_type: &str,
         document_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DocumentProofResponseWasm, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
 
         // Parse IDs
@@ -558,8 +502,7 @@ impl WasmSdk {
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
 
-        // Get the document type
-        let document_type_ref = data_contract
+        data_contract
             .document_type_for_name(document_type)
             .map_err(|e| WasmSdkError::not_found(format!("Document type not found: {}", e)))?;
 
@@ -567,253 +510,16 @@ impl WasmSdk {
         let (document_result, metadata, proof) =
             Document::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        match document_result {
-            Some(doc) => {
-                let doc_response =
-                    DocumentResponse::from_document(&doc, &data_contract, document_type_ref)?;
-
-                let response = ProofMetadataResponse {
-                    data: doc_response,
-                    metadata: metadata.into(),
-                    proof: proof.into(),
-                };
-
-                // Use json_compatible serializer
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
-            None => {
-                // Return null data with proof
-                let response = ProofMetadataResponse {
-                    data: Option::<DocumentResponse>::None,
-                    metadata: metadata.into(),
-                    proof: proof.into(),
-                };
-
-                // Use json_compatible serializer
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
-        }
-    }
-
-    #[wasm_bindgen(js_name = "getDpnsUsernames")]
-    pub async fn get_dpns_usernames(
-        &self,
-        identity_id: &str,
-        limit: Option<u32>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::platform::documents::document_query::DocumentQuery;
-        use dash_sdk::platform::FetchMany;
-        use drive_proof_verifier::types::Documents;
-
-        // DPNS contract ID on testnet
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        const DPNS_DOCUMENT_TYPE: &str = "domain";
-
-        // Parse identity ID
-        let identity_id_parsed = Identifier::from_string(
-            identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
-
-        // Parse DPNS contract ID
-        let contract_id = Identifier::from_string(
-            DPNS_CONTRACT_ID,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
-
-        // Create document query for DPNS domains owned by this identity
-        let mut query = DocumentQuery::new_with_data_contract_id(
-            self.as_ref(),
-            contract_id,
-            DPNS_DOCUMENT_TYPE,
-        )
-        .await?;
-
-        // Query by records.identity using the identityId index
-        let where_clause = WhereClause {
-            field: "records.identity".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(identity_id_parsed.to_buffer()),
-        };
-
-        query = query.with_where(where_clause);
-
-        // Set limit from parameter or default to 10
-        query.limit = limit.unwrap_or(10);
-
-        // Execute query
-        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
-
-        // Collect all usernames
-        let mut usernames: Vec<String> = Vec::new();
-
-        // Process all results
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                // Extract the username from the document
-                let properties = doc.properties();
-
-                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                    properties.get("label"),
-                    properties.get("normalizedParentDomainName"),
-                ) {
-                    // Construct the full username
-                    let username = format!("{}.{}", label, parent_domain);
-                    usernames.push(username);
-                }
-            }
-        }
-
-        // Return usernames as a JSON array
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        usernames.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize usernames: {}", e))
-        })
-    }
-
-    // Keep the old function for backward compatibility but have it call the new one
-    #[wasm_bindgen(js_name = "getDpnsUsername")]
-    pub async fn get_dpns_username(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
-        // Call the new function with limit 1
-        let result = self.get_dpns_usernames(identity_id, Some(1)).await?;
-
-        // Extract the first username from the array
-        if let Some(array) = result.dyn_ref::<js_sys::Array>() {
-            if array.length() > 0 {
-                return Ok(array.get(0));
-            }
-        }
-
-        Ok(JsValue::NULL)
-    }
-
-    // Proof info versions for DPNS queries
-
-    #[wasm_bindgen(js_name = "getDpnsUsernamesWithProofInfo")]
-    pub async fn get_dpns_usernames_with_proof_info(
-        &self,
-        identity_id: &str,
-        limit: Option<u32>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use dash_sdk::platform::documents::document_query::DocumentQuery;
-        use dash_sdk::platform::FetchMany;
-
-        // DPNS contract ID on testnet
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        const DPNS_DOCUMENT_TYPE: &str = "domain";
-
-        // Parse identity ID
-        let identity_id_parsed = Identifier::from_string(
-            identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
-
-        // Parse DPNS contract ID
-        let contract_id = Identifier::from_string(
-            DPNS_CONTRACT_ID,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e)))?;
-
-        // Create document query for DPNS domains owned by this identity
-        let mut query = DocumentQuery::new_with_data_contract_id(
-            self.as_ref(),
-            contract_id,
-            DPNS_DOCUMENT_TYPE,
-        )
-        .await?;
-
-        // Query by records.identity using the identityId index
-        let where_clause = WhereClause {
-            field: "records.identity".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(identity_id_parsed.to_buffer()),
-        };
-
-        query = query.with_where(where_clause);
-
-        // Set limit from parameter or default to 10
-        query.limit = limit.unwrap_or(10);
-
-        // Execute query with proof
-        let (documents_result, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
-
-        // Collect all usernames
-        let mut usernames: Vec<String> = Vec::new();
-
-        // Process all results
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                // Extract the username from the document
-                let properties = doc.properties();
-
-                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                    properties.get("label"),
-                    properties.get("normalizedParentDomainName"),
-                ) {
-                    // Construct the full username
-                    let username = format!("{}.{}", label, parent_domain);
-                    usernames.push(username);
-                }
-            }
-        }
-
-        let response = ProofMetadataResponse {
-            data: usernames,
+        Ok(DocumentProofResponseWasm {
+            document: document_result.map(|doc| DocumentWasm::from_batch(
+                doc,
+                contract_id,
+                document_type.to_string(),
+                None,
+            )),
             metadata: metadata.into(),
             proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
-    #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
-    pub async fn get_dpns_username_with_proof_info(
-        &self,
-        identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
-        // Call the new function with limit 1
-        let result = self
-            .get_dpns_usernames_with_proof_info(identity_id, Some(1))
-            .await?;
-
-        // The result already contains proof info, just modify the data field
-        // Parse the result to extract first username
-        let result_obj: serde_json::Value = serde_wasm_bindgen::from_value(result.clone())
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to parse JSON: {}", e)))?;
-
-        if let Some(data_array) = result_obj.get("data").and_then(|d| d.as_array()) {
-            if let Some(first_username) = data_array.first() {
-                // Create a new response with just the first username
-                let mut modified_result = result_obj.clone();
-                modified_result["data"] = first_username.clone();
-
-                return serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                });
-            }
-        }
-
-        // If no username found, return null data with proof info
-        let mut modified_result = result_obj.clone();
-        modified_result["data"] = serde_json::Value::Null;
-
-        serde_wasm_bindgen::to_value(&modified_result).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
-    }
 }

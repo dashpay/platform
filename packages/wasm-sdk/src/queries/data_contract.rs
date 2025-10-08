@@ -1,26 +1,46 @@
-use crate::queries::ProofMetadataResponse;
+use crate::queries::{ProofInfoWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
-use crate::DataContractWasm;
 use crate::WasmSdkError;
-use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
 use dash_sdk::platform::query::LimitQuery;
 use dash_sdk::platform::{DataContract, Fetch, FetchMany, Identifier};
 use drive_proof_verifier::types::{DataContractHistory, DataContracts};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
-use wasm_bindgen::prelude::wasm_bindgen;
+use js_sys::{BigInt, Map};
+use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::DataContractWasm;
+use wasm_dpp2::identifier::IdentifierWasm;
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct DataContractHistoryResponse {
-    versions: BTreeMap<String, serde_json::Value>,
+#[wasm_bindgen(js_name = "DataContractProofResponse")]
+#[derive(Clone)]
+pub struct DataContractProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub contract: DataContractWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct DataContractsResponse {
-    data_contracts: BTreeMap<String, Option<serde_json::Value>>,
+#[wasm_bindgen(js_name = "DataContractHistoryProofResponse")]
+#[derive(Clone)]
+pub struct DataContractHistoryProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub history: Map,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
+}
+
+#[wasm_bindgen(js_name = "DataContractsProofResponse")]
+#[derive(Clone)]
+pub struct DataContractsProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub contracts: Map,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
 }
 
 #[wasm_bindgen]
@@ -29,24 +49,25 @@ impl WasmSdk {
     pub async fn get_data_contract(
         &self,
         base58_id: &str,
-    ) -> Result<DataContractWasm, WasmSdkError> {
+    ) -> Result<Option<DataContractWasm>, WasmSdkError> {
         let id = Identifier::from_string(
             base58_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
 
-        DataContract::fetch_by_identifier(self.as_ref(), id)
+        let data_contract = DataContract::fetch_by_identifier(self.as_ref(), id)
             .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))
-            .map(Into::into)
+            .map(DataContractWasm::from);
+
+        Ok(data_contract)
     }
 
     #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]
     pub async fn get_data_contract_with_proof_info(
         &self,
         base58_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DataContractProofResponseWasm, WasmSdkError> {
         let id = Identifier::from_string(
             base58_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
@@ -57,28 +78,11 @@ impl WasmSdk {
             DataContract::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
 
         match contract {
-            Some(contract) => {
-                let response = ProofMetadataResponse {
-                    data: contract
-                        .to_json(
-                            dash_sdk::dpp::version::PlatformVersion::get(self.version()).unwrap(),
-                        )
-                        .map_err(|e| {
-                            WasmSdkError::serialization(format!(
-                                "Failed to convert contract to JSON: {}",
-                                e
-                            ))
-                        })?,
-                    metadata: metadata.into(),
-                    proof: proof.into(),
-                };
-
-                // Use json_compatible serializer
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
+            Some(contract) => Ok(DataContractProofResponseWasm {
+                contract: DataContractWasm::from(contract),
+                metadata: metadata.into(),
+                proof: proof.into(),
+            }),
             None => Err(WasmSdkError::not_found("Data contract not found")),
         }
     }
@@ -90,7 +94,7 @@ impl WasmSdk {
         limit: Option<u32>,
         _offset: Option<u32>,
         start_at_ms: Option<u64>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Map, WasmSdkError> {
         // Parse contract ID
         let contract_id = Identifier::from_string(
             id,
@@ -108,35 +112,22 @@ impl WasmSdk {
         // Fetch contract history
         let history_result = DataContractHistory::fetch(self.as_ref(), query).await?;
 
-        // Convert to response format
-        let mut versions = BTreeMap::new();
-        let platform_version = self.as_ref().version();
+        let history_map = Map::new();
 
         if let Some(history) = history_result {
-            for (revision, contract) in history {
-                versions.insert(
-                    revision.to_string(),
-                    contract.to_json(platform_version).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert contract to JSON: {}",
-                            e
-                        ))
-                    })?,
-                );
+            for (block_time_ms, contract) in history {
+                let contract_js = JsValue::from(DataContractWasm::from(contract));
+                let key = JsValue::from(BigInt::from(block_time_ms));
+
+                history_map.set(&key, &contract_js);
             }
         }
 
-        let response = DataContractHistoryResponse { versions };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(history_map)
     }
 
     #[wasm_bindgen(js_name = "getDataContracts")]
-    pub async fn get_data_contracts(&self, ids: Vec<String>) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_data_contracts(&self, ids: Vec<String>) -> Result<Map, WasmSdkError> {
         // Parse all contract IDs
         let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
             .iter()
@@ -156,31 +147,22 @@ impl WasmSdk {
         let contracts_result: DataContracts =
             DataContract::fetch_many(self.as_ref(), identifiers).await?;
 
-        // Convert to response format
-        let mut data_contracts = BTreeMap::new();
-        let platform_version = self.as_ref().version();
+        let contracts_map = Map::new();
+
         for (id, contract_opt) in contracts_result {
-            let id_str =
-                id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
-            let contract_json = match contract_opt {
-                Some(contract) => Some(contract.to_json(platform_version).map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert contract to JSON: {}",
-                        e
-                    ))
-                })?),
-                None => None,
-            };
-            data_contracts.insert(id_str, contract_json);
+            let key = JsValue::from(IdentifierWasm::from(id));
+
+            match contract_opt {
+                Some(contract) => {
+                    contracts_map.set(&key, &JsValue::from(DataContractWasm::from(contract)));
+                }
+                None => {
+                    contracts_map.set(&key, &JsValue::NULL);
+                }
+            }
         }
 
-        let response = DataContractsResponse { data_contracts };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(contracts_map)
     }
 
     // Proof info versions for data contract queries
@@ -192,7 +174,7 @@ impl WasmSdk {
         limit: Option<u32>,
         _offset: Option<u32>,
         start_at_ms: Option<u64>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DataContractHistoryProofResponseWasm, WasmSdkError> {
         // Parse contract ID
         let contract_id = Identifier::from_string(
             id,
@@ -211,36 +193,21 @@ impl WasmSdk {
         let (history_result, metadata, proof) =
             DataContractHistory::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Convert to response format
-        let mut versions = BTreeMap::new();
-        let platform_version = self.as_ref().version();
+        let history_map = Map::new();
 
         if let Some(history) = history_result {
-            for (revision, contract) in history {
-                versions.insert(
-                    revision.to_string(),
-                    contract.to_json(platform_version).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert contract to JSON: {}",
-                            e
-                        ))
-                    })?,
-                );
+            for (block_time_ms, contract) in history {
+                let contract_js = JsValue::from(DataContractWasm::from(contract));
+                let key = JsValue::from(BigInt::from(block_time_ms));
+
+                history_map.set(&key, &contract_js);
             }
         }
 
-        let data = DataContractHistoryResponse { versions };
-
-        let response = ProofMetadataResponse {
-            data,
+        Ok(DataContractHistoryProofResponseWasm {
+            history: history_map,
             metadata: metadata.into(),
             proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -248,7 +215,7 @@ impl WasmSdk {
     pub async fn get_data_contracts_with_proof_info(
         &self,
         ids: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<DataContractsProofResponseWasm, WasmSdkError> {
         // Parse all contract IDs
         let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
             .iter()
@@ -269,36 +236,25 @@ impl WasmSdk {
             DataContract::fetch_many_with_metadata_and_proof(self.as_ref(), identifiers, None)
                 .await?;
 
-        // Convert to response format
-        let mut data_contracts = BTreeMap::new();
-        let platform_version = self.as_ref().version();
+        let contracts_map = Map::new();
+
         for (id, contract_opt) in contracts_result {
-            let id_str =
-                id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
-            let contract_json = match contract_opt {
-                Some(contract) => Some(contract.to_json(platform_version).map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert contract to JSON: {}",
-                        e
-                    ))
-                })?),
-                None => None,
+            let key = JsValue::from(
+                id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+            );
+
+            let value = match contract_opt {
+                Some(contract) => JsValue::from(DataContractWasm::from(contract)),
+                None => JsValue::NULL,
             };
-            data_contracts.insert(id_str, contract_json);
+
+            contracts_map.set(&key, &value);
         }
 
-        let data = DataContractsResponse { data_contracts };
-
-        let response = ProofMetadataResponse {
-            data,
+        Ok(DataContractsProofResponseWasm {
+            contracts: contracts_map,
             metadata: metadata.into(),
             proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 }

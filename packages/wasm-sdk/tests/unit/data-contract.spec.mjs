@@ -9,10 +9,10 @@ describe('DataContract', () => {
   });
 
   it('should create a contract from JSON and expose identifiers', async () => {
-    const contract = sdk.DataContract.fromJSON(contractFixture, PLATFORM_VERSION);
+    const contract = sdk.DataContract.fromValue(contractFixture, true, PLATFORM_VERSION);
 
     expect(contract).to.be.ok();
-    expect(contract.id()).to.equal(contractFixture.id);
+    expect(contract.id.base58()).to.equal(contractFixture.id);
 
     const roundTripped = contract.toJSON();
     expect(roundTripped).to.be.an('object');

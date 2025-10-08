@@ -21,26 +21,26 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('lists DPNS documents (no filters)', async () => {
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', null, null, 5, null, null);
-    expect(docs).to.be.an('array');
+    expect(docs instanceof Map).to.be(true);
   });
 
   it('queries with where clause', async () => {
     const where = JSON.stringify([['normalizedParentDomainName', '==', 'dash']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', where, null, 5, null, null);
-    expect(docs).to.be.an('array');
+    expect(docs instanceof Map).to.be(true);
   });
 
   it('queries with orderBy', async () => {
     const orderBy = JSON.stringify([['normalizedParentDomainName', 'asc']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', null, orderBy, 5, null, null);
-    expect(docs).to.be.an('array');
+    expect(docs instanceof Map).to.be(true);
   });
 
   it('complex where + orderBy', async () => {
     const where = JSON.stringify([['normalizedLabel', 'startsWith', 'test'], ['normalizedParentDomainName', '==', 'dash']]);
     const orderBy = JSON.stringify([['normalizedParentDomainName', 'asc'], ['normalizedLabel', 'asc']]);
     const docs = await client.getDocuments(DPNS_CONTRACT, 'domain', where, orderBy, 5, null, null);
-    expect(docs).to.be.an('array');
+    expect(docs instanceof Map).to.be(true);
   });
 
   it('getDocument by id (should handle invalid id gracefully)', async () => {
@@ -52,6 +52,6 @@ describe('Document queries', function describeDocumentQueries() {
   it('fetches usernames for a known identity and verifies fields', async () => {
     const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
     const list = await client.getDpnsUsernames(TEST_IDENTITY, 10);
-    expect(list).to.be.an('array');
+    expect(Array.isArray(list)).to.be(true);
   });
 });
