@@ -4,10 +4,12 @@ use crate::error::{DAPIResult, DapiError};
 use crate::utils::generate_jsonrpc_id;
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
+use reqwest_tracing::TracingMiddleware;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::fmt::Debug;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::broadcast;
 use tracing::{debug, error, info, trace};
 
@@ -183,8 +185,18 @@ impl TenderdashClient {
             "Creating Tenderdash client with WebSocket support"
         );
 
-        // Create client with tracing middleware
-        let client = ClientBuilder::new(Client::new()).build();
+        let http_client = Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .timeout(Duration::from_secs(30))
+            .build()
+            .map_err(|e| {
+                error!("Failed to build Tenderdash HTTP client: {}", e);
+                DapiError::Client(format!("Failed to build Tenderdash HTTP client: {}", e))
+            })?;
+
+        let client = ClientBuilder::new(http_client)
+            .with(TracingMiddleware::default())
+            .build();
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
 
         let tenderdash_client = Self {
