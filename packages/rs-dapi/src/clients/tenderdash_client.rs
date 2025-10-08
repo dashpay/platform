@@ -173,24 +173,48 @@ impl TenderdashClient {
         })
     }
 
-    /// Create a new TenderdashClient with HTTP request tracing middleware
+    /// Create a new TenderdashClient with HTTP and WebSocket support.
     ///
-    /// This method validates the connection by making a test HTTP status call
-    /// to ensure the Tenderdash service is reachable and responding correctly.
-    pub async fn new(uri: &str) -> DAPIResult<Self> {
-        trace!("Creating Tenderdash client for: {}", uri);
+    /// This method validates both HTTP and WebSocket connectivity before returning.
+    pub async fn new(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
+        trace!(
+            uri = %uri,
+            ws_uri = %ws_uri,
+            "Creating Tenderdash client with WebSocket support"
+        );
 
         // Create client with tracing middleware
         let client = ClientBuilder::new(Client::new()).build();
+        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
 
         let tenderdash_client = Self {
             client,
             base_url: uri.to_string(),
-            websocket_client: None,
+            websocket_client: Some(websocket_client.clone()),
             workers: Default::default(),
         };
 
+        // Validate HTTP connection
         tenderdash_client.validate_connection().await?;
+
+        // Validate WebSocket connection
+        match TenderdashWebSocketClient::test_connection(ws_uri).await {
+            Ok(_) => {
+                info!("Tenderdash WebSocket connection validated successfully");
+            }
+            Err(e) => {
+                error!(
+                    "Tenderdash WebSocket connection validation failed at {}: {}",
+                    ws_uri, e
+                );
+                return Err(DapiError::server_unavailable(ws_uri, e));
+            }
+        };
+
+        // Start listening for WebSocket events
+        tenderdash_client
+            .workers
+            .spawn(async move { websocket_client.connect_and_listen().await });
 
         Ok(tenderdash_client)
     }
@@ -218,40 +242,6 @@ impl TenderdashClient {
                 ))
             }
         }
-    }
-
-    /// Instantiate the client with an accompanying WebSocket listener for subscriptions.
-    /// Validates both HTTP and WebSocket connectivity before returning.
-    pub async fn with_websocket(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
-        trace!(uri, ws_uri, "Creating Tenderdash WebSocket client",);
-        let websocket_client = Arc::new(TenderdashWebSocketClient::new(ws_uri.to_string(), 1000));
-
-        // Create client with tracing middleware
-        let tenderdash_client = Self {
-            websocket_client: Some(websocket_client.clone()),
-            ..Self::new(uri).await?
-        };
-
-        // Validate WebSocket connection
-        match TenderdashWebSocketClient::test_connection(ws_uri).await {
-            Ok(_) => {
-                info!("Tenderdash WebSocket connection validated successfully");
-            }
-            Err(e) => {
-                error!(
-                    "Tenderdash WebSocket connection validation failed at {}: {}",
-                    ws_uri, e
-                );
-                return Err(DapiError::server_unavailable(ws_uri, e));
-            }
-        };
-
-        // we are good to go, we can start listening to WebSocket events
-        tenderdash_client
-            .workers
-            .spawn(async move { websocket_client.connect_and_listen().await });
-
-        Ok(tenderdash_client)
     }
 
     /// Query Tenderdash for node and sync status information via JSON-RPC `status`.

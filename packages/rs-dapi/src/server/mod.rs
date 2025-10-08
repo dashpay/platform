@@ -32,7 +32,7 @@ impl DapiServer {
             .map_err(|e| DapiError::Client(format!("Failed to create Drive client: {}", e)))?;
 
         let tenderdash_client = Arc::new(
-            TenderdashClient::with_websocket(
+            TenderdashClient::new(
                 &config.dapi.tenderdash.uri,
                 &config.dapi.tenderdash.websocket_uri,
             )

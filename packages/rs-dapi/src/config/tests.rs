@@ -77,7 +77,10 @@ async fn test_clients_can_be_created_with_uris() {
     DriveClient::new(&config.dapi.drive.uri)
         .await
         .expect_err("DriveClient should fail if no server is running");
-    TenderdashClient::new(&config.dapi.tenderdash.uri)
+    TenderdashClient::new(
+        &config.dapi.tenderdash.uri,
+        &config.dapi.tenderdash.websocket_uri,
+    )
         .await
         .expect_err("TenderdashClient should fail if no server is running");
 }
