@@ -1,16 +1,25 @@
 use std::sync::Arc;
 
+use dash_spv::bloom::utils::{extract_pubkey_hash, outpoint_to_bytes};
 use dashcore_rpc::dashcore::bloom::{BloomFilter as CoreBloomFilter, BloomFlags};
 use dashcore_rpc::dashcore::script::Instruction;
-use dashcore_rpc::dashcore::{ScriptBuf, Transaction as CoreTx, Txid};
+use dashcore_rpc::dashcore::{OutPoint, ScriptBuf, Transaction as CoreTx, Txid};
 
-fn script_matches(filter: &CoreBloomFilter, script: &[u8]) -> bool {
-    for data in extract_pushdatas(script) {
-        if filter.contains(&data) {
+fn script_matches(filter: &CoreBloomFilter, script: &ScriptBuf) -> bool {
+    let script_bytes = script.as_bytes();
+    if filter.contains(script_bytes) {
+        return true;
+    }
+
+    if let Some(pubkey_hash) = extract_pubkey_hash(script.as_script()) {
+        if filter.contains(&pubkey_hash) {
             return true;
         }
     }
-    false
+
+    extract_pushdatas(script_bytes)
+        .into_iter()
+        .any(|data| filter.contains(&data))
 }
 
 #[inline]
@@ -21,11 +30,14 @@ fn txid_to_be_bytes(txid: &Txid) -> Vec<u8> {
     arr.to_vec()
 }
 
-fn is_pubkey_script(script: &[u8]) -> bool {
-    if script.len() >= 35 && (script[0] == 33 || script[0] == 65) {
+fn is_pubkey_script(script: &ScriptBuf) -> bool {
+    let bytes = script.as_bytes();
+    if bytes.len() >= 35 && (bytes[0] == 33 || bytes[0] == 65) {
         return true;
     }
-    script.contains(&33u8) || script.contains(&65u8)
+    bytes.contains(&33u8)
+        || bytes.contains(&65u8)
+        || extract_pubkey_hash(script.as_script()).is_some()
 }
 
 pub fn extract_pushdatas(script: &[u8]) -> Vec<Vec<u8>> {
@@ -52,25 +64,26 @@ pub fn matches_transaction(
         Err(_) => return false,
     };
 
-    let txid_be = txid_to_be_bytes(&tx.txid());
+    let txid = tx.txid();
+    let txid_be = txid_to_be_bytes(&txid);
     if filter.contains(&txid_be) {
         return true;
     }
 
     for (index, out) in tx.output.iter().enumerate() {
-        if script_matches(&filter, out.script_pubkey.as_bytes()) {
+        if script_matches(&filter, &out.script_pubkey) {
             if flags == BloomFlags::All
-                || (flags == BloomFlags::PubkeyOnly
-                    && is_pubkey_script(out.script_pubkey.as_bytes()))
+                || (flags == BloomFlags::PubkeyOnly && is_pubkey_script(&out.script_pubkey))
             {
-                let mut outpoint = Vec::with_capacity(36);
-                outpoint.extend_from_slice(&txid_be);
-                outpoint.extend_from_slice(&(index as u32).to_le_bytes());
+                let outpoint_bytes = outpoint_to_bytes(&OutPoint {
+                    txid,
+                    vout: index as u32,
+                });
                 drop(filter);
                 if let Ok(mut f) = filter_lock.write().inspect_err(|e| {
                     tracing::debug!("Failed to acquire write lock for bloom filter: {}", e);
                 }) {
-                    f.insert(&outpoint);
+                    f.insert(&outpoint_bytes);
                 }
             }
             return true;
@@ -78,11 +91,8 @@ pub fn matches_transaction(
     }
 
     for input in tx.input.iter() {
-        let mut outpoint = Vec::with_capacity(36);
-        let prev_txid_be = txid_to_be_bytes(&input.previous_output.txid);
-        outpoint.extend_from_slice(&prev_txid_be);
-        outpoint.extend_from_slice(&input.previous_output.vout.to_le_bytes());
-        if filter.contains(&outpoint) || script_matches(&filter, input.script_sig.as_bytes()) {
+        let outpoint_bytes = outpoint_to_bytes(&input.previous_output);
+        if filter.contains(&outpoint_bytes) || script_matches(&filter, &input.script_sig) {
             return true;
         }
     }
@@ -106,6 +116,7 @@ pub(crate) fn bloom_flags_from_int<I: TryInto<u8>>(flags: I) -> BloomFlags {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dash_spv::bloom::utils::outpoint_to_bytes;
     use dashcore_rpc::dashcore::bloom::BloomFilter as CoreBloomFilter;
     use dashcore_rpc::dashcore::hashes::Hash;
     use dashcore_rpc::dashcore::{OutPoint, PubkeyHash};
@@ -182,8 +193,10 @@ mod tests {
             &tx,
             BloomFlags::All
         ));
-        let mut outpoint = super::txid_to_be_bytes(&tx.txid());
-        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        let outpoint = outpoint_to_bytes(&OutPoint {
+            txid: tx.txid(),
+            vout: 0,
+        });
         let guard = filter_lock.read().unwrap();
         assert!(guard.contains(&outpoint));
     }
@@ -309,8 +322,10 @@ mod tests {
             &tx_sh,
             BloomFlags::PubkeyOnly
         ));
-        let mut outpoint = super::txid_to_be_bytes(&tx_sh.txid());
-        outpoint.extend_from_slice(&(0u32).to_le_bytes());
+        let outpoint = outpoint_to_bytes(&OutPoint {
+            txid: tx_sh.txid(),
+            vout: 0,
+        });
         assert!(!filter_lock.read().unwrap().contains(&outpoint));
         let mut opret_bytes2 = Vec::new();
         opret_bytes2.push(0x6a);
@@ -331,8 +346,10 @@ mod tests {
             &tx_or,
             BloomFlags::PubkeyOnly
         ));
-        let mut outpoint2 = super::txid_to_be_bytes(&tx_or.txid());
-        outpoint2.extend_from_slice(&(0u32).to_le_bytes());
+        let outpoint2 = outpoint_to_bytes(&OutPoint {
+            txid: tx_or.txid(),
+            vout: 0,
+        });
         assert!(!filter_lock.read().unwrap().contains(&outpoint2));
     }
 

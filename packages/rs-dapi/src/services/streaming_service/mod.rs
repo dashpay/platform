@@ -440,6 +440,6 @@ impl StreamingServiceImpl {
 
     /// Returns current health of the ZMQ streaming pipeline
     pub fn is_healthy(&self) -> bool {
-        self.zmq_listener.is_connected()
+        self.zmq_listener.is_running()
     }
 }

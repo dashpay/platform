@@ -86,6 +86,7 @@ rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 
 # Dash Core RPC client
 dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964" }
 zeroize = "1.8"
 
 

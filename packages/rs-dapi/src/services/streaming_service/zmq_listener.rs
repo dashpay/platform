@@ -295,7 +295,7 @@ impl ZmqListener {
     }
 
     /// Check if the ZMQ listener is connected (placeholder)
-    pub fn is_connected(&self) -> bool {
+    pub fn is_running(&self) -> bool {
         !self.cancel.is_cancelled()
     }
     /// ZMQ listener task that runs asynchronously
@@ -469,6 +469,14 @@ impl ZmqDispatcher {
         // Health check of zmq connection
         // This is a hack to ensure the connection is alive, as the monitor fails to notify us about disconnects
         let current_status = self.socket.subscribe("ping").await.is_ok();
+        // Unsubscribe immediately to avoid resource waste
+        self.socket
+            .unsubscribe("ping")
+            .await
+            .inspect_err(|e| {
+                debug!(error = %e, "Error unsubscribing from ping topic during health check");
+            })
+            .ok();
 
         // If the status changed, log it
         let previous_status = self.connected.swap(current_status, Ordering::SeqCst);

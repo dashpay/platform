@@ -5193,6 +5193,7 @@ dependencies = [
  "ciborium",
  "clap",
  "dapi-grpc",
+ "dash-spv",
  "dashcore-rpc",
  "dotenvy",
  "dpp",
