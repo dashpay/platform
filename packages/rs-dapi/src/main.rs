@@ -117,24 +117,28 @@ impl Cli {
                     // Check if this is a connection-related error and set appropriate exit code
                     match &e {
                         DapiError::ServerUnavailable(_, _) => {
-                            error!(
-                                "Upstream service connection failed. Use --force to start without affected services."
+                            error!(error = %e,
+                                "Upstream service connection failed. Check drive-abci and tenderdash and try again."
                             );
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Client(msg) if msg.contains("Failed to connect") => {
-                            error!(
-                                "Client connection failed. Use --force to start without affected services."
+                            error!(error = %msg,
+                                "Client connection failed.  Check drive-abci and tenderdash and try again."
                             );
                             return Err(format!("Connection error: {}", e));
                         }
                         DapiError::Transport(_) => {
                             error!(
-                                "Transport error occurred. Use --force to start without affected services."
+                                error = %e,
+                                "Transport error occurred. Check drive-abci and tenderdash and try again."
                             );
                             return Err(format!("Connection error: {}", e));
                         }
-                        _ => return Err(e.to_string()),
+                        _ => {
+                            error!(error = %e, "Cannot start server.");
+                            return Err(e.to_string());
+                        }
                     }
                 }
                 Ok(())
