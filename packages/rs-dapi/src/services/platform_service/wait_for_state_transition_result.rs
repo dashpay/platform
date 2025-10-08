@@ -138,39 +138,44 @@ impl PlatformServiceImpl {
             };
 
         // Check if transaction had an error
-        if let Some(tx_result) = &tx_response.tx_result
-            && tx_result.code != 0
-        {
+        let tx_result = &tx_response.tx_result;
+
+        if tx_result.code != 0 {
             // Transaction had an error
-            let consensus_error_serialized = tx_result
-                .info
-                .as_ref()
-                .and_then(|info_base64| decode_consensus_error(info_base64.clone()));
+            let consensus_error_serialized = if tx_result.info.is_empty() {
+                None
+            } else {
+                decode_consensus_error(tx_result.info.clone())
+            };
 
             let error = TenderdashStatus::new(
                 i64::from(tx_result.code),
-                tx_result.data.clone(),
+                if tx_result.data.is_empty() {
+                    None
+                } else {
+                    Some(tx_result.data.clone())
+                },
                 consensus_error_serialized,
             );
             return Ok(error.into());
         }
 
         // No error; generate proof if requested
-        if prove
-            && let Some(tx_bytes) = &tx_response.tx
-            && let Ok(tx_data) =
-                base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, tx_bytes)
-        {
-            match self.fetch_proof_for_state_transition(tx_data).await {
-                Ok((proof, metadata)) => {
-                    response_v0.result = Some(
-                        wait_for_state_transition_result_response_v0::Result::Proof(proof),
-                    );
-                    response_v0.metadata = Some(metadata);
-                }
-                Err(e) => {
-                    debug!("Failed to fetch proof: {}", e);
-                    // Continue without proof
+        if prove && !tx_response.tx.is_empty() {
+            if let Ok(tx_data) =
+                base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
+            {
+                match self.fetch_proof_for_state_transition(tx_data).await {
+                    Ok((proof, metadata)) => {
+                        response_v0.result = Some(
+                            wait_for_state_transition_result_response_v0::Result::Proof(proof),
+                        );
+                        response_v0.metadata = Some(metadata);
+                    }
+                    Err(e) => {
+                        debug!("Failed to fetch proof: {}", e);
+                        // Continue without proof
+                    }
                 }
             }
         }

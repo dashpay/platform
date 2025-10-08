@@ -1,6 +1,6 @@
 use crate::{
     DAPIResult, DapiError,
-    clients::REQUEST_TIMEOUT,
+    clients::{REQUEST_TIMEOUT, tenderdash_client::ExecTxResult},
     utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
 };
 use futures::{SinkExt, StreamExt};
@@ -54,25 +54,8 @@ struct TxEvent {
     #[serde(deserialize_with = "deserialize_string_or_number")]
     height: u64,
     tx: Option<String>,
-    result: Option<TxResult>,
+    result: Option<ExecTxResult>,
     events: Option<Vec<EventAttribute>>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct TxResult {
-    #[serde(
-        deserialize_with = "deserialize_string_or_number",
-        default = "default_code"
-    )]
-    code: u32,
-    data: Option<String>,
-    info: Option<String>,
-    log: Option<String>,
-}
-
-// Default function for code field
-fn default_code() -> u32 {
-    0
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,8 +287,12 @@ impl TenderdashWebSocketClient {
                 } else {
                     TransactionResult::Error {
                         code: tx_result.code,
-                        info: tx_result.info.clone().unwrap_or_default(),
-                        data: tx_result.data.clone(),
+                        info: tx_result.info.clone(),
+                        data: if tx_result.data.is_empty() {
+                            None
+                        } else {
+                            Some(tx_result.data.clone())
+                        },
                     }
                 }
             } else {
@@ -441,7 +428,7 @@ mod tests {
             "log": ""
         });
 
-        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        let tx_result: ExecTxResult = serde_json::from_value(json_data).unwrap();
         assert_eq!(tx_result.code, 1005);
     }
 
@@ -454,7 +441,7 @@ mod tests {
             "log": ""
         });
 
-        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        let tx_result: ExecTxResult = serde_json::from_value(json_data).unwrap();
         assert_eq!(tx_result.code, 1005);
     }
 
@@ -467,7 +454,7 @@ mod tests {
             "log": ""
         });
 
-        let tx_result: TxResult = serde_json::from_value(json_data).unwrap();
+        let tx_result: ExecTxResult = serde_json::from_value(json_data).unwrap();
         assert_eq!(tx_result.code, 0); // Should default to 0 (success)
     }
 

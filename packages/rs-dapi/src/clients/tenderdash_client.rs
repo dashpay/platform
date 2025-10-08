@@ -2,7 +2,7 @@ use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
-use crate::utils::generate_jsonrpc_id;
+use crate::utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id};
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
@@ -86,15 +86,15 @@ struct TxParams<'a> {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultStatus {
     #[serde(default)]
-    pub node_info: Option<NodeInfo>,
+    pub node_info: NodeInfo,
     #[serde(default)]
-    pub application_info: Option<ApplicationInfo>,
+    pub application_info: ApplicationInfo,
     #[serde(default)]
-    pub sync_info: Option<SyncInfo>,
+    pub sync_info: SyncInfo,
     #[serde(default)]
-    pub validator_info: Option<ValidatorInfo>,
+    pub validator_info: ValidatorInfo,
     #[serde(default)]
-    pub light_client_info: Option<Value>,
+    pub light_client_info: Value,
 }
 
 pub type TenderdashStatusResponse = ResultStatus;
@@ -102,107 +102,111 @@ pub type TenderdashStatusResponse = ResultStatus;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ApplicationInfo {
     #[serde(default)]
-    pub version: Option<String>,
+    pub version: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeInfo {
     #[serde(default)]
-    pub protocol_version: Option<ProtocolVersion>,
+    pub protocol_version: ProtocolVersion,
     #[serde(default)]
-    pub id: Option<String>,
+    pub id: String,
     #[serde(default)]
-    pub listen_addr: Option<String>,
+    pub listen_addr: String,
     #[serde(rename = "ProTxHash", default)]
-    pub pro_tx_hash: Option<String>,
+    pub pro_tx_hash: String,
     #[serde(default)]
-    pub network: Option<String>,
+    pub network: String,
     #[serde(default)]
-    pub version: Option<String>,
+    pub version: String,
+    #[serde(default, deserialize_with = "deserialize_to_string")]
+    pub channels: String,
     #[serde(default)]
-    pub channels: Option<Value>,
+    pub moniker: String,
     #[serde(default)]
-    pub moniker: Option<String>,
-    #[serde(default)]
-    pub other: Option<NodeInfoOther>,
+    pub other: NodeInfoOther,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NodeInfoOther {
     #[serde(default)]
-    pub tx_index: Option<String>,
+    pub tx_index: String,
     #[serde(default)]
-    pub rpc_address: Option<String>,
+    pub rpc_address: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ProtocolVersion {
     #[serde(default)]
-    pub p2p: Option<String>,
+    pub p2p: String,
     #[serde(default)]
-    pub block: Option<String>,
+    pub block: String,
     #[serde(default)]
-    pub app: Option<String>,
+    pub app: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SyncInfo {
     #[serde(default)]
-    pub latest_block_hash: Option<String>,
+    pub latest_block_hash: String,
     #[serde(default)]
-    pub latest_app_hash: Option<String>,
+    pub latest_app_hash: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub latest_block_height: i64,
     #[serde(default)]
-    pub latest_block_height: Option<String>,
+    pub latest_block_time: String,
     #[serde(default)]
-    pub latest_block_time: Option<String>,
+    pub earliest_block_hash: String,
     #[serde(default)]
-    pub earliest_block_hash: Option<String>,
+    pub earliest_app_hash: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub earliest_block_height: i64,
     #[serde(default)]
-    pub earliest_app_hash: Option<String>,
+    pub earliest_block_time: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub max_peer_block_height: i64,
     #[serde(default)]
-    pub earliest_block_height: Option<String>,
+    pub catching_up: bool,
     #[serde(default)]
-    pub earliest_block_time: Option<String>,
+    pub total_synced_time: String,
     #[serde(default)]
-    pub max_peer_block_height: Option<String>,
+    pub remaining_time: String,
     #[serde(default)]
-    pub catching_up: Option<bool>,
+    pub total_snapshots: String,
     #[serde(default)]
-    pub total_synced_time: Option<String>,
+    pub chunk_process_avg_time: String,
     #[serde(default)]
-    pub remaining_time: Option<String>,
+    pub snapshot_height: String,
     #[serde(default)]
-    pub total_snapshots: Option<String>,
-    #[serde(default)]
-    pub chunk_process_avg_time: Option<String>,
-    #[serde(default)]
-    pub snapshot_height: Option<String>,
-    #[serde(default)]
-    pub snapshot_chunks_count: Option<String>,
+    pub snapshot_chunks_count: String,
     #[serde(rename = "backfilled_blocks", default)]
-    pub backfilled_blocks: Option<String>,
+    pub backfilled_blocks: String,
     #[serde(rename = "backfill_blocks_total", default)]
-    pub backfill_blocks_total: Option<String>,
+    pub backfill_blocks_total: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ValidatorInfo {
     #[serde(default)]
-    pub pro_tx_hash: Option<String>,
+    pub pro_tx_hash: String,
     #[serde(default)]
-    pub voting_power: Option<String>,
+    pub voting_power: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultNetInfo {
     #[serde(default)]
-    pub listening: Option<bool>,
+    pub listening: bool,
     #[serde(default)]
-    pub listeners: Option<Vec<String>>,
-    #[serde(rename = "n_peers", default)]
-    pub n_peers: Option<String>,
+    pub listeners: Vec<String>,
+    #[serde(
+        rename = "n_peers",
+        default,
+        deserialize_with = "deserialize_string_or_number"
+    )]
+    pub n_peers: u32,
     #[serde(default)]
-    pub peers: Option<Vec<Peer>>,
+    pub peers: Vec<Peer>,
 }
 
 pub type NetInfoResponse = ResultNetInfo;
@@ -210,9 +214,9 @@ pub type NetInfoResponse = ResultNetInfo;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Peer {
     #[serde(rename = "node_id", default)]
-    pub node_id: Option<String>,
+    pub node_id: String,
     #[serde(default)]
-    pub url: Option<String>,
+    pub url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -220,13 +224,13 @@ pub struct ResultBroadcastTx {
     #[serde(default)]
     pub code: u32,
     #[serde(default)]
-    pub data: Option<String>,
+    pub data: String,
     #[serde(default)]
-    pub codespace: Option<String>,
+    pub codespace: String,
     #[serde(default)]
-    pub hash: Option<String>,
+    pub hash: String,
     #[serde(default)]
-    pub info: Option<String>,
+    pub info: String,
 }
 
 pub type BroadcastTxResponse = ResultBroadcastTx;
@@ -236,19 +240,17 @@ pub struct ResultCheckTx {
     #[serde(default)]
     pub code: u32,
     #[serde(default)]
-    pub data: Option<String>,
+    pub data: String,
     #[serde(default)]
-    pub log: Option<String>,
+    pub info: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub gas_wanted: i64,
     #[serde(default)]
-    pub info: Option<String>,
+    pub codespace: String,
     #[serde(default)]
-    pub gas_wanted: Option<String>,
-    #[serde(default)]
-    pub gas_used: Option<String>,
-    #[serde(default)]
-    pub events: Option<Value>,
-    #[serde(default)]
-    pub codespace: Option<String>,
+    pub sender: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub priority: i64,
 }
 
 pub type CheckTxResponse = ResultCheckTx;
@@ -256,7 +258,7 @@ pub type CheckTxResponse = ResultCheckTx;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultUnconfirmedTx {
     #[serde(default)]
-    pub tx: Option<String>,
+    pub tx: String,
 }
 
 pub type UnconfirmedTxResponse = ResultUnconfirmedTx;
@@ -264,39 +266,50 @@ pub type UnconfirmedTxResponse = ResultUnconfirmedTx;
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ResultTx {
     #[serde(default)]
-    pub hash: Option<String>,
-    #[serde(default)]
-    pub height: Option<String>,
-    #[serde(default)]
-    pub index: Option<u32>,
+    pub hash: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub height: i64,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub index: u32,
     #[serde(rename = "tx_result", default)]
-    pub tx_result: Option<ExecTxResult>,
+    pub tx_result: ExecTxResult,
     #[serde(default)]
-    pub tx: Option<String>,
+    pub tx: String,
     #[serde(default)]
-    pub proof: Option<Value>,
+    pub proof: Value,
 }
 
 pub type TxResponse = ResultTx;
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExecTxResult {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
     pub code: u32,
     #[serde(default)]
-    pub data: Option<String>,
+    pub data: String,
     #[serde(default)]
-    pub info: Option<String>,
+    pub info: String,
     #[serde(default)]
-    pub log: Option<String>,
+    pub log: String,
+    #[serde(default, deserialize_with = "deserialize_string_or_number")]
+    pub gas_used: i64,
     #[serde(default)]
-    pub gas_wanted: Option<String>,
+    pub codespace: String,
     #[serde(default)]
-    pub gas_used: Option<String>,
-    #[serde(default)]
-    pub codespace: Option<String>,
-    #[serde(default)]
-    pub events: Option<Value>,
+    pub events: Vec<Value>,
+}
+
+impl ExecTxResult {
+    /// Check if all fields are at their default values. Useful to detect absent results.
+    pub fn is_empty(&self) -> bool {
+        self.code == 0
+            && self.data.is_empty()
+            && self.info.is_empty()
+            && self.log.is_empty()
+            && self.gas_used == 0
+            && self.codespace.is_empty()
+            && self.events.is_empty()
+    }
 }
 
 pub type TxResult = ExecTxResult;
@@ -316,7 +329,7 @@ impl TenderdashClient {
             DapiError::Client(format!("Failed to serialize request: {}", e))
         })?;
 
-        let response: TenderdashResponse<T> = self
+        let response_body = self
             .client
             .post(&self.base_url)
             .header("Content-Type", "application/json")
@@ -330,10 +343,19 @@ impl TenderdashClient {
                 );
                 DapiError::Client(format!("Failed to send request: {}", e))
             })?
-            .json()
+            .text()
             .await
             .map_err(|e| {
-                error!("Failed to parse Tenderdash response: {}", e);
+                error!("Failed to read Tenderdash response body: {}", e);
+                DapiError::Client(format!("Failed to read response body: {}", e))
+            })?;
+
+        let response: TenderdashResponse<T> =
+            serde_json::from_str(&response_body).map_err(|e| {
+                error!(
+                    "Failed to parse Tenderdash response: {}; full body: {}",
+                    e, response_body
+                );
                 DapiError::Client(format!("Failed to parse response: {}", e))
             })?;
 

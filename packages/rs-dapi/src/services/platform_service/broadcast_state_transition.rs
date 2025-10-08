@@ -75,14 +75,20 @@ impl PlatformServiceImpl {
                             "broadcast_state_transition: State transition broadcast failed - service error"
                         );
 
-                        // TODO: review to get real error message
-                        let error_message = broadcast_result.data.clone().unwrap_or_default();
+                        // Prefer detailed error message if provided in `data`, otherwise fallback to `info`.
+                        let error_message = if broadcast_result.data.is_empty() {
+                            broadcast_result.info.clone()
+                        } else {
+                            broadcast_result.data.clone()
+                        };
 
-                        map_broadcast_error(
-                            broadcast_result.code,
-                            &error_message,
-                            broadcast_result.info.as_deref(),
-                        )
+                        let info = if broadcast_result.info.is_empty() {
+                            None
+                        } else {
+                            Some(broadcast_result.info.as_str())
+                        };
+
+                        map_broadcast_error(broadcast_result.code, &error_message, info)
                     }
                 }
                 Err(DapiError::TenderdashClientError(e)) => DapiError::TenderdashClientError(e),
@@ -148,7 +154,7 @@ impl PlatformServiceImpl {
         // Check if the ST is already committed to the blockchain
         match self.tenderdash_client.tx(txid_base64.clone()).await {
             Ok(tx_response) => {
-                if tx_response.tx_result.is_some() {
+                if !tx_response.tx_result.is_empty() || !tx_response.tx.is_empty() {
                     return Err(DapiError::AlreadyExists(
                         "state transition already in chain".to_string(),
                     ));

@@ -167,17 +167,19 @@ fn build_version_info(
     let mut protocol = get_status_response_v0::version::Protocol::default();
 
     // Tenderdash protocol version
-    if let Some(node_info) = &tenderdash_status.node_info
-        && let Some(protocol_version) = &node_info.protocol_version
-    {
+    let node_info = &tenderdash_status.node_info;
+    let protocol_version = &node_info.protocol_version;
+
+    if !protocol_version.block.is_empty() || !protocol_version.p2p.is_empty() {
         let mut tenderdash_protocol =
             get_status_response_v0::version::protocol::Tenderdash::default();
 
-        if let Some(block) = &protocol_version.block {
-            tenderdash_protocol.block = block.parse().unwrap_or(0);
+        if !protocol_version.block.is_empty() {
+            tenderdash_protocol.block = protocol_version.block.parse().unwrap_or(0);
         }
-        if let Some(p2p) = &protocol_version.p2p {
-            tenderdash_protocol.p2p = p2p.parse().unwrap_or(0);
+
+        if !protocol_version.p2p.is_empty() {
+            tenderdash_protocol.p2p = protocol_version.p2p.parse().unwrap_or(0);
         }
 
         protocol.tenderdash = Some(tenderdash_protocol);
@@ -206,11 +208,11 @@ fn build_version_info(
         .and_then(|s| s.drive.as_ref())
         .cloned();
 
-    let tenderdash_version = tenderdash_status
-        .node_info
-        .as_ref()
-        .and_then(|n| n.version.as_ref())
-        .cloned();
+    let tenderdash_version = if tenderdash_status.node_info.version.is_empty() {
+        None
+    } else {
+        Some(tenderdash_status.node_info.version.clone())
+    };
 
     let software = get_status_response_v0::version::Software {
         dapi: env!("CARGO_PKG_VERSION").to_string(),
@@ -226,24 +228,24 @@ fn build_version_info(
 fn build_node_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::Node> {
-    if let Some(node_info) = &tenderdash_status.node_info {
+    let node_info = &tenderdash_status.node_info;
+
+    if node_info.id.is_empty() && node_info.pro_tx_hash.is_empty() {
+        None
+    } else {
         let mut node = get_status_response_v0::Node::default();
 
-        if let Some(id) = &node_info.id
-            && let Ok(id_bytes) = hex::decode(id)
-        {
+        if let Ok(id_bytes) = hex::decode(&node_info.id) {
             node.id = id_bytes;
         }
 
-        if let Some(pro_tx_hash) = &node_info.pro_tx_hash
-            && let Ok(pro_tx_hash_bytes) = hex::decode(pro_tx_hash)
-        {
-            node.pro_tx_hash = Some(pro_tx_hash_bytes);
+        if !node_info.pro_tx_hash.is_empty() {
+            if let Ok(pro_tx_hash_bytes) = hex::decode(&node_info.pro_tx_hash) {
+                node.pro_tx_hash = Some(pro_tx_hash_bytes);
+            }
         }
 
         Some(node)
-    } else {
-        None
     }
 }
 
@@ -252,50 +254,45 @@ fn build_chain_info(
     drive_status: &DriveStatusResponse,
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::Chain> {
-    if let Some(sync_info) = &tenderdash_status.sync_info {
-        let catching_up = sync_info.catching_up.unwrap_or(false);
+    let sync_info = &tenderdash_status.sync_info;
 
-        let latest_block_hash = sync_info
-            .latest_block_hash
-            .as_ref()
-            .and_then(|hash| hex::decode(hash).ok())
-            .unwrap_or_default();
+    let has_sync_data = sync_info.latest_block_height != 0
+        || !sync_info.latest_block_hash.is_empty()
+        || !sync_info.latest_app_hash.is_empty();
 
-        let latest_app_hash = sync_info
-            .latest_app_hash
-            .as_ref()
-            .and_then(|hash| hex::decode(hash).ok())
-            .unwrap_or_default();
+    if !has_sync_data {
+        None
+    } else {
+        let catching_up = sync_info.catching_up;
 
-        let latest_block_height = sync_info
-            .latest_block_height
-            .as_ref()
-            .and_then(|h| h.parse().ok())
-            .unwrap_or(0);
+        let latest_block_hash = if sync_info.latest_block_hash.is_empty() {
+            Vec::new()
+        } else {
+            hex::decode(&sync_info.latest_block_hash).unwrap_or_default()
+        };
 
-        let earliest_block_hash = sync_info
-            .earliest_block_hash
-            .as_ref()
-            .and_then(|hash| hex::decode(hash).ok())
-            .unwrap_or_default();
+        let latest_app_hash = if sync_info.latest_app_hash.is_empty() {
+            Vec::new()
+        } else {
+            hex::decode(&sync_info.latest_app_hash).unwrap_or_default()
+        };
 
-        let earliest_app_hash = sync_info
-            .earliest_app_hash
-            .as_ref()
-            .and_then(|hash| hex::decode(hash).ok())
-            .unwrap_or_default();
+        let latest_block_height = sync_info.latest_block_height.max(0) as u64;
 
-        let earliest_block_height = sync_info
-            .earliest_block_height
-            .as_ref()
-            .and_then(|h| h.parse().ok())
-            .unwrap_or(0);
+        let earliest_block_hash = if sync_info.earliest_block_hash.is_empty() {
+            Vec::new()
+        } else {
+            hex::decode(&sync_info.earliest_block_hash).unwrap_or_default()
+        };
 
-        let max_peer_block_height = sync_info
-            .max_peer_block_height
-            .as_ref()
-            .and_then(|h| h.parse().ok())
-            .unwrap_or(0);
+        let earliest_app_hash = if sync_info.earliest_app_hash.is_empty() {
+            Vec::new()
+        } else {
+            hex::decode(&sync_info.earliest_app_hash).unwrap_or_default()
+        };
+
+        let earliest_block_height = sync_info.earliest_block_height.max(0) as u64;
+        let max_peer_block_height = sync_info.max_peer_block_height.max(0) as u64;
 
         let core_chain_locked_height = drive_status
             .chain
@@ -316,8 +313,6 @@ fn build_chain_info(
         };
 
         Some(chain)
-    } else {
-        None
     }
 }
 
@@ -325,25 +320,36 @@ fn build_chain_info(
 fn build_state_sync_info(
     tenderdash_status: &TenderdashStatusResponse,
 ) -> Option<get_status_response_v0::StateSync> {
-    if let Some(sync_info) = &tenderdash_status.sync_info {
-        let parse_or_default = |opt_str: Option<&String>| -> u64 {
-            opt_str.unwrap_or(&"0".to_string()).parse().unwrap_or(0)
+    let sync_info = &tenderdash_status.sync_info;
+
+    let has_state_sync_data = !sync_info.total_synced_time.is_empty()
+        || !sync_info.remaining_time.is_empty()
+        || !sync_info.total_snapshots.is_empty()
+        || !sync_info.snapshot_height.is_empty();
+
+    if !has_state_sync_data {
+        None
+    } else {
+        let parse_or_default = |value: &str| -> u64 {
+            if value.is_empty() {
+                0
+            } else {
+                value.parse::<i64>().map(|v| v.max(0) as u64).unwrap_or(0)
+            }
         };
 
         let state_sync = get_status_response_v0::StateSync {
-            total_synced_time: parse_or_default(sync_info.total_synced_time.as_ref()),
-            remaining_time: parse_or_default(sync_info.remaining_time.as_ref()),
-            total_snapshots: parse_or_default(sync_info.total_snapshots.as_ref()) as u32,
-            chunk_process_avg_time: parse_or_default(sync_info.chunk_process_avg_time.as_ref()),
-            snapshot_height: parse_or_default(sync_info.snapshot_height.as_ref()),
-            snapshot_chunks_count: parse_or_default(sync_info.snapshot_chunks_count.as_ref()),
-            backfilled_blocks: parse_or_default(sync_info.backfilled_blocks.as_ref()),
-            backfill_blocks_total: parse_or_default(sync_info.backfill_blocks_total.as_ref()),
+            total_synced_time: parse_or_default(&sync_info.total_synced_time),
+            remaining_time: parse_or_default(&sync_info.remaining_time),
+            total_snapshots: parse_or_default(&sync_info.total_snapshots) as u32,
+            chunk_process_avg_time: parse_or_default(&sync_info.chunk_process_avg_time),
+            snapshot_height: parse_or_default(&sync_info.snapshot_height),
+            snapshot_chunks_count: parse_or_default(&sync_info.snapshot_chunks_count),
+            backfilled_blocks: parse_or_default(&sync_info.backfilled_blocks),
+            backfill_blocks_total: parse_or_default(&sync_info.backfill_blocks_total),
         };
 
         Some(state_sync)
-    } else {
-        None
     }
 }
 
@@ -352,31 +358,20 @@ fn build_network_info(
     tenderdash_status: &TenderdashStatusResponse,
     tenderdash_netinfo: &NetInfoResponse,
 ) -> Option<get_status_response_v0::Network> {
-    if tenderdash_netinfo.listening.is_some() {
-        let listening = tenderdash_netinfo.listening.unwrap_or(false);
-        let peers_count = tenderdash_netinfo
-            .n_peers
-            .as_ref()
-            .unwrap_or(&"0".to_string())
-            .parse()
-            .unwrap_or(0);
+    let has_network_data = tenderdash_netinfo.listening
+        || tenderdash_netinfo.n_peers > 0
+        || !tenderdash_status.node_info.network.is_empty();
 
-        let chain_id = tenderdash_status
-            .node_info
-            .as_ref()
-            .and_then(|n| n.network.as_ref())
-            .cloned()
-            .unwrap_or_default();
-
+    if !has_network_data {
+        None
+    } else {
         let network = get_status_response_v0::Network {
-            listening,
-            peers_count,
-            chain_id,
+            listening: tenderdash_netinfo.listening,
+            peers_count: tenderdash_netinfo.n_peers,
+            chain_id: tenderdash_status.node_info.network.clone(),
         };
 
         Some(network)
-    } else {
-        None
     }
 }
 
