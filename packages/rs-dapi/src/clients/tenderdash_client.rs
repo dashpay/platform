@@ -190,7 +190,7 @@ pub struct ValidatorInfo {
     #[serde(default)]
     pub pro_tx_hash: String,
     #[serde(default)]
-    pub voting_power: String,
+    pub voting_power: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
