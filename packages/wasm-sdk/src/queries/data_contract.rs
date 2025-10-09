@@ -149,17 +149,10 @@ impl WasmSdk {
 
         let contracts_map = Map::new();
 
-        for (id, contract_opt) in contracts_result {
+        for (id, contract) in contracts_result {
             let key = JsValue::from(IdentifierWasm::from(id));
-
-            match contract_opt {
-                Some(contract) => {
-                    contracts_map.set(&key, &JsValue::from(DataContractWasm::from(contract)));
-                }
-                None => {
-                    contracts_map.set(&key, &JsValue::NULL);
-                }
-            }
+            let value = contract.map(DataContractWasm::from);
+            contracts_map.set(&key, &JsValue::from(value));
         }
 
         Ok(contracts_map)
@@ -239,16 +232,10 @@ impl WasmSdk {
         let contracts_map = Map::new();
 
         for (id, contract_opt) in contracts_result {
-            let key = JsValue::from(
-                id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-            );
+            let key = JsValue::from(IdentifierWasm::from(id));
+            let value = contract_opt.map(DataContractWasm::from);
 
-            let value = match contract_opt {
-                Some(contract) => JsValue::from(DataContractWasm::from(contract)),
-                None => JsValue::NULL,
-            };
-
-            contracts_map.set(&key, &value);
+            contracts_map.set(&key, &JsValue::from(value));
         }
 
         Ok(DataContractsProofResponseWasm {

@@ -16,6 +16,7 @@ pub mod data_contract;
 pub mod enums;
 pub mod epoch;
 pub mod error;
+pub mod group;
 pub mod identifier;
 pub mod identity;
 pub mod mock_bls;
@@ -30,6 +31,7 @@ pub use data_contract::{
     DataContractWasm, DocumentWasm,
 };
 pub use epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
+pub use group::{GroupActionEventWasm, GroupActionWasm, TokenEventWasm};
 
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,

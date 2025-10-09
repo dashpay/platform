@@ -1,5 +1,6 @@
+use super::set_property;
 use crate::error::WasmSdkError;
-use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::group::accessors::v0::GroupV0Getters;
 use dash_sdk::dpp::data_contract::group::Group;
@@ -11,69 +12,15 @@ use dash_sdk::platform::group_actions::{
     GroupActionSignersQuery, GroupActionsQuery, GroupInfosQuery, GroupQuery,
 };
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
-use serde::{Deserialize, Serialize};
-use std::collections::BTreeMap;
+use js_sys::{Array, BigInt, Map, Number, Object, Reflect};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::group::GroupActionWasm;
+use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::tokens::GroupWasm;
+use wasm_dpp2::utils::JsValueExt;
 
 // Proof info functions are now included below
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct GroupInfoResponse {
-    members: BTreeMap<String, u32>,
-    required_power: u32,
-}
-
-impl GroupInfoResponse {
-    fn from_group(group: &Group) -> Self {
-        let members = group
-            .members()
-            .iter()
-            .map(|(id, power)| {
-                (
-                    id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                    *power,
-                )
-            })
-            .collect();
-
-        Self {
-            members,
-            required_power: group.required_power(),
-        }
-    }
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct GroupMember {
-    member_id: String,
-    power: u32,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct IdentityGroupInfo {
-    data_contract_id: String,
-    group_contract_position: u32,
-    role: String,       // "member", "owner", or "moderator"
-    power: Option<u32>, // Only for members
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct GroupsDataContractInfo {
-    data_contract_id: String,
-    groups: Vec<GroupContractPositionInfo>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct GroupContractPositionInfo {
-    position: u32,
-    group: GroupInfoResponse,
-}
 
 #[wasm_bindgen]
 impl WasmSdk {
@@ -100,15 +47,7 @@ impl WasmSdk {
         let group_result: Option<Group> = Group::fetch(self.as_ref(), query).await?;
 
         match group_result {
-            Some(group) => {
-                let response = GroupInfoResponse::from_group(&group);
-
-                // Use json_compatible serializer to convert maps to objects
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
+            Some(group) => Ok(JsValue::from(GroupWasm::from(group))),
             None => Ok(JsValue::NULL),
         }
     }
@@ -139,83 +78,8 @@ impl WasmSdk {
         let group_result: Option<Group> = Group::fetch(self.as_ref(), query).await?;
 
         match group_result {
-            Some(group) => {
-                let mut members: Vec<GroupMember> = Vec::new();
-
-                // If specific member IDs are requested, filter by them
-                if let Some(requested_ids) = member_ids {
-                    let requested_identifiers: Result<Vec<Identifier>, _> = requested_ids
-                        .iter()
-                        .map(|id| {
-                            Identifier::from_string(
-                                id,
-                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                            )
-                        })
-                        .collect();
-                    let requested_identifiers = requested_identifiers.map_err(|e| {
-                        WasmSdkError::invalid_argument(format!("Invalid member identity ID: {}", e))
-                    })?;
-
-                    for id in requested_identifiers {
-                        if let Ok(power) = group.member_power(id) {
-                            members.push(GroupMember {
-                                member_id: id.to_string(
-                                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                                ),
-                                power,
-                            });
-                        }
-                    }
-                } else {
-                    // Return all members with pagination
-                    let all_members = group.members();
-                    let mut sorted_members: Vec<_> = all_members.iter().collect();
-                    sorted_members.sort_by_key(|(id, _)| *id);
-
-                    // Apply start_at if provided
-                    let start_index = if let Some(start_id) = start_at {
-                        let start_identifier = Identifier::from_string(
-                            &start_id,
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        )
-                        .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid start identity ID: {}",
-                                e
-                            ))
-                        })?;
-                        sorted_members
-                            .iter()
-                            .position(|(id, _)| **id > start_identifier)
-                            .unwrap_or(sorted_members.len())
-                    } else {
-                        0
-                    };
-
-                    // Apply limit
-                    let end_index = if let Some(lim) = limit {
-                        (start_index + lim as usize).min(sorted_members.len())
-                    } else {
-                        sorted_members.len()
-                    };
-
-                    for (id, power) in &sorted_members[start_index..end_index] {
-                        members.push(GroupMember {
-                            member_id: (*id).to_string(
-                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                            ),
-                            power: **power,
-                        });
-                    }
-                }
-
-                // Use json_compatible serializer to convert response
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                members.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
+            Some(group) => collect_group_members_map(&group, &member_ids, &start_at, limit)
+                .map(|map| map.into()),
             None => Ok(JsValue::NULL),
         }
     }
@@ -235,7 +99,7 @@ impl WasmSdk {
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        let mut groups: Vec<IdentityGroupInfo> = Vec::new();
+        let groups_array = Array::new();
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
@@ -264,12 +128,20 @@ impl WasmSdk {
                 for (position, group_opt) in groups_result {
                     if let Some(group) = group_opt {
                         if let Ok(power) = group.member_power(id) {
-                            groups.push(IdentityGroupInfo {
-                                data_contract_id: contract_id_str.clone(),
-                                group_contract_position: position as u32,
-                                role: "member".to_string(),
-                                power: Some(power),
-                            });
+                            let entry = Object::new();
+                            set_property(
+                                &entry,
+                                "dataContractId",
+                                &JsValue::from_str(&contract_id_str),
+                            )?;
+                            set_property(
+                                &entry,
+                                "groupContractPosition",
+                                &Number::from(position as u32).into(),
+                            )?;
+                            set_property(&entry, "role", &JsValue::from_str("member"))?;
+                            set_property(&entry, "power", &BigInt::from(power as u64))?;
+                            groups_array.push(&entry.into());
                         }
                     }
                 }
@@ -285,11 +157,7 @@ impl WasmSdk {
             );
         }
 
-        // Use json_compatible serializer to convert response
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        groups.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(groups_array.into())
     }
 
     #[wasm_bindgen(js_name = "getGroupInfos")]
@@ -307,22 +175,25 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Parse start at info if provided
-        let start_group_contract_position =
-            if !start_at_info.is_null() && !start_at_info.is_undefined() {
-                let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
-                match info {
-                    Ok(json) => {
-                        let position = json["position"].as_u64().ok_or_else(|| {
-                            WasmSdkError::invalid_argument("Invalid start position")
-                        })? as u32;
-                        let included = json["included"].as_bool().unwrap_or(false);
-                        Some((position as GroupContractPosition, included))
-                    }
-                    Err(_) => None,
-                }
-            } else {
-                None
-            };
+        let start_group_contract_position = if !start_at_info.is_null()
+            && !start_at_info.is_undefined()
+        {
+            let position_value = Reflect::get(&start_at_info, &JsValue::from_str("position"))
+                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
+            let position = position_value
+                .as_f64()
+                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid start position"))?
+                as GroupContractPosition;
+
+            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+
+            Some((position, included))
+        } else {
+            None
+        };
 
         // Create query
         let query = GroupInfosQuery {
@@ -335,36 +206,16 @@ impl WasmSdk {
         let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
         // Convert result to response format
-        let mut group_infos = Vec::new();
+        let infos_map = Map::new();
         for (position, group_opt) in groups_result {
             if let Some(group) = group_opt {
-                let members: Vec<serde_json::Value> = group.members()
-                    .iter()
-                    .map(|(id, power)| {
-                        serde_json::json!({
-                            "memberId": id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                            "power": *power
-                        })
-                    })
-                    .collect();
-
-                group_infos.push(serde_json::json!({
-                    "groupContractPosition": position,
-                    "members": members,
-                    "groupRequiredPower": group.required_power()
-                }));
+                let key = Number::from(position as u32);
+                let value = JsValue::from(GroupWasm::from(group));
+                infos_map.set(&key.into(), &value);
             }
         }
 
-        let response = serde_json::json!({
-            "groupInfos": group_infos
-        });
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(infos_map))
     }
 
     #[wasm_bindgen(js_name = "getGroupActions")]
@@ -397,26 +248,21 @@ impl WasmSdk {
 
         // Parse start action ID if provided
         let start_at_action_id = if !start_at_info.is_null() && !start_at_info.is_undefined() {
-            let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
-            match info {
-                Ok(json) => {
-                    let action_id = json["actionId"]
-                        .as_str()
-                        .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
-                    let included = json["included"].as_bool().unwrap_or(false);
-                    Some((
-                        Identifier::from_string(
-                            action_id,
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        )
-                        .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e))
-                        })?,
-                        included,
-                    ))
-                }
-                Err(_) => None,
-            }
+            let action_id_value = Reflect::get(&start_at_info, &JsValue::from_str("actionId"))
+                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
+            let action_id_str = action_id_value
+                .as_string()
+                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
+            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let identifier = Identifier::from_string(
+                &action_id_str,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
+            Some((identifier, included))
         } else {
             None
         };
@@ -433,28 +279,17 @@ impl WasmSdk {
         // Fetch actions
         let actions_result = GroupAction::fetch_many(self.as_ref(), query).await?;
 
-        // Convert result to response format
-        let mut group_actions = Vec::new();
+        let actions_map = Map::new();
         for (action_id, action_opt) in actions_result {
-            if let Some(_action) = action_opt {
-                // For now, just return the action ID
-                // The full action structure requires custom serialization
-                group_actions.push(serde_json::json!({
-                    "actionId": action_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                    // TODO: Serialize the full action event structure
-                }));
-            }
+            let key = JsValue::from(IdentifierWasm::from(action_id));
+            let value = match action_opt {
+                Some(action) => JsValue::from(GroupActionWasm::from(action)),
+                None => JsValue::NULL,
+            };
+            actions_map.set(&key, &value);
         }
 
-        let response = serde_json::json!({
-            "groupActions": group_actions
-        });
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(actions_map))
     }
 
     #[wasm_bindgen(js_name = "getGroupActionSigners")]
@@ -502,26 +337,16 @@ impl WasmSdk {
         // Fetch signers
         let signers_result = GroupMemberPower::fetch_many(self.as_ref(), query).await?;
 
-        // Convert result to response format
-        let mut signers = Vec::new();
+        let signers_map = Map::new();
         for (signer_id, power_opt) in signers_result {
             if let Some(power) = power_opt {
-                signers.push(serde_json::json!({
-                    "signerId": signer_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                    "power": power
-                }));
+                let key = JsValue::from(IdentifierWasm::from(signer_id));
+                let value = JsValue::from(BigInt::from(power as u64));
+                signers_map.set(&key, &value);
             }
         }
 
-        let response = serde_json::json!({
-            "signers": signers
-        });
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(signers_map))
     }
 
     #[wasm_bindgen(js_name = "getGroupsDataContracts")]
@@ -529,7 +354,7 @@ impl WasmSdk {
         &self,
         data_contract_ids: Vec<String>,
     ) -> Result<JsValue, WasmSdkError> {
-        let mut results: Vec<GroupsDataContractInfo> = Vec::new();
+        let contracts_map = Map::new();
 
         for contract_id_str in data_contract_ids {
             let contract_id = Identifier::from_string(
@@ -552,28 +377,22 @@ impl WasmSdk {
 
             let groups_result = Group::fetch_many(self.as_ref(), query).await?;
 
-            let mut groups: Vec<GroupContractPositionInfo> = Vec::new();
+            let groups_map = Map::new();
 
             for (position, group_opt) in groups_result {
-                if let Some(group) = group_opt {
-                    groups.push(GroupContractPositionInfo {
-                        position: position as u32,
-                        group: GroupInfoResponse::from_group(&group),
-                    });
-                }
+                let key = Number::from(position as u32);
+                let value = match group_opt {
+                    Some(group) => JsValue::from(GroupWasm::from(group)),
+                    None => JsValue::NULL,
+                };
+                groups_map.set(&key.into(), &value);
             }
 
-            results.push(GroupsDataContractInfo {
-                data_contract_id: contract_id_str,
-                groups,
-            });
+            let groups_value = JsValue::from(groups_map);
+            contracts_map.set(&JsValue::from_str(&contract_id_str), &groups_value);
         }
 
-        // Use json_compatible serializer to convert response
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        results.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(contracts_map))
     }
 
     // Proof versions for group queries
@@ -584,8 +403,6 @@ impl WasmSdk {
         data_contract_id: &str,
         group_contract_position: u32,
     ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
-
         // Parse data contract ID
         let contract_id = Identifier::from_string(
             data_contract_id,
@@ -603,19 +420,9 @@ impl WasmSdk {
         let (group_result, metadata, proof) =
             Group::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let data = group_result.map(|group| GroupInfoResponse::from_group(&group));
+        let response = ProofMetadataResponseWasm::from_sdk_parts(group_result.map(GroupWasm::from), metadata, proof);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     #[wasm_bindgen(js_name = "getGroupInfosWithProofInfo")]
@@ -625,8 +432,6 @@ impl WasmSdk {
         start_at_info: JsValue,
         count: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
-
         // Parse contract ID
         let contract_id = Identifier::from_string(
             contract_id,
@@ -635,22 +440,25 @@ impl WasmSdk {
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
         // Parse start at info if provided
-        let start_group_contract_position =
-            if !start_at_info.is_null() && !start_at_info.is_undefined() {
-                let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
-                match info {
-                    Ok(json) => {
-                        let position = json["position"].as_u64().ok_or_else(|| {
-                            WasmSdkError::invalid_argument("Invalid start position")
-                        })? as u32;
-                        let included = json["included"].as_bool().unwrap_or(false);
-                        Some((position as GroupContractPosition, included))
-                    }
-                    Err(_) => None,
-                }
-            } else {
-                None
-            };
+        let start_group_contract_position = if !start_at_info.is_null()
+            && !start_at_info.is_undefined()
+        {
+            let position_value = Reflect::get(&start_at_info, &JsValue::from_str("position"))
+                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
+            let position = position_value
+                .as_f64()
+                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid start position"))?
+                as GroupContractPosition;
+
+            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+
+            Some((position, included))
+        } else {
+            None
+        };
 
         // Create query
         let query = GroupInfosQuery {
@@ -663,32 +471,20 @@ impl WasmSdk {
         let (groups_result, metadata, proof) =
             Group::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Convert result to response format
-        let mut group_infos = Vec::new();
+        let infos_map = Map::new();
         for (position, group_opt) in groups_result {
-            if let Some(group) = group_opt {
-                group_infos.push(GroupContractPositionInfo {
-                    position: position as u32,
-                    group: GroupInfoResponse::from_group(&group),
-                });
-            }
+            let key = Number::from(position as u32);
+            let value = match group_opt {
+                Some(group) => JsValue::from(GroupWasm::from(group)),
+                None => JsValue::NULL,
+            };
+            infos_map.set(&key.into(), &value);
         }
 
-        let data = serde_json::json!({
-            "groupInfos": group_infos
-        });
+        let data = JsValue::from(infos_map);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     // Additional proof info versions for remaining group queries
@@ -720,93 +516,13 @@ impl WasmSdk {
             Group::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
         let data = match group_result {
-            Some(group) => {
-                let mut members: Vec<GroupMember> = Vec::new();
-
-                // If specific member IDs are requested, filter by them
-                if let Some(requested_ids) = member_ids {
-                    let requested_identifiers: Result<Vec<Identifier>, _> = requested_ids
-                        .iter()
-                        .map(|id| {
-                            Identifier::from_string(
-                                id,
-                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                            )
-                        })
-                        .collect();
-                    let requested_identifiers = requested_identifiers.map_err(|e| {
-                        WasmSdkError::invalid_argument(format!("Invalid member identity ID: {}", e))
-                    })?;
-
-                    for id in requested_identifiers {
-                        if let Ok(power) = group.member_power(id) {
-                            members.push(GroupMember {
-                                member_id: id.to_string(
-                                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                                ),
-                                power,
-                            });
-                        }
-                    }
-                } else {
-                    // Return all members with pagination
-                    let all_members = group.members();
-                    let mut sorted_members: Vec<_> = all_members.iter().collect();
-                    sorted_members.sort_by_key(|(id, _)| *id);
-
-                    // Apply start_at if provided
-                    let start_index = if let Some(start_id) = start_at {
-                        let start_identifier = Identifier::from_string(
-                            &start_id,
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        )
-                        .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!(
-                                "Invalid start identity ID: {}",
-                                e
-                            ))
-                        })?;
-                        sorted_members
-                            .iter()
-                            .position(|(id, _)| **id > start_identifier)
-                            .unwrap_or(sorted_members.len())
-                    } else {
-                        0
-                    };
-
-                    // Apply limit
-                    let end_index = if let Some(lim) = limit {
-                        (start_index + lim as usize).min(sorted_members.len())
-                    } else {
-                        sorted_members.len()
-                    };
-
-                    for (id, power) in &sorted_members[start_index..end_index] {
-                        members.push(GroupMember {
-                            member_id: (*id).to_string(
-                                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                            ),
-                            power: **power,
-                        });
-                    }
-                }
-
-                Some(members)
-            }
-            None => None,
+            Some(group) => collect_group_members_map(&group, &member_ids, &start_at, limit)?.into(),
+            None => JsValue::NULL,
         };
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     #[wasm_bindgen(js_name = "getIdentityGroupsWithProofInfo")]
@@ -817,15 +533,6 @@ impl WasmSdk {
         owner_data_contracts: Option<Vec<String>>,
         moderator_data_contracts: Option<Vec<String>>,
     ) -> Result<JsValue, WasmSdkError> {
-        #[derive(Serialize, Deserialize, Debug)]
-        #[serde(rename_all = "camelCase")]
-        struct IdentityGroupInfo {
-            data_contract_id: String,
-            group_contract_position: u32,
-            role: String,       // "member", "owner", or "moderator"
-            power: Option<u32>, // Only for members
-        }
-
         // Parse identity ID
         let id = Identifier::from_string(
             identity_id,
@@ -833,9 +540,9 @@ impl WasmSdk {
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        let mut groups: Vec<IdentityGroupInfo> = Vec::new();
-        let mut combined_metadata: Option<ResponseMetadata> = None;
-        let mut combined_proof: Option<ProofInfo> = None;
+        let groups_array = Array::new();
+        let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
+        let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
@@ -863,20 +570,28 @@ impl WasmSdk {
 
                 // Store first metadata and proof
                 if combined_metadata.is_none() {
-                    combined_metadata = Some(metadata.into());
-                    combined_proof = Some(proof.into());
+                    combined_metadata = Some(metadata);
+                    combined_proof = Some(proof);
                 }
 
                 // Check each group for the identity
                 for (position, group_opt) in groups_result {
                     if let Some(group) = group_opt {
                         if let Ok(power) = group.member_power(id) {
-                            groups.push(IdentityGroupInfo {
-                                data_contract_id: contract_id_str.clone(),
-                                group_contract_position: position as u32,
-                                role: "member".to_string(),
-                                power: Some(power),
-                            });
+                            let entry = Object::new();
+                            set_property(
+                                &entry,
+                                "dataContractId",
+                                &JsValue::from_str(&contract_id_str),
+                            )?;
+                            set_property(
+                                &entry,
+                                "groupContractPosition",
+                                &Number::from(position as u32).into(),
+                            )?;
+                            set_property(&entry, "role", &JsValue::from_str("member"))?;
+                            set_property(&entry, "power", &BigInt::from(power as u64))?;
+                            groups_array.push(&entry.into());
                         }
                     }
                 }
@@ -892,31 +607,12 @@ impl WasmSdk {
             );
         }
 
-        let response = ProofMetadataResponse {
-            data: groups,
-            metadata: combined_metadata.unwrap_or_else(|| ResponseMetadata {
-                height: 0,
-                core_chain_locked_height: 0,
-                epoch: 0,
-                time_ms: 0,
-                protocol_version: 0,
-                chain_id: String::new(),
-            }),
-            proof: combined_proof.unwrap_or_else(|| ProofInfo {
-                grovedb_proof: String::new(),
-                quorum_hash: String::new(),
-                signature: String::new(),
-                round: 0,
-                block_id_hash: String::new(),
-                quorum_type: 0,
-            }),
-        };
+        let metadata = combined_metadata.unwrap_or_default();
+        let proof = combined_proof.unwrap_or_default();
+        let data = JsValue::from(groups_array);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     #[wasm_bindgen(js_name = "getGroupActionsWithProofInfo")]
@@ -949,26 +645,21 @@ impl WasmSdk {
 
         // Parse start action ID if provided
         let start_at_action_id = if !start_at_info.is_null() && !start_at_info.is_undefined() {
-            let info = serde_wasm_bindgen::from_value::<serde_json::Value>(start_at_info);
-            match info {
-                Ok(json) => {
-                    let action_id = json["actionId"]
-                        .as_str()
-                        .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
-                    let included = json["included"].as_bool().unwrap_or(false);
-                    Some((
-                        Identifier::from_string(
-                            action_id,
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        )
-                        .map_err(|e| {
-                            WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e))
-                        })?,
-                        included,
-                    ))
-                }
-                Err(_) => None,
-            }
+            let action_id_value = Reflect::get(&start_at_info, &JsValue::from_str("actionId"))
+                .map_err(|err| WasmSdkError::invalid_argument(err.error_message()))?;
+            let action_id_str = action_id_value
+                .as_string()
+                .ok_or_else(|| WasmSdkError::invalid_argument("Invalid action ID"))?;
+            let included = Reflect::get(&start_at_info, &JsValue::from_str("included"))
+                .ok()
+                .and_then(|value| value.as_bool())
+                .unwrap_or(false);
+            let identifier = Identifier::from_string(
+                &action_id_str,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", e)))?;
+            Some((identifier, included))
         } else {
             None
         };
@@ -986,34 +677,20 @@ impl WasmSdk {
         let (actions_result, metadata, proof) =
             GroupAction::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Convert result to response format
-        let mut group_actions = Vec::new();
+        let actions_map = Map::new();
         for (action_id, action_opt) in actions_result {
-            if let Some(_action) = action_opt {
-                // For now, just return the action ID
-                // The full action structure requires custom serialization
-                group_actions.push(serde_json::json!({
-                    "actionId": action_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                    // TODO: Serialize the full action event structure
-                }));
-            }
+            let key = JsValue::from(IdentifierWasm::from(action_id));
+            let value = match action_opt {
+                Some(action) => JsValue::from(GroupActionWasm::from(action)),
+                None => JsValue::NULL,
+            };
+            actions_map.set(&key, &value);
         }
 
-        let data = serde_json::json!({
-            "groupActions": group_actions
-        });
+        let data = JsValue::from(actions_map);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
@@ -1063,32 +740,19 @@ impl WasmSdk {
             GroupMemberPower::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-        // Convert result to response format
-        let mut signers = Vec::new();
+        let signers_map = Map::new();
         for (signer_id, power_opt) in signers_result {
             if let Some(power) = power_opt {
-                signers.push(serde_json::json!({
-                    "signerId": signer_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
-                    "power": power
-                }));
+                let key = JsValue::from(IdentifierWasm::from(signer_id));
+                let value = JsValue::from(BigInt::from(power as u64));
+                signers_map.set(&key, &value);
             }
         }
 
-        let data = serde_json::json!({
-            "signers": signers
-        });
+        let data = JsValue::from(signers_map);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(JsValue::from(response))
     }
 
     #[wasm_bindgen(js_name = "getGroupsDataContractsWithProofInfo")]
@@ -1096,9 +760,9 @@ impl WasmSdk {
         &self,
         data_contract_ids: Vec<String>,
     ) -> Result<JsValue, WasmSdkError> {
-        let mut results: Vec<GroupsDataContractInfo> = Vec::new();
-        let mut combined_metadata: Option<ResponseMetadata> = None;
-        let mut combined_proof: Option<ProofInfo> = None;
+        let contracts_map = Map::new();
+        let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
+        let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
         for contract_id_str in data_contract_ids {
             let contract_id = Identifier::from_string(
@@ -1122,53 +786,97 @@ impl WasmSdk {
             let (groups_result, metadata, proof) =
                 Group::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-            // Store first metadata and proof
             if combined_metadata.is_none() {
-                combined_metadata = Some(metadata.into());
-                combined_proof = Some(proof.into());
+                combined_metadata = Some(metadata.clone());
+                combined_proof = Some(proof.clone());
             }
 
-            let mut groups: Vec<GroupContractPositionInfo> = Vec::new();
-
+            let groups_map = Map::new();
             for (position, group_opt) in groups_result {
-                if let Some(group) = group_opt {
-                    groups.push(GroupContractPositionInfo {
-                        position: position as u32,
-                        group: GroupInfoResponse::from_group(&group),
-                    });
+                let key = Number::from(position as u32);
+                let value = match group_opt {
+                    Some(group) => JsValue::from(GroupWasm::from(group)),
+                    None => JsValue::NULL,
+                };
+                groups_map.set(&key.into(), &value);
+            }
+
+            contracts_map.set(&JsValue::from_str(&contract_id_str), &groups_map.into());
+        }
+
+        let metadata = combined_metadata.unwrap_or_default();
+        let proof = combined_proof.unwrap_or_default();
+        let data = JsValue::from(contracts_map);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+
+        Ok(JsValue::from(response))
+    }
+}
+
+fn insert_member(
+    map: &Map,
+    identifier: Identifier,
+    power: GroupMemberPower,
+) -> Result<(), WasmSdkError> {
+    let key = JsValue::from(IdentifierWasm::from(identifier));
+    let value = JsValue::from(BigInt::from(power as u64));
+    map.set(&key, &value);
+    Ok(())
+}
+
+fn collect_group_members_map(
+    group: &Group,
+    member_ids: &Option<Vec<String>>,
+    start_at: &Option<String>,
+    limit: Option<u32>,
+) -> Result<Map, WasmSdkError> {
+    let members_map = Map::new();
+
+    if let Some(requested_ids) = member_ids {
+        for id_str in requested_ids {
+            let identifier = Identifier::from_string(
+                id_str,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid member identity ID: {}", e))
+            })?;
+
+            if let Ok(power) = group.member_power(identifier) {
+                insert_member(&members_map, identifier, power)?;
+            }
+        }
+    } else {
+        let mut start_identifier = None;
+        if let Some(start_id) = start_at {
+            let identifier = Identifier::from_string(
+                start_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid start identity ID: {}", e))
+            })?;
+            start_identifier = Some(identifier);
+        }
+
+        let mut added = 0usize;
+        for (identifier, power) in group.members().iter() {
+            if let Some(start_id) = start_identifier {
+                if *identifier <= start_id {
+                    continue;
                 }
             }
 
-            results.push(GroupsDataContractInfo {
-                data_contract_id: contract_id_str,
-                groups,
-            });
+            insert_member(&members_map, *identifier, *power)?;
+            added += 1;
+
+            if let Some(lim) = limit {
+                if added >= lim as usize {
+                    break;
+                }
+            }
         }
-
-        let response = ProofMetadataResponse {
-            data: results,
-            metadata: combined_metadata.unwrap_or_else(|| ResponseMetadata {
-                height: 0,
-                core_chain_locked_height: 0,
-                epoch: 0,
-                time_ms: 0,
-                protocol_version: 0,
-                chain_id: String::new(),
-            }),
-            proof: combined_proof.unwrap_or_else(|| ProofInfo {
-                grovedb_proof: String::new(),
-                quorum_hash: String::new(),
-                signature: String::new(),
-                round: 0,
-                block_id_hash: String::new(),
-                quorum_type: 0,
-            }),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
     }
+
+    Ok(members_map)
 }
