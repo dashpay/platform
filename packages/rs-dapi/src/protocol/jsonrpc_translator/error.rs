@@ -4,7 +4,10 @@ use dapi_grpc::tonic::Code;
 
 use crate::error::DapiError;
 
-const ERR_NOT_FOUND: i32 = -32004;
+/// JSON-RPC error code for "not found" errors.
+///
+/// For backwards compatibility with existing clients, we use -32602 (Invalid params) for not found errors.
+const ERR_NOT_FOUND: i32 = -32602;
 
 /// Translate a `DapiError` into JSON-RPC error code, message, and optional data payload.
 /// Collapses related client-side errors into shared codes and defers gRPC statuses for finer handling.

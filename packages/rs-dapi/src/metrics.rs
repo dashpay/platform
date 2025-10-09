@@ -112,6 +112,7 @@ pub enum Label {
     Method,
     Outcome,
     Protocol,
+    // TODO: ensure we have a limited set of endpoints, so that cardinality is controlled and we don't overload Prometheus
     Endpoint,
     Status,
     Op,
