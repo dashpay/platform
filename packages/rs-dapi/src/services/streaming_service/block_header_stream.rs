@@ -40,24 +40,25 @@ impl StreamingServiceImpl {
 
         // Validate parameters
         let count = req.count;
-        let validation_error = "Minimum value for `fromBlockHeight` is 1";
 
         let from_block = match req.from_block {
             Some(FromBlock::FromBlockHeight(height)) => {
                 if height == 0 {
                     debug!(height, "block_headers=invalid_starting_height");
-                    return Err(Status::invalid_argument(validation_error));
+                    return Err(Status::invalid_argument(
+                        "Minimum value for `fromBlockHeight` is 1",
+                    ));
                 }
                 FromBlock::FromBlockHeight(height)
             }
             Some(FromBlock::FromBlockHash(ref hash)) if hash.is_empty() => {
                 debug!("block_headers=empty_from_block_hash");
-                return Err(Status::invalid_argument(validation_error));
+                return Err(Status::invalid_argument("fromBlockHash cannot be empty"));
             }
             Some(from_block) => from_block,
             None => {
                 debug!("block_headers=missing_from_block");
-                return Err(Status::invalid_argument(validation_error));
+                return Err(Status::invalid_argument("from_block is required"));
             }
         };
 
