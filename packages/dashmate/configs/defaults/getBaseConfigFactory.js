@@ -269,7 +269,7 @@ export default function getBaseConfigFactory() {
               port: 9091,
             },
             logs: {
-              level: 'info',
+              level: 'debug',
               jsonFormat: false,
               accessLogPath: null,
               accessLogFormat: 'combined',
