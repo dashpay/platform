@@ -43,8 +43,8 @@ This timeout setting controls how long DAPI will wait for state transition resul
 |--------|-------------|---------|---------|
 | `platform.dapi.rsDapi.docker.image` | Docker image for rs-dapi | `dashpay/rs-dapi:${version}` | `dashpay/rs-dapi:latest` |
 | `platform.dapi.rsDapi.docker.build.enabled` | Enable custom build | `false` | `true` |
-| `platform.dapi.rsDapi.docker.build.context` | Build context directory | `null` | `"/path/to/context"` |
-| `platform.dapi.rsDapi.docker.build.dockerFile` | Path to Dockerfile | `null` | `"/path/to/Dockerfile"` |
+| `platform.dapi.rsDapi.docker.build.context` | Build context directory | `path.join(PACKAGE_ROOT_DIR, '..', '..')` (Dash Platform repo root) | `"/path/to/context"` |
+| `platform.dapi.rsDapi.docker.build.dockerFile` | Path to Dockerfile | `path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile')` | `"/path/to/Dockerfile"` |
 | `platform.dapi.rsDapi.docker.build.target` | Target build stage | `rs-dapi` | `"rs-dapi"` |
 | `platform.dapi.rsDapi.docker.deploy.replicas` | Number of replicas | `1` | `2` |
 
@@ -55,7 +55,7 @@ This timeout setting controls how long DAPI will wait for state transition resul
 | `platform.dapi.rsDapi.metrics.host` | Host interface exposed on the Docker host | `127.0.0.1` | `0.0.0.0` |
 | `platform.dapi.rsDapi.metrics.port` | Host port for both health checks and Prometheus metrics | `9091` | `9191` |
 
-The rs-dapi metrics server exposes `/health`, `/ready`, `/live`, and `/metrics`. Prometheus-compatible metrics are served from `/metrics` on the configured port, allowing separate node instances on the same machine to use distinct ports.
+The rs-dapi metrics server exposes `/health` and `/metrics`. Prometheus-compatible metrics are served from `/metrics` on the configured port, allowing separate node instances on the same machine to use distinct ports. The `/health` endpoint aggregates dependency checks (Drive, Tenderdash, Core) and returns `503` when any upstream component is unhealthy.
 
 ### Logging
 

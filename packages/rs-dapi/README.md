@@ -9,7 +9,6 @@ environment or saved in a .env file. Use 'rs-dapi config' to see current values.
 ENVIRONMENT VARIABLES:
 Server Configuration:
   DAPI_GRPC_SERVER_PORT       - gRPC API server port (default: 3005)
-  DAPI_GRPC_STREAMS_PORT      - gRPC streams server port (default: 3006)  
   DAPI_JSON_RPC_PORT          - JSON-RPC server port (default: 3004)
   DAPI_METRICS_PORT           - Metrics server port (health + Prometheus, default: 9090, set to 0 to disable)
   DAPI_BIND_ADDRESS           - IP address to bind to (default: 127.0.0.1)

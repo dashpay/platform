@@ -8,7 +8,6 @@ use tempfile::NamedTempFile;
 fn cleanup_env_vars() {
     let env_vars = [
         "DAPI_GRPC_SERVER_PORT",
-        "DAPI_GRPC_STREAMS_PORT",
         "DAPI_JSON_RPC_PORT",
         "DAPI_METRICS_PORT",
         "DAPI_BIND_ADDRESS",
@@ -96,7 +95,6 @@ fn test_config_load_from_dotenv_file() {
     let env_content = r#"
 # Test configuration
 DAPI_GRPC_SERVER_PORT=4005
-DAPI_GRPC_STREAMS_PORT=4006
 DAPI_JSON_RPC_PORT=4004
 DAPI_METRICS_PORT=9091
 DAPI_BIND_ADDRESS=0.0.0.0
