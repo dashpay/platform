@@ -1,112 +1,292 @@
 use crate::error::WasmSdkError;
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
-use serde::{Deserialize, Serialize};
+use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
-// Response structures for the gRPC getStatus endpoint
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusResponse {
-    version: StatusVersion,
-    node: StatusNode,
-    chain: StatusChain,
-    network: StatusNetwork,
-    state_sync: StatusStateSync,
-    time: StatusTime,
+#[wasm_bindgen(js_name = "StatusSoftware")]
+#[derive(Clone)]
+pub struct StatusSoftwareWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub dapi: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub drive: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub tenderdash: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusVersion {
-    software: StatusSoftware,
-    protocol: StatusProtocol,
+impl StatusSoftwareWasm {
+    fn new(dapi: String, drive: Option<String>, tenderdash: Option<String>) -> Self {
+        Self {
+            dapi,
+            drive,
+            tenderdash,
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusSoftware {
-    dapi: String,
-    drive: Option<String>,
-    tenderdash: Option<String>,
+#[wasm_bindgen(js_name = "StatusTenderdashProtocol")]
+#[derive(Clone)]
+pub struct StatusTenderdashProtocolWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub p2p: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub block: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusProtocol {
-    tenderdash: StatusTenderdashProtocol,
-    drive: StatusDriveProtocol,
+impl StatusTenderdashProtocolWasm {
+    fn new(p2p: u32, block: u32) -> Self {
+        Self { p2p, block }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusTenderdashProtocol {
-    p2p: u32,
-    block: u32,
+#[wasm_bindgen(js_name = "StatusDriveProtocol")]
+#[derive(Clone)]
+pub struct StatusDriveProtocolWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub latest: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub current: u32,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusDriveProtocol {
-    latest: u32,
-    current: u32,
+impl StatusDriveProtocolWasm {
+    fn new(latest: u32, current: u32) -> Self {
+        Self { latest, current }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusNode {
-    id: String,
-    pro_tx_hash: Option<String>,
+#[wasm_bindgen(js_name = "StatusProtocol")]
+#[derive(Clone)]
+pub struct StatusProtocolWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub tenderdash: StatusTenderdashProtocolWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub drive: StatusDriveProtocolWasm,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusChain {
-    catching_up: bool,
-    latest_block_hash: String,
-    latest_app_hash: String,
-    latest_block_height: String,
-    earliest_block_hash: String,
-    earliest_app_hash: String,
-    earliest_block_height: String,
-    max_peer_block_height: String,
-    core_chain_locked_height: Option<u32>,
+impl StatusProtocolWasm {
+    fn new(tenderdash: StatusTenderdashProtocolWasm, drive: StatusDriveProtocolWasm) -> Self {
+        Self { tenderdash, drive }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusNetwork {
-    chain_id: String,
-    peers_count: u32,
-    listening: bool,
+#[wasm_bindgen(js_name = "StatusVersion")]
+#[derive(Clone)]
+pub struct StatusVersionWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub software: StatusSoftwareWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub protocol: StatusProtocolWasm,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusStateSync {
-    total_synced_time: String,
-    remaining_time: String,
-    total_snapshots: u32,
-    chunk_process_avg_time: String,
-    snapshot_height: String,
-    snapshot_chunks_count: String,
-    backfilled_blocks: String,
-    backfill_blocks_total: String,
+impl StatusVersionWasm {
+    fn new(software: StatusSoftwareWasm, protocol: StatusProtocolWasm) -> Self {
+        Self { software, protocol }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StatusTime {
-    local: String,
-    block: Option<String>,
-    genesis: Option<String>,
-    epoch: Option<u32>,
+#[wasm_bindgen(js_name = "StatusNode")]
+#[derive(Clone)]
+pub struct StatusNodeWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub id: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub pro_tx_hash: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct QuorumInfo {
+impl StatusNodeWasm {
+    fn new(id: String, pro_tx_hash: Option<String>) -> Self {
+        Self { id, pro_tx_hash }
+    }
+}
+
+#[wasm_bindgen(js_name = "StatusChain")]
+#[derive(Clone)]
+pub struct StatusChainWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub catching_up: bool,
+    #[wasm_bindgen(getter_with_clone)]
+    pub latest_block_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub latest_app_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub latest_block_height: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub earliest_block_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub earliest_app_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub earliest_block_height: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub max_peer_block_height: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub core_chain_locked_height: Option<u32>,
+}
+
+impl StatusChainWasm {
+    #[allow(clippy::too_many_arguments)]
+    fn new(
+        catching_up: bool,
+        latest_block_hash: String,
+        latest_app_hash: String,
+        latest_block_height: String,
+        earliest_block_hash: String,
+        earliest_app_hash: String,
+        earliest_block_height: String,
+        max_peer_block_height: String,
+        core_chain_locked_height: Option<u32>,
+    ) -> Self {
+        Self {
+            catching_up,
+            latest_block_hash,
+            latest_app_hash,
+            latest_block_height,
+            earliest_block_hash,
+            earliest_app_hash,
+            earliest_block_height,
+            max_peer_block_height,
+            core_chain_locked_height,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "StatusNetwork")]
+#[derive(Clone)]
+pub struct StatusNetworkWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub chain_id: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub peers_count: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub listening: bool,
+}
+
+impl StatusNetworkWasm {
+    fn new(chain_id: String, peers_count: u32, listening: bool) -> Self {
+        Self {
+            chain_id,
+            peers_count,
+            listening,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "StatusStateSync")]
+#[derive(Clone)]
+pub struct StatusStateSyncWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub total_synced_time: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub remaining_time: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub total_snapshots: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub chunk_process_avg_time: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub snapshot_height: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub snapshot_chunks_count: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub backfilled_blocks: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub backfill_blocks_total: String,
+}
+
+impl StatusStateSyncWasm {
+    fn new(
+        total_synced_time: String,
+        remaining_time: String,
+        total_snapshots: u32,
+        chunk_process_avg_time: String,
+        snapshot_height: String,
+        snapshot_chunks_count: String,
+        backfilled_blocks: String,
+        backfill_blocks_total: String,
+    ) -> Self {
+        Self {
+            total_synced_time,
+            remaining_time,
+            total_snapshots,
+            chunk_process_avg_time,
+            snapshot_height,
+            snapshot_chunks_count,
+            backfilled_blocks,
+            backfill_blocks_total,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "StatusTime")]
+#[derive(Clone)]
+pub struct StatusTimeWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub local: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub block: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub genesis: Option<String>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub epoch: Option<u32>,
+}
+
+impl StatusTimeWasm {
+    fn new(
+        local: String,
+        block: Option<String>,
+        genesis: Option<String>,
+        epoch: Option<u32>,
+    ) -> Self {
+        Self {
+            local,
+            block,
+            genesis,
+            epoch,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "StatusResponse")]
+#[derive(Clone)]
+pub struct StatusResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub version: StatusVersionWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub node: StatusNodeWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub chain: StatusChainWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub network: StatusNetworkWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub state_sync: StatusStateSyncWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub time: StatusTimeWasm,
+}
+
+impl StatusResponseWasm {
+    fn new(
+        version: StatusVersionWasm,
+        node: StatusNodeWasm,
+        chain: StatusChainWasm,
+        network: StatusNetworkWasm,
+        state_sync: StatusStateSyncWasm,
+        time: StatusTimeWasm,
+    ) -> Self {
+        Self {
+            version,
+            node,
+            chain,
+            network,
+            state_sync,
+            time,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "QuorumInfo")]
+#[derive(Clone)]
+pub struct QuorumInfoWasm {
     quorum_hash: String,
     quorum_type: String,
     member_count: u32,
@@ -114,45 +294,162 @@ struct QuorumInfo {
     is_verified: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct CurrentQuorumsInfo {
-    quorums: Vec<QuorumInfo>,
+impl QuorumInfoWasm {
+    fn new(
+        quorum_hash: String,
+        quorum_type: String,
+        member_count: u32,
+        threshold: u32,
+        is_verified: bool,
+    ) -> Self {
+        Self {
+            quorum_hash,
+            quorum_type,
+            member_count,
+            threshold,
+            is_verified,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = QuorumInfo)]
+impl QuorumInfoWasm {
+    #[wasm_bindgen(getter = "quorumHash")]
+    pub fn quorum_hash(&self) -> String {
+        self.quorum_hash.clone()
+    }
+
+    #[wasm_bindgen(getter = "quorumType")]
+    pub fn quorum_type(&self) -> String {
+        self.quorum_type.clone()
+    }
+
+    #[wasm_bindgen(getter = "memberCount")]
+    pub fn member_count(&self) -> u32 {
+        self.member_count
+    }
+
+    #[wasm_bindgen(getter = "threshold")]
+    pub fn threshold(&self) -> u32 {
+        self.threshold
+    }
+
+    #[wasm_bindgen(getter = "isVerified")]
+    pub fn is_verified(&self) -> bool {
+        self.is_verified
+    }
+}
+
+#[wasm_bindgen(js_name = "CurrentQuorumsInfo")]
+#[derive(Clone)]
+pub struct CurrentQuorumsInfoWasm {
+    quorums: Vec<QuorumInfoWasm>,
     height: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct TotalCreditsResponse {
-    total_credits_in_platform: String, // Use String to handle large numbers
+impl CurrentQuorumsInfoWasm {
+    fn new(quorums: Vec<QuorumInfoWasm>, height: u64) -> Self {
+        Self { quorums, height }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct StateTransitionResult {
-    state_transition_hash: String,
-    status: String,
-    error: Option<String>,
+#[wasm_bindgen(js_class = CurrentQuorumsInfo)]
+impl CurrentQuorumsInfoWasm {
+    #[wasm_bindgen(getter = "quorums")]
+    pub fn quorums(&self) -> Array {
+        let array = Array::new();
+        for quorum in &self.quorums {
+            array.push(&JsValue::from(quorum.clone()));
+        }
+        array
+    }
+
+    #[wasm_bindgen(getter = "height")]
+    pub fn height(&self) -> u64 {
+        self.height
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct PrefundedSpecializedBalance {
-    identity_id: String,
+#[wasm_bindgen(js_name = "PrefundedSpecializedBalance")]
+#[derive(Clone)]
+pub struct PrefundedSpecializedBalanceWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub identity_id: String,
     balance: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct PathElement {
+impl PrefundedSpecializedBalanceWasm {
+    fn new(identity_id: String, balance: u64) -> Self {
+        Self {
+            identity_id,
+            balance,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = PrefundedSpecializedBalance)]
+impl PrefundedSpecializedBalanceWasm {
+    #[wasm_bindgen(getter = "balance")]
+    pub fn balance(&self) -> BigInt {
+        BigInt::from(self.balance as u64)
+    }
+}
+
+#[wasm_bindgen(js_name = "PathElement")]
+#[derive(Clone)]
+pub struct PathElementWasm {
     path: Vec<String>,
     value: Option<String>,
+}
+
+impl PathElementWasm {
+    fn new(path: Vec<String>, value: Option<String>) -> Self {
+        Self { path, value }
+    }
+}
+
+#[wasm_bindgen(js_class = PathElement)]
+impl PathElementWasm {
+    #[wasm_bindgen(getter = "path")]
+    pub fn path(&self) -> Array {
+        let array = Array::new();
+        for segment in &self.path {
+            array.push(&JsValue::from_str(segment));
+        }
+        array
+    }
+
+    #[wasm_bindgen(getter = "value")]
+    pub fn value(&self) -> Option<String> {
+        self.value.clone()
+    }
+}
+
+#[wasm_bindgen(js_name = "StateTransitionResult")]
+#[derive(Clone)]
+pub struct StateTransitionResultWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub state_transition_hash: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub status: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub error: Option<String>,
+}
+
+impl StateTransitionResultWasm {
+    fn new(state_transition_hash: String, status: String, error: Option<String>) -> Self {
+        Self {
+            state_transition_hash,
+            status,
+            error,
+        }
+    }
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getStatus")]
-    pub async fn get_status(&self) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_status(&self) -> Result<StatusResponseWasm, WasmSdkError> {
         use dapi_grpc::platform::v0::get_status_request::{GetStatusRequestV0, Version};
         use dapi_grpc::platform::v0::GetStatusRequest;
         use dash_sdk::RequestSettings;
@@ -179,205 +476,209 @@ impl WasmSdk {
         };
 
         // Map the response to our StatusResponse structure
-        let status = StatusResponse {
-            version: StatusVersion {
-                software: StatusSoftware {
-                    dapi: v0_response
-                        .version
-                        .as_ref()
-                        .and_then(|v| v.software.as_ref())
-                        .map(|s| s.dapi.clone())
-                        .unwrap_or_else(|| "unknown".to_string()),
-                    drive: v0_response
-                        .version
-                        .as_ref()
-                        .and_then(|v| v.software.as_ref())
-                        .and_then(|s| s.drive.clone()),
-                    tenderdash: v0_response
-                        .version
-                        .as_ref()
-                        .and_then(|v| v.software.as_ref())
-                        .and_then(|s| s.tenderdash.clone()),
-                },
-                protocol: StatusProtocol {
-                    tenderdash: StatusTenderdashProtocol {
-                        p2p: v0_response
-                            .version
-                            .as_ref()
-                            .and_then(|v| v.protocol.as_ref())
-                            .and_then(|p| p.tenderdash.as_ref())
-                            .map(|t| t.p2p)
-                            .unwrap_or(0),
-                        block: v0_response
-                            .version
-                            .as_ref()
-                            .and_then(|v| v.protocol.as_ref())
-                            .and_then(|p| p.tenderdash.as_ref())
-                            .map(|t| t.block)
-                            .unwrap_or(0),
-                    },
-                    drive: StatusDriveProtocol {
-                        latest: v0_response
-                            .version
-                            .as_ref()
-                            .and_then(|v| v.protocol.as_ref())
-                            .and_then(|p| p.drive.as_ref())
-                            .map(|d| d.latest)
-                            .unwrap_or(0),
-                        current: v0_response
-                            .version
-                            .as_ref()
-                            .and_then(|v| v.protocol.as_ref())
-                            .and_then(|p| p.drive.as_ref())
-                            .map(|d| d.current)
-                            .unwrap_or(0),
-                    },
-                },
-            },
-            node: StatusNode {
-                id: v0_response
-                    .node
-                    .as_ref()
-                    .map(|n| hex::encode(&n.id))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                pro_tx_hash: v0_response
-                    .node
-                    .as_ref()
-                    .and_then(|n| n.pro_tx_hash.as_ref())
-                    .map(hex::encode),
-            },
-            chain: StatusChain {
-                catching_up: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| c.catching_up)
-                    .unwrap_or(false),
-                latest_block_hash: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| hex::encode(&c.latest_block_hash))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                latest_app_hash: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| hex::encode(&c.latest_app_hash))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                latest_block_height: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| c.latest_block_height.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                earliest_block_hash: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| hex::encode(&c.earliest_block_hash))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                earliest_app_hash: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| hex::encode(&c.earliest_app_hash))
-                    .unwrap_or_else(|| "unknown".to_string()),
-                earliest_block_height: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| c.earliest_block_height.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                max_peer_block_height: v0_response
-                    .chain
-                    .as_ref()
-                    .map(|c| c.max_peer_block_height.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                core_chain_locked_height: v0_response
-                    .chain
-                    .as_ref()
-                    .and_then(|c| c.core_chain_locked_height),
-            },
-            network: StatusNetwork {
-                chain_id: v0_response
-                    .network
-                    .as_ref()
-                    .map(|n| n.chain_id.clone())
-                    .unwrap_or_else(|| "unknown".to_string()),
-                peers_count: v0_response
-                    .network
-                    .as_ref()
-                    .map(|n| n.peers_count)
-                    .unwrap_or(0),
-                listening: v0_response
-                    .network
-                    .as_ref()
-                    .map(|n| n.listening)
-                    .unwrap_or(false),
-            },
-            state_sync: StatusStateSync {
-                total_synced_time: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.total_synced_time.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                remaining_time: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.remaining_time.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                total_snapshots: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.total_snapshots)
-                    .unwrap_or(0),
-                chunk_process_avg_time: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.chunk_process_avg_time.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                snapshot_height: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.snapshot_height.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                snapshot_chunks_count: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.snapshot_chunks_count.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                backfilled_blocks: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.backfilled_blocks.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                backfill_blocks_total: v0_response
-                    .state_sync
-                    .as_ref()
-                    .map(|s| s.backfill_blocks_total.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-            },
-            time: StatusTime {
-                local: v0_response
-                    .time
-                    .as_ref()
-                    .map(|t| t.local.to_string())
-                    .unwrap_or_else(|| "0".to_string()),
-                block: v0_response
-                    .time
-                    .as_ref()
-                    .and_then(|t| t.block)
-                    .map(|b| b.to_string()),
-                genesis: v0_response
-                    .time
-                    .as_ref()
-                    .and_then(|t| t.genesis)
-                    .map(|g| g.to_string()),
-                epoch: v0_response.time.as_ref().and_then(|t| t.epoch),
-            },
-        };
+        let software = StatusSoftwareWasm::new(
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.software.as_ref())
+                .map(|s| s.dapi.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.software.as_ref())
+                .and_then(|s| s.drive.clone()),
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.software.as_ref())
+                .and_then(|s| s.tenderdash.clone()),
+        );
 
-        serde_wasm_bindgen::to_value(&status).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        let tenderdash_protocol = StatusTenderdashProtocolWasm::new(
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.protocol.as_ref())
+                .and_then(|p| p.tenderdash.as_ref())
+                .map(|t| t.p2p)
+                .unwrap_or(0),
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.protocol.as_ref())
+                .and_then(|p| p.tenderdash.as_ref())
+                .map(|t| t.block)
+                .unwrap_or(0),
+        );
+
+        let drive_protocol = StatusDriveProtocolWasm::new(
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.protocol.as_ref())
+                .and_then(|p| p.drive.as_ref())
+                .map(|d| d.latest)
+                .unwrap_or(0),
+            v0_response
+                .version
+                .as_ref()
+                .and_then(|v| v.protocol.as_ref())
+                .and_then(|p| p.drive.as_ref())
+                .map(|d| d.current)
+                .unwrap_or(0),
+        );
+
+        let protocol = StatusProtocolWasm::new(tenderdash_protocol, drive_protocol);
+        let version = StatusVersionWasm::new(software, protocol);
+
+        let node = StatusNodeWasm::new(
+            v0_response
+                .node
+                .as_ref()
+                .map(|n| hex::encode(&n.id))
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .node
+                .as_ref()
+                .and_then(|n| n.pro_tx_hash.as_ref())
+                .map(hex::encode),
+        );
+
+        let chain = StatusChainWasm::new(
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| c.catching_up)
+                .unwrap_or(false),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| hex::encode(&c.latest_block_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| hex::encode(&c.latest_app_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| c.latest_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| hex::encode(&c.earliest_block_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| hex::encode(&c.earliest_app_hash))
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| c.earliest_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .map(|c| c.max_peer_block_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .chain
+                .as_ref()
+                .and_then(|c| c.core_chain_locked_height),
+        );
+
+        let network = StatusNetworkWasm::new(
+            v0_response
+                .network
+                .as_ref()
+                .map(|n| n.chain_id.clone())
+                .unwrap_or_else(|| "unknown".to_string()),
+            v0_response
+                .network
+                .as_ref()
+                .map(|n| n.peers_count)
+                .unwrap_or(0),
+            v0_response
+                .network
+                .as_ref()
+                .map(|n| n.listening)
+                .unwrap_or(false),
+        );
+
+        let state_sync = StatusStateSyncWasm::new(
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.total_synced_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.remaining_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.total_snapshots)
+                .unwrap_or(0),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.chunk_process_avg_time.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.snapshot_height.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.snapshot_chunks_count.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.backfilled_blocks.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .state_sync
+                .as_ref()
+                .map(|s| s.backfill_blocks_total.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+        );
+
+        let time = StatusTimeWasm::new(
+            v0_response
+                .time
+                .as_ref()
+                .map(|t| t.local.to_string())
+                .unwrap_or_else(|| "0".to_string()),
+            v0_response
+                .time
+                .as_ref()
+                .and_then(|t| t.block)
+                .map(|b| b.to_string()),
+            v0_response
+                .time
+                .as_ref()
+                .and_then(|t| t.genesis)
+                .map(|g| g.to_string()),
+            v0_response.time.as_ref().and_then(|t| t.epoch),
+        );
+
+        Ok(StatusResponseWasm::new(
+            version, node, chain, network, state_sync, time,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getCurrentQuorumsInfo")]
-    pub async fn get_current_quorums_info(&self) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_current_quorums_info(&self) -> Result<CurrentQuorumsInfoWasm, WasmSdkError> {
         use dash_sdk::platform::FetchUnproved;
         use drive_proof_verifier::types::{
             CurrentQuorumsInfo as SdkCurrentQuorumsInfo, NoParamQuery,
@@ -390,7 +691,7 @@ impl WasmSdk {
         if let Some(quorum_info) = quorums_result {
             // Convert the SDK response to our structure
             // Match quorum hashes with validator sets to get detailed information
-            let quorums: Vec<QuorumInfo> = quorum_info
+            let quorums: Vec<QuorumInfoWasm> = quorum_info
                 .quorum_hashes
                 .into_iter()
                 .map(|quorum_hash| {
@@ -422,51 +723,40 @@ impl WasmSdk {
                             ),
                         };
 
-                        QuorumInfo {
-                            quorum_hash: hex::encode(quorum_hash),
+                        QuorumInfoWasm::new(
+                            hex::encode(quorum_hash),
                             quorum_type,
                             member_count,
                             threshold,
-                            is_verified: true, // We have the validator set, so it's verified
-                        }
+                            true,
+                        )
                     } else {
                         // No validator set found for this quorum hash
                         // TODO: This should not happen in normal circumstances. When the SDK
                         // provides complete quorum information, this fallback can be removed.
-                        QuorumInfo {
-                            quorum_hash: hex::encode(quorum_hash),
-                            quorum_type: "LLMQ_TYPE_UNKNOWN".to_string(),
-                            member_count: 0,
-                            threshold: 0,
-                            is_verified: false,
-                        }
+                        QuorumInfoWasm::new(
+                            hex::encode(quorum_hash),
+                            "LLMQ_TYPE_UNKNOWN".to_string(),
+                            0,
+                            0,
+                            false,
+                        )
                     }
                 })
                 .collect();
 
-            let info = CurrentQuorumsInfo {
+            Ok(CurrentQuorumsInfoWasm::new(
                 quorums,
-                height: quorum_info.last_platform_block_height,
-            };
-
-            serde_wasm_bindgen::to_value(&info).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
+                quorum_info.last_platform_block_height,
+            ))
         } else {
             // No quorum info available
-            let info = CurrentQuorumsInfo {
-                quorums: vec![],
-                height: 0,
-            };
-
-            serde_wasm_bindgen::to_value(&info).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
+            Ok(CurrentQuorumsInfoWasm::new(vec![], 0))
         }
     }
 
     #[wasm_bindgen(js_name = "getTotalCreditsInPlatform")]
-    pub async fn get_total_credits_in_platform(&self) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_total_credits_in_platform(&self) -> Result<BigInt, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{
             NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery,
@@ -483,22 +773,14 @@ impl WasmSdk {
             0
         };
 
-        let response = TotalCreditsResponse {
-            total_credits_in_platform: credits_value.to_string(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(BigInt::from(credits_value as u64))
     }
 
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
         identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
         use dash_sdk::platform::{Fetch, Identifier};
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
@@ -512,37 +794,19 @@ impl WasmSdk {
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
 
-        if let Some(balance) = balance_result {
-            let response = PrefundedSpecializedBalance {
-                identity_id: identity_id.to_string(),
-                balance: balance.0, // PrefundedSpecializedBalance is a newtype wrapper around u64
-            };
+        let balance_value = balance_result.map(|b| b.0).unwrap_or(0);
 
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
-        } else {
-            // Return zero balance if not found
-            let response = PrefundedSpecializedBalance {
-                identity_id: identity_id.to_string(),
-                balance: 0,
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
-        }
+        Ok(PrefundedSpecializedBalanceWasm::new(
+            identity_id.to_string(),
+            balance_value,
+        ))
     }
 
     #[wasm_bindgen(js_name = "waitForStateTransitionResult")]
     pub async fn wait_for_state_transition_result(
         &self,
         state_transition_hash: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<StateTransitionResultWasm, WasmSdkError> {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
             Version, WaitForStateTransitionResultRequestV0,
         };
@@ -600,15 +864,11 @@ impl WasmSdk {
             ),
         };
 
-        let result = StateTransitionResult {
-            state_transition_hash: state_transition_hash.to_string(),
+        Ok(StateTransitionResultWasm::new(
+            state_transition_hash.to_string(),
             status,
             error,
-        };
-
-        serde_wasm_bindgen::to_value(&result).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        ))
     }
 
     #[wasm_bindgen(js_name = "getPathElements")]
@@ -616,7 +876,7 @@ impl WasmSdk {
         &self,
         path: Vec<String>,
         keys: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         use dash_sdk::drive::grovedb::Element;
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::{Elements, KeysInPath};
@@ -649,31 +909,22 @@ impl WasmSdk {
         let path_elements_result: Elements = Element::fetch_many(self.as_ref(), query).await?;
 
         // Convert the result to our response format
-        let elements: Vec<PathElement> = keys
-            .into_iter()
-            .map(|key| {
-                // Check if this key exists in the result
-                let value = path_elements_result
-                    .get(key.as_bytes())
-                    .and_then(|element_opt| element_opt.as_ref())
-                    .and_then(|element| {
-                        // Element can contain different types, we'll serialize it as base64
-                        element.as_item_bytes().ok().map(|bytes| {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        })
-                    });
+        let elements_array = Array::new();
+        for key in keys {
+            let value = path_elements_result
+                .get(key.as_bytes())
+                .and_then(|element_opt| element_opt.as_ref())
+                .and_then(|element| {
+                    element.as_item_bytes().ok().map(|bytes| {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    })
+                });
 
-                PathElement {
-                    path: vec![key],
-                    value,
-                }
-            })
-            .collect();
+            elements_array.push(&JsValue::from(PathElementWasm::new(vec![key], value)));
+        }
 
-        serde_wasm_bindgen::to_value(&elements).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(elements_array)
     }
 
     // Proof versions for system queries
@@ -681,8 +932,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTotalCreditsInPlatformWithProofInfo")]
     pub async fn get_total_credits_in_platform_with_proof_info(
         &self,
-    ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::{
             NoParamQuery, TotalCreditsInPlatform as TotalCreditsQuery,
@@ -692,29 +942,20 @@ impl WasmSdk {
             TotalCreditsQuery::fetch_with_metadata_and_proof(self.as_ref(), NoParamQuery {}, None)
                 .await?;
 
-        let data = total_credits_result.map(|credits| TotalCreditsResponse {
-            total_credits_in_platform: credits.0.to_string(),
-        });
+        let data = total_credits_result
+            .map(|credits| JsValue::from(BigInt::from(credits.0 as u64)))
+            .unwrap_or(JsValue::UNDEFINED);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            data, metadata, proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
         identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::{Fetch, Identifier};
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
@@ -733,22 +974,18 @@ impl WasmSdk {
         )
         .await?;
 
-        let data = PrefundedSpecializedBalance {
-            identity_id: identity_id.to_string(),
-            balance: balance_result.map(|b| b.0).unwrap_or(0),
-        };
+        let data = balance_result
+            .map(|balance| {
+                JsValue::from(PrefundedSpecializedBalanceWasm::new(
+                    identity_id.to_string(),
+                    balance.0,
+                ))
+            })
+            .unwrap_or(JsValue::UNDEFINED);
 
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            data, metadata, proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getPathElementsWithProofInfo")]
@@ -756,8 +993,7 @@ impl WasmSdk {
         &self,
         path: Vec<String>,
         keys: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::drive::grovedb::Element;
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::KeysInPath;
@@ -790,37 +1026,25 @@ impl WasmSdk {
         let (path_elements_result, metadata, proof) =
             Element::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Convert the result to our response format
-        let elements: Vec<PathElement> = keys
-            .into_iter()
-            .map(|key| {
-                let value = path_elements_result
-                    .get(key.as_bytes())
-                    .and_then(|element_opt| element_opt.as_ref())
-                    .and_then(|element| {
-                        element.as_item_bytes().ok().map(|bytes| {
-                            use base64::Engine;
-                            base64::engine::general_purpose::STANDARD.encode(bytes)
-                        })
-                    });
+        let elements_array = Array::new();
+        for key in keys {
+            let value = path_elements_result
+                .get(key.as_bytes())
+                .and_then(|element_opt| element_opt.as_ref())
+                .and_then(|element| {
+                    element.as_item_bytes().ok().map(|bytes| {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD.encode(bytes)
+                    })
+                });
 
-                PathElement {
-                    path: vec![key],
-                    value,
-                }
-            })
-            .collect();
+            elements_array.push(&JsValue::from(PathElementWasm::new(vec![key], value)));
+        }
 
-        let response = ProofMetadataResponse {
-            data: elements,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            elements_array,
+            metadata,
+            proof,
+        ))
     }
 }
