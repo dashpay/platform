@@ -88,6 +88,7 @@ const parseRawInstantLocks = (rawInstantLocks) => rawInstantLocks
     try {
       return new InstantLock(Buffer.from(instantSendLock));
     } catch (e) {
+      logger.warn('[parseRawInstantLocks] Failed to parse instant lock', { error: e.message });
       return null;
     }
   })

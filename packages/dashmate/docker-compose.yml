@@ -1,5 +1,4 @@
 ---
-
 x-default-logging: &default-logging
   driver: local
   options:
@@ -228,9 +227,9 @@ services:
         source: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_SOURCE:-rs-dapi-access-logs}
         target: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR}
     expose:
-      - 3009  # JSON-RPC
-      - 3010  # gRPC (different from current DAPI to avoid conflict)
-      - ${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}  # Metrics
+      - 3009 # JSON-RPC
+      - 3010 # gRPC (different from current DAPI to avoid conflict)
+      - ${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err} # Metrics
     ports:
       - ${PLATFORM_DAPI_RS_DAPI_METRICS_HOST:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
     profiles:
@@ -270,6 +269,7 @@ volumes:
   core_data:
   drive_abci_data:
   drive_tenderdash:
+  rs-dapi-access-logs:
 
 networks:
   default:
