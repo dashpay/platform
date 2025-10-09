@@ -278,10 +278,13 @@ impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<Result<T, E>, J
     }
 }
 
-impl<T: Sized> MapToDapiResult<T> for DapiResult<T> {
-    /// Identity conversion to simplify generic usage of `MapToDapiResult`.
+impl<T: Sized, E: Into<DapiError>> MapToDapiResult<T> for Result<T, E> {
+    /// Flatten `Result<Result<..>>` from spawned tasks into `DAPIResult`.
     fn to_dapi_result(self) -> DAPIResult<T> {
-        self
+        match self {
+            Ok(inner) => Ok(inner),
+            Err(e) => Err(e.into()),
+        }
     }
 }
 

@@ -1,9 +1,12 @@
 use crate::cache::{LruResponseCache, make_cache_key};
+use crate::clients::REQUEST_TIMEOUT;
 use crate::error::MapToDapiResult;
 use crate::{DAPIResult, DapiError};
 use dashcore_rpc::{self, Auth, Client, RpcApi, dashcore, jsonrpc};
+use std::any::type_name;
 use std::sync::Arc;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+
 use tracing::trace;
 use zeroize::Zeroizing;
 
@@ -35,10 +38,7 @@ impl CoreClient {
     }
 
     /// Execute a blocking Core RPC call inside a limited concurrency pool.
-    async fn guarded_blocking_call<F, R, E>(
-        &self,
-        op: F,
-    ) -> Result<Result<R, E>, tokio::task::JoinError>
+    async fn guarded_blocking_call<F, R, E>(&self, op: F) -> Result<Result<R, E>, DapiError>
     where
         F: FnOnce(Arc<Client>) -> Result<R, E> + Send + 'static,
         R: Send + 'static,
@@ -46,12 +46,23 @@ impl CoreClient {
     {
         let permit = self.access_guard.acquire().await;
         let client = self.client.clone();
-        tokio::task::spawn_blocking(move || {
-            let result = op(client);
-            drop(permit);
-            result
-        })
+        tokio::time::timeout(
+            REQUEST_TIMEOUT,
+            tokio::task::spawn_blocking(move || {
+                let result = op(client);
+                drop(permit);
+                result
+            }),
+        )
         .await
+        .map_err(|_| {
+            DapiError::timeout(format!(
+                "Core RPC call timed out: {:?} not received within {} seconds",
+                type_name::<R>(),
+                REQUEST_TIMEOUT.as_secs(),
+            ))
+        })?
+        .map_err(DapiError::from)
     }
 
     /// Retrieve the current block count from Dash Core as a `u32`.
@@ -59,8 +70,7 @@ impl CoreClient {
         trace!("Core RPC: get_block_count");
         let height = self
             .guarded_blocking_call(|client| client.get_block_count())
-            .await
-            .to_dapi_result()?;
+            .await??;
 
         Ok(height as u32)
     }
@@ -77,8 +87,7 @@ impl CoreClient {
             .map_err(|e| DapiError::InvalidArgument(format!("invalid txid: {}", e)))?;
         let info = self
             .guarded_blocking_call(move |client| client.get_raw_transaction_info(&txid, None))
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(info)
     }
 
@@ -88,8 +97,7 @@ impl CoreClient {
         let raw_vec = raw.to_vec();
         let txid = self
             .guarded_blocking_call(move |client| client.send_raw_transaction(&raw_vec))
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(txid.to_string())
     }
 
@@ -114,8 +122,7 @@ impl CoreClient {
                 async move {
                     let hash = this
                         .guarded_blocking_call(move |client| client.get_block_hash(target_height))
-                        .await
-                        .to_dapi_result()?;
+                        .await??;
                     Ok(hash.to_string().into_bytes())
                 }
             })
@@ -164,8 +171,7 @@ impl CoreClient {
                     // (eg. UnsupportedSegwitFlag(0), UnknownSpecialTransactionType(58385))
                     let block_hex = this
                         .guarded_blocking_call(move |client| client.get_block_hex(&hash))
-                        .await
-                        .to_dapi_result()?;
+                        .await??;
 
                     hex::decode(&block_hex).map_err(|e| {
                         DapiError::InvalidData(format!(
@@ -187,8 +193,7 @@ impl CoreClient {
         trace!("Core RPC: get_block_header");
         let header = self
             .guarded_blocking_call(move |client| client.get_block_header(&hash))
-            .await
-            .to_dapi_result()?;
+            .await??;
 
         let bytes = dashcore::consensus::encode::serialize(&header);
         Ok(bytes)
@@ -233,8 +238,7 @@ impl CoreClient {
                             ];
                             client.call("getblock", &params)
                         })
-                        .await
-                        .to_dapi_result()?;
+                        .await??;
 
                     let obj = value.as_object().ok_or_else(|| {
                         DapiError::invalid_data("getblock verbosity 2 did not return an object")
@@ -273,7 +277,7 @@ impl CoreClient {
     pub async fn get_mempool_txids(&self) -> DAPIResult<Vec<dashcore_rpc::dashcore::Txid>> {
         trace!("Core RPC: get_raw_mempool");
         self.guarded_blocking_call(|client| client.get_raw_mempool())
-            .await
+            .await?
             .to_dapi_result()
     }
 
@@ -284,7 +288,7 @@ impl CoreClient {
     ) -> DAPIResult<dashcore::Transaction> {
         trace!("Core RPC: get_raw_transaction");
         self.guarded_blocking_call(move |client| client.get_raw_transaction(&txid, None))
-            .await
+            .await?
             .to_dapi_result()
     }
 
@@ -307,8 +311,7 @@ impl CoreClient {
                 async move {
                     let header = this
                         .guarded_blocking_call(move |client| client.get_block_header_info(&h))
-                        .await
-                        .to_dapi_result()?;
+                        .await??;
                     let v = serde_json::to_vec(&header)
                         .map_err(|e| DapiError::client(format!("serialize header: {}", e)))?;
                     let parsed: dashcore_rpc::json::GetBlockHeaderResult =
@@ -339,7 +342,7 @@ impl CoreClient {
                 Ok(None)
             }
             Ok(Err(e)) => Err(DapiError::from(e)),
-            Err(e) => Err(DapiError::from(e)),
+            Err(e) => Err(e),
         }
     }
 
@@ -361,8 +364,7 @@ impl CoreClient {
                 ];
                 client.call("protx", &params)
             })
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(diff)
     }
 
@@ -373,8 +375,7 @@ impl CoreClient {
         trace!("Core RPC: get_blockchain_info");
         let info = self
             .guarded_blocking_call(|client| client.get_blockchain_info())
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(info)
     }
 
@@ -383,8 +384,7 @@ impl CoreClient {
         trace!("Core RPC: get_network_info");
         let info = self
             .guarded_blocking_call(|client| client.get_network_info())
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(info)
     }
 
@@ -393,8 +393,7 @@ impl CoreClient {
         trace!("Core RPC: estimatesmartfee");
         let result = self
             .guarded_blocking_call(move |client| client.estimate_smart_fee(blocks, None))
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(result.fee_rate.map(|a| a.to_dash()))
     }
 
@@ -403,8 +402,7 @@ impl CoreClient {
         trace!("Core RPC: masternode status");
         let st = self
             .guarded_blocking_call(|client| client.get_masternode_status())
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(st)
     }
 
@@ -413,8 +411,7 @@ impl CoreClient {
         trace!("Core RPC: mnsync status");
         let st = self
             .guarded_blocking_call(|client| client.mnsync_status())
-            .await
-            .to_dapi_result()?;
+            .await??;
         Ok(st)
     }
 
@@ -430,8 +427,7 @@ impl CoreClient {
             .guarded_blocking_call(move |client| {
                 client.get_masternode_list(Some("json"), Some(&filter))
             })
-            .await
-            .to_dapi_result()?;
+            .await??;
 
         // Find the entry matching the filter
         if let Some((_k, v)) = map.into_iter().next() {
