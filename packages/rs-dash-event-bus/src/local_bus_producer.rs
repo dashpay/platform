@@ -107,19 +107,6 @@ pub async fn run_local_platform_events_producer<F>(
                             worker.abort();
                         }
                     }
-                    Some(Cmd::Ping(p)) => {
-                        let ack = PlatformEventsResponse {
-                            version: Some(RespVersion::V0(PlatformEventsResponseV0 {
-                                response: Some(Resp::Ack(dapi_grpc::platform::v0::AckV0 {
-                                    client_subscription_id: p.nonce.to_string(),
-                                    op: "ping".to_string(),
-                                })),
-                            })),
-                        };
-                        if resp_tx.send(Ok(ack)).await.is_err() {
-                            tracing::warn!("local producer failed to send ping ack");
-                        }
-                    }
                     None => {
                         let err = PlatformEventsResponse {
                             version: Some(RespVersion::V0(PlatformEventsResponseV0 {

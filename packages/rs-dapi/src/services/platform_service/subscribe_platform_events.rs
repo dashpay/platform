@@ -37,7 +37,6 @@ fn platform_events_command_label(command: &PlatformEventsCommand) -> &'static st
         Some(Version::V0(v0)) => match v0.command.as_ref() {
             Some(Command::Add(_)) => "add",
             Some(Command::Remove(_)) => "remove",
-            Some(Command::Ping(_)) => "ping",
             None => "unknown",
         },
         None => "unknown",
