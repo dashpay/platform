@@ -1,5 +1,10 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, env, net::SocketAddr, path::PathBuf};
+use std::{
+    collections::HashMap,
+    env,
+    net::{IpAddr, SocketAddr, ToSocketAddrs},
+    path::PathBuf,
+};
 use tracing::{debug, trace, warn};
 
 use crate::{DAPIResult, DapiError};
@@ -46,6 +51,13 @@ impl Default for ServerConfig {
             metrics_port: 9090,
             bind_address: "127.0.0.1".to_string(),
         }
+    }
+}
+
+impl ServerConfig {
+    /// Resolve the configured bind address into a socket address for the provided port.
+    pub fn address_with_port(&self, port: u16) -> DAPIResult<SocketAddr> {
+        socket_addr_from_bind(&self.bind_address, port)
     }
 }
 
@@ -299,29 +311,12 @@ impl Config {
 
     /// Build the socket address for the unified gRPC endpoint.
     pub fn grpc_server_addr(&self) -> DAPIResult<SocketAddr> {
-        format!(
-            "{}:{}",
-            self.server.bind_address, self.server.grpc_server_port
-        )
-        .parse()
-        .map_err(|e| {
-            DapiError::Configuration(format!(
-                "Invalid gRPC server address '{}:{}': {}",
-                self.server.bind_address, self.server.grpc_server_port, e
-            ))
-        })
+        self.server.address_with_port(self.server.grpc_server_port)
     }
 
     /// Build the socket address for the JSON-RPC endpoint.
     pub fn json_rpc_addr(&self) -> DAPIResult<SocketAddr> {
-        format!("{}:{}", self.server.bind_address, self.server.json_rpc_port)
-            .parse()
-            .map_err(|e| {
-                DapiError::Configuration(format!(
-                    "Invalid JSON-RPC address '{}:{}': {}",
-                    self.server.bind_address, self.server.json_rpc_port, e
-                ))
-            })
+        self.server.address_with_port(self.server.json_rpc_port)
     }
 
     /// Return the configured metrics listener port.
@@ -340,15 +335,9 @@ impl Config {
             return Ok(None);
         }
 
-        format!("{}:{}", self.server.bind_address, self.server.metrics_port)
-            .parse()
+        self.server
+            .address_with_port(self.server.metrics_port)
             .map(Some)
-            .map_err(|e| {
-                DapiError::Configuration(format!(
-                    "Invalid metrics address '{}:{}': {}",
-                    self.server.bind_address, self.server.metrics_port, e
-                ))
-            })
     }
 
     /// Validate configuration to ensure dependent subsystems can start successfully.
@@ -362,3 +351,60 @@ impl Config {
 
 #[cfg(test)]
 mod tests;
+
+/// Create a `SocketAddr` by combining a bind address string with a port number.
+/// Supports IPv4, IPv6, and hostname/FQDN values for the bind address.
+fn socket_addr_from_bind(bind_address: &str, port: u16) -> DAPIResult<SocketAddr> {
+    let trimmed = bind_address.trim();
+
+    if trimmed.is_empty() {
+        return Err(DapiError::Configuration(
+            "Bind address cannot be empty".to_string(),
+        ));
+    }
+
+    // Reject addresses that already contain an explicit port to avoid ambiguity.
+    if trimmed.parse::<SocketAddr>().is_ok() {
+        return Err(DapiError::Configuration(format!(
+            "Bind address '{}' must not include a port",
+            trimmed
+        )));
+    }
+
+    // Direct IPv4/IPv6 literal.
+    if let Ok(ip_addr) = trimmed.parse::<IpAddr>() {
+        return Ok(SocketAddr::new(ip_addr, port));
+    }
+
+    // Handle bracketed IPv6 literals like `[::1]`.
+    if trimmed.starts_with('[') && trimmed.ends_with(']') {
+        let inner = &trimmed[1..trimmed.len() - 1];
+        if let Ok(ip_addr) = inner.parse::<IpAddr>() {
+            return Ok(SocketAddr::new(ip_addr, port));
+        }
+    }
+
+    // Attempt DNS resolution for hostnames/FQDNs and IPv6 literals without brackets.
+    let address = if trimmed.contains(':') && !trimmed.starts_with('[') && !trimmed.contains(']') {
+        format!("[{}]:{}", trimmed, port)
+    } else {
+        format!("{}:{}", trimmed, port)
+    };
+
+    let mut candidates = address.to_socket_addrs().map_err(|e| {
+        DapiError::Configuration(format!(
+            "Invalid bind address '{}': failed to resolve ({})",
+            trimmed, e
+        ))
+    })?;
+
+    candidates
+        .next()
+        .ok_or_else(|| {
+            DapiError::Configuration(format!(
+                "Invalid bind address '{}': no address records found",
+                trimmed
+            ))
+        })
+        .map(|resolved| SocketAddr::new(resolved.ip(), port))
+}

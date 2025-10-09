@@ -31,6 +31,10 @@ impl JsonRpcTranslator {
     /// Interpret an incoming JSON-RPC request and produce the corresponding gRPC call marker.
     /// Validates parameters and converts them into typed messages or structured errors.
     pub async fn translate_request(&self, json_rpc: JsonRpcRequest) -> DapiResult<JsonRpcCall> {
+        if json_rpc.jsonrpc != "2.0" {
+            return Err(DapiError::InvalidArgument("jsonrpc must be \"2.0\"".into()));
+        }
+
         match json_rpc.method.as_str() {
             "getStatus" => Ok(self.translate_platform_status()),
             "getBestBlockHash" => Ok(JsonRpcCall::CoreGetBestBlockHash),

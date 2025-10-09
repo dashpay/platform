@@ -1,6 +1,7 @@
-use super::Config;
+use super::{Config, ServerConfig};
 use serial_test::serial;
 use std::fs;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::path::PathBuf;
 use tempfile::NamedTempFile;
 
@@ -172,6 +173,75 @@ fn test_config_load_from_nonexistent_dotenv_file() {
     // Error message should mention the file path
     let error_msg = result.unwrap_err().to_string();
     assert!(error_msg.contains("Cannot load config file"));
+}
+
+#[test]
+fn test_server_config_address_with_port_ipv4_literal() {
+    let mut server = ServerConfig::default();
+    server.bind_address = "0.0.0.0".to_string();
+
+    let addr = server
+        .address_with_port(1234)
+        .expect("IPv4 bind address should resolve");
+
+    assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::UNSPECIFIED));
+    assert_eq!(addr.port(), 1234);
+}
+
+#[test]
+fn test_server_config_address_with_port_ipv6_literal() {
+    let mut server = ServerConfig::default();
+    server.bind_address = "::1".to_string();
+
+    let addr = server
+        .address_with_port(4321)
+        .expect("IPv6 bind address should resolve");
+
+    assert_eq!(addr.ip(), IpAddr::V6(Ipv6Addr::LOCALHOST));
+    assert_eq!(addr.port(), 4321);
+}
+
+#[test]
+fn test_server_config_address_with_port_hostname() {
+    let mut server = ServerConfig::default();
+    server.bind_address = "localhost".to_string();
+
+    let addr = server
+        .address_with_port(8080)
+        .expect("Hostname bind address should resolve");
+
+    assert!(addr.ip().is_loopback());
+    assert_eq!(addr.port(), 8080);
+}
+
+#[test]
+fn test_server_config_rejects_port_in_bind_address() {
+    let mut server = ServerConfig::default();
+    server.bind_address = "127.0.0.1:9000".to_string();
+
+    let err = server
+        .address_with_port(5000)
+        .expect_err("Port in bind address should be rejected");
+
+    assert!(
+        err.to_string()
+            .contains("Bind address '127.0.0.1:9000' must not include a port")
+    );
+}
+
+#[test]
+fn test_server_config_invalid_bind_address() {
+    let mut server = ServerConfig::default();
+    server.bind_address = "invalid host".to_string();
+
+    let err = server
+        .address_with_port(6000)
+        .expect_err("Invalid bind address should fail");
+
+    assert!(
+        err.to_string()
+            .contains("Invalid bind address 'invalid host'")
+    );
 }
 
 #[test]
@@ -353,7 +423,7 @@ fn test_validate_fails_on_invalid_bind_address() {
     assert!(
         error
             .to_string()
-            .contains("Invalid gRPC server address 'invalid-address:3005'"),
+            .contains("Invalid bind address 'invalid-address'"),
         "unexpected error message: {}",
         error
     );

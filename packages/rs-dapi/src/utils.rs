@@ -1,4 +1,6 @@
+use serde::Deserialize;
 use serde::de::{Error as DeError, Visitor};
+use serde_json::Value;
 use std::fmt;
 use std::marker::PhantomData;
 use std::str::FromStr;
@@ -140,4 +142,22 @@ where
     }
 
     deserializer.deserialize_any(ToStringVisitor)
+}
+
+pub fn deserialize_string_number_or_null<'de, D>(deserializer: D) -> Result<String, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<Value>::deserialize(deserializer)?;
+
+    match value {
+        None | Some(Value::Null) => Ok(String::new()),
+        Some(Value::String(s)) => Ok(s),
+        Some(Value::Number(n)) => Ok(n.to_string()),
+        Some(Value::Bool(b)) => Ok(b.to_string()),
+        Some(other) => Err(DeError::custom(format!(
+            "expected string, number, bool, or null but got {}",
+            other
+        ))),
+    }
 }
