@@ -3,6 +3,7 @@ use std::fmt::Debug;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
+use tracing::{debug, warn};
 
 use crate::DapiError;
 use crate::metrics::{self};
@@ -26,7 +27,7 @@ const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard();
 ///
 /// Panics if serialization of keys or values fails.
 pub struct LruResponseCache {
-    inner: Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>,
+    inner: Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter>>,
     label: Arc<str>,
     #[allow(dead_code)]
     workers: Workers,
@@ -48,12 +49,15 @@ impl Debug for LruResponseCache {
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct CacheKey {
     method: &'static str,
-    digest: u128,
+    /// Message digest; when None, all lookups will miss
+    digest: Option<CacheIndex>,
 }
+
+type CacheIndex = u128;
 
 impl CacheKey {
     #[inline(always)]
-    pub fn new<M: serde::Serialize>(method: &'static str, key: &M) -> CacheKey {
+    pub fn new<M: serde::Serialize + Debug>(method: &'static str, key: &M) -> CacheKey {
         make_cache_key(method, key)
     }
 
@@ -63,7 +67,7 @@ impl CacheKey {
     }
 
     #[inline(always)]
-    pub const fn digest(self) -> u128 {
+    pub const fn digest(self) -> Option<CacheIndex> {
         self.digest
     }
 }
@@ -77,34 +81,37 @@ impl CachedValue {
     #[inline(always)]
     /// Capture the current instant and serialize the provided value into bytes.
     ///
-    /// Panics if serialization fails.
-    fn new<T: serde::Serialize>(data: T) -> Self {
+    /// Returns None if serialization fails.
+    fn new<T: serde::Serialize>(data: T) -> Option<Self> {
         let data = bincode::serde::encode_to_vec(&data, BINCODE_CFG)
-            .expect("Failed to serialize cache value");
+            .inspect_err(|e| {
+                tracing::debug!("Failed to serialize value for caching: {}", e);
+            })
+            .ok()?;
 
-        Self {
+        Some(Self {
             inserted_at: Instant::now(),
             data,
-        }
+        })
     }
 
     #[inline(always)]
     /// Deserialize the cached bytes into the requested type if possible.
-    fn value<T: serde::de::DeserializeOwned>(&self) -> Option<T> {
-        if let Ok((v, _)) = bincode::serde::decode_from_slice(&self.data, BINCODE_CFG) {
-            Some(v)
-        } else {
-            None
-        }
+    fn value<T: serde::de::DeserializeOwned>(&self) -> Result<T, DapiError> {
+        bincode::serde::decode_from_slice(&self.data, BINCODE_CFG)
+            .map(|(v, _)| v)
+            .map_err(|e| {
+                DapiError::invalid_data(format!("Failed to deserialize cached value: {}", e))
+            })
     }
 }
 
 #[derive(Clone, Default)]
 struct CachedValueWeighter;
 
-impl Weighter<CacheKey, CachedValue> for CachedValueWeighter {
+impl Weighter<CacheIndex, CachedValue> for CachedValueWeighter {
     /// Estimate cache entry weight by combining struct overhead and payload size.
-    fn weight(&self, _key: &CacheKey, value: &CachedValue) -> u64 {
+    fn weight(&self, _key: &CacheIndex, value: &CachedValue) -> u64 {
         let structural = std::mem::size_of::<CachedValue>() as u64;
         let payload = value.data.len() as u64;
         (structural + payload).max(1)
@@ -153,7 +160,7 @@ impl LruResponseCache {
     }
 
     /// Create the underlying cache with weighted capacity based on estimated entry size.
-    fn new_cache(capacity: u64) -> Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>> {
+    fn new_cache(capacity: u64) -> Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter>> {
         let capacity_bytes = capacity.max(1);
         let estimated_items_u64 = (capacity_bytes / ESTIMATED_ENTRY_SIZE_BYTES).max(1);
         let estimated_items = estimated_items_u64.min(usize::MAX as u64) as usize;
@@ -170,16 +177,35 @@ impl LruResponseCache {
         observe_memory(&self.inner, self.label.as_ref());
     }
 
+    /// Helper to get and parse the cached value
+    fn get_and_parse<T: serde::de::DeserializeOwned>(
+        &self,
+        key: &CacheKey,
+    ) -> Option<(T, Instant)> {
+        let cached_value = self.inner.get(&key.digest()?)?;
+        let value = match cached_value.value() {
+            Ok(cv) => Some(cv),
+            Err(error) => {
+                debug!(%error, method = key.method(), "Failed to deserialize cached value, interpreting as cache miss and dropping");
+                self.remove(key);
+
+                None
+            }
+        };
+
+        value.map(|v| (v, cached_value.inserted_at))
+    }
+
     #[inline(always)]
     /// Retrieve a cached value by key, deserializing it into the requested type.
     pub fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        match self.inner.get(key).and_then(|cv| cv.value()) {
-            Some(cv) => {
+        match self.get_and_parse(key) {
+            Some((v, _)) => {
                 metrics::cache_hit(self.label.as_ref(), key.method());
-                Some(cv)
+                Some(v)
             }
             None => {
                 metrics::cache_miss(self.label.as_ref(), key.method());
@@ -193,19 +219,35 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        if let Some(cv) = self.inner.get(key) {
-            if cv.inserted_at.elapsed() <= ttl {
-                metrics::cache_hit(self.label.as_ref(), key.method());
-                return cv.value();
-            }
+        let Some((value, inserted_at)) = self.get_and_parse(key) else {
+            metrics::cache_miss(self.label.as_ref(), key.method());
+            return None;
+        };
 
-            // expired, drop it
-            self.inner.remove(key);
-            observe_memory(&self.inner, self.label.as_ref());
+        if inserted_at.elapsed() <= ttl {
+            metrics::cache_hit(self.label.as_ref(), key.method());
+            return value;
         }
 
+        // expired, drop it
+        self.remove(key);
+        // treat as miss
         metrics::cache_miss(self.label.as_ref(), key.method());
         None
+    }
+
+    /// Remove a cached value by key.
+    /// Returns true if an entry was removed.
+    pub fn remove(&self, key: &CacheKey) -> bool {
+        let Some(index) = key.digest() else {
+            return false;
+        };
+
+        let removed = self.inner.remove(&index).is_some();
+        if removed {
+            observe_memory(&self.inner, self.label.as_ref());
+        }
+        removed
     }
 
     /// Insert or replace a cached value for the given key.
@@ -216,9 +258,19 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
-        let cv = CachedValue::new(value);
-        self.inner.insert(key, cv);
-        observe_memory(&self.inner, self.label.as_ref());
+        let Some(index) = key.digest() else {
+            // serialization of key failed, skip caching
+            debug!(
+                method = key.method(),
+                "Cache key serialization failed, skipping cache"
+            );
+            return;
+        };
+
+        if let Some(cv) = CachedValue::new(value) {
+            self.inner.insert(index, cv);
+            observe_memory(&self.inner, self.label.as_ref());
+        }
     }
 
     /// Get a cached value or compute it using `producer` and insert into cache.
@@ -228,30 +280,40 @@ impl LruResponseCache {
         T: serde::Serialize + serde::de::DeserializeOwned,
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
+        E: From<DapiError>,
     {
-        use futures::future::FutureExt;
+        // calculate index; if serialization fails, always miss
+        let Some(index) = key.digest() else {
+            // serialization of key failed, always miss
+            warn!(
+                method = key.method(),
+                "Cache key serialization failed, skipping cache"
+            );
+            metrics::cache_miss(self.label.as_ref(), key.method());
+            return producer().await;
+        };
 
         let cache_hit = Arc::new(AtomicBool::new(true));
         let inner_hit = cache_hit.clone();
 
         let item = self
             .inner
-            .get_or_insert_async(&key, async move {
+            .get_or_insert_async(&index, async move {
                 // wrapped in async block to not execute producer immediately
                 // executed only on cache miss
                 inner_hit.store(false, Ordering::SeqCst);
 
-                producer()
-                    .map(|result| result.map(|value| CachedValue::new(value)))
-                    .await
+                match producer().await {
+                    Ok(v) => CachedValue::new(v)
+                        .ok_or_else(|| DapiError::invalid_data("Failed to serialize value").into()),
+                    Err(e) => Err(e),
+                }
             })
-            .await
-            .map(|cv| {
-                observe_memory(&self.inner, self.label.as_ref());
-                cv.value().expect("Deserialization must succeed")
-            });
+            .await?
+            .value()
+            .map_err(|e| e.into());
 
-        if cache_hit.load(Ordering::SeqCst) {
+        if cache_hit.load(Ordering::SeqCst) && item.is_ok() {
             metrics::cache_hit(self.label.as_ref(), key.method());
         } else {
             metrics::cache_miss(self.label.as_ref(), key.method());
@@ -263,7 +325,7 @@ impl LruResponseCache {
 }
 
 #[inline(always)]
-fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>, label: &str) {
+fn observe_memory(cache: &Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter>>, label: &str) {
     metrics::cache_memory_usage_bytes(label, cache.weight());
     metrics::cache_memory_capacity_bytes(label, cache.capacity());
     metrics::cache_entries(label, cache.len());
@@ -272,16 +334,19 @@ fn observe_memory(cache: &Arc<Cache<CacheKey, CachedValue, CachedValueWeighter>>
 #[inline(always)]
 /// Combine a method name and serializable key into a stable 128-bit cache key.
 ///
-/// Panics if serialization fails.
-pub fn make_cache_key<M: serde::Serialize>(method: &'static str, key: &M) -> CacheKey {
+/// Sets digest to None if serialization fails, causing all lookups to miss.
+pub fn make_cache_key<M: serde::Serialize + Debug>(method: &'static str, key: &M) -> CacheKey {
     let mut data = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize); // preallocate some space
-    bincode::serde::encode_into_std_write(key, &mut data, BINCODE_CFG)
-        .expect("Failed to serialize cache key");
-    data.push(0); // separator
-    data.extend(method.as_bytes());
-
-    CacheKey {
-        method,
-        digest: xxhash_rust::xxh3::xxh3_128(&data),
-    }
+    let digest = match bincode::serde::encode_into_std_write(key, &mut data, BINCODE_CFG) {
+        Ok(_) => {
+            data.push(0); // separator
+            data.extend(method.as_bytes());
+            Some(xxhash_rust::xxh3::xxh3_128(&data))
+        }
+        Err(error) => {
+            debug!(?key, %error, "Failed to serialize cache key");
+            None
+        }
+    };
+    CacheKey { method, digest }
 }
