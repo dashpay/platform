@@ -76,6 +76,9 @@ pub enum DapiError {
     #[error("Already exists: {0}")]
     AlreadyExists(String),
 
+    #[error("Invalid request: {0}")]
+    InvalidRequest(String),
+
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
 

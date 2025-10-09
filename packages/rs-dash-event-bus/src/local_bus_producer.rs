@@ -72,7 +72,14 @@ pub async fn run_local_platform_events_producer<F>(
                             forward_local_events(handle_clone, &id_for, resp_tx_clone).await;
                         });
 
-                        subs.insert(id.clone(), (handle, worker));
+                        if let Some((old_handle, old_task)) =
+                            subs.insert(id.clone(), (handle, worker))
+                        {
+                            tracing::debug!("replacing existing local subscription with id {}", id);
+                            // Stop previous forwarder and drop old subscription
+                            old_task.abort();
+                            drop(old_handle);
+                        }
 
                         // Ack
                         let ack = PlatformEventsResponse {

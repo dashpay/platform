@@ -5,13 +5,15 @@ use crate::{DAPIResult, DapiError};
 use dashcore_rpc::{self, Auth, Client, RpcApi, dashcore, jsonrpc};
 use std::any::type_name;
 use std::sync::Arc;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::select;
+use tokio::sync::{OwnedSemaphorePermit, Semaphore, mpsc};
+use tokio::time::timeout;
 
 use tracing::trace;
 use zeroize::Zeroizing;
 
 const CORE_RPC_GUARD_PERMITS: usize = 2;
-
+const PERMIT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 #[derive(Debug, Clone)]
 pub struct CoreClient {
     client: Arc<Client>,
@@ -41,28 +43,44 @@ impl CoreClient {
     async fn guarded_blocking_call<F, R, E>(&self, op: F) -> Result<Result<R, E>, DapiError>
     where
         F: FnOnce(Arc<Client>) -> Result<R, E> + Send + 'static,
-        R: Send + 'static,
-        E: Send + 'static,
+        R: Send + Sync + 'static,
+        E: Send + Sync + 'static,
     {
-        let permit = self.access_guard.acquire().await;
+        let mut permit = Some(self.access_guard.acquire().await);
         let client = self.client.clone();
-        tokio::time::timeout(
-            REQUEST_TIMEOUT,
-            tokio::task::spawn_blocking(move || {
-                let result = op(client);
-                drop(permit);
-                result
-            }),
-        )
-        .await
-        .map_err(|_| {
-            DapiError::timeout(format!(
-                "Core RPC call timed out: {:?} not received within {} seconds",
-                type_name::<R>(),
-                REQUEST_TIMEOUT.as_secs(),
-            ))
-        })?
-        .map_err(DapiError::from)
+
+        let permit_deadline = tokio::time::Instant::now() + PERMIT_TIMEOUT;
+
+        let (tx, mut rx) = mpsc::channel(1);
+        // let (abortable_fut, abort) = abortable();
+        let task = tokio::task::spawn(timeout(REQUEST_TIMEOUT, async move {
+            let res = tokio::task::spawn_blocking(move || op(client)).await;
+            tx.send(res).await
+        }));
+
+        let result = loop {
+            select! {
+                biased;
+                result = rx.recv() => {break result;}
+
+                _ = tokio::time::sleep_until(permit_deadline) => {
+                    tracing::debug!("Core RPC access guard permit wait timed out after {:?}, releasing permit", PERMIT_TIMEOUT);
+                    drop(permit.take());
+                }
+            }
+        };
+        drop(permit);
+        // task should be done by now
+        task.abort();
+
+        result
+            .ok_or_else(|| {
+                DapiError::timeout(format!(
+                    "Core RPC call of type {} did not complete",
+                    type_name::<F>()
+                ))
+            })?
+            .map_err(DapiError::TaskJoin)
     }
 
     /// Retrieve the current block count from Dash Core as a `u32`.

@@ -902,6 +902,7 @@ export default {
                       type: 'string',
                       minLength: 1,
                       description: 'error, warn, info, debug, trace, off or logging specification string in RUST_LOG format',
+                      enum: ['error', 'warn', 'info', 'debug', 'trace', 'off'],
                     },
                     jsonFormat: {
                       type: 'boolean',

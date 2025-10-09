@@ -32,7 +32,7 @@ impl JsonRpcTranslator {
     /// Validates parameters and converts them into typed messages or structured errors.
     pub async fn translate_request(&self, json_rpc: JsonRpcRequest) -> DapiResult<JsonRpcCall> {
         if json_rpc.jsonrpc != "2.0" {
-            return Err(DapiError::InvalidArgument("jsonrpc must be \"2.0\"".into()));
+            return Err(DapiError::InvalidRequest("jsonrpc must be \"2.0\"".into()));
         }
 
         match json_rpc.method.as_str() {
