@@ -98,31 +98,36 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
     const hasConfiguredPath = typeof configuredAccessLogPath === 'string'
       && configuredAccessLogPath.trim() !== '';
 
-    const homeDirPath = homeDir.getPath();
-    let hostAccessLogPath;
+    const containerAccessLogDir = '/var/log/rs-dapi';
+    let containerAccessLogPath = path.posix.join(containerAccessLogDir, 'access.log');
+    let accessLogVolumeType = 'volume';
+    let accessLogVolumeSource = 'rs-dapi-access-logs';
+
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = '';
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = '';
+
     if (hasConfiguredPath) {
-      hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
+      const homeDirPath = homeDir.getPath();
+
+      const hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
         ? configuredAccessLogPath
         : path.resolve(homeDirPath, configuredAccessLogPath);
-    } else {
-      hostAccessLogPath = homeDir.joinPath(
-        config.getName(),
-        'platform',
-        'rs-dapi',
-        'logs',
-        'access.log',
-      );
+
+      const hostAccessLogDir = path.dirname(hostAccessLogPath);
+      const hostAccessLogFile = path.basename(hostAccessLogPath);
+
+      containerAccessLogPath = path.posix.join(containerAccessLogDir, hostAccessLogFile);
+      accessLogVolumeType = 'bind';
+      accessLogVolumeSource = hostAccessLogDir;
+
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = hostAccessLogPath;
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = hostAccessLogDir;
     }
 
-    const hostAccessLogDir = path.dirname(hostAccessLogPath);
-    const hostAccessLogFile = path.basename(hostAccessLogPath);
-    const containerAccessLogDir = '/var/log/rs-dapi';
-    const containerAccessLogPath = path.posix.join(containerAccessLogDir, hostAccessLogFile);
-
-    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = hostAccessLogPath;
-    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = hostAccessLogDir;
     envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR = containerAccessLogDir;
     envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_PATH = containerAccessLogPath;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_TYPE = accessLogVolumeType;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_SOURCE = accessLogVolumeSource;
 
     if (hasConfiguredPath) {
       envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = containerAccessLogPath;
