@@ -2,7 +2,9 @@ use super::tenderdash_websocket::{TenderdashWebSocketClient, TransactionEvent};
 use crate::clients::tenderdash_websocket::BlockEvent;
 use crate::clients::{CONNECT_TIMEOUT, REQUEST_TIMEOUT};
 use crate::error::{DAPIResult, DapiError};
-use crate::utils::{deserialize_string_or_number, generate_jsonrpc_id};
+use crate::utils::{
+    deserialize_string_number_or_null, deserialize_string_or_number, generate_jsonrpc_id,
+};
 use reqwest::Client;
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_tracing::TracingMiddleware;
@@ -285,15 +287,15 @@ pub type TxResponse = ResultTx;
 pub struct ExecTxResult {
     #[serde(default, deserialize_with = "deserialize_string_or_number")]
     pub code: u32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_number_or_null")]
     pub data: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_number_or_null")]
     pub info: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_number_or_null")]
     pub log: String,
     #[serde(default, deserialize_with = "deserialize_string_or_number")]
     pub gas_used: i64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_string_number_or_null")]
     pub codespace: String,
     #[serde(default)]
     pub events: Vec<Value>,
