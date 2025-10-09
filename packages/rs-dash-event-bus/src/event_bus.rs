@@ -260,7 +260,9 @@ where
 {
     fn drop(&mut self) {
         if self.drop {
-            // Remove only when the last clone of this handle is dropped
+            // Remove only when the last clone of this handle is dropped.
+            // As we are in a Drop impl, strong_count == 1 means that it cannot be cloned anymore,
+            // so no race condition is possible.
             if Arc::strong_count(&self.rx) == 1 {
                 let bus = self.event_bus.clone();
                 let id = self.id;
@@ -269,15 +271,14 @@ where
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
                     handle.spawn(async move {
                         bus.remove_subscription(id).await;
+                        tracing::trace!("event_bus: removed subscription id={} on drop", id);
                     });
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
-                    if let Ok(mut subs) = bus.subs.try_write()
-                        && subs.remove(&id).is_some()
-                    {
-                        metrics_unsubscribe_inc();
-                        metrics_active_gauge_set(subs.len());
-                    }
+                    tracing::debug!(
+                        "event_bus: no current tokio runtime, not removing subscription id={}",
+                        id
+                    );
                 }
             }
         }

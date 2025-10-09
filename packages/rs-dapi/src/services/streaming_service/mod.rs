@@ -15,6 +15,7 @@ use crate::config::Config;
 use crate::sync::Workers;
 use std::sync::Arc;
 use tokio::sync::broadcast;
+use tokio::sync::broadcast::error::RecvError;
 use tokio::time::{Duration, sleep};
 use tracing::{debug, trace};
 
@@ -316,8 +317,8 @@ impl StreamingServiceImpl {
                 }
                 Err(tokio::sync::broadcast::error::RecvError::Lagged(skipped)) => {
                     debug!(
-                        "Tenderdash block event receiver lagged, skipped {} events",
-                        skipped
+                        skipped,
+                        "Tenderdash block event receiver lagged, skipped events",
                     );
                     continue;
                 }
@@ -350,9 +351,9 @@ impl StreamingServiceImpl {
                     trace!("ZMQ listener started successfully, processing events");
                     Self::process_zmq_events(zmq_events, subscriber_manager.clone()).await;
                     // processing ended; mark unhealthy and retry after short delay
+                    backoff = Duration::from_secs(1);
                     debug!("ZMQ event processing ended; restarting after {:?}", backoff);
                     sleep(backoff).await;
-                    backoff = (backoff * 2).min(max_backoff);
                 }
                 Err(e) => {
                     debug!("ZMQ subscribe failed: {}", e);
@@ -371,10 +372,12 @@ impl StreamingServiceImpl {
     ) {
         trace!("Starting ZMQ event processing loop");
         let mut processed_events: u64 = 0;
-        while let Ok(event) = zmq_events.recv().await {
+        loop {
+            let event = zmq_events.recv().await;
+
             processed_events = processed_events.saturating_add(1);
             match event {
-                ZmqEvent::RawTransaction { data } => {
+                Ok(ZmqEvent::RawTransaction { data }) => {
                     let txid =
                         Self::txid_hex_from_bytes(&data).unwrap_or_else(|| "n/a".to_string());
                     trace!(
@@ -387,7 +390,7 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreRawTransaction { data })
                         .await;
                 }
-                ZmqEvent::RawBlock { data } => {
+                Ok(ZmqEvent::RawBlock { data }) => {
                     let block_hash = Self::block_hash_hex_from_block_bytes(&data)
                         .unwrap_or_else(|| "n/a".to_string());
                     trace!(
@@ -400,7 +403,7 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreRawBlock { data })
                         .await;
                 }
-                ZmqEvent::RawTransactionLock { data } => {
+                Ok(ZmqEvent::RawTransactionLock { data }) => {
                     trace!(
                         size = data.len(),
                         processed = processed_events,
@@ -410,7 +413,7 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreInstantLock { data })
                         .await;
                 }
-                ZmqEvent::RawChainLock { data } => {
+                Ok(ZmqEvent::RawChainLock { data }) => {
                     trace!(
                         size = data.len(),
                         processed = processed_events,
@@ -420,7 +423,7 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreChainLock { data })
                         .await;
                 }
-                ZmqEvent::HashBlock { hash } => {
+                Ok(ZmqEvent::HashBlock { hash }) => {
                     trace!(
                         size = hash.len(),
                         processed = processed_events,
@@ -430,8 +433,13 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreNewBlockHash { hash })
                         .await;
                 }
+                Err(RecvError::Closed) => break,
+                Err(RecvError::Lagged(skipped)) => {
+                    tracing::error!(skipped, "ZMQ event reader lagged, skipped events");
+                }
             }
         }
+
         trace!(
             processed = processed_events,
             "ZMQ event processing loop ended"

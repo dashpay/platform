@@ -1,5 +1,3 @@
-// TODO: remove and fix all warnings
-#![allow(unused_attributes)]
 // lib.rs - rs-dapi library
 
 pub mod cache;

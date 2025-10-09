@@ -3,8 +3,6 @@ use dapi_grpc::platform::v0::{
     StateTransitionBroadcastError, WaitForStateTransitionResultResponse,
 };
 use dpp::{consensus::ConsensusError, serialization::PlatformDeserializable};
-
-use core::panic;
 use std::{fmt::Debug, str::FromStr};
 use tonic::{Code, metadata::MetadataValue};
 
@@ -151,7 +149,7 @@ impl From<TenderdashStatus> for StateTransitionBroadcastError {
 
 impl Debug for TenderdashStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("TenderdashBroadcastError")
+        f.debug_struct("TenderdashStatus")
             .field("code", &self.code)
             .field("message", &self.message)
             .field(

@@ -63,7 +63,7 @@ impl PlatformServiceImpl {
             if let Some(get_status_response::Version::V0(ref mut v0)) = cached.version
                 && let Some(ref mut time) = v0.time
             {
-                time.local = chrono::Utc::now().timestamp() as u64;
+                time.local = chrono::Utc::now().timestamp().max(0) as u64;
             }
             return Ok(Response::new(cached));
         }
@@ -239,10 +239,10 @@ fn build_node_info(
             node.id = id_bytes;
         }
 
-        if !node_info.pro_tx_hash.is_empty() {
-            if let Ok(pro_tx_hash_bytes) = hex::decode(&node_info.pro_tx_hash) {
-                node.pro_tx_hash = Some(pro_tx_hash_bytes);
-            }
+        if !node_info.pro_tx_hash.is_empty()
+            && let Ok(pro_tx_hash_bytes) = hex::decode(&node_info.pro_tx_hash)
+        {
+            node.pro_tx_hash = Some(pro_tx_hash_bytes);
         }
 
         Some(node)
@@ -385,7 +385,7 @@ fn build_time_info(drive_status: &DriveStatusResponse) -> get_status_response_v0
         time.epoch = drive_time.epoch.map(|e| e as u32);
     }
 
-    time.local = chrono::Utc::now().timestamp() as u64;
+    time.local = chrono::Utc::now().timestamp().max(0) as u64;
 
     time
 }

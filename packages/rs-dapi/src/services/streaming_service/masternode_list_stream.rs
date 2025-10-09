@@ -29,7 +29,7 @@ impl StreamingServiceImpl {
         // Spawn task to convert internal messages to gRPC responses
         let sub_handle = subscription_handle.clone();
         let tx_stream = tx.clone();
-        self.workers.spawn(async move {
+        let msg_convert_worker = self.workers.spawn(async move {
             while let Some(message) = sub_handle.recv().await {
                 let response = match message {
                     StreamingEvent::CoreMasternodeListDiff { data } => {
@@ -68,6 +68,7 @@ impl StreamingServiceImpl {
                 error = %err,
                 "masternode_list_stream=ensure_ready_failed"
             );
+            msg_convert_worker.abort().await;
             return Err(tonic::Status::from(err));
         }
 

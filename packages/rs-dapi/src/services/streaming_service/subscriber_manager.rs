@@ -188,7 +188,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_bloom_update_persistence_across_messages_fails_currently() {
+    async fn test_bloom_update_persistence_across_messages() {
         // This test describes desired behavior and is expected to FAIL with the current
         // implementation because filter updates are not persisted (filter is cloned per check).
         let manager = SubscriberManager::new();

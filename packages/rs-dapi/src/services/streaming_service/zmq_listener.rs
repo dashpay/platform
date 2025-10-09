@@ -101,7 +101,7 @@ impl Drop for ZmqConnection {
 }
 
 impl ZmqConnection {
-    /// Create new ZmqConnection with runnning dispatcher and monitor.
+    /// Create new ZmqConnection with running dispatcher and monitor.
     ///
     /// Messages will be received using [`ZmqConnection::recv`].
     async fn new(

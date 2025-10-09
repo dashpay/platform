@@ -455,7 +455,10 @@ impl StreamingServiceImpl {
                     .await
                     .map_err(Status::from)?;
                 let start = header.height as usize;
-                let available = best_height.saturating_sub(start).saturating_add(1);
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
                 let desired = limit.unwrap_or(available);
                 debug!(start, desired, "block_headers=historical_from_hash_request");
                 (start, available, desired)
@@ -467,7 +470,10 @@ impl StreamingServiceImpl {
                         "Minimum value for `fromBlockHeight` is 1",
                     ));
                 }
-                let available = best_height.saturating_sub(start).saturating_add(1);
+                let available = best_height
+                    .checked_sub(start)
+                    .and_then(|diff| diff.checked_add(1))
+                    .unwrap_or(0);
                 let desired = limit.unwrap_or(available);
                 debug!(
                     start,

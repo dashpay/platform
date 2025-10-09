@@ -168,7 +168,11 @@ impl DapiError {
         DapiError::TenderdashClientError(TenderdashStatus::from(value))
     }
 
-    /// Create a no proof error for a transaction
+    /// Create a no proof error for a transaction.
+    ///
+    /// Note that this assumes that if tx is 32 bytes, it is already a hash.
+    /// If the input has a different size, it will be hashed.
+    /// It can lead to false positives if a non-hash 32-byte array is passed.
     pub fn no_valid_tx_proof(tx: &[u8]) -> Self {
         let tx_hash = if tx.len() == sha2::Sha256::output_size() {
             // possible false positive if tx is not a hash but still a 32-byte array
