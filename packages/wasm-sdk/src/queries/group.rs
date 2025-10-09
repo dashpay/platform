@@ -122,7 +122,7 @@ impl WasmSdk {
 
         if let Some(group) = group {
             let members = collect_group_members_map(&group, &member_ids, &start_at, limit)?;
-            return Ok(members)
+            return Ok(members);
         };
 
         Ok(Map::new())
@@ -245,11 +245,9 @@ impl WasmSdk {
         // Convert result to response format
         let infos_map = Map::new();
         for (position, group_opt) in groups_result {
-            if let Some(group) = group_opt {
-                let key = Number::from(position as u32);
-                let value = JsValue::from(GroupWasm::from(group));
-                infos_map.set(&key.into(), &value);
-            }
+            let key = Number::from(position as u32);
+            let value = JsValue::from(group_opt.map(GroupWasm::from));
+            infos_map.set(&key.into(), &value);
         }
 
         Ok(infos_map)
@@ -319,10 +317,7 @@ impl WasmSdk {
         let actions_map = Map::new();
         for (action_id, action_opt) in actions_result {
             let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = match action_opt {
-                Some(action) => JsValue::from(GroupActionWasm::from(action)),
-                None => JsValue::NULL,
-            };
+            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
             actions_map.set(&key, &value);
         }
 
@@ -405,6 +400,8 @@ impl WasmSdk {
                 ))
             })?;
 
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
+
             // Fetch all groups for this contract
             let query = GroupInfosQuery {
                 contract_id,
@@ -418,17 +415,11 @@ impl WasmSdk {
 
             for (position, group_opt) in groups_result {
                 let key = Number::from(position as u32);
-                let value = match group_opt {
-                    Some(group) => JsValue::from(GroupWasm::from(group)),
-                    None => JsValue::NULL,
-                };
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
                 groups_map.set(&key.into(), &value);
             }
 
-            contracts_map.set(
-                &JsValue::from_str(&contract_id_str),
-                &JsValue::from(groups_map),
-            );
+            contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }
 
         Ok(contracts_map)
@@ -517,15 +508,11 @@ impl WasmSdk {
         let infos_map = Map::new();
         for (position, group_opt) in groups_result {
             let key = Number::from(position as u32);
-            let value = match group_opt {
-                Some(group) => JsValue::from(GroupWasm::from(group)),
-                None => JsValue::NULL,
-            };
+            let value = JsValue::from(group_opt.map(GroupWasm::from));
             infos_map.set(&key.into(), &value);
         }
 
-        let data = JsValue::from(infos_map);
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(infos_map, metadata, proof);
 
         Ok(response)
     }
@@ -560,7 +547,7 @@ impl WasmSdk {
 
         let data = match group_result {
             Some(group) => collect_group_members_map(&group, &member_ids, &start_at, limit)?.into(),
-            None => JsValue::NULL,
+            None => JsValue::UNDEFINED,
         };
 
         let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
@@ -645,8 +632,7 @@ impl WasmSdk {
 
         let metadata = combined_metadata.unwrap_or_default();
         let proof = combined_proof.unwrap_or_default();
-        let data = JsValue::from(groups_array);
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(groups_array, metadata, proof);
 
         Ok(response)
     }
@@ -716,15 +702,11 @@ impl WasmSdk {
         let actions_map = Map::new();
         for (action_id, action_opt) in actions_result {
             let key = JsValue::from(IdentifierWasm::from(action_id));
-            let value = match action_opt {
-                Some(action) => JsValue::from(GroupActionWasm::from(action)),
-                None => JsValue::NULL,
-            };
+            let value = JsValue::from(action_opt.map(GroupActionWasm::from));
             actions_map.set(&key, &value);
         }
 
-        let data = JsValue::from(actions_map);
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(actions_map, metadata, proof);
 
         Ok(response)
     }
@@ -785,8 +767,7 @@ impl WasmSdk {
             }
         }
 
-        let data = JsValue::from(signers_map);
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(signers_map, metadata, proof);
 
         Ok(response)
     }
@@ -811,6 +792,7 @@ impl WasmSdk {
                     contract_id_str, e
                 ))
             })?;
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
 
             // Fetch all groups for this contract with proof
             let query = GroupInfosQuery {
@@ -830,20 +812,16 @@ impl WasmSdk {
             let groups_map = Map::new();
             for (position, group_opt) in groups_result {
                 let key = Number::from(position as u32);
-                let value = match group_opt {
-                    Some(group) => JsValue::from(GroupWasm::from(group)),
-                    None => JsValue::NULL,
-                };
+                let value = JsValue::from(group_opt.map(GroupWasm::from));
                 groups_map.set(&key.into(), &value);
             }
 
-            contracts_map.set(&JsValue::from_str(&contract_id_str), &groups_map.into());
+            contracts_map.set(&contract_key, &JsValue::from(groups_map));
         }
 
         let metadata = combined_metadata.unwrap_or_default();
         let proof = combined_proof.unwrap_or_default();
-        let data = JsValue::from(contracts_map);
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(contracts_map, metadata, proof);
 
         Ok(response)
     }
