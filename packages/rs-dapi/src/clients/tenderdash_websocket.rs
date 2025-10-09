@@ -1,6 +1,6 @@
 use crate::{
     DAPIResult, DapiError,
-    clients::{REQUEST_TIMEOUT, tenderdash_client::ExecTxResult},
+    clients::{CONNECT_TIMEOUT, tenderdash_client::ExecTxResult},
     utils::{deserialize_string_or_number, deserialize_to_string, generate_jsonrpc_id},
 };
 use futures::{SinkExt, StreamExt};
@@ -110,7 +110,7 @@ impl TenderdashWebSocketClient {
         let _url = url::Url::parse(ws_url)?;
 
         // Try to connect
-        let (mut ws_stream, _) = timeout(REQUEST_TIMEOUT, connect_async(ws_url))
+        let (mut ws_stream, _) = timeout(CONNECT_TIMEOUT, connect_async(ws_url))
             .await
             .map_err(|e| {
                 DapiError::timeout(format!("WebSocket connection test timed out: {e}"))
@@ -130,7 +130,9 @@ impl TenderdashWebSocketClient {
 
         // Validate URL format
         let _url = url::Url::parse(&self.ws_url)?;
-        let (ws_stream, _) = connect_async(&self.ws_url).await?;
+        let (ws_stream, _) = timeout(CONNECT_TIMEOUT, connect_async(&self.ws_url))
+            .await
+            .map_err(|e| DapiError::timeout(format!("WebSocket connect timed out: {e}")))??;
 
         self.is_connected.store(true, Ordering::Relaxed);
         tracing::debug!(ws_url = self.ws_url, "Connected to Tenderdash WebSocket");
