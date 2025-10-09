@@ -6,6 +6,7 @@
 
 use dash_sdk::platform::{FetchMany, Identifier, IdentityKeysQuery, IdentityPublicKey, ProofData};
 use dash_sdk::Sdk;
+use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::KeyID;
 
 #[tokio::main]
