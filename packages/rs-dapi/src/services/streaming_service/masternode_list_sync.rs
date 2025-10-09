@@ -80,6 +80,11 @@ impl MasternodeListSync {
     }
 
     pub async fn ensure_ready(&self) -> DAPIResult<()> {
+        // Define Notified so that we will not miss notifications between the check and the wait.
+        // As per docs, The Notified future is guaranteed to receive wakeups from notify_waiters() as soon as
+        // it has been created, even if it has not yet been polled.
+        let notified = self.ready_notify.notified();
+
         if self.state.read().await.full_diff.is_some() {
             trace!("masternode_sync=ensure_ready cached");
             return Ok(());
@@ -91,7 +96,8 @@ impl MasternodeListSync {
         }
 
         trace!("masternode_sync=ensure_ready wait_notify");
-        self.ready_notify.notified().await;
+        // Wait until notified that initial sync is done
+        notified.await;
         Ok(())
     }
 
