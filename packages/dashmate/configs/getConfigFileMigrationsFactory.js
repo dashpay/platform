@@ -1138,7 +1138,9 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
 
             if (options.platform.dapi.rsDapi.healthCheck) {
-              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(options.platform.dapi.rsDapi.healthCheck);
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(
+                options.platform.dapi.rsDapi.healthCheck,
+              );
               delete options.platform.dapi.rsDapi.healthCheck;
             }
 
