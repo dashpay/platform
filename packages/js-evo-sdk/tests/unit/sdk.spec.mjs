@@ -1,14 +1,10 @@
 import { EvoSDK } from '../../dist/evo-sdk.module.js';
 
-// Test addresses
-const TESTNET_ADDRESS = 'https://52.12.176.90:1443';
-const TESTNET_ADDRESSES = [
-  'https://52.12.176.90:1443',
-  'https://35.82.197.197:1443',
-  'https://44.240.98.102:1443'
-];
-const MAINNET_ADDRESS = 'https://149.28.241.190:443';
-const CUSTOM_ADDRESS = 'https://custom.node:1443';
+// Test addresses (RFC 6761 reserved test domain - no network calls in unit tests)
+const TEST_ADDRESS_1 = 'https://node-1.test:1443';
+const TEST_ADDRESS_2 = 'https://node-2.test:1443';
+const TEST_ADDRESS_3 = 'https://node-3.test:1443';
+const TEST_ADDRESSES = [TEST_ADDRESS_1, TEST_ADDRESS_2, TEST_ADDRESS_3];
 
 describe('EvoSDK', () => {
   it('exposes constructor and factories', () => {
@@ -29,36 +25,36 @@ describe('EvoSDK', () => {
 
   describe('EvoSDK.withAddresses()', () => {
     it('creates SDK instance with specific addresses', () => {
-      const sdk = EvoSDK.withAddresses([TESTNET_ADDRESS], 'testnet');
+      const sdk = EvoSDK.withAddresses([TEST_ADDRESS_1], 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('defaults to testnet when network not specified', () => {
-      const sdk = EvoSDK.withAddresses([TESTNET_ADDRESS]);
+      const sdk = EvoSDK.withAddresses([TEST_ADDRESS_1]);
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('accepts mainnet network', () => {
-      const sdk = EvoSDK.withAddresses([MAINNET_ADDRESS], 'mainnet');
+      const sdk = EvoSDK.withAddresses([TEST_ADDRESS_2], 'mainnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('accepts multiple addresses', () => {
-      const sdk = EvoSDK.withAddresses(TESTNET_ADDRESSES, 'testnet');
+      const sdk = EvoSDK.withAddresses(TEST_ADDRESSES, 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
-      expect(sdk.options.addresses).to.deep.equal(TESTNET_ADDRESSES);
+      expect(sdk.options.addresses).to.deep.equal(TEST_ADDRESSES);
     });
 
     it('accepts additional connection options', () => {
       const sdk = EvoSDK.withAddresses(
-        [TESTNET_ADDRESS],
+        [TEST_ADDRESS_1],
         'testnet',
         {
           version: 1,
@@ -75,7 +71,7 @@ describe('EvoSDK', () => {
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.options.trusted).to.be.false();
-      expect(sdk.options.addresses).to.deep.equal([TESTNET_ADDRESS]);
+      expect(sdk.options.addresses).to.deep.equal([TEST_ADDRESS_1]);
       expect(sdk.options.version).to.equal(1);
       expect(sdk.options.proofs).to.be.true();
       expect(sdk.options.logs).to.equal('info');
@@ -90,7 +86,7 @@ describe('EvoSDK', () => {
   describe('constructor with addresses option', () => {
     it('accepts addresses in options', () => {
       const sdk = new EvoSDK({
-        addresses: [TESTNET_ADDRESS],
+        addresses: [TEST_ADDRESS_1],
         network: 'testnet'
       });
       expect(sdk).to.be.instanceof(EvoSDK);
@@ -101,7 +97,7 @@ describe('EvoSDK', () => {
 
     it('works with testnet default', () => {
       const sdk = new EvoSDK({
-        addresses: [TESTNET_ADDRESS]
+        addresses: [TEST_ADDRESS_1]
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -110,7 +106,7 @@ describe('EvoSDK', () => {
 
     it('works with mainnet', () => {
       const sdk = new EvoSDK({
-        addresses: [MAINNET_ADDRESS],
+        addresses: [TEST_ADDRESS_2],
         network: 'mainnet'
       });
       expect(sdk).to.be.instanceof(EvoSDK);
@@ -120,7 +116,7 @@ describe('EvoSDK', () => {
 
     it('combines addresses with other options', () => {
       const sdk = new EvoSDK({
-        addresses: [TESTNET_ADDRESS],
+        addresses: [TEST_ADDRESS_1],
         network: 'testnet',
         version: 1,
         proofs: true,
@@ -135,7 +131,7 @@ describe('EvoSDK', () => {
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.options.trusted).to.be.false();
-      expect(sdk.options.addresses).to.deep.equal([TESTNET_ADDRESS]);
+      expect(sdk.options.addresses).to.deep.equal([TEST_ADDRESS_1]);
       expect(sdk.options.version).to.equal(1);
       expect(sdk.options.proofs).to.be.true();
       expect(sdk.options.logs).to.equal('debug');
@@ -149,23 +145,23 @@ describe('EvoSDK', () => {
     it('prioritizes addresses over network presets when both provided', () => {
       // When addresses are provided, they should be used instead of default network addresses
       const sdk = new EvoSDK({
-        addresses: [CUSTOM_ADDRESS],
+        addresses: [TEST_ADDRESS_3],
         network: 'testnet',
         trusted: true
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
-      expect(sdk.options.addresses).to.deep.equal([CUSTOM_ADDRESS]);
+      expect(sdk.options.addresses).to.deep.equal([TEST_ADDRESS_3]);
       expect(sdk.options.trusted).to.be.true();
     });
 
-    it('custom() and constructor with addresses produce equivalent SDKs', () => {
-      const addresses = ['https://52.12.176.90:1443'];
+    it('withAddresses() and constructor with addresses produce equivalent SDKs', () => {
+      const addresses = [TEST_ADDRESS_1];
       const options = { version: 1, proofs: true };
-      
+
       const sdk1 = EvoSDK.withAddresses(addresses, 'testnet', options);
       const sdk2 = new EvoSDK({ addresses, network: 'testnet', ...options });
-      
+
       expect(sdk1.options.addresses).to.deep.equal(sdk2.options.addresses);
       expect(sdk1.options.network).to.equal(sdk2.options.network);
       expect(sdk1.options.version).to.equal(sdk2.options.version);
