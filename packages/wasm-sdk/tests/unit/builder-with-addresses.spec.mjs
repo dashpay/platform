@@ -166,7 +166,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
 
     it('chains multiple methods', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
-        ['TEST_ADDRESS_1'],
+        [TEST_ADDRESS_1],
         'testnet'
       );
       builder = builder
