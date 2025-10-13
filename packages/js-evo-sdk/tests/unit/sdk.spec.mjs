@@ -17,7 +17,7 @@ describe('EvoSDK', () => {
     expect(EvoSDK.mainnet).to.be.a('function');
     expect(EvoSDK.testnetTrusted).to.be.a('function');
     expect(EvoSDK.mainnetTrusted).to.be.a('function');
-    expect(EvoSDK.custom).to.be.a('function');
+    expect(EvoSDK.withAddresses).to.be.a('function');
   });
 
   it('fromWasm() marks instance as connected', () => {
@@ -27,37 +27,37 @@ describe('EvoSDK', () => {
     expect(sdk.wasm).to.equal(wasmStub);
   });
 
-  describe('EvoSDK.custom()', () => {
-    it('creates SDK instance with custom addresses', () => {
-      const sdk = EvoSDK.custom([TESTNET_ADDRESS], 'testnet');
+  describe('EvoSDK.withAddresses()', () => {
+    it('creates SDK instance with specific addresses', () => {
+      const sdk = EvoSDK.withAddresses([TESTNET_ADDRESS], 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('defaults to testnet when network not specified', () => {
-      const sdk = EvoSDK.custom([TESTNET_ADDRESS]);
+      const sdk = EvoSDK.withAddresses([TESTNET_ADDRESS]);
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('accepts mainnet network', () => {
-      const sdk = EvoSDK.custom([MAINNET_ADDRESS], 'mainnet');
+      const sdk = EvoSDK.withAddresses([MAINNET_ADDRESS], 'mainnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
       expect(sdk.isConnected).to.equal(false);
     });
 
     it('accepts multiple addresses', () => {
-      const sdk = EvoSDK.custom(TESTNET_ADDRESSES, 'testnet');
+      const sdk = EvoSDK.withAddresses(TESTNET_ADDRESSES, 'testnet');
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
       expect(sdk.options.addresses).to.deep.equal(TESTNET_ADDRESSES);
     });
 
     it('accepts additional connection options', () => {
-      const sdk = EvoSDK.custom(
+      const sdk = EvoSDK.withAddresses(
         [TESTNET_ADDRESS],
         'testnet',
         {
@@ -163,7 +163,7 @@ describe('EvoSDK', () => {
       const addresses = ['https://52.12.176.90:1443'];
       const options = { version: 1, proofs: true };
       
-      const sdk1 = EvoSDK.custom(addresses, 'testnet', options);
+      const sdk1 = EvoSDK.withAddresses(addresses, 'testnet', options);
       const sdk2 = new EvoSDK({ addresses, network: 'testnet', ...options });
       
       expect(sdk1.options.addresses).to.deep.equal(sdk2.options.addresses);

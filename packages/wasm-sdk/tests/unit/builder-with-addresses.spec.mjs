@@ -5,18 +5,18 @@ const TEST_ADDRESS_1 = 'https://node-1.test:1443';
 const TEST_ADDRESS_2 = 'https://node-2.test:1443';
 const TEST_ADDRESS_3 = 'https://node-3.test:1443';
 
-describe('WasmSdkBuilder.custom()', () => {
+describe('WasmSdkBuilder.withAddresses()', () => {
   before(async () => {
     await init();
   });
 
-  it('custom() method exists', () => {
-    expect(sdk.WasmSdkBuilder.custom).to.be.a('function');
+  it('withAddresses() method exists', () => {
+    expect(sdk.WasmSdkBuilder.withAddresses).to.be.a('function');
   });
 
   describe('valid configurations', () => {
     it('builds with single testnet address', async () => {
-      const builder = sdk.WasmSdkBuilder.custom(
+      const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'testnet'
       );
@@ -30,7 +30,7 @@ describe('WasmSdkBuilder.custom()', () => {
     });
 
     it('builds with multiple testnet addresses', async () => {
-      const builder = sdk.WasmSdkBuilder.custom(
+      const builder = sdk.WasmSdkBuilder.withAddresses(
         [
           TEST_ADDRESS_1,
           TEST_ADDRESS_2,
@@ -45,7 +45,7 @@ describe('WasmSdkBuilder.custom()', () => {
     });
 
     it('builds with mainnet address', async () => {
-      const builder = sdk.WasmSdkBuilder.custom(
+      const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
         'mainnet'
       );
@@ -59,7 +59,7 @@ describe('WasmSdkBuilder.custom()', () => {
   describe('network validation', () => {
     it('rejects devnet', async () => {
       try {
-        sdk.WasmSdkBuilder.custom(
+        sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
           'devnet'
         );
@@ -71,7 +71,7 @@ describe('WasmSdkBuilder.custom()', () => {
 
     it('rejects regtest', async () => {
       try {
-        sdk.WasmSdkBuilder.custom(
+        sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
           'regtest'
         );
@@ -83,7 +83,7 @@ describe('WasmSdkBuilder.custom()', () => {
 
     it('rejects invalid network name', async () => {
       try {
-        sdk.WasmSdkBuilder.custom(
+        sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
           'invalid-network'
         );
@@ -94,13 +94,13 @@ describe('WasmSdkBuilder.custom()', () => {
     });
 
     it('is case-insensitive for network names', async () => {
-      const builder1 = sdk.WasmSdkBuilder.custom(
+      const builder1 = sdk.WasmSdkBuilder.withAddresses(
         ['TEST_ADDRESS_1'],
         'TESTNET'
       );
       expect(builder1).to.be.an.instanceof(sdk.WasmSdkBuilder);
 
-      const builder2 = sdk.WasmSdkBuilder.custom(
+      const builder2 = sdk.WasmSdkBuilder.withAddresses(
         ['https://149.28.241.190:443'],
         'Mainnet'
       );
@@ -111,7 +111,7 @@ describe('WasmSdkBuilder.custom()', () => {
   describe('address validation', () => {
     it('rejects URI without host', () => {
       try {
-        sdk.WasmSdkBuilder.custom(
+        sdk.WasmSdkBuilder.withAddresses(
           ['https://'],
           'testnet'
         );
@@ -126,7 +126,7 @@ describe('WasmSdkBuilder.custom()', () => {
       // Empty address array will panic when trying to build because
       // ConnectionPool requires non-zero addresses
       try {
-        const builder = sdk.WasmSdkBuilder.custom([], 'testnet');
+        const builder = sdk.WasmSdkBuilder.withAddresses([], 'testnet');
         await builder.build();
         expect.fail('Should have panicked with empty address array');
       } catch (error) {
@@ -138,7 +138,7 @@ describe('WasmSdkBuilder.custom()', () => {
 
   describe('builder method chaining', () => {
     it('chains with withSettings()', async () => {
-      let builder = sdk.WasmSdkBuilder.custom(
+      let builder = sdk.WasmSdkBuilder.withAddresses(
         ['TEST_ADDRESS_1'],
         'testnet'
       );
@@ -152,7 +152,7 @@ describe('WasmSdkBuilder.custom()', () => {
     });
 
     it('chains with withVersion()', async () => {
-      let builder = sdk.WasmSdkBuilder.custom(
+      let builder = sdk.WasmSdkBuilder.withAddresses(
         ['TEST_ADDRESS_1'],
         'testnet'
       );
@@ -166,7 +166,7 @@ describe('WasmSdkBuilder.custom()', () => {
     });
 
     it('chains multiple methods', async () => {
-      let builder = sdk.WasmSdkBuilder.custom(
+      let builder = sdk.WasmSdkBuilder.withAddresses(
         ['TEST_ADDRESS_1'],
         'testnet'
       );

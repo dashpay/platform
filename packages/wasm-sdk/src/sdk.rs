@@ -127,7 +127,7 @@ impl WasmSdkBuilder {
         PlatformVersion::latest().protocol_version
     }
 
-    /// Create a new SdkBuilder with custom addresses and network.
+    /// Create a new SdkBuilder with specific addresses and network.
     ///
     /// # Arguments
     /// * `addresses` - Array of HTTPS URLs (e.g., ["https://127.0.0.1:1443"])
@@ -135,11 +135,11 @@ impl WasmSdkBuilder {
     ///
     /// # Example
     /// ```javascript
-    /// const builder = WasmSdkBuilder.custom(['https://127.0.0.1:1443'], 'testnet');
+    /// const builder = WasmSdkBuilder.withAddresses(['https://127.0.0.1:1443'], 'testnet');
     /// const sdk = builder.build();
     /// ```
-    #[wasm_bindgen(js_name = "custom")]
-    pub fn new_custom(addresses: Vec<String>, network: String) -> Result<Self, WasmSdkError> {
+    #[wasm_bindgen(js_name = "withAddresses")]
+    pub fn new_with_addresses(addresses: Vec<String>, network: String) -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;

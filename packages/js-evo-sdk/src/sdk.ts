@@ -87,15 +87,15 @@ export class EvoSDK {
 
     let builder: wasm.WasmSdkBuilder;
 
-    // If custom addresses are provided, use them instead of network presets
+    // If specific addresses are provided, use them instead of network presets
     if (addresses && addresses.length > 0) {
-      // Prefetch trusted quorums for the network before creating custom builder
+      // Prefetch trusted quorums for the network before creating builder with addresses
       if (network === 'mainnet') {
         await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
       } else if (network === 'testnet') {
         await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
       }
-      builder = wasm.WasmSdkBuilder.custom(addresses, network);
+      builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
       await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
 
@@ -146,7 +146,7 @@ export class EvoSDK {
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
 
   /**
-   * Create an EvoSDK instance configured with custom masternode addresses.
+   * Create an EvoSDK instance configured with specific masternode addresses.
    *
    * @param addresses - Array of HTTPS URLs to masternodes (e.g., ['https://127.0.0.1:1443'])
    * @param network - Network identifier: 'mainnet', 'testnet' (default: 'testnet')
@@ -155,11 +155,11 @@ export class EvoSDK {
    *
    * @example
    * ```typescript
-   * const sdk = EvoSDK.custom(['https://52.12.176.90:1443'], 'testnet');
+   * const sdk = EvoSDK.withAddresses(['https://52.12.176.90:1443'], 'testnet');
    * await sdk.connect();
    * ```
    */
-  static custom(addresses: string[], network: 'mainnet' | 'testnet' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
+  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
     return new EvoSDK({ addresses, network, ...options });
   }
 }
