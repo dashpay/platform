@@ -146,6 +146,11 @@ impl WasmSdkBuilder {
         use rs_dapi_client::Address;
 
         // Parse and validate addresses
+        if addresses.is_empty() {
+            return Err(WasmSdkError::invalid_argument(
+                "Addresses must be a non-empty array",
+            ));
+        }
         let parsed_addresses: Result<Vec<Address>, _> = addresses
             .into_iter()
             .map(|addr| {

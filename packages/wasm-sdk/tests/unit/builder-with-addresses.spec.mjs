@@ -109,6 +109,18 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   });
 
   describe('address validation', () => {
+    it('rejects empty URI', () => {
+      try {
+        sdk.WasmSdkBuilder.withAddresses(
+          [],
+          'testnet'
+        );
+        expect.fail('Should have thrown error for empty URI');
+      } catch (error) {
+        expect(error.message).to.equal('Addresses must be a non-empty array');
+      }
+    });
+
     it('rejects URI without host', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
