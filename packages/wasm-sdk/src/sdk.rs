@@ -199,12 +199,8 @@ impl WasmSdkBuilder {
                 WasmTrustedContext::new_testnet()
                     .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
             })?,
-            _ => {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "Unsupported network '{}'. Only mainnet and testnet are supported.",
-                    network
-                )))
-            }
+            // Network was already validated above
+            _ => unreachable!("Network already validated to mainnet or testnet"),
         };
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(parsed_addresses);
