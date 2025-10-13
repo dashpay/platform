@@ -95,7 +95,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
 
     it('is case-insensitive for network names', async () => {
       const builder1 = sdk.WasmSdkBuilder.withAddresses(
-        ['TEST_ADDRESS_1'],
+        [TEST_ADDRESS_1],
         'TESTNET'
       );
       expect(builder1).to.be.an.instanceof(sdk.WasmSdkBuilder);
@@ -139,7 +139,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   describe('builder method chaining', () => {
     it('chains with withSettings()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
-        ['TEST_ADDRESS_1'],
+        [TEST_ADDRESS_1],
         'testnet'
       );
       builder = builder.withSettings(5000, 10000, 3, false);
@@ -153,7 +153,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
 
     it('chains with withVersion()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
-        ['TEST_ADDRESS_1'],
+        [TEST_ADDRESS_1],
         'testnet'
       );
       builder = builder.withVersion(1);
