@@ -109,7 +109,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
   });
 
   describe('address validation', () => {
-    it('rejects empty URI', () => {
+    it('fails to build with empty address array', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [],
@@ -131,19 +131,6 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       } catch (error) {
         expect(error.message).to.include('Invalid URI');
         expect(error.message).to.include('https://');
-      }
-    });
-
-    it('fails to build with empty address array', async () => {
-      // Empty address array will panic when trying to build because
-      // ConnectionPool requires non-zero addresses
-      try {
-        const builder = sdk.WasmSdkBuilder.withAddresses([], 'testnet');
-        await builder.build();
-        expect.fail('Should have panicked with empty address array');
-      } catch (error) {
-        // Expect panic or error when building with no addresses
-        expect(error).to.exist();
       }
     });
   });
