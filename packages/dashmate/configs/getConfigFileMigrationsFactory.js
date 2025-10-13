@@ -1119,7 +1119,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
-      '2.1.0-dev.8': (configFile) => {
+      '2.1.0-dev.9': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
@@ -1174,6 +1174,32 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (typeof options.platform.dapi.rsDapi.logs.accessLogFormat === 'undefined') {
               options.platform.dapi.rsDapi.logs.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogFormat');
+            }
+          });
+
+        return configFile;
+      },
+      '2.1.0-pr.2716.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            options.platform.dapi.api.docker.image = defaultConfig
+              .get('platform.dapi.api.docker.image');
+
+            options.platform.drive.abci.docker.image = defaultConfig
+              .get('platform.drive.abci.docker.image');
+
+            if (options.platform.dapi.rsDapi
+              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
+              options.platform.dapi.rsDapi.docker.image = defaultConfig
+                .get('platform.dapi.rsDapi.docker.image');
+            }
+
+            if (options.platform.drive.tenderdash
+              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
+              options.platform.drive.tenderdash.docker.image = defaultConfig
+                .get('platform.drive.tenderdash.docker.image');
             }
           });
 
