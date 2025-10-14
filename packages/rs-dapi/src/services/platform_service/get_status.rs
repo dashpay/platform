@@ -389,3 +389,105 @@ fn build_time_info(drive_status: &DriveStatusResponse) -> get_status_response_v0
 
     time
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::clients::drive_client::DriveStatusResponse;
+    use crate::clients::tenderdash_client::{NetInfoResponse, TenderdashStatusResponse};
+
+    #[test]
+    fn build_status_response_uses_application_version_for_tenderdash() {
+        let tenderdash_status: TenderdashStatusResponse =
+            serde_json::from_str(TENDERMASH_STATUS_JSON).expect("parse tenderdash status");
+        let drive_status = DriveStatusResponse::default();
+        let net_info = NetInfoResponse::default();
+
+        let response =
+            build_status_response(drive_status, tenderdash_status, net_info).expect("build ok");
+
+        let version = response
+            .version
+            .and_then(|v| match v {
+                get_status_response::Version::V0(v0) => v0.version,
+            })
+            .expect("version present");
+
+        let software = version.software.expect("software present");
+
+        assert_eq!(software.tenderdash.as_deref(), Some("1.5.0-dev.3"));
+    }
+
+    const TENDERMASH_STATUS_JSON: &str = r#"
+    {
+      "node_info": {
+        "protocol_version": {
+          "p2p": "10",
+          "block": "14",
+          "app": "9"
+        },
+        "id": "972a33056d57359de8acfa4fb8b29dc1c14f76b8",
+        "listen_addr": "44.239.39.153:36656",
+        "ProTxHash": "5C6542766615387183715D958A925552472F93335FA1612880423E4BBDAEF436",
+        "network": "dash-testnet-51",
+        "version": "1.5.0-dev.3",
+        "channels": [
+          64,
+          32,
+          33,
+          34,
+          35,
+          48,
+          56,
+          96,
+          97,
+          98,
+          99,
+          0
+        ],
+        "moniker": "hp-masternode-16",
+        "other": {
+          "tx_index": "on",
+          "rpc_address": "tcp://0.0.0.0:36657"
+        }
+      },
+      "application_info": {
+        "version": "10"
+      },
+      "sync_info": {
+        "latest_block_hash": "B15CB7BD25D5334587B591D46FADEDA3AFCE2C57B7BC99E512F79422AB710343",
+        "latest_app_hash": "FB90D667EB6CAE5DD5293EED7ECCE8B8B492EC0FF310BB0CB0C49C7DC1FFF9CD",
+        "latest_block_height": "198748",
+        "latest_block_time": "2025-10-14T13:10:48.765Z",
+        "earliest_block_hash": "08FA02C27EC0390BA301E4FC7E3D7EADB350C8193E3E62A093689706E3A20BFA",
+        "earliest_app_hash": "BF0CCB9CA071BA01AE6E67A0C090F97803D26D56D675DCD5131781CBCAC8EC8F",
+        "earliest_block_height": "1",
+        "earliest_block_time": "2024-07-19T01:40:09Z",
+        "max_peer_block_height": "198748",
+        "catching_up": false,
+        "total_synced_time": "0",
+        "remaining_time": "0",
+        "total_snapshots": "0",
+        "chunk_process_avg_time": "0",
+        "snapshot_height": "0",
+        "snapshot_chunks_count": "0",
+        "backfilled_blocks": "0",
+        "backfill_blocks_total": "0"
+      },
+      "validator_info": {
+        "pro_tx_hash": "5C6542766615387183715D958A925552472F93335FA1612880423E4BBDAEF436",
+        "voting_power": 100
+      },
+      "light_client_info": {
+        "primaryID": "",
+        "witnessesID": null,
+        "number_of_peers": "0",
+        "last_trusted_height": "0",
+        "last_trusted_hash": "",
+        "latest_block_time": "0001-01-01T00:00:00Z",
+        "trusting_period": "",
+        "trusted_block_expired": false
+      }
+    }
+    "#;
+}
