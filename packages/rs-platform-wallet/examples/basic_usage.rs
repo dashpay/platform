@@ -1,7 +1,8 @@
 //! Example demonstrating basic usage of PlatformWalletInfo
 
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use platform_wallet::{PlatformWalletError, PlatformWalletInfo};
+use platform_wallet::error::PlatformWalletError;
+use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 
 fn main() -> Result<(), PlatformWalletError> {
     // Create a platform wallet
