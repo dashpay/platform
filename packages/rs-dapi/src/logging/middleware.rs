@@ -3,10 +3,7 @@
 //! Provides Tower layers for HTTP and gRPC access logging with
 //! structured logging.
 
-use crate::{
-    logging::access_log::{AccessLogEntry, AccessLogger},
-    metrics,
-};
+use crate::logging::access_log::{AccessLogEntry, AccessLogger};
 use axum::extract::ConnectInfo;
 use axum::http::{Request, Response, Version};
 use std::future::Future;
@@ -73,7 +70,6 @@ where
         let method = req.method().to_string();
         let uri = req.uri().clone();
         let uri_display = uri.to_string();
-        let endpoint_path = uri.path().to_string();
         let request_target = uri
             .path_and_query()
             .map(|pq| pq.as_str())
@@ -163,20 +159,6 @@ where
 
                     access_logger.log(&entry).await;
 
-                    let metrics_status = if protocol_type == "gRPC" {
-                        grpc_status_code
-                    } else {
-                        http_status_to_grpc_status(status)
-                    };
-                    let metrics_status_label = metrics_status.to_string();
-                    metrics::requests_inc(&protocol_type, &endpoint_path, &metrics_status_label);
-                    metrics::request_duration_observe(
-                        &protocol_type,
-                        &endpoint_path,
-                        &metrics_status_label,
-                        duration.as_secs_f64(),
-                    );
-
                     // Log to structured logging
                     debug!(
                         method = %method,
@@ -200,15 +182,6 @@ where
                         "Request failed"
                     );
 
-                    let metrics_status_label = http_status_to_grpc_status(500).to_string();
-                    metrics::requests_inc(&protocol_type, &endpoint_path, &metrics_status_label);
-                    metrics::request_duration_observe(
-                        &protocol_type,
-                        &endpoint_path,
-                        &metrics_status_label,
-                        duration.as_secs_f64(),
-                    );
-
                     Err(err)
                 }
             }
@@ -217,7 +190,7 @@ where
 }
 
 /// Detect protocol type from HTTP request
-fn detect_protocol_type<T>(req: &Request<T>) -> String {
+pub(crate) fn detect_protocol_type<T>(req: &Request<T>) -> String {
     // Check Content-Type header for JSON-RPC
     if let Some(content_type) = req.headers().get("content-type")
         && let Ok(ct_str) = content_type.to_str()
@@ -261,7 +234,7 @@ fn detect_protocol_type<T>(req: &Request<T>) -> String {
 
 /// Parse gRPC service and method from request path
 /// Path format: /<package>.<service>/<method>
-fn parse_grpc_path(path: &str) -> (String, String) {
+pub(crate) fn parse_grpc_path(path: &str) -> (String, String) {
     let path_component = if let Some(scheme_pos) = path.find("://") {
         let after_scheme = &path[scheme_pos + 3..];
         if let Some(path_start) = after_scheme.find('/') {
@@ -295,7 +268,7 @@ fn parse_grpc_path(path: &str) -> (String, String) {
 }
 
 /// Convert HTTP status code to gRPC status code
-fn http_status_to_grpc_status(http_status: u16) -> u32 {
+pub(crate) fn http_status_to_grpc_status(http_status: u16) -> u32 {
     match http_status {
         200 => 0,  // OK
         400 => 3,  // INVALID_ARGUMENT
@@ -330,7 +303,7 @@ fn extract_remote_ip<B>(req: &Request<B>) -> Option<IpAddr> {
 }
 
 /// Determine the gRPC status code from response headers, extensions, or fallback mapping.
-fn extract_grpc_status<B>(response: &Response<B>, http_status: u16) -> u32 {
+pub(crate) fn extract_grpc_status<B>(response: &Response<B>, http_status: u16) -> u32 {
     if let Some(value) = response.headers().get("grpc-status")
         && let Ok(as_str) = value.to_str()
         && let Ok(code) = as_str.parse::<u32>()

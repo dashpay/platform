@@ -1,12 +1,15 @@
-use axum::{Router, extract::State, response::Json, routing::post};
+use axum::{
+    Router, extract::State, response::IntoResponse, response::Json, response::Response,
+    routing::post,
+};
 use serde_json::Value;
 use tokio::net::TcpListener;
-use tower::ServiceBuilder;
 use tower_http::cors::CorsLayer;
 use tracing::info;
 
-use crate::error::{DAPIResult, DapiError};
+use crate::error::DAPIResult;
 use crate::logging::middleware::AccessLogLayer;
+use crate::metrics::MetricsLayer;
 use crate::protocol::{JsonRpcCall, JsonRpcRequest};
 
 use dapi_grpc::core::v0::core_server::Core;
@@ -33,15 +36,13 @@ impl DapiServer {
             .route("/", post(handle_jsonrpc_request))
             .with_state(app_state);
 
+        app = app.layer(MetricsLayer::new());
+
         if let Some(ref access_logger) = self.access_logger {
-            app = app.layer(
-                ServiceBuilder::new()
-                    .layer(AccessLogLayer::new(access_logger.clone()))
-                    .layer(CorsLayer::permissive()),
-            );
-        } else {
-            app = app.layer(CorsLayer::permissive());
+            app = app.layer(AccessLogLayer::new(access_logger.clone()));
         }
+
+        app = app.layer(CorsLayer::permissive());
 
         let listener = TcpListener::bind(addr).await?;
         axum::serve(listener, app).await?;
@@ -56,28 +57,38 @@ impl DapiServer {
 async fn handle_jsonrpc_request(
     State(state): State<JsonRpcAppState>,
     Json(json_rpc): Json<JsonRpcRequest>,
-) -> Json<Value> {
+) -> Response {
     let id = json_rpc.id.clone();
+    let requested_method = json_rpc.method.clone();
 
     let call = match state.translator.translate_request(json_rpc).await {
         Ok(req) => req,
         Err(e) => {
             let error_response = state.translator.error_response(e, id.clone());
-            return Json(serde_json::to_value(error_response).unwrap_or_default());
+            return respond_with_method(
+                crate::metrics::MethodLabel::from_owned(requested_method),
+                Json(serde_json::to_value(error_response).unwrap_or_default()),
+            );
         }
     };
 
     match call {
         JsonRpcCall::PlatformGetStatus(grpc_request) => {
-            let grpc_response = match state
-                .platform_service
-                .get_status(dapi_grpc::tonic::Request::new(grpc_request))
-                .await
-            {
+            let method_label = crate::metrics::method_label(&grpc_request);
+            let mut tonic_request = dapi_grpc::tonic::Request::new(grpc_request);
+            crate::metrics::attach_method_label(
+                tonic_request.extensions_mut(),
+                method_label.clone(),
+            );
+
+            let grpc_response = match state.platform_service.get_status(tonic_request).await {
                 Ok(resp) => resp.into_inner(),
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
-                    return Json(serde_json::to_value(error_response).unwrap_or_default());
+                    return respond_with_method(
+                        method_label,
+                        Json(serde_json::to_value(error_response).unwrap_or_default()),
+                    );
                 }
             };
 
@@ -86,19 +97,30 @@ async fn handle_jsonrpc_request(
                 .translate_response(grpc_response, id.clone())
                 .await
             {
-                Ok(json_rpc_response) => {
-                    Json(serde_json::to_value(json_rpc_response).unwrap_or_default())
-                }
+                Ok(json_rpc_response) => respond_with_method(
+                    method_label.clone(),
+                    Json(serde_json::to_value(json_rpc_response).unwrap_or_default()),
+                ),
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
-                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                    respond_with_method(
+                        method_label,
+                        Json(serde_json::to_value(error_response).unwrap_or_default()),
+                    )
                 }
             }
         }
         JsonRpcCall::CoreBroadcastTransaction(req_broadcast) => {
+            let method_label = crate::metrics::method_label(&req_broadcast);
+            let mut tonic_request = dapi_grpc::tonic::Request::new(req_broadcast);
+            crate::metrics::attach_method_label(
+                tonic_request.extensions_mut(),
+                method_label.clone(),
+            );
+
             let result = state
                 .core_service
-                .broadcast_transaction(dapi_grpc::tonic::Request::new(req_broadcast))
+                .broadcast_transaction(tonic_request)
                 .await;
             match result {
                 Ok(resp) => {
@@ -106,27 +128,41 @@ async fn handle_jsonrpc_request(
                     let ok = state
                         .translator
                         .ok_response(serde_json::json!(txid), id.clone());
-                    Json(serde_json::to_value(ok).unwrap_or_default())
+                    respond_with_method(
+                        method_label,
+                        Json(serde_json::to_value(ok).unwrap_or_default()),
+                    )
                 }
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
-                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                    respond_with_method(
+                        method_label,
+                        Json(serde_json::to_value(error_response).unwrap_or_default()),
+                    )
                 }
             }
         }
         JsonRpcCall::CoreGetBestBlockHash => {
             use dapi_grpc::core::v0::GetBlockchainStatusRequest;
+            let request = GetBlockchainStatusRequest {};
+            let method_label = crate::metrics::method_label(&request);
+            let mut tonic_request = dapi_grpc::tonic::Request::new(request);
+            crate::metrics::attach_method_label(
+                tonic_request.extensions_mut(),
+                method_label.clone(),
+            );
             let resp = match state
                 .core_service
-                .get_blockchain_status(dapi_grpc::tonic::Request::new(
-                    GetBlockchainStatusRequest {},
-                ))
+                .get_blockchain_status(tonic_request)
                 .await
             {
                 Ok(r) => r.into_inner(),
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
-                    return Json(serde_json::to_value(error_response).unwrap_or_default());
+                    return respond_with_method(
+                        method_label,
+                        Json(serde_json::to_value(error_response).unwrap_or_default()),
+                    );
                 }
             };
             let best_block_hash_hex = resp
@@ -136,7 +172,10 @@ async fn handle_jsonrpc_request(
             let ok = state
                 .translator
                 .ok_response(serde_json::json!(best_block_hash_hex), id.clone());
-            Json(serde_json::to_value(ok).unwrap_or_default())
+            respond_with_method(
+                method_label,
+                Json(serde_json::to_value(ok).unwrap_or_default()),
+            )
         }
         JsonRpcCall::CoreGetBlockHash { height } => {
             let result = state.core_service.core_client.get_block_hash(height).await;
@@ -145,13 +184,29 @@ async fn handle_jsonrpc_request(
                     let ok = state
                         .translator
                         .ok_response(serde_json::json!(hash.to_string()), id.clone());
-                    Json(serde_json::to_value(ok).unwrap_or_default())
+                    respond_with_method(
+                        crate::metrics::MethodLabel::from_owned(
+                            "CoreClient::get_block_hash".to_string(),
+                        ),
+                        Json(serde_json::to_value(ok).unwrap_or_default()),
+                    )
                 }
                 Err(e) => {
                     let error_response = state.translator.error_response(e, id.clone());
-                    Json(serde_json::to_value(error_response).unwrap_or_default())
+                    respond_with_method(
+                        crate::metrics::MethodLabel::from_owned(
+                            "CoreClient::get_block_hash".to_string(),
+                        ),
+                        Json(serde_json::to_value(error_response).unwrap_or_default()),
+                    )
                 }
             }
         }
     }
+}
+
+fn respond_with_method(method: crate::metrics::MethodLabel, body: Json<Value>) -> Response {
+    let mut response = body.into_response();
+    crate::metrics::attach_method_label(response.extensions_mut(), method);
+    response
 }

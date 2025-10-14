@@ -3,11 +3,12 @@ use tracing::info;
 
 use dapi_grpc::core::v0::core_server::CoreServer;
 use dapi_grpc::platform::v0::platform_server::PlatformServer;
-use tower::layer::util::Identity;
+use tower::layer::util::{Identity, Stack};
 use tower::util::Either;
 
 use crate::error::DAPIResult;
 use crate::logging::AccessLogLayer;
+use crate::metrics::MetricsLayer;
 
 use super::DapiServer;
 
@@ -34,13 +35,15 @@ impl DapiServer {
             .tcp_keepalive(Some(Duration::from_secs(25)))
             .timeout(Duration::from_secs(120));
 
-        let layer = if let Some(ref access_logger) = self.access_logger {
+        let metrics_layer = MetricsLayer::new();
+        let access_layer = if let Some(ref access_logger) = self.access_logger {
             Either::Left(AccessLogLayer::new(access_logger.clone()))
         } else {
             Either::Right(Identity::new())
         };
 
-        let mut builder = builder.layer(layer);
+        let combined_layer = Stack::new(access_layer, metrics_layer);
+        let mut builder = builder.layer(combined_layer);
 
         builder
             .add_service(

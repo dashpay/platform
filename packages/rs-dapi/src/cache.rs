@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, warn};
 
 use crate::DapiError;
-use crate::metrics::{self};
+use crate::metrics::{self, MethodLabel};
 use crate::services::streaming_service::SubscriptionHandle;
 use crate::sync::Workers;
 
@@ -64,6 +64,11 @@ impl CacheKey {
     #[inline(always)]
     pub const fn method(self) -> &'static str {
         self.method
+    }
+
+    #[inline(always)]
+    pub fn method_label(&self) -> MethodLabel {
+        MethodLabel::from_type_name(self.method)
     }
 
     #[inline(always)]
@@ -202,13 +207,14 @@ impl LruResponseCache {
     where
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
+        let method_label = key.method_label();
         match self.get_and_parse(key) {
             Some((v, _)) => {
-                metrics::cache_hit(self.label.as_ref(), key.method());
+                metrics::cache_hit(self.label.as_ref(), &method_label);
                 Some(v)
             }
             None => {
-                metrics::cache_miss(self.label.as_ref(), key.method());
+                metrics::cache_miss(self.label.as_ref(), &method_label);
                 None
             }
         }
@@ -220,19 +226,21 @@ impl LruResponseCache {
         T: serde::Serialize + serde::de::DeserializeOwned,
     {
         let Some((value, inserted_at)) = self.get_and_parse(key) else {
-            metrics::cache_miss(self.label.as_ref(), key.method());
+            metrics::cache_miss(self.label.as_ref(), &key.method_label());
             return None;
         };
 
+        let method_label = key.method_label();
+
         if inserted_at.elapsed() <= ttl {
-            metrics::cache_hit(self.label.as_ref(), key.method());
+            metrics::cache_hit(self.label.as_ref(), &method_label);
             return value;
         }
 
         // expired, drop it
         self.remove(key);
         // treat as miss
-        metrics::cache_miss(self.label.as_ref(), key.method());
+        metrics::cache_miss(self.label.as_ref(), &method_label);
         None
     }
 
@@ -282,6 +290,7 @@ impl LruResponseCache {
         Fut: std::future::Future<Output = Result<T, E>>,
         E: From<DapiError>,
     {
+        let method_label = key.method_label();
         // calculate index; if serialization fails, always miss
         let Some(index) = key.digest() else {
             // serialization of key failed, always miss
@@ -289,7 +298,7 @@ impl LruResponseCache {
                 method = key.method(),
                 "Cache key serialization failed, skipping cache"
             );
-            metrics::cache_miss(self.label.as_ref(), key.method());
+            metrics::cache_miss(self.label.as_ref(), &method_label);
             return producer().await;
         };
 
@@ -314,9 +323,9 @@ impl LruResponseCache {
             .map_err(|e| e.into());
 
         if cache_hit.load(Ordering::SeqCst) && item.is_ok() {
-            metrics::cache_hit(self.label.as_ref(), key.method());
+            metrics::cache_hit(self.label.as_ref(), &method_label);
         } else {
-            metrics::cache_miss(self.label.as_ref(), key.method());
+            metrics::cache_miss(self.label.as_ref(), &method_label);
             observe_memory(&self.inner, self.label.as_ref());
         }
 

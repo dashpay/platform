@@ -1,9 +1,53 @@
+use axum::http::{Extensions, Request, Response};
 use once_cell::sync::Lazy;
 use prometheus::{
     Encoder, HistogramVec, IntCounter, IntCounterVec, IntGauge, IntGaugeVec, TextEncoder,
     register_histogram_vec, register_int_counter, register_int_counter_vec, register_int_gauge,
     register_int_gauge_vec,
 };
+use std::any::type_name_of_val;
+use std::borrow::Cow;
+use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
+use std::task::{Context, Poll};
+use std::time::Instant;
+use tower::{Layer, Service};
+
+use crate::logging::middleware::{
+    detect_protocol_type, extract_grpc_status, http_status_to_grpc_status, parse_grpc_path,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq, Hash)]
+pub struct MethodLabel(Cow<'static, str>);
+
+impl MethodLabel {
+    pub fn from_type_name(name: &'static str) -> Self {
+        Self(Cow::Borrowed(name))
+    }
+
+    pub fn from_owned(name: String) -> Self {
+        Self(Cow::Owned(name))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl fmt::Display for MethodLabel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+pub fn method_label<T>(value: &T) -> MethodLabel {
+    MethodLabel::from_type_name(type_name_of_val(value))
+}
+
+pub fn attach_method_label(extensions: &mut Extensions, method: MethodLabel) {
+    extensions.insert(method);
+}
 
 /// Enum for all metric names used in rs-dapi
 #[derive(Copy, Clone, Debug)]
@@ -259,39 +303,39 @@ pub struct Metrics;
 impl Metrics {
     /// Increment cache events counter with explicit outcome
     #[inline]
-    pub fn cache_events_inc(cache: &str, method: &str, outcome: Outcome) {
+    pub fn cache_events_inc(cache: &str, method: &MethodLabel, outcome: Outcome) {
         CACHE_EVENTS
-            .with_label_values(&[cache, method, outcome.as_str()])
+            .with_label_values(&[cache, method.as_str(), outcome.as_str()])
             .inc();
     }
 
     /// Mark cache hit for method
     #[inline]
-    pub fn cache_events_hit(cache: &str, method: &str) {
+    pub fn cache_events_hit(cache: &str, method: &MethodLabel) {
         Self::cache_events_inc(cache, method, Outcome::Hit);
     }
 
     /// Mark cache miss for method
     #[inline]
-    pub fn cache_events_miss(cache: &str, method: &str) {
+    pub fn cache_events_miss(cache: &str, method: &MethodLabel) {
         Self::cache_events_inc(cache, method, Outcome::Miss);
     }
 }
 
 #[inline]
-pub fn record_cache_event(cache: &str, method: &str, outcome: Outcome) {
+pub fn record_cache_event(cache: &str, method: &MethodLabel, outcome: Outcome) {
     CACHE_EVENTS
-        .with_label_values(&[cache, method, outcome.as_str()])
+        .with_label_values(&[cache, method.as_str(), outcome.as_str()])
         .inc();
 }
 
 #[inline]
-pub fn cache_hit(cache: &str, method: &str) {
+pub fn cache_hit(cache: &str, method: &MethodLabel) {
     record_cache_event(cache, method, Outcome::Hit);
 }
 
 #[inline]
-pub fn cache_miss(cache: &str, method: &str) {
+pub fn cache_miss(cache: &str, method: &MethodLabel) {
     record_cache_event(cache, method, Outcome::Miss);
 }
 
@@ -345,6 +389,136 @@ pub fn gather_prometheus() -> (Vec<u8>, String) {
         .unwrap_or_default();
     let content_type = encoder.format_type().to_string();
     (buffer, content_type)
+}
+
+// ---- Request metrics middleware ----
+
+#[derive(Clone, Default)]
+pub struct MetricsLayer;
+
+impl MetricsLayer {
+    pub fn new() -> Self {
+        Self
+    }
+}
+
+#[derive(Clone)]
+pub struct MetricsService<S> {
+    inner: S,
+}
+
+impl<S> Layer<S> for MetricsLayer {
+    type Service = MetricsService<S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        MetricsService { inner: service }
+    }
+}
+
+impl<S, ReqBody, ResBody> Service<Request<ReqBody>> for MetricsService<S>
+where
+    S: Service<Request<ReqBody>, Response = Response<ResBody>> + Clone + Send + 'static,
+    S::Future: Send + 'static,
+    S::Error: Send + 'static,
+    ReqBody: Send + 'static,
+    ResBody: Send + 'static,
+{
+    type Response = S::Response;
+    type Error = S::Error;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send>>;
+
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.inner.poll_ready(cx)
+    }
+
+    fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
+        let start_time = Instant::now();
+        let protocol_type = detect_protocol_type(&req);
+        let path = req.uri().path().to_string();
+        let request_method_hint = req.extensions().get::<MethodLabel>().cloned();
+
+        let mut inner = self.inner.clone();
+
+        Box::pin(async move {
+            let result = inner.call(req).await;
+            match result {
+                Ok(response) => {
+                    let duration = start_time.elapsed();
+                    let status = response.status().as_u16();
+                    let method_hint = response.extensions().get::<MethodLabel>();
+                    let endpoint_label = endpoint_label(
+                        &protocol_type,
+                        &path,
+                        method_hint.or(request_method_hint.as_ref()),
+                    );
+
+                    let status_code = if protocol_type == "gRPC" {
+                        extract_grpc_status(&response, status)
+                    } else {
+                        http_status_to_grpc_status(status)
+                    };
+                    let status_label = status_code.to_string();
+
+                    requests_inc(
+                        protocol_type.as_str(),
+                        endpoint_label.as_str(),
+                        status_label.as_str(),
+                    );
+                    request_duration_observe(
+                        protocol_type.as_str(),
+                        endpoint_label.as_str(),
+                        status_label.as_str(),
+                        duration.as_secs_f64(),
+                    );
+
+                    Ok(response)
+                }
+                Err(err) => {
+                    let duration = start_time.elapsed();
+                    let endpoint_label =
+                        endpoint_label(&protocol_type, &path, request_method_hint.as_ref());
+                    let status_label = http_status_to_grpc_status(500).to_string();
+
+                    requests_inc(
+                        protocol_type.as_str(),
+                        endpoint_label.as_str(),
+                        status_label.as_str(),
+                    );
+                    request_duration_observe(
+                        protocol_type.as_str(),
+                        endpoint_label.as_str(),
+                        status_label.as_str(),
+                        duration.as_secs_f64(),
+                    );
+
+                    Err(err)
+                }
+            }
+        })
+    }
+}
+
+#[inline]
+fn endpoint_label(protocol: &str, path: &str, method_hint: Option<&MethodLabel>) -> String {
+    if protocol == "gRPC" {
+        if let Some(method) = method_hint {
+            return method.as_str().to_string();
+        }
+        let (service, method) = parse_grpc_path(path);
+        if service == "unknown" && method == "unknown" {
+            path.to_string()
+        } else {
+            format!("{}/{}", service, method)
+        }
+    } else if protocol == "JSON-RPC" {
+        if let Some(method) = method_hint {
+            method.as_str().to_string()
+        } else {
+            path.to_string()
+        }
+    } else {
+        path.to_string()
+    }
 }
 
 // ---- Platform events (proxy) helpers ----
