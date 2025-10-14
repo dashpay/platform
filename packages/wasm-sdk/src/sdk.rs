@@ -139,7 +139,10 @@ impl WasmSdkBuilder {
     /// const sdk = builder.build();
     /// ```
     #[wasm_bindgen(js_name = "withAddresses")]
-    pub fn new_with_addresses(addresses: Vec<String>, network: String) -> Result<Self, WasmSdkError> {
+    pub fn new_with_addresses(
+        addresses: Vec<String>,
+        network: String,
+    ) -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;
@@ -157,15 +160,12 @@ impl WasmSdkBuilder {
                 addr.parse::<Uri>()
                     .map_err(|e| format!("Invalid URI '{}': {}", addr, e))
                     .and_then(|uri| {
-                        Address::try_from(uri)
-                            .map_err(|e| format!("Invalid address: {}", e))
+                        Address::try_from(uri).map_err(|e| format!("Invalid address: {}", e))
                     })
             })
             .collect();
 
-        let parsed_addresses = parsed_addresses.map_err(|e| {
-            WasmSdkError::invalid_argument(e)
-        })?;
+        let parsed_addresses = parsed_addresses.map_err(|e| WasmSdkError::invalid_argument(e))?;
 
         // Parse network - only mainnet and testnet are supported
         let network = match network.to_lowercase().as_str() {

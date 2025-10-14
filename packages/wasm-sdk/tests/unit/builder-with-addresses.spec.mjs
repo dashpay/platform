@@ -18,7 +18,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('builds with single testnet address', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'testnet'
+        'testnet',
       );
       expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
 
@@ -34,9 +34,9 @@ describe('WasmSdkBuilder.withAddresses()', () => {
         [
           TEST_ADDRESS_1,
           TEST_ADDRESS_2,
-          TEST_ADDRESS_3
+          TEST_ADDRESS_3,
         ],
-        'testnet'
+        'testnet',
       );
       expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
       const built = await builder.build();
@@ -47,7 +47,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('builds with mainnet address', async () => {
       const builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'mainnet'
+        'mainnet',
       );
       expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
       const built = await builder.build();
@@ -61,7 +61,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
-          'devnet'
+          'devnet',
         );
         expect.fail('Should have thrown error for devnet');
       } catch (error) {
@@ -73,7 +73,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
-          'regtest'
+          'regtest',
         );
         expect.fail('Should have thrown error for regtest');
       } catch (error) {
@@ -85,7 +85,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [TEST_ADDRESS_1],
-          'invalid-network'
+          'invalid-network',
         );
         expect.fail('Should have thrown error for invalid network');
       } catch (error) {
@@ -96,13 +96,13 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('is case-insensitive for network names', async () => {
       const builder1 = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'TESTNET'
+        'TESTNET',
       );
       expect(builder1).to.be.an.instanceof(sdk.WasmSdkBuilder);
 
       const builder2 = sdk.WasmSdkBuilder.withAddresses(
         ['https://149.28.241.190:443'],
-        'Mainnet'
+        'Mainnet',
       );
       expect(builder2).to.be.an.instanceof(sdk.WasmSdkBuilder);
     });
@@ -113,7 +113,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           [],
-          'testnet'
+          'testnet',
         );
         expect.fail('Should have thrown error for empty URI');
       } catch (error) {
@@ -125,7 +125,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       try {
         sdk.WasmSdkBuilder.withAddresses(
           ['https://'],
-          'testnet'
+          'testnet',
         );
         expect.fail('Should have thrown error for URI without host');
       } catch (error) {
@@ -139,7 +139,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('chains with withSettings()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'testnet'
+        'testnet',
       );
       builder = builder.withSettings(5000, 10000, 3, false);
       expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
@@ -153,7 +153,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('chains with withVersion()', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'testnet'
+        'testnet',
       );
       builder = builder.withVersion(1);
       expect(builder).to.be.an.instanceof(sdk.WasmSdkBuilder);
@@ -167,7 +167,7 @@ describe('WasmSdkBuilder.withAddresses()', () => {
     it('chains multiple methods', async () => {
       let builder = sdk.WasmSdkBuilder.withAddresses(
         [TEST_ADDRESS_1],
-        'testnet'
+        'testnet',
       );
       builder = builder
         .withVersion(1)
@@ -182,5 +182,4 @@ describe('WasmSdkBuilder.withAddresses()', () => {
       built.free();
     });
   });
-
 });

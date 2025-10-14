@@ -64,9 +64,9 @@ describe('EvoSDK', () => {
             connectTimeoutMs: 10000,
             timeoutMs: 30000,
             retries: 3,
-            banFailedAddress: false
-          }
-        }
+            banFailedAddress: false,
+          },
+        },
       );
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -87,7 +87,7 @@ describe('EvoSDK', () => {
     it('accepts addresses in options', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_1],
-        network: 'testnet'
+        network: 'testnet',
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -97,7 +97,7 @@ describe('EvoSDK', () => {
 
     it('works with testnet default', () => {
       const sdk = new EvoSDK({
-        addresses: [TEST_ADDRESS_1]
+        addresses: [TEST_ADDRESS_1],
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -107,7 +107,7 @@ describe('EvoSDK', () => {
     it('works with mainnet', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_2],
-        network: 'mainnet'
+        network: 'mainnet',
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('mainnet');
@@ -125,8 +125,8 @@ describe('EvoSDK', () => {
           connectTimeoutMs: 5000,
           timeoutMs: 15000,
           retries: 5,
-          banFailedAddress: true
-        }
+          banFailedAddress: true,
+        },
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -147,7 +147,7 @@ describe('EvoSDK', () => {
       const sdk = new EvoSDK({
         addresses: [TEST_ADDRESS_3],
         network: 'testnet',
-        trusted: true
+        trusted: true,
       });
       expect(sdk).to.be.instanceof(EvoSDK);
       expect(sdk.options.network).to.equal('testnet');
@@ -207,7 +207,7 @@ describe('EvoSDK', () => {
       const sdk = EvoSDK.testnet({
         version: 1,
         proofs: false,
-        logs: 'warn'
+        logs: 'warn',
       });
       expect(sdk).to.be.instanceof(EvoSDK);
     });
