@@ -165,7 +165,7 @@ impl WasmSdkBuilder {
             })
             .collect();
 
-        let parsed_addresses = parsed_addresses.map_err(|e| WasmSdkError::invalid_argument(e))?;
+        let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
 
         // Parse network - only mainnet and testnet are supported
         let network = match network.to_lowercase().as_str() {
