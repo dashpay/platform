@@ -31,7 +31,7 @@ impl Drive {
                 "fee pools storage fee pool must be sum item",
             ))),
             Err(grovedb::Error::PathKeyNotFound(_)) => Ok(0),
-            Err(e) => Err(Error::GroveDB(e)),
+            Err(e) => Err(Error::from(e)),
         }
     }
 }
@@ -62,7 +62,7 @@ mod tests {
 
             assert!(matches!(
                 result,
-                Err(Error::GroveDB(grovedb::Error::PathParentLayerNotFound(_)))
+                Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathParentLayerNotFound(_))
             ));
         }
 

@@ -46,7 +46,7 @@ use crate::data_contract::document_type::class_methods::try_from_schema::{
 #[cfg(feature = "validation")]
 use crate::data_contract::document_type::class_methods::try_from_schema::{
     MAX_INDEXED_BYTE_ARRAY_PROPERTY_LENGTH, MAX_INDEXED_STRING_PROPERTY_LENGTH,
-    NOT_ALLOWED_SYSTEM_PROPERTIES, SYSTEM_PROPERTIES,
+    NOT_ALLOWED_SYSTEM_PROPERTIES,
 };
 use crate::data_contract::document_type::class_methods::{
     consensus_or_protocol_data_contract_error, consensus_or_protocol_value_error,
@@ -79,13 +79,15 @@ impl DocumentTypeV1 {
     #[allow(clippy::too_many_arguments)]
     pub(super) fn try_from_schema(
         data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
         name: &str,
         schema: Value,
         schema_defs: Option<&BTreeMap<String, Value>>,
         token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
         data_contact_config: &DataContractConfig,
         full_validation: bool, // we don't need to validate if loaded from state
-        validation_operations: &mut Vec<ProtocolValidationOperation>,
+        validation_operations: &mut impl Extend<ProtocolValidationOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         // Create a full root JSON Schema from shorten contract document type schema
@@ -99,9 +101,7 @@ impl DocumentTypeV1 {
         if full_validation {
             // TODO we are silently dropping this error when we shouldn't be
             // but returning this error causes tests to fail; investigate more.
-            ProtocolError::CorruptedCodeExecution(
-                "validation is not enabled but is being called on try_from_schema".to_string(),
-            );
+            "validation is not enabled but is being called on try_from_schema".to_string();
         }
 
         #[cfg(feature = "validation")]
@@ -129,18 +129,18 @@ impl DocumentTypeV1 {
 
                 let schema_size = result.into_data()?.size;
 
-                validation_operations.push(
+                validation_operations.extend(std::iter::once(
                     ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-                );
+                ));
 
                 return Err(ProtocolError::ConsensusError(Box::new(error)));
             }
 
             let schema_size = result.into_data()?.size;
 
-            validation_operations.push(
+            validation_operations.extend(std::iter::once(
                 ProtocolValidationOperation::DocumentTypeSchemaValidationForSize(schema_size),
-            );
+            ));
 
             // Make sure JSON Schema is compilable
             let root_json_schema = root_schema.try_to_validating_json().map_err(|e| {
@@ -217,11 +217,11 @@ impl DocumentTypeV1 {
 
         #[cfg(feature = "validation")]
         if full_validation {
-            validation_operations.push(
+            validation_operations.extend(std::iter::once(
                 ProtocolValidationOperation::DocumentTypeSchemaPropertyValidation(
                     property_values.values().len() as u64,
                 ),
-            );
+            ));
 
             // We should validate that the positions are continuous
             for (pos, value) in property_values.values().enumerate() {
@@ -319,12 +319,12 @@ impl DocumentTypeV1 {
 
                         #[cfg(feature = "validation")]
                         if full_validation {
-                            validation_operations.push(
+                            validation_operations.extend(std::iter::once(
                                 ProtocolValidationOperation::DocumentTypeSchemaIndexValidation(
                                     index.properties.len() as u64,
                                     index.unique,
                                 ),
-                            );
+                            ));
 
                             // Unique indices produces significant load on the system during state validation
                             // so we need to limit their number to prevent of spikes and DoS attacks
@@ -443,7 +443,14 @@ impl DocumentTypeV1 {
                                 }
 
                                 // Indexed property must be defined in user schema if it's not a system one
-                                if !SYSTEM_PROPERTIES.contains(&index_property.name.as_str()) {
+                                if !DocumentType::system_properties_contains(
+                                    data_contract_system_version,
+                                    contract_config_version,
+                                    documents_transferable,
+                                    trade_mode,
+                                    index_property.name.as_str(),
+                                    platform_version,
+                                )? {
                                     let property_definition = flattened_document_properties
                                         .get(&index_property.name)
                                         .ok_or_else(|| {
@@ -711,6 +718,8 @@ mod tests {
 
             let _result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
+                1,
+                config.version(),
                 "valid_name-a-b-123",
                 schema,
                 None,
@@ -743,6 +752,8 @@ mod tests {
 
             let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
+                1,
+                config.version(),
                 "",
                 schema,
                 None,
@@ -786,6 +797,8 @@ mod tests {
 
             let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
+                1,
+                config.version(),
                 &"a".repeat(65),
                 schema,
                 None,
@@ -829,6 +842,8 @@ mod tests {
 
             let result = DocumentTypeV0::try_from_schema(
                 Identifier::new([1; 32]),
+                1,
+                config.version(),
                 "invalid name",
                 schema.clone(),
                 None,
@@ -855,6 +870,8 @@ mod tests {
 
             let result = DocumentTypeV1::try_from_schema(
                 Identifier::new([1; 32]),
+                1,
+                config.version(),
                 "invalid&name",
                 schema,
                 None,

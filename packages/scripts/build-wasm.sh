@@ -96,17 +96,18 @@ cd "$PACKAGE_DIR"
 
 echo "Building $PACKAGE_NAME..."
 
-# Create pkg directory if it doesn't exist
+# Create a new clean directory package directory
+rm -rf pkg
 mkdir -p pkg
 
 if [ "$USE_WASM_PACK" = true ]; then
     # Build using wasm-pack
     echo "Building with wasm-pack..."
-    
+
     # Disable LTO for wasm-pack builds to avoid conflicts
     export CARGO_PROFILE_RELEASE_LTO=false
     export RUSTFLAGS="-C lto=off"
-    
+
     # Add features if specified
     FEATURES_ARG=""
     if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
@@ -117,19 +118,19 @@ if [ "$USE_WASM_PACK" = true ]; then
         # Explicitly pass default features to ensure they're used
         FEATURES_ARG="--features default"
     fi
-    
+
     echo "Running: wasm-pack build --target $TARGET_TYPE --release --no-opt $FEATURES_ARG"
     wasm-pack build --target "$TARGET_TYPE" --release --no-opt $FEATURES_ARG
 else
     # Build using cargo directly
     echo "Building with cargo..."
-    
+
     # Add features if specified
     FEATURES_ARG=""
     if [ -n "${CARGO_BUILD_FEATURES:-}" ]; then
         FEATURES_ARG="--features $CARGO_BUILD_FEATURES"
     fi
-    
+
     cargo build --target wasm32-unknown-unknown --release $FEATURES_ARG \
         --config 'profile.release.panic="abort"' \
         --config 'profile.release.strip=true' \
@@ -138,7 +139,7 @@ else
         --config 'profile.release.lto=true' \
         --config 'profile.release.opt-level="z"' \
         --config 'profile.release.codegen-units=1'
-    
+
     # Run wasm-snip if available
     if command -v wasm-snip &> /dev/null; then
         wasm-snip "../../target/wasm32-unknown-unknown/release/${PACKAGE_NAME//-/_}.wasm" \
@@ -146,14 +147,14 @@ else
             --snip-rust-fmt-code \
             --snip-rust-panicking-code
     fi
-    
+
     # Run wasm-bindgen
     echo "Running wasm-bindgen..."
     if ! command -v wasm-bindgen &> /dev/null; then
         echo "Error: 'wasm-bindgen' not found. Install via 'cargo install wasm-bindgen-cli'." >&2
         exit 1
     fi
-    
+
     wasm-bindgen \
         --typescript \
         --out-dir=pkg \
@@ -165,13 +166,13 @@ fi
 # Optimize the WASM file
 if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
     echo "Optimizing wasm using Binaryen (level: $OPT_LEVEL)..."
-    
+
     WASM_PATH="pkg/$WASM_FILE"
-    
+
     if [ "$OPT_LEVEL" = "full" ]; then
         # Check wasm-opt version to determine available options
         WASM_OPT_VERSION=$(wasm-opt --version 2>/dev/null || echo "")
-        
+
         # Core optimization flags that should work with most versions
         CORE_FLAGS=(
             --strip-producers
@@ -191,7 +192,7 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             -Oz
             -Oz
         )
-        
+
         # Additional flags to test for compatibility
         OPTIONAL_FLAGS=(
             "--code-folding"
@@ -209,7 +210,7 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             "--generate-global-effects"
             "--abstract-type-refining"
         )
-        
+
         # Test which optional flags are supported
         SUPPORTED_FLAGS=()
         for flag in "${OPTIONAL_FLAGS[@]}"; do
@@ -219,7 +220,7 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
                 echo "Note: $flag not supported by this wasm-opt version, skipping..."
             fi
         done
-        
+
         # Run optimization with core flags and any supported optional flags
         wasm-opt \
             "${CORE_FLAGS[@]}" \
@@ -227,16 +228,21 @@ if [ "$OPT_LEVEL" != "none" ] && command -v wasm-opt &> /dev/null; then
             "$WASM_PATH" \
             -o \
             "$WASM_PATH"
-            
+
         # Create optimized version for wasm-sdk
         if [ "$PACKAGE_NAME" = "wasm-sdk" ]; then
             cp "$WASM_PATH" "pkg/optimized.wasm"
         fi
     else
         # Minimal optimization for development builds
+        # Explicitly enable features used by newer toolchains:
+        # - bulk memory (memory.copy)
+        # - non-trapping float-to-int (i32/i64.trunc_sat_fXX_[su])
         wasm-opt \
             --strip-producers \
             -O2 \
+            --enable-bulk-memory \
+            --enable-nontrapping-float-to-int \
             "$WASM_PATH" \
             -o \
             "$WASM_PATH"

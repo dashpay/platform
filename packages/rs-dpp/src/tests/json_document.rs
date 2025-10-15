@@ -148,6 +148,7 @@ pub fn json_document_to_document(
         updated_at_core_block_height: data.remove_optional_integer("$updatedAtCoreBlockHeight")?,
         transferred_at_core_block_height: data
             .remove_optional_integer("$transferredAtCoreBlockHeight")?,
+        creator_id: data.remove_optional_identifier("$creatorId")?,
     };
 
     data.replace_at_paths(

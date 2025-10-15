@@ -103,7 +103,6 @@ impl DocumentCreateTransitionActionStructureValidationV0 for DocumentCreateTrans
                 ));
             }
         }
-
         // Validate user defined properties
 
         data_contract

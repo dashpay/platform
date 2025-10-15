@@ -2559,6 +2559,191 @@ export namespace GetIdentityByPublicKeyHashResponse {
   }
 }
 
+export class GetIdentityByNonUniquePublicKeyHashRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0 | undefined;
+  setV0(value?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0): void;
+
+  getVersionCase(): GetIdentityByNonUniquePublicKeyHashRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashRequest): GetIdentityByNonUniquePublicKeyHashRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashRequest;
+  static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashRequest, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashRequest;
+}
+
+export namespace GetIdentityByNonUniquePublicKeyHashRequest {
+  export type AsObject = {
+    v0?: GetIdentityByNonUniquePublicKeyHashRequest.GetIdentityByNonUniquePublicKeyHashRequestV0.AsObject,
+  }
+
+  export class GetIdentityByNonUniquePublicKeyHashRequestV0 extends jspb.Message {
+    getPublicKeyHash(): Uint8Array | string;
+    getPublicKeyHash_asU8(): Uint8Array;
+    getPublicKeyHash_asB64(): string;
+    setPublicKeyHash(value: Uint8Array | string): void;
+
+    hasStartAfter(): boolean;
+    clearStartAfter(): void;
+    getStartAfter(): Uint8Array | string;
+    getStartAfter_asU8(): Uint8Array;
+    getStartAfter_asB64(): string;
+    setStartAfter(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashRequestV0): GetIdentityByNonUniquePublicKeyHashRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashRequestV0;
+    static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashRequestV0, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashRequestV0;
+  }
+
+  export namespace GetIdentityByNonUniquePublicKeyHashRequestV0 {
+    export type AsObject = {
+      publicKeyHash: Uint8Array | string,
+      startAfter: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetIdentityByNonUniquePublicKeyHashResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0 | undefined;
+  setV0(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0): void;
+
+  getVersionCase(): GetIdentityByNonUniquePublicKeyHashResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashResponse): GetIdentityByNonUniquePublicKeyHashResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashResponse;
+  static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashResponse, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashResponse;
+}
+
+export namespace GetIdentityByNonUniquePublicKeyHashResponse {
+  export type AsObject = {
+    v0?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.AsObject,
+  }
+
+  export class GetIdentityByNonUniquePublicKeyHashResponseV0 extends jspb.Message {
+    hasIdentity(): boolean;
+    clearIdentity(): void;
+    getIdentity(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse | undefined;
+    setIdentity(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse | undefined;
+    setProof(value?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetIdentityByNonUniquePublicKeyHashResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetIdentityByNonUniquePublicKeyHashResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetIdentityByNonUniquePublicKeyHashResponseV0): GetIdentityByNonUniquePublicKeyHashResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetIdentityByNonUniquePublicKeyHashResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetIdentityByNonUniquePublicKeyHashResponseV0;
+    static deserializeBinaryFromReader(message: GetIdentityByNonUniquePublicKeyHashResponseV0, reader: jspb.BinaryReader): GetIdentityByNonUniquePublicKeyHashResponseV0;
+  }
+
+  export namespace GetIdentityByNonUniquePublicKeyHashResponseV0 {
+    export type AsObject = {
+      identity?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityResponse.AsObject,
+      proof?: GetIdentityByNonUniquePublicKeyHashResponse.GetIdentityByNonUniquePublicKeyHashResponseV0.IdentityProvedResponse.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class IdentityResponse extends jspb.Message {
+      hasIdentity(): boolean;
+      clearIdentity(): void;
+      getIdentity(): Uint8Array | string;
+      getIdentity_asU8(): Uint8Array;
+      getIdentity_asB64(): string;
+      setIdentity(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): IdentityResponse.AsObject;
+      static toObject(includeInstance: boolean, msg: IdentityResponse): IdentityResponse.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: IdentityResponse, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): IdentityResponse;
+      static deserializeBinaryFromReader(message: IdentityResponse, reader: jspb.BinaryReader): IdentityResponse;
+    }
+
+    export namespace IdentityResponse {
+      export type AsObject = {
+        identity: Uint8Array | string,
+      }
+    }
+
+    export class IdentityProvedResponse extends jspb.Message {
+      hasGrovedbIdentityPublicKeyHashProof(): boolean;
+      clearGrovedbIdentityPublicKeyHashProof(): void;
+      getGrovedbIdentityPublicKeyHashProof(): Proof | undefined;
+      setGrovedbIdentityPublicKeyHashProof(value?: Proof): void;
+
+      hasIdentityProofBytes(): boolean;
+      clearIdentityProofBytes(): void;
+      getIdentityProofBytes(): Uint8Array | string;
+      getIdentityProofBytes_asU8(): Uint8Array;
+      getIdentityProofBytes_asB64(): string;
+      setIdentityProofBytes(value: Uint8Array | string): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): IdentityProvedResponse.AsObject;
+      static toObject(includeInstance: boolean, msg: IdentityProvedResponse): IdentityProvedResponse.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: IdentityProvedResponse, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): IdentityProvedResponse;
+      static deserializeBinaryFromReader(message: IdentityProvedResponse, reader: jspb.BinaryReader): IdentityProvedResponse;
+    }
+
+    export namespace IdentityProvedResponse {
+      export type AsObject = {
+        grovedbIdentityPublicKeyHashProof?: Proof.AsObject,
+        identityProofBytes: Uint8Array | string,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      IDENTITY = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class WaitForStateTransitionResultRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -3361,6 +3546,257 @@ export namespace GetEpochsInfoResponse {
         startTime: string,
         feeMultiplier: number,
         protocolVersion: number,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      EPOCHS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetFinalizedEpochInfosRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetFinalizedEpochInfosRequest.GetFinalizedEpochInfosRequestV0 | undefined;
+  setV0(value?: GetFinalizedEpochInfosRequest.GetFinalizedEpochInfosRequestV0): void;
+
+  getVersionCase(): GetFinalizedEpochInfosRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetFinalizedEpochInfosRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetFinalizedEpochInfosRequest): GetFinalizedEpochInfosRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetFinalizedEpochInfosRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetFinalizedEpochInfosRequest;
+  static deserializeBinaryFromReader(message: GetFinalizedEpochInfosRequest, reader: jspb.BinaryReader): GetFinalizedEpochInfosRequest;
+}
+
+export namespace GetFinalizedEpochInfosRequest {
+  export type AsObject = {
+    v0?: GetFinalizedEpochInfosRequest.GetFinalizedEpochInfosRequestV0.AsObject,
+  }
+
+  export class GetFinalizedEpochInfosRequestV0 extends jspb.Message {
+    getStartEpochIndex(): number;
+    setStartEpochIndex(value: number): void;
+
+    getStartEpochIndexIncluded(): boolean;
+    setStartEpochIndexIncluded(value: boolean): void;
+
+    getEndEpochIndex(): number;
+    setEndEpochIndex(value: number): void;
+
+    getEndEpochIndexIncluded(): boolean;
+    setEndEpochIndexIncluded(value: boolean): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetFinalizedEpochInfosRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetFinalizedEpochInfosRequestV0): GetFinalizedEpochInfosRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetFinalizedEpochInfosRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetFinalizedEpochInfosRequestV0;
+    static deserializeBinaryFromReader(message: GetFinalizedEpochInfosRequestV0, reader: jspb.BinaryReader): GetFinalizedEpochInfosRequestV0;
+  }
+
+  export namespace GetFinalizedEpochInfosRequestV0 {
+    export type AsObject = {
+      startEpochIndex: number,
+      startEpochIndexIncluded: boolean,
+      endEpochIndex: number,
+      endEpochIndexIncluded: boolean,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetFinalizedEpochInfosResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0 | undefined;
+  setV0(value?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0): void;
+
+  getVersionCase(): GetFinalizedEpochInfosResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetFinalizedEpochInfosResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetFinalizedEpochInfosResponse): GetFinalizedEpochInfosResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetFinalizedEpochInfosResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetFinalizedEpochInfosResponse;
+  static deserializeBinaryFromReader(message: GetFinalizedEpochInfosResponse, reader: jspb.BinaryReader): GetFinalizedEpochInfosResponse;
+}
+
+export namespace GetFinalizedEpochInfosResponse {
+  export type AsObject = {
+    v0?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.AsObject,
+  }
+
+  export class GetFinalizedEpochInfosResponseV0 extends jspb.Message {
+    hasEpochs(): boolean;
+    clearEpochs(): void;
+    getEpochs(): GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfos | undefined;
+    setEpochs(value?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfos): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetFinalizedEpochInfosResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetFinalizedEpochInfosResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetFinalizedEpochInfosResponseV0): GetFinalizedEpochInfosResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetFinalizedEpochInfosResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetFinalizedEpochInfosResponseV0;
+    static deserializeBinaryFromReader(message: GetFinalizedEpochInfosResponseV0, reader: jspb.BinaryReader): GetFinalizedEpochInfosResponseV0;
+  }
+
+  export namespace GetFinalizedEpochInfosResponseV0 {
+    export type AsObject = {
+      epochs?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfos.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class FinalizedEpochInfos extends jspb.Message {
+      clearFinalizedEpochInfosList(): void;
+      getFinalizedEpochInfosList(): Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo>;
+      setFinalizedEpochInfosList(value: Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo>): void;
+      addFinalizedEpochInfos(value?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo, index?: number): GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): FinalizedEpochInfos.AsObject;
+      static toObject(includeInstance: boolean, msg: FinalizedEpochInfos): FinalizedEpochInfos.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: FinalizedEpochInfos, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): FinalizedEpochInfos;
+      static deserializeBinaryFromReader(message: FinalizedEpochInfos, reader: jspb.BinaryReader): FinalizedEpochInfos;
+    }
+
+    export namespace FinalizedEpochInfos {
+      export type AsObject = {
+        finalizedEpochInfosList: Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.FinalizedEpochInfo.AsObject>,
+      }
+    }
+
+    export class FinalizedEpochInfo extends jspb.Message {
+      getNumber(): number;
+      setNumber(value: number): void;
+
+      getFirstBlockHeight(): string;
+      setFirstBlockHeight(value: string): void;
+
+      getFirstCoreBlockHeight(): number;
+      setFirstCoreBlockHeight(value: number): void;
+
+      getFirstBlockTime(): string;
+      setFirstBlockTime(value: string): void;
+
+      getFeeMultiplier(): number;
+      setFeeMultiplier(value: number): void;
+
+      getProtocolVersion(): number;
+      setProtocolVersion(value: number): void;
+
+      getTotalBlocksInEpoch(): string;
+      setTotalBlocksInEpoch(value: string): void;
+
+      getNextEpochStartCoreBlockHeight(): number;
+      setNextEpochStartCoreBlockHeight(value: number): void;
+
+      getTotalProcessingFees(): string;
+      setTotalProcessingFees(value: string): void;
+
+      getTotalDistributedStorageFees(): string;
+      setTotalDistributedStorageFees(value: string): void;
+
+      getTotalCreatedStorageFees(): string;
+      setTotalCreatedStorageFees(value: string): void;
+
+      getCoreBlockRewards(): string;
+      setCoreBlockRewards(value: string): void;
+
+      clearBlockProposersList(): void;
+      getBlockProposersList(): Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer>;
+      setBlockProposersList(value: Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer>): void;
+      addBlockProposers(value?: GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer, index?: number): GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): FinalizedEpochInfo.AsObject;
+      static toObject(includeInstance: boolean, msg: FinalizedEpochInfo): FinalizedEpochInfo.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: FinalizedEpochInfo, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): FinalizedEpochInfo;
+      static deserializeBinaryFromReader(message: FinalizedEpochInfo, reader: jspb.BinaryReader): FinalizedEpochInfo;
+    }
+
+    export namespace FinalizedEpochInfo {
+      export type AsObject = {
+        number: number,
+        firstBlockHeight: string,
+        firstCoreBlockHeight: number,
+        firstBlockTime: string,
+        feeMultiplier: number,
+        protocolVersion: number,
+        totalBlocksInEpoch: string,
+        nextEpochStartCoreBlockHeight: number,
+        totalProcessingFees: string,
+        totalDistributedStorageFees: string,
+        totalCreatedStorageFees: string,
+        coreBlockRewards: string,
+        blockProposersList: Array<GetFinalizedEpochInfosResponse.GetFinalizedEpochInfosResponseV0.BlockProposer.AsObject>,
+      }
+    }
+
+    export class BlockProposer extends jspb.Message {
+      getProposerId(): Uint8Array | string;
+      getProposerId_asU8(): Uint8Array;
+      getProposerId_asB64(): string;
+      setProposerId(value: Uint8Array | string): void;
+
+      getBlockCount(): number;
+      setBlockCount(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): BlockProposer.AsObject;
+      static toObject(includeInstance: boolean, msg: BlockProposer): BlockProposer.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: BlockProposer, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): BlockProposer;
+      static deserializeBinaryFromReader(message: BlockProposer, reader: jspb.BinaryReader): BlockProposer;
+    }
+
+    export namespace BlockProposer {
+      export type AsObject = {
+        proposerId: Uint8Array | string,
+        blockCount: number,
       }
     }
 
@@ -6636,6 +7072,62 @@ export namespace GetTokenStatusesResponse {
   }
 }
 
+export class GetTokenDirectPurchasePricesRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0 | undefined;
+  setV0(value?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0): void;
+
+  getVersionCase(): GetTokenDirectPurchasePricesRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequest): GetTokenDirectPurchasePricesRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequest;
+  static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequest, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequest;
+}
+
+export namespace GetTokenDirectPurchasePricesRequest {
+  export type AsObject = {
+    v0?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0.AsObject,
+  }
+
+  export class GetTokenDirectPurchasePricesRequestV0 extends jspb.Message {
+    clearTokenIdsList(): void;
+    getTokenIdsList(): Array<Uint8Array | string>;
+    getTokenIdsList_asU8(): Array<Uint8Array>;
+    getTokenIdsList_asB64(): Array<string>;
+    setTokenIdsList(value: Array<Uint8Array | string>): void;
+    addTokenIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequestV0): GetTokenDirectPurchasePricesRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequestV0;
+    static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequestV0, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequestV0;
+  }
+
+  export namespace GetTokenDirectPurchasePricesRequestV0 {
+    export type AsObject = {
+      tokenIdsList: Array<Uint8Array | string>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export class GetTokenDirectPurchasePricesResponse extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
@@ -6814,53 +7306,146 @@ export namespace GetTokenDirectPurchasePricesResponse {
   }
 }
 
-export class GetTokenDirectPurchasePricesRequest extends jspb.Message {
+export class GetTokenContractInfoRequest extends jspb.Message {
   hasV0(): boolean;
   clearV0(): void;
-  getV0(): GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0 | undefined;
-  setV0(value?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0): void;
+  getV0(): GetTokenContractInfoRequest.GetTokenContractInfoRequestV0 | undefined;
+  setV0(value?: GetTokenContractInfoRequest.GetTokenContractInfoRequestV0): void;
 
-  getVersionCase(): GetTokenDirectPurchasePricesRequest.VersionCase;
+  getVersionCase(): GetTokenContractInfoRequest.VersionCase;
   serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequest.AsObject;
-  static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequest): GetTokenDirectPurchasePricesRequest.AsObject;
+  toObject(includeInstance?: boolean): GetTokenContractInfoRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenContractInfoRequest): GetTokenContractInfoRequest.AsObject;
   static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
   static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequest, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequest;
-  static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequest, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequest;
+  static serializeBinaryToWriter(message: GetTokenContractInfoRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenContractInfoRequest;
+  static deserializeBinaryFromReader(message: GetTokenContractInfoRequest, reader: jspb.BinaryReader): GetTokenContractInfoRequest;
 }
 
-export namespace GetTokenDirectPurchasePricesRequest {
+export namespace GetTokenContractInfoRequest {
   export type AsObject = {
-    v0?: GetTokenDirectPurchasePricesRequest.GetTokenDirectPurchasePricesRequestV0.AsObject,
+    v0?: GetTokenContractInfoRequest.GetTokenContractInfoRequestV0.AsObject,
   }
 
-  export class GetTokenDirectPurchasePricesRequestV0 extends jspb.Message {
-    clearTokenIdsList(): void;
-    getTokenIdsList(): Array<Uint8Array | string>;
-    getTokenIdsList_asU8(): Array<Uint8Array>;
-    getTokenIdsList_asB64(): Array<string>;
-    setTokenIdsList(value: Array<Uint8Array | string>): void;
-    addTokenIds(value: Uint8Array | string, index?: number): Uint8Array | string;
+  export class GetTokenContractInfoRequestV0 extends jspb.Message {
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
 
     getProve(): boolean;
     setProve(value: boolean): void;
 
     serializeBinary(): Uint8Array;
-    toObject(includeInstance?: boolean): GetTokenDirectPurchasePricesRequestV0.AsObject;
-    static toObject(includeInstance: boolean, msg: GetTokenDirectPurchasePricesRequestV0): GetTokenDirectPurchasePricesRequestV0.AsObject;
+    toObject(includeInstance?: boolean): GetTokenContractInfoRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenContractInfoRequestV0): GetTokenContractInfoRequestV0.AsObject;
     static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
     static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-    static serializeBinaryToWriter(message: GetTokenDirectPurchasePricesRequestV0, writer: jspb.BinaryWriter): void;
-    static deserializeBinary(bytes: Uint8Array): GetTokenDirectPurchasePricesRequestV0;
-    static deserializeBinaryFromReader(message: GetTokenDirectPurchasePricesRequestV0, reader: jspb.BinaryReader): GetTokenDirectPurchasePricesRequestV0;
+    static serializeBinaryToWriter(message: GetTokenContractInfoRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenContractInfoRequestV0;
+    static deserializeBinaryFromReader(message: GetTokenContractInfoRequestV0, reader: jspb.BinaryReader): GetTokenContractInfoRequestV0;
   }
 
-  export namespace GetTokenDirectPurchasePricesRequestV0 {
+  export namespace GetTokenContractInfoRequestV0 {
     export type AsObject = {
-      tokenIdsList: Array<Uint8Array | string>,
+      tokenId: Uint8Array | string,
       prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTokenContractInfoResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenContractInfoResponse.GetTokenContractInfoResponseV0 | undefined;
+  setV0(value?: GetTokenContractInfoResponse.GetTokenContractInfoResponseV0): void;
+
+  getVersionCase(): GetTokenContractInfoResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenContractInfoResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenContractInfoResponse): GetTokenContractInfoResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenContractInfoResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenContractInfoResponse;
+  static deserializeBinaryFromReader(message: GetTokenContractInfoResponse, reader: jspb.BinaryReader): GetTokenContractInfoResponse;
+}
+
+export namespace GetTokenContractInfoResponse {
+  export type AsObject = {
+    v0?: GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.AsObject,
+  }
+
+  export class GetTokenContractInfoResponseV0 extends jspb.Message {
+    hasData(): boolean;
+    clearData(): void;
+    getData(): GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.TokenContractInfoData | undefined;
+    setData(value?: GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.TokenContractInfoData): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetTokenContractInfoResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenContractInfoResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenContractInfoResponseV0): GetTokenContractInfoResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenContractInfoResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenContractInfoResponseV0;
+    static deserializeBinaryFromReader(message: GetTokenContractInfoResponseV0, reader: jspb.BinaryReader): GetTokenContractInfoResponseV0;
+  }
+
+  export namespace GetTokenContractInfoResponseV0 {
+    export type AsObject = {
+      data?: GetTokenContractInfoResponse.GetTokenContractInfoResponseV0.TokenContractInfoData.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class TokenContractInfoData extends jspb.Message {
+      getContractId(): Uint8Array | string;
+      getContractId_asU8(): Uint8Array;
+      getContractId_asB64(): string;
+      setContractId(value: Uint8Array | string): void;
+
+      getTokenContractPosition(): number;
+      setTokenContractPosition(value: number): void;
+
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): TokenContractInfoData.AsObject;
+      static toObject(includeInstance: boolean, msg: TokenContractInfoData): TokenContractInfoData.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: TokenContractInfoData, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): TokenContractInfoData;
+      static deserializeBinaryFromReader(message: TokenContractInfoData, reader: jspb.BinaryReader): TokenContractInfoData;
+    }
+
+    export namespace TokenContractInfoData {
+      export type AsObject = {
+        contractId: Uint8Array | string,
+        tokenContractPosition: number,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      DATA = 1,
+      PROOF = 2,
     }
   }
 
@@ -7103,6 +7688,218 @@ export namespace GetTokenPreProgrammedDistributionsResponse {
     export enum ResultCase {
       RESULT_NOT_SET = 0,
       TOKEN_DISTRIBUTIONS = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTokenPerpetualDistributionLastClaimRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenPerpetualDistributionLastClaimRequest.GetTokenPerpetualDistributionLastClaimRequestV0 | undefined;
+  setV0(value?: GetTokenPerpetualDistributionLastClaimRequest.GetTokenPerpetualDistributionLastClaimRequestV0): void;
+
+  getVersionCase(): GetTokenPerpetualDistributionLastClaimRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenPerpetualDistributionLastClaimRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenPerpetualDistributionLastClaimRequest): GetTokenPerpetualDistributionLastClaimRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenPerpetualDistributionLastClaimRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenPerpetualDistributionLastClaimRequest;
+  static deserializeBinaryFromReader(message: GetTokenPerpetualDistributionLastClaimRequest, reader: jspb.BinaryReader): GetTokenPerpetualDistributionLastClaimRequest;
+}
+
+export namespace GetTokenPerpetualDistributionLastClaimRequest {
+  export type AsObject = {
+    v0?: GetTokenPerpetualDistributionLastClaimRequest.GetTokenPerpetualDistributionLastClaimRequestV0.AsObject,
+  }
+
+  export class ContractTokenInfo extends jspb.Message {
+    getContractId(): Uint8Array | string;
+    getContractId_asU8(): Uint8Array;
+    getContractId_asB64(): string;
+    setContractId(value: Uint8Array | string): void;
+
+    getTokenContractPosition(): number;
+    setTokenContractPosition(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): ContractTokenInfo.AsObject;
+    static toObject(includeInstance: boolean, msg: ContractTokenInfo): ContractTokenInfo.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: ContractTokenInfo, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): ContractTokenInfo;
+    static deserializeBinaryFromReader(message: ContractTokenInfo, reader: jspb.BinaryReader): ContractTokenInfo;
+  }
+
+  export namespace ContractTokenInfo {
+    export type AsObject = {
+      contractId: Uint8Array | string,
+      tokenContractPosition: number,
+    }
+  }
+
+  export class GetTokenPerpetualDistributionLastClaimRequestV0 extends jspb.Message {
+    getTokenId(): Uint8Array | string;
+    getTokenId_asU8(): Uint8Array;
+    getTokenId_asB64(): string;
+    setTokenId(value: Uint8Array | string): void;
+
+    hasContractInfo(): boolean;
+    clearContractInfo(): void;
+    getContractInfo(): GetTokenPerpetualDistributionLastClaimRequest.ContractTokenInfo | undefined;
+    setContractInfo(value?: GetTokenPerpetualDistributionLastClaimRequest.ContractTokenInfo): void;
+
+    getIdentityId(): Uint8Array | string;
+    getIdentityId_asU8(): Uint8Array;
+    getIdentityId_asB64(): string;
+    setIdentityId(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenPerpetualDistributionLastClaimRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenPerpetualDistributionLastClaimRequestV0): GetTokenPerpetualDistributionLastClaimRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenPerpetualDistributionLastClaimRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenPerpetualDistributionLastClaimRequestV0;
+    static deserializeBinaryFromReader(message: GetTokenPerpetualDistributionLastClaimRequestV0, reader: jspb.BinaryReader): GetTokenPerpetualDistributionLastClaimRequestV0;
+  }
+
+  export namespace GetTokenPerpetualDistributionLastClaimRequestV0 {
+    export type AsObject = {
+      tokenId: Uint8Array | string,
+      contractInfo?: GetTokenPerpetualDistributionLastClaimRequest.ContractTokenInfo.AsObject,
+      identityId: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetTokenPerpetualDistributionLastClaimResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0 | undefined;
+  setV0(value?: GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0): void;
+
+  getVersionCase(): GetTokenPerpetualDistributionLastClaimResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetTokenPerpetualDistributionLastClaimResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetTokenPerpetualDistributionLastClaimResponse): GetTokenPerpetualDistributionLastClaimResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetTokenPerpetualDistributionLastClaimResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetTokenPerpetualDistributionLastClaimResponse;
+  static deserializeBinaryFromReader(message: GetTokenPerpetualDistributionLastClaimResponse, reader: jspb.BinaryReader): GetTokenPerpetualDistributionLastClaimResponse;
+}
+
+export namespace GetTokenPerpetualDistributionLastClaimResponse {
+  export type AsObject = {
+    v0?: GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.AsObject,
+  }
+
+  export class GetTokenPerpetualDistributionLastClaimResponseV0 extends jspb.Message {
+    hasLastClaim(): boolean;
+    clearLastClaim(): void;
+    getLastClaim(): GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.LastClaimInfo | undefined;
+    setLastClaim(value?: GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.LastClaimInfo): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetTokenPerpetualDistributionLastClaimResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetTokenPerpetualDistributionLastClaimResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetTokenPerpetualDistributionLastClaimResponseV0): GetTokenPerpetualDistributionLastClaimResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetTokenPerpetualDistributionLastClaimResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetTokenPerpetualDistributionLastClaimResponseV0;
+    static deserializeBinaryFromReader(message: GetTokenPerpetualDistributionLastClaimResponseV0, reader: jspb.BinaryReader): GetTokenPerpetualDistributionLastClaimResponseV0;
+  }
+
+  export namespace GetTokenPerpetualDistributionLastClaimResponseV0 {
+    export type AsObject = {
+      lastClaim?: GetTokenPerpetualDistributionLastClaimResponse.GetTokenPerpetualDistributionLastClaimResponseV0.LastClaimInfo.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export class LastClaimInfo extends jspb.Message {
+      hasTimestampMs(): boolean;
+      clearTimestampMs(): void;
+      getTimestampMs(): string;
+      setTimestampMs(value: string): void;
+
+      hasBlockHeight(): boolean;
+      clearBlockHeight(): void;
+      getBlockHeight(): string;
+      setBlockHeight(value: string): void;
+
+      hasEpoch(): boolean;
+      clearEpoch(): void;
+      getEpoch(): number;
+      setEpoch(value: number): void;
+
+      hasRawBytes(): boolean;
+      clearRawBytes(): void;
+      getRawBytes(): Uint8Array | string;
+      getRawBytes_asU8(): Uint8Array;
+      getRawBytes_asB64(): string;
+      setRawBytes(value: Uint8Array | string): void;
+
+      getPaidAtCase(): LastClaimInfo.PaidAtCase;
+      serializeBinary(): Uint8Array;
+      toObject(includeInstance?: boolean): LastClaimInfo.AsObject;
+      static toObject(includeInstance: boolean, msg: LastClaimInfo): LastClaimInfo.AsObject;
+      static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+      static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+      static serializeBinaryToWriter(message: LastClaimInfo, writer: jspb.BinaryWriter): void;
+      static deserializeBinary(bytes: Uint8Array): LastClaimInfo;
+      static deserializeBinaryFromReader(message: LastClaimInfo, reader: jspb.BinaryReader): LastClaimInfo;
+    }
+
+    export namespace LastClaimInfo {
+      export type AsObject = {
+        timestampMs: string,
+        blockHeight: string,
+        epoch: number,
+        rawBytes: Uint8Array | string,
+      }
+
+      export enum PaidAtCase {
+        PAID_AT_NOT_SET = 0,
+        TIMESTAMP_MS = 1,
+        BLOCK_HEIGHT = 2,
+        EPOCH = 3,
+        RAW_BYTES = 4,
+      }
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      LAST_CLAIM = 1,
       PROOF = 2,
     }
   }
@@ -7903,6 +8700,11 @@ export namespace GetGroupActionsResponse {
       getAmount(): number;
       setAmount(value: number): void;
 
+      getBurnFromId(): Uint8Array | string;
+      getBurnFromId_asU8(): Uint8Array;
+      getBurnFromId_asB64(): string;
+      setBurnFromId(value: Uint8Array | string): void;
+
       hasPublicNote(): boolean;
       clearPublicNote(): void;
       getPublicNote(): string;
@@ -7921,6 +8723,7 @@ export namespace GetGroupActionsResponse {
     export namespace BurnEvent {
       export type AsObject = {
         amount: number,
+        burnFromId: Uint8Array | string,
         publicNote: string,
       }
     }

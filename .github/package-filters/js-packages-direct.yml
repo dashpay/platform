@@ -1,0 +1,53 @@
+'@dashevo/wallet-utils-contract':
+  - packages/wallet-utils-contract/**
+
+'@dashevo/token-history-contract':
+  - packages/token-history-contract/**
+
+'@dashevo/dashpay-contract':
+  - packages/dashpay-contract/**
+
+'@dashevo/masternode-reward-shares-contract':
+  - packages/masternode-reward-shares-contract/**
+
+'@dashevo/withdrawals-contract':
+  - packages/withdrawals-contract/**
+
+'@dashevo/dpns-contract':
+  - packages/dpns-contract/**
+
+'@dashevo/grpc-common':
+  - packages/js-grpc-common/**
+
+'@dashevo/wasm-dpp':
+  - packages/wasm-dpp/**
+
+'@dashevo/dapi-grpc':
+  - packages/dapi-grpc/**
+
+'@dashevo/dash-spv':
+  - packages/dash-spv/**
+
+'@dashevo/dapi':
+  - packages/dapi/**
+
+'@dashevo/dapi-client':
+  - packages/js-dapi-client/**
+
+'@dashevo/wallet-lib':
+  - packages/wallet-lib/**
+
+dash:
+  - packages/js-dash-sdk/**
+
+dashmate:
+  - packages/dashmate/**
+
+'@dashevo/platform-test-suite':
+  - packages/platform-test-suite/**
+
+'@dashevo/wasm-sdk':
+  - packages/wasm-sdk/**
+
+'@dashevo/evo-sdk':
+  - packages/js-evo-sdk/**

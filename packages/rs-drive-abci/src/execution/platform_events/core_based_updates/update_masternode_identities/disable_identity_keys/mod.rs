@@ -4,8 +4,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::dashcore_rpc_json::MasternodeListItem;
 
 use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation;

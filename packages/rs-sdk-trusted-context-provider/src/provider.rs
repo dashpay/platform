@@ -25,6 +25,7 @@ use dpp::version::PlatformVersion;
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 #[cfg(not(target_arch = "wasm32"))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
@@ -118,15 +119,27 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        // Verify the domain resolves before proceeding (skip on WASM)
-        #[cfg(not(target_arch = "wasm32"))]
+        // Verify the domain resolves before proceeding (skip on WASM and iOS)
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
 
         #[cfg(target_arch = "wasm32")]
         let client = Client::builder().build()?;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
+        #[cfg(all(not(target_arch = "wasm32"), target_os = "ios"))]
+        let client = {
+            // iOS specific configuration
+            Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent("DashSDK-iOS/1.0")
+                .build()?
+        };
+
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("DashSDK/1.0")
+            .build()?;
 
         Ok(Self {
             network,
@@ -172,6 +185,15 @@ impl TrustedHttpContextProvider {
         known.insert(id, Arc::new(contract));
     }
 
+    /// Add multiple data contracts to the known contracts cache
+    pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
+        let mut known = self.known_contracts.lock().unwrap();
+        for contract in contracts {
+            let id = contract.id();
+            known.insert(id, Arc::new(contract));
+        }
+    }
+
     /// Update the quorum caches by fetching current and previous quorums
     pub async fn update_quorum_caches(&self) -> Result<(), TrustedContextProviderError> {
         // Fetch current quorums
@@ -190,6 +212,23 @@ impl TrustedHttpContextProvider {
         Ok(())
     }
 
+    /// Get the total number of quorums in both caches
+    pub fn get_cached_quorum_count(&self) -> usize {
+        let current_count = self
+            .current_quorums_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+
+        let previous_count = self
+            .previous_quorums_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+
+        current_count + previous_count
+    }
+
     /// Fetch current quorums from the HTTP endpoint
     pub async fn fetch_current_quorums(
         &self,
@@ -197,7 +236,31 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = self.client.get(&url).send().await?;
+        let response = match self.client.get(&url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::error!(error = ?e, url = %url, "HTTP request failed");
+                if let Some(source) = e.source() {
+                    tracing::error!(?source, "Error source");
+                    if let Some(inner) = source.source() {
+                        tracing::error!(?inner, "Inner error");
+                    }
+                }
+
+                // Check for specific error types (connect detection not available across all reqwest versions)
+                if e.is_timeout() {
+                    tracing::error!("Request timeout");
+                } else if e.is_request() {
+                    tracing::error!("Error building the request");
+                } else if e.is_body() {
+                    tracing::error!("Error reading response body");
+                } else if e.is_decode() {
+                    tracing::error!("Error decoding response");
+                }
+
+                return Err(e.into());
+            }
+        };
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {

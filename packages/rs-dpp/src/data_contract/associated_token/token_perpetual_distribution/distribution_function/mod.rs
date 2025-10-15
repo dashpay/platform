@@ -119,10 +119,10 @@ pub enum DistributionFunction {
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
     /// - `start_decreasing_offset`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
-    ///     If this is provided before this number we give out the distribution start amount every interval.
+    ///   If this is provided before this number we give out the distribution start amount every interval.
     /// - `max_interval_count`: The maximum amount of intervals there can be. Can be up to 1024.
-    ///     !!!Very important!!! -> This will default to 128 is default if not set.
-    ///     This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
+    ///   !!!Very important!!! -> This will default to 128 is default if not set.
+    ///   This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
     /// - `distribution_start_amount`: The initial token emission.
     /// - `trailing_distribution_interval_amount`: The token emission after all decreasing intervals.
     /// - `min_value`: Optional minimum emission value.
@@ -524,6 +524,7 @@ pub enum DistributionFunction {
     ///   f(x) = 10000 * ln(5000 / x)
     ///   ```
     /// - Values: a = 10000 n = 5000 m = 1 o = 0 b = 0 d = 0
+    /// ```text
     ///           y
     ///           ↑
     ///          10000 |*
@@ -538,6 +539,7 @@ pub enum DistributionFunction {
     ///           1000 |              *
     ///              0 +-------------------*----------→ x
     ///                  0     2000   4000   6000   8000
+    /// ```
     ///
     ///   - The emission **starts high** and **gradually decreases**, ensuring early adopters receive
     ///     more tokens while later participants still get rewards.

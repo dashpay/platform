@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 pub use {
-    conditions::{WhereClause, WhereOperator},
+    conditions::{ValueClause, WhereClause, WhereOperator},
     grovedb::{PathQuery, Query, QueryItem, SizedQuery},
     ordering::OrderClause,
     single_document_drive_query::SingleDocumentDriveQuery,
@@ -24,10 +24,7 @@ use {
             document_type::{DocumentTypeRef, Index, IndexProperty},
             DataContract,
         },
-        document::{
-            document_methods::DocumentMethodsV0,
-            serialization_traits::DocumentPlatformConversionMethodsV0, Document, DocumentV0Getters,
-        },
+        document::{document_methods::DocumentMethodsV0, Document, DocumentV0Getters},
         platform_value::{btreemap_extensions::BTreeValueRemoveFromMapHelper, Value},
         version::PlatformVersion,
         ProtocolError,
@@ -41,9 +38,11 @@ use {
     std::{collections::BTreeMap, ops::BitXor},
 };
 
-#[cfg(feature = "verify")]
+#[cfg(all(feature = "server", feature = "verify"))]
 use crate::verify::RootHash;
 
+#[cfg(feature = "server")]
+use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
 #[cfg(feature = "server")]
 pub use grovedb::{
     query_result_type::{QueryResultElements, QueryResultType},
@@ -52,6 +51,7 @@ pub use grovedb::{
 
 use dpp::document;
 use dpp::prelude::Identifier;
+use dpp::validation::{SimpleValidationResult, ValidationResult};
 #[cfg(feature = "server")]
 use {
     crate::{drive::Drive, fees::op::LowLevelDriveOperation},
@@ -103,8 +103,8 @@ pub mod vote_polls_by_document_type_query;
 /// It should be implemented by the caller in order to provide data
 /// contract required for operations like proof verification.
 #[cfg(any(feature = "server", feature = "verify"))]
-pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<Option<Arc<DataContract>>, crate::error::Error>
-    + 'a;
+pub type ContractLookupFn<'a> =
+    dyn Fn(&Identifier) -> Result<Option<Arc<DataContract>>, Error> + 'a;
 
 /// Creates a [ContractLookupFn] function that returns provided data contract when requested.
 ///
@@ -120,13 +120,12 @@ pub type ContractLookupFn<'a> = dyn Fn(&dpp::identifier::Identifier) -> Result<O
 pub fn contract_lookup_fn_for_contract<'a>(
     data_contract: Arc<DataContract>,
 ) -> Box<ContractLookupFn<'a>> {
-    let func = move
-        |id: &dpp::identifier::Identifier| -> Result<Option<Arc<DataContract>>, crate::error::Error> {
-            if data_contract.id().ne(id) {
-                return Ok(None);
-            }
-            Ok(Some(Arc::clone(&data_contract)))
-        };
+    let func = move |id: &Identifier| -> Result<Option<Arc<DataContract>>, Error> {
+        if data_contract.id().ne(id) {
+            return Ok(None);
+        }
+        Ok(Some(Arc::clone(&data_contract)))
+    };
     Box::new(func)
 }
 
@@ -148,9 +147,18 @@ pub mod identity_token_balance_drive_query;
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod identity_token_info_drive_query;
 
+/// Document subscription filtering
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod filter;
 /// A query to get the token's status
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod token_status_drive_query;
+
+/// A Query Syntax Validation Result that contains data
+pub type QuerySyntaxValidationResult<TData> = ValidationResult<TData, QuerySyntaxError>;
+
+/// A Query Syntax Validation Result
+pub type QuerySyntaxSimpleValidationResult = SimpleValidationResult<QuerySyntaxError>;
 
 #[cfg(any(feature = "server", feature = "verify"))]
 /// Represents a starting point for a query based on a specific document.
@@ -172,8 +180,9 @@ pub struct StartAtDocument<'a> {
     /// - `false`: The document is excluded, and the query starts from the next matching document.
     pub included: bool,
 }
-#[cfg(any(feature = "server", feature = "verify"))]
+
 /// Internal clauses struct
+#[cfg(any(feature = "server", feature = "verify"))]
 #[derive(Clone, Debug, PartialEq, Default)]
 pub struct InternalClauses {
     /// Primary key in clause
@@ -295,6 +304,114 @@ impl InternalClauses {
                 QuerySyntaxError::InvalidWhereClauseComponents("Query has invalid where clauses"),
             )),
         }
+    }
+
+    /// Validate this collection of InternalClauses against the document schema
+    #[cfg(any(feature = "server", feature = "verify"))]
+    pub fn validate_against_schema(
+        &self,
+        document_type: DocumentTypeRef,
+    ) -> QuerySyntaxSimpleValidationResult {
+        // Basic composition
+        if !self.verify() {
+            return QuerySyntaxSimpleValidationResult::new_with_error(
+                QuerySyntaxError::InvalidWhereClauseComponents(
+                    "invalid composition of where clauses",
+                ),
+            );
+        }
+
+        // Validate in_clause against schema
+        if let Some(in_clause) = &self.in_clause {
+            // Forbid $id in non-primary-key clauses
+            if in_clause.field == "$id" {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                );
+            }
+            let result = in_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
+        }
+
+        // Validate range_clause against schema
+        if let Some(range_clause) = &self.range_clause {
+            // Forbid $id in non-primary-key clauses
+            if range_clause.field == "$id" {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                );
+            }
+            let result = range_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
+        }
+
+        // Validate equal_clauses against schema
+        for (field, eq_clause) in &self.equal_clauses {
+            // Forbid $id in non-primary-key clauses
+            if field.as_str() == "$id" {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "use primary_key_* clauses for $id",
+                    ),
+                );
+            }
+            let result = eq_clause.validate_against_schema(document_type);
+            if !result.is_valid() {
+                return result;
+            }
+        }
+
+        // Validate primary key clauses typing
+        if let Some(pk_eq) = &self.primary_key_equal_clause {
+            if pk_eq.operator != WhereOperator::Equal
+                || !matches!(pk_eq.value, Value::Identifier(_))
+            {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key equality must compare an identifier",
+                    ),
+                );
+            }
+        }
+        if let Some(pk_in) = &self.primary_key_in_clause {
+            if pk_in.operator != WhereOperator::In {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must use IN operator",
+                    ),
+                );
+            }
+            // enforce array shape and no duplicates/size
+            let result = pk_in.in_values();
+            if !result.is_valid() {
+                return QuerySyntaxSimpleValidationResult::new_with_errors(result.errors);
+            }
+            if let Value::Array(arr) = &pk_in.value {
+                if !arr.iter().all(|v| matches!(v, Value::Identifier(_))) {
+                    return QuerySyntaxSimpleValidationResult::new_with_error(
+                        QuerySyntaxError::InvalidWhereClauseComponents(
+                            "primary key IN must contain identifiers",
+                        ),
+                    );
+                }
+            } else {
+                return QuerySyntaxSimpleValidationResult::new_with_error(
+                    QuerySyntaxError::InvalidWhereClauseComponents(
+                        "primary key IN must contain an array of identifiers",
+                    ),
+                );
+            }
+        }
+
+        QuerySyntaxSimpleValidationResult::default()
     }
 }
 
@@ -465,7 +582,7 @@ impl<'a> DriveDocumentQuery<'a> {
     ) -> Result<Self, Error> {
         if let Some(contract_id) = query_document
             .remove_optional_identifier("contract_id")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if contract.id() != contract_id {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -479,7 +596,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         if let Some(document_type_name) = query_document
             .remove_optional_string("document_type_name")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?
         {
             if document_type.name() != &document_type_name {
                 return Err(ProtocolError::IdentifierError(format!(
@@ -493,7 +610,7 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let maybe_limit: Option<u16> = query_document
             .remove_optional_integer("limit")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let limit = maybe_limit
             .map_or(Some(config.default_query_limit), |limit_value| {
@@ -510,11 +627,11 @@ impl<'a> DriveDocumentQuery<'a> {
 
         let offset: Option<u16> = query_document
             .remove_optional_integer("offset")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let block_time_ms: Option<u64> = query_document
             .remove_optional_integer("blockTime")
-            .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))?;
+            .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))?;
 
         let all_where_clauses: Vec<WhereClause> =
             query_document
@@ -565,7 +682,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -581,7 +698,7 @@ impl<'a> DriveDocumentQuery<'a> {
                                 if let Value::Array(clauses_components) = order_clause {
                                     let order_clause =
                                         OrderClause::from_components(&clauses_components)
-                                            .map_err(Error::GroveDB);
+                                            .map_err(Error::from);
                                     match order_clause {
                                         Ok(order_clause) => {
                                             Some(Ok((order_clause.field.clone(), order_clause)))
@@ -846,7 +963,7 @@ impl<'a> DriveDocumentQuery<'a> {
         let start_at: Option<[u8; 32]> = start_option
             .map(|v| {
                 v.into_identifier()
-                    .map_err(|e| Error::Protocol(ProtocolError::ValueError(e)))
+                    .map_err(|e| Error::Protocol(Box::new(ProtocolError::ValueError(e))))
                     .map(|identifier| identifier.into_buffer())
             })
             .transpose()?;
@@ -945,9 +1062,14 @@ impl<'a> DriveDocumentQuery<'a> {
                         drive_version,
                     )
                     .map_err(|e| match e {
-                        Error::GroveDB(GroveError::PathKeyNotFound(_))
-                        | Error::GroveDB(GroveError::PathNotFound(_))
-                        | Error::GroveDB(GroveError::PathParentLayerNotFound(_)) => {
+                        Error::GroveDB(e)
+                            if matches!(
+                                e.as_ref(),
+                                GroveError::PathKeyNotFound(_)
+                                    | GroveError::PathNotFound(_)
+                                    | GroveError::PathParentLayerNotFound(_)
+                            ) =>
+                        {
                             let error_message = if self.start_at_included {
                                 "startAt document not found"
                             } else {
@@ -1002,7 +1124,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 vec![&start_at_path_query, &main_path_query],
                 &platform_version.drive.grove_version,
             )
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
             merged.query.limit = limit.map(|a| a.saturating_add(1));
             Ok(merged)
         } else {
@@ -1111,7 +1233,7 @@ impl<'a> DriveDocumentQuery<'a> {
             };
 
             if let Some(primary_key_in_clause) = &self.internal_clauses.primary_key_in_clause {
-                let in_values = primary_key_in_clause.in_values()?;
+                let in_values = primary_key_in_clause.in_values().into_data_with_error()??;
 
                 match starts_at_key_option {
                     None => {
@@ -1854,7 +1976,7 @@ impl<'a> DriveDocumentQuery<'a> {
                 }
             })
             .collect::<Result<Vec<Vec<u8>>, ProtocolError>>()
-            .map_err(Error::Protocol)?;
+            .map_err(Error::from)?;
 
         let final_query = match last_clause {
             None => {
@@ -2162,9 +2284,16 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => Ok((Vec::new(), 0)),
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
+                Ok((Vec::new(), 0))
+            }
             _ => {
                 let (data, skipped) = query_result?;
                 {
@@ -2199,9 +2328,14 @@ impl<'a> DriveDocumentQuery<'a> {
             &platform_version.drive,
         );
         match query_result {
-            Err(Error::GroveDB(GroveError::PathKeyNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathNotFound(_)))
-            | Err(Error::GroveDB(GroveError::PathParentLayerNotFound(_))) => {
+            Err(Error::GroveDB(e))
+                if matches!(
+                    e.as_ref(),
+                    GroveError::PathKeyNotFound(_)
+                        | GroveError::PathNotFound(_)
+                        | GroveError::PathParentLayerNotFound(_)
+                ) =>
+            {
                 Ok((QueryResultElements::new(), 0))
             }
             _ => {
@@ -2656,7 +2790,10 @@ mod tests {
         // Convert the encoded bytes to a hex string
         let hex_string = hex::encode(encoded);
 
-        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e746974790105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c0010101000101030000000001010000010101000101030000000000010600");
+        // Note: The expected encoding changed due to an upstream GroveDB
+        // serialization update. Keep this value in sync with the current
+        // GroveDB revision pinned in Cargo.toml.
+        assert_eq!(hex_string, "050140201da29f488023e306ff9a680bc9837153fb0778c8ee9c934a87dc0de1d69abd3c010106646f6d61696e107265636f7264732e6964656e74697479010105208dc201fd7ad7905f8a84d66218e2b387daea7fe4739ae0e21e8c3ee755e6a2c00101010001010103000000000001010000010101000101010300000000000000010600");
     }
 
     #[test]
@@ -3083,6 +3220,7 @@ mod tests {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         }
         .into();
 

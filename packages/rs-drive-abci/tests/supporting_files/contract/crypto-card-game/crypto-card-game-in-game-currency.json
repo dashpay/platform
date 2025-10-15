@@ -77,6 +77,14 @@
           ]
         },
         {
+          "name": "creator",
+          "properties": [
+            {
+              "$creatorId": "asc"
+            }
+          ]
+        },
+        {
           "name": "attack",
           "properties": [
             {

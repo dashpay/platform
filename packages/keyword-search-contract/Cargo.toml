@@ -1,7 +1,7 @@
 [package]
 name = "keyword-search-contract"
 description = "Search data contract schema and tools. Keyword Search contract is used to find other contracts and tokens"
-version = "2.0.0"
+version = "2.1.0-dev.8"
 edition = "2021"
 rust-version.workspace = true
 license = "MIT"
@@ -11,3 +11,5 @@ thiserror = "2.0.12"
 platform-version = { path = "../rs-platform-version" }
 serde_json = { version = "1.0" }
 platform-value = { path = "../rs-platform-value" }
+[dev-dependencies]
+base58 = "0.2.0"

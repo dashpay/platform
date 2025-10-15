@@ -32,6 +32,7 @@ jobs:
           # Configure which scopes are allowed (newline-delimited).
           # These are regex patterns auto-wrapped in `^ $`.
           scopes: |
+            sdk
             dapi
             platform
             drive
@@ -39,14 +40,16 @@ jobs:
             dpp
             dashmate
             contract
-            sdk
+            rs-sdk
+            rs-sdk-ffi
+            swift-sdk
             strategy-tests
             simple-signer
             wallet-lib
             test-suite
             bench-suite
             release
-            dash-spv
+            wasm-sdk
           requireScope: false
           # Configure additional validation for the subject based on a regex.
           # This example ensures the subject doesn't start with an uppercase character.

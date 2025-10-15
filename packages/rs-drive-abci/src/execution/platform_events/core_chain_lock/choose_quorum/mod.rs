@@ -2,9 +2,9 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use dpp::dashcore::QuorumHash;
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 
 use std::collections::BTreeMap;
 

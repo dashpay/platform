@@ -1,145 +1,241 @@
-# Dash Platform WASM JS SDK
+# WASM SDK
 
-This package provides WebAssembly bindings for the Dash Platform SDK, allowing JavaScript and TypeScript applications in browsers to interact with Dash Platform.
+Dash Platform WebAssembly SDK for JavaScript and TypeScript. The core is implemented in Rust and compiled to WebAssembly; a thin ESM wrapper exposes a convenient JS API that works in both Node.js and modern browsers.
 
-## Overview
+The SDK provides:
+- Cryptographic utilities: mnemonic generation/validation, key derivation, key pair generation, address validation, message signing.
+- Platform state transitions and queries: identities, documents, data contracts, tokens, groups, epochs/system, voting, proofs (when supported).
+- A builder pattern (`WasmSdkBuilder`) to configure and construct a client for network-backed queries.
 
-The WASM JS SDK provides:
-- **Queries**: Read-only operations to fetch data from Dash Platform
-- **State Transitions**: Write operations to modify state on Dash Platform
+This package ships a single-file ESM build (`dist/sdk.js`) with the Wasm inlined and compiled off the main thread in browsers. Advanced users can also opt into separate raw artifacts under `dist/raw/*`.
+
+---
+
+## Install
+
+From npm (consumer apps):
+
+```bash
+npm install @dashevo/wasm-sdk
+# or
+yarn add @dashevo/wasm-sdk
+```
+
+From this monorepo (contributors):
+
+```bash
+# fast for development
+yarn build
+# or optimized
+yarn run build:release
+```
+
+The package is ESM-only ("type": "module"). In CommonJS, use dynamic import().
+
+---
 
 ## Usage
 
-### Quick Start
+Always call `await init()` once before using the API. It is idempotent and safe to call multiple times.
 
-1. Build the WASM module:
-   ```bash
-   ./build.sh
-   ```
+### Node.js (ESM)
 
-2. Serve the demo application:
-   ```bash
-   python3 -m http.server 8888
-   ```
+```js
+import init, * as sdk from '@dashevo/wasm-sdk';
 
-3. Open http://localhost:8888 in your browser
-
-### Integration
-
-```javascript
-import init, { WasmSdk } from './pkg/wasm_sdk.js';
-
-// Initialize WASM module
+// Initialize Wasm (Node uses an inlined binary; no assets to load)
 await init();
 
-// Create SDK instance
-const transport = { 
-    url: "https://52.12.176.90:1443/", // testnet
-    network: "testnet"
+// Crypto helpers
+const { address } = sdk.generate_key_pair('testnet');
+console.log('Address:', address);
+
+// Optional: enable logs (silent by default)
+await sdk.WasmSdk.setLogLevel('warn'); // or 'info' | 'debug' | full filter
+
+// Platform queries via a client
+let builder = sdk.WasmSdkBuilder.testnetTrusted();
+builder = builder.withSettings(5000, 10000, 3, true);
+const client = await builder.withLogs('warn').build();
+
+const DPNS = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+const docs = await client.getDocuments(DPNS, 'domain', null, null, 5, null, null);
+console.log('Docs:', docs.length);
+
+client.free();
+```
+
+### Browser (bundler, ESM)
+
+```js
+import init, * as sdk from '@dashevo/wasm-sdk';
+
+// Initialize Wasm (browser compiles in a Web Worker; no separate .wasm files)
+await init();
+
+const ok = sdk.validate_address('yXXX...', 'testnet');
+```
+
+### Advanced: raw artifacts (separate .wasm)
+
+If you prefer to manage the `.wasm` file via your bundler, import the raw entry explicitly:
+
+```js
+import init, * as sdk from '@dashevo/wasm-sdk/raw';
+await init(); // wasm-bindgen will resolve and fetch wasm_sdk_bg.wasm
+```
+
+Configure your bundler accordingly. For webpack 5:
+
+```js
+// webpack config
+module.exports = {
+  experiments: { asyncWebAssembly: true },
+  module: { rules: [{ test: /\.wasm$/, type: 'asset/resource' }] },
 };
-const sdk = await WasmSdk.new(transport, true); // true = enable proofs
-
-// Example query
-const identity = await sdk.get_identity("GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec");
 ```
 
-## Documentation
+---
 
-- **[User Documentation](docs.html)**: Comprehensive guide for all queries and state transitions
-- **[AI Reference](AI_REFERENCE.md)**: Quick reference optimized for AI assistants and developers
-- **[Live Demo](index.html)**: Interactive interface to test all SDK functionality
+## How bundling works
 
-## Development
+The publishable build provides two ways to consume the SDK:
 
-### Building
+1) Single file (default): `import '@dashevo/wasm-sdk'`
+- `dist/sdk.js` inlines the Wasm (base64) to avoid asset pipelines and MIME issues.
+- Browser: compiles the inlined bytes in a Web Worker to avoid main-thread stalls and 8MB sync limits; then instantiates on the main thread.
+- Node: uses the inlined bytes with initSync internally; you still call `await init()` for a consistent API.
+- The wrapper imports a sanitized variant of the wasm-bindgen glue so bundlers do not "see" any `new URL('…wasm')` and therefore will not emit a `.wasm` asset.
 
-The SDK requires Rust and wasm-pack:
+2) Raw artifacts (opt-in): `import '@dashevo/wasm-sdk/raw'`
+- `dist/raw/wasm_sdk.js` (unmodified wasm-bindgen output) plus `dist/raw/wasm_sdk_bg.wasm`.
+- Your bundler must serve the `.wasm` with the correct content type and URL rewriting.
+
+Why this design?
+- Eliminate flaky Wasm asset handling in test/dev and simplify consumer setup.
+- Keep an escape hatch for asset-pipeline users.
+
+---
+
+## Build (contributors)
+
+Prerequisites: Rust toolchain, `wasm-pack`, and (optionally) Binaryen for optimized builds.
+
+Commands (run at repo root or inside `packages/wasm-sdk`):
 
 ```bash
-# Install wasm-pack if not already installed
-curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+# Development build (fast)
+yarn workspace @dashevo/wasm-sdk build
 
-# Build the WASM module
-./build.sh
+# Release build (optimized)
+yarn workspace @dashevo/wasm-sdk build:release
 ```
+---
 
-### Documentation
+## Test (contributors)
 
-**IMPORTANT**: Documentation must be kept in sync with `index.html`. When adding or modifying queries/state transitions in `index.html`, you MUST update the documentation:
+Unit tests (Node + browser/Karma):
 
 ```bash
-# Regenerate documentation after changes to index.html
-python3 generate_docs.py
-
-# Check if documentation is up to date
-python3 check_documentation.py
+yarn workspace @dashevo/wasm-sdk test:unit
 ```
 
-The CI will fail if documentation is out of sync with the code.
+Functional tests (networked; some cases may be skipped if offline):
 
-### Adding New Features
+```bash
+yarn workspace @dashevo/wasm-sdk test:functional
+```
 
-1. Add the query/transition definition to `index.html`
-2. Implement the corresponding method in the Rust code
-3. Regenerate documentation: `python3 generate_docs.py`
-4. Test your changes using the web interface
+---
 
-### CI/CD
+## API highlights
 
-This package has automated checks for:
-- Documentation completeness (all queries/transitions must be documented)
-- Documentation freshness (docs must be regenerated when index.html changes)
+Examples (after `await init()`):
 
-The checks run on:
-- Pull requests that modify relevant files
-- Pushes to master and release branches
+```js
+// Addresses & keys
+const { address, private_key_wif } = sdk.generate_key_pair('mainnet');
+sdk.validate_address(address, 'mainnet');
+const addr = sdk.pubkey_to_address('02...pubkeyHex', 'testnet');
 
-## Architecture
+// Mnemonics & derivation
+const m = sdk.generate_mnemonic(12);
+const r = sdk.derive_key_from_seed_with_path(m, undefined, "m/44'/5'/0'/0/0", 'mainnet');
 
-### File Structure
+// Network client
+let b = sdk.WasmSdkBuilder.testnetTrusted();
+const client = await b.withSettings(5000, 10000, 3, true).withLogs('info').build();
+const status = await client.getStatus();
+client.free();
+```
 
-- `src/`: Rust source code
-  - `queries/`: Query implementations
-  - `state_transitions/`: State transition implementations
-  - `sdk.rs`: Main SDK interface
-- `index.html`: Interactive demo and test interface
-- `docs.html`: User-friendly documentation
-- `AI_REFERENCE.md`: Developer/AI reference documentation
-- `generate_docs.py`: Documentation generator
-- `check_documentation.py`: Documentation validation
+The full surface includes identity, document, contract, token, group, epoch/system, and proof helpers.
 
-### Key Concepts
+### Logging
 
-1. **Queries**: Read operations that don't modify state
-   - Identity queries (balance, keys, nonce)
-   - Document queries (with where/orderBy support)
-   - Data contract queries
-   - Token queries
-   - System queries
+By default, the SDK is silent. You can enable tracing logs globally or via the builder:
 
-2. **State Transitions**: Operations that modify platform state
-   - Identity operations (create, update, transfer)
-   - Document operations (create, update, delete)
-   - Token operations (mint, burn, transfer)
-   - Voting operations
+```js
+// Globally
+await sdk.WasmSdk.setLogLevel('info');
 
-3. **Proofs**: Cryptographic proofs can be requested for most queries to verify data authenticity
+// Or on the builder (applies immediately)
+await sdk.WasmSdkBuilder.new_testnet().withLogs('wasm_sdk=debug,rs_dapi_client=warn').build();
+```
 
-## Testing
+Accepted values are simple levels ('off'|'error'|'warn'|'info'|'debug'|'trace') or a full EnvFilter string.
 
-The web interface (`index.html`) provides comprehensive testing capabilities:
-- Network selection (mainnet/testnet)
-- Query execution with parameter validation
-- State transition testing with authentication
-- Proof verification toggle
+---
 
-## Contributing
+## Environment & compatibility
 
-1. Make your changes
-2. Update documentation if needed: `python3 generate_docs.py`
-3. Run tests
-4. Submit a pull request
+- ESM-only package ("type": "module"). Use dynamic import in CJS.
+- Node.js: 16+ recommended (18+ preferred).
+- Browsers: modern engines with WebAssembly + Web Workers.
 
-## License
+---
 
-See the main platform repository for license information.
+## Troubleshooting
+
+- "expected magic word 00 61 73 6d …" in browsers:
+  - Ensure you import the default entry (`@dashevo/wasm-sdk`), not the raw one, unless you have configured Wasm assets.
+  - Always `await init()` before calling functions.
+
+- Karma/webpack serving errors:
+  - Not applicable with the default single-file build. If you opt into `@dashevo/wasm-sdk/raw`, configure a `.wasm` asset rule and correct MIME type.
+
+---
+
+## Contributing & License
+
+This package is part of the Dash Platform monorepo. Follow the repository’s contribution guidelines and do not commit secrets. See the root repository for license details.
+
+---
+
+## State transitions
+
+In addition to read-only queries, the SDK exposes helpers to construct and submit state transitions (requires a networked client and valid inputs):
+
+```js
+import init, * as sdk from '@dashevo/wasm-sdk';
+await init();
+
+const builder = sdk.WasmSdkBuilder.testnetTrusted();
+const client = await builder.build();
+
+// Identity create (example — requires a valid proof and keys)
+const proofJson = JSON.stringify({ /* platform-provided proof object */ });
+const assetLockWif = 'Kx...';
+const pubKeysJson = JSON.stringify([
+  { keyType: 'ECDSA_SECP256K1', purpose: 'AUTHENTICATION', securityLevel: 'MASTER', privateKeyHex: '...' },
+]);
+await sdk.identityCreate(proofJson, assetLockWif, pubKeysJson)
+  .then(() => {/* submitted */})
+  .catch((e) => {/* handle error */});
+
+// Token transfer (negative example if parameters are invalid)
+await sdk.tokenTransfer('contractId', 0, '1000', 'senderIdentityId', 'recipientIdentityId', assetLockWif, null)
+  .catch(() => {});
+
+client.free();
+```

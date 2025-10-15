@@ -38,6 +38,10 @@ pub trait DocumentFromReplaceTransition {
     /// * `created_at` - An optional timestamp indicating when the original document was created.
     /// * `created_at_block_height` - An optional block height indicating when the original document was created.
     /// * `created_at_core_block_height` - An optional core block height indicating when the original document was created.
+    /// * `transferred_at` - An optional timestamp indicating when the document was last transferred.
+    /// * `transferred_at_block_height` - An optional block height indicating when the document was last transferred.
+    /// * `transferred_at_core_block_height` - An optional core block height indicating when the document was last transferred.
+    /// * `creator_id` - An optional `Identifier` of the document's original creator.
     /// * `block_info` - Current block information used for updating document metadata.
     /// * `document_type` - Reference to the document type to ensure compatibility and proper validation.
     /// * `platform_version` - Reference to the current platform version to check for compatibility and apply version-specific logic.
@@ -59,6 +63,7 @@ pub trait DocumentFromReplaceTransition {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -77,6 +82,10 @@ pub trait DocumentFromReplaceTransition {
     /// * `created_at` - An optional timestamp indicating when the original document was created.
     /// * `created_at_block_height` - An optional block height indicating when the original document was created.
     /// * `created_at_core_block_height` - An optional core block height indicating when the original document was created.
+    /// * `transferred_at` - An optional timestamp indicating when the document was last transferred.
+    /// * `transferred_at_block_height` - An optional block height indicating when the document was last transferred.
+    /// * `transferred_at_core_block_height` - An optional core block height indicating when the document was last transferred.
+    /// * `creator_id` - An optional `Identifier` of the document's original creator.
     /// * `block_info` - Current block information used for updating document metadata.
     /// * `document_type` - Reference to the document type to ensure compatibility and proper validation.
     /// * `platform_version` - Reference to the current platform version to check for compatibility and apply version-specific logic.
@@ -98,6 +107,7 @@ pub trait DocumentFromReplaceTransition {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -116,6 +126,7 @@ impl DocumentFromReplaceTransition for Document {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -130,6 +141,7 @@ impl DocumentFromReplaceTransition for Document {
                 transferred_at,
                 transferred_at_block_height,
                 transferred_at_core_block_height,
+                creator_id,
                 block_info,
                 document_type,
                 platform_version,
@@ -146,6 +158,7 @@ impl DocumentFromReplaceTransition for Document {
         transferred_at: Option<TimestampMillis>,
         transferred_at_block_height: Option<BlockHeight>,
         transferred_at_core_block_height: Option<CoreBlockHeight>,
+        creator_id: Option<Identifier>,
         block_info: &BlockInfo,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
@@ -160,6 +173,7 @@ impl DocumentFromReplaceTransition for Document {
                 transferred_at,
                 transferred_at_block_height,
                 transferred_at_core_block_height,
+                creator_id,
                 block_info,
                 document_type,
                 platform_version,

@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Operation application returns drive::Error with rich causes
 mod v0;
 
 use crate::drive::Drive;

@@ -63,7 +63,7 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                             key.as_slice(),
                             platform_version,
                         )
-                        .map_err(Error::Protocol)
+                        .map_err(Error::from)
                 } else if path.len() < result_path_index.unwrap() {
                     Err(Error::Drive(DriveError::CorruptedCodeExecution(
                         "the path length should always be bigger or equal to the result path index",
@@ -79,7 +79,7 @@ impl ResolvedVotePollsByDocumentTypeQuery<'_> {
                             inner_path_value_bytes.as_slice(),
                             platform_version,
                         )
-                        .map_err(Error::Protocol)
+                        .map_err(Error::from)
                 }
             })
             .collect::<Result<Vec<Value>, Error>>()?;

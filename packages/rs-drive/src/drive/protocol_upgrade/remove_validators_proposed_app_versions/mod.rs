@@ -14,13 +14,13 @@ impl Drive {
     /// # Arguments
     ///
     /// * `validator_pro_tx_hashes` - A vector of ProTx hashes representing the validators
-    ///                                whose proposed app versions should be removed.
+    ///   whose proposed app versions should be removed.
     /// * `transaction` - A transaction argument to interact with the underlying storage.
     ///
     /// # Returns
     ///
     /// * `Result<Vec<[u8; 32]>, Error>` - Returns the pro_tx_hashes of validators that were removed,
-    ///                             or an error if an issue was encountered.
+    ///   or an error if an issue was encountered.
     ///
     /// # Errors
     ///

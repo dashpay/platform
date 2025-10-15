@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)] // Errors intentionally carry rich context in verify paths
+                                    // TODO: Revisit after shrinking top-level Error by boxing heavy variants
 ///DataContract verification methods on proofs
 pub mod contract;
 /// Document verification methods on proofs

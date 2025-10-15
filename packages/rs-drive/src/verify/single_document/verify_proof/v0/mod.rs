@@ -44,7 +44,7 @@ impl SingleDocumentDriveQuery {
                 let document = serialized
                     .map(|serialized| {
                         Document::from_bytes(serialized.as_slice(), document_type, platform_version)
-                            .map_err(Error::Protocol)
+                            .map_err(Error::from)
                     })
                     .transpose()?;
                 Ok((root_hash, document))

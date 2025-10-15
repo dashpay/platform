@@ -23,7 +23,7 @@ impl Drive {
     /// - `group_contract_position`: The position of the group within the contract whose actions are to be proven.
     /// - `action_status`: The status of the group actions to prove.
     /// - `start_action_id`: An optional starting action ID, combined with a [`StartAtIncluded`] flag to specify whether
-    ///                      the start position is inclusive.
+    ///   the start position is inclusive.
     /// - `limit`: An optional limit on the number of actions to include in the proof.
     /// - `transaction`: The transaction context for the operation.
     /// - `platform_version`: A reference to the platform version, used to determine the appropriate versioned implementation.
@@ -82,7 +82,7 @@ impl Drive {
     /// - `group_contract_position`: The position of the group within the contract whose actions are to be proven.
     /// - `action_status`: The status of the group actions to prove.
     /// - `start_action_id`: An optional starting action ID, combined with a [`StartAtIncluded`] flag to specify whether
-    ///                      the start position is inclusive.
+    ///   the start position is inclusive.
     /// - `limit`: An optional limit on the number of actions to include in the proof.
     /// - `transaction`: The transaction context for the operation.
     /// - `drive_operations`: A mutable reference to a vector where additional low-level operations can be appended.

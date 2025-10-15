@@ -97,6 +97,7 @@ impl DocumentSetPriceTransitionBuilder {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         });
 
         Self::new(data_contract, document_type_name, document, price)

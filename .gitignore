@@ -33,7 +33,36 @@ node_modules
 
 # Rust build artifacts
 /target
+packages/*/target
 .gitaipconfig
+
+# Swift build artifacts and IDE files
+.build/
+.swiftpm/
+.index-build/
+DerivedData/
+*.xcworkspace
+xcuserdata/
+*.dSYM/
+*.o
+*.swiftdeps
+*.d
+
+# Generated Swift SDK header files
+packages/swift-sdk/Sources/CDashSDKFFI/DashSDKFFI.h
+packages/swift-sdk/generated/DashSDKFFI.h
+
+# Generated Swift SDK files
+packages/swift-sdk/Sources/CDashSDKFFI/librs_sdk_ffi.pc
+packages/swift-sdk/SwiftExampleApp/DashSDK.xcframework/
+packages/swift-sdk/*.xcframework/
+packages/swift-sdk/**/*.xcframework/
+
+# rs-sdk-ffi build directory
+packages/rs-sdk-ffi/build/
+
+# Swift SDK build outputs
+packages/swift-sdk/build_output.txt
 
 # wasm-drive-verify build artifacts
 packages/wasm-drive-verify/target/
@@ -57,4 +86,3 @@ packages/wasm-sdk/extracted_definitions.json
 
 # gRPC coverage report
 grpc-coverage-report.txt
-

@@ -35,7 +35,7 @@ pub struct SplitFeatureVersionOutcome<'a> {
 #[cfg(feature = "cbor")]
 pub fn split_cbor_feature_version(
     message_bytes: &[u8],
-) -> Result<SplitFeatureVersionOutcome, ProtocolError> {
+) -> Result<SplitFeatureVersionOutcome<'_>, ProtocolError> {
     let (feature_version, protocol_version_size) =
         u16::decode_var(message_bytes).ok_or(ConsensusError::BasicError(
             BasicError::ProtocolVersionParsingError(ProtocolVersionParsingError::new(

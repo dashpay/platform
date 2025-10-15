@@ -167,7 +167,7 @@ fn push_drive_operation_result<T>(
     if !cost.is_nothing() {
         drive_operations.push(CalculatedCostOperation(cost));
     }
-    value.map_err(Error::GroveDB)
+    value.map_err(Error::from)
 }
 
 /// Pushes an operation's `OperationCost` to `drive_operations` given its `CostContext`
@@ -180,7 +180,7 @@ fn push_drive_operation_result_optional<T>(
     if let Some(drive_operations) = drive_operations {
         drive_operations.push(CalculatedCostOperation(cost));
     }
-    value.map_err(Error::GroveDB)
+    value.map_err(Error::from)
 }
 /// Is subtree?
 pub type IsSubTree = bool;
