@@ -1,7 +1,6 @@
 //! Merkle proof generation for Identity keys
 //!
-//! This module provides functionality to generate merkle proofs for identity keys,
-//! which are useful for zero-knowledge proof applications.
+//! This module provides functionality to generate merkle proofs for identity keys
 
 use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
