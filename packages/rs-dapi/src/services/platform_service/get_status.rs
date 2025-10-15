@@ -53,12 +53,12 @@ impl PlatformServiceImpl {
         use crate::cache::make_cache_key;
         use std::time::Duration;
 
-        // Build cache key and try TTL cache first (3 minutes)
+        // Cache status response, just to avoid hammering Drive and Tenderdash
         let key = make_cache_key("get_status", request.get_ref());
         trace!(?key, "get_status cache lookup");
         if let Some(mut cached) = self
             .platform_cache
-            .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(30))
+            .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(10))
         {
             trace!(?key, "get_status cache hit");
             // Refresh local time to current instant like JS implementation
