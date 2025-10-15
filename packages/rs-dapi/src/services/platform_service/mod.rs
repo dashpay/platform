@@ -18,8 +18,6 @@ use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
-use tokio::task::JoinSet;
 use tracing::{debug, info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
@@ -106,6 +104,7 @@ use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
 use crate::services::streaming_service::FilterType;
+use crate::sync::Workers;
 
 /// Platform service implementation with modular method delegation
 #[derive(Clone)]
@@ -116,7 +115,7 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
-    workers: Arc<Mutex<JoinSet<()>>>,
+    workers: Workers,
 }
 
 impl PlatformServiceImpl {
@@ -128,7 +127,7 @@ impl PlatformServiceImpl {
         config: Arc<Config>,
         subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
-        let mut workers = JoinSet::new();
+        let mut workers = Workers::new();
         // Create WebSocket client
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(
             config.dapi.tenderdash.websocket_uri.clone(),
@@ -159,7 +158,7 @@ impl PlatformServiceImpl {
                 invalidation_subscription,
             ),
             subscriber_manager,
-            workers: Arc::new(Mutex::new(workers)),
+            workers,
         }
     }
 }
