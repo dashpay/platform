@@ -1,7 +1,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tracing::info;
+use tracing::{info, trace};
 
 use axum::http::{HeaderMap, Request, Response};
 use dapi_grpc::core::v0::core_server::CoreServer;
@@ -59,7 +59,7 @@ impl DapiServer {
             Either::Right(Identity::new())
         };
 
-        // Stack layers: timeout -> access log -> metrics
+        // Stack layers (execution order: metrics -> access log -> timeout)
         let combined_layer = Stack::new(Stack::new(timeout_layer, access_layer), metrics_layer);
         let mut builder = builder.layer(combined_layer);
 
@@ -161,21 +161,26 @@ where
     fn call(&mut self, req: Request<ReqBody>) -> Self::Future {
         let path = req.uri().path().to_owned();
         let default_timeout = self.config.timeout_for_method(&path);
-        let inbound_deadline = parse_grpc_timeout_header(req.headers())
-            .and_then(|d| d.checked_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN));
-        let effective_timeout = if let Some(budget) = inbound_deadline {
-            let timeout = budget.min(default_timeout);
-            tracing::trace!(
-                method = path.as_str(),
-                ?budget,
-                effective_timeout = ?timeout,
-                default_timeout = ?default_timeout,
-                "Applying inbound grpc-timeout budget"
+        let timeout_from_header = parse_grpc_timeout_header(req.headers());
+        let effective_timeout = timeout_from_header
+            .and_then(|d| d.checked_sub(GRPC_REQUEST_TIME_SAFETY_MARGIN))
+            .unwrap_or(default_timeout)
+            .min(default_timeout);
+
+        if timeout_from_header.is_some() {
+            trace!(
+                path,
+                header_timeout = timeout_from_header.unwrap_or_default().as_secs_f32(),
+                timeout = effective_timeout.as_secs_f32(),
+                "Applying gRPC timeout from header"
             );
-            timeout
         } else {
-            default_timeout
-        };
+            tracing::trace!(
+                path,
+                timeout = effective_timeout.as_secs_f32(),
+                "Applying default gRPC timeout"
+            );
+        }
 
         Box::pin(tower::timeout::Timeout::new(self.inner.clone(), effective_timeout).call(req))
     }
