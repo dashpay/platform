@@ -1,16 +1,17 @@
+use crate::IdentityManager;
 use key_wallet::wallet::ManagedWalletInfo;
 use key_wallet::Network;
-use crate::IdentityManager;
 use std::collections::BTreeMap;
+use std::fmt;
 
-mod wallet_info_interface;
 mod accessors;
-mod wallet_transaction_checker;
-mod managed_account_operations;
 mod contact_requests;
+mod managed_account_operations;
+mod wallet_info_interface;
+mod wallet_transaction_checker;
 
 /// Platform wallet information that extends ManagedWalletInfo with identity support
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PlatformWalletInfo {
     /// The underlying managed wallet info
     pub wallet_info: ManagedWalletInfo,
@@ -41,11 +42,20 @@ impl PlatformWalletInfo {
     }
 }
 
+impl fmt::Debug for PlatformWalletInfo {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PlatformWalletInfo")
+            .field("wallet_info", &self.wallet_info)
+            .field("identity_managers", &self.identity_managers)
+            .finish()
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use crate::platform_wallet_info::PlatformWalletInfo;
     use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
     use key_wallet::Network;
-    use crate::platform_wallet_info::PlatformWalletInfo;
 
     #[test]
     fn test_platform_wallet_creation() {

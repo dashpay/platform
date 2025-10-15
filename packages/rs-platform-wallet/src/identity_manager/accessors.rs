@@ -1,8 +1,8 @@
 //! Accessor methods for IdentityManager
 
 use super::IdentityManager;
-use crate::managed_identity::ManagedIdentity;
 use crate::error::PlatformWalletError;
+use crate::managed_identity::ManagedIdentity;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::Identity;
 use dpp::prelude::Identifier;

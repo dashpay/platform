@@ -1,7 +1,7 @@
+use crate::platform_wallet_info::PlatformWalletInfo;
+use dashcore::Network;
 use key_wallet::wallet::managed_wallet_info::ManagedAccountOperations;
 use key_wallet::{AccountType, ExtendedPubKey, Wallet};
-use dashcore::Network;
-use crate::platform_wallet_info::PlatformWalletInfo;
 
 /// Implement ManagedAccountOperations for PlatformWalletInfo
 impl ManagedAccountOperations for PlatformWalletInfo {

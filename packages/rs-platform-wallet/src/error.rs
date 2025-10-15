@@ -21,4 +21,24 @@ pub enum PlatformWalletError {
 
     #[error("No accounts found for network: {0:?}")]
     NoAccountsForNetwork(Network),
+
+    #[error(
+        "DashPay receiving account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
+    )]
+    DashpayReceivingAccountAlreadyExists {
+        identity: Identifier,
+        contact: Identifier,
+        network: Network,
+        account_index: u32,
+    },
+
+    #[error(
+        "DashPay external account already exists for identity {identity} with contact {contact} on network {network:?} (account index {account_index})"
+    )]
+    DashpayExternalAccountAlreadyExists {
+        identity: Identifier,
+        contact: Identifier,
+        network: Network,
+        account_index: u32,
+    },
 }

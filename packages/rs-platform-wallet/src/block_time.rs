@@ -33,11 +33,7 @@ impl BlockTime {
     }
 
     /// Check if this block time is older than a given age in milliseconds
-    pub fn is_older_than(
-        &self,
-        current_timestamp: TimestampMillis,
-        max_age_millis: u64,
-    ) -> bool {
+    pub fn is_older_than(&self, current_timestamp: TimestampMillis, max_age_millis: u64) -> bool {
         (current_timestamp - self.timestamp) > max_age_millis
     }
 }

@@ -9,11 +9,11 @@ use dpp::prelude::Identifier;
 use std::collections::BTreeMap;
 
 // Import implementation modules
+mod contact_requests;
+mod contacts;
 mod identity_ops;
 mod label;
 mod sync;
-mod contacts;
-mod contact_requests;
 
 /// A managed identity that combines an Identity with wallet-specific metadata
 #[derive(Debug, Clone)]
@@ -95,10 +95,7 @@ mod tests {
             100000
         );
         assert_eq!(
-            managed
-                .last_updated_balance_block_time
-                .unwrap()
-                .core_height,
+            managed.last_updated_balance_block_time.unwrap().core_height,
             900000
         );
         assert_eq!(

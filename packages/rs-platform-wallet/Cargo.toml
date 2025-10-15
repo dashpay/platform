@@ -24,6 +24,14 @@ thiserror = "1.0"
 # Collections
 indexmap = "2.0"
 
+# Cryptography
+aes = "0.8"
+cbc = "0.1"
+sha2 = "0.10"
+
+[dev-dependencies]
+rand = "0.8"
+
 
 [features]
 default = ["bls", "eddsa", "manager"]

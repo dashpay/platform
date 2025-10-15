@@ -1,10 +1,10 @@
-use indexmap::IndexMap;
-use dpp::identifier::Identifier;
-use dpp::identity::Identity;
-use key_wallet::Network;
-use crate::ManagedIdentity;
 use crate::error::PlatformWalletError;
 use crate::platform_wallet_info::PlatformWalletInfo;
+use crate::ManagedIdentity;
+use dpp::identifier::Identifier;
+use dpp::identity::Identity;
+use indexmap::IndexMap;
+use key_wallet::Network;
 
 impl PlatformWalletInfo {
     /// Get all identities associated with this wallet for a specific network
@@ -15,13 +15,20 @@ impl PlatformWalletInfo {
     }
 
     /// Get direct access to managed identities for a specific network
-    pub fn managed_identities(&self, network: Network) -> Option<&IndexMap<Identifier, ManagedIdentity>> {
+    pub fn managed_identities(
+        &self,
+        network: Network,
+    ) -> Option<&IndexMap<Identifier, ManagedIdentity>> {
         self.identity_manager(network)
             .map(|manager| &manager.identities)
     }
 
     /// Add an identity to this wallet for a specific network
-    pub fn add_identity(&mut self, network: Network, identity: Identity) -> Result<(), PlatformWalletError> {
+    pub fn add_identity(
+        &mut self,
+        network: Network,
+        identity: Identity,
+    ) -> Result<(), PlatformWalletError> {
         self.identity_manager_mut(network).add_identity(identity)
     }
 
@@ -37,7 +44,8 @@ impl PlatformWalletInfo {
         network: Network,
         identity_id: &Identifier,
     ) -> Result<Identity, PlatformWalletError> {
-        self.identity_manager_mut(network).remove_identity(identity_id)
+        self.identity_manager_mut(network)
+            .remove_identity(identity_id)
     }
 
     /// Get the primary identity for a specific network (if set)
@@ -52,6 +60,7 @@ impl PlatformWalletInfo {
         network: Network,
         identity_id: Identifier,
     ) -> Result<(), PlatformWalletError> {
-        self.identity_manager_mut(network).set_primary_identity(identity_id)
+        self.identity_manager_mut(network)
+            .set_primary_identity(identity_id)
     }
 }

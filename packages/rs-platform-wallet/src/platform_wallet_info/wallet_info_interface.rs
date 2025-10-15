@@ -1,13 +1,17 @@
-use std::collections::{BTreeSet, BTreeMap};
-use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
-use key_wallet::{Utxo, Wallet, WalletBalance};
-use key_wallet::wallet::ManagedWalletInfo;
+use crate::platform_wallet_info::PlatformWalletInfo;
 use dashcore::{Address as DashAddress, Address, Network, Transaction};
 use key_wallet::account::{ManagedAccountCollection, TransactionRecord};
-use key_wallet::wallet::immature_transaction::{ImmatureTransaction, ImmatureTransactionCollection};
-use key_wallet::wallet::managed_wallet_info::transaction_building::{AccountTypePreference, TransactionError};
+use key_wallet::wallet::immature_transaction::{
+    ImmatureTransaction, ImmatureTransactionCollection,
+};
 use key_wallet::wallet::managed_wallet_info::fee::FeeLevel;
-use crate::platform_wallet_info::PlatformWalletInfo;
+use key_wallet::wallet::managed_wallet_info::transaction_building::{
+    AccountTypePreference, TransactionError,
+};
+use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::wallet::ManagedWalletInfo;
+use key_wallet::{Utxo, Wallet, WalletBalance};
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Implement WalletInfoInterface for PlatformWalletInfo
 impl WalletInfoInterface for PlatformWalletInfo {

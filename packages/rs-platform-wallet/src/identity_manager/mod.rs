@@ -8,8 +8,8 @@ use dpp::prelude::Identifier;
 use indexmap::IndexMap;
 
 // Import implementation modules
-mod initializers;
 mod accessors;
+mod initializers;
 
 /// Manages identities for a platform wallet
 #[derive(Debug, Clone, Default)]

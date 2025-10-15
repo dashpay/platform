@@ -1,6 +1,7 @@
 //! Example demonstrating basic usage of PlatformWalletInfo
 
 use key_wallet::wallet::managed_wallet_info::wallet_info_interface::WalletInfoInterface;
+use key_wallet::Network;
 use platform_wallet::error::PlatformWalletError;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 
@@ -13,10 +14,11 @@ fn main() -> Result<(), PlatformWalletError> {
 
     // You can manage identities
     // In a real application, you would load identities from the platform
-    println!("Total identities: {}", platform_wallet.identities().len());
+    let network = Network::Testnet;
     println!(
-        "Total credit balance: {}",
-        platform_wallet.identity_manager.total_credit_balance()
+        "Total identities on {:?}: {}",
+        network,
+        platform_wallet.identities(network).len()
     );
 
     // The platform wallet can be used with WalletManager (requires "manager" feature)
