@@ -6,91 +6,6 @@ package org.dash.platform.dapi.v0;
 
 import "google/protobuf/timestamp.proto";
 
-// Platform events streaming (v0)
-message PlatformEventsCommand {
-  message PlatformEventsCommandV0 {
-    oneof command {
-      AddSubscriptionV0 add = 1;
-      RemoveSubscriptionV0 remove = 2;
-    }
-  }
-  oneof version { PlatformEventsCommandV0 v0 = 1; }
-}
-
-message PlatformEventsResponse {
-  message PlatformEventsResponseV0 {
-    oneof response {
-      PlatformEventMessageV0 event = 1;
-      AckV0 ack = 2;
-      PlatformErrorV0 error = 3;
-    }
-  }
-  oneof version { PlatformEventsResponseV0 v0 = 1; }
-}
-
-message AddSubscriptionV0 {
-  string client_subscription_id = 1;
-  PlatformFilterV0 filter = 2;
-}
-
-message RemoveSubscriptionV0 { 
-  string client_subscription_id = 1; 
-}
-
-message AckV0 {
-  string client_subscription_id = 1;
-  string op = 2; // "add" | "remove"
-}
-
-message PlatformErrorV0 {
-  string client_subscription_id = 1;
-  uint32 code = 2;
-  string message = 3;
-}
-
-message PlatformEventMessageV0 {
-  string client_subscription_id = 1;
-  PlatformEventV0 event = 2;
-}
-
-// Initial placeholder filter and event to be refined during integration
-// Filter for StateTransitionResult events
-message StateTransitionResultFilter {
-  // When set, only match StateTransitionResult events for this tx hash.
-  optional bytes tx_hash = 1;
-}
-
-message PlatformFilterV0 {
-  oneof kind {
-    bool all = 1; // subscribe to all platform events
-    bool block_committed = 2; // subscribe to BlockCommitted events only
-    StateTransitionResultFilter state_transition_result = 3; // subscribe to StateTransitionResult events (optionally filtered by tx_hash)
-  }
-}
-
-message PlatformEventV0 {
-  message BlockMetadata {
-    uint64 height = 1 [ jstype = JS_STRING ];
-    uint64 time_ms = 2 [ jstype = JS_STRING ];
-    bytes block_id_hash = 3;
-  }
-
-  message BlockCommitted {
-    BlockMetadata meta = 1;
-    uint32 tx_count = 2;
-  }
-
-  message StateTransitionFinalized {
-    BlockMetadata meta = 1;
-    bytes tx_hash = 2;
-  }
-
-  oneof event {
-    BlockCommitted block_committed = 1;
-    StateTransitionFinalized state_transition_finalized = 2;
-  }
-}
-
 service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
@@ -122,7 +37,8 @@ service Platform {
   rpc getDocuments(GetDocumentsRequest) returns (GetDocumentsResponse);
   rpc getIdentityByPublicKeyHash(GetIdentityByPublicKeyHashRequest)
       returns (GetIdentityByPublicKeyHashResponse);
-  rpc getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest)
+  rpc getIdentityByNonUniquePublicKeyHash(
+      GetIdentityByNonUniquePublicKeyHashRequest)
       returns (GetIdentityByNonUniquePublicKeyHashResponse);
   rpc waitForStateTransitionResult(WaitForStateTransitionResultRequest)
       returns (WaitForStateTransitionResultResponse);
@@ -134,7 +50,8 @@ service Platform {
       GetProtocolVersionUpgradeVoteStatusRequest)
       returns (GetProtocolVersionUpgradeVoteStatusResponse);
   rpc getEpochsInfo(GetEpochsInfoRequest) returns (GetEpochsInfoResponse);
-  rpc getFinalizedEpochInfos(GetFinalizedEpochInfosRequest) returns (GetFinalizedEpochInfosResponse);
+  rpc getFinalizedEpochInfos(GetFinalizedEpochInfosRequest)
+      returns (GetFinalizedEpochInfosResponse);
   // What votes are currently happening for a specific contested index
   rpc getContestedResources(GetContestedResourcesRequest)
       returns (GetContestedResourcesResponse);
@@ -187,10 +104,6 @@ service Platform {
   rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
   rpc getGroupActionSigners(GetGroupActionSignersRequest)
       returns (GetGroupActionSignersResponse);
-
-  // Bi-directional stream for multiplexed platform events subscriptions
-  rpc SubscribePlatformEvents(stream PlatformEventsCommand)
-      returns (stream PlatformEventsResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses
@@ -700,9 +613,7 @@ message GetIdentityByNonUniquePublicKeyHashRequest {
 
 message GetIdentityByNonUniquePublicKeyHashResponse {
   message GetIdentityByNonUniquePublicKeyHashResponseV0 {
-    message IdentityResponse {
-      optional bytes identity = 1;
-    }
+    message IdentityResponse { optional bytes identity = 1; }
 
     message IdentityProvedResponse {
       Proof grovedb_identity_public_key_hash_proof = 1;
@@ -713,7 +624,7 @@ message GetIdentityByNonUniquePublicKeyHashResponse {
       IdentityProvedResponse proof = 2;
     }
 
-    ResponseMetadata metadata = 3;  // Metadata about the blockchain state
+    ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
   oneof version { GetIdentityByNonUniquePublicKeyHashResponseV0 v0 = 1; }
 }
@@ -890,11 +801,11 @@ message GetEpochsInfoResponse {
 
 message GetFinalizedEpochInfosRequest {
   message GetFinalizedEpochInfosRequestV0 {
-    uint32 start_epoch_index = 1;          // The starting epoch index
-    bool start_epoch_index_included = 2;   // Whether to include the start epoch
-    uint32 end_epoch_index = 3;            // The ending epoch index  
-    bool end_epoch_index_included = 4;     // Whether to include the end epoch
-    bool prove = 5;                        // Flag to request a proof as the response
+    uint32 start_epoch_index = 1;        // The starting epoch index
+    bool start_epoch_index_included = 2; // Whether to include the start epoch
+    uint32 end_epoch_index = 3;          // The ending epoch index
+    bool end_epoch_index_included = 4;   // Whether to include the end epoch
+    bool prove = 5; // Flag to request a proof as the response
   }
 
   oneof version { GetFinalizedEpochInfosRequestV0 v0 = 1; }
@@ -902,9 +813,10 @@ message GetFinalizedEpochInfosRequest {
 
 message GetFinalizedEpochInfosResponse {
   message GetFinalizedEpochInfosResponseV0 {
-    // FinalizedEpochInfos holds a collection of finalized epoch information entries
+    // FinalizedEpochInfos holds a collection of finalized epoch information
+    // entries
     message FinalizedEpochInfos {
-      repeated FinalizedEpochInfo finalized_epoch_infos = 
+      repeated FinalizedEpochInfo finalized_epoch_infos =
           1; // List of finalized information for each requested epoch
     }
 
@@ -913,15 +825,17 @@ message GetFinalizedEpochInfosResponse {
       uint32 number = 1; // The number of the epoch
       uint64 first_block_height = 2
           [ jstype = JS_STRING ]; // The height of the first block in this epoch
-      uint32 first_core_block_height = 
+      uint32 first_core_block_height =
           3; // The height of the first Core block in this epoch
       uint64 first_block_time = 4
-          [ jstype = JS_STRING ]; // The timestamp of the first block (milliseconds)
-      double fee_multiplier = 5;  // The fee multiplier (converted from permille)
+          [ jstype =
+                JS_STRING ]; // The timestamp of the first block (milliseconds)
+      double fee_multiplier = 5; // The fee multiplier (converted from permille)
       uint32 protocol_version = 6; // The protocol version for this epoch
       uint64 total_blocks_in_epoch = 7
           [ jstype = JS_STRING ]; // Total number of blocks in the epoch
-      uint32 next_epoch_start_core_block_height = 8; // Core block height where next epoch starts
+      uint32 next_epoch_start_core_block_height =
+          8; // Core block height where next epoch starts
       uint64 total_processing_fees = 9
           [ jstype = JS_STRING ]; // Total processing fees collected
       uint64 total_distributed_storage_fees = 10
@@ -930,20 +844,21 @@ message GetFinalizedEpochInfosResponse {
           [ jstype = JS_STRING ]; // Total storage fees created
       uint64 core_block_rewards = 12
           [ jstype = JS_STRING ]; // Rewards from core blocks
-      repeated BlockProposer block_proposers = 13; // List of block proposers and their counts
+      repeated BlockProposer block_proposers =
+          13; // List of block proposers and their counts
     }
 
     // BlockProposer represents a block proposer and their block count
     message BlockProposer {
-      bytes proposer_id = 1; // The proposer's identifier
+      bytes proposer_id = 1;  // The proposer's identifier
       uint32 block_count = 2; // Number of blocks proposed
     }
 
     oneof result {
-      FinalizedEpochInfos epochs = 
+      FinalizedEpochInfos epochs =
           1; // The actual finalized information about the requested epochs
-      Proof proof = 
-          2; // Cryptographic proof of the finalized epoch information, if requested
+      Proof proof = 2; // Cryptographic proof of the finalized epoch
+                       // information, if requested
     }
     ResponseMetadata metadata = 3; // Metadata about the blockchain state
   }
@@ -1545,7 +1460,6 @@ message GetTokenDirectPurchasePricesRequest {
   oneof version { GetTokenDirectPurchasePricesRequestV0 v0 = 1; }
 }
 
-
 // Response to GetTokenDirectPurchasePricesRequest, containing information about
 // direct purchase prices defined for requested token IDs.
 message GetTokenDirectPurchasePricesResponse {
@@ -1606,9 +1520,7 @@ message GetTokenContractInfoRequest {
     bool prove = 2;
   }
 
-  oneof version {
-    GetTokenContractInfoRequestV0 v0 = 1;
-  }
+  oneof version { GetTokenContractInfoRequestV0 v0 = 1; }
 }
 
 // Response to GetTokenContractInfoRequest.
@@ -1635,9 +1547,7 @@ message GetTokenContractInfoResponse {
     ResponseMetadata metadata = 3;
   }
 
-  oneof version {
-    GetTokenContractInfoResponseV0 v0 = 1;
-  }
+  oneof version { GetTokenContractInfoResponseV0 v0 = 1; }
 }
 
 message GetTokenPreProgrammedDistributionsRequest {
@@ -1694,15 +1604,16 @@ message GetTokenPerpetualDistributionLastClaimRequest {
 
   message GetTokenPerpetualDistributionLastClaimRequestV0 {
     // 32‑byte token identifier
-    bytes token_id   = 1;
+    bytes token_id = 1;
 
-    // This should be set if you wish to get back the last claim info as a specific type
+    // This should be set if you wish to get back the last claim info as a
+    // specific type
     optional ContractTokenInfo contract_info = 2;
 
     // Identity whose last‑claim timestamp is requested
     bytes identity_id = 4;
     // Return GroveDB / signature proof instead of raw value
-    bool  prove       = 5;
+    bool prove = 5;
   }
 
   oneof version { GetTokenPerpetualDistributionLastClaimRequestV0 v0 = 1; }
@@ -1715,17 +1626,17 @@ message GetTokenPerpetualDistributionLastClaimResponse {
       oneof paid_at {
         uint64 timestamp_ms = 1 [ jstype = JS_STRING ]; // Unix epoch, ms
         uint64 block_height = 2 [ jstype = JS_STRING ]; // Core‑block height
-        uint32 epoch        = 3;                       // Epoch index
-        bytes  raw_bytes    = 4;                       // Arbitrary encoding
+        uint32 epoch = 3;                               // Epoch index
+        bytes raw_bytes = 4;                            // Arbitrary encoding
       }
     }
 
     oneof result {
       LastClaimInfo last_claim = 1; // Direct answer
-      Proof         proof      = 2; // GroveDB / quorum proof
+      Proof proof = 2;              // GroveDB / quorum proof
     }
 
-    ResponseMetadata metadata = 3;  // Chain context
+    ResponseMetadata metadata = 3; // Chain context
   }
 
   oneof version { GetTokenPerpetualDistributionLastClaimResponseV0 v0 = 1; }
@@ -1736,7 +1647,7 @@ message GetTokenTotalSupplyRequest {
     bytes token_id = 1;
     bool prove = 2;
   }
-  oneof version {GetTokenTotalSupplyRequestV0 v0 = 1;}
+  oneof version { GetTokenTotalSupplyRequestV0 v0 = 1; }
 }
 
 message GetTokenTotalSupplyResponse {

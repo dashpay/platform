@@ -47,17 +47,15 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
-    PlatformEventsCommand, PlatformEventsResponse, WaitForStateTransitionResultRequest,
-    WaitForStateTransitionResultResponse,
+    WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
-use dapi_grpc::tonic::{Code, Request, Response, Status, Streaming};
+use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use std::thread::sleep;
 use std::time::Duration;
-use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
 
 /// Service to handle platform queries
@@ -256,14 +254,6 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
 
 #[async_trait]
 impl PlatformService for QueryService {
-    type SubscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
-    async fn subscribe_platform_events(
-        &self,
-        _request: Request<Streaming<PlatformEventsCommand>>,
-    ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
-        respond_with_unimplemented("subscribe_platform_events")
-    }
-
     async fn broadcast_state_transition(
         &self,
         _request: Request<BroadcastStateTransitionRequest>,
