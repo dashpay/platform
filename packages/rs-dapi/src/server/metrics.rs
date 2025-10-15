@@ -7,8 +7,7 @@ use tracing::info;
 use crate::error::DAPIResult;
 use crate::logging::middleware::AccessLogLayer;
 
-use super::DapiServer;
-use super::state::MetricsAppState;
+use super::{DapiServer, state::MetricsAppState};
 
 impl DapiServer {
     /// Launch the health and Prometheus metrics server if configured.

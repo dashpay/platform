@@ -88,10 +88,7 @@ impl Workers {
             let _metrics_guard = metrics_guard;
             match fut.await {
                 Ok(_) => Ok(()),
-                Err(e) => {
-                    tracing::error!(error=?e, "Worker task failed");
-                    Err(e.into())
-                }
+                Err(e) => Err(e.into()),
             }
         };
 

@@ -93,7 +93,7 @@ impl DriveClient {
     /// the Drive service is reachable and responding correctly.
     pub async fn new(uri: &str) -> Result<Self, tonic::Status> {
         info!("Creating Drive client for: {}", uri);
-        let channel = Self::create_channel(uri).await?;
+        let channel = Self::create_channel(uri)?;
 
         // Configure clients with larger message sizes.
         // Compression (gzip) is intentionally DISABLED at rs-dapi level; Envoy handles it.
@@ -111,34 +111,31 @@ impl DriveClient {
                 .max_encoding_message_size(MAX_ENCODING_BYTES),
         };
 
-        // Validate connection by making a test status call
+        // Validate connection by making a test status call.
+        // Failures are logged but do not prevent server startup; a background task will retry.
         trace!("Validating Drive connection at: {}", uri);
         let test_request = GetStatusRequest { version: None };
         match client.get_drive_status(&test_request).await {
             Ok(_) => {
                 debug!("Drive connection validated successfully");
-                Ok(client)
             }
             Err(e) => {
                 error!("Failed to validate Drive connection: {}", e);
-                Err(e)
             }
         }
+
+        Ok(client)
     }
 
     /// Build a traced gRPC channel to Drive with error normalization.
-    async fn create_channel(uri: &str) -> Result<DriveChannel, tonic::Status> {
-        let raw_channel = dapi_grpc::tonic::transport::Endpoint::from_shared(uri.to_string())
+    fn create_channel(uri: &str) -> Result<DriveChannel, tonic::Status> {
+        let endpoint = dapi_grpc::tonic::transport::Endpoint::from_shared(uri.to_string())
             .map_err(|e| {
                 error!("Invalid Drive service URI {}: {}", uri, e);
                 tonic::Status::invalid_argument(format!("Invalid URI: {}", e))
-            })?
-            .connect()
-            .await
-            .map_err(|e| {
-                error!("Failed to connect to Drive service at {}: {}", uri, e);
-                tonic::Status::unavailable(format!("Connection failed: {}", e))
             })?;
+
+        let raw_channel = endpoint.connect_lazy();
 
         let channel: Trace<
             tonic::transport::Channel,
