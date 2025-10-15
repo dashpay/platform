@@ -13,7 +13,6 @@ use serde_json::Value;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, trace};
 
 #[derive(Debug, Clone)]
@@ -32,7 +31,6 @@ pub struct TenderdashClient {
     client: ClientWithMiddleware,
     base_url: String,
     websocket_client: Option<Arc<TenderdashWebSocketClient>>,
-    workers: crate::sync::Workers,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -407,52 +405,15 @@ impl TenderdashClient {
             client,
             base_url: uri.to_string(),
             websocket_client: Some(websocket_client.clone()),
-            workers: Default::default(),
         };
 
         // Validate HTTP connection. Failures are logged but do not abort startup.
         if let Err(e) = tenderdash_client.validate_connection().await {
             error!(
                 error = %e,
-                "Tenderdash HTTP connection validation failed; continuing with retry loop"
+                "Tenderdash HTTP connection validation failed; will retry in background"
             );
         }
-
-        // Validate WebSocket connection. Failures trigger retries via background worker.
-        match TenderdashWebSocketClient::test_connection(ws_uri).await {
-            Ok(_) => {
-                info!("Tenderdash WebSocket connection validated successfully");
-            }
-            Err(e) => {
-                error!(
-                    error = %e,
-                    ws_uri = %ws_uri,
-                    "Tenderdash WebSocket validation failed; continuing with retry loop"
-                );
-            }
-        };
-
-        // Start listening for WebSocket events with automatic retries.
-        tenderdash_client.workers.spawn(async move {
-            loop {
-                match websocket_client.connect_and_listen().await {
-                    Ok(_) => {
-                        info!("Tenderdash WebSocket listener exited; reconnecting in 10 seconds");
-                    }
-                    Err(e) => {
-                        error!(
-                            error = %e,
-                            retry_in_secs = 10,
-                            "Tenderdash WebSocket listener error"
-                        );
-                    }
-                }
-
-                sleep(Duration::from_secs(10)).await;
-            }
-            #[allow(unreachable_code)]
-            Ok::<(), DapiError>(())
-        });
 
         Ok(tenderdash_client)
     }

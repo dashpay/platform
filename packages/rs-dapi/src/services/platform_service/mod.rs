@@ -17,6 +17,8 @@ use std::any::type_name_of_val;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{info, trace, warn};
 
 pub use error_mapping::TenderdashStatus;
@@ -81,6 +83,7 @@ macro_rules! drive_method {
         }
     };
 }
+use crate::DapiError;
 use crate::clients::tenderdash_client::TenderdashClient;
 use crate::clients::tenderdash_websocket::TenderdashWebSocketClient;
 use crate::config::Config;
@@ -116,10 +119,29 @@ impl PlatformServiceImpl {
             config.dapi.tenderdash.websocket_uri.clone(),
             1000,
         ));
-        {
-            let ws: Arc<TenderdashWebSocketClient> = websocket_client.clone();
-            workers.spawn(async move { ws.connect_and_listen().await });
-        }
+
+        let ws: Arc<TenderdashWebSocketClient> = websocket_client.clone();
+        // Start listening for WebSocket events with automatic retries.
+        workers.spawn(async move {
+            loop {
+                match ws.connect_and_listen().await {
+                    Ok(_) => {
+                        info!("Tenderdash WebSocket listener exited; reconnecting in 10 seconds");
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            retry_in_secs = 10,
+                            "Tenderdash WebSocket listener error"
+                        );
+                    }
+                }
+
+                sleep(Duration::from_secs(10)).await;
+            }
+            #[allow(unreachable_code)]
+            Ok::<(), DapiError>(())
+        });
 
         // Cache dropped on each new block
         let invalidation_subscription = subscriber_manager
