@@ -5188,7 +5188,6 @@ dependencies = [
  "async-trait",
  "axum 0.8.4",
  "base64 0.22.1",
- "bincode 2.0.0-rc.3",
  "chrono",
  "ciborium",
  "clap",
