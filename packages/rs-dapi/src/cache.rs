@@ -110,7 +110,7 @@ impl CachedValue {
 
     /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Result<T, DapiError> {
-        rmp_serde::from_read(&self.data[..]).map_err(|e| {
+        rmp_serde::from_slice(&self.data).map_err(|e| {
             DapiError::invalid_data(format!("Failed to deserialize cached value: {}", e))
         })
     }
@@ -218,7 +218,7 @@ impl LruResponseCache {
     /// Retrieve a cached value by key, deserializing it into the requested type.
     pub fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned + Debug,
+        T: serde::de::DeserializeOwned + Debug,
     {
         let method_label = key.method_label();
         match self.get_and_parse(key) {
@@ -237,21 +237,14 @@ impl LruResponseCache {
     #[inline(always)]
     pub fn get_with_ttl<T>(&self, key: &CacheKey, ttl: Duration) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned + Debug,
+        T: serde::de::DeserializeOwned + Debug,
     {
         let Some((value, inserted_at)): Option<(Option<T>, Instant)> = self.get_and_parse(key)
         else {
             metrics::cache_miss(self.label.as_ref(), &key.method_label());
             return None;
         };
-        tracing::trace!(
-            method = key.method(),
-            ?value,
-            ?inserted_at,
-            age_ms = inserted_at.elapsed().as_millis(),
-            ?ttl,
-            "Cache hit within TTL"
-        );
+
         let method_label = key.method_label();
 
         if inserted_at.elapsed() <= ttl {
@@ -287,7 +280,7 @@ impl LruResponseCache {
     #[inline]
     pub fn put<T>(&self, key: CacheKey, value: &T)
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: serde::Serialize,
     {
         let Some(index) = key.digest() else {
             // serialization of key failed, skip caching
@@ -311,7 +304,7 @@ impl LruResponseCache {
         T: serde::Serialize + serde::de::DeserializeOwned,
         F: FnOnce() -> Fut,
         Fut: std::future::Future<Output = Result<T, E>>,
-        E: From<DapiError>,
+        E: From<DapiError> + Debug,
     {
         let method_label = key.method_label();
         // calculate index; if serialization fails, always miss
@@ -341,15 +334,40 @@ impl LruResponseCache {
                     Err(e) => Err(e),
                 }
             })
-            .await?
-            .value()
-            .map_err(|e| e.into());
+            .await
+            .and_then(|cv| cv.value().map_err(Into::into));
 
-        if cache_hit.load(Ordering::SeqCst) && item.is_ok() {
-            metrics::cache_hit(self.label.as_ref(), &method_label);
-        } else {
-            metrics::cache_miss(self.label.as_ref(), &method_label);
-            observe_memory(&self.inner, self.label.as_ref());
+        let hit = cache_hit.load(Ordering::SeqCst);
+        match (hit, &item) {
+            (true, Ok(_)) => {
+                tracing::trace!(method = key.method(), "Cache hit");
+                metrics::cache_hit(self.label.as_ref(), &method_label);
+            }
+            (true, Err(error)) => {
+                tracing::debug!(
+                    method = key.method(),
+                    ?error,
+                    "Cache hit but failed to deserialize cached value, dropping entry and recording as a miss"
+                );
+                metrics::cache_miss(self.label.as_ref(), &method_label);
+                self.remove(&key);
+            }
+            (false, Ok(_)) => {
+                tracing::trace!(
+                    method = key.method(),
+                    "Cache miss, value produced and cached"
+                );
+                metrics::cache_miss(self.label.as_ref(), &method_label);
+                observe_memory(&self.inner, self.label.as_ref());
+            }
+            (false, Err(error)) => {
+                tracing::debug!(
+                    method = key.method(),
+                    ?error,
+                    "Cache miss, value production failed"
+                );
+                metrics::cache_miss(self.label.as_ref(), &method_label);
+            }
         }
 
         item
@@ -389,6 +407,8 @@ mod tests {
         GetStatusRequest, GetStatusResponse, get_status_request,
         get_status_response::{self, GetStatusResponseV0, get_status_response_v0::Time},
     };
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
     use std::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -479,6 +499,132 @@ mod tests {
         assert_eq!(
             get_with_ttl_response, response,
             "get_with_ttl cached response should match stored value"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_or_try_insert_caches_successful_values() {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
+
+        let cache = LruResponseCache::with_capacity("test_cache", ESTIMATED_ENTRY_SIZE_BYTES * 2);
+        let key = CacheKey::new("get_u64", &"key");
+        let produced_value = 1337_u64;
+        let producer_calls = Arc::new(AtomicUsize::new(0));
+
+        let initial_calls = producer_calls.clone();
+        let first = cache
+            .get_or_try_insert::<_, _, _, DapiError>(key, || {
+                let initial_calls = initial_calls.clone();
+                async move {
+                    initial_calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(produced_value)
+                }
+            })
+            .await
+            .expect("value should be produced on first call");
+
+        assert_eq!(first, produced_value, "produced value must be returned");
+        assert_eq!(
+            producer_calls.load(Ordering::SeqCst),
+            1,
+            "producer should run exactly once on cache miss"
+        );
+
+        let cached = cache
+            .get::<u64>(&key)
+            .expect("value should be cached after first call");
+        assert_eq!(cached, produced_value, "cached value must match producer");
+
+        let follow_up_calls = producer_calls.clone();
+        let second = cache
+            .get_or_try_insert::<_, _, _, DapiError>(key, || {
+                let follow_up_calls = follow_up_calls.clone();
+                async move {
+                    follow_up_calls.fetch_add(10, Ordering::SeqCst);
+                    Ok(produced_value + 1)
+                }
+            })
+            .await
+            .expect("cached value should be returned on second call");
+
+        assert_eq!(
+            second, produced_value,
+            "second call must yield cached value rather than producer result"
+        );
+        assert_eq!(
+            producer_calls.load(Ordering::SeqCst),
+            1,
+            "producer should not run again when cache contains value"
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn get_or_try_insert_does_not_cache_errors() {
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
+
+        let cache = LruResponseCache::with_capacity("test_cache_errors", ESTIMATED_ENTRY_SIZE_BYTES);
+        let key = CacheKey::new("get_error", &"key");
+        let producer_calls = Arc::new(AtomicUsize::new(0));
+
+        let failing_calls = producer_calls.clone();
+        let first_attempt: Result<u64, DapiError> = cache
+            .get_or_try_insert::<u64, _, _, DapiError>(key, || {
+                let failing_calls = failing_calls.clone();
+                async move {
+                    failing_calls.fetch_add(1, Ordering::SeqCst);
+                    Err(DapiError::invalid_data("boom"))
+                }
+            })
+            .await;
+
+        assert!(
+            first_attempt.is_err(),
+            "failed producer result should be returned to caller"
+        );
+        assert_eq!(
+            producer_calls.load(Ordering::SeqCst),
+            1,
+            "producer should run once even when it errors"
+        );
+        assert!(
+            cache.get::<u64>(&key).is_none(),
+            "failed producer must not populate the cache"
+        );
+
+        let successful_calls = producer_calls.clone();
+        let expected_value = 9001_u64;
+        let second_attempt = cache
+            .get_or_try_insert::<u64, _, _, DapiError>(key, || {
+                let successful_calls = successful_calls.clone();
+                async move {
+                    successful_calls.fetch_add(1, Ordering::SeqCst);
+                    Ok(expected_value)
+                }
+            })
+            .await
+            .expect("second attempt should succeed and cache value");
+
+        assert_eq!(
+            second_attempt, expected_value,
+            "successful producer result should be returned"
+        );
+        assert_eq!(
+            producer_calls.load(Ordering::SeqCst),
+            2,
+            "producer should run again after an error because nothing was cached"
+        );
+        let cached = cache
+            .get::<u64>(&key)
+            .expect("successful producer must populate cache");
+        assert_eq!(
+            cached, expected_value,
+            "cached value should match successful producer output"
         );
     }
 }
