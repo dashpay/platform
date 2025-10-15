@@ -115,6 +115,8 @@ pub struct PlatformServiceImpl {
     pub config: Arc<Config>,
     pub platform_cache: crate::cache::LruResponseCache,
     pub subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
+    #[allow(dead_code)]
+    // workers - dropping will cancel all spawned tasks
     workers: Workers,
 }
 
@@ -127,7 +129,7 @@ impl PlatformServiceImpl {
         config: Arc<Config>,
         subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
-        let mut workers = Workers::new();
+        let workers = Workers::new();
         // Create WebSocket client
         let websocket_client = Arc::new(TenderdashWebSocketClient::new(
             config.dapi.tenderdash.websocket_uri.clone(),
@@ -135,9 +137,7 @@ impl PlatformServiceImpl {
         ));
         {
             let ws: Arc<TenderdashWebSocketClient> = websocket_client.clone();
-            workers.spawn(async move {
-                let _ = ws.connect_and_listen().await;
-            });
+            workers.spawn(async move { ws.connect_and_listen().await });
         }
 
         // Cache dropped on each new block
