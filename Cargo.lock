@@ -5227,6 +5227,7 @@ dependencies = [
  "reqwest-middleware",
  "reqwest-tracing",
  "rmp-serde",
+ "rs-dash-event-bus",
  "serde",
  "serde_bytes",
  "serde_json",
@@ -5281,12 +5282,8 @@ dependencies = [
 name = "rs-dash-event-bus"
 version = "2.1.0-pr.2716.1"
 dependencies = [
- "dapi-grpc",
- "futures",
  "metrics",
  "tokio",
- "tokio-stream",
- "tokio-util",
  "tracing",
 ]
 
@@ -6575,7 +6572,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -6615,7 +6611,6 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
- "futures-util",
  "pin-project-lite",
  "tokio",
 ]
