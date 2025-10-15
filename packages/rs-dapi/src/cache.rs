@@ -396,7 +396,11 @@ mod tests {
     use std::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]
-    async fn bincode_fails_within_get_with_ttl() {
+    /// Test that all cache methods work as expected.
+    ///
+    /// We have hit a bug in bincode that causes deserialization to fail when used through
+    /// get_with_ttl. This test ensures it works correctly in that case.
+    async fn all_cache_methods_must_work() {
         // Configure tracing for the test
         let _ = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::TRACE)
