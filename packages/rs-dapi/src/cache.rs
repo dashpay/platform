@@ -71,7 +71,6 @@ impl CacheKey {
         MethodLabel::from_type_name(self.method)
     }
 
-    #[inline(always)]
     pub const fn digest(self) -> Option<CacheIndex> {
         self.digest
     }
@@ -82,8 +81,17 @@ struct CachedValue {
     data: Vec<u8>,
 }
 
+impl Debug for CachedValue {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CachedValue")
+            .field("inserted_at", &self.inserted_at)
+            .field("data", &hex::encode(&self.data))
+            .field("data_len", &self.data.len())
+            .finish()
+    }
+}
+
 impl CachedValue {
-    #[inline(always)]
     /// Capture the current instant and serialize the provided value into bytes.
     ///
     /// Returns None if serialization fails.
@@ -100,7 +108,6 @@ impl CachedValue {
         })
     }
 
-    #[inline(always)]
     /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Result<T, DapiError> {
         bincode::serde::decode_from_slice(&self.data, BINCODE_CFG)
@@ -183,11 +190,12 @@ impl LruResponseCache {
     }
 
     /// Helper to get and parse the cached value
-    fn get_and_parse<T: serde::de::DeserializeOwned>(
+    fn get_and_parse<T: serde::de::DeserializeOwned + Debug>(
         &self,
         key: &CacheKey,
     ) -> Option<(T, Instant)> {
         let cached_value = self.inner.get(&key.digest()?)?;
+
         let value = match cached_value.value() {
             Ok(cv) => Some(cv),
             Err(error) => {
@@ -198,14 +206,21 @@ impl LruResponseCache {
             }
         };
 
+        tracing::trace!(
+            method = key.method(),
+            age_ms = cached_value.inserted_at.elapsed().as_millis(),
+            ?cached_value,
+            ?value,
+            "Cache hit"
+        );
+
         value.map(|v| (v, cached_value.inserted_at))
     }
 
-    #[inline(always)]
     /// Retrieve a cached value by key, deserializing it into the requested type.
     pub fn get<T>(&self, key: &CacheKey) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: serde::Serialize + serde::de::DeserializeOwned + Debug,
     {
         let method_label = key.method_label();
         match self.get_and_parse(key) {
@@ -221,19 +236,29 @@ impl LruResponseCache {
     }
 
     /// Get a value with TTL semantics; returns None if entry is older than TTL.
+    #[inline(always)]
     pub fn get_with_ttl<T>(&self, key: &CacheKey, ttl: Duration) -> Option<T>
     where
-        T: serde::Serialize + serde::de::DeserializeOwned,
+        T: serde::Serialize + serde::de::DeserializeOwned + Debug,
     {
-        let Some((value, inserted_at)) = self.get_and_parse(key) else {
+        let Some((value, inserted_at)): Option<(Option<T>, Instant)> = self.get_and_parse(key)
+        else {
             metrics::cache_miss(self.label.as_ref(), &key.method_label());
             return None;
         };
-
+        tracing::trace!(
+            method = key.method(),
+            ?value,
+            ?inserted_at,
+            age_ms = inserted_at.elapsed().as_millis(),
+            ?ttl,
+            "Cache hit within TTL"
+        );
         let method_label = key.method_label();
 
         if inserted_at.elapsed() <= ttl {
             metrics::cache_hit(self.label.as_ref(), &method_label);
+
             return value;
         }
 
@@ -358,4 +383,101 @@ pub fn make_cache_key<M: serde::Serialize + Debug>(method: &'static str, key: &M
         }
     };
     CacheKey { method, digest }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dapi_grpc::platform::v0::{
+        GetStatusRequest, GetStatusResponse, get_status_request,
+        get_status_response::{self, GetStatusResponseV0, get_status_response_v0::Time},
+    };
+    use std::time::Duration;
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn bincode_fails_within_get_with_ttl() {
+        // Configure tracing for the test
+        let _ = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::TRACE)
+            .with_test_writer()
+            .try_init();
+
+        // Given some cache, request, response and ttl
+        let cache = LruResponseCache::with_capacity("platform", ESTIMATED_ENTRY_SIZE_BYTES * 4);
+        let request = GetStatusRequest {
+            version: Some(get_status_request::Version::V0(
+                get_status_request::GetStatusRequestV0 {},
+            )),
+        };
+        let key = make_cache_key("get_status", &request);
+
+        let cached_time = Time {
+            local: 42,
+            block: Some(100),
+            genesis: Some(200),
+            epoch: Some(300),
+        };
+
+        let response = GetStatusResponse {
+            version: Some(get_status_response::Version::V0(GetStatusResponseV0 {
+                time: Some(cached_time),
+                ..Default::default()
+            })),
+        };
+
+        let ttl = Duration::from_secs(30);
+
+        // When we put the response in the cache
+        cache.put(key, &response);
+
+        // Then all methods should return the cached response
+        // 1. Directly inspect the raw cache entry
+
+        let inner_cached_value = cache
+            .inner
+            .get(&key.digest().expect("digest present"))
+            .expect("cache should contain raw entry");
+        assert!(
+            !inner_cached_value.data.is_empty(),
+            "serialized cache entry should not be empty"
+        );
+        let decoded_from_raw = inner_cached_value
+            .value::<GetStatusResponse>()
+            .expect("raw decode should succeed");
+        assert_eq!(
+            decoded_from_raw, response,
+            "raw cache entry should deserialize to stored response"
+        );
+
+        // 2. Use the typed get method
+        let get_response = cache
+            .get::<GetStatusResponse>(&key)
+            .expect("expected plain get to succeed");
+
+        assert_eq!(
+            get_response, response,
+            "plain cache get should match stored response"
+        );
+
+        // 3. Use internal get_and_parse method
+        let (get_and_parse_response, _inserted_at) = cache
+            .get_and_parse::<GetStatusResponse>(&key)
+            .expect("expected get_and_parse to succeed");
+
+        assert_eq!(
+            get_and_parse_response, response,
+            "get_and_parse value should match stored response"
+        );
+
+        // 4. Use the get_with_ttl method
+        let get_with_ttl_response = cache
+            .get_with_ttl::<GetStatusResponse>(&key, ttl)
+            .expect("expected get_status response to be cached");
+
+        // HERE IT FAILS WITH BINCODE!!!
+        assert_eq!(
+            get_with_ttl_response, response,
+            "get_with_ttl cached response should match stored value"
+        );
+    }
 }
