@@ -4,7 +4,7 @@ use dapi_grpc::platform::v0::{
     get_status_response::{self, GetStatusResponseV0},
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::clients::{
     drive_client::DriveStatusResponse,
@@ -55,10 +55,12 @@ impl PlatformServiceImpl {
 
         // Build cache key and try TTL cache first (3 minutes)
         let key = make_cache_key("get_status", request.get_ref());
+        trace!(?key, "get_status cache lookup");
         if let Some(mut cached) = self
             .platform_cache
-            .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(180))
+            .get_with_ttl::<GetStatusResponse>(&key, Duration::from_secs(30))
         {
+            trace!(?key, "get_status cache hit");
             // Refresh local time to current instant like JS implementation
             if let Some(get_status_response::Version::V0(ref mut v0)) = cached.version
                 && let Some(ref mut time) = v0.time
@@ -68,9 +70,16 @@ impl PlatformServiceImpl {
             return Ok(Response::new(cached));
         }
 
+        trace!(?key, "get_status cache miss; building response");
         // Build fresh response and cache it
         match self.build_status_response_with_health().await {
-            Ok((response, _health)) => {
+            Ok((response, health)) => {
+                trace!(
+                    drive_error = health.drive_error.as_deref(),
+                    tenderdash_status_error = health.tenderdash_status_error.as_deref(),
+                    tenderdash_netinfo_error = health.tenderdash_netinfo_error.as_deref(),
+                    "get_status upstream fetch completed"
+                );
                 self.platform_cache.put(key, &response);
                 Ok(Response::new(response))
             }
@@ -92,6 +101,7 @@ impl PlatformServiceImpl {
         };
 
         // Fetch data from Drive and Tenderdash concurrently
+        trace!("fetching Drive status, Tenderdash status, and netinfo");
         let (drive_result, tenderdash_status_result, tenderdash_netinfo_result) = tokio::join!(
             self.drive_client.get_drive_status(&drive_request),
             self.tenderdash_client.status(),
@@ -149,7 +159,7 @@ fn build_status_response(
         time: Some(build_time_info(&drive_status)),
     };
 
-    let response = GetStatusResponse {
+    let response: GetStatusResponse = GetStatusResponse {
         version: Some(get_status_response::Version::V0(v0)),
     };
 
@@ -397,7 +407,7 @@ mod tests {
     use crate::clients::tenderdash_client::{NetInfoResponse, TenderdashStatusResponse};
 
     #[test]
-    fn build_status_response_uses_application_version_for_tenderdash() {
+    fn build_status_response_populates_fields_from_tenderdash_status() {
         let tenderdash_status: TenderdashStatusResponse =
             serde_json::from_str(TENDERMASH_STATUS_JSON).expect("parse tenderdash status");
         let drive_status = DriveStatusResponse::default();
@@ -406,16 +416,44 @@ mod tests {
         let response =
             build_status_response(drive_status, tenderdash_status, net_info).expect("build ok");
 
-        let version = response
-            .version
-            .and_then(|v| match v {
-                get_status_response::Version::V0(v0) => v0.version,
-            })
-            .expect("version present");
+        let get_status_response::Version::V0(inner) = response.version.expect("version present");
 
+        let version = inner.version.expect("version struct");
         let software = version.software.expect("software present");
-
         assert_eq!(software.tenderdash.as_deref(), Some("1.5.0-dev.3"));
+
+        let protocol = version.protocol.expect("protocol present");
+        let tenderdash_protocol = protocol.tenderdash.expect("tenderdash protocol");
+        assert_eq!(tenderdash_protocol.block, 14);
+        assert_eq!(tenderdash_protocol.p2p, 10);
+
+        let node = inner.node.expect("node present");
+        assert_eq!(
+            node.id,
+            hex::decode("972a33056d57359de8acfa4fb8b29dc1c14f76b8").expect("decode node id")
+        );
+
+        let chain = inner.chain.expect("chain present");
+        assert_eq!(chain.latest_block_height, 198748);
+        assert_eq!(
+            chain.latest_block_hash,
+            hex::decode("B15CB7BD25D5334587B591D46FADEDA3AFCE2C57B7BC99E512F79422AB710343")
+                .expect("decode latest block hash")
+        );
+        assert_eq!(
+            chain.earliest_block_hash,
+            hex::decode("08FA02C27EC0390BA301E4FC7E3D7EADB350C8193E3E62A093689706E3A20BFA")
+                .expect("decode earliest block hash")
+        );
+
+        let network = inner.network.expect("network present");
+        assert_eq!(network.chain_id, "dash-testnet-51");
+
+        let state_sync = inner.state_sync.expect("state sync present");
+        assert_eq!(state_sync.total_synced_time, 0);
+
+        let time = inner.time.expect("time present");
+        assert!(time.local > 0);
     }
 
     const TENDERMASH_STATUS_JSON: &str = r#"
