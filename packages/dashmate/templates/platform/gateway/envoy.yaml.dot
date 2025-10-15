@@ -202,13 +202,13 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: 300s
+                  idle_timeout: 3000s
                   # Upstream response timeout
-                  timeout: 600s
+                  timeout: 6000s
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 600s
-                    grpc_timeout_header_max: 600s
+                    max_stream_duration: 6000s
+                    grpc_timeout_header_max: 6000s
               # Core endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
