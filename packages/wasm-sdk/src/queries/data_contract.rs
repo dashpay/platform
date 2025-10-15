@@ -92,7 +92,6 @@ impl WasmSdk {
         &self,
         id: &str,
         limit: Option<u32>,
-        _offset: Option<u32>,
         start_at_ms: Option<u64>,
     ) -> Result<Map, WasmSdkError> {
         // Parse contract ID
@@ -165,7 +164,6 @@ impl WasmSdk {
         &self,
         id: &str,
         limit: Option<u32>,
-        _offset: Option<u32>,
         start_at_ms: Option<u64>,
     ) -> Result<DataContractHistoryProofResponseWasm, WasmSdkError> {
         // Parse contract ID

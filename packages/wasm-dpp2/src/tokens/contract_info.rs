@@ -1,7 +1,7 @@
 use crate::identifier::IdentifierWasm;
 use dpp::data_contract::TokenContractPosition;
-use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
 use dpp::tokens::contract_info::TokenContractInfo;
+use dpp::tokens::contract_info::v0::TokenContractInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "TokenContractInfo")]

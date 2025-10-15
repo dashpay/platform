@@ -30,10 +30,20 @@ describe('VotingFacade', () => {
     await client.voting.contestedResourceIdentityVotes('id', { limit: 3, startAtVotePollIdInfo: 's', orderAscending: true });
     await client.voting.contestedResourceIdentityVotesWithProof('id', { limit: 4, offset: 1, orderAscending: false });
     await client.voting.votePollsByEndDate({
-      startTimeInfo: 'a', endTimeInfo: 'b', limit: 2, orderAscending: true,
+      startTimeMs: 1000,
+      startTimeIncluded: true,
+      endTimeMs: 2000,
+      endTimeIncluded: false,
+      limit: 2,
+      offset: 1,
+      orderAscending: true,
     });
     await client.voting.votePollsByEndDateWithProof({
-      startTimeMs: 10, endTimeMs: 20, limit: 1, offset: 0, orderAscending: false,
+      startTimeMs: 10,
+      endTimeMs: 20,
+      limit: 1,
+      offset: 0,
+      orderAscending: false,
     });
     expect(wasmSdk.getContestedResourceVoteState).to.be.calledOnce();
     expect(wasmSdk.getContestedResourceVoteStateWithProofInfo).to.be.calledOnce();

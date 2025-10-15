@@ -52,6 +52,7 @@ pub use indexmap::IndexMap;
 use std::collections::{BTreeMap, BTreeSet};
 
 use dpp::dashcore::hashes::Hash;
+use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 #[cfg(feature = "mocks")]
 use {
     bincode::{Decode, Encode},

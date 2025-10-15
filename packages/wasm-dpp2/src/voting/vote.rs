@@ -1,5 +1,5 @@
-use crate::identity::governance::masternode_vote::resource_vote_choice::ResourceVoteChoiceWasm;
-use crate::identity::governance::masternode_vote::vote_poll::VotePollWasm;
+use crate::voting::resource_vote_choice::ResourceVoteChoiceWasm;
+use crate::voting::vote_poll::VotePollWasm;
 use dpp::voting::votes::Vote;
 use dpp::voting::votes::resource_vote::ResourceVote;
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;

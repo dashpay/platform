@@ -1,5 +1,5 @@
-use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::tokens::info::IdentityTokenInfo;
+use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "IdentityTokenInfo")]

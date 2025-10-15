@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::queries::{ProofInfoWasm, ProofMetadataResponse, ResponseMetadataWasm};
+use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -287,16 +287,14 @@ impl WasmSdk {
                 document_id: document.id().to_string(Encoding::Base58),
             };
 
-            let response = ProofMetadataResponse {
-                data: result,
-                metadata: metadata.into(),
-                proof: proof.into(),
-            };
+            let data = serde_wasm_bindgen::to_value(&result).map_err(|e| {
+                WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
+            })?;
 
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
+            let response =
+                ProofMetadataResponseWasm::from_parts(data, metadata.into(), proof.into());
+
+            Ok(JsValue::from(response))
         } else {
             Err(WasmSdkError::not_found(format!(
                 "Username '{}' not found",

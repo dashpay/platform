@@ -203,7 +203,11 @@ impl WasmSdk {
                     },
                 };
 
-                Ok(TokenPriceInfoWasm::new(token_identifier_wasm, current_price, base_price))
+                Ok(TokenPriceInfoWasm::new(
+                    token_identifier_wasm,
+                    current_price,
+                    base_price,
+                ))
             } else {
                 Err(WasmSdkError::not_found(format!(
                     "No pricing schedule found for token at contract {} position {}",
@@ -374,10 +378,7 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getTokenStatuses")]
-    pub async fn get_token_statuses(
-        &self,
-        token_ids: Vec<String>,
-    ) -> Result<Map, WasmSdkError> {
+    pub async fn get_token_statuses(&self, token_ids: Vec<String>) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
         // Parse token IDs
@@ -455,8 +456,7 @@ impl WasmSdk {
                     }
                 };
 
-                let price_info =
-                    TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
+                let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
                 let key = JsValue::from(token_id_wasm);
                 let value = JsValue::from(price_info);
@@ -646,9 +646,7 @@ impl WasmSdk {
         // Fetch total supply
         let supply_result = TotalSingleTokenBalance::fetch(self.as_ref(), token_identifier).await?;
 
-        Ok(supply_result.map(|supply| {
-            TokenTotalSupplyWasm::new(supply.token_supply as u64)
-        }))
+        Ok(supply_result.map(|supply| TokenTotalSupplyWasm::new(supply.token_supply as u64)))
     }
 
     // Proof versions for token queries
@@ -704,7 +702,9 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            balances_map, metadata, proof,
+            balances_map,
+            metadata,
+            proof,
         ))
     }
 
@@ -942,8 +942,7 @@ impl WasmSdk {
                     }
                 };
 
-                let price_info =
-                    TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
+                let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
 
                 let key = JsValue::from(token_id_wasm);
                 let value = JsValue::from(price_info);
@@ -952,9 +951,7 @@ impl WasmSdk {
         }
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            prices_map,
-            metadata,
-            proof,
+            prices_map, metadata, proof,
         ))
     }
 

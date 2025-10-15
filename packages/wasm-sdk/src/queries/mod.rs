@@ -11,70 +11,9 @@ pub mod voting;
 // Re-export all query functions for easy access
 pub use group::*;
 
-use crate::WasmSdkError;
-use js_sys::{Object, Uint8Array};
-use serde::{Deserialize, Serialize};
+use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-
-// Legacy JSON-friendly response structures kept for compatibility with existing code paths
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct ProofMetadataResponse<T> {
-    pub data: T,
-    pub metadata: ResponseMetadata,
-    pub proof: ProofInfo,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct ResponseMetadata {
-    pub height: u64,
-    pub core_chain_locked_height: u32,
-    pub epoch: u32,
-    pub time_ms: u64,
-    pub protocol_version: u32,
-    pub chain_id: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct ProofInfo {
-    pub grovedb_proof: String,
-    pub quorum_hash: String,
-    pub signature: String,
-    pub round: u32,
-    pub block_id_hash: String,
-    pub quorum_type: u32,
-}
-
-impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadata {
-    fn from(metadata: dash_sdk::platform::proto::ResponseMetadata) -> Self {
-        ResponseMetadata {
-            height: metadata.height,
-            core_chain_locked_height: metadata.core_chain_locked_height,
-            epoch: metadata.epoch,
-            time_ms: metadata.time_ms,
-            protocol_version: metadata.protocol_version,
-            chain_id: metadata.chain_id,
-        }
-    }
-}
-
-impl From<dash_sdk::platform::proto::Proof> for ProofInfo {
-    fn from(proof: dash_sdk::platform::proto::Proof) -> Self {
-        use base64::{engine::general_purpose, Engine as _};
-
-        ProofInfo {
-            grovedb_proof: general_purpose::STANDARD.encode(&proof.grovedb_proof),
-            quorum_hash: hex::encode(&proof.quorum_hash),
-            signature: general_purpose::STANDARD.encode(&proof.signature),
-            round: proof.round,
-            block_id_hash: hex::encode(&proof.block_id_hash),
-            quorum_type: proof.quorum_type,
-        }
-    }
-}
 
 #[wasm_bindgen(js_name = "ResponseMetadata")]
 #[derive(Clone, Debug)]
@@ -333,45 +272,4 @@ impl ProofMetadataResponseWasm {
     pub(crate) fn into_parts(self) -> (JsValue, ResponseMetadataWasm, ProofInfoWasm) {
         (self.data, self.metadata, self.proof)
     }
-}
-
-pub(crate) fn proof_response_from_js_value(
-    data: JsValue,
-    metadata: ResponseMetadata,
-    proof: ProofInfo,
-) -> Result<JsValue, WasmSdkError> {
-    let metadata_js = serialize_to_js(&metadata)?;
-    let proof_js = serialize_to_js(&proof)?;
-
-    let response = Object::new();
-    set_property(&response, "data", &data)?;
-    set_property(&response, "metadata", &metadata_js)?;
-    set_property(&response, "proof", &proof_js)?;
-
-    Ok(response.into())
-}
-
-pub(crate) fn proof_response_from_serializable<T: Serialize>(
-    data: T,
-    metadata: ResponseMetadata,
-    proof: ProofInfo,
-) -> Result<JsValue, WasmSdkError> {
-    proof_response_from_js_value(serialize_to_js(&data)?, metadata, proof)
-}
-
-fn serialize_to_js<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
-    serde_wasm_bindgen::to_value(value).map_err(|e| {
-        WasmSdkError::serialization(format!("Failed to serialize response component: {}", e))
-    })
-}
-
-fn set_property(object: &Object, key: &str, value: &JsValue) -> Result<(), WasmSdkError> {
-    js_sys::Reflect::set(object, &JsValue::from_str(key), value).map_err(|err| {
-        WasmSdkError::serialization(format!(
-            "Failed to set '{}' on proof response: {:?}",
-            key, err
-        ))
-    })?;
-
-    Ok(())
 }

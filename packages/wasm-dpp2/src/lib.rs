@@ -10,6 +10,7 @@
 // };
 
 pub mod asset_lock_proof;
+pub mod block;
 pub mod consensus_error;
 pub mod core_script;
 pub mod data_contract;
@@ -25,24 +26,15 @@ pub mod public_key;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
+pub mod voting;
 
-pub use data_contract::{
-    ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
-    DataContractWasm, DocumentWasm,
-};
-pub use epoch::{ExtendedEpochInfoWasm, FinalizedEpochInfoWasm};
-pub use group::{GroupActionEventWasm, GroupActionWasm, TokenEventWasm};
-
-pub use identity::{
-    IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
-    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, MasternodeVoteTransitionWasm,
-    PartialIdentityWasm, ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,
-};
-
+pub use data_contract::*;
+pub use epoch::*;
+pub use group::*;
+pub use identity::*;
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
-
-pub use tokens::{
-    AuthorizedActionTakersWasm, GroupWasm, PrivateEncryptedNoteWasm, SharedEncryptedNoteWasm,
-    TokenConfigurationChangeItemWasm, TokenConfigurationLocalizationWasm, TokenConfigurationWasm,
+pub use tokens::*;
+pub use voting::{
+    ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm,
+    ResourceVoteChoiceWasm, VotePollWasm, VoteWasm,
 };

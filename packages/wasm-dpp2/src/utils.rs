@@ -261,6 +261,18 @@ pub fn generate_document_id_v0(
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
 }
 
+// TODO: Refactor, code bellow
+
+// if let Ok(obj) = input.dyn_into::<MyClass>() {
+// // received wasm object
+// web_sys::console::log_1(&format!("MyClass: {}", obj.value()).into());
+// } else if let Some(s) = input.as_string() {
+// // received string
+// web_sys::console::log_1(&format!("String: {}", s).into());
+// } else {
+// web_sys::console::error_1(&"Expected string | MyClass".into());
+// }
+
 // Try to extract Identifier from **stringified** identifier_utils.
 // The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
 pub fn identifier_from_js_value(js_value: &JsValue) -> WasmDppResult<Identifier> {

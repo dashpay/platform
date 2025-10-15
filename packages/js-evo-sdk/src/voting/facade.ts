@@ -29,18 +29,74 @@ export class VotingFacade {
     return w.getContestedResourceIdentityVotesWithProofInfo(identityId, limit ?? null, offset ?? null, orderAscending ?? null);
   }
 
-  async votePollsByEndDate(opts: { startTimeInfo?: string; endTimeInfo?: string; limit?: number; orderAscending?: boolean } = {}): Promise<any> {
-    const { startTimeInfo, endTimeInfo, limit, orderAscending } = opts;
+  async votePollsByEndDate(opts: { startTimeMs?: number | string | bigint | null; startTimeIncluded?: boolean; endTimeMs?: number | string | bigint | null; endTimeIncluded?: boolean; limit?: number; offset?: number; orderAscending?: boolean } = {}): Promise<any> {
+    const { startTimeMs, startTimeIncluded, endTimeMs, endTimeIncluded, limit, offset, orderAscending } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getVotePollsByEndDate(startTimeInfo ?? null, endTimeInfo ?? null, limit ?? null, orderAscending ?? null);
+
+    const normalizeTime = (value?: number | string | bigint | null) => {
+      if (value === null || value === undefined) {
+        return undefined;
+      }
+
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+      }
+
+      if (typeof value === 'bigint') {
+        return Number(value);
+      }
+
+      const trimmed = value.trim();
+      if (!trimmed) {
+        return undefined;
+      }
+
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+
+    const options: Record<string, unknown> = {};
+    const start = normalizeTime(startTimeMs);
+    if (start !== undefined) options.startTimeMs = start;
+    if (startTimeIncluded !== undefined) options.startTimeIncluded = startTimeIncluded;
+
+    const end = normalizeTime(endTimeMs);
+    if (end !== undefined) options.endTimeMs = end;
+    if (endTimeIncluded !== undefined) options.endTimeIncluded = endTimeIncluded;
+
+    if (limit !== undefined) options.limit = limit;
+    if (offset !== undefined) options.offset = offset;
+    if (orderAscending !== undefined) options.orderAscending = orderAscending;
+
+    return w.getVotePollsByEndDate(options);
   }
 
   async votePollsByEndDateWithProof(opts: { startTimeMs?: number | bigint | null; endTimeMs?: number | bigint | null; limit?: number; offset?: number; orderAscending?: boolean } = {}): Promise<any> {
     const { startTimeMs, endTimeMs, limit, offset, orderAscending } = opts;
-    const start = startTimeMs != null ? BigInt(startTimeMs) : null;
-    const end = endTimeMs != null ? BigInt(endTimeMs) : null;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getVotePollsByEndDateWithProofInfo(start ?? null, end ?? null, limit ?? null, offset ?? null, orderAscending ?? null);
+
+    const normalizeTime = (value?: number | bigint | null) => {
+      if (value === null || value === undefined) {
+        return undefined;
+      }
+
+      if (typeof value === 'number') {
+        return Number.isFinite(value) ? value : undefined;
+      }
+
+      return Number(value);
+    };
+
+    const options: Record<string, unknown> = {};
+    const start = normalizeTime(startTimeMs);
+    if (start !== undefined) options.startTimeMs = start;
+    const end = normalizeTime(endTimeMs);
+    if (end !== undefined) options.endTimeMs = end;
+    if (limit !== undefined) options.limit = limit;
+    if (offset !== undefined) options.offset = offset;
+    if (orderAscending !== undefined) options.orderAscending = orderAscending;
+
+    return w.getVotePollsByEndDateWithProofInfo(options);
   }
 
   async masternodeVote(args: { masternodeProTxHash: string; contractId: string; documentTypeName: string; indexName: string; indexValues: string | any[]; voteChoice: string; votingKeyWif: string }): Promise<any> {

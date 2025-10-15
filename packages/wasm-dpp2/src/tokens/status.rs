@@ -1,5 +1,5 @@
-use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use dpp::tokens::status::TokenStatus;
+use dpp::tokens::status::v0::TokenStatusV0Accessors;
 use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "TokenStatus")]
