@@ -76,7 +76,7 @@ impl CacheKey {
 #[derive(Clone)]
 struct CachedValue {
     inserted_at: Instant,
-    data: Vec<u8>,
+    data: serde_bytes::ByteBuf,
 }
 
 impl Debug for CachedValue {
@@ -94,26 +94,23 @@ impl CachedValue {
     ///
     /// Returns None if serialization fails.
     fn new<T: serde::Serialize>(data: T) -> Option<Self> {
-        let mut serialized = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize);
-
-        // We prefer ciborium over bincode, as we have hit a bug in bincode
+        // We don't use bincode, as we have hit a bug in bincode
         // that causes deserialization to fail in some cases within get_with_ttl.
-        ciborium::ser::into_writer(&data, &mut serialized)
+        let serialized = rmp_serde::to_vec(&data)
             .inspect_err(|e| {
                 tracing::debug!("Failed to serialize value for caching: {}", e);
             })
             .ok()?;
-        serialized.shrink_to_fit();
 
         Some(Self {
             inserted_at: Instant::now(),
-            data: serialized,
+            data: serialized.into(),
         })
     }
 
     /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Result<T, DapiError> {
-        ciborium::from_reader(&self.data[..]).map_err(|e| {
+        rmp_serde::from_read(&self.data[..]).map_err(|e| {
             DapiError::invalid_data(format!("Failed to deserialize cached value: {}", e))
         })
     }
@@ -371,9 +368,8 @@ fn observe_memory(cache: &Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter
 ///
 /// Sets digest to None if serialization fails, causing all lookups to miss.
 pub fn make_cache_key<M: serde::Serialize + Debug>(method: &'static str, key: &M) -> CacheKey {
-    let mut data = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize); // preallocate some space
-    let digest = match ciborium::into_writer(key, &mut data) {
-        Ok(_) => {
+    let digest = match rmp_serde::to_vec(key) {
+        Ok(mut data) => {
             data.push(0); // separator
             data.extend(method.as_bytes());
             Some(xxhash_rust::xxh3::xxh3_128(&data))
