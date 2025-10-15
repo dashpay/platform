@@ -239,8 +239,7 @@ impl LruResponseCache {
     where
         T: serde::de::DeserializeOwned + Debug,
     {
-        let Some((value, inserted_at)): Option<(Option<T>, Instant)> = self.get_and_parse(key)
-        else {
+        let Some((value, inserted_at)) = self.get_and_parse(key) else {
             metrics::cache_miss(self.label.as_ref(), &key.method_label());
             return None;
         };
@@ -407,8 +406,8 @@ mod tests {
         GetStatusRequest, GetStatusResponse, get_status_request,
         get_status_response::{self, GetStatusResponseV0, get_status_response_v0::Time},
     };
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::time::Duration;
 
     #[tokio::test(flavor = "multi_thread")]
@@ -568,7 +567,8 @@ mod tests {
             .with_test_writer()
             .try_init();
 
-        let cache = LruResponseCache::with_capacity("test_cache_errors", ESTIMATED_ENTRY_SIZE_BYTES);
+        let cache =
+            LruResponseCache::with_capacity("test_cache_errors", ESTIMATED_ENTRY_SIZE_BYTES);
         let key = CacheKey::new("get_error", &"key");
         let producer_calls = Arc::new(AtomicUsize::new(0));
 
