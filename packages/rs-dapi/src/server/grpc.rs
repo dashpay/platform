@@ -17,9 +17,9 @@ use crate::metrics::MetricsLayer;
 use super::DapiServer;
 
 /// Timeouts for regular requests - sync with envoy config if changed there
-const UNARY_TIMEOUT_SECS: u64 = 120;
+const UNARY_TIMEOUT_SECS: u64 = 15;
 /// Timeouts for streaming requests - sync with envoy config if changed there
-const STREAMING_TIMEOUT_SECS: u64 = 3600;
+const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
 const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
 
@@ -107,6 +107,7 @@ impl TimeoutLayer {
             "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs",
             "/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList",
             "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult",
+            "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents",
         ];
 
         // Check if this is a known streaming method
