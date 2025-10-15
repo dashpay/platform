@@ -12,8 +12,6 @@ use crate::sync::Workers;
 
 /// Estimated average size of a cache entry in bytes, used for initial capacity planning.
 const ESTIMATED_ENTRY_SIZE_BYTES: u64 = 1024;
-/// Fixed bincode configuration for stable serialization.
-const BINCODE_CFG: bincode::config::Configuration = bincode::config::standard(); // keep this fixed for stability
 
 #[derive(Clone)]
 /// An LRU cache for storing serialized responses, keyed by method name and request parameters.
@@ -96,25 +94,28 @@ impl CachedValue {
     ///
     /// Returns None if serialization fails.
     fn new<T: serde::Serialize>(data: T) -> Option<Self> {
-        let data = bincode::serde::encode_to_vec(&data, BINCODE_CFG)
+        let mut serialized = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize);
+
+        // We prefer ciborium over bincode, as we have hit a bug in bincode
+        // that causes deserialization to fail in some cases within get_with_ttl.
+        ciborium::ser::into_writer(&data, &mut serialized)
             .inspect_err(|e| {
                 tracing::debug!("Failed to serialize value for caching: {}", e);
             })
             .ok()?;
+        serialized.shrink_to_fit();
 
         Some(Self {
             inserted_at: Instant::now(),
-            data,
+            data: serialized,
         })
     }
 
     /// Deserialize the cached bytes into the requested type if possible.
     fn value<T: serde::de::DeserializeOwned>(&self) -> Result<T, DapiError> {
-        bincode::serde::decode_from_slice(&self.data, BINCODE_CFG)
-            .map(|(v, _)| v)
-            .map_err(|e| {
-                DapiError::invalid_data(format!("Failed to deserialize cached value: {}", e))
-            })
+        ciborium::from_reader(&self.data[..]).map_err(|e| {
+            DapiError::invalid_data(format!("Failed to deserialize cached value: {}", e))
+        })
     }
 }
 
@@ -371,7 +372,7 @@ fn observe_memory(cache: &Arc<Cache<CacheIndex, CachedValue, CachedValueWeighter
 /// Sets digest to None if serialization fails, causing all lookups to miss.
 pub fn make_cache_key<M: serde::Serialize + Debug>(method: &'static str, key: &M) -> CacheKey {
     let mut data = Vec::with_capacity(ESTIMATED_ENTRY_SIZE_BYTES as usize); // preallocate some space
-    let digest = match bincode::serde::encode_into_std_write(key, &mut data, BINCODE_CFG) {
+    let digest = match ciborium::into_writer(key, &mut data) {
         Ok(_) => {
             data.push(0); // separator
             data.extend(method.as_bytes());
