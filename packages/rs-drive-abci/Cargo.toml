@@ -13,7 +13,6 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-tokio-stream = "0.1"
 arc-swap = "1.7.0"
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 ciborium = { version = "0.2.2" }
