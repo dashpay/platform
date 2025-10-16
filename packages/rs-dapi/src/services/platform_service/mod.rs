@@ -114,11 +114,8 @@ impl PlatformServiceImpl {
         subscriber_manager: Arc<crate::services::streaming_service::SubscriberManager>,
     ) -> Self {
         let workers = Workers::new();
-        // Create WebSocket client
-        let websocket_client = Arc::new(TenderdashWebSocketClient::new(
-            config.dapi.tenderdash.websocket_uri.clone(),
-            1000,
-        ));
+        // Reuse Tenderdash client's WebSocket stream so that subscribers and forwarders share the same source.
+        let websocket_client = tenderdash_client.websocket_client();
 
         let ws: Arc<TenderdashWebSocketClient> = websocket_client.clone();
         // Start listening for WebSocket events with automatic retries.

@@ -30,7 +30,7 @@ use tracing::{debug, error, info, trace};
 pub struct TenderdashClient {
     client: ClientWithMiddleware,
     base_url: String,
-    websocket_client: Option<Arc<TenderdashWebSocketClient>>,
+    websocket_client: Arc<TenderdashWebSocketClient>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -405,7 +405,7 @@ impl TenderdashClient {
         let tenderdash_client = Self {
             client,
             base_url: uri.to_string(),
-            websocket_client: Some(websocket_client.clone()),
+            websocket_client: websocket_client.clone(),
         };
 
         tenderdash_client.validate_connection().await?;
@@ -515,31 +515,20 @@ impl TenderdashClient {
     }
     /// Subscribe to streaming Tenderdash transaction events if WebSocket is available.
     pub fn subscribe_to_transactions(&self) -> broadcast::Receiver<TransactionEvent> {
-        if let Some(ws_client) = &self.websocket_client {
-            ws_client.subscribe()
-        } else {
-            // Return a receiver that will never receive messages
-            let (_, rx) = broadcast::channel(1);
-            rx
-        }
+        self.websocket_client.subscribe()
     }
     /// Subscribe to block events from Tenderdash via WebSocket.
     pub fn subscribe_to_blocks(&self) -> broadcast::Receiver<BlockEvent> {
-        if let Some(ws_client) = &self.websocket_client {
-            ws_client.subscribe_blocks()
-        } else {
-            // Return a receiver that will never receive messages
-            let (_, rx) = broadcast::channel(1);
-            rx
-        }
+        self.websocket_client.subscribe_blocks()
     }
 
     /// Return whether the internal WebSocket client currently maintains a connection.
     pub fn is_websocket_connected(&self) -> bool {
-        if let Some(ws_client) = &self.websocket_client {
-            ws_client.is_connected()
-        } else {
-            false
-        }
+        self.websocket_client.is_connected()
+    }
+
+    /// Return a clone of the underlying WebSocket client to allow shared listeners.
+    pub fn websocket_client(&self) -> Arc<TenderdashWebSocketClient> {
+        self.websocket_client.clone()
     }
 }
