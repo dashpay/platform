@@ -2,9 +2,9 @@ use axum::{Router, extract::State, http::StatusCode, response::Json, routing::ge
 use serde::Serialize;
 use tokio::net::TcpListener;
 use tokio::time::{Duration, timeout};
-use tracing::info;
+use tracing::{error, info};
 
-use crate::error::DAPIResult;
+use crate::error::{DAPIResult, DapiError};
 use crate::logging::middleware::AccessLogLayer;
 
 use super::{DapiServer, state::MetricsAppState};
@@ -82,16 +82,19 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
             };
             (is_healthy, payload)
         }
-        Ok(Err(err)) => (
-            false,
-            PlatformChecks {
-                status: "error".into(),
-                error: Some(err.to_string()),
-                drive: None,
-                tenderdash_status: None,
-                tenderdash_net_info: None,
-            },
-        ),
+        Ok(Err(err)) => {
+            error!(error = %err, "Platform health check failed");
+            (
+                false,
+                PlatformChecks {
+                    status: "error".into(),
+                    error: Some(health_error_label(&err).to_string()),
+                    drive: None,
+                    tenderdash_status: None,
+                    tenderdash_net_info: None,
+                },
+            )
+        }
         Err(_) => (
             false,
             PlatformChecks {
@@ -113,14 +116,17 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 error: None,
             },
         ),
-        Ok(Err(err)) => (
-            false,
-            CoreRpcCheck {
-                status: "error".into(),
-                latest_block_height: None,
-                error: Some(err.to_string()),
-            },
-        ),
+        Ok(Err(err)) => {
+            error!(error = %err, "Core RPC health check failed");
+            (
+                false,
+                CoreRpcCheck {
+                    status: "error".into(),
+                    latest_block_height: None,
+                    error: Some(health_error_label(&err).to_string()),
+                },
+            )
+        }
         Err(_) => (
             false,
             CoreRpcCheck {
@@ -208,6 +214,41 @@ struct ComponentCheck {
     status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     error: Option<String>,
+}
+
+/// Produce a redacted error label suitable for public health endpoints.
+/// This keeps logs detailed while preventing information leakage over HTTP.
+fn health_error_label(err: &DapiError) -> &'static str {
+    use DapiError::*;
+
+    match err {
+        Configuration(_) => "configuration error",
+        StreamingService(_) => "streaming service error",
+        Client(_) | ClientGone(_) => "client error",
+        ServerUnavailable(_, _) | Unavailable(_) | ServiceUnavailable(_) => "service unavailable",
+        Server(_) => "server error",
+        Serialization(_) | InvalidData(_) | NoValidTxProof(_) => "invalid data",
+        Transport(_) | Http(_) | WebSocket(_) | Request(_) => "transport error",
+        TenderdashClientError(_) => "tenderdash error",
+        Status(_) => "upstream returned error",
+        TaskJoin(_) => "internal task error",
+        Io(_) => "io error",
+        UrlParse(_) => "invalid url",
+        Base64Decode(_) => "invalid base64 data",
+        TransactionHashNotFound => "transaction hash missing",
+        NotFound(_) => "not found",
+        AlreadyExists(_) => "already exists",
+        InvalidRequest(_) => "invalid request",
+        InvalidArgument(_) => "invalid argument",
+        ResourceExhausted(_) => "resource exhausted",
+        Aborted(_) => "aborted",
+        Timeout(_) => "timeout",
+        Internal(_) => "internal error",
+        ConnectionClosed => "connection closed",
+        MethodNotFound(_) => "method not found",
+        ZmqConnection(_) => "zmq connection error",
+        _ => "internal error",
+    }
 }
 
 impl ComponentCheck {
