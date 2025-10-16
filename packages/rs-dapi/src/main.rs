@@ -111,33 +111,54 @@ impl Cli {
                     "rs-dapi server initializing",
                 );
 
-                if let Err(e) = run_server(config, access_logger).await {
-                    error!("Server error: {}", e);
+                let mut server_future = run_server(config, access_logger);
+                tokio::pin!(server_future);
 
-                    // Check if this is a connection-related error and set appropriate exit code
-                    match &e {
-                        DapiError::ServerUnavailable(_, _) => {
-                            error!(error = %e,
-                                "Upstream service connection failed. Check drive-abci and tenderdash and try again."
-                            );
-                            return Err(format!("Connection error: {}", e));
+                let outcome = tokio::select! {
+                    result = &mut server_future => Some(result),
+                    signal = shutdown_signal() => {
+                        match signal {
+                            Ok(()) => {
+                                info!("Shutdown signal received; stopping rs-dapi");
+                            }
+                            Err(err) => {
+                                error!(error = %err, "Error while awaiting shutdown signal");
+                                return Err(format!("Signal handling error: {}", err));
+                            }
                         }
-                        DapiError::Client(msg) if msg.contains("Failed to connect") => {
-                            error!(error = %msg,
-                                "Client connection failed.  Check drive-abci and tenderdash and try again."
-                            );
-                            return Err(format!("Connection error: {}", e));
-                        }
-                        DapiError::Transport(_) => {
-                            error!(
-                                error = %e,
-                                "Transport error occurred. Check drive-abci and tenderdash and try again."
-                            );
-                            return Err(format!("Connection error: {}", e));
-                        }
-                        _ => {
-                            error!(error = %e, "Cannot start server.");
-                            return Err(e.to_string());
+                        None
+                    }
+                };
+
+                if let Some(result) = outcome {
+                    if let Err(e) = result {
+                        error!("Server error: {}", e);
+
+                        // Check if this is a connection-related error and set appropriate exit code
+                        match &e {
+                            DapiError::ServerUnavailable(_, _) => {
+                                error!(error = %e,
+                                    "Upstream service connection failed. Check drive-abci and tenderdash and try again."
+                                );
+                                return Err(format!("Connection error: {}", e));
+                            }
+                            DapiError::Client(msg) if msg.contains("Failed to connect") => {
+                                error!(error = %msg,
+                                    "Client connection failed.  Check drive-abci and tenderdash and try again."
+                                );
+                                return Err(format!("Connection error: {}", e));
+                            }
+                            DapiError::Transport(_) => {
+                                error!(
+                                    error = %e,
+                                    "Transport error occurred. Check drive-abci and tenderdash and try again."
+                                );
+                                return Err(format!("Connection error: {}", e));
+                            }
+                            _ => {
+                                error!(error = %e, "Cannot start server.");
+                                return Err(e.to_string());
+                            }
                         }
                     }
                 }
@@ -214,6 +235,30 @@ fn dump_config(config: &Config) -> Result<(), String> {
 fn print_version() {
     println!("rs-dapi {}", env!("CARGO_PKG_VERSION"));
     println!("Built with Rust {}", env!("CARGO_PKG_RUST_VERSION"));
+}
+
+/// Wait for an OS shutdown signal (SIGTERM/SIGINT on Unix, Ctrl+C elsewhere).
+/// Returning Ok indicates a signal was received; errors surface issues with signal handlers.
+async fn shutdown_signal() -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{signal, SignalKind};
+
+        let mut sigterm = signal(SignalKind::terminate())?;
+        let mut sigint = signal(SignalKind::interrupt())?;
+
+        tokio::select! {
+            _ = sigterm.recv() => {},
+            _ = sigint.recv() => {},
+        }
+
+        Ok(())
+    }
+
+    #[cfg(not(unix))]
+    {
+        tokio::signal::ctrl_c().await
+    }
 }
 
 /// Initialize a Tokio runtime and execute the CLI runner, mapping failures to exit codes.
