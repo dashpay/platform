@@ -3,8 +3,8 @@
 //! This module implements the Diffie-Hellman key exchange and encryption/decryption
 //! operations as specified in DIP-15 for secure communication between Dash identities.
 
+use aes::cipher::{block_padding::Pkcs7, KeyIvInit};
 use aes::Aes256;
-use aes::cipher::{KeyIvInit, block_padding::Pkcs7};
 use dashcore::secp256k1::{PublicKey, SecretKey};
 
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
@@ -21,10 +21,7 @@ type Aes256CbcDec = cbc::Decryptor<Aes256>;
 ///
 /// # Returns
 /// A 32-byte shared secret key
-pub fn derive_shared_key_ecdh(
-    private_key: &SecretKey,
-    public_key: &PublicKey,
-) -> [u8; 32] {
+pub fn derive_shared_key_ecdh(private_key: &SecretKey, public_key: &PublicKey) -> [u8; 32] {
     use dashcore::secp256k1::ecdh::SharedSecret;
 
     // Use secp256k1's built-in ECDH which matches libsecp256k1_ecdh
@@ -45,11 +42,7 @@ pub fn derive_shared_key_ecdh(
 ///
 /// # Returns
 /// Encrypted data with PKCS7 padding
-pub fn encrypt_aes_256_cbc(
-    key: &[u8; 32],
-    iv: &[u8; 16],
-    data: &[u8],
-) -> Vec<u8> {
+pub fn encrypt_aes_256_cbc(key: &[u8; 32], iv: &[u8; 16], data: &[u8]) -> Vec<u8> {
     use aes::cipher::BlockEncryptMut;
 
     let cipher = Aes256CbcEnc::new(key.into(), iv.into());
@@ -60,7 +53,8 @@ pub fn encrypt_aes_256_cbc(
     let padding_needed = 16 - (data.len() % 16);
     buffer.resize(data.len() + padding_needed, padding_needed as u8);
 
-    cipher.encrypt_padded_mut::<Pkcs7>(&mut buffer, data.len())
+    cipher
+        .encrypt_padded_mut::<Pkcs7>(&mut buffer, data.len())
         .expect("encryption failed")
         .to_vec()
 }
@@ -99,30 +93,38 @@ pub fn decrypt_aes_256_cbc(
 /// * `xpub` - Extended public key bytes to encrypt
 ///
 /// # Returns
-/// Encrypted extended public key (80 bytes with padding)
-pub fn encrypt_extended_public_key(
-    shared_key: &[u8; 32],
-    iv: &[u8; 16],
-    xpub: &[u8],
-) -> Vec<u8> {
-    encrypt_aes_256_cbc(shared_key, iv, xpub)
+/// Encrypted extended public key with IV prepended (96 bytes: 16-byte IV + 80-byte encrypted data)
+pub fn encrypt_extended_public_key(shared_key: &[u8; 32], iv: &[u8; 16], xpub: &[u8]) -> Vec<u8> {
+    let encrypted_data = encrypt_aes_256_cbc(shared_key, iv, xpub);
+
+    // Prepend IV to encrypted data as per DIP-15
+    let mut result = Vec::with_capacity(16 + encrypted_data.len());
+    result.extend_from_slice(iv);
+    result.extend_from_slice(&encrypted_data);
+    result
 }
 
 /// Decrypt an extended public key from DashPay contact requests (DIP-15)
 ///
 /// # Arguments
 /// * `shared_key` - 32-byte shared secret from ECDH
-/// * `iv` - 16-byte initialization vector
-/// * `ciphertext` - Encrypted extended public key
+/// * `encrypted_data` - Encrypted extended public key with IV prepended (96 bytes total)
 ///
 /// # Returns
 /// Decrypted extended public key bytes
 pub fn decrypt_extended_public_key(
     shared_key: &[u8; 32],
-    iv: &[u8; 16],
-    ciphertext: &[u8],
+    encrypted_data: &[u8],
 ) -> Result<Vec<u8>, CryptoError> {
-    decrypt_aes_256_cbc(shared_key, iv, ciphertext)
+    if encrypted_data.len() < 16 {
+        return Err(CryptoError::InvalidCiphertextLength);
+    }
+
+    // Extract IV from first 16 bytes
+    let iv: [u8; 16] = encrypted_data[..16].try_into().unwrap();
+    let ciphertext = &encrypted_data[16..];
+
+    decrypt_aes_256_cbc(shared_key, &iv, ciphertext)
 }
 
 /// Encrypt an account label for DashPay (DIP-15)
@@ -133,30 +135,38 @@ pub fn decrypt_extended_public_key(
 /// * `label` - Account label string to encrypt
 ///
 /// # Returns
-/// Encrypted label (32-64 bytes with padding)
-pub fn encrypt_account_label(
-    shared_key: &[u8; 32],
-    iv: &[u8; 16],
-    label: &str,
-) -> Vec<u8> {
-    encrypt_aes_256_cbc(shared_key, iv, label.as_bytes())
+/// Encrypted label with IV prepended (48-80 bytes: 16-byte IV + 32-64 byte encrypted data)
+pub fn encrypt_account_label(shared_key: &[u8; 32], iv: &[u8; 16], label: &str) -> Vec<u8> {
+    let encrypted_data = encrypt_aes_256_cbc(shared_key, iv, label.as_bytes());
+
+    // Prepend IV to encrypted data as per DIP-15
+    let mut result = Vec::with_capacity(16 + encrypted_data.len());
+    result.extend_from_slice(iv);
+    result.extend_from_slice(&encrypted_data);
+    result
 }
 
 /// Decrypt an account label from DashPay (DIP-15)
 ///
 /// # Arguments
 /// * `shared_key` - 32-byte shared secret from ECDH
-/// * `iv` - 16-byte initialization vector
-/// * `ciphertext` - Encrypted label
+/// * `encrypted_data` - Encrypted label with IV prepended (48-80 bytes total)
 ///
 /// # Returns
 /// Decrypted label string
 pub fn decrypt_account_label(
     shared_key: &[u8; 32],
-    iv: &[u8; 16],
-    ciphertext: &[u8],
+    encrypted_data: &[u8],
 ) -> Result<String, CryptoError> {
-    let decrypted = decrypt_aes_256_cbc(shared_key, iv, ciphertext)?;
+    if encrypted_data.len() < 16 {
+        return Err(CryptoError::InvalidCiphertextLength);
+    }
+
+    // Extract IV from first 16 bytes
+    let iv: [u8; 16] = encrypted_data[..16].try_into().unwrap();
+    let ciphertext = &encrypted_data[16..];
+
+    let decrypted = decrypt_aes_256_cbc(shared_key, &iv, ciphertext)?;
     String::from_utf8(decrypted).map_err(|_| CryptoError::InvalidUtf8)
 }
 
@@ -168,6 +178,9 @@ pub enum CryptoError {
 
     #[error("Invalid UTF-8 in decrypted data")]
     InvalidUtf8,
+
+    #[error("Invalid ciphertext length (must be at least 16 bytes for IV)")]
+    InvalidCiphertextLength,
 }
 
 #[cfg(test)]
@@ -219,12 +232,16 @@ mod tests {
         let mut iv = [0u8; 16];
         rand::thread_rng().fill_bytes(&mut iv);
 
-        // Mock extended public key data
-        let xpub_data = vec![0x04; 78]; // Example xpub size
+        // Mock extended public key data (78 bytes)
+        let xpub_data = vec![0x04; 78];
 
         // Encrypt and decrypt
         let encrypted = encrypt_extended_public_key(&shared_key, &iv, &xpub_data);
-        let decrypted = decrypt_extended_public_key(&shared_key, &iv, &encrypted).unwrap();
+
+        // Verify size: 16 bytes (IV) + 80 bytes (encrypted data) = 96 bytes
+        assert_eq!(encrypted.len(), 96, "Encrypted xpub should be 96 bytes");
+
+        let decrypted = decrypt_extended_public_key(&shared_key, &encrypted).unwrap();
 
         assert_eq!(xpub_data, decrypted);
     }
@@ -246,7 +263,15 @@ mod tests {
 
         // Encrypt and decrypt
         let encrypted = encrypt_account_label(&shared_key, &iv, label);
-        let decrypted = decrypt_account_label(&shared_key, &iv, &encrypted).unwrap();
+
+        // Verify size is in valid range: 48-80 bytes (16-byte IV + 32-64 bytes encrypted)
+        assert!(
+            encrypted.len() >= 48 && encrypted.len() <= 80,
+            "Encrypted label should be 48-80 bytes, got {}",
+            encrypted.len()
+        );
+
+        let decrypted = decrypt_account_label(&shared_key, &encrypted).unwrap();
 
         assert_eq!(label, decrypted);
     }

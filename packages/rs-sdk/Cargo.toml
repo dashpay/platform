@@ -73,6 +73,7 @@ default = [
   "offline-testing",
   "dapi-grpc/client",
   "token_reward_explanations",
+  "dep:platform-wallet",
 ]
 spv-client = [
   "core_spv",

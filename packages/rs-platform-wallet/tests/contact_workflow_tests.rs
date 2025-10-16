@@ -176,30 +176,20 @@ fn test_multiple_contact_requests_workflow() {
     let mut managed_main = ManagedIdentity::new(identity_main);
 
     // Send requests to three different identities
-    managed_main.add_sent_contact_request(create_contact_request(
-        id_main, id_friend1, 0, 1000,
-    ));
-    managed_main.add_sent_contact_request(create_contact_request(
-        id_main, id_friend2, 0, 2000,
-    ));
-    managed_main.add_sent_contact_request(create_contact_request(
-        id_main, id_friend3, 0, 3000,
-    ));
+    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend1, 0, 1000));
+    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend2, 0, 2000));
+    managed_main.add_sent_contact_request(create_contact_request(id_main, id_friend3, 0, 3000));
 
     assert_eq!(managed_main.sent_contact_requests.len(), 3);
 
     // Receive incoming request from friend1 (should auto-establish)
-    managed_main.add_incoming_contact_request(create_contact_request(
-        id_friend1, id_main, 0, 1001,
-    ));
+    managed_main.add_incoming_contact_request(create_contact_request(id_friend1, id_main, 0, 1001));
 
     assert_eq!(managed_main.sent_contact_requests.len(), 2); // friend2 and friend3 left
     assert_eq!(managed_main.established_contacts.len(), 1); // friend1 established
 
     // Receive incoming request from friend2 (should auto-establish)
-    managed_main.add_incoming_contact_request(create_contact_request(
-        id_friend2, id_main, 0, 2001,
-    ));
+    managed_main.add_incoming_contact_request(create_contact_request(id_friend2, id_main, 0, 2001));
 
     assert_eq!(managed_main.sent_contact_requests.len(), 1); // only friend3 left
     assert_eq!(managed_main.established_contacts.len(), 2); // friend1 and friend2 established

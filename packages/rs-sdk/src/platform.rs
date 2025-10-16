@@ -16,6 +16,7 @@ pub mod query;
 pub mod transition;
 pub mod types;
 
+pub mod dashpay;
 pub mod documents;
 pub mod dpns_usernames;
 pub mod group_actions;

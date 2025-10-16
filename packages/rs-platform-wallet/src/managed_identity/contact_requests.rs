@@ -318,16 +318,8 @@ mod tests {
         let contact3_id = Identifier::from([4u8; 32]);
 
         // Add multiple sent requests
-        managed.add_sent_contact_request(create_contact_request(
-            our_id,
-            contact1_id,
-            1234567890,
-        ));
-        managed.add_sent_contact_request(create_contact_request(
-            our_id,
-            contact2_id,
-            1234567891,
-        ));
+        managed.add_sent_contact_request(create_contact_request(our_id, contact1_id, 1234567890));
+        managed.add_sent_contact_request(create_contact_request(our_id, contact2_id, 1234567891));
 
         // Add incoming request that doesn't match sent
         managed.add_incoming_contact_request(create_contact_request(
