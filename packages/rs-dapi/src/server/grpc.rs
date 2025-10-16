@@ -3,16 +3,16 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 use tracing::{info, trace};
 
-use axum::http::{HeaderMap, Request, Response};
-use dapi_grpc::core::v0::core_server::CoreServer;
-use dapi_grpc::platform::v0::platform_server::PlatformServer;
-use tower::layer::util::{Identity, Stack};
-use tower::util::Either;
-use tower::{Layer, Service};
-
 use crate::error::DAPIResult;
 use crate::logging::AccessLogLayer;
 use crate::metrics::MetricsLayer;
+use axum::http::{HeaderMap, Request, Response};
+use dapi_grpc::core::v0::core_server::CoreServer;
+use dapi_grpc::platform::v0::platform_server::PlatformServer;
+use dapi_grpc::tonic::Status;
+use tower::layer::util::{Identity, Stack};
+use tower::util::Either;
+use tower::{Layer, Service};
 
 use super::DapiServer;
 
@@ -181,8 +181,19 @@ where
                 "Applying default gRPC timeout"
             );
         }
+        let timeout_duration = effective_timeout;
+        let fut = tower::timeout::Timeout::new(self.inner.clone(), timeout_duration).call(req);
 
-        Box::pin(tower::timeout::Timeout::new(self.inner.clone(), effective_timeout).call(req))
+        Box::pin(async move {
+            fut.await.map_err(|err| {
+                if err.is::<tower::timeout::error::Elapsed>() {
+                    // timeout from TimeoutLayer
+                    Status::deadline_exceeded(format!("request timed out: {err}")).into()
+                } else {
+                    err
+                }
+            })
+        })
     }
 }
 
@@ -203,5 +214,57 @@ fn parse_grpc_timeout_header(headers: &HeaderMap) -> Option<Duration> {
         "u" => Some(Duration::from_micros(amount)),
         "n" => Some(Duration::from_nanos(amount)),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::future::Future;
+    use std::task::{Context, Poll};
+
+    #[derive(Clone)]
+    struct SlowService;
+
+    impl Service<Request<()>> for SlowService {
+        type Response = Response<()>;
+        type Error = Box<dyn std::error::Error + Send + Sync>;
+        type Future =
+            Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>> + Send + 'static>>;
+
+        fn poll_ready(&mut self, _cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+            Poll::Ready(Ok(()))
+        }
+
+        fn call(&mut self, _req: Request<()>) -> Self::Future {
+            Box::pin(async {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                Ok(Response::new(()))
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn timeout_service_returns_deadline_exceeded_status() {
+        let timeout_layer = TimeoutLayer::new(Duration::from_millis(5), Duration::from_secs(1));
+        let mut service = timeout_layer.layer(SlowService);
+
+        let request = Request::builder().uri("/test").body(()).unwrap();
+
+        let err = service
+            .call(request)
+            .await
+            .expect_err("expected timeout error");
+
+        let status = err
+            .downcast::<Status>()
+            .expect("expected tonic status error");
+
+        assert_eq!(status.code(), dapi_grpc::tonic::Code::DeadlineExceeded);
+        assert!(
+            status.message().contains("0.005"),
+            "status message should include timeout value, got '{}'",
+            status.message()
+        );
     }
 }
