@@ -201,8 +201,8 @@ fn build_version_info(
         && let Some(drive_protocol) = &protocol_info.drive
     {
         let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
-            current: drive_protocol.current.unwrap_or(0) as u32,
-            latest: drive_protocol.latest.unwrap_or(0) as u32,
+            current: drive_protocol.current.unwrap_or(0).min(u32::MAX as u64) as u32,
+            latest: drive_protocol.latest.unwrap_or(0).min(u32::MAX as u64) as u32,
         };
 
         protocol.drive = Some(drive_protocol_version);
@@ -361,7 +361,8 @@ fn build_state_sync_info(
         let state_sync = get_status_response_v0::StateSync {
             total_synced_time: parse_or_default(&sync_info.total_synced_time),
             remaining_time: parse_or_default(&sync_info.remaining_time),
-            total_snapshots: parse_or_default(&sync_info.total_snapshots) as u32,
+            total_snapshots: parse_or_default(&sync_info.total_snapshots).min(u32::MAX as u64)
+                as u32,
             chunk_process_avg_time: parse_or_default(&sync_info.chunk_process_avg_time),
             snapshot_height: parse_or_default(&sync_info.snapshot_height),
             snapshot_chunks_count: parse_or_default(&sync_info.snapshot_chunks_count),
@@ -402,7 +403,7 @@ fn build_time_info(drive_status: &DriveStatusResponse) -> get_status_response_v0
     if let Some(drive_time) = &drive_status.time {
         time.block = drive_time.block;
         time.genesis = drive_time.genesis;
-        time.epoch = drive_time.epoch.map(|e| e as u32);
+        time.epoch = drive_time.epoch.map(|e| e.min(u32::MAX as u64) as u32);
     }
 
     time.local = chrono::Utc::now().timestamp().max(0) as u64;
