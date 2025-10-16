@@ -253,7 +253,7 @@ impl Query<proto::GetIdentityKeysRequest> for IdentityKeysQuery {
                     request_type: Some(KeyRequestType {
                         request: Some(proto::key_request_type::Request::SpecificKeys(
                             SpecificKeys {
-                                key_ids: self.key_ids.into_iter().map(|id| id as u32).collect(),
+                                key_ids: self.key_ids.into_iter().collect(),
                             },
                         )),
                     }),
