@@ -182,13 +182,18 @@ where
             );
         }
         let timeout_duration = effective_timeout;
+        let timeout_secs = timeout_duration.as_secs_f64();
         let fut = tower::timeout::Timeout::new(self.inner.clone(), timeout_duration).call(req);
 
         Box::pin(async move {
             fut.await.map_err(|err| {
                 if err.is::<tower::timeout::error::Elapsed>() {
                     // timeout from TimeoutLayer
-                    Status::deadline_exceeded(format!("request timed out: {err}")).into()
+                    Status::deadline_exceeded(format!(
+                        "request timed out after {:.3}s: {err}",
+                        timeout_secs
+                    ))
+                    .into()
                 } else {
                     err
                 }

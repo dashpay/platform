@@ -87,10 +87,11 @@ pub type DriveChannel = Trace<
 >;
 
 impl DriveClient {
-    /// Create a new DriveClient with gRPC request tracing and connection reuse
+    /// Create a new DriveClient with gRPC request tracing and connection reuse.
     ///
     /// This method validates the connection by making a test gRPC call to ensure
-    /// the Drive service is reachable and responding correctly.
+    /// the Drive service is reachable and responding correctly. If the Drive
+    /// service cannot be reached, an error is returned.
     pub async fn new(uri: &str) -> Result<Self, tonic::Status> {
         info!("Creating Drive client for: {}", uri);
         let channel = Self::create_channel(uri)?;
@@ -111,20 +112,19 @@ impl DriveClient {
                 .max_encoding_message_size(MAX_ENCODING_BYTES),
         };
 
-        // Validate connection by making a test status call.
-        // Failures are logged but do not prevent server startup.
+        // Validate connection by making a test status call and fail fast on errors.
         trace!("Validating Drive connection at: {}", uri);
         let test_request = GetStatusRequest { version: None };
         match client.get_drive_status(&test_request).await {
             Ok(_) => {
                 debug!("Drive connection validated successfully");
+                Ok(client)
             }
             Err(e) => {
                 error!("Failed to validate Drive connection: {}", e);
+                Err(e)
             }
         }
-
-        Ok(client)
     }
 
     /// Build a traced gRPC channel to Drive with error normalization.

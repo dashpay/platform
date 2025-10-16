@@ -379,6 +379,7 @@ impl TenderdashClient {
     /// Create a new TenderdashClient with HTTP and WebSocket support.
     ///
     /// This method validates both HTTP and WebSocket connectivity before returning.
+    /// If either check fails, client construction fails.
     pub async fn new(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
         trace!(
             uri = %uri,
@@ -407,12 +408,14 @@ impl TenderdashClient {
             websocket_client: Some(websocket_client.clone()),
         };
 
-        // Validate HTTP connection. Failures are logged but do not abort startup.
-        if let Err(e) = tenderdash_client.validate_connection().await {
+        tenderdash_client.validate_connection().await?;
+
+        if let Err(e) = TenderdashWebSocketClient::test_connection(ws_uri).await {
             error!(
                 error = %e,
-                "Tenderdash HTTP connection validation failed; will retry in background"
+                "Tenderdash WebSocket connection validation failed"
             );
+            return Err(e);
         }
 
         Ok(tenderdash_client)
