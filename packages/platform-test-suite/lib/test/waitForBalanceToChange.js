@@ -15,7 +15,12 @@ async function waitForBalanceToChange(walletAccount) {
   let currentIteration = 0;
   while (walletAccount.getTotalBalance() === originalBalance
       && currentIteration <= NUMBER_OF_ITERATIONS) {
-    await wait(ITERATION_TIME_MS);
+    const attempt = currentIteration + 1;
+
+    await wait(
+      ITERATION_TIME_MS,
+      `wallet balance to change from ${originalBalance} (attempt ${attempt}/${NUMBER_OF_ITERATIONS})`,
+    );
     currentIteration++;
   }
 }

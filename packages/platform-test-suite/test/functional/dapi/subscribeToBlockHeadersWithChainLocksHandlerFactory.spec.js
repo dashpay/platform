@@ -13,9 +13,7 @@ const {
   DAPIClient,
 } = Dash;
 
-const wait = (ms) => new Promise((resolve) => {
-  setTimeout(resolve, ms);
-});
+const wait = require('../../../lib/wait');
 // TODO: rework with ReconnectableStream
 const createRetryableStream = (dapiClient) => {
   const streamMediator = new EventEmitter();
@@ -128,11 +126,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
     });
 
     // TODO: Use promise instead of loop
+    let waitIterations = 0;
     while (!streamEnded) {
       if (streamError) {
         throw streamError;
       }
-      await wait(1000);
+
+      waitIterations += 1;
+      await wait(
+        1000,
+        `historical block header stream to end (attempt ${waitIterations})`,
+      );
     }
     expect(streamError).to.not.exist();
     expect(streamEnded).to.be.true();
@@ -215,12 +219,17 @@ describe('subscribeToBlockHeadersWithChainLocksHandlerFactory', () => {
 
     // TODO: Use promise instead of loop
     // Wait for stream ending
+    let waitIterations = 0;
     while (!streamEnded) {
       if (streamError) {
         throw streamError;
       }
 
-      await wait(1000);
+      waitIterations += 1;
+      await wait(
+        1000,
+        `block header stream to deliver fresh data and chain lock (attempt ${waitIterations})`,
+      );
     }
 
     expect(streamError).to.not.exist();
