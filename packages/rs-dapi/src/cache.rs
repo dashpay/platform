@@ -152,7 +152,8 @@ impl LruResponseCache {
         let label_clone = label.clone();
         let workers = Workers::new();
         workers.spawn(async move {
-            while receiver.recv().await.is_some() {
+            while let Some(event) = receiver.recv().await {
+                tracing::trace!(?event, "Cache invalidation event received, clearing cache");
                 inner_clone.clear();
                 observe_memory(&inner_clone, label_clone.as_ref());
             }

@@ -112,7 +112,7 @@ impl DriveClient {
         };
 
         // Validate connection by making a test status call.
-        // Failures are logged but do not prevent server startup; a background task will retry.
+        // Failures are logged but do not prevent server startup.
         trace!("Validating Drive connection at: {}", uri);
         let test_request = GetStatusRequest { version: None };
         match client.get_drive_status(&test_request).await {

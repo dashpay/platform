@@ -88,7 +88,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 false,
                 PlatformChecks {
                     status: "error".into(),
-                    error: Some(health_error_label(&err).to_string()),
+                    error: Some(health_error_label(&err.into()).to_string()),
                     drive: None,
                     tenderdash_status: None,
                     tenderdash_net_info: None,

@@ -1,3 +1,4 @@
+use dpp::dashcore::prelude::DisplayHex;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -99,7 +100,7 @@ impl EventBusFilter<StreamingEvent> for FilterType {
 }
 
 /// Incoming events from various sources to dispatch to subscribers
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum StreamingEvent {
     /// Core raw transaction bytes
     CoreRawTransaction { data: Vec<u8> },
@@ -117,6 +118,61 @@ pub enum StreamingEvent {
     PlatformBlock { event: BlockEvent },
     /// Masternode list diff bytes
     CoreMasternodeListDiff { data: Vec<u8> },
+}
+
+impl Debug for StreamingEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            StreamingEvent::CoreRawTransaction { data } => {
+                write!(
+                    f,
+                    "CoreRawTransaction {{ data: [{}] }}",
+                    data.to_lower_hex_string()
+                )
+            }
+            StreamingEvent::CoreRawBlock { data } => {
+                write!(
+                    f,
+                    "CoreRawBlock {{ data: [{}] }}",
+                    data.to_lower_hex_string()
+                )
+            }
+            StreamingEvent::CoreInstantLock { data } => {
+                write!(
+                    f,
+                    "CoreInstantLock {{ data: [{}] }}",
+                    data.to_lower_hex_string()
+                )
+            }
+            StreamingEvent::CoreChainLock { data } => {
+                write!(
+                    f,
+                    "CoreChainLock {{ data: [{}] }}",
+                    data.to_lower_hex_string()
+                )
+            }
+            StreamingEvent::CoreNewBlockHash { hash } => {
+                write!(
+                    f,
+                    "CoreNewBlockHash {{ hash: [{}] }}",
+                    hash.to_lower_hex_string()
+                )
+            }
+            StreamingEvent::PlatformTx { event } => {
+                write!(f, "PlatformTx {{ hash: {} }}", event.hash)
+            }
+            StreamingEvent::PlatformBlock { .. } => {
+                write!(f, "PlatformBlock {{ }}")
+            }
+            StreamingEvent::CoreMasternodeListDiff { data } => {
+                write!(
+                    f,
+                    "CoreMasternodeListDiff {{ data: [{}] }}",
+                    data.to_lower_hex_string()
+                )
+            }
+        }
+    }
 }
 
 /// Manages all active streaming subscriptions
