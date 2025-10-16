@@ -47,6 +47,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
     const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
 
     let platform_service = state.platform_service.clone();
+    let websocket_connected = platform_service.websocket_client.is_connected();
     let core_client = state.core_service.core_client.clone();
 
     let platform_result = timeout(HEALTH_CHECK_TIMEOUT, async move {
@@ -73,6 +74,10 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 },
                 error: None,
                 drive: Some(ComponentCheck::from_option(health.drive_error.clone())),
+                tenderdash_websocket: Some(ComponentCheck::from_bool(
+                    websocket_connected,
+                    "disconnected",
+                )),
                 tenderdash_status: Some(ComponentCheck::from_option(
                     health.tenderdash_status_error.clone(),
                 )),
@@ -90,6 +95,10 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                     status: "error".into(),
                     error: Some(health_error_label(&err.into()).to_string()),
                     drive: None,
+                    tenderdash_websocket: Some(ComponentCheck::from_bool(
+                        websocket_connected,
+                        "disconnected",
+                    )),
                     tenderdash_status: None,
                     tenderdash_net_info: None,
                 },
@@ -101,6 +110,10 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 status: "error".into(),
                 error: Some("timeout".into()),
                 drive: None,
+                tenderdash_websocket: Some(ComponentCheck::from_bool(
+                    websocket_connected,
+                    "disconnected",
+                )),
                 tenderdash_status: None,
                 tenderdash_net_info: None,
             },
@@ -137,10 +150,15 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
         ),
     };
 
-    let overall_status = match (platform_ok, core_ok) {
-        (true, true) => "ok",
-        (false, false) => "error",
-        _ => "degraded",
+    let websocket_ok = websocket_connected;
+    let failures = u8::from(!platform_ok) + u8::from(!core_ok) + u8::from(!websocket_ok);
+
+    let overall_status = if failures == 0 {
+        "ok"
+    } else if failures == 1 {
+        "degraded"
+    } else {
+        "error"
     };
 
     let http_status = if overall_status == "ok" {
@@ -194,6 +212,8 @@ struct PlatformChecks {
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     drive: Option<ComponentCheck>,
+    #[serde(rename = "tenderdashWebSocket", skip_serializing_if = "Option::is_none")]
+    tenderdash_websocket: Option<ComponentCheck>,
     #[serde(rename = "tenderdashStatus", skip_serializing_if = "Option::is_none")]
     tenderdash_status: Option<ComponentCheck>,
     #[serde(rename = "tenderdashNetInfo", skip_serializing_if = "Option::is_none")]
@@ -262,6 +282,20 @@ impl ComponentCheck {
                 status: "ok".into(),
                 error: None,
             },
+        }
+    }
+
+    fn from_bool(is_ok: bool, error_message: &'static str) -> Self {
+        if is_ok {
+            Self {
+                status: "ok".into(),
+                error: None,
+            }
+        } else {
+            Self {
+                status: "error".into(),
+                error: Some(error_message.into()),
+            }
         }
     }
 }
