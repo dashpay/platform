@@ -50,32 +50,6 @@ You can also inspect tests in `tests/` folder for more detailed examples.
 
 Also refer to [Platform Explorer](https://github.com/dashpay/rs-platform-explorer/) which uses the SDK to execute various state transitions.
 
-### Accessing Proof Data for Zero-Knowledge Applications
-
-The SDK provides methods to fetch objects along with their cryptographic proof data, enabling zero-knowledge proof applications:
-
-```rust
-use dash_sdk::platform::{Identity, Document, FetchWithProof, DocumentFetchManyWithProofs};
-
-// Fetch identity with proof data
-let (identity, proof_data) = Identity::fetch_with_proof(&sdk, identity_id).await?;
-
-// Access raw GroveDB proof bytes for ZK circuits
-let grovedb_proof = &proof_data.grovedb_proof;
-let root_hash = proof_data.root_hash;
-
-// Fetch documents with proof data
-let (documents, proof_data) = Document::fetch_many_with_proofs(&sdk, query).await?;
-```
-
-The `ProofData` structure contains:
-- `grovedb_proof`: Raw GroveDB proof bytes containing Merkle tree data
-- `metadata`: Blockchain state information (height, epoch, timestamp)
-- `root_hash`: 32-byte root hash of the Merkle tree
-- Additional fields: quorum_hash, signature, round, block_id_hash
-
-See `examples/proof_data_zkp.rs` for a complete example of using proof data.
-
 ## Tests
 
 This section provides instructions on how to test the RS-SDK for Dash Platform. The tests can be run in two modes: **offline** (without connectivity to the Dash Platform) and **network** (with connectivity to the Dash Platform). **Offline** mode is the default one.
