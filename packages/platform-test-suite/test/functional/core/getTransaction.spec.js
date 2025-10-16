@@ -28,7 +28,7 @@ describe('Core', () => {
     it('should respond with a transaction by it\'s ID', async () => {
       const account = await client.getWalletAccount();
 
-      await wait(5000, 'wallet account readiness before creating transaction');
+      await wait(5000);
 
       const transaction = account.createTransaction({
         recipient: new PrivateKey().toAddress(process.env.NETWORK),
@@ -37,7 +37,7 @@ describe('Core', () => {
 
       await account.broadcastTransaction(transaction);
 
-      await wait(5000, `transaction ${transaction.id} to propagate before fetching by id`);
+      await wait(5000);
 
       const result = await client.getDAPIClient().core.getTransaction(transaction.id);
       const receivedTx = new Transaction(result.getTransaction());

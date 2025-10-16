@@ -10,7 +10,7 @@ async function waitForSTPropagated() {
     interval = parseInt(process.env.ST_EXECUTION_INTERVAL, 10);
   }
 
-  await wait(interval, 'state transition propagation window');
+  await wait(interval);
 }
 
 module.exports = waitForSTPropagated;

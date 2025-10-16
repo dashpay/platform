@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const wait = require('../../lib/wait');
+const wait = require('@dashevo/dapi-client/lib/utils/wait');
 const { STATUSES: WITHDRAWAL_STATUSES } = require('dash/build/SDK/Client/Platform/methods/identities/creditWithdrawal');
 
 const createClientWithFundedWallet = require('../../lib/test/createClientWithFundedWallet');
@@ -255,7 +255,7 @@ describe('Withdrawals', function withdrawalsTest() {
 
         withdrawalBroadcasted = withdrawalDocument.get('status') === WITHDRAWAL_STATUSES.BROADCASTED;
 
-        await wait(1000, 'withdrawal document to update during status polling');
+        await wait(1000);
       }
 
       try {

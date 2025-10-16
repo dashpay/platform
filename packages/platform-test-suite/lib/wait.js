@@ -1,9 +1,3 @@
-/* eslint-disable no-console */
-
-module.exports = function wait(ms, description = '') {
-  const details = description ? `${description} (${ms}ms)` : `${ms}ms delay`;
-
-  console.debug(`Waiting for ${details}`);
-
+module.exports = function wait(ms) {
   return new Promise((res) => { setTimeout(res, ms); });
 };
