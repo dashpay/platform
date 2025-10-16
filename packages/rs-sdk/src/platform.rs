@@ -12,7 +12,6 @@ pub mod fetch_current_no_parameters;
 mod fetch_many;
 mod fetch_unproved;
 mod identities_contract_keys_query;
-pub mod proof_data;
 pub mod query;
 pub mod transition;
 pub mod types;
@@ -38,7 +37,6 @@ pub use {
     fetch::Fetch,
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
-    proof_data::{FetchWithProof, ProofData},
     query::{
         IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
         DEFAULT_EPOCH_QUERY_LIMIT,
