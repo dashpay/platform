@@ -26,13 +26,11 @@ mod identity_facade;
 #[cfg(feature = "factories")]
 pub mod identity_factory;
 pub mod identity_nonce;
-pub mod merkle_proof;
 pub mod methods;
 #[cfg(feature = "random-identities")]
 pub mod random;
 pub mod v0;
 
 pub use fields::*;
-pub use merkle_proof::{KeyMerkleProof, MerkleTree};
 
 pub use v0::*;
