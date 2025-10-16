@@ -14,7 +14,6 @@ mod fetch_unproved;
 mod identities_contract_keys_query;
 pub mod proof_data;
 pub mod query;
-pub mod signature_utils;
 pub mod transition;
 pub mod types;
 
