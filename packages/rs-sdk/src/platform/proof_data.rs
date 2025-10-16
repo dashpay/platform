@@ -1,15 +1,14 @@
-//! Proof data structures for zero-knowledge proof applications.
+//! Proof data structures.
 //!
 //! This module provides structures to expose raw proof data from DAPI responses,
-//! enabling users to extract Merkle paths and other cryptographic data for use
-//! in zero-knowledge proof systems.
+//! enabling users to extract Merkle paths and other cryptographic data.
 
 use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 
 /// Raw proof data extracted from DAPI responses.
 ///
 /// This structure contains all the cryptographic proof data needed to independently
-/// verify Platform state or use in zero-knowledge proof applications.
+/// verify Platform state.
 ///
 /// # Example
 ///
@@ -23,10 +22,10 @@ use dapi_grpc::platform::v0::{Proof, ResponseMetadata};
 /// // Fetch identity with proof data
 /// let (identity, proof_data) = Identity::fetch_with_proof(&sdk, identity_id).await?;
 ///
-/// // Access raw GroveDB proof bytes for ZK circuits
+/// // Access raw GroveDB proof bytes
 /// let grovedb_proof = &proof_data.grovedb_proof;
 ///
-/// // Extract Merkle path from grovedb_proof for use in ZK proof generation
+/// // Extract Merkle path from grovedb_proof
 /// // let merkle_path = extract_merkle_path_from_grovedb_proof(grovedb_proof);
 /// # Ok(())
 /// # }
@@ -36,7 +35,7 @@ pub struct ProofData {
     /// Raw GroveDB proof bytes containing Merkle tree data.
     ///
     /// This contains the cryptographic proof data that can be parsed to extract
-    /// Merkle paths, node hashes, and other data needed for zero-knowledge proofs.
+    /// Merkle paths, node hashes, and other data.
     pub grovedb_proof: Vec<u8>,
 
     /// Response metadata containing blockchain state information.
@@ -51,7 +50,6 @@ pub struct ProofData {
     /// Root hash derived from the proof (32 bytes).
     ///
     /// This is the root of the Merkle tree that the proof validates against.
-    /// For ZK applications, this serves as the public input to prove membership.
     pub root_hash: [u8; 32],
 
     /// Hash of the quorum that validated this data.
@@ -112,12 +110,12 @@ impl ProofData {
 /// Extension trait for types that can be fetched with proof data.
 ///
 /// This trait provides convenient methods to fetch objects along with their
-/// cryptographic proof data for use in zero-knowledge proof applications.
+/// cryptographic proof data.
 #[async_trait::async_trait]
 pub trait FetchWithProof: super::Fetch {
     /// Fetches an object along with its proof data.
     ///
-    /// This method is designed for zero-knowledge proof applications that need
+    /// This method is designed for applications that need
     /// access to the raw Merkle proof data from DAPI responses.
     ///
     /// # Arguments
@@ -172,7 +170,7 @@ pub type DocumentsWithProofData = (drive_proof_verifier::types::Documents, Proof
 pub trait DocumentFetchManyWithProofs {
     /// Fetches multiple documents along with their proof data.
     ///
-    /// This method is designed for zero-knowledge proof applications that need
+    /// This method is designed for applications that need
     /// access to the raw Merkle proof data from DAPI responses when fetching
     /// multiple documents.
     ///

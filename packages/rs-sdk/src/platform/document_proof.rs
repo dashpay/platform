@@ -1,7 +1,7 @@
-//! Document proof functionality for zero-knowledge proof applications.
+//! Document proof functionality
 //!
 //! This module provides functionality to fetch documents along with their
-//! merkle proofs to the state root, enabling use in zero-knowledge proof systems.
+//! merkle proofs to the state root
 
 use crate::{Error, Sdk};
 use dpp::document::{Document, DocumentV0Getters};
@@ -26,7 +26,7 @@ pub struct DocumentWithProof {
 /// Extract merkle path from GroveDB proof bytes
 ///
 /// This function properly parses the GroveDB proof structure to extract
-/// the merkle proof elements needed for ZK circuits.
+/// the merkle proof elements.
 ///
 /// GroveDB proofs can be in multiple formats:
 /// - Raw Merk proof (doesn't start with 0x00)
@@ -175,8 +175,7 @@ pub(crate) fn decode_varint(bytes: &[u8]) -> Result<(usize, usize), String> {
 /// Fetch a document along with its merkle proof to the state root
 ///
 /// This function fetches a document and extracts its merkle proof from the
-/// GroveDB proof, providing all necessary data for zero-knowledge proof
-/// applications.
+/// GroveDB proof.
 ///
 /// # Arguments
 ///
