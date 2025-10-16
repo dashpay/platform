@@ -309,13 +309,21 @@ mod tests {
         let workers = Workers::new();
         let (drop_tx, drop_rx) = oneshot::channel();
         let notify = Arc::new(Notify::new());
+        let ready = Arc::new(Notify::new());
+        let ready_wait = ready.notified();
 
         let worker_notify = notify.clone();
+        let worker_ready = ready.clone();
         let handle = workers.spawn(async move {
             let _guard = DropGuard(Some(drop_tx));
+            worker_ready.notify_one();
             worker_notify.notified().await;
             Ok::<(), DapiError>(())
         });
+
+        timeout(Duration::from_secs(1), ready_wait)
+            .await
+            .expect("worker did not signal readiness");
 
         timeout(Duration::from_secs(1), handle.abort())
             .await
