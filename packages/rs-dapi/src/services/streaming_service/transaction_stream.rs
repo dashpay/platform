@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::io::Cursor;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -8,8 +9,8 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dashcore_rpc::dashcore::{Block, InstantLock, hashes::Hash};
-use dpp::dashcore::consensus::Decodable;
+use dashcore_rpc::dashcore::consensus::Decodable as CoreDecodable;
+use dashcore_rpc::dashcore::{Block, InstantLock, Transaction, hashes::Hash};
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio::task::JoinSet;
@@ -388,8 +389,21 @@ impl StreamingServiceImpl {
                 }
             }
             StreamingEvent::CoreInstantLock { data } => {
-                let txid_bytes = match InstantLock::consensus_decode(&mut data.reader()) {
-                    Ok(instant_lock) => *instant_lock.txid.as_byte_array(),
+                let mut cursor = Cursor::new(data.as_slice());
+                let tx_result = Transaction::consensus_decode(&mut cursor);
+                if tx_result.is_err() {
+                    trace!(
+                        subscriber_id,
+                        handle_id,
+                        error = ?tx_result.as_ref().err(),
+                        "transactions_with_proofs=instant_lock_tx_decode_failed"
+                    );
+                    cursor.set_position(0);
+                }
+                let tx = tx_result.ok();
+
+                let instant_lock = match InstantLock::consensus_decode(&mut cursor) {
+                    Ok(instant_lock) => instant_lock,
                     Err(e) => {
                         debug!(
                             subscriber_id,
@@ -401,6 +415,32 @@ impl StreamingServiceImpl {
                         return true;
                     }
                 };
+                let txid_bytes = *instant_lock.txid.as_byte_array();
+
+                let already_delivered = state.has_transaction_been_delivered(&txid_bytes).await;
+                let bloom_matched = match &filter {
+                    FilterType::CoreAllTxs => true,
+                    FilterType::CoreBloomFilter(bloom, flags) => tx
+                        .as_ref()
+                        .map(|tx| super::bloom::matches_transaction(
+                            Arc::clone(bloom),
+                            tx,
+                            *flags,
+                        ))
+                        .unwrap_or(false),
+                    _ => true,
+                };
+
+                if !bloom_matched && !already_delivered && !matches!(filter, FilterType::CoreAllTxs)
+                {
+                    trace!(
+                        subscriber_id,
+                        handle_id,
+                        txid = %txid_to_hex(&txid_bytes),
+                        "transactions_with_proofs=skip_instant_lock_not_in_bloom"
+                    );
+                    return true;
+                }
 
                 if !state.mark_instant_lock_delivered(&txid_bytes).await {
                     trace!(
