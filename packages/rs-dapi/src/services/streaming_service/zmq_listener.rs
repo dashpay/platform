@@ -59,8 +59,6 @@ impl ZmqTopics {
         vec![
             self.rawtx.clone(),
             self.rawblock.clone(),
-            // Subscribe to both legacy and signature variants for IS locks
-            self.rawtxlock.clone(),
             self.rawtxlocksig.clone(),
             self.rawchainlock.clone(),
             self.rawchainlocksig.clone(),
@@ -401,8 +399,8 @@ impl ZmqListener {
             "rawtx" => Some(ZmqEvent::RawTransaction { data }),
             "rawblock" => Some(ZmqEvent::RawBlock { data }),
             "rawtxlocksig" => Some(ZmqEvent::RawTransactionLock { data }),
-            // Some Core builds emit rawtxlock instead of rawtxlocksig
-            "rawtxlock" => Some(ZmqEvent::RawTransactionLock { data }),
+            // We ignore rawtxlock, we need rawtxlocksig only
+            // "rawtxlock" => Some(ZmqEvent::RawTransactionLock { data }),
             "rawchainlocksig" => Some(ZmqEvent::RawChainLock { data }),
             // Some Core builds emit rawchainlock without signature suffix
             "rawchainlock" => Some(ZmqEvent::RawChainLock { data }),
