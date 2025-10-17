@@ -275,9 +275,11 @@ public class SPVClient: ObservableObject {
             }
         }
         
-        // Enable mempool tracking
+        // Enable mempool tracking and ensure detailed events are available
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 1)) // BloomFilter
+        _ = dash_spv_ffi_config_set_fetch_mempool_transactions(configPtr, true)
+        _ = dash_spv_ffi_config_set_persist_mempool(configPtr, true)
 
         // Set user agent to include SwiftDashSDK version from the framework bundle
         do {
@@ -625,6 +627,90 @@ public class SPVClient: ObservableObject {
                 guard let client = clientRef else { return }
                 client.blocksHit &+= 1
                 client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
+            }
+        }
+
+        // Mempool: unconfirmed transaction detected for any tracked address
+        callbacks.on_mempool_transaction_added = { txidPtr, amount, addressesPtr, _isInstantSend, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            var addresses: [String] = []
+            if let addressesPtr = addressesPtr {
+                let addressesStr = String(cString: addressesPtr)
+                addresses = addressesStr.components(separatedBy: ",")
+            }
+
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: false,
+                    amount: amount,
+                    addresses: addresses,
+                    blockHeight: nil
+                )
+            }
+        }
+
+        // Mempool: transaction confirmed
+        callbacks.on_mempool_transaction_confirmed = { txidPtr, blockHeight, _blockHashPtr, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            // Amount and addresses are not provided here; emit a confirmation-only update
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: true,
+                    amount: 0,
+                    addresses: [],
+                    blockHeight: blockHeight
+                )
+            }
+        }
+
+        // Mempool: transaction removed (expired/replaced/etc). No UI path yet; ignore for now.
+        callbacks.on_mempool_transaction_removed = { _txidPtr, _reason, _userData in
+            // Intentionally no-op; could surface to UI in future if needed
+        }
+
+        // Wallet-specific transaction callback (fires for our wallet, including mempool)
+        callbacks.on_wallet_transaction = { _walletId, _accountIndex, txidPtr, confirmed, amount, addressesPtr, blockHeight, _isOurs, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            var addresses: [String] = []
+            if let addressesPtr = addressesPtr {
+                let addressesStr = String(cString: addressesPtr)
+                addresses = addressesStr.components(separatedBy: ",")
+            }
+
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: confirmed,
+                    amount: amount,
+                    addresses: addresses,
+                    blockHeight: blockHeight > 0 ? blockHeight : nil
+                )
             }
         }
 
