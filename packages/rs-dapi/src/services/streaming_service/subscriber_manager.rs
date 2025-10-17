@@ -88,7 +88,7 @@ impl FilterType {
             (FilterType::CoreAllTxs, _) => false,
         };
         let event_summary = super::StreamingServiceImpl::summarize_streaming_event(event);
-        trace!(filter = ?self, event = %event_summary, matched, "subscription_manager=filter_evaluated");
+        trace!(matched, filter = ?self, event = %event_summary, "subscription_manager=filter_evaluated");
         matched
     }
 }

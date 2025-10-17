@@ -214,7 +214,7 @@ impl Platform for PlatformServiceImpl {
             Err(e) => {
                 let status = e.to_status();
                 let metadata = status.metadata();
-                warn!(method, error = %status, source = %e, ?metadata, "request failed");
+                warn!(method, error = %status, source = %e, ?metadata, "broadcast state transition request failed");
                 Err(status)
             }
         }
@@ -236,7 +236,7 @@ impl Platform for PlatformServiceImpl {
                 Ok(response)
             }
             Err(error) => {
-                warn!(method, error = %error, "request failed");
+                warn!(method, error = %error, "wait for state transition result request failed");
                 let response =
                     wait_for_state_transition_result::build_wait_for_state_transition_error_response(
                         &error,
