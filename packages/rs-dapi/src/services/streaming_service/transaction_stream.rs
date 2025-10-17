@@ -341,7 +341,7 @@ impl StreamingServiceImpl {
                     return true;
                 };
 
-                trace!(
+                debug!(
                     subscriber_id,
                     handle_id,
                     txid = txid_hex,
@@ -402,13 +402,18 @@ impl StreamingServiceImpl {
                 }
                 let tx = tx_result.ok();
 
+                let txid_hex_from_tx = tx.as_ref().map(|tx| tx.txid().to_string());
+
                 let instant_lock = match InstantLock::consensus_decode(&mut cursor) {
                     Ok(instant_lock) => instant_lock,
                     Err(e) => {
+                        let lock_bytes = cursor.into_inner();
                         debug!(
                             subscriber_id,
                             handle_id,
+                            txid = txid_hex_from_tx.as_deref().unwrap_or("unknown"),
                             error = %e,
+                            hex = %hex::encode(&lock_bytes),
                             "transactions_with_proofs=drop_invalid_instant_lock"
                         );
 
@@ -422,11 +427,7 @@ impl StreamingServiceImpl {
                     FilterType::CoreAllTxs => true,
                     FilterType::CoreBloomFilter(bloom, flags) => tx
                         .as_ref()
-                        .map(|tx| super::bloom::matches_transaction(
-                            Arc::clone(bloom),
-                            tx,
-                            *flags,
-                        ))
+                        .map(|tx| super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags))
                         .unwrap_or(false),
                     _ => true,
                 };
@@ -452,9 +453,10 @@ impl StreamingServiceImpl {
                     return true;
                 }
 
-                trace!(
+                debug!(
                     subscriber_id,
                     handle_id,
+                    txid = %txid_to_hex(&txid_bytes),
                     payload_size = data.len(),
                     "transactions_with_proofs=forward_instant_lock"
                 );
