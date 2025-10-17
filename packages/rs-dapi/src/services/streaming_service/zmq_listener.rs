@@ -6,7 +6,10 @@ use std::sync::atomic::Ordering;
 use crate::error::{DAPIResult, DapiError};
 use crate::sync::Workers;
 use async_trait::async_trait;
+use dashcore_rpc::dashcore::Transaction as CoreTransaction;
+use dpp::dashcore::consensus::Decodable as _;
 use futures::StreamExt;
+use std::io::Cursor;
 use tokio::select;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
@@ -31,7 +34,7 @@ pub struct ZmqTopics {
     pub hashblock: String,
     pub rawblock: String,
     pub rawtx: String,
-    pub rawtxlock: String,
+    // pub rawtxlock: String, -- not used
     pub rawtxlocksig: String,
     pub rawchainlock: String,
     pub rawchainlocksig: String,
@@ -45,7 +48,7 @@ impl Default for ZmqTopics {
             hashblock: "hashblock".to_string(),
             rawblock: "rawblock".to_string(),
             rawtx: "rawtx".to_string(),
-            rawtxlock: "rawtxlock".to_string(),
+            // rawtxlock: "rawtxlock".to_string(),
             rawtxlocksig: "rawtxlocksig".to_string(),
             rawchainlock: "rawchainlock".to_string(),
             rawchainlocksig: "rawchainlocksig".to_string(),
@@ -75,7 +78,10 @@ pub enum ZmqEvent {
     /// Raw block data from Dash Core
     RawBlock { data: Vec<u8> },
     /// Raw transaction lock (InstantSend) data
-    RawTransactionLock { data: Vec<u8> },
+    RawTransactionLock {
+        tx_bytes: Option<Vec<u8>>,
+        lock_bytes: Vec<u8>,
+    },
     /// Raw chain lock data
     RawChainLock { data: Vec<u8> },
     /// New block hash notification
@@ -398,7 +404,18 @@ impl ZmqListener {
         match topic.as_ref() {
             "rawtx" => Some(ZmqEvent::RawTransaction { data }),
             "rawblock" => Some(ZmqEvent::RawBlock { data }),
-            "rawtxlocksig" => Some(ZmqEvent::RawTransactionLock { data }),
+            "rawtxlocksig" => {
+                let (tx_bytes, lock_bytes) = split_tx_and_lock(data);
+                if lock_bytes.is_empty() {
+                    debug!("rawtxlocksig payload missing instant lock bytes");
+                    None
+                } else {
+                    Some(ZmqEvent::RawTransactionLock {
+                        tx_bytes,
+                        lock_bytes,
+                    })
+                }
+            }
             // We ignore rawtxlock, we need rawtxlocksig only
             // "rawtxlock" => Some(ZmqEvent::RawTransactionLock { data }),
             "rawchainlocksig" => Some(ZmqEvent::RawChainLock { data }),
@@ -410,6 +427,23 @@ impl ZmqListener {
                 None
             }
         }
+    }
+}
+
+fn split_tx_and_lock(data: Vec<u8>) -> (Option<Vec<u8>>, Vec<u8>) {
+    let mut cursor = Cursor::new(data.as_slice());
+    match CoreTransaction::consensus_decode(&mut cursor) {
+        Ok(_) => {
+            let consumed = cursor.position() as usize;
+            if consumed >= data.len() {
+                (Some(data), Vec::new())
+            } else {
+                let lock_bytes = data[consumed..].to_vec();
+                let tx_bytes = data[..consumed].to_vec();
+                (Some(tx_bytes), lock_bytes)
+            }
+        }
+        Err(_) => (None, data),
     }
 }
 
@@ -506,7 +540,9 @@ async fn with_cancel<T>(
 
 #[cfg(test)]
 mod tests {
+    use super::split_tx_and_lock;
     use super::*;
+    use hex::FromHex;
 
     #[test]
     fn test_zmq_topics_default() {
@@ -519,5 +555,19 @@ mod tests {
     async fn test_zmq_listener_creation() {
         let listener = ZmqListener::new("tcp://127.0.0.1:28332").unwrap();
         assert_eq!(listener.zmq_uri, "tcp://127.0.0.1:28332");
+    }
+
+    #[test]
+    fn split_tx_and_lock_extracts_components() {
+        let hex_bytes = "030008000167c3b38231c0a4593c73bf9f109a29dbf775ac46c137ee07d64c262b34a92c34000000006b483045022100ca870556e4c9692f8db5c364653ec815be367328a68990c3ced9a83869ad51a1022063999e56189ae6f1d7c11ee75bcc8da8fc4ee550ed08ba06f20fd72c449145f101210342e7310746e4af47264908309031b977ced9c136862368ec3fd8610466bd07ceffffffff0280841e0000000000026a00180e7a00000000001976a914bd04c1fb11018acde9abd2c14ed4b361673e3aa488ac0000000024010180841e00000000001976a914a4e906f2bdf25fa3d986d0000d29aa27b358f28588ac";
+        let data = Vec::from_hex(hex_bytes).expect("hex should decode");
+
+        let (tx_bytes, lock_bytes) = split_tx_and_lock(data);
+
+        assert!(tx_bytes.is_some(), "transaction bytes should be extracted");
+        assert!(
+            !lock_bytes.is_empty(),
+            "instant lock bytes should be present for rawtxlocksig payloads"
+        );
     }
 }

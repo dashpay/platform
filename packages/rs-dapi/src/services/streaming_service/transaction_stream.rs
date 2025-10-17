@@ -9,7 +9,7 @@ use dapi_grpc::core::v0::{
     TransactionsWithProofsResponse,
 };
 use dapi_grpc::tonic::{Request, Response, Status};
-use dashcore_rpc::dashcore::consensus::Decodable as CoreDecodable;
+use dashcore_rpc::dashcore::consensus::Decodable as _;
 use dashcore_rpc::dashcore::{Block, InstantLock, Transaction, hashes::Hash};
 use futures::TryFutureExt;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
@@ -387,26 +387,52 @@ impl StreamingServiceImpl {
                     Err(e) => Some(Err(e)),
                 }
             }
-            StreamingEvent::CoreInstantLock { data } => {
-                let (tx, instant_lock) = decode_transaction_and_instant_lock(&data);
-                if tx.is_none() && instant_lock.is_none() {
-                    tracing::debug!(
+            StreamingEvent::CoreInstantLock {
+                tx_bytes,
+                lock_bytes,
+            } => {
+                let tx = tx_bytes.as_ref().and_then(|bytes| {
+                    let mut cursor = Cursor::new(bytes.as_slice());
+                    Transaction::consensus_decode(&mut cursor).ok()
+                });
+
+                if lock_bytes.is_empty() {
+                    trace!(
                         subscriber_id,
                         handle_id,
-                        payload = hex::encode(&data),
-                        "transactions_with_proofs=instant_lock_decode_failed"
+                        txid = tx
+                            .as_ref()
+                            .map(|tx| tx.txid().to_string())
+                            .unwrap_or_else(|| "unknown".to_string()),
+                        "transactions_with_proofs=instant_lock_missing"
                     );
                     return true;
                 }
 
-                let txid_bytes = *instant_lock
-                    .map(|d| d.txid)
-                    .unwrap_or_else(|| {
-                        tx.as_ref()
-                            .map(|d| d.txid())
-                            .expect("Either tx or instant lock must be present, as checked above")
-                    })
-                    .as_byte_array();
+                let mut cursor = Cursor::new(lock_bytes.as_slice());
+                let instant_lock = match InstantLock::consensus_decode(&mut cursor) {
+                    Ok(instant_lock) => instant_lock,
+                    Err(e) => {
+                        debug!(
+                            subscriber_id,
+                            handle_id,
+                            txid = tx
+                                .as_ref()
+                                .map(|tx| tx.txid().to_string())
+                                .unwrap_or_else(|| "unknown".to_string()),
+                            error = %e,
+                            hex = %hex::encode(lock_bytes.as_slice()),
+                            "transactions_with_proofs=drop_invalid_instant_lock"
+                        );
+                        return true;
+                    }
+                };
+
+                let txid_bytes = *instant_lock.txid.as_byte_array();
+                let txid_hex = tx
+                    .as_ref()
+                    .map(|tx| tx.txid().to_string())
+                    .unwrap_or_else(|| txid_to_hex(&txid_bytes));
 
                 let already_delivered = state.has_transaction_been_delivered(&txid_bytes).await;
                 let bloom_matched = match &filter {
@@ -414,8 +440,8 @@ impl StreamingServiceImpl {
                     FilterType::CoreBloomFilter(bloom, flags) => tx
                         .as_ref()
                         .map(|tx| super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags))
-                        .unwrap_or(false),
-                    _ => true,
+                        .unwrap_or(true),
+                    _ => false,
                 };
 
                 if !bloom_matched && !already_delivered && !matches!(filter, FilterType::CoreAllTxs)
@@ -423,7 +449,7 @@ impl StreamingServiceImpl {
                     trace!(
                         subscriber_id,
                         handle_id,
-                        txid = %txid_to_hex(&txid_bytes),
+                        txid = %txid_hex,
                         "transactions_with_proofs=skip_instant_lock_not_in_bloom"
                     );
                     return true;
@@ -433,7 +459,7 @@ impl StreamingServiceImpl {
                     trace!(
                         subscriber_id,
                         handle_id,
-                        txid = %txid_to_hex(&txid_bytes),
+                        txid = %txid_hex,
                         "transactions_with_proofs=skip_duplicate_instant_lock"
                     );
                     return true;
@@ -442,12 +468,12 @@ impl StreamingServiceImpl {
                 debug!(
                     subscriber_id,
                     handle_id,
-                    txid = %txid_to_hex(&txid_bytes),
-                    payload_size = data.len(),
+                    txid = %txid_hex,
+                    payload_size = lock_bytes.len(),
                     "transactions_with_proofs=forward_instant_lock"
                 );
                 let instant_lock_messages = InstantSendLockMessages {
-                    messages: vec![data],
+                    messages: vec![lock_bytes.clone()],
                 };
                 Some(Ok(TransactionsWithProofsResponse {
                     responses: Some(Responses::InstantSendLockMessages(instant_lock_messages)),
@@ -1079,61 +1105,4 @@ fn txid_to_hex(txid: &[u8]) -> String {
     // txid is displayed in reverse byte order (little-endian)
     buf.reverse();
     hex::encode(buf)
-}
-
-fn decode_transaction_and_instant_lock(data: &[u8]) -> (Option<Transaction>, Option<InstantLock>) {
-    let mut cursor = Cursor::new(data);
-    let tx_result = Transaction::consensus_decode(&mut cursor);
-
-    match tx_result {
-        Ok(tx) => match InstantLock::consensus_decode(&mut cursor) {
-            Ok(instant_lock) => (Some(tx), Some(instant_lock)),
-            Err(err) => (Some(tx), None),
-        },
-        Err(err) => {
-            tracing::trace!(
-                error = %err,
-                "transactions_with_proofs=instant_lock_tx_decode_failed"
-            );
-            let fallback = InstantLock::consensus_decode(&mut Cursor::new(data));
-            match fallback {
-                Ok(instant_lock) => (None, Some(instant_lock)),
-                Err(error) => {
-                    tracing::trace!(
-                        error = %error,
-                        "transactions_with_proofs=instant_lock_decode_failed"
-                    );
-                    (None, None)
-                }
-            }
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use hex::FromHex;
-
-    use super::decode_transaction_and_instant_lock;
-
-    #[test_case::test_case(
-        "03000800011496abeb93eda6dbc24e6644e35b5df9496d3c419060c402c626e44820ebac850100000069463043021f05634eb2c6911e64e10f0d29143c1030c553aadfc2a084eb740560586b276202204fdfd602268983ab04a96d4f6109f065cb8cbac1ecbb68048781e696ab45ec550121020879075d0e4b4cc17d1000d6e56d740cd8a0bc39b9c6ca64a9a61beabbe84664ffffffff02400d030000000000026a00f01f0900000000001976a914f9a3f9d6a8ce0163d1d7ee186763b7e550d2301488ac00000000240101400d0300000000001976a914a2ca84df5239f23bfc40b7065f1e45a66705f4e988ac",
-        "b7f90c3adee5891b185ed3d8c97eea99332e7d6329986d5db7c9002736e0035c";
-        "ac"
-    )]
-    fn transaction_only_payload_returns_io_for_missing_instant_lock(
-        hex_bytes: &str,
-        expected_txid: &str,
-    ) {
-        let bytes = Vec::from_hex(hex_bytes).expect("hex should decode");
-        let (tx_opt, instant_lock_opt) = decode_transaction_and_instant_lock(&bytes);
-
-        assert!(tx_opt.is_some());
-        assert!(instant_lock_opt.is_none());
-
-        let transaction = tx_opt.expect("transaction should decode successfully");
-
-        // Sanity check: decoded transaction matches expected txid
-        assert_eq!(transaction.txid().to_string(), expected_txid);
-    }
 }

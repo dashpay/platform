@@ -108,8 +108,12 @@ impl StreamingServiceImpl {
                     )
                 }
             }
-            StreamingEvent::CoreInstantLock { data } => {
-                format!("CoreInstantLock size={} bytes", data.len())
+            StreamingEvent::CoreInstantLock { tx_bytes, lock_bytes } => {
+                format!(
+                    "CoreInstantLock tx_bytes={} lock_bytes={}",
+                    tx_bytes.as_ref().map(|b| b.len()).unwrap_or(0),
+                    lock_bytes.len()
+                )
             }
             StreamingEvent::CoreChainLock { data } => {
                 format!("CoreChainLock size={} bytes", data.len())
@@ -153,8 +157,12 @@ impl StreamingServiceImpl {
                     )
                 }
             }
-            ZmqEvent::RawTransactionLock { data } => {
-                format!("RawTransactionLock size={} bytes", data.len())
+            ZmqEvent::RawTransactionLock { tx_bytes, lock_bytes } => {
+                format!(
+                    "RawTransactionLock tx_bytes={} lock_bytes={}",
+                    tx_bytes.as_ref().map(|b| b.len()).unwrap_or(0),
+                    lock_bytes.len()
+                )
             }
             ZmqEvent::RawChainLock { data } => {
                 format!("RawChainLock size={} bytes", data.len())
@@ -403,14 +411,15 @@ impl StreamingServiceImpl {
                         .notify(StreamingEvent::CoreRawBlock { data })
                         .await;
                 }
-                Ok(ZmqEvent::RawTransactionLock { data }) => {
+                Ok(ZmqEvent::RawTransactionLock { tx_bytes, lock_bytes }) => {
                     trace!(
-                        size = data.len(),
+                        tx_bytes = tx_bytes.as_ref().map(|b| b.len()).unwrap_or(0),
+                        lock_bytes = lock_bytes.len(),
                         processed = processed_events,
                         "Processing transaction lock event"
                     );
                     subscriber_manager
-                        .notify(StreamingEvent::CoreInstantLock { data })
+                        .notify(StreamingEvent::CoreInstantLock { tx_bytes, lock_bytes })
                         .await;
                 }
                 Ok(ZmqEvent::RawChainLock { data }) => {

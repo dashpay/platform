@@ -1,4 +1,5 @@
 use dpp::dashcore::prelude::DisplayHex;
+use hex::encode;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tracing::{debug, trace};
@@ -75,7 +76,10 @@ impl FilterType {
                 self.matches_core_transaction(data)
             }
             (FilterType::CoreBloomFilter(_, _), CoreRawBlock { .. }) => true,
-            (FilterType::CoreBloomFilter(_, _), CoreInstantLock { .. }) => true,
+            (FilterType::CoreBloomFilter(_, _), CoreInstantLock { tx_bytes, .. }) => tx_bytes
+                .as_ref()
+                .map(|data| self.matches_core_transaction(data))
+                .unwrap_or(true),
             (FilterType::CoreBloomFilter(_, _), CoreChainLock { .. }) => true,
             (FilterType::CoreBloomFilter(_, _), _) => false,
             (FilterType::CoreAllMasternodes, CoreMasternodeListDiff { .. }) => true,
@@ -106,8 +110,11 @@ pub enum StreamingEvent {
     CoreRawTransaction { data: Vec<u8> },
     /// Core raw block bytes
     CoreRawBlock { data: Vec<u8> },
-    /// Core InstantSend lock
-    CoreInstantLock { data: Vec<u8> },
+    /// Core InstantSend lock (transaction bytes optional, lock bytes mandatory)
+    CoreInstantLock {
+        tx_bytes: Option<Vec<u8>>,
+        lock_bytes: Vec<u8>,
+    },
     /// Core ChainLock
     CoreChainLock { data: Vec<u8> },
     /// New block hash event (for side-effects like cache invalidation)
@@ -137,12 +144,20 @@ impl Debug for StreamingEvent {
                     data.to_lower_hex_string()
                 )
             }
-            StreamingEvent::CoreInstantLock { data } => {
-                write!(
-                    f,
-                    "CoreInstantLock {{ data: [{}] }}",
-                    data.to_lower_hex_string()
-                )
+            StreamingEvent::CoreInstantLock { tx_bytes, lock_bytes } => {
+                match tx_bytes {
+                    Some(tx) => write!(
+                        f,
+                        "CoreInstantLock {{ tx_bytes: [{}], lock_bytes: [{}] }}",
+                        encode(tx),
+                        encode(lock_bytes)
+                    ),
+                    None => write!(
+                        f,
+                        "CoreInstantLock {{ tx_bytes: none, lock_bytes: [{}] }}",
+                        encode(lock_bytes)
+                    ),
+                }
             }
             StreamingEvent::CoreChainLock { data } => {
                 write!(
