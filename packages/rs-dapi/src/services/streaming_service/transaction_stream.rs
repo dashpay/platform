@@ -388,25 +388,25 @@ impl StreamingServiceImpl {
                 }
             }
             StreamingEvent::CoreInstantLock { data } => {
-                let (tx, instant_lock_result) = decode_transaction_and_instant_lock(&data);
-                let txid_hex_from_tx = tx.as_ref().map(|tx| tx.txid().to_string());
+                let (tx, instant_lock) = decode_transaction_and_instant_lock(&data);
+                if tx.is_none() && instant_lock.is_none() {
+                    tracing::debug!(
+                        subscriber_id,
+                        handle_id,
+                        payload = hex::encode(&data),
+                        "transactions_with_proofs=instant_lock_decode_failed"
+                    );
+                    return true;
+                }
 
-                let instant_lock = match instant_lock_result {
-                    Ok(instant_lock) => instant_lock,
-                    Err(e) => {
-                        debug!(
-                            subscriber_id,
-                            handle_id,
-                            txid = txid_hex_from_tx.as_deref().unwrap_or("unknown"),
-                            error = %e,
-                            hex = %hex::encode(data),
-                            "transactions_with_proofs=drop_invalid_instant_lock"
-                        );
-
-                        return true;
-                    }
-                };
-                let txid_bytes = *instant_lock.txid.as_byte_array();
+                let txid_bytes = *instant_lock
+                    .map(|d| d.txid)
+                    .unwrap_or_else(|| {
+                        tx.as_ref()
+                            .map(|d| d.txid())
+                            .expect("Either tx or instant lock must be present, as checked above")
+                    })
+                    .as_byte_array();
 
                 let already_delivered = state.has_transaction_been_delivered(&txid_bytes).await;
                 let bloom_matched = match &filter {
@@ -1081,19 +1081,14 @@ fn txid_to_hex(txid: &[u8]) -> String {
     hex::encode(buf)
 }
 
-fn decode_transaction_and_instant_lock(
-    data: &[u8],
-) -> (
-    Option<Transaction>,
-    Result<InstantLock, dashcore_rpc::dashcore::consensus::encode::Error>,
-) {
+fn decode_transaction_and_instant_lock(data: &[u8]) -> (Option<Transaction>, Option<InstantLock>) {
     let mut cursor = Cursor::new(data);
     let tx_result = Transaction::consensus_decode(&mut cursor);
 
     match tx_result {
         Ok(tx) => match InstantLock::consensus_decode(&mut cursor) {
-            Ok(instant_lock) => (Some(tx), Ok(instant_lock)),
-            Err(err) => (Some(tx), Err(err)),
+            Ok(instant_lock) => (Some(tx), Some(instant_lock)),
+            Err(err) => (Some(tx), None),
         },
         Err(err) => {
             tracing::trace!(
@@ -1102,8 +1097,14 @@ fn decode_transaction_and_instant_lock(
             );
             let fallback = InstantLock::consensus_decode(&mut Cursor::new(data));
             match fallback {
-                Ok(instant_lock) => (None, Ok(instant_lock)),
-                Err(second_err) => (None, Err(second_err)),
+                Ok(instant_lock) => (None, Some(instant_lock)),
+                Err(error) => {
+                    tracing::trace!(
+                        error = %error,
+                        "transactions_with_proofs=instant_lock_decode_failed"
+                    );
+                    (None, None)
+                }
             }
         }
     }
@@ -1111,32 +1112,28 @@ fn decode_transaction_and_instant_lock(
 
 #[cfg(test)]
 mod tests {
-    use dashcore_rpc::dashcore::consensus::encode::Error as ConsensusDecodeError;
     use hex::FromHex;
 
     use super::decode_transaction_and_instant_lock;
 
-    #[test]
-    fn transaction_only_payload_returns_io_for_missing_instant_lock() {
-        let hex_bytes = "030008000167c3b38231c0a4593c73bf9f109a29dbf775ac46c137ee07d64c262b34a92c34000000006b483045022100ca870556e4c9692f8db5c364653ec815be367328a68990c3ced9a83869ad51a1022063999e56189ae6f1d7c11ee75bcc8da8fc4ee550ed08ba06f20fd72c449145f101210342e7310746e4af47264908309031b977ced9c136862368ec3fd8610466bd07ceffffffff0280841e0000000000026a00180e7a00000000001976a914bd04c1fb11018acde9abd2c14ed4b361673e3aa488ac0000000024010180841e00000000001976a914a4e906f2bdf25fa3d986d0000d29aa27b358f28588ac";
+    #[test_case::test_case(
+        "03000800011496abeb93eda6dbc24e6644e35b5df9496d3c419060c402c626e44820ebac850100000069463043021f05634eb2c6911e64e10f0d29143c1030c553aadfc2a084eb740560586b276202204fdfd602268983ab04a96d4f6109f065cb8cbac1ecbb68048781e696ab45ec550121020879075d0e4b4cc17d1000d6e56d740cd8a0bc39b9c6ca64a9a61beabbe84664ffffffff02400d030000000000026a00f01f0900000000001976a914f9a3f9d6a8ce0163d1d7ee186763b7e550d2301488ac00000000240101400d0300000000001976a914a2ca84df5239f23bfc40b7065f1e45a66705f4e988ac",
+        "b7f90c3adee5891b185ed3d8c97eea99332e7d6329986d5db7c9002736e0035c";
+        "ac"
+    )]
+    fn transaction_only_payload_returns_io_for_missing_instant_lock(
+        hex_bytes: &str,
+        expected_txid: &str,
+    ) {
         let bytes = Vec::from_hex(hex_bytes).expect("hex should decode");
+        let (tx_opt, instant_lock_opt) = decode_transaction_and_instant_lock(&bytes);
 
-        let (tx_opt, instant_lock_result) = decode_transaction_and_instant_lock(&bytes);
+        assert!(tx_opt.is_some());
+        assert!(instant_lock_opt.is_none());
 
         let transaction = tx_opt.expect("transaction should decode successfully");
 
         // Sanity check: decoded transaction matches expected txid
-        let expected_txid = "8d7a0cb7caa49220ed7c755bbc47c967081df34a7a4297e8df49d026a425ca6d";
         assert_eq!(transaction.txid().to_string(), expected_txid);
-
-        match instant_lock_result {
-            Err(ConsensusDecodeError::Io(_)) => {}
-            Err(other) => {
-                panic!("expected IO error when instant lock bytes are absent, got {other:?}")
-            }
-            Ok(_) => {
-                panic!("instant lock should not decode when only transaction bytes are provided")
-            }
-        }
     }
 }
