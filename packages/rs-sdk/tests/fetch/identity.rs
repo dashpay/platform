@@ -4,9 +4,9 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
-use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
 #[cfg(feature = "offline-testing")]
 use drive_proof_verifier::types::IdentityPublicKeys;
+use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
 use std::collections::BTreeSet;
 
 use super::{common::setup_logs, config::Config};
