@@ -4,8 +4,6 @@ use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
-#[cfg(feature = "offline-testing")]
-use drive_proof_verifier::types::IdentityPublicKeys;
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
 use std::collections::BTreeSet;
 
@@ -128,7 +126,7 @@ async fn test_identity_public_keys_specific_read() {
     let cfg = Config::new();
     let identity_id: dpp::prelude::Identifier = cfg.existing_identity_id;
 
-    let mut sdk = cfg
+    let sdk = cfg
         .setup_api("test_identity_public_keys_specific_read")
         .await;
 
@@ -141,32 +139,9 @@ async fn test_identity_public_keys_specific_read() {
         "identity must expose at least one public key"
     );
 
-    let requested_key_ids: Vec<_> = all_public_keys.keys().take(3).copied().collect();
-    assert!(
-        !requested_key_ids.is_empty(),
-        "expected to select at least one key id"
-    );
+    let requested_key_ids = vec![0, 2];
 
     let query = IdentityKeysQuery::new(identity_id, requested_key_ids.clone());
-
-    #[cfg(feature = "offline-testing")]
-    {
-        let expected_subset = requested_key_ids
-            .iter()
-            .map(|key_id| {
-                let value = all_public_keys
-                    .get(key_id)
-                    .cloned()
-                    .expect("key exists in full key set");
-                (*key_id, value)
-            })
-            .collect::<IdentityPublicKeys>();
-
-        sdk.mock()
-            .expect_fetch_many(query.clone(), Some(expected_subset))
-            .await
-            .expect("configure mock response for specific key query");
-    }
 
     let fetched_subset = IdentityPublicKey::fetch_many(&sdk, query)
         .await
@@ -178,7 +153,7 @@ async fn test_identity_public_keys_specific_read() {
         "number of fetched keys should match the requested set"
     );
 
-    let requested_key_set: BTreeSet<_> = requested_key_ids.iter().copied().collect();
+    let requested_key_set: BTreeSet<u32> = requested_key_ids.iter().copied().collect();
 
     for key_id in &requested_key_ids {
         let expected = all_public_keys
