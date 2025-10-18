@@ -5,6 +5,7 @@ import DashSDKFFI
 struct WalletDetailView: View {
     @EnvironmentObject var walletService: WalletService
     @EnvironmentObject var unifiedAppState: UnifiedAppState
+    @Environment(\.dismiss) private var dismiss
     let wallet: HDWallet
     @State private var showReceiveAddress = false
     @State private var showSendTransaction = false
@@ -84,8 +85,10 @@ struct WalletDetailView: View {
                 .environmentObject(unifiedAppState)
         }
         .sheet(isPresented: $showWalletInfo) {
-            WalletInfoView(wallet: wallet)
-                .environmentObject(walletService)
+            WalletInfoView(wallet: wallet) {
+                dismiss()
+            }
+            .environmentObject(walletService)
         }
         .task {
             await walletService.loadWallet(wallet)
@@ -101,6 +104,7 @@ struct WalletInfoView: View {
     @Environment(\.dismiss) var dismiss
     @Environment(\.modelContext) var modelContext
     let wallet: HDWallet
+    var onWalletDeleted: () -> Void = {}
     
     @State private var editedName: String = ""
     @State private var isEditingName = false
@@ -262,6 +266,39 @@ struct WalletInfoView: View {
                         }
                     }
                 }
+
+                // Sync From (per-network) Section
+                Section("Sync From (Block Height)") {
+                    // Show only enabled networks for clarity
+                    if mainnetEnabled {
+                        HStack {
+                            Text("Mainnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromMainnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if testnetEnabled {
+                        HStack {
+                            Text("Testnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromTestnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if devnetEnabled {
+                        HStack {
+                            Text("Devnet")
+                            Spacer()
+                            Text(formatHeight(wallet.syncFromDevnet))
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    if !mainnetEnabled && !testnetEnabled && !devnetEnabled {
+                        Text("No networks enabled")
+                            .foregroundColor(.secondary)
+                    }
+                }
                 
                 // Delete Wallet Section
                 Section {
@@ -344,6 +381,13 @@ struct WalletInfoView: View {
             }
         } else { devnetAccountCount = nil }
     }
+
+    // Format a block height with thousands separators
+    private func formatHeight(_ h: Int) -> String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        return f.string(from: NSNumber(value: h)) ?? "\(h)"
+    }
     
     private func saveWalletName() {
         wallet.label = editedName
@@ -409,7 +453,7 @@ struct WalletInfoView: View {
             // Dismiss both the info view and the wallet detail view
             await MainActor.run {
                 dismiss()
-                // The navigation will automatically go back when the wallet is deleted
+                onWalletDeleted()
             }
             
             // Notify the wallet service to reload
