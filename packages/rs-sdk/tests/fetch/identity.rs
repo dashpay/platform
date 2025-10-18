@@ -173,7 +173,7 @@ async fn test_identity_public_keys_specific_read() {
         );
     }
 
-    let unexpected: Vec<_> = fetched_subset
+    let unexpected: Vec<u32> = fetched_subset
         .keys()
         .filter(|key| !requested_key_set.contains(key))
         .copied()
