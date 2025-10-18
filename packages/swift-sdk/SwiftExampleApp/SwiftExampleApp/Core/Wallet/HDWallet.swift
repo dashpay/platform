@@ -38,9 +38,9 @@ public final class HDWallet: HDWalletModels {
     // Per-network sync-from heights (absolute block heights)
     // These indicate the starting block to sync from for each network.
     // 0 means start from genesis.
-    public var syncFromMainnet: Int
-    public var syncFromTestnet: Int
-    public var syncFromDevnet: Int
+    public var syncFromMainnet: Int = 0
+    public var syncFromTestnet: Int = 0
+    public var syncFromDevnet: Int = 0
     
     init(label: String, network: Network, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()

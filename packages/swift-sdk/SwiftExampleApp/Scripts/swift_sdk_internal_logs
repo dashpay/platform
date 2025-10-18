@@ -30,7 +30,7 @@ esac
 
 device="${SIM_DEVICE:-}"
 if [[ -z "$device" ]]; then
-  device=$(xcrun simctl list devices booted | awk '/Booted/{print $NF; exit}')
+  device=$(xcrun simctl list devices booted | awk '/Booted/{gsub(/[()]/,"",$(NF-1)); print $(NF-1); exit}')
 fi
 
 if [[ -z "$device" ]]; then

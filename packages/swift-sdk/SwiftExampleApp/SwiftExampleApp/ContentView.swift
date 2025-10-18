@@ -105,12 +105,6 @@ struct GlobalSyncIndicator: View {
         if h < 1.0 { return "Headers (\(Int(h * 100))%)" }
         return "Complete"
     }
-    
-    private func fmt(_ value: Int) -> String {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        return f.string(from: NSNumber(value: value)) ?? "\(value)"
-    }
 
     private var fillProgress: Double {
         let h = min(max(walletService.headerProgress, 0.0), 1.0)

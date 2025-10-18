@@ -433,10 +433,13 @@ public class WalletService: ObservableObject {
 
         isSyncing = true
         lastSyncError = nil
-        
+
+        // Capture references on MainActor
         let serviceBox = SendableBox(self)
+        let clientBox = SendableBox(spvClient)
         syncTask = Task.detached(priority: .userInitiated) {
             let service = serviceBox.value
+            let client = clientBox.value
             defer {
                 Task { @MainActor in service.syncTask = nil }
             }
@@ -445,11 +448,11 @@ public class WalletService: ObservableObject {
 
             do {
                 // Ensure the underlying client is started (connected) before syncing
-                let connected = await spvClient.isConnected
+                let connected = await client.isConnected
                 if connected == false {
                     if Task.isCancelled { return }
                     do {
-                        try await spvClient.start()
+                        try await client.start()
                         if Task.isCancelled { return }
                         print("[SPV] Client started (connected) before sync")
                     } catch {
@@ -463,7 +466,7 @@ public class WalletService: ObservableObject {
                 }
 
                 if Task.isCancelled { return }
-                try await spvClient.startSync()
+                try await client.startSync()
             } catch {
                 await MainActor.run {
                     service.lastSyncError = error
