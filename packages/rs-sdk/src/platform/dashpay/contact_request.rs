@@ -10,7 +10,7 @@ use dpp::dashcore::secp256k1::rand::{RngCore, SeedableRng};
 use dpp::dashcore::secp256k1::{PublicKey, SecretKey};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
-use dpp::document::{DocumentV0, DocumentV0Getters};
+use dpp::document::DocumentV0;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::identity_public_key::Purpose;
@@ -23,33 +23,94 @@ use platform_wallet::crypto::{
 };
 use std::collections::BTreeMap;
 
+/// ECDH provider for contact request encryption
+///
+/// Supports two modes:
+/// 1. Client-side ECDH (preferred for hardware wallets)
+/// 2. SDK-side ECDH (for software wallets providing private keys)
+pub enum EcdhProvider<F, Fut, G, Gut>
+where
+    F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+    Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+    G: FnOnce(&PublicKey) -> Gut,
+    Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+{
+    /// Client performs ECDH and provides the shared secret directly
+    /// This is preferred for hardware wallets that can do ECDH internally
+    ClientSide {
+        /// Callback to get the shared secret after client performs ECDH
+        /// Parameters: recipient's public key
+        /// Returns: 32-byte shared secret
+        get_shared_secret: G,
+    },
+    /// SDK performs ECDH using provided private key
+    /// This is for software wallets that can provide the private key
+    SdkSide {
+        /// Callback to get the sender's private encryption key
+        /// Parameters: (IdentityPublicKey, key_index)
+        /// Returns: Private key for ECDH
+        get_private_key: F,
+    },
+}
+
+/// Recipient identity specification for contact requests
+#[derive(Debug, Clone)]
+pub enum RecipientIdentity {
+    /// Recipient identity ID - the full identity will be fetched from the platform
+    Identifier(Identifier),
+    /// Complete recipient identity - no fetch required
+    Identity(Identity),
+}
+
+impl RecipientIdentity {
+    /// Get the identifier from the recipient
+    pub fn id(&self) -> Identifier {
+        match self {
+            RecipientIdentity::Identifier(id) => *id,
+            RecipientIdentity::Identity(identity) => identity.id(),
+        }
+    }
+}
+
+impl From<Identifier> for RecipientIdentity {
+    fn from(id: Identifier) -> Self {
+        RecipientIdentity::Identifier(id)
+    }
+}
+
+impl From<Identity> for RecipientIdentity {
+    fn from(identity: Identity) -> Self {
+        RecipientIdentity::Identity(identity)
+    }
+}
+
 /// Input for creating a contact request document
 pub struct ContactRequestInput {
     /// The identity sending the contact request (owner)
     pub sender_identity: Identity,
-    /// The recipient's complete identity (needed for ECDH encryption)
-    pub recipient_identity: Identity,
+    /// The recipient - can be either an Identifier (will be fetched) or a complete Identity
+    pub recipient: RecipientIdentity,
     /// The sender's encryption key index for ECDH
     pub sender_key_index: u32,
     /// The recipient's encryption key index for ECDH
     pub recipient_key_index: u32,
     /// Reference to the DashPay receiving account
     pub account_reference: u32,
-    /// Extended public key bytes to encrypt for the recipient (unencrypted, typically 78 bytes, encrypted to 96 bytes with IV)
-    pub extended_public_key: Vec<u8>,
-    /// Optional account label to encrypt (unencrypted string, encrypted to 48-80 bytes with IV depending on length)
+    /// Optional account label (UNENCRYPTED string - SDK will encrypt to 48-80 bytes automatically)
     pub account_label: Option<String>,
     /// Optional auto-accept proof (38-102 bytes) - not encrypted
     pub auto_accept_proof: Option<Vec<u8>>,
-    /// The sender's private key for ECDH (for deriving shared secret)
-    pub sender_private_key: SecretKey,
 }
 
 /// Result of creating a contact request document
 #[derive(Debug)]
 pub struct ContactRequestResult {
-    /// The created contact request document
-    pub document: Document,
+    /// The document ID
+    pub id: Identifier,
+    /// The owner ID (sender identity ID)
+    pub owner_id: Identifier,
+    /// The document properties
+    pub properties: BTreeMap<String, Value>,
 }
 
 /// Input for sending a contact request to the platform
@@ -83,6 +144,10 @@ impl Sdk {
     /// # Arguments
     ///
     /// * `input` - The contact request input containing sender/recipient information and unencrypted data
+    /// * `ecdh_provider` - Provider for ECDH key exchange (client-side or SDK-side)
+    /// * `get_extended_public_key` - Async function to retrieve the extended public key to share with recipient
+    ///   - Parameters: `(account_reference: u32)`
+    ///   - Returns: The unencrypted extended public key bytes (typically 78 bytes)
     ///
     /// # Returns
     ///
@@ -95,10 +160,21 @@ impl Sdk {
     /// - The contactRequest document type is not found
     /// - The sender or recipient doesn't have the required encryption keys
     /// - ECDH encryption fails
-    pub async fn create_contact_request(
+    /// - The shared secret, private key, or extended public key cannot be retrieved
+    pub async fn create_contact_request<F, Fut, G, Gut, H, Hut>(
         &self,
         input: ContactRequestInput,
-    ) -> Result<ContactRequestResult, Error> {
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<ContactRequestResult, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
         // Validate auto accept proof size if provided
         if let Some(ref proof) = input.auto_accept_proof {
             if proof.len() < 38 || proof.len() > 102 {
@@ -108,6 +184,17 @@ impl Sdk {
                 )));
             }
         }
+
+        // Fetch recipient identity if only ID was provided
+        let recipient_identity = match input.recipient {
+            RecipientIdentity::Identity(identity) => identity,
+            RecipientIdentity::Identifier(id) => {
+                use crate::platform::Fetch;
+                Identity::fetch(self, id)
+                    .await?
+                    .ok_or_else(|| Error::Generic(format!("Recipient identity {} not found", id)))?
+            }
+        };
 
         // Verify sender has the encryption key at the specified index
         let sender_key = input
@@ -129,8 +216,7 @@ impl Sdk {
         }
 
         // Verify recipient has the encryption key at the specified index
-        let recipient_key = input
-            .recipient_identity
+        let recipient_key = recipient_identity
             .public_keys()
             .get(&input.recipient_key_index)
             .ok_or_else(|| {
@@ -140,9 +226,9 @@ impl Sdk {
                 ))
             })?;
 
-        if recipient_key.purpose() != Purpose::ENCRYPTION {
+        if recipient_key.purpose() != Purpose::DECRYPTION {
             return Err(Error::Generic(format!(
-                "Recipient key at index {} is not an encryption key",
+                "Recipient key at index {} is not a decryption key",
                 input.recipient_key_index
             )));
         }
@@ -152,8 +238,22 @@ impl Sdk {
         let recipient_public_key = PublicKey::from_slice(recipient_public_key_data.as_slice())
             .map_err(|e| Error::Generic(format!("Invalid recipient public key: {}", e)))?;
 
-        // Derive shared secret using ECDH
-        let shared_key = derive_shared_key_ecdh(&input.sender_private_key, &recipient_public_key);
+        // Derive shared secret using ECDH (either client-side or SDK-side)
+        let shared_key = match ecdh_provider {
+            EcdhProvider::ClientSide { get_shared_secret } => {
+                // Client performs ECDH and provides the shared secret
+                get_shared_secret(&recipient_public_key).await?
+            }
+            EcdhProvider::SdkSide { get_private_key } => {
+                // SDK performs ECDH using the provided private key
+                let sender_private_key =
+                    get_private_key(sender_key, input.sender_key_index).await?;
+                derive_shared_key_ecdh(&sender_private_key, &recipient_public_key)
+            }
+        };
+
+        // Get the extended public key to encrypt
+        let extended_public_key = get_extended_public_key(input.account_reference).await?;
 
         // Generate random IVs for encryption
         let mut rng = StdRng::from_entropy();
@@ -162,7 +262,7 @@ impl Sdk {
 
         // Encrypt the extended public key (includes IV prepended)
         let encrypted_public_key =
-            encrypt_extended_public_key(&shared_key, &xpub_iv, &input.extended_public_key);
+            encrypt_extended_public_key(&shared_key, &xpub_iv, &extended_public_key);
 
         // Validate encrypted public key size (must be exactly 96 bytes: 16-byte IV + 80-byte encrypted data)
         if encrypted_public_key.len() != 96 {
@@ -215,7 +315,7 @@ impl Sdk {
 
         // Build document properties
         let mut properties = BTreeMap::new();
-        let recipient_id = input.recipient_identity.id().to_owned();
+        let recipient_id = recipient_identity.id().to_owned();
         properties.insert(
             "toUserId".to_string(),
             Value::Identifier(recipient_id.to_buffer()),
@@ -245,11 +345,76 @@ impl Sdk {
             properties.insert("autoAcceptProof".to_string(), Value::Bytes(proof));
         }
 
-        // Create the contact request document
-        let document = Document::V0(DocumentV0 {
+        // Return the essential fields for the contact request
+        Ok(ContactRequestResult {
             id: document_id,
             owner_id: sender_id,
             properties,
+        })
+    }
+
+    /// Send a contact request to the platform
+    ///
+    /// This creates a contact request document with automatic ECDH encryption and submits it
+    /// to the platform as a state transition.
+    ///
+    /// # Arguments
+    ///
+    /// * `input` - The send contact request input containing document data, key, and signer
+    /// * `ecdh_provider` - Provider for ECDH key exchange (client-side or SDK-side)
+    /// * `get_extended_public_key` - Async function to retrieve the extended public key to share with recipient
+    ///   - Parameters: `(account_reference: u32)`
+    ///   - Returns: The unencrypted extended public key bytes (typically 78 bytes)
+    ///
+    /// # Returns
+    ///
+    /// Returns a `SendContactRequestResult` containing the submitted document
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Document creation fails (including ECDH encryption)
+    /// - State transition submission fails
+    pub async fn send_contact_request<S: Signer, F, Fut, G, Gut, H, Hut>(
+        &self,
+        input: SendContactRequestInput<S>,
+        ecdh_provider: EcdhProvider<F, Fut, G, Gut>,
+        get_extended_public_key: H,
+    ) -> Result<SendContactRequestResult, Error>
+    where
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<SecretKey, Error>>,
+        G: FnOnce(&PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], Error>>,
+        H: FnOnce(u32) -> Hut,
+        Hut: std::future::Future<Output = Result<Vec<u8>, Error>>,
+    {
+        // Save values we need before moving contact_request
+        let recipient_id = input.contact_request.recipient.id();
+        let account_reference = input.contact_request.account_reference;
+
+        // Create the contact request document (handles ECDH encryption internally)
+        let result = self
+            .create_contact_request(
+                input.contact_request,
+                ecdh_provider,
+                get_extended_public_key,
+            )
+            .await?;
+
+        // Get the DashPay contract for the document type
+        let dashpay_contract = self.fetch_dashpay_contract().await?;
+        let contact_request_document_type = dashpay_contract
+            .document_type_for_name("contactRequest")
+            .map_err(|_| {
+                Error::Generic("DashPay contactRequest document type not found".to_string())
+            })?;
+
+        // Create the document from the result
+        let document = Document::V0(DocumentV0 {
+            id: result.id,
+            owner_id: result.owner_id,
+            properties: result.properties,
             revision: None,
             created_at: None,
             updated_at: None,
@@ -263,42 +428,6 @@ impl Sdk {
             creator_id: None,
         });
 
-        Ok(ContactRequestResult { document })
-    }
-
-    /// Send a contact request to the platform
-    ///
-    /// This creates a contact request document with automatic ECDH encryption and submits it
-    /// to the platform as a state transition.
-    ///
-    /// # Arguments
-    ///
-    /// * `input` - The send contact request input containing document data, key, and signer
-    ///
-    /// # Returns
-    ///
-    /// Returns a `SendContactRequestResult` containing the submitted document
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if:
-    /// - Document creation fails (including ECDH encryption)
-    /// - State transition submission fails
-    pub async fn send_contact_request<S: Signer>(
-        &self,
-        input: SendContactRequestInput<S>,
-    ) -> Result<SendContactRequestResult, Error> {
-        // Create the contact request document (handles ECDH encryption internally)
-        let result = self.create_contact_request(input.contact_request).await?;
-
-        // Get the DashPay contract for the document type
-        let dashpay_contract = self.fetch_dashpay_contract().await?;
-        let contact_request_document_type = dashpay_contract
-            .document_type_for_name("contactRequest")
-            .map_err(|_| {
-                Error::Generic("DashPay contactRequest document type not found".to_string())
-            })?;
-
         // Extract entropy from document ID for state transition
         // Note: In a real implementation, we'd need to store the entropy used during creation
         // For now, we'll generate new entropy (this is a simplification)
@@ -306,8 +435,7 @@ impl Sdk {
         let entropy = Bytes32::random_with_rng(&mut rng);
 
         // Submit the document to the platform
-        let platform_document = result
-            .document
+        let platform_document = document
             .put_to_platform_and_wait_for_response(
                 self,
                 contact_request_document_type.to_owned_document_type(),
@@ -319,28 +447,7 @@ impl Sdk {
             )
             .await?;
 
-        // Extract recipient ID and account reference from the document
-        let recipient_id = if let Some(Value::Identifier(id_bytes)) =
-            platform_document.properties().get("toUserId")
-        {
-            Identifier::from_bytes(id_bytes)
-                .map_err(|e| Error::Generic(format!("Invalid recipient ID: {}", e)))?
-        } else {
-            return Err(Error::Generic(
-                "toUserId not found in contact request document".to_string(),
-            ));
-        };
-
-        let account_reference = if let Some(Value::U32(ref_val)) =
-            platform_document.properties().get("accountReference")
-        {
-            *ref_val
-        } else {
-            return Err(Error::Generic(
-                "accountReference not found in contact request document".to_string(),
-            ));
-        };
-
+        // Return the result with recipient ID and account reference we saved earlier
         Ok(SendContactRequestResult {
             document: platform_document,
             recipient_id,

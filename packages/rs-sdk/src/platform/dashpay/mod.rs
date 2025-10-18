@@ -6,7 +6,8 @@
 mod contact_request;
 
 pub use contact_request::{
-    ContactRequestInput, ContactRequestResult, SendContactRequestInput, SendContactRequestResult,
+    ContactRequestInput, ContactRequestResult, EcdhProvider, RecipientIdentity,
+    SendContactRequestInput, SendContactRequestResult,
 };
 
 use crate::platform::Fetch;

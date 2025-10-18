@@ -12,6 +12,7 @@ pub mod context_provider;
 #[cfg(test)]
 mod context_provider_stubs;
 mod crypto;
+mod dashpay;
 mod data_contract;
 mod document;
 mod dpns;
@@ -38,6 +39,7 @@ pub use contested_resource::*;
 pub use context_callbacks::*;
 pub use context_provider::*;
 pub use crypto::*;
+pub use dashpay::*;
 pub use data_contract::*;
 pub use document::*;
 pub use dpns::*;
