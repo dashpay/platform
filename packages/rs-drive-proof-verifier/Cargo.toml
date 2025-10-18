@@ -1,6 +1,6 @@
 [package]
 name = "drive-proof-verifier"
-version = "2.0.0"
+version = "2.1.0-dev.8"
 edition = "2021"
 rust-version.workspace = true
 
@@ -30,7 +30,9 @@ dpp = { path = "../rs-dpp", features = [
   "bls-signatures",
   "core-types-serialization",
 ], default-features = false }
-dash-context-provider = { path = "../rs-context-provider", features = ["mocks"] }
+dash-context-provider = { path = "../rs-context-provider", features = [
+  "mocks",
+] }
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive", optional = true }
 platform-serialization = { path = "../rs-platform-serialization" }

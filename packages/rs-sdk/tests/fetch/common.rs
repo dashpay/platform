@@ -37,6 +37,8 @@ pub fn mock_document_type() -> dpp::data_contract::document_type::DocumentType {
 
     DocumentType::try_from_schema(
         Identifier::random(),
+        1,
+        config.version(),
         "document_type_name",
         schema,
         None,

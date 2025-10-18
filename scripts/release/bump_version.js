@@ -14,6 +14,45 @@ const convertPrereleaseType = (version, prereleaseType) => {
   return `${semver.major(version)}.${semver.minor(version)}.0-${prereleaseType}.1`;
 };
 
+const setExactVersion = (targetVersion) => () => targetVersion;
+
+const parseArgs = (argv) => {
+  let releaseType;
+  let targetVersion;
+
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
+
+    if (arg.startsWith('--target-version=')) {
+      targetVersion = arg.split('=')[1];
+      continue;
+    }
+
+    if (arg === '--target-version') {
+      targetVersion = argv[i + 1];
+      i += 1;
+      continue;
+    }
+
+    if (arg.startsWith('--version=')) {
+      targetVersion = arg.split('=')[1];
+      continue;
+    }
+
+    if (arg === '--version') {
+      targetVersion = argv[i + 1];
+      i += 1;
+      continue;
+    }
+
+    if (!releaseType && !arg.startsWith('-')) {
+      releaseType = arg;
+    }
+  }
+
+  return { releaseType, targetVersion };
+};
+
 const bumpNpmPackages = (versionFunc, releaseType) => {
   for (const {filename, json} of packagesIterator.npm()) {
     const {version} = json;
@@ -40,7 +79,7 @@ const bumpRustPackages = (versionFunc, releaseType) => {
 }
 
 (async () => {
-  let [ releaseType ] = process.argv.slice(2);
+  const { releaseType: releaseTypeArg, targetVersion } = parseArgs(process.argv.slice(2));
 
   const { version: rootVersion } = rootPackageJson;
 
@@ -51,10 +90,38 @@ const bumpRustPackages = (versionFunc, releaseType) => {
     rootVersionType = semverPrerelease[0];
   }
 
+  let releaseType = releaseTypeArg;
+
+  if (targetVersion !== undefined && !semver.valid(targetVersion)) {
+    throw new Error(`Invalid target version: ${targetVersion}`);
+  }
+
+  if (targetVersion !== undefined && releaseType === undefined) {
+    const targetPrerelease = semver.prerelease(targetVersion);
+    releaseType = targetPrerelease !== null ? targetPrerelease[0] : 'release';
+  }
+
   // Figure out release type using current version if not set
   if (releaseType === undefined) {
     // get releaseType from root package.json
     releaseType = rootVersionType;
+  }
+
+  if (targetVersion !== undefined) {
+    const targetPrerelease = semver.prerelease(targetVersion);
+    const targetVersionType = targetPrerelease !== null ? targetPrerelease[0] : 'release';
+
+    if (releaseType !== targetVersionType) {
+      throw new Error(`Specified release type (${releaseType}) does not match target version type (${targetVersionType})`);
+    }
+
+    bumpNpmPackages(setExactVersion(targetVersion), releaseType);
+    bumpRustPackages(setExactVersion(targetVersion), releaseType);
+
+    rootPackageJson.version = targetVersion;
+    fs.writeFileSync(path.join(__dirname, '..', '..', 'package.json'), `${JSON.stringify(rootPackageJson, null, 2)}\n`);
+
+    return;
   }
 
   if (rootVersionType === releaseType && releaseType === 'release') {

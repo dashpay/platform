@@ -77,3 +77,16 @@ dashmate:
 '@dashevo/platform-test-suite':
   - packages/platform-test-suite/**
   - *dash
+
+'@dashevo/wasm-sdk': &wasm-sdk
+  - packages/wasm-sdk/**
+  - packages/rs-drive-proof-verifier/**
+  - packages/rs-sdk/**
+  - packages/rs-dapi-client/**
+  - packages/rs-platform-version/**
+  - packages/rs-dapi-grpc-macros/**
+  - packages/dapi-grpc/**
+
+'@dashevo/evo-sdk': &evo-sdk
+  - packages/js-evo-sdk/**
+  - *wasm-sdk

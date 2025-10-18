@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "2.0.0"
+version = "2.1.0-dev.8"
 edition = "2021"
 
 [dependencies]
@@ -16,7 +16,7 @@ rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-platform-wallet = { path = "../rs-platform-wallet", optional = true}
+platform-wallet = { path = "../rs-platform-wallet", optional = true }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
@@ -68,8 +68,19 @@ assert_matches = "1.5.0"
 
 [features]
 # TODO: remove mocks from default features
-default = ["mocks", "offline-testing", "dapi-grpc/client", "token_reward_explanations"]
-spv-client = ["core_spv", "core_key_wallet_manager", "core_key_wallet", "core_bincode", "core_key_wallet_bincode"]
+default = [
+  "mocks",
+  "offline-testing",
+  "dapi-grpc/client",
+  "token_reward_explanations",
+]
+spv-client = [
+  "core_spv",
+  "core_key_wallet_manager",
+  "core_key_wallet",
+  "core_bincode",
+  "core_key_wallet_bincode",
+]
 
 mocks = [
   "dep:serde",

@@ -22,7 +22,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use crate::context_provider::WasmContext;
 use crate::dpp::{DataContractWasm, IdentityWasm};
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "verifyIdentityResponse")]
 pub async fn verify_identity_response() -> Option<IdentityWasm> {
     let request = dash_sdk::dapi_grpc::platform::v0::GetIdentityRequest {
         version: Some(GetIdentityRequestVersion::V0(GetIdentityRequestV0 {
@@ -67,7 +67,7 @@ pub async fn verify_identity_response() -> Option<IdentityWasm> {
     response.map(IdentityWasm::from)
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "verifyDataContract")]
 pub async fn verify_data_contract() -> Option<DataContractWasm> {
     let request = dash_sdk::dapi_grpc::platform::v0::GetDataContractRequest {
         version: Some(
@@ -125,7 +125,7 @@ pub async fn verify_data_contract() -> Option<DataContractWasm> {
     response.map(DataContractWasm::from)
 }
 
-#[wasm_bindgen]
+#[wasm_bindgen(js_name = "verifyDocuments")]
 pub async fn verify_documents() -> Vec<DocumentWasm> {
     // TODO: this is a dummy implementation, replace with actual verification
     let data_contract =

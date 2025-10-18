@@ -5,7 +5,7 @@ jobs:
   build-js:
     name: Build JS
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: softwareforgood/check-artifact-v4-existence@v0
         id: check-artifact
@@ -57,32 +57,8 @@ jobs:
         run: cargo binstall wasm-bindgen-cli@0.2.100
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
-      - name: Restore cached wasm-opt (Binaryen)
-        id: cache-binaryen
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.HOME }}/.cache/binaryen/version_121
-          key: binaryen/version_121/${{ runner.os }}/x86_64
-
-      - name: Install wasm-opt if cache miss
-        if: steps.cache-binaryen.outputs.cache-hit != 'true'
-        run: |
-          set -euxo pipefail
-          mkdir -p "${HOME}/.cache/binaryen"
-          curl -fsSL -o /tmp/binaryen.tar.gz \
-            "https://github.com/WebAssembly/binaryen/releases/download/version_121/binaryen-version_121-x86_64-linux.tar.gz"
-          tar -xzf /tmp/binaryen.tar.gz -C "${HOME}/.cache/binaryen"
-          mv "${HOME}/.cache/binaryen/binaryen-version_121" "${HOME}/.cache/binaryen/version_121"
-
-      - name: Save cached wasm-opt
-        if: steps.cache-binaryen.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
-        with:
-          path: ${{ env.HOME }}/.cache/binaryen/version_121
-          key: binaryen/version_121/${{ runner.os }}/x86_64
-
-      - name: Export wasm-opt to PATH
-        run: echo "${HOME}/.cache/binaryen/version_121/bin" >> $GITHUB_PATH
+      - name: Install wasm-pack
+        run: cargo binstall wasm-pack
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Build JS packages

@@ -36,36 +36,6 @@ use itertools::Itertools;
 use crate::state_transition::state_transitions::document::batch_transition::batched_transition::document_transition::DocumentTransition;
 use crate::tokens::token_payment_info::TokenPaymentInfo;
 
-const PROPERTY_FEATURE_VERSION: &str = "$version";
-const PROPERTY_ENTROPY: &str = "$entropy";
-const PROPERTY_ACTION: &str = "$action";
-const PROPERTY_OWNER_ID: &str = "ownerId";
-const PROPERTY_DOCUMENT_OWNER_ID: &str = "$ownerId";
-const PROPERTY_TYPE: &str = "$type";
-const PROPERTY_ID: &str = "$id";
-const PROPERTY_TRANSITIONS: &str = "transitions";
-const PROPERTY_DATA_CONTRACT_ID: &str = "$dataContractId";
-const PROPERTY_REVISION: &str = "$revision";
-const PROPERTY_CREATED_AT: &str = "$createdAt";
-const PROPERTY_UPDATED_AT: &str = "$updatedAt";
-const PROPERTY_DOCUMENT_TYPE: &str = "$type";
-
-const DOCUMENT_CREATE_KEYS_TO_STAY: [&str; 5] = [
-    PROPERTY_ID,
-    PROPERTY_TYPE,
-    PROPERTY_DATA_CONTRACT_ID,
-    PROPERTY_CREATED_AT,
-    PROPERTY_UPDATED_AT,
-];
-
-const DOCUMENT_REPLACE_KEYS_TO_STAY: [&str; 5] = [
-    PROPERTY_ID,
-    PROPERTY_TYPE,
-    PROPERTY_DATA_CONTRACT_ID,
-    PROPERTY_REVISION,
-    PROPERTY_UPDATED_AT,
-];
-
 /// Factory for creating documents
 pub struct DocumentFactoryV0 {
     protocol_version: u32,
@@ -617,6 +587,7 @@ mod test {
             created_at_core_block_height: None,
             updated_at_core_block_height: None,
             transferred_at_core_block_height: None,
+            creator_id: None,
         };
         let document = Document::V0(document_v0);
 
