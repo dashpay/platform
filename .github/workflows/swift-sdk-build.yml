@@ -23,12 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.*'
-
-      - name: Show Xcode and Swift versions
+      - name: Show Xcode and Swift versions (use default on self-hosted runner)
         run: |
           xcodebuild -version
           swift --version
@@ -98,12 +93,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          # Use the same rust-dashcore revision as rs-dpp (parse single-line dep)
-          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' packages/rs-dpp/Cargo.toml \
-                | sed -E 's/.*rev[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
+          # Use the same rust-dashcore revision/tag as rs-dpp
+          # Try to find tag first (preferred format)
+          REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*tag[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+                | sed -E 's/.*tag[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
                 | head -n1 || true)
+          # If no tag found, try rev format
           if [ -z "${REV:-}" ]; then
-            echo "Failed to determine rust-dashcore revision from Cargo.toml" >&2
+            REV=$(grep -E '^[[:space:]]*dashcore[[:space:]]*=[[:space:]]*\{.*rev[[:space:]]*=' packages/rs-dpp/Cargo.toml \
+                  | sed -E 's/.*rev[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/' \
+                  | head -n1 || true)
+          fi
+          if [ -z "${REV:-}" ]; then
+            echo "Failed to determine rust-dashcore revision or tag from Cargo.toml" >&2
             exit 1
           fi
           echo "rev=$REV" >> "$GITHUB_OUTPUT"
