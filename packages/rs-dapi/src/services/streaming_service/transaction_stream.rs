@@ -1099,3 +1099,158 @@ fn txid_to_hex(txid: &[u8]) -> String {
     buf.reverse();
     hex::encode(buf)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dashcore_rpc::dashcore::{
+        block::{Header as BlockHeader, Version},
+        consensus::encode::{deserialize, serialize},
+        merkle_tree::MerkleBlock,
+        Block, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction as CoreTx, TxIn,
+        TxMerkleNode, TxOut, Txid, Witness,
+    };
+    use std::time::Duration;
+    use tokio::time::{sleep, timeout};
+
+    fn sample_tx(tag: u8) -> CoreTx {
+        let mut txid_bytes = [0u8; 32];
+        txid_bytes[0] = tag;
+        let out_point = OutPoint::new(Txid::from_byte_array(txid_bytes), 0);
+        CoreTx {
+            version: 1,
+            lock_time: 0,
+            input: vec![TxIn {
+                previous_output: out_point,
+                script_sig: ScriptBuf::new(),
+                sequence: 0xFFFFFFFF,
+                witness: Witness::default(),
+            }],
+            output: vec![TxOut {
+                value: tag as u64,
+                script_pubkey: ScriptBuf::new(),
+            }],
+            special_transaction_payload: None,
+        }
+    }
+
+    fn sample_block(mut txs: Vec<CoreTx>) -> Block {
+        let header = BlockHeader {
+            version: Version::ONE,
+            prev_blockhash: BlockHash::all_zeros(),
+            merkle_root: TxMerkleNode::all_zeros(),
+            time: 0,
+            bits: CompactTarget::from_consensus(0x1f00ffff),
+            nonce: 0,
+        };
+        let mut block = Block { header, txdata: Vec::new() };
+        block.txdata.append(&mut txs);
+        let merkle_root = block
+            .compute_merkle_root()
+            .expect("expected at least one transaction");
+        block.header.merkle_root = merkle_root;
+        block
+    }
+
+    #[tokio::test]
+    async fn should_dedupe_transactions_blocks_and_instant_locks() {
+        let state = TransactionStreamState::new();
+        let txid = vec![1u8; 32];
+        assert!(state.mark_transaction_delivered(&txid).await);
+        assert!(!state.mark_transaction_delivered(&txid).await);
+        assert!(state.has_transaction_been_delivered(&txid).await);
+
+        let block_hash = vec![2u8; 32];
+        assert!(state.mark_block_delivered(&block_hash).await);
+        assert!(!state.mark_block_delivered(&block_hash).await);
+
+        let lock_txid = vec![3u8; 32];
+        assert!(state.mark_instant_lock_delivered(&lock_txid).await);
+        assert!(!state.mark_instant_lock_delivered(&lock_txid).await);
+        assert!(state.has_transaction_been_delivered(&lock_txid).await);
+    }
+
+    #[tokio::test]
+    async fn should_wait_for_gate_and_flush_pending_events() {
+        let state = TransactionStreamState::new();
+        let waiter = {
+            let state_clone = state.clone();
+            tokio::spawn(async move {
+                state_clone.wait_for_gate_open().await;
+            })
+        };
+
+        sleep(Duration::from_millis(10)).await;
+        TransactionStreamState::open_gate(&state.gate_sender);
+        timeout(Duration::from_secs(1), waiter)
+            .await
+            .expect("wait_for_gate_open did not complete in time")
+            .expect("wait task panicked");
+
+        let (tx_sender, mut rx) = mpsc::channel(8);
+        let mut pending = vec![(
+            StreamingEvent::CoreRawTransaction {
+                data: serialize(&sample_tx(7)),
+            },
+            "tx_handle".to_string(),
+        )];
+
+        let flushed = StreamingServiceImpl::flush_transaction_pending(
+            &FilterType::CoreAllTxs,
+            "subscriber",
+            &tx_sender,
+            &state,
+            &mut pending,
+        )
+        .await;
+        assert!(flushed);
+        assert!(pending.is_empty());
+
+        let response = rx.recv().await.expect("expected response").expect("status ok");
+        match response.responses {
+            Some(Responses::RawTransactions(raw)) => {
+                assert_eq!(raw.transactions.len(), 1);
+            }
+            other => panic!("unexpected response: {:?}", other),
+        }
+    }
+
+    #[test]
+    fn should_build_merkle_block_with_partial_matches() {
+        let tx_a = sample_tx(10);
+        let tx_b = sample_tx(11);
+        let tx_c = sample_tx(12);
+        let block = sample_block(vec![tx_a.clone(), tx_b.clone(), tx_c.clone()]);
+
+        let merkle_bytes = build_merkle_block_bytes(&block, &[true, false, true])
+            .expect("merkle construction should succeed");
+        let merkle_block: MerkleBlock = deserialize(&merkle_bytes).expect("valid merkle block");
+
+        let mut matches = Vec::new();
+        let mut indexes = Vec::new();
+        merkle_block
+            .extract_matches(&mut matches, &mut indexes)
+            .expect("extract matches");
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&tx_a.txid()));
+        assert!(matches.contains(&tx_c.txid()));
+    }
+
+    #[tokio::test]
+    async fn should_return_raw_block_on_deserialize_error() {
+        let raw_block = vec![0xde, 0xad, 0xbe, 0xef];
+        let response = StreamingServiceImpl::build_transaction_merkle_response(
+            &FilterType::CoreAllTxs,
+            &raw_block,
+            "handle",
+            None,
+        )
+        .await
+        .expect("response should build");
+
+        match response.responses {
+            Some(Responses::RawMerkleBlock(bytes)) => assert_eq!(bytes, raw_block),
+            other => panic!("unexpected response: {:?}", other),
+        }
+    }
+}
