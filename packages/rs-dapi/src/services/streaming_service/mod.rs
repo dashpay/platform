@@ -226,7 +226,7 @@ impl StreamingServiceImpl {
         let mut backoff = Duration::from_secs(1);
         let max_backoff = Duration::from_secs(60);
         loop {
-            match zmq_listener.subscribe().await {
+            match zmq_listener.subscribe() {
                 Ok(zmq_events) => {
                     trace!("ZMQ listener started successfully, processing events");
                     Self::process_zmq_events(zmq_events, subscriber_manager.clone()).await;

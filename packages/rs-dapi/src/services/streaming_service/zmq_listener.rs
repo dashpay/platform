@@ -363,7 +363,7 @@ impl ZmqListener {
     }
 
     /// Subscribe to ZMQ events and return a receiver for them
-    pub async fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
+    pub fn subscribe(&self) -> DAPIResult<broadcast::Receiver<ZmqEvent>> {
         Ok(self.event_sender.subscribe())
     }
 
