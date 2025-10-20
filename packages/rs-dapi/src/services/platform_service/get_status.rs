@@ -10,16 +10,17 @@ use crate::clients::{
     drive_client::DriveStatusResponse,
     tenderdash_client::{NetInfoResponse, TenderdashStatusResponse},
 };
+use crate::error::DapiError;
 
 // The struct is defined in the parent platform_service.rs module
 use crate::services::platform_service::PlatformServiceImpl;
 
 /// Captures upstream health information when building the Platform status response.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Default)]
 pub struct PlatformStatusHealth {
-    pub drive_error: Option<String>,
-    pub tenderdash_status_error: Option<String>,
-    pub tenderdash_netinfo_error: Option<String>,
+    pub drive_error: Option<DapiError>,
+    pub tenderdash_status_error: Option<DapiError>,
+    pub tenderdash_netinfo_error: Option<DapiError>,
 }
 
 impl PlatformStatusHealth {
@@ -75,9 +76,9 @@ impl PlatformServiceImpl {
         match self.build_status_response_with_health().await {
             Ok((response, health)) => {
                 trace!(
-                    drive_error = health.drive_error.as_deref(),
-                    tenderdash_status_error = health.tenderdash_status_error.as_deref(),
-                    tenderdash_netinfo_error = health.tenderdash_netinfo_error.as_deref(),
+                    drive_error = ?health.drive_error,
+                    tenderdash_status_error = ?health.tenderdash_status_error,
+                    tenderdash_netinfo_error = ?health.tenderdash_netinfo_error,
                     "get_status upstream fetch completed"
                 );
                 self.platform_cache.put(key, &response);
@@ -113,7 +114,7 @@ impl PlatformServiceImpl {
             Ok(status) => status,
             Err(e) => {
                 debug!(error = ?e, "Failed to fetch Drive status - technical failure, using defaults");
-                health.drive_error = Some(e.to_string());
+                health.drive_error = Some(e.into());
                 DriveStatusResponse::default()
             }
         };
@@ -122,7 +123,7 @@ impl PlatformServiceImpl {
             Ok(status) => status,
             Err(e) => {
                 debug!(error = ?e, "Failed to fetch Tenderdash status - technical failure, using defaults");
-                health.tenderdash_status_error = Some(e.to_string());
+                health.tenderdash_status_error = Some(e);
                 TenderdashStatusResponse::default()
             }
         };
@@ -131,7 +132,7 @@ impl PlatformServiceImpl {
             Ok(netinfo) => netinfo,
             Err(e) => {
                 debug!(error = ?e, "Failed to fetch Tenderdash netinfo - technical failure, using defaults");
-                health.tenderdash_netinfo_error = Some(e.to_string());
+                health.tenderdash_netinfo_error = Some(e);
                 NetInfoResponse::default()
             }
         };

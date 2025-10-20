@@ -73,17 +73,10 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                     "degraded".into()
                 },
                 error: None,
-                drive: Some(ComponentCheck::from_option(health.drive_error.clone())),
-                tenderdash_websocket: Some(ComponentCheck::from_bool(
-                    websocket_connected,
-                    "disconnected",
-                )),
-                tenderdash_status: Some(ComponentCheck::from_option(
-                    health.tenderdash_status_error.clone(),
-                )),
-                tenderdash_net_info: Some(ComponentCheck::from_option(
-                    health.tenderdash_netinfo_error.clone(),
-                )),
+                drive: Some(health.drive_error.as_ref().into()),
+                tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
+                tenderdash_status: Some(health.tenderdash_status_error.as_ref().into()),
+                tenderdash_net_info: Some(health.tenderdash_netinfo_error.as_ref().into()),
             };
             (is_healthy, payload)
         }
@@ -95,10 +88,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                     status: "error".into(),
                     error: Some(health_error_label(&err.into()).to_string()),
                     drive: None,
-                    tenderdash_websocket: Some(ComponentCheck::from_bool(
-                        websocket_connected,
-                        "disconnected",
-                    )),
+                    tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
                     tenderdash_status: None,
                     tenderdash_net_info: None,
                 },
@@ -110,10 +100,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
                 status: "error".into(),
                 error: Some("timeout".into()),
                 drive: None,
-                tenderdash_websocket: Some(ComponentCheck::from_bool(
-                    websocket_connected,
-                    "disconnected",
-                )),
+                tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
                 tenderdash_status: None,
                 tenderdash_net_info: None,
             },
@@ -212,7 +199,10 @@ struct PlatformChecks {
     error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     drive: Option<ComponentCheck>,
-    #[serde(rename = "tenderdashWebSocket", skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "tenderdashWebSocket",
+        skip_serializing_if = "Option::is_none"
+    )]
     tenderdash_websocket: Option<ComponentCheck>,
     #[serde(rename = "tenderdashStatus", skip_serializing_if = "Option::is_none")]
     tenderdash_status: Option<ComponentCheck>,
@@ -271,21 +261,41 @@ fn health_error_label(err: &DapiError) -> &'static str {
     }
 }
 
-impl ComponentCheck {
-    fn from_option(error: Option<String>) -> Self {
-        match error {
-            Some(err) => Self {
-                status: "error".into(),
-                error: Some(err),
-            },
+impl<T> From<Option<T>> for ComponentCheck
+where
+    T: Into<ComponentCheck>,
+{
+    fn from(option: Option<T>) -> Self {
+        match option {
+            Some(value) => value.into(),
             None => Self {
                 status: "ok".into(),
                 error: None,
             },
         }
     }
+}
 
-    fn from_bool(is_ok: bool, error_message: &'static str) -> Self {
+impl From<String> for ComponentCheck {
+    fn from(err: String) -> Self {
+        Self {
+            status: "error".into(),
+            error: Some(err),
+        }
+    }
+}
+
+impl From<&DapiError> for ComponentCheck {
+    fn from(err: &DapiError) -> Self {
+        Self {
+            status: "error".into(),
+            error: Some(health_error_label(err).to_string()),
+        }
+    }
+}
+
+impl From<bool> for ComponentCheck {
+    fn from(is_ok: bool) -> Self {
         if is_ok {
             Self {
                 status: "ok".into(),
@@ -294,7 +304,7 @@ impl ComponentCheck {
         } else {
             Self {
                 status: "error".into(),
-                error: Some(error_message.into()),
+                error: Some("failed".into()),
             }
         }
     }
