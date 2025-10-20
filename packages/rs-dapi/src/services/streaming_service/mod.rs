@@ -255,7 +255,10 @@ impl StreamingServiceImpl {
         loop {
             let event = zmq_events.recv().await;
 
-            processed_events = processed_events.saturating_add(1);
+            if event.is_ok() {
+                processed_events = processed_events.saturating_add(1);
+            }
+
             match event {
                 Ok(ZmqEvent::RawTransaction { data }) => {
                     let txid = txid_hex_from_bytes(&data).unwrap_or_else(|| "n/a".to_string());

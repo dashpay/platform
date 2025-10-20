@@ -35,7 +35,12 @@ impl Drop for WorkerMetricsGuard {
     }
 }
 
-/// Worker pool entry point used by async services to run background tasks.
+/// Async worker pool for managing background tasks.
+///
+/// The pool uses a command pattern: [`Workers`] handles send spawn requests
+/// to a [`WorkerManager`] task that owns a [`JoinSet`]. The manager continuously
+/// drains completed tasks and returns [`AbortHandle`]s to callers via oneshot channels.
+
 #[derive(Clone)]
 pub struct Workers {
     inner: Arc<WorkersInner>,

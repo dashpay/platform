@@ -50,7 +50,7 @@ pub struct ZmqTopics {
     pub hashblock: String,
     pub rawblock: String,
     pub rawtx: String,
-    // pub rawtxlock: String, -- not used
+    // pub rawtxlock: String, -- not used, it doesn't contain required data, we use rawtxlocksig instead
     pub rawtxlocksig: String,
     pub rawchainlock: String,
     pub rawchainlocksig: String,
@@ -390,6 +390,11 @@ impl ZmqListener {
         loop {
             // We don't want to cancel parent task by mistake
             let cancel = cancel_parent.child_token();
+
+            if cancel.is_cancelled() {
+                debug!("ZMQ listener task cancelled, exiting");
+                return Err(DapiError::ConnectionClosed);
+            }
 
             // Try to establish connection
             match ZmqConnection::new(&zmq_uri, &topics, Duration::from_secs(5), cancel).await {

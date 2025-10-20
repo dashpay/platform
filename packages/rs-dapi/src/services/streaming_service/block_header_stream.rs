@@ -492,7 +492,7 @@ impl StreamingServiceImpl {
             return Ok(());
         }
 
-        if start_height >= best_height.saturating_add(1) {
+        if start_height > best_height {
             debug!(start_height, best_height, "block_headers=start_beyond_tip");
             return Err(Status::not_found(format!(
                 "Block {} not found",

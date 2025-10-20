@@ -439,6 +439,7 @@ impl StreamingServiceImpl {
                     _ => false,
                 };
 
+                // skip no match or duplicate
                 if !bloom_matched && !already_delivered && !matches!(filter, FilterType::CoreAllTxs)
                 {
                     trace!(
@@ -754,7 +755,7 @@ impl StreamingServiceImpl {
                         "Minimum value for `fromBlockHeight` is 1",
                     ));
                 }
-                if start > best_height.saturating_add(1) {
+                if start > best_height {
                     return Err(Status::not_found(format!("Block {} not found", start)));
                 }
                 let available = best_height.saturating_sub(start).saturating_add(1);
