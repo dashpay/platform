@@ -127,6 +127,90 @@ impl WasmSdkBuilder {
         PlatformVersion::latest().protocol_version
     }
 
+    /// Create a new SdkBuilder with specific addresses and network.
+    ///
+    /// # Arguments
+    /// * `addresses` - Array of HTTPS URLs (e.g., ["https://127.0.0.1:1443"])
+    /// * `network` - Network identifier: "mainnet" or "testnet"
+    ///
+    /// # Example
+    /// ```javascript
+    /// const builder = WasmSdkBuilder.withAddresses(['https://127.0.0.1:1443'], 'testnet');
+    /// const sdk = builder.build();
+    /// ```
+    #[wasm_bindgen(js_name = "withAddresses")]
+    pub fn new_with_addresses(
+        addresses: Vec<String>,
+        network: String,
+    ) -> Result<Self, WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+        use dash_sdk::dpp::dashcore::Network;
+        use dash_sdk::sdk::Uri;
+        use rs_dapi_client::Address;
+
+        // Parse and validate addresses
+        if addresses.is_empty() {
+            return Err(WasmSdkError::invalid_argument(
+                "Addresses must be a non-empty array",
+            ));
+        }
+        let parsed_addresses: Result<Vec<Address>, _> = addresses
+            .into_iter()
+            .map(|addr| {
+                addr.parse::<Uri>()
+                    .map_err(|e| format!("Invalid URI '{}': {}", addr, e))
+                    .and_then(|uri| {
+                        Address::try_from(uri).map_err(|e| format!("Invalid address: {}", e))
+                    })
+            })
+            .collect();
+
+        let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
+
+        // Parse network - only mainnet and testnet are supported
+        let network = match network.to_lowercase().as_str() {
+            "mainnet" => Network::Dash,
+            "testnet" => Network::Testnet,
+            _ => {
+                return Err(WasmSdkError::invalid_argument(format!(
+                    "Invalid network '{}'. Expected: mainnet or testnet",
+                    network
+                )))
+            }
+        };
+
+        // Use the cached trusted context if available for the network, otherwise create a new one
+        let trusted_context = match network {
+            Network::Dash => {
+                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard.clone()
+            }
+            .map(Ok)
+            .unwrap_or_else(|| {
+                WasmTrustedContext::new_mainnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+            })?,
+            Network::Testnet => {
+                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                guard.clone()
+            }
+            .map(Ok)
+            .unwrap_or_else(|| {
+                WasmTrustedContext::new_testnet()
+                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+            })?,
+            // Network was already validated above
+            _ => unreachable!("Network already validated to mainnet or testnet"),
+        };
+
+        let address_list = dash_sdk::sdk::AddressList::from_iter(parsed_addresses);
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(network)
+            .with_context_provider(trusted_context);
+
+        Ok(Self(sdk_builder))
+    }
+
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
         // Mainnet addresses from mnowatch.org
