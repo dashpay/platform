@@ -12,7 +12,7 @@ use tower_http::{
         DefaultOnResponse, Trace, TraceLayer,
     },
 };
-use tracing::{Level, debug, error, info, trace};
+use tracing::{Level, debug, error, info, trace, warn};
 
 /// gRPC client factory for interacting with Dash Platform Drive
 ///
@@ -89,9 +89,10 @@ pub type DriveChannel = Trace<
 impl DriveClient {
     /// Create a new DriveClient with gRPC request tracing and connection reuse.
     ///
-    /// This method validates the connection by making a test gRPC call to ensure
+    /// This method attempts to validate the connection by making a test gRPC call to ensure
     /// the Drive service is reachable and responding correctly. If the Drive
-    /// service cannot be reached, an error is returned.
+    /// service cannot be reached, the error is logged and the client is still returned so the
+    /// caller can operate in a degraded mode while health checks surface the issue.
     pub async fn new(uri: &str) -> Result<Self, tonic::Status> {
         info!("Creating Drive client for: {}", uri);
         let channel = Self::create_channel(uri)?;
@@ -118,13 +119,16 @@ impl DriveClient {
         match client.get_drive_status(&test_request).await {
             Ok(_) => {
                 debug!("Drive connection validated successfully");
-                Ok(client)
             }
             Err(e) => {
-                error!("Failed to validate Drive connection: {}", e);
-                Err(e)
+                warn!(
+                    error = %e,
+                    "Failed to validate Drive connection; continuing with degraded health"
+                );
             }
         }
+
+        Ok(client)
     }
 
     /// Build a traced gRPC channel to Drive with error normalization.

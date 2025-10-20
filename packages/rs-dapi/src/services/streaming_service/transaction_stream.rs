@@ -1104,11 +1104,11 @@ fn txid_to_hex(txid: &[u8]) -> String {
 mod tests {
     use super::*;
     use dashcore_rpc::dashcore::{
+        Block, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction as CoreTx, TxIn,
+        TxMerkleNode, TxOut, Txid, Witness,
         block::{Header as BlockHeader, Version},
         consensus::encode::{deserialize, serialize},
         merkle_tree::MerkleBlock,
-        Block, BlockHash, CompactTarget, OutPoint, ScriptBuf, Transaction as CoreTx, TxIn,
-        TxMerkleNode, TxOut, Txid, Witness,
     };
     use std::time::Duration;
     use tokio::time::{sleep, timeout};
@@ -1143,7 +1143,10 @@ mod tests {
             bits: CompactTarget::from_consensus(0x1f00ffff),
             nonce: 0,
         };
-        let mut block = Block { header, txdata: Vec::new() };
+        let mut block = Block {
+            header,
+            txdata: Vec::new(),
+        };
         block.txdata.append(&mut txs);
         let merkle_root = block
             .compute_merkle_root()
@@ -1206,7 +1209,11 @@ mod tests {
         assert!(flushed);
         assert!(pending.is_empty());
 
-        let response = rx.recv().await.expect("expected response").expect("status ok");
+        let response = rx
+            .recv()
+            .await
+            .expect("expected response")
+            .expect("status ok");
         match response.responses {
             Some(Responses::RawTransactions(raw)) => {
                 assert_eq!(raw.transactions.len(), 1);

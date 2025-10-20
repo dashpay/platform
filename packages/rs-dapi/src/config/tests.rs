@@ -73,10 +73,10 @@ async fn test_clients_can_be_created_with_uris() {
     let config = Config::default();
 
     // Test that clients can be created with URIs from config
-    // Note: These will fail if no servers are running, which is expected in unit tests
+    // These create lazy connections that may operate in degraded mode until upstreams respond
     DriveClient::new(&config.dapi.drive.uri)
         .await
-        .expect_err("DriveClient should fail if no server is running");
+        .expect("DriveClient should be constructed even if no server is running");
     TenderdashClient::new(
         &config.dapi.tenderdash.uri,
         &config.dapi.tenderdash.websocket_uri,
