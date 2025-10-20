@@ -7,7 +7,7 @@ use crate::error::{DAPIResult, DapiError};
 use crate::sync::Workers;
 use async_trait::async_trait;
 use dashcore_rpc::dashcore::Transaction as CoreTransaction;
-use dpp::dashcore::consensus::Decodable as _;
+use dashcore_rpc::dashcore::consensus::Decodable;
 use futures::StreamExt;
 use std::io::Cursor;
 use tokio::select;

@@ -22,7 +22,7 @@ rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider",
 simple-signer = { path = "../simple-signer" }
 
 # Core SDK integration (always included for unified SDK)
-dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964", optional = true }
+dash-spv-ffi = { git = "https://github.com/dashpay/rust-dashcore", rev = "c877c1a74d145e2003d549619698511513db925c", optional = true }
 
 # FFI and serialization
 serde = { version = "1.0", features = ["derive"] }
