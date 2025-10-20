@@ -23,12 +23,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Select Xcode 16
-        uses: maxim-lobanov/setup-xcode@v1
-        with:
-          xcode-version: '16.*'
-
-      - name: Show Xcode and Swift versions
+      - name: Show Xcode and Swift versions (use default on self-hosted runner)
         run: |
           xcodebuild -version
           swift --version
