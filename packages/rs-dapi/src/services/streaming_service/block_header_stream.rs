@@ -489,15 +489,16 @@ impl StreamingServiceImpl {
         };
 
         if available == 0 {
+            // historical mode but no available headers
+            if limit.is_some() {
+                debug!(start_height, best_height, "block_headers=start_beyond_tip");
+                return Err(Status::not_found(format!(
+                    "Block {} not found",
+                    start_height
+                )));
+            }
+            // Combined mode: no historical data yet; proceed with live stream.
             return Ok(());
-        }
-
-        if start_height > best_height {
-            debug!(start_height, best_height, "block_headers=start_beyond_tip");
-            return Err(Status::not_found(format!(
-                "Block {} not found",
-                start_height
-            )));
         }
 
         if desired == 0 {

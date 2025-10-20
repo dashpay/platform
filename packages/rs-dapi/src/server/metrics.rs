@@ -280,15 +280,6 @@ where
     }
 }
 
-impl From<String> for ComponentCheck {
-    fn from(err: String) -> Self {
-        Self {
-            status: "error".into(),
-            error: Some(err),
-        }
-    }
-}
-
 impl From<&DapiError> for ComponentCheck {
     fn from(err: &DapiError) -> Self {
         Self {

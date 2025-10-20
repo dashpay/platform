@@ -329,16 +329,8 @@ DAPI_DRIVE_URI=http://test-drive:8000
 
     // Should either return error or fallback gracefully (depending on implementation)
     // The current implementation should fallback to manual loading which would fail
-    match result {
-        Ok(config) => {
-            // If it succeeds, the invalid port should fallback to default
-            assert_eq!(config.server.grpc_server_port, 3005); // default
-            assert_eq!(config.dapi.drive.uri, "http://test-drive:8000"); // valid value should load
-        }
-        Err(_) => {
-            // Error is also acceptable for invalid configuration
-        }
-    }
+    let error = result.expect_err("valid config").to_string();
+    assert!(error.contains("invalid digit found in string"));
 
     // Cleanup
     cleanup_env_vars();

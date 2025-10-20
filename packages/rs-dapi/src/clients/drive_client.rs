@@ -113,7 +113,7 @@ impl DriveClient {
                 .max_encoding_message_size(MAX_ENCODING_BYTES),
         };
 
-        // Validate connection by making a test status call and fail fast on errors.
+        // Validate connection by making a test status call; log warnings but allow degraded operation.
         trace!("Validating Drive connection at: {}", uri);
         let test_request = GetStatusRequest { version: None };
         match client.get_drive_status(&test_request).await {

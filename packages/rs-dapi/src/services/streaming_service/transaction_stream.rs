@@ -435,7 +435,7 @@ impl StreamingServiceImpl {
                     FilterType::CoreBloomFilter(bloom, flags) => tx
                         .as_ref()
                         .map(|tx| super::bloom::matches_transaction(Arc::clone(bloom), tx, *flags))
-                        .unwrap_or(true),
+                        .unwrap_or(true), // failsafe: we assume match to be on a safe side
                     _ => false,
                 };
 
@@ -1030,11 +1030,10 @@ impl StreamingServiceImpl {
 /// Build a serialized MerkleBlock (header + PartialMerkleTree) from full block bytes and
 /// a boolean match flag per transaction indicating which txids should be included.
 fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u8>, String> {
-    use core::consensus::encode::serialize;
-    use dashcore_rpc::dashcore as core;
+    use dashcore_rpc::dashcore::consensus::encode::serialize;
 
     let header = block.header;
-    let txids: Vec<core::Txid> = block.txdata.iter().map(|t| t.txid()).collect();
+    let txids: Vec<dashcore_rpc::dashcore::Txid> = block.txdata.iter().map(|t| t.txid()).collect();
     if txids.len() != match_flags.len() {
         return Err(format!(
             "flags len {} != tx count {}",
@@ -1043,8 +1042,9 @@ fn build_merkle_block_bytes(block: &Block, match_flags: &[bool]) -> Result<Vec<u
         ));
     }
 
-    let pmt = core::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
-    let mb = core::merkle_tree::MerkleBlock { header, txn: pmt };
+    let pmt =
+        dashcore_rpc::dashcore::merkle_tree::PartialMerkleTree::from_txids(&txids, match_flags);
+    let mb = dashcore_rpc::dashcore::merkle_tree::MerkleBlock { header, txn: pmt };
     Ok(serialize(&mb))
 }
 fn parse_bloom_filter(

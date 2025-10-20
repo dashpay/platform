@@ -16,8 +16,7 @@
 //!
 use std::future::Future;
 use std::sync::Arc;
-use std::sync::atomic::AtomicBool;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
 
 use crate::error::{DAPIResult, DapiError};
 use crate::sync::Workers;
@@ -235,6 +234,7 @@ impl ZmqConnection {
             zmq_tx: tx,
             cancel: cancel.clone(),
             connected: self.connected.clone(),
+            last_recv: Arc::new(AtomicI64::new(0)),
         }
         .spawn(&self.workers);
     }
@@ -551,6 +551,7 @@ struct ZmqDispatcher {
     /// Cancellation token to stop all spawned threads; cancelled when the connection is lost
     cancel: CancellationToken,
     connected: Arc<AtomicBool>,
+    last_recv: Arc<AtomicI64>,
 }
 
 impl ZmqDispatcher {
@@ -570,12 +571,18 @@ impl ZmqDispatcher {
             select! {
                 msg = self.socket.recv() => {
                     match msg {
-                        Ok(msg) => if let Err(e) = self.zmq_tx.send(msg).await {
-                            debug!(error = %e, "Error sending ZMQ event to receiver, receiver may have exited");
-                            // receiver exited? I think it is fatal, we exit as it makes no sense to continue
-                            self.connected.store(false, Ordering::SeqCst);
-                            self.cancel.cancel();
-                            return Err(DapiError::ClientGone("ZMQ receiver exited".to_string()));
+                        Ok(msg) =>
+                        {
+                            if let Err(e) = self.zmq_tx.send(msg).await {
+                                debug!(error = %e, "Error sending ZMQ event to receiver, receiver may have exited");
+                                // receiver exited? I think it is fatal, we exit as it makes no sense to continue
+                                self.connected.store(false, Ordering::SeqCst);
+                                self.cancel.cancel();
+                                return Err(DapiError::ClientGone("ZMQ receiver exited".to_string()));
+                            } else {
+                                // update last received timestamp
+                                self.last_recv.store(chrono::Utc::now().timestamp(), Ordering::SeqCst);
+                            }
                         },
                         Err(e) => {
                             debug!(error = %e, "Error receiving ZMQ message, restarting connection");
@@ -596,8 +603,15 @@ impl ZmqDispatcher {
 
     /// Event that happens every ten seconds to check connection status
     async fn tick_event_10s(&mut self) {
-        // Health check of zmq connection
-        // This is a hack to ensure the connection is alive, as the monitor fails to notify us about disconnects
+        // first, if we received a message within last 10s, we are connected
+        let last_recv = self.last_recv.load(Ordering::SeqCst);
+        if last_recv + 10 >= chrono::Utc::now().timestamp() {
+            self.connected.store(true, Ordering::SeqCst);
+            return;
+        }
+
+        // fallback to subscribing to some dummy `ping` topic.
+        // This is a hack to ensure the connection is alive, as the monitor fails to notify us about disconnects.
         let current_status = self.socket.subscribe("ping").await.is_ok();
         // Unsubscribe immediately to avoid resource waste
         self.socket
@@ -618,6 +632,18 @@ impl ZmqDispatcher {
                 // disconnect the socket
                 self.cancel.cancel();
             }
+        }
+
+        // if we are connected, we assume last_recv is now
+        if current_status {
+            self.last_recv
+                .compare_exchange(
+                    last_recv,
+                    chrono::Utc::now().timestamp(),
+                    Ordering::AcqRel,
+                    Ordering::Relaxed,
+                )
+                .ok();
         }
     }
 }
