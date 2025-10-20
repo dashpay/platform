@@ -140,12 +140,42 @@ impl ZmqConnection {
             .map_err(DapiError::ZmqConnection)?;
 
         // Subscribe to topics
+        let mut subscribed_topics = Vec::new();
+        let mut first_error = None;
+
         for topic in topics {
-            socket
+            let result = socket
                 .subscribe(topic)
                 .await
-                .map_err(DapiError::ZmqConnection)?;
+                .map_err(DapiError::ZmqConnection);
+
+            match result {
+                Ok(_) => subscribed_topics.push(topic.clone()),
+                Err(e) => {
+                    first_error.get_or_insert(e);
+                }
+            }
         }
+
+        if let Some(error) = first_error {
+            debug!(
+                ?error,
+                "ZMQ subscription errors occured, trying to unsubscribe from successful topics",
+            );
+
+            for topic in subscribed_topics {
+                if let Err(e) = socket.unsubscribe(&topic).await {
+                    trace!(
+                        topic = %topic,
+                        error = %e,
+                        "Error unsubscribing from ZMQ topic after subscription failure; error ignored as we are already failing",
+                    );
+                }
+            }
+            // return the first error
+            return Err(error);
+        }
+
         connection.start_dispatcher(socket, tx);
 
         Ok(connection)
