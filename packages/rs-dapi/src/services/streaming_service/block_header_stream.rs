@@ -12,7 +12,7 @@ use dashcore_rpc::dashcore::consensus::encode::{
 use dashcore_rpc::dashcore::hashes::Hash;
 use tokio::sync::{Mutex as AsyncMutex, mpsc, watch};
 use tokio_stream::wrappers::ReceiverStream;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::DapiError;
 use crate::services::streaming_service::{
@@ -316,6 +316,7 @@ impl StreamingServiceImpl {
         true
     }
 
+    /// Forward event to the client, returns false if the client disconnected.
     async fn forward_event(
         event: StreamingEvent,
         subscriber_id: &str,
@@ -324,14 +325,23 @@ impl StreamingServiceImpl {
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawBlock { data } => {
-                let block_hash_hex = super::block_hash_hex_from_block_bytes(&data)
-                    .unwrap_or_else(|| "n/a".to_string());
+                let Some((hash_bytes, block_hash_hex)) = super::block_hash_from_block_bytes(&data)
+                else {
+                    // invalid block data received
+                    warn!(
+                        subscriber_id,
+                        block = %hex::encode(&data),
+                        "block_headers=forward_block_invalid_block - it should not happen, report this issue"
+                    );
+                    return true;
+                };
+
                 let mut allow_forward = true;
-                if block_hash_hex != "n/a"
-                    && let Ok(hash_bytes) = hex::decode(&block_hash_hex)
+
                 {
+                    // scope for the lock
                     let mut hashes = delivered_hashes.lock().await;
-                    if hashes.remove(&hash_bytes) {
+                    if hashes.remove(&hash_bytes[..]) {
                         trace!(
                             subscriber_id,
                             block_hash = %block_hash_hex,
@@ -339,14 +349,8 @@ impl StreamingServiceImpl {
                         );
                         allow_forward = false;
                     } else {
-                        hashes.insert(hash_bytes);
+                        hashes.insert(hash_bytes.into());
                     }
-                } else {
-                    debug!(
-                        subscriber_id,
-                        block_hash = %block_hash_hex,
-                        "block_headers=forward_block_invalid_hash"
-                    );
                 }
 
                 if !allow_forward {
