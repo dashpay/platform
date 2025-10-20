@@ -325,11 +325,6 @@ impl TenderdashClient {
     {
         let start = tokio::time::Instant::now();
 
-        let request_value = serde_json::to_value(request).map_err(|e| {
-            error!("Failed to serialize Tenderdash request: {}", e);
-            DapiError::Client(format!("Failed to serialize request: {}", e))
-        })?;
-
         let response_body = self
             .client
             .post(&self.base_url)
@@ -362,7 +357,7 @@ impl TenderdashClient {
 
         tracing::trace!(
             elapsed = ?start.elapsed(),
-            request = ?request_value,
+            request = ?request,
             response = ?response,
             "tenderdash_client request executed");
 

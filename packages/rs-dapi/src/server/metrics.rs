@@ -156,7 +156,7 @@ async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::respo
 
     let body = HealthResponse {
         status: overall_status.to_string(),
-        timestamp: chrono::Utc::now().timestamp(),
+        timestamp: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::AutoSi, false),
         version: env!("CARGO_PKG_VERSION"),
         checks: Checks {
             platform: platform_payload,
@@ -180,7 +180,7 @@ async fn handle_metrics() -> axum::response::Response {
 #[derive(Serialize)]
 struct HealthResponse {
     status: String,
-    timestamp: i64,
+    timestamp: String,
     version: &'static str,
     checks: Checks,
 }
@@ -231,7 +231,7 @@ struct ComponentCheck {
 fn health_error_label(err: &DapiError) -> &'static str {
     use DapiError::*;
 
-    match err {
+    let label = match err {
         Configuration(_) => "configuration error",
         StreamingService(_) => "streaming service error",
         Client(_) | ClientGone(_) => "client error",
@@ -257,8 +257,12 @@ fn health_error_label(err: &DapiError) -> &'static str {
         ConnectionClosed => "connection closed",
         MethodNotFound(_) => "method not found",
         ZmqConnection(_) => "zmq connection error",
-        _ => "internal error",
-    }
+        FailedPrecondition(_) => "failed precondition",
+        // no default to ensure new errors are handled explicitly
+    };
+    tracing::trace!(error = ?err, label, "Mapping DapiError to health error label");
+
+    label
 }
 
 impl<T> From<Option<T>> for ComponentCheck
