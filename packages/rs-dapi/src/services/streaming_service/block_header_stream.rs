@@ -324,7 +324,7 @@ impl StreamingServiceImpl {
     ) -> bool {
         let maybe_response = match event {
             StreamingEvent::CoreRawBlock { data } => {
-                let block_hash_hex = Self::block_hash_hex_from_block_bytes(&data)
+                let block_hash_hex = super::block_hash_hex_from_block_bytes(&data)
                     .unwrap_or_else(|| "n/a".to_string());
                 let mut allow_forward = true;
                 if block_hash_hex != "n/a"
@@ -405,7 +405,7 @@ impl StreamingServiceImpl {
                 }))
             }
             other => {
-                let summary = Self::summarize_streaming_event(&other);
+                let summary = super::summarize_streaming_event(&other);
                 trace!(
                     subscriber_id,
                     event = %summary,

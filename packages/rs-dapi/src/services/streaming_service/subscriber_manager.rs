@@ -91,7 +91,7 @@ impl FilterType {
             (FilterType::CoreAllTxs, CoreChainLock { .. }) => true,
             (FilterType::CoreAllTxs, _) => false,
         };
-        let event_summary = super::StreamingServiceImpl::summarize_streaming_event(event);
+        let event_summary = super::summarize_streaming_event(event);
         trace!(matched, filter = ?self, event = %event_summary, "subscription_manager=filter_evaluated");
         matched
     }
@@ -144,21 +144,22 @@ impl Debug for StreamingEvent {
                     data.to_lower_hex_string()
                 )
             }
-            StreamingEvent::CoreInstantLock { tx_bytes, lock_bytes } => {
-                match tx_bytes {
-                    Some(tx) => write!(
-                        f,
-                        "CoreInstantLock {{ tx_bytes: [{}], lock_bytes: [{}] }}",
-                        encode(tx),
-                        encode(lock_bytes)
-                    ),
-                    None => write!(
-                        f,
-                        "CoreInstantLock {{ tx_bytes: none, lock_bytes: [{}] }}",
-                        encode(lock_bytes)
-                    ),
-                }
-            }
+            StreamingEvent::CoreInstantLock {
+                tx_bytes,
+                lock_bytes,
+            } => match tx_bytes {
+                Some(tx) => write!(
+                    f,
+                    "CoreInstantLock {{ tx_bytes: [{}], lock_bytes: [{}] }}",
+                    encode(tx),
+                    encode(lock_bytes)
+                ),
+                None => write!(
+                    f,
+                    "CoreInstantLock {{ tx_bytes: none, lock_bytes: [{}] }}",
+                    encode(lock_bytes)
+                ),
+            },
             StreamingEvent::CoreChainLock { data } => {
                 write!(
                     f,

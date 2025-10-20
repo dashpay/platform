@@ -372,7 +372,7 @@ impl ZmqListener {
                         .map(|bytes| bytes.to_vec())
                         .collect();
                     if let Some(event) = Self::parse_zmq_message(frames) {
-                        let summary = super::StreamingServiceImpl::summarize_zmq_event(&event);
+                        let summary = super::summarize_zmq_event(&event);
                         tracing::trace!(event = %summary, "Received ZMQ event");
                         if let Err(e) = sender.send(event) {
                             tracing::trace!("Cannot send ZMQ event, dropping: {}", e);

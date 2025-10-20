@@ -322,8 +322,8 @@ impl StreamingServiceImpl {
         let maybe_response = match event {
             StreamingEvent::CoreRawTransaction { data } => {
                 let (Some(txid_bytes), Some(txid_hex)) = (
-                    super::StreamingServiceImpl::txid_bytes_from_bytes(&data),
-                    super::StreamingServiceImpl::txid_hex_from_bytes(&data),
+                    super::txid_bytes_from_bytes(&data),
+                    super::txid_hex_from_bytes(&data),
                 ) else {
                     tracing::debug!("transactions_with_proofs=transaction_no_txid");
                     return true;
@@ -355,30 +355,25 @@ impl StreamingServiceImpl {
                 }))
             }
             StreamingEvent::CoreRawBlock { data } => {
-                let block_hash =
-                    super::StreamingServiceImpl::block_hash_hex_from_block_bytes(&data)
-                        .unwrap_or_else(|| "n/a".to_string());
+                if let Some((hash_bytes, hash_string)) = super::block_hash_from_block_bytes(&data) {
+                    if !state.mark_block_delivered(&hash_bytes).await {
+                        trace!(
+                            subscriber_id,
+                            handle_id,
+                            block_hash = hash_string,
+                            "transactions_with_proofs=skip_duplicate_merkle_block"
+                        );
+                        return true;
+                    }
 
-                if block_hash != "n/a"
-                    && let Ok(hash_bytes) = hex::decode(&block_hash)
-                    && !state.mark_block_delivered(&hash_bytes).await
-                {
                     trace!(
                         subscriber_id,
                         handle_id,
-                        block_hash = %block_hash,
-                        "transactions_with_proofs=skip_duplicate_merkle_block"
+                        block_hash = hash_string,
+                        payload_size = data.len(),
+                        "transactions_with_proofs=forward_merkle_block"
                     );
-                    return true;
                 }
-
-                trace!(
-                    subscriber_id,
-                    handle_id,
-                    block_hash = %block_hash,
-                    payload_size = data.len(),
-                    "transactions_with_proofs=forward_merkle_block"
-                );
 
                 match Self::build_transaction_merkle_response(filter, &data, handle_id, Some(state))
                     .await
@@ -480,7 +475,7 @@ impl StreamingServiceImpl {
                 }))
             }
             other => {
-                let summary = super::StreamingServiceImpl::summarize_streaming_event(&other);
+                let summary = super::summarize_streaming_event(&other);
                 trace!(subscriber_id, handle_id, event = %summary, "transactions_with_proofs=ignore_event");
                 None
             }
@@ -964,8 +959,7 @@ impl StreamingServiceImpl {
                 // Include previously delivered transactions in PMT regardless of bloom match
                 let mut matches_for_merkle = filter_matched;
                 if let Some(state) = state.as_ref()
-                    && let Some(hash_bytes) =
-                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
+                    && let Some(hash_bytes) = super::txid_bytes_from_bytes(tx_bytes)
                     && state.has_transaction_been_delivered(&hash_bytes).await
                 {
                     matches_for_merkle = true;
@@ -974,9 +968,7 @@ impl StreamingServiceImpl {
                 match_flags.push(matches_for_merkle);
                 // Only send raw transactions when they matched the bloom filter
                 if filter_matched {
-                    if let Some(hash_bytes) =
-                        super::StreamingServiceImpl::txid_bytes_from_bytes(tx_bytes)
-                    {
+                    if let Some(hash_bytes) = super::txid_bytes_from_bytes(tx_bytes) {
                         matching_hashes.push(hash_bytes);
                     }
                     matching.push(tx_bytes.clone());
@@ -1067,7 +1059,7 @@ fn parse_bloom_filter(
         n_hash_funcs = bloom_filter.n_hash_funcs,
         n_tweak = bloom_filter.n_tweak,
         v_data_len = bloom_filter.v_data.len(),
-        v_data_prefix = %super::StreamingServiceImpl::short_hex(&bloom_filter.v_data, 16),
+        v_data_prefix = %super::short_hex(&bloom_filter.v_data, 16),
         "transactions_with_proofs=request_bloom_filter_parsed"
     );
 
