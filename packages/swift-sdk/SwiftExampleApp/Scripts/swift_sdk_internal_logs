@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+usage() {
+  cat <<'USAGE'
+Usage: swift_sdk_internal_logs <high|medium|low>
+
+Adjusts SwiftExampleApp logging verbosity for the active iOS Simulator.
+
+Levels:
+  high   - Full verbose logs (SDK internals and SPV trace output)
+  medium - Key lifecycle events and warnings
+  low    - Errors only
+
+You can override the simulator target by setting SIM_DEVICE=<udid>.
+USAGE
+  exit 1
+}
+
+if [[ $# -ne 1 ]]; then
+  usage
+fi
+
+level="${1,,}"
+case "$level" in
+  high|medium|low) ;;
+  *) usage ;;
+esac
+
+device="${SIM_DEVICE:-}"
+if [[ -z "$device" ]]; then
+  device=$(xcrun simctl list devices booted | awk '/Booted/{gsub(/[()]/,"",$(NF-1)); print $(NF-1); exit}')
+fi
+
+if [[ -z "$device" ]]; then
+  echo "No booted simulator found. Boot a simulator or set SIM_DEVICE=<udid>." >&2
+  exit 1
+fi
+
+bundle_id="org.dashfoundation.SwiftExampleApp"
+
+echo "Setting SwiftExampleApp logging level to '$level' on simulator $device"
+xcrun simctl spawn "$device" defaults write "$bundle_id" SwiftSDKLogLevel -string "$level"
+xcrun simctl spawn "$device" defaults synchronize "$bundle_id" >/dev/null 2>&1 || true
+
+cat <<EOF
+Done. Restart the SwiftExampleApp if it's running to apply the new logging level.
+EOF

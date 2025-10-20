@@ -25,6 +25,7 @@ jobs:
     name: Build rs-sdk-ffi for iOS targets
     # macOS runners are required to access Apple SDKs (no osxcross here)
     runs-on: macos-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
