@@ -154,7 +154,13 @@ impl ZmqConnection {
         // Set connection timeout
         tokio::time::timeout(connection_timeout, async { socket.connect(zmq_uri).await })
             .await
-            .map_err(|_| DapiError::Configuration("Connection timeout".to_string()))?
+            .map_err(|e| {
+                DapiError::Timeout(format!(
+                    "Upstream ZMQ connect timeout {:.2}s exceeded: {}",
+                    connection_timeout.as_secs_f32(),
+                    e
+                ))
+            })?
             .map_err(DapiError::ZmqConnection)?;
 
         connection.zmq_subscribe(&mut socket, topics).await?;
@@ -463,6 +469,7 @@ impl ZmqListener {
 
     /// Parse ZMQ message frames into events
     fn parse_zmq_message(frames: Vec<Vec<u8>>) -> Option<ZmqEvent> {
+        tracing::trace!(frames_count = frames.len(), "Parsing new ZMQ message");
         if frames.len() < 2 {
             return None;
         }
@@ -474,15 +481,21 @@ impl ZmqListener {
             "rawtx" => Some(ZmqEvent::RawTransaction { data }),
             "rawblock" => Some(ZmqEvent::RawBlock { data }),
             "rawtxlocksig" => {
-                let (tx_bytes, lock_bytes) = split_tx_and_lock(data);
-                if lock_bytes.is_empty() {
-                    debug!("rawtxlocksig payload missing instant lock bytes");
-                    None
-                } else {
+                tracing::trace!(
+                    data = hex::encode(&data),
+                    "Parsing rawtxlocksig ZMQ message"
+                );
+                let (tx_bytes, lock_bytes_opt) = split_tx_and_lock(data);
+                if let Some(lock_bytes) = lock_bytes_opt
+                    && !lock_bytes.is_empty()
+                {
                     Some(ZmqEvent::RawTransactionLock {
                         tx_bytes,
                         lock_bytes,
                     })
+                } else {
+                    debug!("rawtxlocksig payload missing instant lock bytes");
+                    None
                 }
             }
             // We ignore rawtxlock, we need rawtxlocksig only
@@ -499,20 +512,21 @@ impl ZmqListener {
     }
 }
 
-fn split_tx_and_lock(data: Vec<u8>) -> (Option<Vec<u8>>, Vec<u8>) {
+fn split_tx_and_lock(data: Vec<u8>) -> (Option<Vec<u8>>, Option<Vec<u8>>) {
     let mut cursor = Cursor::new(data.as_slice());
     match CoreTransaction::consensus_decode(&mut cursor) {
         Ok(_) => {
             let consumed = cursor.position() as usize;
             if consumed >= data.len() {
-                (Some(data), Vec::new())
+                // Transaction consumed all bytes, no lock data present
+                (Some(data), None)
             } else {
                 let lock_bytes = data[consumed..].to_vec();
                 let tx_bytes = data[..consumed].to_vec();
-                (Some(tx_bytes), lock_bytes)
+                (Some(tx_bytes), Some(lock_bytes))
             }
         }
-        Err(_) => (None, data),
+        Err(_) => (None, Some(data)),
     }
 }
 
@@ -645,7 +659,7 @@ mod tests {
 
         assert!(tx_bytes.is_some(), "transaction bytes should be extracted");
         assert!(
-            !lock_bytes.is_empty(),
+            !lock_bytes.is_none_or(|b| b.is_empty()),
             "instant lock bytes should be present for rawtxlocksig payloads"
         );
     }
