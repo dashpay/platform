@@ -640,6 +640,8 @@ async fn with_cancel<T>(
 mod tests {
     use super::split_tx_and_lock;
     use super::*;
+    use dpp::dashcore::consensus::Decodable;
+    use dpp::dashcore::{InstantLock, Transaction};
     use hex::FromHex;
 
     #[test]
@@ -657,15 +659,23 @@ mod tests {
 
     #[test]
     fn split_tx_and_lock_extracts_components() {
-        let hex_bytes = "030008000167c3b38231c0a4593c73bf9f109a29dbf775ac46c137ee07d64c262b34a92c34000000006b483045022100ca870556e4c9692f8db5c364653ec815be367328a68990c3ced9a83869ad51a1022063999e56189ae6f1d7c11ee75bcc8da8fc4ee550ed08ba06f20fd72c449145f101210342e7310746e4af47264908309031b977ced9c136862368ec3fd8610466bd07ceffffffff0280841e0000000000026a00180e7a00000000001976a914bd04c1fb11018acde9abd2c14ed4b361673e3aa488ac0000000024010180841e00000000001976a914a4e906f2bdf25fa3d986d0000d29aa27b358f28588ac";
+        let hex_bytes = "03000800014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000006a47304402200136894a2ebb4967cf2766c10e238d69c53c24bf330758e4432eb4753def03de02202a2afb05475a064a419a6cc1c582e3504fcb36c2e22b610b5d320f7656573f7f0121028fdb0a3f730bb20f477536d98ca830efa56412dd05992c801219ba0ff35ad530ffffffff028801030000000000026a00288d9500000000001976a9148d40dfe30494080a1c1187c74066956043ff13fb88ac0000000024010188010300000000001976a914aa85a9fb4f84bc63046a574ac4f2ce3361f0db0d88ac01014d6d36c50d484aa79f7db080f971c3f6845407f652c7d5865756017fa06969c1010000008155cc5d9fe5da3b0508c28d02c88fb6d3d4cf44ef4ffcd77162afa338d1a181ad7300e92255a7a7cf031d6de6bac99df9f1b94735ea603b3f03060c3ebf1f37acc4c1d8ddea77f3d4d816e467571f51ae216715fb3e47d68831adeee6aa1640b26cdf085bb8dd0b4920d15eed83e8c50de8b4b0508db47f08451f7807194d68758a92b367ef6074b516336f689c75c5e22b87aa71d50157875f1018a305a957";
         let data = Vec::from_hex(hex_bytes).expect("hex should decode");
 
         let (tx_bytes, lock_bytes) = split_tx_and_lock(data);
 
         assert!(tx_bytes.is_some(), "transaction bytes should be extracted");
+        // Parse tx_bytes to ensure it's valid
+        let tx = Transaction::consensus_decode(&mut Cursor::new(tx_bytes.as_ref().unwrap()))
+            .expect("transaction bytes should decode");
+        assert_eq!(tx.version, 3, "transaction version should be 3");
+
+        // Parse lock_bytes to ensure it's valid
         assert!(
-            !lock_bytes.is_none_or(|b| b.is_empty()),
+            lock_bytes.as_ref().is_some_and(|b| !b.is_empty()),
             "instant lock bytes should be present for rawtxlocksig payloads"
         );
+        InstantLock::consensus_decode(&mut Cursor::new(lock_bytes.as_ref().unwrap()))
+            .expect("instant asset lock should be correct");
     }
 }
