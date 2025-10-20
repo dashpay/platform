@@ -13,7 +13,7 @@ use serde_json::Value;
 use std::fmt::Debug;
 use std::sync::Arc;
 use tokio::sync::broadcast;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 #[derive(Debug, Clone)]
 /// HTTP client for interacting with Tenderdash consensus engine
@@ -373,8 +373,9 @@ impl TenderdashClient {
 
     /// Create a new TenderdashClient with HTTP and WebSocket support.
     ///
-    /// This method validates both HTTP and WebSocket connectivity before returning.
-    /// If either check fails, client construction fails.
+    /// This method attempts to validate both HTTP and WebSocket connectivity before returning.
+    /// If either check fails, the error is logged and the client is still returned so callers can
+    /// operate in a degraded state while health checks surface the issue.
     pub async fn new(uri: &str, ws_uri: &str) -> DAPIResult<Self> {
         trace!(
             uri = %uri,
@@ -403,14 +404,18 @@ impl TenderdashClient {
             websocket_client: websocket_client.clone(),
         };
 
-        tenderdash_client.validate_connection().await?;
+        if let Err(e) = tenderdash_client.validate_connection().await {
+            warn!(
+                error = %e,
+                "Tenderdash HTTP connection validation failed; continuing with degraded health"
+            );
+        }
 
         if let Err(e) = TenderdashWebSocketClient::test_connection(ws_uri).await {
-            error!(
+            warn!(
                 error = %e,
-                "Tenderdash WebSocket connection validation failed"
+                "Tenderdash WebSocket connection validation failed; continuing with retries"
             );
-            return Err(e);
         }
 
         Ok(tenderdash_client)
@@ -428,16 +433,10 @@ impl TenderdashClient {
                 info!("Tenderdash HTTP connection validated successfully");
                 Ok(())
             }
-            Err(e) => {
-                error!(
-                    "Tenderdash HTTP connection validation failed at {}: {}",
-                    self.base_url, e
-                );
-                Err(DapiError::server_unavailable(
-                    self.base_url.clone(),
-                    e.to_string(),
-                ))
-            }
+            Err(e) => Err(DapiError::server_unavailable(
+                self.base_url.clone(),
+                e.to_string(),
+            )),
         }
     }
 

@@ -1,17 +1,17 @@
 import { Observable } from 'rxjs';
 
-import isWsl from 'is-wsl';
 import dockerCompose from '@dashevo/docker-compose';
+import isWsl from 'is-wsl';
 
 import hasbin from 'hasbin';
-import semver from 'semver';
 import util from 'node:util';
+import semver from 'semver';
 
 import { PACKAGE_ROOT_DIR } from '../constants.js';
-import ServiceAlreadyRunningError from './errors/ServiceAlreadyRunningError.js';
-import DockerComposeError from './errors/DockerComposeError.js';
-import ServiceIsNotRunningError from './errors/ServiceIsNotRunningError.js';
 import ContainerIsNotPresentError from './errors/ContainerIsNotPresentError.js';
+import DockerComposeError from './errors/DockerComposeError.js';
+import ServiceAlreadyRunningError from './errors/ServiceAlreadyRunningError.js';
+import ServiceIsNotRunningError from './errors/ServiceIsNotRunningError.js';
 
 export default class DockerCompose {
   /**
