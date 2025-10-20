@@ -1,3 +1,19 @@
+//! ZMQ listener for Dash Core events
+//!
+//! This module provides functionality to connect to Dash Core's ZMQ interface.
+//!
+//! See [`ZmqListener`] for the main entry point.
+//!
+//! ## Control flow
+//!
+//! - `ZmqListener::new` creates a new listener and starts the connection task with [`ZmqConnection::new`]
+//! - `ZmqConnection::new` establishes a new ZMQ connection and spawns [dispatcher](ZmqDispatcher)
+//!   and [monitor](ZmqConnection::start_monitor) tasks
+//! - Whenever new message arrives, [`ZmqDispatcher`] forwards it through a channel to [`ZmqConnection::recv`]
+//! - [`ZmqListener::process_messages`] reads messages from the connection with [`ZmqConnection::recv`]
+//! - [`ZmqListener::parse_zmq_message`] parses raw ZMQ messages into structured [`ZmqEvent`]
+//! - subscribers subscribe to events via [`ZmqListener::subscribe`] to receive [`ZmqEvent`]s
+//!
 use std::future::Future;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
@@ -89,12 +105,13 @@ pub enum ZmqEvent {
 }
 
 #[derive(Clone)]
-pub struct ZmqConnection {
+struct ZmqConnection {
     cancel: CancellationToken,
-    // Receiver for ZMQ messages; see `next()` method for usage
+    /// Messages from zmq server, forwarded by  [ZmqDispatcher]; consumed in [`ZmqConnection::recv`]
     rx: Arc<Mutex<mpsc::Receiver<ZmqMessage>>>,
     connected: Arc<AtomicBool>,
     workers: Workers,
+    subscribed_topics: Vec<String>,
 }
 
 impl Drop for ZmqConnection {
@@ -124,11 +141,12 @@ impl ZmqConnection {
 
         let (tx, rx) = mpsc::channel(1000);
 
-        let connection = Self {
+        let mut connection = Self {
             cancel: cancel.clone(),
             rx: Arc::new(Mutex::new(rx)),
             connected: connected.clone(),
             workers: Workers::default(),
+            subscribed_topics: Vec::new(),
         };
         // Start monitor
         connection.start_monitor(socket.monitor());
@@ -139,8 +157,15 @@ impl ZmqConnection {
             .map_err(|_| DapiError::Configuration("Connection timeout".to_string()))?
             .map_err(DapiError::ZmqConnection)?;
 
+        connection.zmq_subscribe(&mut socket, topics).await?;
+
+        connection.start_dispatcher(socket, tx);
+
+        Ok(connection)
+    }
+
+    async fn zmq_subscribe(&mut self, socket: &mut SubSocket, topics: &[String]) -> DAPIResult<()> {
         // Subscribe to topics
-        let mut subscribed_topics = Vec::new();
         let mut first_error = None;
 
         for topic in topics {
@@ -150,7 +175,7 @@ impl ZmqConnection {
                 .map_err(DapiError::ZmqConnection);
 
             match result {
-                Ok(_) => subscribed_topics.push(topic.clone()),
+                Ok(_) => self.subscribed_topics.push(topic.clone()),
                 Err(e) => {
                     first_error.get_or_insert(e);
                 }
@@ -163,22 +188,32 @@ impl ZmqConnection {
                 "ZMQ subscription errors occured, trying to unsubscribe from successful topics",
             );
 
-            for topic in subscribed_topics {
-                if let Err(e) = socket.unsubscribe(&topic).await {
-                    trace!(
-                        topic = %topic,
-                        error = %e,
-                        "Error unsubscribing from ZMQ topic after subscription failure; error ignored as we are already failing",
-                    );
-                }
-            }
+            self.zmq_unsubscribe_all(socket).await?;
             // return the first error
             return Err(error);
+        };
+
+        Ok(())
+    }
+
+    /// Unsubscribe from all topics. Returns first error encountered, if any.
+    async fn zmq_unsubscribe_all(&mut self, socket: &mut SubSocket) -> DAPIResult<()> {
+        let mut first_error = None;
+        for topic in &self.subscribed_topics {
+            if let Err(e) = socket.unsubscribe(topic).await {
+                trace!(
+                    topic = %topic,
+                    error = %e,
+                    "Error unsubscribing from ZMQ topic",
+                );
+                first_error.get_or_insert(DapiError::ZmqConnection(e));
+            }
         }
 
-        connection.start_dispatcher(socket, tx);
+        // Clear the list of subscribed topics; even if errors occurred, we consider ourselves unsubscribed
+        self.subscribed_topics.clear();
 
-        Ok(connection)
+        first_error.map(Err).unwrap_or(Ok(()))
     }
 
     fn disconnected(&self) {
@@ -276,12 +311,15 @@ impl SocketRecv for ZmqConnection {
     }
 }
 
-/// ZMQ listener that connects to Dash Core and streams events
+/// ZMQ listener that connects to Dash Core and streams events.
+///
+/// This is the main entry point for ZMQ streaming.
 pub struct ZmqListener {
     zmq_uri: String,
     topics: ZmqTopics,
     event_sender: broadcast::Sender<ZmqEvent>,
     cancel: CancellationToken,
+    workers: Workers,
 }
 
 impl ZmqListener {
@@ -293,6 +331,7 @@ impl ZmqListener {
             topics: ZmqTopics::default(),
             event_sender,
             cancel: CancellationToken::new(),
+            workers: Workers::default(),
         };
         instance.connect()?;
         Ok(instance)
@@ -306,7 +345,7 @@ impl ZmqListener {
 
         let cancel = self.cancel.clone();
 
-        tokio::task::spawn(with_cancel(cancel.clone(), async move {
+        self.workers.spawn(with_cancel(cancel.clone(), async move {
             // we use child token so that cancelling threads started inside zmq_listener_task
             // does not cancel the zmq_listener_task itself, as it needs to restart the
             // connection if it fails
@@ -477,8 +516,18 @@ fn split_tx_and_lock(data: Vec<u8>) -> (Option<Vec<u8>>, Vec<u8>) {
     }
 }
 
+impl Drop for ZmqListener {
+    fn drop(&mut self) {
+        // Cancel all running tasks when dropped
+        self.cancel.cancel();
+    }
+}
+
+/// ZMQ dispatcher that receives messages from the socket and forwards them
+/// to the provided sender (usually ZmqListener).
 struct ZmqDispatcher {
     socket: SubSocket,
+    /// Sender to forward received ZMQ messages, consumed by [ZmqConnection::recv]
     zmq_tx: mpsc::Sender<ZmqMessage>,
     /// Cancellation token to stop all spawned threads; cancelled when the connection is lost
     cancel: CancellationToken,
