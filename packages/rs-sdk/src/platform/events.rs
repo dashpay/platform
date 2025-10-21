@@ -21,8 +21,8 @@ static NEXT_SUBSCRIPTION_ID: LazyLock<AtomicU64> = LazyLock::new(|| {
         .as_secs();
     let pid = std::process::id() as u64;
 
-    // 48..63 bits: pid
-    // 32..47 bits: process start time in seconds (lower 16 bits)
+    // 48..63 bits: lower 16 bits of pid
+    // 32..47 bits: lower 16 bits ofprocess start time in seconds
     // 0..31 bits: for a counter
     AtomicU64::new(((pid & 0xFFFF) << 48) | (secs & 0xFFFF) << 32)
 });
@@ -37,13 +37,13 @@ impl EventSubscriptionId {
 
 impl Display for EventSubscriptionId {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        // Write in format: 16 hex digits for time, 8 hex digits for pid, 8 hex digits for counter
+        // Write in format: timepid:counter
         write!(
             f,
-            "{:016x}:{:08x}:{:08x}",
-            self.0 >> 64,
-            (self.0 >> 32) & 0xffffffff,
-            self.0 & 0xffffffff
+            "{:04X}_{:04X}:{}",
+            (self.0 >> 48) & 0xffff,
+            (self.0 >> 32) & 0xffff,
+            self.0 & 0xffff_ffff
         )
     }
 }
