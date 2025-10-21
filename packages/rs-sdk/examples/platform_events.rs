@@ -10,19 +10,20 @@ fn main() {
 #[cfg(feature = "subscriptions")]
 mod subscribe {
 
+    use dapi_grpc::platform::v0::platform_Subscription_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::platform_event_v0::Event as PlatformEvent;
     use dapi_grpc::platform::v0::platform_filter_v0::Kind as FilterKind;
-    use dapi_grpc::platform::v0::PlatformFilterV0;
     use dapi_grpc::platform::v0::{
-        platform_events_response::platform_events_response_v0::Response as Resp,
-        PlatformEventsResponse,
+        PlatformFilterV0, PlatformSubscriptionResponse, StateTransitionResultFilter,
     };
-    use dash_event_bus::SubscriptionHandle;
     use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
     use dash_sdk::platform::types::epoch::Epoch;
     use dash_sdk::{Sdk, SdkBuilder};
+    use futures::StreamExt;
     use rs_dapi_client::{Address, AddressList};
     use serde::Deserialize;
     use std::str::FromStr;
+    use tonic::Streaming;
     use zeroize::Zeroizing;
 
     #[derive(Debug, Deserialize)]
@@ -77,7 +78,7 @@ mod subscribe {
         let filter_block = PlatformFilterV0 {
             kind: Some(FilterKind::BlockCommitted(true)),
         };
-        let (block_id, block_handle) = sdk
+        let (block_id, block_stream) = sdk
             .subscribe_platform_events(filter_block)
             .await
             .expect("subscribe block_committed");
@@ -89,12 +90,12 @@ mod subscribe {
             .and_then(|s| hex::decode(s).ok());
         let filter_str = PlatformFilterV0 {
             kind: Some(FilterKind::StateTransitionResult(
-                dapi_grpc::platform::v0::StateTransitionResultFilter {
+                StateTransitionResultFilter {
                     tx_hash: tx_hash_bytes,
                 },
             )),
         };
-        let (str_id, str_handle) = sdk
+        let (str_id, str_stream) = sdk
             .subscribe_platform_events(filter_str)
             .await
             .expect("subscribe state_transition_result");
@@ -103,20 +104,21 @@ mod subscribe {
         let filter_all = PlatformFilterV0 {
             kind: Some(FilterKind::All(true)),
         };
-        let (all_id, all_handle) = sdk
+        let (all_id, all_stream) = sdk
             .subscribe_platform_events(filter_all)
             .await
             .expect("subscribe all");
 
-        println!(
-            "Subscribed: BlockCommitted id={}, STR id={}, All id={}",
-            block_id, str_id, all_id
-        );
+        println!("Subscribed: BlockCommitted id={block_id}, STR id={str_id}, All id={all_id}");
         println!("Waiting for events... (Ctrl+C to exit)");
 
-        let block_worker = tokio::spawn(worker(block_handle));
-        let str_worker = tokio::spawn(worker(str_handle));
-        let all_worker = tokio::spawn(worker(all_handle));
+        let block_worker =
+            tokio::spawn(worker(block_stream, format!("BlockCommitted ({block_id})")));
+        let str_worker = tokio::spawn(worker(
+            str_stream,
+            format!("StateTransitionResult ({str_id})"),
+        ));
+        let all_worker = tokio::spawn(worker(all_stream, format!("All ({all_id})")));
 
         // Handle Ctrl+C to remove subscriptions and exit
         let abort_block = block_worker.abort_handle();
@@ -134,62 +136,48 @@ mod subscribe {
         let _ = tokio::join!(block_worker, str_worker, all_worker);
     }
 
-    async fn worker<F>(handle: SubscriptionHandle<PlatformEventsResponse, F>)
-    where
-        F: Send + Sync + 'static,
-    {
-        while let Some(resp) = handle.recv().await {
-            // Parse and print
-            if let Some(dapi_grpc::platform::v0::platform_events_response::Version::V0(v0)) =
-                resp.version
-            {
-                match v0.response {
-                    Some(Resp::Event(ev)) => {
-                        let sub_id = ev.client_subscription_id;
-                        use dapi_grpc::platform::v0::platform_event_v0::Event as E;
-                        if let Some(event_v0) = ev.event {
+    async fn worker(mut stream: Streaming<PlatformSubscriptionResponse>, label: String) {
+        while let Some(message) = stream.next().await {
+            match message {
+                Ok(response) => {
+                    if let Some(ResponseVersion::V0(v0)) = response.version {
+                        let sub_id = v0.client_subscription_id;
+                        if let Some(event_v0) = v0.event {
                             if let Some(event) = event_v0.event {
                                 match event {
-                                    E::BlockCommitted(bc) => {
+                                    PlatformEvent::BlockCommitted(bc) => {
                                         if let Some(meta) = bc.meta {
                                             println!(
-                                            "{} BlockCommitted: height={} time_ms={} tx_count={} block_id_hash=0x{}",
-                                            sub_id,
-                                            meta.height,
-                                            meta.time_ms,
-                                            bc.tx_count,
-                                            hex::encode(meta.block_id_hash)
-                                        );
+                                                "{label}: id={sub_id} height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                                meta.height,
+                                                meta.time_ms,
+                                                bc.tx_count,
+                                                hex::encode(meta.block_id_hash)
+                                            );
                                         }
                                     }
-                                    E::StateTransitionFinalized(r) => {
+                                    PlatformEvent::StateTransitionFinalized(r) => {
                                         if let Some(meta) = r.meta {
                                             println!(
-                                            "{} StateTransitionFinalized: height={} tx_hash=0x{} block_id_hash=0x{}",
-                                            sub_id,
-                                            meta.height,
-                                            hex::encode(r.tx_hash),
-                                            hex::encode(meta.block_id_hash)
-                                        );
+                                                "{label}: id={sub_id} height={} tx_hash=0x{} block_id_hash=0x{}",
+                                                meta.height,
+                                                hex::encode(r.tx_hash),
+                                                hex::encode(meta.block_id_hash)
+                                            );
                                         }
                                     }
                                 }
                             }
                         }
                     }
-                    Some(Resp::Ack(ack)) => {
-                        println!("Ack: {} op={}", ack.client_subscription_id, ack.op);
-                    }
-                    Some(Resp::Error(err)) => {
-                        eprintln!(
-                            "Error: {} code={} msg={}",
-                            err.client_subscription_id, err.code, err.message
-                        );
-                    }
-                    None => {}
+                }
+                Err(status) => {
+                    eprintln!("{label}: stream error {status}");
+                    break;
                 }
             }
         }
+        println!("{label}: stream closed");
     }
 
     fn setup_sdk(config: &Config) -> Sdk {

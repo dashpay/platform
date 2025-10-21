@@ -1505,10 +1505,8 @@ dependencies = [
  "http",
  "js-sys",
  "lru",
- "once_cell",
  "platform-wallet",
  "rs-dapi-client",
- "rs-dash-event-bus",
  "rs-sdk-trusted-context-provider",
  "rustls-pemfile",
  "sanitize-filename",
@@ -5445,12 +5443,8 @@ dependencies = [
 name = "rs-dash-event-bus"
 version = "2.1.0-pr.2716.1"
 dependencies = [
- "dapi-grpc",
- "futures",
  "metrics",
  "tokio",
- "tokio-stream",
- "tokio-util",
  "tracing",
 ]
 
@@ -6739,7 +6733,6 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
- "tokio-util",
 ]
 
 [[package]]
@@ -6779,7 +6772,6 @@ dependencies = [
  "futures-core",
  "futures-io",
  "futures-sink",
- "futures-util",
  "pin-project-lite",
  "tokio",
 ]

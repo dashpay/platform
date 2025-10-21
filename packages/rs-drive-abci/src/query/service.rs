@@ -47,13 +47,11 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
-    PlatformEventV0 as PlatformEvent, PlatformEventsCommand, PlatformEventsResponse,
+    PlatformEventV0 as PlatformEvent, PlatformSubscriptionRequest, PlatformSubscriptionResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
-use dapi_grpc::tonic::Streaming;
 use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter};
-use dash_event_bus::{sender_sink, EventMux};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
@@ -69,9 +67,7 @@ const PLATFORM_EVENTS_STREAM_BUFFER: usize = 128;
 /// Service to handle platform queries
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
-    _event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
-    /// Multiplexer for Platform events
-    platform_events_mux: EventMux,
+    event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
     /// background worker tasks
     workers: Arc<Mutex<tokio::task::JoinSet<()>>>,
 }
@@ -89,25 +85,10 @@ impl QueryService {
         platform: Arc<Platform<DefaultCoreRPC>>,
         event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
     ) -> Self {
-        let mux = EventMux::new();
-        let mut workers = tokio::task::JoinSet::new();
-
-        // Start local mux producer to bridge internal event_bus
-        {
-            let bus = event_bus.clone();
-            let worker_mux = mux.clone();
-            workers.spawn(async move {
-                use std::sync::Arc;
-                let mk = Arc::new(|f| PlatformFilterAdapter::new(f));
-                dash_event_bus::run_local_platform_events_producer(worker_mux, bus, mk).await;
-            });
-        }
-
         Self {
             platform,
-            _event_bus: event_bus,
-            platform_events_mux: mux,
-            workers: Arc::new(Mutex::new(workers)),
+            event_bus,
+            workers: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
         }
     }
 
@@ -879,26 +860,69 @@ impl PlatformService for QueryService {
         .await
     }
 
-    type subscribePlatformEventsStream = ReceiverStream<Result<PlatformEventsResponse, Status>>;
+    type SubscribePlatformEventsStream =
+        ReceiverStream<Result<PlatformSubscriptionResponse, Status>>;
 
-    /// Uses EventMux: forward inbound commands to mux subscriber and return its response stream
     async fn subscribe_platform_events(
         &self,
-        request: Request<Streaming<PlatformEventsCommand>>,
-    ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
-        // TODO: two issues are to be resolved:
-        // 1) restart of client with the same subscription id shows that old subscription is not removed
-        // 2) connection drops after some time
-        // return Err(Status::unimplemented("the endpoint is not supported yet"));
-        let inbound = request.into_inner();
-        let (downstream_tx, rx) =
-            mpsc::channel::<Result<PlatformEventsResponse, Status>>(PLATFORM_EVENTS_STREAM_BUFFER);
-        let subscriber = self.platform_events_mux.add_subscriber().await;
+        request: Request<PlatformSubscriptionRequest>,
+    ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
+        use dapi_grpc::platform::v0::platform_Subscription_request::Version as RequestVersion;
+        use dapi_grpc::platform::v0::platform_Subscription_response::{
+            PlatformSubscriptionResponseV0, Version as ResponseVersion,
+        };
+
+        let request = request.into_inner();
+        let req_v0 = match request.version {
+            Some(RequestVersion::V0(v0)) => v0,
+            _ => {
+                tracing::warn!("subscribe_platform_events: unsupported request version");
+                return Err(Status::invalid_argument("unsupported request version"));
+            }
+        };
+
+        if req_v0.client_subscription_id.is_empty() {
+            tracing::debug!("subscribe_platform_events: missing client_subscription_id");
+            return Err(Status::invalid_argument(
+                "client_subscription_id is required",
+            ));
+        }
+
+        let filter = req_v0.filter.unwrap_or_default();
+        let subscription_id = req_v0.client_subscription_id.clone();
+
+        let subscription = self
+            .event_bus
+            .add_subscription(PlatformFilterAdapter::new(filter))
+            .await;
+
+        let (downstream_tx, rx) = mpsc::channel::<Result<PlatformSubscriptionResponse, Status>>(
+            PLATFORM_EVENTS_STREAM_BUFFER,
+        );
 
         let mut workers = self.workers.lock().unwrap();
         workers.spawn(async move {
-            let resp_sink = sender_sink(downstream_tx);
-            subscriber.forward(inbound, resp_sink).await;
+            let handle = subscription;
+            while let Some(event) = handle.recv().await {
+                let response = PlatformSubscriptionResponse {
+                    version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                        client_subscription_id: subscription_id.clone(),
+                        event: Some(event),
+                    })),
+                };
+
+                if downstream_tx.send(Ok(response)).await.is_err() {
+                    tracing::debug!(
+                        subscription_id = %subscription_id,
+                        "subscribe_platform_events: client stream closed"
+                    );
+                    break;
+                }
+            }
+            tracing::debug!(
+                subscription_id = %subscription_id,
+                "subscribe_platform_events: event stream completed"
+            );
         });
 
         Ok(Response::new(ReceiverStream::new(rx)))

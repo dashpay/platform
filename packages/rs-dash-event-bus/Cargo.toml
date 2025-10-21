@@ -3,7 +3,7 @@ name = "rs-dash-event-bus"
 version = "2.1.0-pr.2716.1"
 edition = "2024"
 license = "MIT"
-description = "Shared event bus and Platform events multiplexer for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
+description = "Shared event bus utilities for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
 
 [lib]
 name = "dash_event_bus"
@@ -15,13 +15,7 @@ metrics = ["dep:metrics"]
 
 [dependencies]
 tokio = { version = "1", features = ["rt", "macros", "sync", "time"] }
-tokio-stream = { version = "0.1", features = ["sync"] }
-tokio-util = { version = "0.7", features = ["rt"] }
 tracing = "0.1"
-futures = "0.3"
-
-# Internal workspace crates
-dapi-grpc = { path = "../dapi-grpc" }
 
 # Optional metrics
 metrics = { version = "0.24.2", optional = true }

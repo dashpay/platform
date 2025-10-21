@@ -1,31 +1,80 @@
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
-use dapi_grpc::platform::v0::PlatformFilterV0;
-use dash_event_bus::GrpcPlatformEventsProducer;
-use dash_event_bus::{EventMux, PlatformEventsSubscriptionHandle};
+use dapi_grpc::platform::v0::platform_subscription_request::{
+    PlatformSubscriptionRequestV0, Version as RequestVersion,
+};
+use dapi_grpc::platform::v0::{
+    PlatformFilterV0, PlatformSubscriptionRequest, PlatformSubscriptionResponse,
+};
+use dapi_grpc::tonic::{Request, Streaming};
 use rs_dapi_client::transport::{create_channel, PlatformGrpcClient};
 use rs_dapi_client::{RequestSettings, Uri};
-use std::time::Duration;
-use tokio::time::timeout;
+use std::fmt::{Debug, Display};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::LazyLock;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+/// ID generator with most siginificant bits based on local process info.
+static NEXT_SUBSCRIPTION_ID: LazyLock<AtomicU64> = LazyLock::new(|| {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let pid = std::process::id() as u64;
+
+    // 48..63 bits: pid
+    // 32..47 bits: process start time in seconds (lower 16 bits)
+    // 0..31 bits: for a counter
+    AtomicU64::new(((pid & 0xFFFF) << 48) | (secs & 0xFFFF) << 32)
+});
+
+#[derive(Default, Copy, Clone, Eq, PartialEq, Hash)]
+pub struct EventSubscriptionId(pub u64);
+impl EventSubscriptionId {
+    pub fn new() -> Self {
+        Self(NEXT_SUBSCRIPTION_ID.fetch_add(1, Ordering::Relaxed))
+    }
+}
+
+impl Display for EventSubscriptionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Write in format: 16 hex digits for time, 8 hex digits for pid, 8 hex digits for counter
+        write!(
+            f,
+            "{:016x}:{:08x}:{:08x}",
+            self.0 >> 64,
+            (self.0 >> 32) & 0xffffffff,
+            self.0 & 0xffffffff
+        )
+    }
+}
+
+impl Debug for EventSubscriptionId {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(self, f)
+    }
+}
 
 impl crate::Sdk {
-    pub(crate) async fn get_event_mux(&self) -> Result<EventMux, crate::Error> {
-        use once_cell::sync::OnceCell;
-        static MUX: OnceCell<EventMux> = OnceCell::new();
+    /// Subscribe to Platform events using the gRPC streaming API.
+    ///
+    /// Returns the generated client subscription id alongside the streaming response.
+    pub async fn subscribe_platform_events(
+        &self,
+        filter: PlatformFilterV0,
+    ) -> Result<(EventSubscriptionId, Streaming<PlatformSubscriptionResponse>), crate::Error> {
+        let subscription_id = EventSubscriptionId::new();
 
-        if let Some(mux) = MUX.get() {
-            return Ok(mux.clone());
-        }
-
-        let mux = EventMux::new();
-
-        // Build a gRPC client to a live address
         let address = self
             .address_list()
             .get_live_address()
             .ok_or_else(|| crate::Error::SubscriptionError("no live DAPI address".to_string()))?;
         let uri: Uri = address.uri().clone();
 
-        tracing::debug!(address = ?uri, "creating gRPC client for platform events");
+        tracing::debug!(
+            address = ?uri,
+            %subscription_id,
+            "creating gRPC client for platform events subscription"
+        );
         let settings = self
             .dapi_client_settings
             .override_by(RequestSettings {
@@ -36,47 +85,21 @@ impl crate::Sdk {
             .finalize();
         let channel = create_channel(uri, Some(&settings))
             .map_err(|e| crate::Error::SubscriptionError(format!("channel: {e}")))?;
-        let client: PlatformGrpcClient = PlatformClient::new(channel);
+        let mut client: PlatformGrpcClient = PlatformClient::new(channel);
 
-        // Spawn the producer bridge
-        let worker_mux = mux.clone();
-        tracing::debug!("spawning platform events producer task");
-        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
-        self.spawn(async move {
-            let inner_mux = worker_mux.clone();
-            tracing::debug!("starting platform events producer task GrpcPlatformEventsProducer");
-            if let Err(e) = GrpcPlatformEventsProducer::run(inner_mux, client, ready_tx).await {
-                tracing::error!("platform events producer terminated: {}", e);
-            }
-        })
-        .await;
-        // wait until the producer is ready, with a timeout
-        if timeout(Duration::from_secs(5), ready_rx).await.is_err() {
-            tracing::error!("timed out waiting for platform events producer to be ready");
-            return Err(crate::Error::SubscriptionError(
-                "timeout waiting for platform events producer to be ready".to_string(),
-            ));
-        }
+        let request = PlatformSubscriptionRequest {
+            version: Some(RequestVersion::V0(PlatformSubscriptionRequestV0 {
+                client_subscription_id: subscription_id.to_string(),
+                filter: Some(filter),
+            })),
+        };
 
-        let _ = MUX.set(mux.clone());
-
-        Ok(mux)
-    }
-
-    /// Subscribe to Platform events and receive a raw EventBus handle. The
-    /// upstream subscription is removed automatically (RAII) when the last
-    /// clone of the handle is dropped.
-    pub async fn subscribe_platform_events(
-        &self,
-        filter: PlatformFilterV0,
-    ) -> Result<(String, PlatformEventsSubscriptionHandle), crate::Error> {
-        // Initialize global mux with a single upstream producer on first use
-        let mux = self.get_event_mux().await?;
-
-        let (id, handle) = mux
-            .subscribe(filter)
+        let response = client
+            .subscribe_platform_events(Request::new(request))
             .await
-            .map_err(|e| crate::Error::SubscriptionError(format!("subscribe: {}", e)))?;
-        Ok((id, handle))
+            .map_err(|e| crate::Error::SubscriptionError(format!("subscribe: {}", e)))?
+            .into_inner();
+
+        Ok((subscription_id, response))
     }
 }

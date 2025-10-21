@@ -264,7 +264,7 @@ Operational notes:
 - Access logging: HTTP/JSON-RPC and gRPC traffic share the same access logging layer when configured, so all protocols emit uniform access entries
 
 - Platform event streaming is handled via a direct upstream proxy:
-  - `subscribePlatformEvents` simply forwards every inbound command stream to a single Drive connection and relays responses back without multiplexing
+  - `subscribePlatformEvents` forwards each inbound subscription request to Drive and relays the resulting event stream without additional multiplexing
 
 #### Key Features
 - **Modular Organization**: Complex methods separated into dedicated modules for maintainability
@@ -283,12 +283,11 @@ Operational notes:
 rs-dapi exposes `subscribePlatformEvents` as a server-streaming endpoint and currently performs a straightforward pass-through to rs-drive-abci.
 
 - Public interface:
-  - Bi-directional gRPC stream: `subscribePlatformEvents(request stream PlatformEventsCommand) -> (response stream PlatformEventsResponse)`.
-  - Commands (`Add`, `Remove`, `Ping`) and responses (`Event`, `Ack`, `Error`) stay in their protobuf `V0` envelopes end-to-end.
+  - Server-streaming gRPC method: `subscribePlatformEvents(PlatformSubscriptionRequest) -> (stream PlatformSubscriptionResponse)`.
+  - Requests carry versioned `V0` envelopes with the client subscription id and filter; responses return the same id alongside the event payload.
 
 - Upstream behavior:
-  - Each client stream obtains its own upstream Drive connection; tokio channels forward commands upstream and pipe responses back downstream without pooling.
-  - The `EventMux` from `rs-dash-event-bus` is retained for future multiplexing work but does not alter traffic today.
+  - Each client stream obtains its own upstream Drive connection; responses are forwarded downstream as they arrive without intermediate pooling or command channels.
 
 - Observability:
   - Standard `tracing` logging wraps the forwarders, and the proxy participates in the existing `/metrics` exporter via shared counters.

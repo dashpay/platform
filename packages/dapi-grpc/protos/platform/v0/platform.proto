@@ -6,54 +6,21 @@ package org.dash.platform.dapi.v0;
 
 import "google/protobuf/timestamp.proto";
 
-// Platform events streaming (v0)
-message PlatformEventsCommand {
-  message PlatformEventsCommandV0 {
-    oneof command {
-      AddSubscriptionV0 add = 1;
-      RemoveSubscriptionV0 remove = 2;
-      PingV0 ping = 3;
-    }
+// Platform events subscription (v0)
+message PlatformSubscriptionRequest {
+  message PlatformSubscriptionRequestV0 {
+    string client_subscription_id = 1;
+    PlatformFilterV0 filter = 2;
   }
-  oneof version { PlatformEventsCommandV0 v0 = 1; }
+  oneof version { PlatformSubscriptionRequestV0 v0 = 1; }
 }
 
-message PlatformEventsResponse {
-  message PlatformEventsResponseV0 {
-    oneof response {
-      PlatformEventMessageV0 event = 1;
-      AckV0 ack = 2;
-      PlatformErrorV0 error = 3;
-    }
+message PlatformSubscriptionResponse {
+  message PlatformSubscriptionResponseV0 {
+    string client_subscription_id = 1;
+    PlatformEventV0 event = 2;
   }
-  oneof version { PlatformEventsResponseV0 v0 = 1; }
-}
-
-message AddSubscriptionV0 {
-  string client_subscription_id = 1;
-  PlatformFilterV0 filter = 2;
-}
-
-message RemoveSubscriptionV0 {
-  string client_subscription_id = 1;
-}
-
-message PingV0 { uint64 nonce = 1; }
-
-message AckV0 {
-  string client_subscription_id = 1;
-  string op = 2; // "add" | "remove"
-}
-
-message PlatformErrorV0 {
-  string client_subscription_id = 1;
-  uint32 code = 2;
-  string message = 3;
-}
-
-message PlatformEventMessageV0 {
-  string client_subscription_id = 1;
-  PlatformEventV0 event = 2;
+  oneof version { PlatformSubscriptionResponseV0 v0 = 1; }
 }
 
 // Initial placeholder filter and event to be refined during integration
@@ -65,9 +32,11 @@ message StateTransitionResultFilter {
 
 message PlatformFilterV0 {
   oneof kind {
-    bool all = 1; // subscribe to all platform events
+    bool all = 1;             // subscribe to all platform events
     bool block_committed = 2; // subscribe to BlockCommitted events only
-    StateTransitionResultFilter state_transition_result = 3; // subscribe to StateTransitionResult events (optionally filtered by tx_hash)
+    StateTransitionResultFilter state_transition_result =
+        3; // subscribe to StateTransitionResult events (optionally filtered by
+           // tx_hash)
   }
 }
 
@@ -194,8 +163,8 @@ service Platform {
       returns (GetGroupActionSignersResponse);
 
   // Bi-directional stream for multiplexed platform events subscriptions
-  rpc subscribePlatformEvents(stream PlatformEventsCommand)
-      returns (stream PlatformEventsResponse);
+  rpc SubscribePlatformEvents(PlatformSubscriptionRequest)
+      returns (stream PlatformSubscriptionResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses

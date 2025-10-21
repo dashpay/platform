@@ -13,7 +13,6 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
 ] }
 dapi-grpc = { path = "../dapi-grpc", default-features = false }
 rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
-rs-dash-event-bus = { path = "../rs-dash-event-bus", optional = true }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
@@ -35,7 +34,6 @@ serde = { version = "1.0.219", default-features = false, features = [
 serde_json = { version = "1.0", features = ["preserve_order"], optional = true }
 tracing = { version = "0.1.41" }
 hex = { version = "0.4.3" }
-once_cell = { version = "1.19", optional = true }
 dotenvy = { version = "0.15.7", optional = true }
 envy = { version = "0.4.2", optional = true }
 futures = { version = "0.3.30" }
@@ -101,7 +99,7 @@ mocks = [
   "zeroize/serde",
 ]
 
-subscriptions = ["dep:rs-dash-event-bus", "dep:once_cell"]
+subscriptions = []
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #
