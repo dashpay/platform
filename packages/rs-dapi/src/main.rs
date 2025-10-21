@@ -111,7 +111,7 @@ impl Cli {
                     "rs-dapi server initializing",
                 );
 
-                let mut server_future = run_server(config, access_logger);
+                let server_future = run_server(config, access_logger);
                 tokio::pin!(server_future);
 
                 let outcome = tokio::select! {
@@ -130,8 +130,8 @@ impl Cli {
                     }
                 };
 
-                if let Some(result) = outcome {
-                    if let Err(e) = result {
+                if let Some(result) = outcome
+                    && let Err(e) = result {
                         error!("Server error: {}", e);
 
                         // Check if this is a connection-related error and set appropriate exit code
@@ -161,7 +161,6 @@ impl Cli {
                             }
                         }
                     }
-                }
                 Ok(())
             }
             Commands::Config => dump_config(&config),
