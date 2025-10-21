@@ -121,7 +121,7 @@ jobs:
             cd rust-dashcore
             git fetch --all --tags --prune
           else
-            git clone --no-tags --filter=blob:none https://github.com/dashpay/rust-dashcore.git rust-dashcore
+            git clone --filter=blob:none https://github.com/dashpay/rust-dashcore.git rust-dashcore
             cd rust-dashcore
           fi
           git checkout "${{ steps.dashcore_rev.outputs.rev }}"
