@@ -804,6 +804,16 @@ export default {
         dapi: {
           type: 'object',
           properties: {
+            deprecated: {
+              type: 'object',
+              properties: {
+                enabled: {
+                  type: 'boolean',
+                },
+              },
+              required: ['enabled'],
+              additionalProperties: false,
+            },
             api: {
               type: 'object',
               properties: {
@@ -841,8 +851,82 @@ export default {
               required: ['docker', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
+            rsDapi: {
+              type: 'object',
+              properties: {
+                docker: {
+                  type: 'object',
+                  properties: {
+                    image: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    deploy: {
+                      type: 'object',
+                      properties: {
+                        replicas: {
+                          type: 'integer',
+                          minimum: 0,
+                        },
+                      },
+                      additionalProperties: false,
+                      required: ['replicas'],
+                    },
+                    build: {
+                      $ref: '#/definitions/dockerBuild',
+                    },
+                  },
+                  required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
+                },
+                metrics: {
+                  type: 'object',
+                  properties: {
+                    host: {
+                      type: 'string',
+                      minLength: 1,
+                    },
+                    port: {
+                      type: 'integer',
+                      minimum: 1,
+                      maximum: 65535,
+                    },
+                  },
+                  required: ['host', 'port'],
+                  additionalProperties: false,
+                },
+                logs: {
+                  type: 'object',
+                  properties: {
+                    level: {
+                      type: 'string',
+                      minLength: 1,
+                      description: 'error, warn, info, debug, trace, off or logging specification string in RUST_LOG format',
+                      enum: ['error', 'warn', 'info', 'debug', 'trace', 'off'],
+                    },
+                    jsonFormat: {
+                      type: 'boolean',
+                      description: 'Emit structured JSON application logs when true',
+                    },
+                    accessLogPath: {
+                      type: ['string', 'null'],
+                      description: 'Filesystem path for access logs; leave empty or null to disable access logging',
+                    },
+                    accessLogFormat: {
+                      type: 'string',
+                      description: 'Access log format',
+                      enum: ['combined', 'json'],
+                    },
+                  },
+                  required: ['level', 'jsonFormat', 'accessLogPath', 'accessLogFormat'],
+                  additionalProperties: false,
+                },
+              },
+              required: ['docker', 'metrics', 'logs'],
+              additionalProperties: false,
+            },
           },
-          required: ['api'],
+          required: ['api', 'rsDapi'],
           additionalProperties: false,
         },
         drive: {
