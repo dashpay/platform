@@ -1,6 +1,7 @@
 import os from 'os';
-import convertObjectToEnvs from './convertObjectToEnvs.js';
+import path from 'path';
 import { DASHMATE_HELPER_DOCKER_IMAGE } from '../constants.js';
+import convertObjectToEnvs from './convertObjectToEnvs.js';
 
 /**
  * @param {ConfigFile} configFile
@@ -44,6 +45,9 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
         dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
         dockerComposeFiles.push('docker-compose.build.dapi_core_streams.yml');
       }
+      if (config.get('platform.dapi.rsDapi.docker.build.enabled')) {
+        dockerComposeFiles.push('docker-compose.build.rs-dapi.yml');
+      }
     }
 
     if (config.get('core.insight.enabled')) {
@@ -73,7 +77,7 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       driveAbciMetricsUrl = 'http://0.0.0.0:29090';
     }
 
-    return {
+    const envs = {
       DASHMATE_HOME_DIR: homeDir.getPath(),
       LOCAL_UID: uid,
       LOCAL_GID: gid,
@@ -89,6 +93,49 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       PLATFORM_DRIVE_ABCI_METRICS_URL: driveAbciMetricsUrl,
       ...convertObjectToEnvs(config.getOptions()),
     };
+
+    const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
+    const hasConfiguredPath = typeof configuredAccessLogPath === 'string'
+      && configuredAccessLogPath.trim() !== '';
+
+    const containerAccessLogDir = '/var/log/rs-dapi';
+    let containerAccessLogPath = path.posix.join(containerAccessLogDir, 'access.log');
+    let accessLogVolumeType = 'volume';
+    let accessLogVolumeSource = 'rs-dapi-access-logs';
+
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = '';
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = '';
+
+    if (hasConfiguredPath) {
+      const homeDirPath = homeDir.getPath();
+
+      const hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
+        ? configuredAccessLogPath
+        : path.resolve(homeDirPath, configuredAccessLogPath);
+
+      const hostAccessLogDir = path.dirname(hostAccessLogPath);
+      const hostAccessLogFile = path.basename(hostAccessLogPath);
+
+      containerAccessLogPath = path.posix.join(containerAccessLogDir, hostAccessLogFile);
+      accessLogVolumeType = 'bind';
+      accessLogVolumeSource = hostAccessLogDir;
+
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_PATH = hostAccessLogPath;
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_HOST_DIR = hostAccessLogDir;
+    }
+
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR = containerAccessLogDir;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_PATH = containerAccessLogPath;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_TYPE = accessLogVolumeType;
+    envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_SOURCE = accessLogVolumeSource;
+
+    if (hasConfiguredPath) {
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = containerAccessLogPath;
+    } else {
+      envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = '';
+    }
+
+    return envs;
   }
 
   return generateEnvs;

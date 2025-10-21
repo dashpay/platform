@@ -1,0 +1,102 @@
+[package]
+name = "rs-dapi"
+version = "2.1.0-pr.2716.1"
+edition = "2024"
+
+[[bin]]
+name = "rs-dapi"
+path = "src/main.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.47.0", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3.31"
+tokio-util = "0.7.15"
+
+# gRPC framework
+tonic = "0.14.2"
+
+# HTTP framework for JSON-RPC and metrics endpoints
+axum = "0.8.4"
+tower = "0.5.2"
+tower-http = { version = "0.6.6", features = ["cors", "trace"] }
+
+# Serialization
+serde = { version = "1.0.219", features = ["derive"] }
+serde_json = "1.0.141"
+ciborium = "0.2"
+serde_bytes = "0.11"
+rmp-serde = "1.3.0"
+
+# Configuration
+envy = "0.4.2"
+
+clap = { version = "4.4.10", features = ["derive"] }
+dotenvy = { version = "0.15.7" }
+# Logging
+tracing = "0.1.41"
+tracing-subscriber = { version = "0.3.19", features = ["env-filter", "json"] }
+
+# Error handling
+thiserror = "2.0.12"
+
+# Time handling
+chrono = { version = "0.4.41", features = ["serde"] }
+
+# HTTP client for external API calls
+reqwest = { version = "0.12.23", features = ["json"] }
+reqwest-middleware = { version = "0.4.2", features = ["json"] }
+reqwest-tracing = "0.5.8"
+
+# Hex encoding/decoding
+hex = "0.4"
+
+# Base64 encoding/decoding
+base64 = "0.22"
+
+# Cryptographic hashing
+sha2 = "0.10"
+
+# Async traits
+async-trait = "0.1"
+
+# WebSocket support for Tenderdash events
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+url = "2.5"
+
+# ZMQ for real-time blockchain events
+# zeromq = { version = "0.4.1", default-features = false, features = [
+#     "tokio-runtime",
+#     "tcp-transport",
+# ] }
+# Use fork of zmq.rs to receive Disconnect events, see https://github.com/zeromq/zmq.rs/pull/209
+zeromq = { git = "https://github.com/gvz/zmq.rs", rev = "b0787de310befaedd1f762e3b9bc711612d8137f", features = [
+    "tokio-runtime",
+    "tcp-transport",
+], default-features = false }
+
+xxhash-rust = { version = "0.8.15", features = ["xxh3"] }
+# Dash Platform dependencies (using workspace versions)
+dpp = { path = "../rs-dpp", default-features = false }
+dapi-grpc = { path = "../dapi-grpc", features = ["server", "client", "serde"] }
+quick_cache = "0.6.16"
+prometheus = "0.14"
+once_cell = "1.19"
+
+# Dash Core RPC client
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964" }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "e44b1fb2086ad57c8884995f9f93f14de91bf964" }
+
+rs-dash-event-bus = { path = "../rs-dash-event-bus" }
+
+zeroize = "1.8"
+
+
+[dev-dependencies]
+tempfile = "3.13.0"
+serial_test = "3.1.1"
+test-case = "3.3.1"
+
+[package.metadata.cargo-machete]
+ignored = ["rs-dash-event-bus"]

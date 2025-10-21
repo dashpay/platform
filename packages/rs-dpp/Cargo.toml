@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "2.1.0-dev.8"
+version = "2.1.0-pr.2716.1"
 edition = "2021"
 rust-version.workspace = true
 authors = [
@@ -23,20 +23,21 @@ chrono = { version = "0.4.35", default-features = false, features = [
 ] }
 chrono-tz = { version = "0.8", optional = true }
 ciborium = { version = "0.2.2", optional = true }
-dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", features = [
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", features = [
   "std",
   "secp-recovery",
   "rand",
   "signer",
   "serde",
 ], default-features = false }
-key-wallet = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
-key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
-dash-spv = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
-dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", rev = "befd0356bebfcd0d06d1028d8a03bfa4c78bd219", optional = true }
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
+dash-spv = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
+dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
 
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
+
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
