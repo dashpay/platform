@@ -60,7 +60,7 @@ this repository may be used on the following networks:
         in terminal run `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.zshrc` or `echo 'export PATH="/opt/homebrew/opt/llvm/bin:$PATH"' >> ~/.bash_profile` depending on your default shell.
         You can find your default shell with `echo $SHELL`
       - Reload your shell with `source ~/.zshrc` or `source ~/.bash_profile`
-    - `cargo install wasm-bindgen-cli@0.2.100`
+    - `cargo install wasm-bindgen-cli@0.2.103`
       - *double-check that wasm-bindgen-cli version above matches wasm-bindgen version in Cargo.lock file*
       - *Depending on system, additional packages may need to be installed as a prerequisite for wasm-bindgen-cli. If anything is missing, installation will error and prompt what packages are missing (i.e. clang, llvm, libssl-dev)*
   - essential build tools - example for Debian/Ubuntu: `apt install -y build-essential libssl-dev pkg-config clang cmake llvm`
