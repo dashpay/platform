@@ -196,7 +196,9 @@ impl ZmqConnection {
                 "ZMQ subscription errors occured, trying to unsubscribe from successful topics",
             );
 
-            self.zmq_unsubscribe_all(socket).await?;
+            if let Err(unsub_err) = self.zmq_unsubscribe_all(socket).await {
+                debug!(error = %unsub_err, "Unsubscribe during rollback failed; preserving original subscribe error");
+            }
             // return the first error
             return Err(error);
         };
