@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/platform-test-suite",
   "private": true,
-  "version": "2.1.0-pr.2716.1",
+  "version": "2.1.0-rc.1",
   "description": "Dash Network end-to-end tests",
   "scripts": {
     "test": "yarn exec bin/test.sh",
