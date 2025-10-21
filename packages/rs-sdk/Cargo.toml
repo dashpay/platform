@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "2.1.0-dev.7"
+version = "2.1.0-pr.2716.1"
 edition = "2021"
 
 [dependencies]
@@ -49,7 +49,7 @@ zeroize = { version = "1.8", features = ["derive"] }
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-js-sys = "0.3"
+js-sys = "0.3.64"
 
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }
@@ -70,7 +70,6 @@ test-case = { version = "3.3.1" }
 assert_matches = "1.5.0"
 
 [features]
-
 # TODO: remove mocks from default features
 default = [
   "mocks",
@@ -102,10 +101,7 @@ mocks = [
   "zeroize/serde",
 ]
 
-subscriptions = [
-  "dep:rs-dash-event-bus",
-  "dep:once_cell",
-]
+subscriptions = ["dep:rs-dash-event-bus", "dep:once_cell"]
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #

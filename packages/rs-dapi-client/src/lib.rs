@@ -35,7 +35,10 @@ pub use request_settings::RequestSettings;
 /// A DAPI request could be executed with an initialized [DapiClient].
 ///
 /// # Examples
+/// Requires the `mocks` feature.
 /// ```
+/// # #[cfg(feature = "mocks")]
+/// # {
 /// use rs_dapi_client::{RequestSettings, AddressList, mock::MockDapiClient, DapiClientError, DapiRequest, ExecutionError};
 /// use dapi_grpc::platform::v0::{self as proto};
 ///
@@ -45,6 +48,7 @@ pub use request_settings::RequestSettings;
 /// let response = request.execute(&mut client, RequestSettings::default()).await?;
 /// # Ok::<(), ExecutionError<DapiClientError>>(())
 /// # };
+/// # }
 /// ```
 pub trait DapiRequest {
     /// Response from DAPI for this specific request.

@@ -554,7 +554,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             if (options.network === NETWORK_TESTNET && name !== 'base') {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
@@ -758,7 +758,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.core.devnet.llmq = base.get('core.devnet.llmq');
 
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
           });
         return configFile;
@@ -784,7 +784,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
             if (options.network === NETWORK_TESTNET) {
-              options.platform.drive.tenderdash.genesis = testnet.get('platform.drive.tenderdash.genesis');
+              options.platform.drive.tenderdash.genesis = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis'));
             }
 
             // Update tenderdash image
@@ -1096,6 +1096,15 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
           });
         return configFile;
       },
+      '2.0.2-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            if (options.network === NETWORK_TESTNET && name !== 'base') {
+              options.platform.drive.tenderdash.genesis.consensus_params = lodash.cloneDeep(testnet.get('platform.drive.tenderdash.genesis.consensus_params'));
+            }
+          });
+        return configFile;
+      },
       '2.1.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([, options]) => {
@@ -1108,6 +1117,92 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             options.platform.dapi.api.docker.image = 'dashpay/dapi:2-dev';
             options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1-dev';
           });
+        return configFile;
+      },
+      '2.1.0-dev.9': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.dapi.deprecated) {
+              options.platform.dapi.deprecated = defaultConfig.get('platform.dapi.deprecated');
+            } else if (typeof options.platform.dapi.deprecated.enabled === 'undefined') {
+              options.platform.dapi.deprecated.enabled = defaultConfig.get('platform.dapi.deprecated.enabled');
+            }
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              return;
+            }
+
+            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+
+            if (options.platform.dapi.rsDapi.healthCheck) {
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(
+                options.platform.dapi.rsDapi.healthCheck,
+              );
+              delete options.platform.dapi.rsDapi.healthCheck;
+            }
+
+            if (!options.platform.dapi.rsDapi.metrics) {
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
+            }
+
+            if (typeof options.platform.dapi.rsDapi.metrics.host === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.host = defaultMetrics.host;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
+            }
+
+            if (!options.platform.dapi.rsDapi.logs) {
+              options.platform.dapi.rsDapi.logs = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi.logs'));
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logs.level === 'undefined') {
+              options.platform.dapi.rsDapi.logs.level = defaultConfig.get('platform.dapi.rsDapi.logs.level');
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logs.jsonFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logs.jsonFormat = defaultConfig.get('platform.dapi.rsDapi.logs.jsonFormat');
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logs.accessLogPath === 'undefined') {
+              options.platform.dapi.rsDapi.logs.accessLogPath = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogPath');
+            }
+
+            if (typeof options.platform.dapi.rsDapi.logs.accessLogFormat === 'undefined') {
+              options.platform.dapi.rsDapi.logs.accessLogFormat = defaultConfig.get('platform.dapi.rsDapi.logs.accessLogFormat');
+            }
+          });
+
+        return configFile;
+      },
+      '2.1.0-pr.2716.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            options.platform.dapi.api.docker.image = defaultConfig
+              .get('platform.dapi.api.docker.image');
+
+            options.platform.drive.abci.docker.image = defaultConfig
+              .get('platform.drive.abci.docker.image');
+
+            if (options.platform.dapi.rsDapi
+              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
+              options.platform.dapi.rsDapi.docker.image = defaultConfig
+                .get('platform.dapi.rsDapi.docker.image');
+            }
+
+            if (options.platform.drive.tenderdash
+              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
+              options.platform.drive.tenderdash.docker.image = defaultConfig
+                .get('platform.drive.tenderdash.docker.image');
+            }
+          });
+
         return configFile;
       },
     };

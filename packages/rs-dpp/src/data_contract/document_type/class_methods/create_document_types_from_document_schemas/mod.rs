@@ -24,6 +24,7 @@ impl DocumentType {
     /// # Parameters
     ///
     /// * `data_contract_id`: Identifier for the data contract.
+    /// * `data_contract_system_version`: The version of the data contract
     /// * `contract_document_types_raw`: Vector representing the raw contract document types.
     /// * `definition_references`: BTreeMap representing the definition references.
     /// * `documents_keep_history_contract_default`: A boolean flag that specifies the document's keep history contract default.
@@ -37,6 +38,8 @@ impl DocumentType {
     #[allow(clippy::too_many_arguments)]
     pub fn create_document_types_from_document_schemas(
         data_contract_id: Identifier,
+        data_contract_system_version: u16,
+        contract_config_version: u16,
         document_schemas: BTreeMap<DocumentName, Value>,
         schema_defs: Option<&BTreeMap<String, Value>>,
         token_configurations: &BTreeMap<TokenContractPosition, TokenConfiguration>,
@@ -55,6 +58,8 @@ impl DocumentType {
         {
             0 => DocumentType::create_document_types_from_document_schemas_v0(
                 data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
                 document_schemas,
                 schema_defs,
                 token_configurations,
@@ -66,6 +71,8 @@ impl DocumentType {
             // in v1 we add the ability to have contracts without documents and just tokens
             1 => DocumentType::create_document_types_from_document_schemas_v1(
                 data_contract_id,
+                data_contract_system_version,
+                contract_config_version,
                 document_schemas,
                 schema_defs,
                 token_configurations,

@@ -22,13 +22,13 @@ describe('DPNSFacade', () => {
     this.sinon.stub(wasmSdk, 'getDpnsUsernameByNameWithProofInfo').resolves({});
   });
 
-  it('convertToHomographSafe/isValidUsername/isContestedUsername use class statics', () => {
-    const out1 = wasmSDKPackage.WasmSdk.dpnsConvertToHomographSafe('abc');
-    const out2 = wasmSDKPackage.WasmSdk.dpnsIsValidUsername('abc');
-    const out3 = wasmSDKPackage.WasmSdk.dpnsIsContestedUsername('abc');
+  it('convertToHomographSafe/isValidUsername/isContestedUsername await wasm statics', async () => {
+    const out1 = await client.dpns.convertToHomographSafe('abc');
+    const out2 = await client.dpns.isValidUsername('abc');
+    const out3 = await client.dpns.isContestedUsername('abc');
     expect(out1).to.be.ok();
-    expect(typeof out2).to.not.equal('undefined');
-    expect(typeof out3).to.not.equal('undefined');
+    expect(out2).to.be.a('boolean');
+    expect(out3).to.be.a('boolean');
   });
 
   it('name resolution and registration forward correctly', async () => {

@@ -1,7 +1,7 @@
 [package]
 name = "dapi-grpc"
 description = "GRPC client for Dash Platform"
-version = "2.1.0-dev.7"
+version = "2.1.0-pr.2716.1"
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Igor Markin <igor.markin@dash.org>",
@@ -51,9 +51,7 @@ platform-version = { path = "../rs-platform-version" }
 tonic-prost = { version = "0.14.2" }
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-tonic = { version = "0.14.2", features = [
-  "codegen",
-], default-features = false }
+tonic = { version = "0.14.2", features = ["codegen"], default-features = false }
 getrandom = { version = "0.2", features = ["js"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

@@ -260,7 +260,9 @@ where
 {
     fn drop(&mut self) {
         if self.drop {
-            // Remove only when the last clone of this handle is dropped
+            // Remove only when the last clone of this handle is dropped.
+            // As we are in a Drop impl, strong_count == 1 means that it cannot be cloned anymore,
+            // so no race condition is possible.
             if Arc::strong_count(&self.rx) == 1 {
                 let bus = self.event_bus.clone();
                 let id = self.id;
@@ -273,10 +275,11 @@ where
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
                     if let Ok(mut subs) = bus.subs.try_write()
-                        && subs.remove(&id).is_some() {
-                            metrics_unsubscribe_inc();
-                            metrics_active_gauge_set(subs.len());
-                        }
+                        && subs.remove(&id).is_some()
+                    {
+                        metrics_unsubscribe_inc();
+                        metrics_active_gauge_set(subs.len());
+                    }
                 }
             }
         }

@@ -1,6 +1,6 @@
 [package]
 name = "simple-signer"
-version = "2.1.0-dev.7"
+version = "2.1.0-pr.2716.1"
 edition = "2021"
 rust-version.workspace = true
 
@@ -9,11 +9,17 @@ rust-version.workspace = true
 [features]
 default = []
 # Enable state transitions support (requires additional dpp features)
-state-transitions = ["dpp/state-transitions", "dpp/bls-signatures", "dpp/state-transition-signing"]
+state-transitions = [
+    "dpp/state-transitions",
+    "dpp/bls-signatures",
+    "dpp/state-transition-signing",
+]
 
 [dependencies]
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
-dpp = { path = "../rs-dpp", default-features = false, features = ["ed25519-dalek"] }
+dpp = { path = "../rs-dpp", default-features = false, features = [
+    "ed25519-dalek",
+] }
 base64 = { version = "0.22.1" }
 hex = { version = "0.4.3" }
 tracing = "0.1.41"

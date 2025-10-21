@@ -30,6 +30,10 @@ impl DataContractV0Getters for DataContractV1 {
         &self.id
     }
 
+    fn system_version_type(&self) -> u16 {
+        1
+    }
+
     fn version(&self) -> u32 {
         self.version
     }

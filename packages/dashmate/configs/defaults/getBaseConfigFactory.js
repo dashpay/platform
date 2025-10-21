@@ -230,6 +230,12 @@ export default function getBaseConfigFactory() {
           },
         },
         dapi: {
+          // Controls whether to use the deprecated JS DAPI stack
+          // If enabled = true -> use old DAPI (JS)
+          // If enabled = false -> use rs-dapi (Rust) [default]
+          deprecated: {
+            enabled: false,
+          },
           api: {
             docker: {
               image: `dashpay/dapi:${dockerImageVersion}`,
@@ -244,6 +250,30 @@ export default function getBaseConfigFactory() {
               },
             },
             waitForStResultTimeout: 120000,
+          },
+          rsDapi: {
+            docker: {
+              image: `dashpay/rs-dapi:${dockerImageVersion}`,
+              deploy: {
+                replicas: 1,
+              },
+              build: {
+                enabled: false,
+                context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
+                dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
+                target: 'rs-dapi',
+              },
+            },
+            metrics: {
+              host: '127.0.0.1',
+              port: 9091,
+            },
+            logs: {
+              level: 'debug',
+              jsonFormat: false,
+              accessLogPath: null,
+              accessLogFormat: 'combined',
+            },
           },
         },
         drive: {

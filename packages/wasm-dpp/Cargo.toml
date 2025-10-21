@@ -1,6 +1,6 @@
 [package]
 name = "wasm-dpp"
-version = "2.1.0-dev.7"
+version = "2.1.0-pr.2716.1"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Anton Suprunchuk <anton.suprunchuk@gmail.com>"]
@@ -18,9 +18,9 @@ serde_json = { version = "1.0", features = ["preserve_order"] }
 # Meantime if you want to update wasm-bindgen you also need to update version in:
 #  - packages/wasm-dpp/scripts/build-wasm.sh
 #  - Dockerfile
-wasm-bindgen = { version = "=0.2.100" }
-js-sys = "0.3.53"
-web-sys = { version = "0.3.6", features = ["console"] }
+wasm-bindgen = { version = "=0.2.103" }
+js-sys = "0.3.64"
+web-sys = { version = "0.3.64", features = ["console"] }
 thiserror = { version = "2.0.12" }
 serde-wasm-bindgen = { git = "https://github.com/QuantumExplorer/serde-wasm-bindgen", branch = "feat/not_human_readable" }
 dpp = { path = "../rs-dpp", default-features = false, features = [

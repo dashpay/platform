@@ -1,6 +1,6 @@
 use crate::drive::Drive;
 
-use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequest;
+use crate::drive::document::index_uniqueness::internal::validate_uniqueness_of_data::UniquenessOfDataRequestV0;
 use crate::drive::document::query::QueryDocumentsOutcomeV0Methods;
 use crate::error::Error;
 use crate::query::{DriveDocumentQuery, InternalClauses, WhereClause, WhereOperator};
@@ -37,11 +37,11 @@ impl Drive {
     #[inline(always)]
     pub(super) fn validate_uniqueness_of_data_v0(
         &self,
-        request: UniquenessOfDataRequest,
+        request: UniquenessOfDataRequestV0,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        let UniquenessOfDataRequest {
+        let UniquenessOfDataRequestV0 {
             contract,
             document_type,
             owner_id,

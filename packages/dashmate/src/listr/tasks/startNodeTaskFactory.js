@@ -1,4 +1,5 @@
 import { Listr } from 'listr2';
+import path from 'path';
 import { Observable } from 'rxjs';
 import { NETWORK_LOCAL } from '../../constants.js';
 import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
@@ -12,6 +13,7 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
+ * @param {HomeDir} homeDir
  * @return {startNodeTask}
  */
 export default function startNodeTaskFactory(
@@ -22,6 +24,7 @@ export default function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
+  homeDir,
 ) {
   /**
    * @typedef {startNodeTask}
@@ -61,6 +64,18 @@ export default function startNodeTaskFactory(
       const tenderdashLogFilePath = config.get('platform.drive.tenderdash.log.path');
       if (tenderdashLogFilePath !== null) {
         ensureFileMountExists(tenderdashLogFilePath, 0o666);
+      }
+
+      const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
+      const hasConfiguredAccessLogPath = typeof configuredAccessLogPath === 'string'
+        && configuredAccessLogPath.trim() !== '';
+
+      if (hasConfiguredAccessLogPath) {
+        const hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
+          ? configuredAccessLogPath
+          : path.resolve(homeDir.getPath(), configuredAccessLogPath);
+
+        ensureFileMountExists(hostAccessLogPath, 0o666);
       }
     }
 

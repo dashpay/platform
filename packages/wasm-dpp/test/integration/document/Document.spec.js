@@ -57,6 +57,7 @@ describe('ExtendedDocument', () => {
         $createdAt: null, // TODO: it should be omitted
         $createdAtBlockHeight: null,
         $createdAtCoreBlockHeight: null,
+        $creatorId: null,
         $updatedAt: null,
         $updatedAtBlockHeight: null,
         $updatedAtCoreBlockHeight: null,

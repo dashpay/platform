@@ -47,6 +47,7 @@ pub trait DocumentV0Getters {
     fn created_at_core_block_height(&self) -> Option<u32>;
     fn updated_at_core_block_height(&self) -> Option<u32>;
     fn transferred_at_core_block_height(&self) -> Option<u32>;
+    fn creator_id(&self) -> Option<Identifier>;
 }
 
 pub trait DocumentV0Setters: DocumentV0Getters {
@@ -150,4 +151,11 @@ pub trait DocumentV0Setters: DocumentV0Getters {
     fn set_transferred_at_block_height(&mut self, transferred_at_block_height: Option<u64>);
     fn set_transferred_at(&mut self, transferred_at: Option<TimestampMillis>);
     fn bump_revision(&mut self);
+    /// Sets the creator identifier of the document. This is applicable if the document's
+    /// schema requires this information.
+    ///
+    /// # Parameters
+    /// - `creator_id`: An `Option<Identifier>` to set as the document's creator ID.
+    ///   `None` indicates the creator ID is not available.
+    fn set_creator_id(&mut self, creator_id: Option<Identifier>);
 }
