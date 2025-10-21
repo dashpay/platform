@@ -867,8 +867,8 @@ impl PlatformService for QueryService {
         &self,
         request: Request<PlatformSubscriptionRequest>,
     ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
-        use dapi_grpc::platform::v0::platform_Subscription_request::Version as RequestVersion;
-        use dapi_grpc::platform::v0::platform_Subscription_response::{
+        use dapi_grpc::platform::v0::platform_subscription_request::Version as RequestVersion;
+        use dapi_grpc::platform::v0::platform_subscription_response::{
             PlatformSubscriptionResponseV0, Version as ResponseVersion,
         };
 

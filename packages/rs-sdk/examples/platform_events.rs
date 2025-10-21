@@ -10,12 +10,13 @@ fn main() {
 #[cfg(feature = "subscriptions")]
 mod subscribe {
 
-    use dapi_grpc::platform::v0::platform_Subscription_response::Version as ResponseVersion;
     use dapi_grpc::platform::v0::platform_event_v0::Event as PlatformEvent;
     use dapi_grpc::platform::v0::platform_filter_v0::Kind as FilterKind;
+    use dapi_grpc::platform::v0::platform_subscription_response::Version as ResponseVersion;
     use dapi_grpc::platform::v0::{
         PlatformFilterV0, PlatformSubscriptionResponse, StateTransitionResultFilter,
     };
+    use dapi_grpc::tonic::Streaming;
     use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
     use dash_sdk::platform::types::epoch::Epoch;
     use dash_sdk::{Sdk, SdkBuilder};
@@ -23,7 +24,6 @@ mod subscribe {
     use rs_dapi_client::{Address, AddressList};
     use serde::Deserialize;
     use std::str::FromStr;
-    use tonic::Streaming;
     use zeroize::Zeroizing;
 
     #[derive(Debug, Deserialize)]
