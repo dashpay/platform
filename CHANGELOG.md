@@ -1,266 +1,187 @@
-## [2.1.0-pr.2716.1](https://github.com/dashpay/platform/compare/v2.1.0-dev.8...v2.1.0-pr.2716.1) (2025-10-10)
+## [2.1.0-rc.1](https://github.com/dashpay/platform/compare/v2.1.0-dev.8...v2.1.0-rc.1) (2025-10-21)
 
-
-### ⚠ BREAKING CHANGES
-
-* **sdk:** provide all getStatus info (#2729)
 
 ### Features
 
-* access log
-* add tests for new token transitions
-* bloom filters
-* cache  metrics
-* config dapi_platform_cache_bytes, dapi_core_cache_bytes
-* core client block cache
-* core get_block  get_blockchain_status  get_masternode_status get_estimated_transaction_fee
-* core get_transaction
-* core transaction broadcast
-* **dapi-cli:** dapi_cli core masternode-status
-* **dapi-cli:** identity cmd
-* dashmate rs-dapi metrics support
-* **dashmate:** deprecate old dapi
-* **dashmate:** rs dapi log level configurable
-* **drive-abci:** event bus
-* event bus in rs-dapi
-* **event_bus:** impl no_unsubscribe_on_drop
-* forward core chain locks in tx stream
-* get_best_block_height
-* historical streaming for `subscribeToBlockHeadersWithChainLocks`
-* masternode list diff
-* **platform-test-suite:** disable peer lookup when DAPI_ADDRESSES is provided
-* publish finalized transaction
-* request metrics
-* rs-dapi only forwards subscribe platform events req/resp
-* **rs-dapi:** rest and jsonrpc translator
-* **rs-dapi:** rest get glock by hash/height
-* rs-drive-abci subscribe endpoint
-* **sdk:** provide all getStatus info ([#2729](https://github.com/dashpay/platform/issues/2729))
-* subscribe to all transactions
-* tenderdash client example
-* transaction stream gate auto open after timeout
-* **wasm-sdk:** implement four missing token transitions
-
-
-### Bug Fixes
-
-*  mempool uses shared stream state
-* cache merged for no good reason
-* core client needs timeouts
-* dapi-grpc service capitalization - clippy warning
-* **dapi-grpc:** invalid routers
-* dash-serialized-consensus-error-bin
-* dashmate reset access denied when deleting logs
-* **dashmate:** support dapi deprecated in schema
-* deprecated mode not working
-* docker build fails
-* dockerfile overwrites log level
-* duplicates in subs
-* empty data scenario
-* error handling, continued
-* get_blockchain_status fails
-* getBlockHash  height parsing
-* instant lock deserialize
-* invalid serialization of consensus params
-* jsonrpc request id should be unique
-* mempool should not block normal txs sending
-* mn diff using wrong method
-* **sdk:** fix generate docs ([#2730](https://github.com/dashpay/platform/issues/2730))
-* streaming fails on error
-* tenderdash client
-* **test:** fix  env tests that are unsafe in edition=2024
-* transaction filter update
-* transaction stream: merkle block checks already delivered txs
-* **wallet-lib:** resume sync from last synced height
-* **wallet-lib:** stream restarted every now and then due to   addressesGenerated = [];
-* **wasm-drive-verify:** simple_benchmars.rs fail
-* wasm-sdk does not build
-* **wasm-sdk:** enable proofs for getContestedResourceVotersForIdentity ([#2732](https://github.com/dashpay/platform/issues/2732))
-* **wasm-sdk:** resolve test failures and optimize CI workflow ([#2735](https://github.com/dashpay/platform/issues/2735))
-* **wasm-sdk:** use identity contract nonce for data contract updates ([#2738](https://github.com/dashpay/platform/issues/2738))
-* zmq tx event
-* zmq_listernet should listen on rawtxlock and rawchainlock
-
-
-### Tests
-
-* add debug info - to revert
-* bloom filtering
-* bloom filters
-* increase tests of bloom filtering
-* more debug, to revert
-* platform events ping test (fails now)
-* **sdk:** expand wasm-sdk page UI testing ([#2720](https://github.com/dashpay/platform/issues/2720))
-* test event bus
-* **wallet-lib:** add txids to merke block info
-* **wallet-lib:** add txids to merke block info, continued
-
-
-### Build System
-
-* bump tenderdash-abci to v1.5.0-dev.2
-* **deps:** bump wasm-bindgen to 0.2.103
-* **deps:** dashcore v0.40-dev in wasm-sdk
-* **deps:** rust 1.89
-* **deps:** update dashcore to latest dev
-* Dockerfile rocksdb 10.4.2
-* fix build
-* **rs-dapi:** bump tonic
-* update Cargo.lock
-* update rust-dashcore
-
-
-### Code Refactoring
-
-* cache sync
-* cache using serde
-* cache with memory usage limits
-* dapi-cli
-* divide block_header_stream.rs into parts.
-* error handling
-* less Arcs in DapiServer
-* move bloom implementation to separate mod
-* move some code around
-* remove mocks
-* remove REST gateway
-* remove rs-dapi/dapi_cli
-* rename rs-dash-notify to rs-dash-event-bus
-* **rs-dapi:** move mux to platformserviceimpl
-* **sdk:** wasm-sdk doc generation refactor ([#2726](https://github.com/dashpay/platform/issues/2726))
-* td client uses req/resp structs, not plain json
-* trace spawned threaads
-* transaction_stream refactor async handling
-* use bloom logic from dash spv
-* use bounded streams in subscriptions
+* **swift-sdk:** swift SDK improvements ([#2809](https://github.com/dashpay/platform/issues/2809))
+* **wasm-sdk:** add custom masternode address configuration ([#2805](https://github.com/dashpay/platform/issues/2805))
 
 
 ### Miscellaneous Chores
 
-*  Remove panic on ZMQ startup
-* add InstantLock and chainLock msgs to bloom filter and CoreAllTxs
-* add merke block to the tx stream
-* add rs-dapi todo
-* add some logs
-* add some tracing
-* add subscribePlatformEvents to envoy config
-* add timeout when proxying
+* update to groveDB 3.1 ([#2808](https://github.com/dashpay/platform/issues/2808))
+* update to rust dash core v0.40.0 ([#2810](https://github.com/dashpay/platform/issues/2810))
+
+
+### Code Refactoring
+
+* **dapi:** rewrite dapi in Rust as rs-dapi ([#2716](https://github.com/dashpay/platform/issues/2716))
+
+## [2.1.0-dev.8](https://github.com/dashpay/platform/compare/v2.1.0-dev.7...v2.1.0-dev.8) (2025-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** creator id and improved verification of document uniqueness before insertion (#2790)
+
+### Features
+
+* **platform:** creator id and improved verification of document uniqueness before insertion ([#2790](https://github.com/dashpay/platform/issues/2790))
+* **sdk:** expose data contract from json ([#2791](https://github.com/dashpay/platform/issues/2791))
+
+
+### Bug Fixes
+
+* **dashmate:** consensus params in dashmate different than on testnet ([#2682](https://github.com/dashpay/platform/issues/2682))
+* **sdk:** wasm is not initialized for some methods ([#2792](https://github.com/dashpay/platform/issues/2792))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.8 ([#2797](https://github.com/dashpay/platform/issues/2797))
+* script to backup and restore state
+
+
+## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
+
+
+### Bug Fixes
+
+* **sdk:** wasm sdk is not initialized for static methods ([#2788](https://github.com/dashpay/platform/issues/2788))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.7 ([#2789](https://github.com/dashpay/platform/issues/2789))
+
+## [2.1.0-dev.6](https://github.com/dashpay/platform/compare/v2.1.0-dev.5...v2.1.0-dev.6) (2025-09-24)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 2 ([#2781](https://github.com/dashpay/platform/issues/2781))
+* **sdk:** add more SDK methods ([#2784](https://github.com/dashpay/platform/issues/2784))
+
+
+### Bug Fixes
+
+* **dashmate:** incompatible tenderdash version ([#2786](https://github.com/dashpay/platform/issues/2786))
+
+
+### Performance Improvements
+
+* **rs-sdk:** optimize wasm-sdk bundle size ([#2783](https://github.com/dashpay/platform/issues/2783))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.6 ([#2785](https://github.com/dashpay/platform/issues/2785))
+
+## [2.1.0-dev.5](https://github.com/dashpay/platform/compare/v2.1.0-dev.4...v2.1.0-dev.5) (2025-09-19)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 1 ([#2761](https://github.com/dashpay/platform/issues/2761))
+
+
+### Build System
+
+* fix sdk npm packaging ([#2780](https://github.com/dashpay/platform/issues/2780))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.5 ([#2782](https://github.com/dashpay/platform/issues/2782))
+
+## [2.1.0-dev.4](https://github.com/dashpay/platform/compare/v2.0.1...v2.1.0-dev.4) (2025-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wasm-sdk:**  handle identity create transition signing for all types of keys (#2754)
+* **wasm-sdk:** remove unused key_id parameters from state transitions (#2759)
+* **sdk:** provide all getStatus info (#2729)
+
+### Features
+
+* add tests for new token transitions
+* add wasm bindings for Drive verification functions ([#2660](https://github.com/dashpay/platform/issues/2660))
+* balance checker app ([#2688](https://github.com/dashpay/platform/issues/2688))
+* **dashmate:** allow configuring zmq using dashmate ([#2697](https://github.com/dashpay/platform/issues/2697))
+* evo sdk ([#2771](https://github.com/dashpay/platform/issues/2771))
+* **sdk:** add request settings in wasm sdk ([#2707](https://github.com/dashpay/platform/issues/2707))
+* **sdk:** add username search example in evo-sdk ([#2706](https://github.com/dashpay/platform/issues/2706))
+* **sdk:** adding a trusted context provider package ([#2687](https://github.com/dashpay/platform/issues/2687))
+* **sdk:** dpns sdk improvements ([#2692](https://github.com/dashpay/platform/issues/2692))
+* **sdk:** enable proof support for most queries ([#2718](https://github.com/dashpay/platform/issues/2718))
+* **sdk:** epic: rs-sdk-ffi and ios support ([#2756](https://github.com/dashpay/platform/issues/2756))
+* **sdk:** identity creation in wasm ([#2711](https://github.com/dashpay/platform/issues/2711))
+* **sdk:** make wasm sdk complete for all state transitions and most queries ([#2690](https://github.com/dashpay/platform/issues/2690))
+* **sdk:** provide all getStatus info ([#2729](https://github.com/dashpay/platform/issues/2729))
+* **sdk:** wasm docs and fixes ([#2700](https://github.com/dashpay/platform/issues/2700))
+* **sdk:** wasm drive verify optimization ([#2683](https://github.com/dashpay/platform/issues/2683))
+* **sdk:** wasm sdk core and test suite ([#2709](https://github.com/dashpay/platform/issues/2709))
+* **wasm-sdk:** implement four missing token transitions
+* **wasm-sdk:** remove unused key_id parameters from state transitions ([#2759](https://github.com/dashpay/platform/issues/2759))
+
+
+### Bug Fixes
+
+* **sdk:** fix documentation examples ([#2710](https://github.com/dashpay/platform/issues/2710))
+* **sdk:** fix generate docs ([#2730](https://github.com/dashpay/platform/issues/2730))
+* **sdk:** install wasm-opt from Github instead of apt ([#2701](https://github.com/dashpay/platform/issues/2701))
+* **sdk:** js sdk audit warnings by adding crypto-related dependencies to package.json ([#2757](https://github.com/dashpay/platform/issues/2757))
+* **sdk:** modifications to get wasm-sdk working again ([#2689](https://github.com/dashpay/platform/issues/2689))
+* **wasm-sdk:**  handle identity create transition signing for all types of keys ([#2754](https://github.com/dashpay/platform/issues/2754))
+* **wasm-sdk:** address compiler warnings ([#2734](https://github.com/dashpay/platform/issues/2734))
+* **wasm-sdk:** connect where and orderBy clause functionality for getDocuments ([#2753](https://github.com/dashpay/platform/issues/2753))
+* **wasm-sdk:** enable proofs for getContestedResourceVotersForIdentity ([#2732](https://github.com/dashpay/platform/issues/2732))
+* **wasm-sdk:** fix nft transitions ([#2751](https://github.com/dashpay/platform/issues/2751))
+* **wasm-sdk:** resolve CI test failures and build issues ([#2765](https://github.com/dashpay/platform/issues/2765))
+* **wasm-sdk:** resolve test failures and optimize CI workflow ([#2735](https://github.com/dashpay/platform/issues/2735))
+* **wasm-sdk:** use identity contract nonce for data contract updates ([#2738](https://github.com/dashpay/platform/issues/2738))
+
+
+### Tests
+
+* **sdk:** automate wasm-sdk page UI testing (partial) ([#2715](https://github.com/dashpay/platform/issues/2715))
+* **sdk:** expand wasm-sdk page UI testing ([#2720](https://github.com/dashpay/platform/issues/2720))
+* **wasm-sdk:** add ui tests for almost all state transitions ([#2739](https://github.com/dashpay/platform/issues/2739))
+
+
+### Build System
+
+* bump tenderdash-abci to v1.5.0-dev.2 ([#2770](https://github.com/dashpay/platform/issues/2770))
+* update rust to 1.89 ([#2755](https://github.com/dashpay/platform/issues/2755))
+
+
+### Code Refactoring
+
+* **sdk:** wasm-sdk doc generation refactor ([#2726](https://github.com/dashpay/platform/issues/2726))
+* swift sdk fixes ([#2772](https://github.com/dashpay/platform/issues/2772))
+* **wasm-sdk:** improve documentation generation maintainability ([#2773](https://github.com/dashpay/platform/issues/2773))
+
+
+### Continuous Integration
+
+* dont do CI when it's not needed ([#2774](https://github.com/dashpay/platform/issues/2774))
+* swift CI fixes ([#2775](https://github.com/dashpay/platform/issues/2775))
+* Use self hosted mac runner ([#2776](https://github.com/dashpay/platform/issues/2776))
+
+
+### Miscellaneous Chores
+
 * add wasm-sdk as scope for pr linting ([#2731](https://github.com/dashpay/platform/issues/2731))
-* always create websocket client
-* better debug
-* block header stream - add chainlocks
-* block_header_stream adjust errors
-* block_header_stream async
-* block_header_stream history adjust
-* block_header_stream input validation
-* bloom filters using dashcore
-* broadcast tx error handling  - cbor walk fix
-* cache fixes
-* cache invalidation
-* cache layer, initial impl
-* cargo fmt
-* change how bloom filter locking works
-* clippy
-* comment
-* consensus error print on silly level
-* dapi-cli protocol upgrade info
-* dashmate config location
-* dashmate config migrations fix
-* debug
-* debug consensus error again
-* debug improvements
-* debug log in js-dapi-client
-* disable deduplication
-* DriveErrorDataBin
-* drop events on full receiver
-* drop invalid instant locks
-* envoy tune keepalives for rs-dapi
-* error handling
-* error mapping
-* errors continued
-* event bus in rs-sdk
-* fallback to contains
-* fix access log
-* fix build
-* fix build
-* fix build in rs-dash-notify
-* fix cache and core client
-* fix connected check
-* fix core config
-* fix debug msg
-* fix error status
-* fix example build
-* fix notifications
-* fix path parsing
-* fix tests
-* fix timeout in wait_for_state_transition_result_impl
-* fix wallet-lib
-* fixes of error handling
-* fmt
-* fmt and others
-* furher implementation of erorrs in broadcast
-* grpc producer ready flag
-* grpc tuning
-* healthcheck improvements
-* improve debug
-* improve error handling
-* improve error mapping
-* improve grpc logging
-* improve subscriptions
-* improve tests
-* inc envoy timeouts
-* instant lock delivered
-* json rpc translator params bool parsing
-* mempool processing gets separate TransactionsStreamState
-* merkle block
-* metrics and cache updates
-* minor refactor
-* minor review fixes
-* mn list sync logging
-* more debug
-* more debug
-* more debug
-* more debug
-* more debug ion subscriptions
-* more logging
-* more logs in subscriptions
-* optimized core client with rate limits
-* platform_events example improved
-* refactor
-* refactor logging
-* refactoring broadcast errors
-* remove logrotate.conf
-* remove subscriptions from drive-abci and rs-sdk - moved to separate pr
-* remove unused deps in rs-dash-event-bus
-* remove uuid
-* remove worksers from LruResponseCache
-* rename filters
-* revert DAPI_ADDRESSES env var support in platform-test-suite
-* review
-* rewrite rs-dash-notify
-* rs-dapi, continued
-* rs-sdk events WIP
-* same wasm-bindgen version and related libs
-* self review
-* self review
-* self review and tests updated
-* speed up historical queries
-* subscribe_platform_events
-* sync docs
-* sync event bus with packages/rs-dash-event-bus
-* tracing middleware for reqwest in td client
-* transaction_stream deliver merkle block even if no matching txs
-* try to fix core client block fetch
-* try to fix error handling
-* trying to fix Dockerfile
-* trying to fix error handling
-* tx stream
-* tx stream order
-* tx stream refactor
-* update wait for state transition result logic
-* use EventBus instead of subscriber_manager
-* use unconfirmed_tx to check if tx is in mempool
-* wallet-lib logs tx hashes and block hashes - to revert
-* watch channel instead of notify
+* clean dpp clippy ([#2764](https://github.com/dashpay/platform/issues/2764))
+* **drive:** fix drive linting ([#2763](https://github.com/dashpay/platform/issues/2763))
+* **platform:** add protocol version 10 support ([#2686](https://github.com/dashpay/platform/issues/2686))
+* **release:** update changelog and bump version to 2.1.0-dev.4 ([#2779](https://github.com/dashpay/platform/issues/2779))
+* sdk clippy issues ([#2767](https://github.com/dashpay/platform/issues/2767))
+* **sdk:** use correct port for evo-sdk mainnet ([#2699](https://github.com/dashpay/platform/issues/2699))
+* update yarn cache with new dependencies ([#2758](https://github.com/dashpay/platform/issues/2758))
+* **wasm-sdk:** apply cargo fmt and cleanup ([#2766](https://github.com/dashpay/platform/issues/2766))
+
 
 ## [2.1.0-dev.3](https://github.com/dashpay/platform/compare/v2.1.0-dev.2...v2.1.0-dev.3) (2025-08-07)
 
