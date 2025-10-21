@@ -15,8 +15,8 @@
 //! - subscribers subscribe to events via [`ZmqListener::subscribe`] to receive [`ZmqEvent`]s
 //!
 use std::future::Future;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicI64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, LazyLock};
 
 use crate::error::{DAPIResult, DapiError};
 use crate::sync::Workers;
@@ -29,7 +29,7 @@ use tokio::select;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast;
 use tokio::sync::mpsc;
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, Instant, sleep};
 use tokio_util::sync::CancellationToken;
 use tracing::span;
 use tracing::{debug, trace};
@@ -39,6 +39,9 @@ use zeromq::ZmqError;
 use zeromq::ZmqMessage;
 use zeromq::ZmqResult;
 use zeromq::prelude::*;
+
+/// Start time for calculating durations
+static START_TIME: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 /// ZMQ topics that we subscribe to from Dash Core
 
@@ -234,7 +237,7 @@ impl ZmqConnection {
             zmq_tx: tx,
             cancel: cancel.clone(),
             connected: self.connected.clone(),
-            last_recv: Arc::new(AtomicI64::new(0)),
+            last_recv: Arc::new(AtomicU64::new(0)),
         }
         .spawn(&self.workers);
     }
@@ -551,7 +554,8 @@ struct ZmqDispatcher {
     /// Cancellation token to stop all spawned threads; cancelled when the connection is lost
     cancel: CancellationToken,
     connected: Arc<AtomicBool>,
-    last_recv: Arc<AtomicI64>,
+    /// Time of last received message, in seconds since [START_TIME]
+    last_recv: Arc<AtomicU64>,
 }
 
 impl ZmqDispatcher {
@@ -581,7 +585,7 @@ impl ZmqDispatcher {
                                 return Err(DapiError::ClientGone("ZMQ receiver exited".to_string()));
                             } else {
                                 // update last received timestamp
-                                self.last_recv.store(chrono::Utc::now().timestamp(), Ordering::SeqCst);
+                                self.last_recv_update();
                             }
                         },
                         Err(e) => {
@@ -603,9 +607,8 @@ impl ZmqDispatcher {
 
     /// Event that happens every ten seconds to check connection status
     async fn tick_event_10s(&mut self) {
-        // first, if we received a message within last 10s, we are connected
-        let last_recv = self.last_recv.load(Ordering::SeqCst);
-        if last_recv + 10 >= chrono::Utc::now().timestamp() {
+        // if we have received a message in less than 10s, we are connected
+        if self.last_recv_elapsed() < Duration::from_secs(10) {
             self.connected.store(true, Ordering::SeqCst);
             return;
         }
@@ -636,15 +639,32 @@ impl ZmqDispatcher {
 
         // if we are connected, we assume last_recv is now
         if current_status {
-            self.last_recv
-                .compare_exchange(
-                    last_recv,
-                    chrono::Utc::now().timestamp(),
-                    Ordering::AcqRel,
-                    Ordering::Relaxed,
-                )
-                .ok();
+            self.last_recv_update();
         }
+    }
+
+    /// Get duration since last received message.
+    /// Defaults to [START_TIME] on error.
+    fn last_recv_elapsed(&self) -> Duration {
+        let now = Instant::now();
+        let start_time = *START_TIME;
+
+        let last_recv_secs = self.last_recv.load(Ordering::Relaxed);
+        let last_recv = START_TIME
+            .checked_add(Duration::from_secs(last_recv_secs))
+            .unwrap_or_else(|| {
+                tracing::warn!(?start_time, ?now, "zmq last receive time out of bounds");
+                *START_TIME
+            });
+
+        now.duration_since(last_recv)
+    }
+
+    /// Update the last received timestamp
+    fn last_recv_update(&self) {
+        let duration = Instant::now().duration_since(*START_TIME);
+
+        self.last_recv.store(duration.as_secs(), Ordering::Relaxed);
     }
 }
 

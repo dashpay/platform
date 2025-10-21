@@ -248,7 +248,7 @@ mod tests {
     #[tokio::test]
     async fn test_drive_client_tracing_integration() {
         // Test that DriveClient can be created with tracing interceptor
-        // Note: This will fail if no server is running, which is expected in unit tests
+        // Note: This should succeed even if no server is running; connectivity validation logs a warning.
         match DriveClient::new("http://localhost:1443").await {
             Ok(client) => {
                 // If connection succeeds, verify the structure
