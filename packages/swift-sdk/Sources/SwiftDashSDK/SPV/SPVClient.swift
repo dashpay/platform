@@ -620,7 +620,7 @@ public class SPVClient: ObservableObject {
     // MARK: - Filter progress event handler
     // MARK: - Event Handlers
     
-    private func handleBlockEvent(height: UInt32, hash: Data) {
+    fileprivate func handleBlockEvent(height: UInt32, hash: Data) {
         let block = SPVBlockEvent(
             height: height,
             hash: hash,
@@ -702,7 +702,7 @@ public class SPVClient: ObservableObject {
         }
     }
     
-    private func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
+    fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
         let transaction = SPVTransactionEvent(
             txid: txid,
             confirmed: confirmed,
