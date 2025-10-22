@@ -72,16 +72,19 @@ private func onBlockCallbackC(
     _ userData: UnsafeMutableRawPointer?
 ) {
     guard let userData = userData else { return }
+    // Synchronously copy 32-byte hash into Swift-owned buffer to avoid TOCTOU
+    var hashBytes: [UInt8] = []
+    if let hashPtr = hashPtr {
+        let raw = UnsafeRawPointer(hashPtr).assumingMemoryBound(to: UInt8.self)
+        let buf = UnsafeBufferPointer(start: raw, count: 32)
+        hashBytes = Array(buf)
+    }
     let ctxAddr = UInt(bitPattern: userData)
-    let hashAddr: UInt = hashPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
     Task { @MainActor in
         guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
         let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        var hash = Data()
-        if hashAddr != 0, let raw = UnsafeRawPointer(bitPattern: hashAddr) {
-            hash = Data(bytes: raw, count: 32)
-        }
-        context.client?.handleBlockEvent(height: height, hash: hash)
+        let hashData = Data(hashBytes)
+        context.client?.handleBlockEvent(height: height, hash: hashData)
     }
 }
 
@@ -94,21 +97,23 @@ private func onTransactionCallbackC(
     _ userData: UnsafeMutableRawPointer?
 ) {
     guard let userData = userData else { return }
+    // Synchronously copy 32-byte txid and address string to Swift-owned values
+    var txidBytes: [UInt8] = []
+    if let txidPtr = txidPtr {
+        let raw = UnsafeRawPointer(txidPtr).assumingMemoryBound(to: UInt8.self)
+        let buf = UnsafeBufferPointer(start: raw, count: 32)
+        txidBytes = Array(buf)
+    }
+    var addresses: [String] = []
+    if let addressesPtr = addressesPtr {
+        let addressesStr = String(cString: addressesPtr)
+        addresses = addressesStr.components(separatedBy: ",")
+    }
     let ctxAddr = UInt(bitPattern: userData)
-    let txidAddr: UInt = txidPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
-    let addrStrAddr: UInt = addressesPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
     Task { @MainActor in
         guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
         let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        var txid = Data()
-        if txidAddr != 0, let raw = UnsafeRawPointer(bitPattern: txidAddr) {
-            txid = Data(bytes: raw, count: 32)
-        }
-        var addresses: [String] = []
-        if addrStrAddr != 0, let cstr = UnsafePointer<CChar>(bitPattern: addrStrAddr) {
-            let addressesStr = String(cString: cstr)
-            addresses = addressesStr.components(separatedBy: ",")
-        }
+        let txid = Data(txidBytes)
         context.client?.handleTransactionEvent(
             txid: txid,
             confirmed: confirmed,
