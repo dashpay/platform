@@ -26,13 +26,14 @@ extension SPVClient {
 }
 
 // MARK: - C Callback Functions
-// Use @convention(c) closures to match C function pointer expectations (Swift 6 warnings-as-errors safe)
+// Use top-level C-compatible functions to avoid actor-isolation init issues
 
-private typealias ProgressCallback = @convention(c) (UnsafePointer<FFIDetailedSyncProgress>?, UnsafeMutableRawPointer?) -> Void
-private typealias CompletionCallback = @convention(c) (Bool, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
-
-private let spvProgressCallback: ProgressCallback = { progressPtr, userData in
-    guard let progressPtr = progressPtr, let userData = userData else { return }
+private func spvProgressCallback(
+    progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
+    userData: UnsafeMutableRawPointer?
+) {
+    guard let progressPtr = progressPtr,
+          let userData = userData else { return }
     let snapshot = progressPtr.pointee
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     DispatchQueue.main.async {
@@ -40,7 +41,11 @@ private let spvProgressCallback: ProgressCallback = { progressPtr, userData in
     }
 }
 
-private let spvCompletionCallback: CompletionCallback = { success, errorMsg, userData in
+private func spvCompletionCallback(
+    success: Bool,
+    errorMsg: UnsafePointer<CChar>?,
+    userData: UnsafeMutableRawPointer?
+) {
     guard let userData = userData else { return }
     let errorString: String? = errorMsg.map { String(cString: $0) }
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
@@ -49,12 +54,12 @@ private let spvCompletionCallback: CompletionCallback = { success, errorMsg, use
     }
 }
 
-// Event callback function pointer types used in FFIEventCallbacks
-private typealias OnBlockCallbackC = @convention(c) (UInt32, UnsafePointer<UInt8>?, UnsafeMutableRawPointer?) -> Void
-private typealias OnTransactionCallbackC = @convention(c) (UnsafePointer<UInt8>?, Bool, Int64, UnsafePointer<CChar>?, UInt32, UnsafeMutableRawPointer?) -> Void
-
 // Global C-compatible event callbacks that use userData context
-private let onBlockCallbackC: OnBlockCallbackC = { height, hashPtr, userData in
+private func onBlockCallbackC(
+    _ height: UInt32,
+    _ hashPtr: UnsafePointer<UInt8>?,
+    _ userData: UnsafeMutableRawPointer?
+) {
     guard let userData = userData else { return }
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     var hash = Data()
@@ -67,7 +72,14 @@ private let onBlockCallbackC: OnBlockCallbackC = { height, hashPtr, userData in
     }
 }
 
-private let onTransactionCallbackC: OnTransactionCallbackC = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
+private func onTransactionCallbackC(
+    _ txidPtr: UnsafePointer<UInt8>?,
+    _ confirmed: Bool,
+    _ amount: Int64,
+    _ addressesPtr: UnsafePointer<CChar>?,
+    _ blockHeight: UInt32,
+    _ userData: UnsafeMutableRawPointer?
+) {
     guard let userData = userData else { return }
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     var txid = Data()
