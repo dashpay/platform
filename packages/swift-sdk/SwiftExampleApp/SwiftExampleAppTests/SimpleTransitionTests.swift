@@ -15,7 +15,7 @@ final class SimpleTransitionTests: XCTestCase {
         print("SDK initialized")
         
         // Create SDK instance
-        let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+        let sdk = try SDK(network: DashSDKNetwork_SDKTestnet)
         print("SDK instance created")
         
         // Load env variables

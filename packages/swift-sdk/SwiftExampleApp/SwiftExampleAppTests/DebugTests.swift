@@ -52,7 +52,7 @@ final class DebugTests: XCTestCase {
         
         // Try to create SDK instance
         do {
-            let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+            let sdk = try SDK(network: DashSDKNetwork_SDKTestnet)
             print("✅ SDK instance created")
             XCTAssertNotNil(sdk.handle)
         } catch {

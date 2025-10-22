@@ -33,7 +33,7 @@ final class SDKMethodTests: XCTestCase {
         
         // Initialize SDK
         SDK.initialize()
-        let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+        let sdk = try SDK(network: DashSDKNetwork_SDKTestnet)
         
         print("SDK created: \(sdk)")
         print("SDK handle: \(String(describing: sdk.handle))")
@@ -93,7 +93,7 @@ final class SDKMethodTests: XCTestCase {
         print("=== Testing Simple Identity Fetch ===")
         
         SDK.initialize()
-        let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
+        let sdk = try SDK(network: DashSDKNetwork_SDKTestnet)
         
         do {
             // Use a known testnet identity
