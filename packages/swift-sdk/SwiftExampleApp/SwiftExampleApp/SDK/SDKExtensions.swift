@@ -9,7 +9,7 @@ extension SDK {
     var network: SwiftDashSDK.Network {
         // In a real implementation, we would track the network during initialization
         // For now, return testnet as default
-        return DashSDKNetwork(rawValue: 1) // Testnet
+        return DashSDKNetwork_SDKTestnet // Testnet
     }
 }
 

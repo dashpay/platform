@@ -184,7 +184,7 @@ public class SPVClient: ObservableObject {
     
     // Removed: Temporary poller for filter header progress (now event-driven via FFI)
     
-    public init(network: Network = DashSDKNetwork(rawValue: 1)) {
+    public init(network: Network = DashSDKNetwork_SDKTestnet) {
         self.network = network
     }
 
@@ -219,11 +219,11 @@ public class SPVClient: ObservableObject {
         // Create configuration based on network raw value
         let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
             switch network {
-            case DashSDKNetwork(rawValue: 0):
+            case DashSDKNetwork_SDKMainnet:
                 return dash_spv_ffi_config_mainnet()
-            case DashSDKNetwork(rawValue: 1):
+            case DashSDKNetwork_SDKTestnet:
                 return dash_spv_ffi_config_testnet()
-            case DashSDKNetwork(rawValue: 2):
+            case DashSDKNetwork_SDKDevnet:
                 // Map devnet to custom FFINetwork value 3
                 return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
             default:
@@ -809,11 +809,11 @@ public class SPVClient: ObservableObject {
         // Derive FFINetwork matching how we built config
         let ffiNet: FFINetwork
         switch network {
-        case DashSDKNetwork(rawValue: 0): // mainnet
+        case DashSDKNetwork_SDKMainnet: // mainnet
             ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): // testnet
+        case DashSDKNetwork_SDKTestnet: // testnet
             ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): // devnet
+        case DashSDKNetwork_SDKDevnet: // devnet
             ffiNet = FFINetwork(rawValue: 3)
         default:
             ffiNet = FFINetwork(rawValue: 1)
@@ -833,11 +833,11 @@ public class SPVClient: ObservableObject {
     public static func latestCheckpointHeight(forNetwork net: DashSDKNetwork) -> UInt32? {
         let ffiNet: FFINetwork
         switch net {
-        case DashSDKNetwork(rawValue: 0): // mainnet
+        case DashSDKNetwork_SDKMainnet: // mainnet
             ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): // testnet
+        case DashSDKNetwork_SDKTestnet: // testnet
             ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): // devnet
+        case DashSDKNetwork_SDKDevnet: // devnet
             ffiNet = FFINetwork(rawValue: 3)
         default:
             ffiNet = FFINetwork(rawValue: 1)
@@ -856,10 +856,10 @@ public class SPVClient: ObservableObject {
     public func getCheckpointHeight(beforeTimestamp timestamp: UInt32) -> UInt32? {
         let ffiNet: FFINetwork
         switch network {
-        case DashSDKNetwork(rawValue: 0): ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): ffiNet = FFINetwork(rawValue: 3)
-        default: ffiNet = FFINetwork(rawValue: 1)
+            case DashSDKNetwork_SDKMainnet: ffiNet = FFINetwork(rawValue: 0)
+            case DashSDKNetwork_SDKTestnet: ffiNet = FFINetwork(rawValue: 1)
+            case DashSDKNetwork_SDKDevnet: ffiNet = FFINetwork(rawValue: 3)
+            default: ffiNet = FFINetwork(rawValue: 1)
         }
         var outHeight: UInt32 = 0
         var outHash = [UInt8](repeating: 0, count: 32)
