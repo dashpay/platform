@@ -59,7 +59,65 @@ private func spvCompletionCallback(
 }
 
 // Global C-compatible event callbacks that use userData context
-// (Event callbacks are set in setupEventCallbacks via C-compatible closures assigned to FFIEventCallbacks.)
+private typealias Byte32 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+)
+
+private func onBlockCallbackC(
+    _ height: UInt32,
+    _ hashPtr: UnsafePointer<Byte32>?,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    guard let userData = userData else { return }
+    let ctxAddr = UInt(bitPattern: userData)
+    let hashAddr: UInt = hashPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
+    Task { @MainActor in
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+        var hash = Data()
+        if hashAddr != 0, let raw = UnsafeRawPointer(bitPattern: hashAddr) {
+            hash = Data(bytes: raw, count: 32)
+        }
+        context.client?.handleBlockEvent(height: height, hash: hash)
+    }
+}
+
+private func onTransactionCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ confirmed: Bool,
+    _ amount: Int64,
+    _ addressesPtr: UnsafePointer<CChar>?,
+    _ blockHeight: UInt32,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    guard let userData = userData else { return }
+    let ctxAddr = UInt(bitPattern: userData)
+    let txidAddr: UInt = txidPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
+    let addrStrAddr: UInt = addressesPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
+    Task { @MainActor in
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+        var txid = Data()
+        if txidAddr != 0, let raw = UnsafeRawPointer(bitPattern: txidAddr) {
+            txid = Data(bytes: raw, count: 32)
+        }
+        var addresses: [String] = []
+        if addrStrAddr != 0, let cstr = UnsafePointer<CChar>(bitPattern: addrStrAddr) {
+            let addressesStr = String(cString: cstr)
+            addresses = addressesStr.components(separatedBy: ",")
+        }
+        context.client?.handleTransactionEvent(
+            txid: txid,
+            confirmed: confirmed,
+            amount: amount,
+            addresses: addresses,
+            blockHeight: blockHeight > 0 ? blockHeight : nil
+        )
+    }
+}
 
 // MARK: - SPV Sync Progress
 
@@ -568,57 +626,9 @@ public class SPVClient: ObservableObject {
         
         var callbacks = FFIEventCallbacks()
 
-        callbacks.on_block = { height, hashPtr, userData in
-            guard let userData = userData else { return }
-
-            // Copy raw addresses to avoid capturing task-isolated pointers
-            let ctxAddr = UInt(bitPattern: userData)
-            let hashAddr: UInt = hashPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
-
-            Task { @MainActor in
-                guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
-                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-                var hash = Data()
-                if hashAddr != 0, let raw = UnsafeRawPointer(bitPattern: hashAddr) {
-                    hash = Data(bytes: raw, count: 32)
-                }
-
-                context.client?.handleBlockEvent(height: height, hash: hash)
-            }
-        }
-
-        callbacks.on_transaction = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
-            guard let userData = userData else { return }
-
-            let ctxAddr = UInt(bitPattern: userData)
-            let txidAddr: UInt = txidPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
-            let addrStrAddr: UInt = addressesPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
-
-            Task { @MainActor in
-                guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
-                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-
-                var txid = Data()
-                if txidAddr != 0, let raw = UnsafeRawPointer(bitPattern: txidAddr) {
-                    txid = Data(bytes: raw, count: 32)
-                }
-
-                var addresses: [String] = []
-                if addrStrAddr != 0, let cstr = UnsafePointer<CChar>(bitPattern: addrStrAddr) {
-                    let addressesStr = String(cString: cstr)
-                    addresses = addressesStr.components(separatedBy: ",")
-                }
-
-                context.client?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: confirmed,
-                    amount: amount,
-                    addresses: addresses,
-                    blockHeight: blockHeight > 0 ? blockHeight : nil
-                )
-            }
-        }
+        // Assign C-compatible top-level functions which match the imported C signatures
+        callbacks.on_block = onBlockCallbackC
+        callbacks.on_transaction = onTransactionCallbackC
 
         callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
             guard let userData = userData else { return }
