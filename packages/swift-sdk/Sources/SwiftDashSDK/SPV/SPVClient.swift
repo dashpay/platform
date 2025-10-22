@@ -26,14 +26,13 @@ extension SPVClient {
 }
 
 // MARK: - C Callback Functions
-// These must be global functions to be used as C function pointers
+// Use @convention(c) closures to match C function pointer expectations (Swift 6 warnings-as-errors safe)
 
-private func spvProgressCallback(
-    progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
-    userData: UnsafeMutableRawPointer?
-) {
-    guard let progressPtr = progressPtr,
-          let userData = userData else { return }
+private typealias ProgressCallback = @convention(c) (UnsafePointer<FFIDetailedSyncProgress>?, UnsafeMutableRawPointer?) -> Void
+private typealias CompletionCallback = @convention(c) (Bool, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void
+
+private let spvProgressCallback: ProgressCallback = { progressPtr, userData in
+    guard let progressPtr = progressPtr, let userData = userData else { return }
     let snapshot = progressPtr.pointee
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     DispatchQueue.main.async {
@@ -41,16 +40,54 @@ private func spvProgressCallback(
     }
 }
 
-private func spvCompletionCallback(
-    success: Bool,
-    errorMsg: UnsafePointer<CChar>?,
-    userData: UnsafeMutableRawPointer?
-) {
+private let spvCompletionCallback: CompletionCallback = { success, errorMsg, userData in
     guard let userData = userData else { return }
     let errorString: String? = errorMsg.map { String(cString: $0) }
     let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     DispatchQueue.main.async {
         context.handleSyncCompletion(success: success, error: errorString)
+    }
+}
+
+// Event callback function pointer types used in FFIEventCallbacks
+private typealias OnBlockCallbackC = @convention(c) (UInt32, UnsafePointer<UInt8>?, UnsafeMutableRawPointer?) -> Void
+private typealias OnTransactionCallbackC = @convention(c) (UnsafePointer<UInt8>?, Bool, Int64, UnsafePointer<CChar>?, UInt32, UnsafeMutableRawPointer?) -> Void
+
+// Global C-compatible event callbacks that use userData context
+private let onBlockCallbackC: OnBlockCallbackC = { height, hashPtr, userData in
+    guard let userData = userData else { return }
+    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+    var hash = Data()
+    if let hashPtr = hashPtr {
+        hash = Data(bytes: hashPtr, count: 32)
+    }
+    let clientRef = context.client
+    Task { @MainActor [weak clientRef] in
+        clientRef?.handleBlockEvent(height: height, hash: hash)
+    }
+}
+
+private let onTransactionCallbackC: OnTransactionCallbackC = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
+    guard let userData = userData else { return }
+    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+    var txid = Data()
+    if let txidPtr = txidPtr {
+        txid = Data(bytes: txidPtr, count: 32)
+    }
+    var addresses: [String] = []
+    if let addressesPtr = addressesPtr {
+        let addressesStr = String(cString: addressesPtr)
+        addresses = addressesStr.components(separatedBy: ",")
+    }
+    let clientRef = context.client
+    Task { @MainActor [weak clientRef] in
+        clientRef?.handleTransactionEvent(
+            txid: txid,
+            confirmed: confirmed,
+            amount: amount,
+            addresses: addresses,
+            blockHeight: blockHeight > 0 ? blockHeight : nil
+        )
     }
 }
 
@@ -560,50 +597,9 @@ public class SPVClient: ObservableObject {
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
         var callbacks = FFIEventCallbacks()
-        
-        callbacks.on_block = { height, hashPtr, userData in
-            guard let userData = userData else { return }
-            
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            
-            var hash = Data()
-            if let hashPtr = hashPtr {
-                hash = Data(bytes: hashPtr, count: 32)
-            }
-            
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleBlockEvent(height: height, hash: hash)
-            }
-        }
-        
-        callbacks.on_transaction = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
-            guard let userData = userData else { return }
-            
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
-            }
-            
-            var addresses: [String] = []
-            if let addressesPtr = addressesPtr {
-                let addressesStr = String(cString: addressesPtr)
-                addresses = addressesStr.components(separatedBy: ",")
-            }
-            
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: confirmed,
-                    amount: amount,
-                    addresses: addresses,
-                    blockHeight: blockHeight > 0 ? blockHeight : nil
-                )
-            }
-        }
+
+        callbacks.on_block = onBlockCallbackC
+        callbacks.on_transaction = onTransactionCallbackC
 
         callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
             guard let userData = userData else { return }
