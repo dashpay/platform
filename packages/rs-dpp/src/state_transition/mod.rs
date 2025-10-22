@@ -118,6 +118,7 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
+use crate::state_transition::identity_credit_transfer_to_single_key_transition::IdentityCreditTransferToSingleKeyTransition;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -275,6 +276,7 @@ pub enum StateTransition {
     IdentityUpdate(IdentityUpdateTransition),
     IdentityCreditTransfer(IdentityCreditTransferTransition),
     MasternodeVote(MasternodeVoteTransition),
+    IdentityCreditTransferToSingleUseKey(IdentityCreditTransferToSingleKeyTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {

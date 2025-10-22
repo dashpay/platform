@@ -16,7 +16,7 @@ use integer_encoding::VarInt;
 
 impl Drive {
     /// Creates the initial state structure.
-    pub(super) fn create_initial_state_structure_0(
+    pub(super) fn create_initial_state_structure_v0(
         &self,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,

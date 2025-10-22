@@ -67,6 +67,7 @@ enum KnownPath {
     VersionsRoot,                                                     //Level 1
     VotesRoot,                                                        //Level 1
     GroupActionsRoot,                                                 //Level 1
+    SingleUseKeyBalancesRoot,                                         //Level 1
 }
 
 impl From<RootTree> for KnownPath {
@@ -90,6 +91,7 @@ impl From<RootTree> for KnownPath {
             RootTree::Versions => KnownPath::VersionsRoot,
             RootTree::Votes => KnownPath::VotesRoot,
             RootTree::GroupActions => KnownPath::GroupActionsRoot,
+            RootTree::SingleUseKeyBalances => KnownPath::SingleUseKeyBalancesRoot,
         }
     }
 }

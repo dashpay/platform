@@ -24,6 +24,7 @@ use rand::Rng;
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
+use serde::{Deserialize, Serialize};
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -50,6 +51,28 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Hash,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    Default,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+pub struct KeyOfType {
+    pub key_type: KeyType,
+    pub key: Vec<u8>,
 }
 
 lazy_static! {
