@@ -95,20 +95,40 @@ struct GlobalSyncIndicator: View {
     @EnvironmentObject var walletService: WalletService
     let showDetails: Bool
     
+    // Helpers
+    private var phaseTitle: String {
+        let h = min(max(walletService.headerProgress, 0.0), 1.0)
+        let fh = min(max(walletService.filterHeaderProgress, 0.0), 1.0)
+        let f = min(max(walletService.transactionProgress, 0.0), 1.0)
+        if f > 0.0 && f < 1.0 { return "Filters (\(Int(f * 100))%)" }
+        if fh > 0.0 && fh < 1.0 { return "Filter Headers (\(Int(fh * 100))%)" }
+        if h < 1.0 { return "Headers (\(Int(h * 100))%)" }
+        return "Complete"
+    }
+
+    private var fillProgress: Double {
+        let h = min(max(walletService.headerProgress, 0.0), 1.0)
+        let fh = min(max(walletService.filterHeaderProgress, 0.0), 1.0)
+        let f = min(max(walletService.transactionProgress, 0.0), 1.0)
+
+        if f > 0.0 && f < 1.0 { return f }
+        if fh > 0.0 && fh < 1.0 { return fh }
+        if h < 1.0 { return h }
+        return 1.0
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            if let progress = walletService.detailedSyncProgress as? SyncProgress {
+            if walletService.detailedSyncProgress != nil {
                 if showDetails {
                     HStack {
                         Image(systemName: "arrow.triangle.2.circlepath")
                             .font(.caption)
                             .symbolEffect(.pulse)
-                        Text("Syncing: \(Int(progress.progress * 100))%")
+                        Text("Syncing: \(phaseTitle)")
                             .font(.caption)
                         Spacer()
-                        Text("\(progress.current)/\(progress.total)")
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        // No right-side numbers in the top bar per design
                         Button(action: { walletService.stopSync() }) {
                             Image(systemName: "xmark.circle.fill")
                                 .font(.caption)
@@ -121,9 +141,10 @@ struct GlobalSyncIndicator: View {
                 }
                 // Thin progress bar always shown
                 GeometryReader { geometry in
+                    // Use current phase progress for the thin bar (filters → filter headers → headers)
                     Rectangle()
                         .fill(Color.blue)
-                        .frame(width: geometry.size.width * progress.progress)
+                        .frame(width: geometry.size.width * fillProgress)
                 }
                 .frame(height: 2)
             }

@@ -1,0 +1,306 @@
+use axum::{Router, extract::State, http::StatusCode, response::Json, routing::get};
+use serde::Serialize;
+use tokio::net::TcpListener;
+use tokio::time::{Duration, timeout};
+use tracing::{error, info};
+
+use crate::error::{DAPIResult, DapiError};
+use crate::logging::middleware::AccessLogLayer;
+
+use super::{DapiServer, state::MetricsAppState};
+
+impl DapiServer {
+    /// Launch the health and Prometheus metrics server if configured.
+    /// Binds Axum routes and wraps them with access logging when available.
+    /// Returns early when metrics are disabled.
+    pub(super) async fn start_metrics_server(&self) -> DAPIResult<()> {
+        let Some(addr) = self.config.metrics_addr()? else {
+            info!("Metrics server disabled; skipping startup");
+            return Ok(());
+        };
+
+        info!("Starting metrics server (health + Prometheus) on {}", addr);
+
+        let app_state = MetricsAppState {
+            platform_service: self.platform_service.clone(),
+            core_service: self.core_service.clone(),
+        };
+
+        let mut app = Router::new()
+            .route("/health", get(handle_health))
+            .route("/metrics", get(handle_metrics))
+            .with_state(app_state);
+
+        if let Some(ref access_logger) = self.access_logger {
+            app = app.layer(AccessLogLayer::new(access_logger.clone()));
+        }
+
+        let listener = TcpListener::bind(addr).await?;
+        axum::serve(listener, app).await?;
+
+        Ok(())
+    }
+}
+
+/// Run health checks against upstream dependencies and expose consolidated status.
+async fn handle_health(State(state): State<MetricsAppState>) -> impl axum::response::IntoResponse {
+    const HEALTH_CHECK_TIMEOUT: Duration = Duration::from_secs(3);
+
+    let platform_service = state.platform_service.clone();
+    let websocket_connected = platform_service.websocket_client.is_connected();
+    let core_client = state.core_service.core_client.clone();
+
+    let platform_result = timeout(HEALTH_CHECK_TIMEOUT, async move {
+        platform_service
+            .build_status_response_with_health()
+            .await
+            .map(|(_, health)| health)
+    });
+
+    let core_result = timeout(HEALTH_CHECK_TIMEOUT, async move {
+        core_client.get_block_count().await
+    });
+
+    let (platform_result, core_result) = tokio::join!(platform_result, core_result);
+
+    let (platform_ok, platform_payload) = match platform_result {
+        Ok(Ok(health)) => {
+            let is_healthy = health.is_healthy();
+            let payload = PlatformChecks {
+                status: if is_healthy {
+                    "ok".into()
+                } else {
+                    "degraded".into()
+                },
+                error: None,
+                drive: Some(health.drive_error.as_ref().into()),
+                tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
+                tenderdash_status: Some(health.tenderdash_status_error.as_ref().into()),
+                tenderdash_net_info: Some(health.tenderdash_netinfo_error.as_ref().into()),
+            };
+            (is_healthy, payload)
+        }
+        Ok(Err(err)) => {
+            error!(error = %err, "Platform health check failed");
+            (
+                false,
+                PlatformChecks {
+                    status: "error".into(),
+                    error: Some(health_error_label(&err.into()).to_string()),
+                    drive: None,
+                    tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
+                    tenderdash_status: None,
+                    tenderdash_net_info: None,
+                },
+            )
+        }
+        Err(_) => (
+            false,
+            PlatformChecks {
+                status: "error".into(),
+                error: Some("timeout".into()),
+                drive: None,
+                tenderdash_websocket: Some(ComponentCheck::from(websocket_connected)),
+                tenderdash_status: None,
+                tenderdash_net_info: None,
+            },
+        ),
+    };
+
+    let (core_ok, core_payload) = match core_result {
+        Ok(Ok(height)) => (
+            true,
+            CoreRpcCheck {
+                status: "ok".into(),
+                latest_block_height: Some(height),
+                error: None,
+            },
+        ),
+        Ok(Err(err)) => {
+            error!(error = %err, "Core RPC health check failed");
+            (
+                false,
+                CoreRpcCheck {
+                    status: "error".into(),
+                    latest_block_height: None,
+                    error: Some(health_error_label(&err).to_string()),
+                },
+            )
+        }
+        Err(_) => (
+            false,
+            CoreRpcCheck {
+                status: "error".into(),
+                latest_block_height: None,
+                error: Some("timeout".into()),
+            },
+        ),
+    };
+
+    let websocket_ok = websocket_connected;
+    let failures = u8::from(!platform_ok) + u8::from(!core_ok) + u8::from(!websocket_ok);
+
+    let overall_status = if failures == 0 {
+        "ok"
+    } else if failures == 1 {
+        "degraded"
+    } else {
+        "error"
+    };
+
+    let http_status = if overall_status == "ok" {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    };
+
+    let body = HealthResponse {
+        status: overall_status.to_string(),
+        timestamp: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::AutoSi, false),
+        version: env!("CARGO_PKG_VERSION"),
+        checks: Checks {
+            platform: platform_payload,
+            core_rpc: core_payload,
+        },
+    };
+
+    (http_status, Json(body))
+}
+
+/// Expose Prometheus-formatted metrics gathered from the registry.
+async fn handle_metrics() -> axum::response::Response {
+    let (body, content_type) = crate::metrics::gather_prometheus();
+    axum::response::Response::builder()
+        .status(200)
+        .header(axum::http::header::CONTENT_TYPE, content_type)
+        .body(axum::body::Body::from(body))
+        .unwrap_or_else(|_| axum::response::Response::new(axum::body::Body::from("")))
+}
+
+#[derive(Serialize)]
+struct HealthResponse {
+    status: String,
+    timestamp: String,
+    version: &'static str,
+    checks: Checks,
+}
+
+#[derive(Serialize)]
+struct Checks {
+    platform: PlatformChecks,
+    #[serde(rename = "coreRpc")]
+    core_rpc: CoreRpcCheck,
+}
+
+#[derive(Serialize)]
+struct PlatformChecks {
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    drive: Option<ComponentCheck>,
+    #[serde(
+        rename = "tenderdashWebSocket",
+        skip_serializing_if = "Option::is_none"
+    )]
+    tenderdash_websocket: Option<ComponentCheck>,
+    #[serde(rename = "tenderdashStatus", skip_serializing_if = "Option::is_none")]
+    tenderdash_status: Option<ComponentCheck>,
+    #[serde(rename = "tenderdashNetInfo", skip_serializing_if = "Option::is_none")]
+    tenderdash_net_info: Option<ComponentCheck>,
+}
+
+#[derive(Serialize)]
+struct CoreRpcCheck {
+    status: String,
+    #[serde(rename = "latestBlockHeight", skip_serializing_if = "Option::is_none")]
+    latest_block_height: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+#[derive(Serialize)]
+struct ComponentCheck {
+    status: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Produce a redacted error label suitable for public health endpoints.
+/// This keeps logs detailed while preventing information leakage over HTTP.
+fn health_error_label(err: &DapiError) -> &'static str {
+    use DapiError::*;
+
+    let label = match err {
+        Configuration(_) => "configuration error",
+        StreamingService(_) => "streaming service error",
+        Client(_) | ClientGone(_) => "client error",
+        ServerUnavailable(_, _) | Unavailable(_) | ServiceUnavailable(_) => "service unavailable",
+        Server(_) => "server error",
+        Serialization(_) | InvalidData(_) | NoValidTxProof(_) => "invalid data",
+        Transport(_) | Http(_) | WebSocket(_) | Request(_) => "transport error",
+        TenderdashClientError(_) => "tenderdash error",
+        Status(_) => "upstream returned error",
+        TaskJoin(_) => "internal task error",
+        Io(_) => "io error",
+        UrlParse(_) => "invalid url",
+        Base64Decode(_) => "invalid base64 data",
+        TransactionHashNotFound => "transaction hash missing",
+        NotFound(_) => "not found",
+        AlreadyExists(_) => "already exists",
+        InvalidRequest(_) => "invalid request",
+        InvalidArgument(_) => "invalid argument",
+        ResourceExhausted(_) => "resource exhausted",
+        Aborted(_) => "aborted",
+        Timeout(_) => "timeout",
+        Internal(_) => "internal error",
+        ConnectionClosed => "connection closed",
+        MethodNotFound(_) => "method not found",
+        ZmqConnection(_) => "zmq connection error",
+        FailedPrecondition(_) => "failed precondition",
+        // no default to ensure new errors are handled explicitly
+    };
+    tracing::trace!(error = ?err, label, "Mapping DapiError to health error label");
+
+    label
+}
+
+impl<T> From<Option<T>> for ComponentCheck
+where
+    T: Into<ComponentCheck>,
+{
+    fn from(option: Option<T>) -> Self {
+        match option {
+            Some(value) => value.into(),
+            None => Self {
+                status: "ok".into(),
+                error: None,
+            },
+        }
+    }
+}
+
+impl From<&DapiError> for ComponentCheck {
+    fn from(err: &DapiError) -> Self {
+        Self {
+            status: "error".into(),
+            error: Some(health_error_label(err).to_string()),
+        }
+    }
+}
+
+impl From<bool> for ComponentCheck {
+    fn from(is_ok: bool) -> Self {
+        if is_ok {
+            Self {
+                status: "ok".into(),
+                error: None,
+            }
+        } else {
+            Self {
+                status: "error".into(),
+                error: Some("failed".into()),
+            }
+        }
+    }
+}
