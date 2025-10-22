@@ -35,8 +35,8 @@ private func spvProgressCallback(
     guard let progressPtr = progressPtr,
           let userData = userData else { return }
     let snapshot = progressPtr.pointee
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     DispatchQueue.main.async {
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleProgressUpdate(snapshot)
     }
 }
@@ -48,60 +48,14 @@ private func spvCompletionCallback(
 ) {
     guard let userData = userData else { return }
     let errorString: String? = errorMsg.map { String(cString: $0) }
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
     DispatchQueue.main.async {
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleSyncCompletion(success: success, error: errorString)
     }
 }
 
 // Global C-compatible event callbacks that use userData context
-private func onBlockCallbackC(
-    _ height: UInt32,
-    _ hashPtr: UnsafePointer<UInt8>?,
-    _ userData: UnsafeMutableRawPointer?
-) {
-    guard let userData = userData else { return }
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-    var hash = Data()
-    if let hashPtr = hashPtr {
-        hash = Data(bytes: hashPtr, count: 32)
-    }
-    let clientRef = context.client
-    Task { @MainActor [weak clientRef] in
-        clientRef?.handleBlockEvent(height: height, hash: hash)
-    }
-}
-
-private func onTransactionCallbackC(
-    _ txidPtr: UnsafePointer<UInt8>?,
-    _ confirmed: Bool,
-    _ amount: Int64,
-    _ addressesPtr: UnsafePointer<CChar>?,
-    _ blockHeight: UInt32,
-    _ userData: UnsafeMutableRawPointer?
-) {
-    guard let userData = userData else { return }
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-    var txid = Data()
-    if let txidPtr = txidPtr {
-        txid = Data(bytes: txidPtr, count: 32)
-    }
-    var addresses: [String] = []
-    if let addressesPtr = addressesPtr {
-        let addressesStr = String(cString: addressesPtr)
-        addresses = addressesStr.components(separatedBy: ",")
-    }
-    let clientRef = context.client
-    Task { @MainActor [weak clientRef] in
-        clientRef?.handleTransactionEvent(
-            txid: txid,
-            confirmed: confirmed,
-            amount: amount,
-            addresses: addresses,
-            blockHeight: blockHeight > 0 ? blockHeight : nil
-        )
-    }
-}
+// (Event callbacks are set in setupEventCallbacks via C-compatible closures assigned to FFIEventCallbacks.)
 
 // MARK: - SPV Sync Progress
 
@@ -610,15 +564,53 @@ public class SPVClient: ObservableObject {
         
         var callbacks = FFIEventCallbacks()
 
-        callbacks.on_block = onBlockCallbackC
-        callbacks.on_transaction = onTransactionCallbackC
+        callbacks.on_block = { height, hashPtr, userData in
+            guard let userData = userData else { return }
+
+            var hash = Data()
+            if let hashPtr = hashPtr {
+                hash = Data(bytes: hashPtr, count: 32)
+            }
+
+            Task { @MainActor in
+                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+                let clientRef = context.client
+                clientRef?.handleBlockEvent(height: height, hash: hash)
+            }
+        }
+
+        callbacks.on_transaction = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
+            guard let userData = userData else { return }
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            var addresses: [String] = []
+            if let addressesPtr = addressesPtr {
+                let addressesStr = String(cString: addressesPtr)
+                addresses = addressesStr.components(separatedBy: ",")
+            }
+
+            Task { @MainActor in
+                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+                let clientRef = context.client
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: confirmed,
+                    amount: amount,
+                    addresses: addresses,
+                    blockHeight: blockHeight > 0 ? blockHeight : nil
+                )
+            }
+        }
 
         callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
             guard let userData = userData else { return }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                guard let client = clientRef else { return }
+            Task { @MainActor in
+                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+                guard let client = context.client else { return }
                 client.blocksHit &+= 1
                 client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
             }
