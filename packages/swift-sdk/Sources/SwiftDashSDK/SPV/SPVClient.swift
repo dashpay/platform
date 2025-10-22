@@ -552,7 +552,12 @@ public class SPVClient: ObservableObject {
         }
 
         // Start sync in the background to avoid blocking the main thread
+        // Copy pointer addresses to avoid capturing non-Sendable pointers inside the GCD closure
+        let clientAddr = UInt(bitPattern: clientPtr)
+        let ctxAddr = UInt(bitPattern: contextPtr)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let clientPtr = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
+                  let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
             let result = dash_spv_ffi_client_sync_to_tip_with_progress(
                 clientPtr,
                 spvProgressCallback,
