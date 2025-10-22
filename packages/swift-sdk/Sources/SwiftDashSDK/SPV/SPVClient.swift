@@ -571,40 +571,46 @@ public class SPVClient: ObservableObject {
         callbacks.on_block = { height, hashPtr, userData in
             guard let userData = userData else { return }
 
-            var hash = Data()
-            if let hashPtr = hashPtr {
-                hash = Data(bytes: UnsafeRawPointer(hashPtr), count: 32)
-            }
+            // Copy raw addresses to avoid capturing task-isolated pointers
+            let ctxAddr = UInt(bitPattern: userData)
+            let hashAddr: UInt = hashPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
 
-            let ptrVal = UInt(bitPattern: userData)
             Task { @MainActor in
-                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-                let clientRef = context.client
-                clientRef?.handleBlockEvent(height: height, hash: hash)
+
+                var hash = Data()
+                if hashAddr != 0, let raw = UnsafeRawPointer(bitPattern: hashAddr) {
+                    hash = Data(bytes: raw, count: 32)
+                }
+
+                context.client?.handleBlockEvent(height: height, hash: hash)
             }
         }
 
         callbacks.on_transaction = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
             guard let userData = userData else { return }
 
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: UnsafeRawPointer(txidPtr), count: 32)
-            }
+            let ctxAddr = UInt(bitPattern: userData)
+            let txidAddr: UInt = txidPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
+            let addrStrAddr: UInt = addressesPtr.map { UInt(bitPattern: UnsafeRawPointer($0)) } ?? 0
 
-            var addresses: [String] = []
-            if let addressesPtr = addressesPtr {
-                let addressesStr = String(cString: addressesPtr)
-                addresses = addressesStr.components(separatedBy: ",")
-            }
-
-            let ptrVal = UInt(bitPattern: userData)
             Task { @MainActor in
-                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-                let clientRef = context.client
-                clientRef?.handleTransactionEvent(
+
+                var txid = Data()
+                if txidAddr != 0, let raw = UnsafeRawPointer(bitPattern: txidAddr) {
+                    txid = Data(bytes: raw, count: 32)
+                }
+
+                var addresses: [String] = []
+                if addrStrAddr != 0, let cstr = UnsafePointer<CChar>(bitPattern: addrStrAddr) {
+                    let addressesStr = String(cString: cstr)
+                    addresses = addressesStr.components(separatedBy: ",")
+                }
+
+                context.client?.handleTransactionEvent(
                     txid: txid,
                     confirmed: confirmed,
                     amount: amount,
