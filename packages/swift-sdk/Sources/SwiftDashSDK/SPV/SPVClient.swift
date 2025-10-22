@@ -35,7 +35,9 @@ private func spvProgressCallback(
     guard let progressPtr = progressPtr,
           let userData = userData else { return }
     let snapshot = progressPtr.pointee
+    let ptrVal = UInt(bitPattern: userData)
     DispatchQueue.main.async {
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
         let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleProgressUpdate(snapshot)
     }
@@ -48,7 +50,9 @@ private func spvCompletionCallback(
 ) {
     guard let userData = userData else { return }
     let errorString: String? = errorMsg.map { String(cString: $0) }
+    let ptrVal = UInt(bitPattern: userData)
     DispatchQueue.main.async {
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
         let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleSyncCompletion(success: success, error: errorString)
     }
@@ -569,10 +573,12 @@ public class SPVClient: ObservableObject {
 
             var hash = Data()
             if let hashPtr = hashPtr {
-                hash = Data(bytes: hashPtr, count: 32)
+                hash = Data(bytes: UnsafeRawPointer(hashPtr), count: 32)
             }
 
+            let ptrVal = UInt(bitPattern: userData)
             Task { @MainActor in
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
                 let clientRef = context.client
                 clientRef?.handleBlockEvent(height: height, hash: hash)
@@ -584,7 +590,7 @@ public class SPVClient: ObservableObject {
 
             var txid = Data()
             if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
+                txid = Data(bytes: UnsafeRawPointer(txidPtr), count: 32)
             }
 
             var addresses: [String] = []
@@ -593,7 +599,9 @@ public class SPVClient: ObservableObject {
                 addresses = addressesStr.components(separatedBy: ",")
             }
 
+            let ptrVal = UInt(bitPattern: userData)
             Task { @MainActor in
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
                 let clientRef = context.client
                 clientRef?.handleTransactionEvent(
@@ -608,7 +616,9 @@ public class SPVClient: ObservableObject {
 
         callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
             guard let userData = userData else { return }
+            let ptrVal = UInt(bitPattern: userData)
             Task { @MainActor in
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
                 let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
                 guard let client = context.client else { return }
                 client.blocksHit &+= 1
