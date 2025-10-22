@@ -27,7 +27,7 @@ final class CrashDebugTests: XCTestCase {
             SDK.initialize()
             
             print("Creating SDK instance...")
-            let sdk = try SDK(network: DashSDKNetwork_SDKTestnet)
+            let sdk = try SDK(network: DashSDKNetwork(rawValue: 1))
             
             print("SDK created, checking methods...")
             
