@@ -6,6 +6,295 @@ import * as google_protobuf_wrappers_pb from "google-protobuf/google/protobuf/wr
 import * as google_protobuf_struct_pb from "google-protobuf/google/protobuf/struct_pb";
 import * as google_protobuf_timestamp_pb from "google-protobuf/google/protobuf/timestamp_pb";
 
+export class PlatformSubscriptionRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): PlatformSubscriptionRequest.PlatformSubscriptionRequestV0 | undefined;
+  setV0(value?: PlatformSubscriptionRequest.PlatformSubscriptionRequestV0): void;
+
+  getVersionCase(): PlatformSubscriptionRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PlatformSubscriptionRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: PlatformSubscriptionRequest): PlatformSubscriptionRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PlatformSubscriptionRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PlatformSubscriptionRequest;
+  static deserializeBinaryFromReader(message: PlatformSubscriptionRequest, reader: jspb.BinaryReader): PlatformSubscriptionRequest;
+}
+
+export namespace PlatformSubscriptionRequest {
+  export type AsObject = {
+    v0?: PlatformSubscriptionRequest.PlatformSubscriptionRequestV0.AsObject,
+  }
+
+  export class PlatformSubscriptionRequestV0 extends jspb.Message {
+    hasFilter(): boolean;
+    clearFilter(): void;
+    getFilter(): PlatformFilterV0 | undefined;
+    setFilter(value?: PlatformFilterV0): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): PlatformSubscriptionRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: PlatformSubscriptionRequestV0): PlatformSubscriptionRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: PlatformSubscriptionRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): PlatformSubscriptionRequestV0;
+    static deserializeBinaryFromReader(message: PlatformSubscriptionRequestV0, reader: jspb.BinaryReader): PlatformSubscriptionRequestV0;
+  }
+
+  export namespace PlatformSubscriptionRequestV0 {
+    export type AsObject = {
+      filter?: PlatformFilterV0.AsObject,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class PlatformSubscriptionResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): PlatformSubscriptionResponse.PlatformSubscriptionResponseV0 | undefined;
+  setV0(value?: PlatformSubscriptionResponse.PlatformSubscriptionResponseV0): void;
+
+  getVersionCase(): PlatformSubscriptionResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PlatformSubscriptionResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: PlatformSubscriptionResponse): PlatformSubscriptionResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PlatformSubscriptionResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PlatformSubscriptionResponse;
+  static deserializeBinaryFromReader(message: PlatformSubscriptionResponse, reader: jspb.BinaryReader): PlatformSubscriptionResponse;
+}
+
+export namespace PlatformSubscriptionResponse {
+  export type AsObject = {
+    v0?: PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.AsObject,
+  }
+
+  export class PlatformSubscriptionResponseV0 extends jspb.Message {
+    getClientSubscriptionId(): string;
+    setClientSubscriptionId(value: string): void;
+
+    hasEvent(): boolean;
+    clearEvent(): void;
+    getEvent(): PlatformEventV0 | undefined;
+    setEvent(value?: PlatformEventV0): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): PlatformSubscriptionResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: PlatformSubscriptionResponseV0): PlatformSubscriptionResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: PlatformSubscriptionResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): PlatformSubscriptionResponseV0;
+    static deserializeBinaryFromReader(message: PlatformSubscriptionResponseV0, reader: jspb.BinaryReader): PlatformSubscriptionResponseV0;
+  }
+
+  export namespace PlatformSubscriptionResponseV0 {
+    export type AsObject = {
+      clientSubscriptionId: string,
+      event?: PlatformEventV0.AsObject,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class StateTransitionResultFilter extends jspb.Message {
+  hasTxHash(): boolean;
+  clearTxHash(): void;
+  getTxHash(): Uint8Array | string;
+  getTxHash_asU8(): Uint8Array;
+  getTxHash_asB64(): string;
+  setTxHash(value: Uint8Array | string): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): StateTransitionResultFilter.AsObject;
+  static toObject(includeInstance: boolean, msg: StateTransitionResultFilter): StateTransitionResultFilter.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: StateTransitionResultFilter, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): StateTransitionResultFilter;
+  static deserializeBinaryFromReader(message: StateTransitionResultFilter, reader: jspb.BinaryReader): StateTransitionResultFilter;
+}
+
+export namespace StateTransitionResultFilter {
+  export type AsObject = {
+    txHash: Uint8Array | string,
+  }
+}
+
+export class PlatformFilterV0 extends jspb.Message {
+  hasAll(): boolean;
+  clearAll(): void;
+  getAll(): boolean;
+  setAll(value: boolean): void;
+
+  hasBlockCommitted(): boolean;
+  clearBlockCommitted(): void;
+  getBlockCommitted(): boolean;
+  setBlockCommitted(value: boolean): void;
+
+  hasStateTransitionResult(): boolean;
+  clearStateTransitionResult(): void;
+  getStateTransitionResult(): StateTransitionResultFilter | undefined;
+  setStateTransitionResult(value?: StateTransitionResultFilter): void;
+
+  getKindCase(): PlatformFilterV0.KindCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PlatformFilterV0.AsObject;
+  static toObject(includeInstance: boolean, msg: PlatformFilterV0): PlatformFilterV0.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PlatformFilterV0, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PlatformFilterV0;
+  static deserializeBinaryFromReader(message: PlatformFilterV0, reader: jspb.BinaryReader): PlatformFilterV0;
+}
+
+export namespace PlatformFilterV0 {
+  export type AsObject = {
+    all: boolean,
+    blockCommitted: boolean,
+    stateTransitionResult?: StateTransitionResultFilter.AsObject,
+  }
+
+  export enum KindCase {
+    KIND_NOT_SET = 0,
+    ALL = 1,
+    BLOCK_COMMITTED = 2,
+    STATE_TRANSITION_RESULT = 3,
+  }
+}
+
+export class PlatformEventV0 extends jspb.Message {
+  hasBlockCommitted(): boolean;
+  clearBlockCommitted(): void;
+  getBlockCommitted(): PlatformEventV0.BlockCommitted | undefined;
+  setBlockCommitted(value?: PlatformEventV0.BlockCommitted): void;
+
+  hasStateTransitionFinalized(): boolean;
+  clearStateTransitionFinalized(): void;
+  getStateTransitionFinalized(): PlatformEventV0.StateTransitionFinalized | undefined;
+  setStateTransitionFinalized(value?: PlatformEventV0.StateTransitionFinalized): void;
+
+  getEventCase(): PlatformEventV0.EventCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): PlatformEventV0.AsObject;
+  static toObject(includeInstance: boolean, msg: PlatformEventV0): PlatformEventV0.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: PlatformEventV0, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): PlatformEventV0;
+  static deserializeBinaryFromReader(message: PlatformEventV0, reader: jspb.BinaryReader): PlatformEventV0;
+}
+
+export namespace PlatformEventV0 {
+  export type AsObject = {
+    blockCommitted?: PlatformEventV0.BlockCommitted.AsObject,
+    stateTransitionFinalized?: PlatformEventV0.StateTransitionFinalized.AsObject,
+  }
+
+  export class BlockMetadata extends jspb.Message {
+    getHeight(): string;
+    setHeight(value: string): void;
+
+    getTimeMs(): string;
+    setTimeMs(value: string): void;
+
+    getBlockIdHash(): Uint8Array | string;
+    getBlockIdHash_asU8(): Uint8Array;
+    getBlockIdHash_asB64(): string;
+    setBlockIdHash(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): BlockMetadata.AsObject;
+    static toObject(includeInstance: boolean, msg: BlockMetadata): BlockMetadata.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: BlockMetadata, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): BlockMetadata;
+    static deserializeBinaryFromReader(message: BlockMetadata, reader: jspb.BinaryReader): BlockMetadata;
+  }
+
+  export namespace BlockMetadata {
+    export type AsObject = {
+      height: string,
+      timeMs: string,
+      blockIdHash: Uint8Array | string,
+    }
+  }
+
+  export class BlockCommitted extends jspb.Message {
+    hasMeta(): boolean;
+    clearMeta(): void;
+    getMeta(): PlatformEventV0.BlockMetadata | undefined;
+    setMeta(value?: PlatformEventV0.BlockMetadata): void;
+
+    getTxCount(): number;
+    setTxCount(value: number): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): BlockCommitted.AsObject;
+    static toObject(includeInstance: boolean, msg: BlockCommitted): BlockCommitted.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: BlockCommitted, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): BlockCommitted;
+    static deserializeBinaryFromReader(message: BlockCommitted, reader: jspb.BinaryReader): BlockCommitted;
+  }
+
+  export namespace BlockCommitted {
+    export type AsObject = {
+      meta?: PlatformEventV0.BlockMetadata.AsObject,
+      txCount: number,
+    }
+  }
+
+  export class StateTransitionFinalized extends jspb.Message {
+    hasMeta(): boolean;
+    clearMeta(): void;
+    getMeta(): PlatformEventV0.BlockMetadata | undefined;
+    setMeta(value?: PlatformEventV0.BlockMetadata): void;
+
+    getTxHash(): Uint8Array | string;
+    getTxHash_asU8(): Uint8Array;
+    getTxHash_asB64(): string;
+    setTxHash(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): StateTransitionFinalized.AsObject;
+    static toObject(includeInstance: boolean, msg: StateTransitionFinalized): StateTransitionFinalized.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: StateTransitionFinalized, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): StateTransitionFinalized;
+    static deserializeBinaryFromReader(message: StateTransitionFinalized, reader: jspb.BinaryReader): StateTransitionFinalized;
+  }
+
+  export namespace StateTransitionFinalized {
+    export type AsObject = {
+      meta?: PlatformEventV0.BlockMetadata.AsObject,
+      txHash: Uint8Array | string,
+    }
+  }
+
+  export enum EventCase {
+    EVENT_NOT_SET = 0,
+    BLOCK_COMMITTED = 1,
+    STATE_TRANSITION_FINALIZED = 2,
+  }
+}
+
 export class Proof extends jspb.Message {
   getGrovedbProof(): Uint8Array | string;
   getGrovedbProof_asU8(): Uint8Array;

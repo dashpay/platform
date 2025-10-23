@@ -228,12 +228,20 @@ CF_EXTERN_C_BEGIN
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamp;
 @class GetVotePollsByEndDateResponse_GetVotePollsByEndDateResponseV0_SerializedVotePollsByTimestamps;
 @class KeyRequestType;
+@class PlatformEventV0;
+@class PlatformEventV0_BlockCommitted;
+@class PlatformEventV0_BlockMetadata;
+@class PlatformEventV0_StateTransitionFinalized;
+@class PlatformFilterV0;
+@class PlatformSubscriptionRequest_PlatformSubscriptionRequestV0;
+@class PlatformSubscriptionResponse_PlatformSubscriptionResponseV0;
 @class Proof;
 @class ResponseMetadata;
 @class SearchKey;
 @class SecurityLevelMap;
 @class SpecificKeys;
 @class StateTransitionBroadcastError;
+@class StateTransitionResultFilter;
 @class WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0;
 @class WaitForStateTransitionResultResponse_WaitForStateTransitionResultResponseV0;
 
@@ -439,6 +447,222 @@ BOOL GetGroupActionSignersRequest_ActionStatus_IsValidValue(int32_t value);
  * this file and all files that it depends on.
  **/
 GPB_FINAL @interface PlatformRoot : GPBRootObject
+@end
+
+#pragma mark - PlatformSubscriptionRequest
+
+typedef GPB_ENUM(PlatformSubscriptionRequest_FieldNumber) {
+  PlatformSubscriptionRequest_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(PlatformSubscriptionRequest_Version_OneOfCase) {
+  PlatformSubscriptionRequest_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  PlatformSubscriptionRequest_Version_OneOfCase_V0 = 1,
+};
+
+/**
+ * Platform events subscription (v0)
+ **/
+GPB_FINAL @interface PlatformSubscriptionRequest : GPBMessage
+
+@property(nonatomic, readonly) PlatformSubscriptionRequest_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformSubscriptionRequest_PlatformSubscriptionRequestV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void PlatformSubscriptionRequest_ClearVersionOneOfCase(PlatformSubscriptionRequest *message);
+
+#pragma mark - PlatformSubscriptionRequest_PlatformSubscriptionRequestV0
+
+typedef GPB_ENUM(PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber) {
+  PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber_Filter = 1,
+};
+
+GPB_FINAL @interface PlatformSubscriptionRequest_PlatformSubscriptionRequestV0 : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformFilterV0 *filter;
+/** Test to see if @c filter has been set. */
+@property(nonatomic, readwrite) BOOL hasFilter;
+
+@end
+
+#pragma mark - PlatformSubscriptionResponse
+
+typedef GPB_ENUM(PlatformSubscriptionResponse_FieldNumber) {
+  PlatformSubscriptionResponse_FieldNumber_V0 = 1,
+};
+
+typedef GPB_ENUM(PlatformSubscriptionResponse_Version_OneOfCase) {
+  PlatformSubscriptionResponse_Version_OneOfCase_GPBUnsetOneOfCase = 0,
+  PlatformSubscriptionResponse_Version_OneOfCase_V0 = 1,
+};
+
+GPB_FINAL @interface PlatformSubscriptionResponse : GPBMessage
+
+@property(nonatomic, readonly) PlatformSubscriptionResponse_Version_OneOfCase versionOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformSubscriptionResponse_PlatformSubscriptionResponseV0 *v0;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'version'.
+ **/
+void PlatformSubscriptionResponse_ClearVersionOneOfCase(PlatformSubscriptionResponse *message);
+
+#pragma mark - PlatformSubscriptionResponse_PlatformSubscriptionResponseV0
+
+typedef GPB_ENUM(PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber) {
+  PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_ClientSubscriptionId = 1,
+  PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_Event = 2,
+};
+
+GPB_FINAL @interface PlatformSubscriptionResponse_PlatformSubscriptionResponseV0 : GPBMessage
+
+@property(nonatomic, readwrite, copy, null_resettable) NSString *clientSubscriptionId;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0 *event;
+/** Test to see if @c event has been set. */
+@property(nonatomic, readwrite) BOOL hasEvent;
+
+@end
+
+#pragma mark - StateTransitionResultFilter
+
+typedef GPB_ENUM(StateTransitionResultFilter_FieldNumber) {
+  StateTransitionResultFilter_FieldNumber_TxHash = 1,
+};
+
+/**
+ * Initial placeholder filter and event to be refined during integration
+ * Filter for StateTransitionResult events
+ **/
+GPB_FINAL @interface StateTransitionResultFilter : GPBMessage
+
+/** When set, only match StateTransitionResult events for this tx hash. */
+@property(nonatomic, readwrite, copy, null_resettable) NSData *txHash;
+/** Test to see if @c txHash has been set. */
+@property(nonatomic, readwrite) BOOL hasTxHash;
+
+@end
+
+#pragma mark - PlatformFilterV0
+
+typedef GPB_ENUM(PlatformFilterV0_FieldNumber) {
+  PlatformFilterV0_FieldNumber_All = 1,
+  PlatformFilterV0_FieldNumber_BlockCommitted = 2,
+  PlatformFilterV0_FieldNumber_StateTransitionResult = 3,
+};
+
+typedef GPB_ENUM(PlatformFilterV0_Kind_OneOfCase) {
+  PlatformFilterV0_Kind_OneOfCase_GPBUnsetOneOfCase = 0,
+  PlatformFilterV0_Kind_OneOfCase_All = 1,
+  PlatformFilterV0_Kind_OneOfCase_BlockCommitted = 2,
+  PlatformFilterV0_Kind_OneOfCase_StateTransitionResult = 3,
+};
+
+GPB_FINAL @interface PlatformFilterV0 : GPBMessage
+
+@property(nonatomic, readonly) PlatformFilterV0_Kind_OneOfCase kindOneOfCase;
+
+/** subscribe to all platform events */
+@property(nonatomic, readwrite) BOOL all;
+
+/** subscribe to BlockCommitted events only */
+@property(nonatomic, readwrite) BOOL blockCommitted;
+
+/** subscribe to StateTransitionResult events (optionally filtered by */
+@property(nonatomic, readwrite, strong, null_resettable) StateTransitionResultFilter *stateTransitionResult;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'kind'.
+ **/
+void PlatformFilterV0_ClearKindOneOfCase(PlatformFilterV0 *message);
+
+#pragma mark - PlatformEventV0
+
+typedef GPB_ENUM(PlatformEventV0_FieldNumber) {
+  PlatformEventV0_FieldNumber_BlockCommitted = 1,
+  PlatformEventV0_FieldNumber_StateTransitionFinalized = 2,
+};
+
+typedef GPB_ENUM(PlatformEventV0_Event_OneOfCase) {
+  PlatformEventV0_Event_OneOfCase_GPBUnsetOneOfCase = 0,
+  PlatformEventV0_Event_OneOfCase_BlockCommitted = 1,
+  PlatformEventV0_Event_OneOfCase_StateTransitionFinalized = 2,
+};
+
+GPB_FINAL @interface PlatformEventV0 : GPBMessage
+
+@property(nonatomic, readonly) PlatformEventV0_Event_OneOfCase eventOneOfCase;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_BlockCommitted *blockCommitted;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_StateTransitionFinalized *stateTransitionFinalized;
+
+@end
+
+/**
+ * Clears whatever value was set for the oneof 'event'.
+ **/
+void PlatformEventV0_ClearEventOneOfCase(PlatformEventV0 *message);
+
+#pragma mark - PlatformEventV0_BlockMetadata
+
+typedef GPB_ENUM(PlatformEventV0_BlockMetadata_FieldNumber) {
+  PlatformEventV0_BlockMetadata_FieldNumber_Height = 1,
+  PlatformEventV0_BlockMetadata_FieldNumber_TimeMs = 2,
+  PlatformEventV0_BlockMetadata_FieldNumber_BlockIdHash = 3,
+};
+
+GPB_FINAL @interface PlatformEventV0_BlockMetadata : GPBMessage
+
+@property(nonatomic, readwrite) uint64_t height;
+
+@property(nonatomic, readwrite) uint64_t timeMs;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *blockIdHash;
+
+@end
+
+#pragma mark - PlatformEventV0_BlockCommitted
+
+typedef GPB_ENUM(PlatformEventV0_BlockCommitted_FieldNumber) {
+  PlatformEventV0_BlockCommitted_FieldNumber_Meta = 1,
+  PlatformEventV0_BlockCommitted_FieldNumber_TxCount = 2,
+};
+
+GPB_FINAL @interface PlatformEventV0_BlockCommitted : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_BlockMetadata *meta;
+/** Test to see if @c meta has been set. */
+@property(nonatomic, readwrite) BOOL hasMeta;
+
+@property(nonatomic, readwrite) uint32_t txCount;
+
+@end
+
+#pragma mark - PlatformEventV0_StateTransitionFinalized
+
+typedef GPB_ENUM(PlatformEventV0_StateTransitionFinalized_FieldNumber) {
+  PlatformEventV0_StateTransitionFinalized_FieldNumber_Meta = 1,
+  PlatformEventV0_StateTransitionFinalized_FieldNumber_TxHash = 2,
+};
+
+GPB_FINAL @interface PlatformEventV0_StateTransitionFinalized : GPBMessage
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_BlockMetadata *meta;
+/** Test to see if @c meta has been set. */
+@property(nonatomic, readwrite) BOOL hasMeta;
+
+@property(nonatomic, readwrite, copy, null_resettable) NSData *txHash;
+
 @end
 
 #pragma mark - Proof
@@ -3362,7 +3586,7 @@ GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosRespon
 /** The actual finalized information about the requested epochs */
 @property(nonatomic, readwrite, strong, null_resettable) GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos *epochs;
 
-/** Cryptographic proof of the finalized epoch information, if requested */
+/** Cryptographic proof of the finalized epoch */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -3384,7 +3608,8 @@ typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0
 };
 
 /**
- * FinalizedEpochInfos holds a collection of finalized epoch information entries
+ * FinalizedEpochInfos holds a collection of finalized epoch information
+ * entries
  **/
 GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos : GPBMessage
 
@@ -6438,7 +6663,10 @@ GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpe
 /** 32‑byte token identifier */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
 
-/** This should be set if you wish to get back the last claim info as a specific type */
+/**
+ * This should be set if you wish to get back the last claim info as a
+ * specific type
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo *contractInfo;
 /** Test to see if @c contractInfo has been set. */
 @property(nonatomic, readwrite) BOOL hasContractInfo;
