@@ -14,6 +14,7 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
  * @param {HomeDir} homeDir
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {startNodeTask}
  */
 export default function startNodeTaskFactory(
@@ -25,7 +26,19 @@ export default function startNodeTaskFactory(
   getConnectionHost,
   ensureFileMountExists,
   homeDir,
+  getConfigProfiles,
 ) {
+  function getPlatformProfiles(config) {
+    const platformProfiles = getConfigProfiles(config)
+      .filter((profile) => profile.startsWith('platform'));
+
+    if (platformProfiles.length === 0) {
+      platformProfiles.push('platform');
+    }
+
+    return Array.from(new Set(platformProfiles));
+  }
+
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
@@ -84,10 +97,7 @@ export default function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
 
           if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -117,10 +127,7 @@ export default function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
 
           await dockerCompose.up(config, { profiles });
         },

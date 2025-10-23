@@ -7,13 +7,26 @@ import waitForDKGWindowPass from '../../core/quorum/waitForDKGWindowPass.js';
  * @param {DockerCompose} dockerCompose
  * @param {createRpcClient} createRpcClient
  * @param {getConnectionHost} getConnectionHost
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {stopNodeTask}
  */
 export default function stopNodeTaskFactory(
   dockerCompose,
   createRpcClient,
   getConnectionHost,
+  getConfigProfiles,
 ) {
+  function getPlatformProfiles(config) {
+    const platformProfiles = getConfigProfiles(config)
+      .filter((profile) => profile.startsWith('platform'));
+
+    if (platformProfiles.length === 0) {
+      platformProfiles.push('platform');
+    }
+
+    return Array.from(new Set(platformProfiles));
+  }
+
   /**
    * Stop node
    * @typedef stopNodeTask
@@ -27,10 +40,7 @@ export default function stopNodeTaskFactory(
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
 
           if (!await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Node is not running');
@@ -70,10 +80,8 @@ export default function stopNodeTaskFactory(
       {
         title: `Stopping ${config.getName()} node`,
         task: async (ctx) => {
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
+
           await dockerCompose.stop(config, { profiles });
         },
       },
