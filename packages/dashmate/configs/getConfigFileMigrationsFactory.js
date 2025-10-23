@@ -1205,6 +1205,17 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '2.1.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2-rc';
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.5';
+          });
+
+        return configFile;
+      },
     };
   }
 
