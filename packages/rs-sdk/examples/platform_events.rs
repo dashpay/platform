@@ -24,6 +24,7 @@ mod subscribe {
     use rs_dapi_client::{Address, AddressList};
     use serde::Deserialize;
     use std::str::FromStr;
+    use tracing::info;
     use tracing_subscriber::EnvFilter;
     use zeroize::Zeroizing;
 
@@ -112,7 +113,7 @@ mod subscribe {
             .await
             .expect("subscribe all");
 
-        println!("Subscriptions created. Waiting for events... (Ctrl+C to exit)");
+        info!("Subscriptions created. Waiting for events... (Ctrl+C to exit)");
 
         let block_worker = tokio::spawn(worker(block_stream, "BlockCommitted"));
         let str_worker = tokio::spawn(worker(str_stream, "StateTransitionResult"));
@@ -124,7 +125,7 @@ mod subscribe {
         let abort_all = all_worker.abort_handle();
         tokio::spawn(async move {
             tokio::signal::ctrl_c().await.ok();
-            println!("Ctrl+C received, stopping...");
+            info!("Ctrl+C received, stopping...");
             abort_block.abort();
             abort_str.abort();
             abort_all.abort();
@@ -145,8 +146,8 @@ mod subscribe {
                                 match event {
                                     PlatformEvent::BlockCommitted(bc) => {
                                         if let Some(meta) = bc.meta {
-                                            println!(
-                                                "{label}: id={sub_id} height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                            info!(
+                                                "{label}: sub_id={sub_id} height={} time_ms={} tx_count={} block_id_hash=0x{}",
                                                 meta.height,
                                                 meta.time_ms,
                                                 bc.tx_count,
