@@ -13,7 +13,7 @@ module.exports = {
     // that breaks test suite and application logic. Temporary solution is to hardcode
     // reliable DCG testnet masternodes to connect. Should be removed when PoSe is introduced.
     // Generate list with:
-    //  curl https://quorums.testnet.networks.dash.org/masternodes | jq 'select(.success) | .data | map(select(.status=="ENABLED" and .versionCheck=="success") | .address | sub(":[0-9]+$"; ":1443")) | sort_by( split(":")[0] | split(".") | map(tonumber) )'
+    //  curl https://quorums.testnet.networks.dash.org/masternodes | jq 'select(.success) | .data | map(select(.status=="ENABLED" and .versionCheck=="success") | .address | sub(":[0-9]+$"; ":1443")) | sort_by( split(":")[0] | split(".") | map(tonumber) )' // eslint-disable-line max-len
     dapiAddressesWhiteList: [
       '34.214.48.68:1443',
       '35.82.197.197:1443',
@@ -36,7 +36,7 @@ module.exports = {
       '54.68.235.201:1443',
       '54.149.33.167:1443',
       '54.187.14.232:1443',
-      '54.201.32.131:1443'
+      '54.201.32.131:1443',
     ],
   },
   local: {
