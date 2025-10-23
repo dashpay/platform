@@ -54,7 +54,7 @@ use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -69,7 +69,16 @@ pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
     event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
     /// background worker tasks
-    workers: Arc<Mutex<tokio::task::JoinSet<()>>>,
+    workers: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+}
+
+impl Drop for QueryService {
+    fn drop(&mut self) {
+        let mut workers = self.workers.lock().unwrap();
+        for handle in workers.drain(..) {
+            handle.abort();
+        }
+    }
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -88,7 +97,7 @@ impl QueryService {
         Self {
             platform,
             event_bus,
-            workers: Arc::new(Mutex::new(tokio::task::JoinSet::new())),
+            workers: Mutex::new(Vec::new()),
         }
     }
 
@@ -881,15 +890,16 @@ impl PlatformService for QueryService {
             }
         };
 
-        if req_v0.client_subscription_id.is_empty() {
-            tracing::debug!("subscribe_platform_events: missing client_subscription_id");
-            return Err(Status::invalid_argument(
-                "client_subscription_id is required",
-            ));
-        }
-
         let filter = req_v0.filter.unwrap_or_default();
-        let subscription_id = req_v0.client_subscription_id.clone();
+        if filter.kind.is_none() {
+            tracing::warn!("subscribe_platform_events: filter kind is not specified");
+            return Err(Status::invalid_argument("filter kind is not specified"));
+        }
+        let subscription_id = format!("{:X}", rand::random::<u64>());
+        tracing::trace!(
+            subscription_id = %subscription_id,
+            "subscribe_platform_events: generated subscription id"
+        );
 
         let subscription = self
             .event_bus
@@ -900,8 +910,27 @@ impl PlatformService for QueryService {
             PLATFORM_EVENTS_STREAM_BUFFER,
         );
 
-        let mut workers = self.workers.lock().unwrap();
-        workers.spawn(async move {
+        let handshake_tx = downstream_tx.clone();
+        {
+            let subscription_id = subscription_id.clone();
+            let handshake = PlatformSubscriptionResponse {
+                version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                    client_subscription_id: subscription_id.clone(),
+                    event: None,
+                })),
+            };
+
+            if let Err(err) = handshake_tx.send(Ok(handshake)).await {
+                tracing::debug!(
+                    subscription_id = %subscription_id,
+                    error = %err,
+                    "subscribe_platform_events: client disconnected before handshake"
+                );
+                return Err(Status::cancelled("client disconnected before handshake"));
+            }
+        }
+
+        let worker = tokio::task::spawn(async move {
             let handle = subscription;
             while let Some(event) = handle.recv().await {
                 let response = PlatformSubscriptionResponse {
@@ -924,6 +953,7 @@ impl PlatformService for QueryService {
                 "subscribe_platform_events: event stream completed"
             );
         });
+        self.workers.lock().unwrap().push(worker);
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }

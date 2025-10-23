@@ -24,6 +24,7 @@ mod subscribe {
     use rs_dapi_client::{Address, AddressList};
     use serde::Deserialize;
     use std::str::FromStr;
+    use tracing_subscriber::EnvFilter;
     use zeroize::Zeroizing;
 
     #[derive(Debug, Deserialize)]
@@ -66,7 +67,9 @@ mod subscribe {
 
     #[tokio::main(flavor = "multi_thread", worker_threads = 2)]
     pub(super) async fn main() {
-        tracing_subscriber::fmt::init();
+        tracing_subscriber::fmt()
+            .with_env_filter(EnvFilter::try_from_default_env().unwrap_or(EnvFilter::new("info")))
+            .init();
 
         let config = Config::load();
         let sdk = setup_sdk(&config);
@@ -78,7 +81,7 @@ mod subscribe {
         let filter_block = PlatformFilterV0 {
             kind: Some(FilterKind::BlockCommitted(true)),
         };
-        let (block_id, block_stream) = sdk
+        let block_stream = sdk
             .subscribe_platform_events(filter_block)
             .await
             .expect("subscribe block_committed");
@@ -95,7 +98,7 @@ mod subscribe {
                 },
             )),
         };
-        let (str_id, str_stream) = sdk
+        let str_stream = sdk
             .subscribe_platform_events(filter_str)
             .await
             .expect("subscribe state_transition_result");
@@ -104,21 +107,16 @@ mod subscribe {
         let filter_all = PlatformFilterV0 {
             kind: Some(FilterKind::All(true)),
         };
-        let (all_id, all_stream) = sdk
+        let all_stream = sdk
             .subscribe_platform_events(filter_all)
             .await
             .expect("subscribe all");
 
-        println!("Subscribed: BlockCommitted id={block_id}, STR id={str_id}, All id={all_id}");
-        println!("Waiting for events... (Ctrl+C to exit)");
+        println!("Subscriptions created. Waiting for events... (Ctrl+C to exit)");
 
-        let block_worker =
-            tokio::spawn(worker(block_stream, format!("BlockCommitted ({block_id})")));
-        let str_worker = tokio::spawn(worker(
-            str_stream,
-            format!("StateTransitionResult ({str_id})"),
-        ));
-        let all_worker = tokio::spawn(worker(all_stream, format!("All ({all_id})")));
+        let block_worker = tokio::spawn(worker(block_stream, "BlockCommitted"));
+        let str_worker = tokio::spawn(worker(str_stream, "StateTransitionResult"));
+        let all_worker = tokio::spawn(worker(all_stream, "AllEvents"));
 
         // Handle Ctrl+C to remove subscriptions and exit
         let abort_block = block_worker.abort_handle();
@@ -136,7 +134,7 @@ mod subscribe {
         let _ = tokio::join!(block_worker, str_worker, all_worker);
     }
 
-    async fn worker(mut stream: Streaming<PlatformSubscriptionResponse>, label: String) {
+    async fn worker(mut stream: Streaming<PlatformSubscriptionResponse>, label: &str) {
         while let Some(message) = stream.next().await {
             match message {
                 Ok(response) => {

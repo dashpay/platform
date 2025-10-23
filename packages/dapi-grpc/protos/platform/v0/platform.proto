@@ -9,8 +9,7 @@ import "google/protobuf/timestamp.proto";
 // Platform events subscription (v0)
 message PlatformSubscriptionRequest {
   message PlatformSubscriptionRequestV0 {
-    string client_subscription_id = 1;
-    PlatformFilterV0 filter = 2;
+    PlatformFilterV0 filter = 1;
   }
   oneof version { PlatformSubscriptionRequestV0 v0 = 1; }
 }
