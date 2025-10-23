@@ -24,7 +24,7 @@ enum Network: String, CaseIterable, Codable {
         case .testnet:
             return DashSDKNetwork(rawValue: 1)
         case .devnet:
-            return DashSDKNetwork(rawValue: 2)
+            return DashSDKNetwork(rawValue: 3)
         }
     }
     
