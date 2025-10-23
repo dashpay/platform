@@ -26,7 +26,7 @@ extension SPVClient {
 }
 
 // MARK: - C Callback Functions
-// These must be global functions to be used as C function pointers
+// Use top-level C-compatible functions to avoid actor-isolation init issues
 
 private func spvProgressCallback(
     progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
@@ -35,8 +35,10 @@ private func spvProgressCallback(
     guard let progressPtr = progressPtr,
           let userData = userData else { return }
     let snapshot = progressPtr.pointee
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+    let ptrVal = UInt(bitPattern: userData)
     DispatchQueue.main.async {
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleProgressUpdate(snapshot)
     }
 }
@@ -48,9 +50,77 @@ private func spvCompletionCallback(
 ) {
     guard let userData = userData else { return }
     let errorString: String? = errorMsg.map { String(cString: $0) }
-    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+    let ptrVal = UInt(bitPattern: userData)
     DispatchQueue.main.async {
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
         context.handleSyncCompletion(success: success, error: errorString)
+    }
+}
+
+// Global C-compatible event callbacks that use userData context
+private typealias Byte32 = (
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
+    UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8
+)
+
+private func onBlockCallbackC(
+    _ height: UInt32,
+    _ hashPtr: UnsafePointer<Byte32>?,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    guard let userData = userData else { return }
+    // Synchronously copy 32-byte hash into Swift-owned buffer to avoid TOCTOU
+    var hashBytes: [UInt8] = []
+    if let hashPtr = hashPtr {
+        let raw = UnsafeRawPointer(hashPtr).assumingMemoryBound(to: UInt8.self)
+        let buf = UnsafeBufferPointer(start: raw, count: 32)
+        hashBytes = Array(buf)
+    }
+    let ctxAddr = UInt(bitPattern: userData)
+    Task { @MainActor in
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+        let hashData = Data(hashBytes)
+        context.client?.handleBlockEvent(height: height, hash: hashData)
+    }
+}
+
+private func onTransactionCallbackC(
+    _ txidPtr: UnsafePointer<Byte32>?,
+    _ confirmed: Bool,
+    _ amount: Int64,
+    _ addressesPtr: UnsafePointer<CChar>?,
+    _ blockHeight: UInt32,
+    _ userData: UnsafeMutableRawPointer?
+) {
+    guard let userData = userData else { return }
+    // Synchronously copy 32-byte txid and address string to Swift-owned values
+    var txidBytes: [UInt8] = []
+    if let txidPtr = txidPtr {
+        let raw = UnsafeRawPointer(txidPtr).assumingMemoryBound(to: UInt8.self)
+        let buf = UnsafeBufferPointer(start: raw, count: 32)
+        txidBytes = Array(buf)
+    }
+    var addresses: [String] = []
+    if let addressesPtr = addressesPtr {
+        let addressesStr = String(cString: addressesPtr)
+        addresses = addressesStr.components(separatedBy: ",")
+    }
+    let ctxAddr = UInt(bitPattern: userData)
+    Task { @MainActor in
+        guard let userData = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
+        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+        let txid = Data(txidBytes)
+        context.client?.handleTransactionEvent(
+            txid: txid,
+            confirmed: confirmed,
+            amount: amount,
+            addresses: addresses,
+            blockHeight: blockHeight > 0 ? blockHeight : nil
+        )
     }
 }
 
@@ -218,12 +288,12 @@ public class SPVClient: ObservableObject {
 
         // Create configuration based on network raw value
         let configPtr: UnsafeMutablePointer<FFIClientConfig>? = {
-            switch network {
-            case DashSDKNetwork(rawValue: 0):
+            switch network.rawValue {
+            case 0:
                 return dash_spv_ffi_config_mainnet()
-            case DashSDKNetwork(rawValue: 1):
+            case 1:
                 return dash_spv_ffi_config_testnet()
-            case DashSDKNetwork(rawValue: 2):
+            case 3:
                 // Map devnet to custom FFINetwork value 3
                 return dash_spv_ffi_config_new(FFINetwork(rawValue: 3))
             default:
@@ -487,7 +557,12 @@ public class SPVClient: ObservableObject {
         }
 
         // Start sync in the background to avoid blocking the main thread
+        // Copy pointer addresses to avoid capturing non-Sendable pointers inside the GCD closure
+        let clientAddr = UInt(bitPattern: clientPtr)
+        let ctxAddr = UInt(bitPattern: contextPtr)
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let clientPtr = UnsafeMutablePointer<FFIDashSpvClient>(bitPattern: clientAddr),
+                  let contextPtr = UnsafeMutableRawPointer(bitPattern: ctxAddr) else { return }
             let result = dash_spv_ffi_client_sync_to_tip_with_progress(
                 clientPtr,
                 spvProgressCallback,
@@ -560,57 +635,18 @@ public class SPVClient: ObservableObject {
         let contextPtr = Unmanaged.passUnretained(context).toOpaque()
         
         var callbacks = FFIEventCallbacks()
-        
-        callbacks.on_block = { height, hashPtr, userData in
-            guard let userData = userData else { return }
-            
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            
-            var hash = Data()
-            if let hashPtr = hashPtr {
-                hash = Data(bytes: hashPtr, count: 32)
-            }
-            
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleBlockEvent(height: height, hash: hash)
-            }
-        }
-        
-        callbacks.on_transaction = { txidPtr, confirmed, amount, addressesPtr, blockHeight, userData in
-            guard let userData = userData else { return }
-            
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            
-            var txid = Data()
-            if let txidPtr = txidPtr {
-                txid = Data(bytes: txidPtr, count: 32)
-            }
-            
-            var addresses: [String] = []
-            if let addressesPtr = addressesPtr {
-                let addressesStr = String(cString: addressesPtr)
-                addresses = addressesStr.components(separatedBy: ",")
-            }
-            
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                clientRef?.handleTransactionEvent(
-                    txid: txid,
-                    confirmed: confirmed,
-                    amount: amount,
-                    addresses: addresses,
-                    blockHeight: blockHeight > 0 ? blockHeight : nil
-                )
-            }
-        }
+
+        // Assign C-compatible top-level functions which match the imported C signatures
+        callbacks.on_block = onBlockCallbackC
+        callbacks.on_transaction = onTransactionCallbackC
 
         callbacks.on_compact_filter_matched = { _blockHashPtr, _scripts, _wallet, userData in
             guard let userData = userData else { return }
-            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-            let clientRef = context.client
-            Task { @MainActor [weak clientRef] in
-                guard let client = clientRef else { return }
+            let ptrVal = UInt(bitPattern: userData)
+            Task { @MainActor in
+                guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
+                let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+                guard let client = context.client else { return }
                 client.blocksHit &+= 1
                 client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
             }
@@ -624,7 +660,7 @@ public class SPVClient: ObservableObject {
     // MARK: - Filter progress event handler
     // MARK: - Event Handlers
     
-    private func handleBlockEvent(height: UInt32, hash: Data) {
+    fileprivate func handleBlockEvent(height: UInt32, hash: Data) {
         let block = SPVBlockEvent(
             height: height,
             hash: hash,
@@ -706,7 +742,7 @@ public class SPVClient: ObservableObject {
         }
     }
     
-    private func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
+    fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
         let transaction = SPVTransactionEvent(
             txid: txid,
             confirmed: confirmed,
@@ -808,15 +844,11 @@ public class SPVClient: ObservableObject {
     public func getLatestCheckpointHeight() -> UInt32? {
         // Derive FFINetwork matching how we built config
         let ffiNet: FFINetwork
-        switch network {
-        case DashSDKNetwork(rawValue: 0): // mainnet
-            ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): // testnet
-            ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): // devnet
-            ffiNet = FFINetwork(rawValue: 3)
-        default:
-            ffiNet = FFINetwork(rawValue: 1)
+        switch network.rawValue {
+        case 0: ffiNet = FFINetwork(rawValue: 0)
+        case 1: ffiNet = FFINetwork(rawValue: 1)
+        case 3: ffiNet = FFINetwork(rawValue: 3)
+        default: ffiNet = FFINetwork(rawValue: 1)
         }
 
         var outHeight: UInt32 = 0
@@ -832,15 +864,11 @@ public class SPVClient: ObservableObject {
     /// without depending on the client's configured network.
     public static func latestCheckpointHeight(forNetwork net: DashSDKNetwork) -> UInt32? {
         let ffiNet: FFINetwork
-        switch net {
-        case DashSDKNetwork(rawValue: 0): // mainnet
-            ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): // testnet
-            ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): // devnet
-            ffiNet = FFINetwork(rawValue: 3)
-        default:
-            ffiNet = FFINetwork(rawValue: 1)
+        switch net.rawValue {
+        case 0: ffiNet = FFINetwork(rawValue: 0)
+        case 1: ffiNet = FFINetwork(rawValue: 1)
+        case 3: ffiNet = FFINetwork(rawValue: 3)
+        default: ffiNet = FFINetwork(rawValue: 1)
         }
 
         var outHeight: UInt32 = 0
@@ -855,11 +883,11 @@ public class SPVClient: ObservableObject {
     /// Returns the checkpoint height at or before a given UNIX timestamp (seconds) for this network
     public func getCheckpointHeight(beforeTimestamp timestamp: UInt32) -> UInt32? {
         let ffiNet: FFINetwork
-        switch network {
-        case DashSDKNetwork(rawValue: 0): ffiNet = FFINetwork(rawValue: 0)
-        case DashSDKNetwork(rawValue: 1): ffiNet = FFINetwork(rawValue: 1)
-        case DashSDKNetwork(rawValue: 2): ffiNet = FFINetwork(rawValue: 3)
-        default: ffiNet = FFINetwork(rawValue: 1)
+        switch network.rawValue {
+            case 0: ffiNet = FFINetwork(rawValue: 0)
+            case 1: ffiNet = FFINetwork(rawValue: 1)
+            case 3: ffiNet = FFINetwork(rawValue: 3)
+            default: ffiNet = FFINetwork(rawValue: 1)
         }
         var outHeight: UInt32 = 0
         var outHash = [UInt8](repeating: 0, count: 32)
