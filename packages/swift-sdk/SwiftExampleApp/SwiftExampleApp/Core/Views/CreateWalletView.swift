@@ -289,7 +289,8 @@ struct CreateWalletView: View {
                     mnemonic: mnemonic,
                     pin: walletPin,
                     network: primaryNetwork,
-                    networks: selectedNetworks
+                    networks: selectedNetworks,
+                    isImport: showImportOption
                 )
 
                 // Update wallet.networks bitfield to reflect all user selections
