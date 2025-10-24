@@ -63,7 +63,7 @@ RUN set -ex; \
     rm /tmp/cargo-binstall; \
     cargo binstall -V
 
-RUN cargo binstall wasm-bindgen-cli@0.2.100 --locked \
+RUN cargo binstall wasm-bindgen-cli@0.2.103 --locked \
                                            --no-discover-github-token \
                                            --disable-telemetry \
                                            --no-track \

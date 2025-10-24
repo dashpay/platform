@@ -33,8 +33,65 @@ struct CoreContentView: View {
     
     // Computed properties to ensure progress values are always valid
     private var safeHeaderProgress: Double { min(max(walletService.headerProgress, 0.0), 1.0) }
-    private var safeMasternodeProgress: Double { min(max(walletService.masternodeProgress, 0.0), 1.0) }
-    private var safeTransactionProgress: Double { min(max(walletService.transactionProgress, 0.0), 1.0) }
+    private var safeFilterHeaderProgress: Double { min(max(walletService.filterHeaderProgress, 0.0), 1.0) }
+    private var safeTransactionProgress: Double {
+        // Use only the event-driven value to avoid misleading jumps
+        min(max(walletService.transactionProgress, 0.0), 1.0)
+    }
+
+    // Display helpers
+    private var headerHeightsDisplay: String? {
+        let cur = max(walletService.headerCurrentHeight, 0)
+        let tot = walletService.headerTargetHeight
+
+        // Format current height allowing zero to render as "0" rather than "—"
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+        let curStr = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        // When the chain tip is unknown (tot <= 0) fall back to the current baseline only.
+        guard tot > 0 else { return curStr }
+
+        let totStr = formattedHeight(tot)
+        return "\(curStr)/\(totStr)"
+    }
+
+    private var filterHeaderHeightsDisplay: String? {
+        let cur = max(walletService.latestFilterHeaderHeight, 0)
+        let tot = walletService.headerTargetHeight
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+
+        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        guard tot > 0 else { return numerator }
+
+        let denominator = formattedHeight(tot)
+        return "\(numerator)/\(denominator)"
+    }
+
+    private var filterHeightsDisplay: String? {
+        let cur = max(walletService.latestFilterHeight, 0)
+        let tot = walletService.headerTargetHeight
+
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.groupingSeparator = ","
+        formatter.decimalSeparator = "."
+
+        let numerator = formatter.string(from: NSNumber(value: cur)) ?? String(cur)
+
+        // When the chain tip is unknown (tot <= 0) show only the baseline.
+        guard tot > 0 else { return numerator }
+
+        let denominator = formattedHeight(tot)
+        return "\(numerator)/\(denominator)"
+    }
     
 var body: some View {
     List {
@@ -42,19 +99,9 @@ var body: some View {
             Section("Sync Status") {
                 VStack(spacing: 16) {
                     // Main sync control
-                    HStack {
-                        if walletService.isSyncing {
-                            Label("Syncing", systemImage: "arrow.triangle.2.circlepath")
-                                .font(.headline)
-                                .foregroundColor(.blue)
-                        } else {
-                            Label("Sync Paused", systemImage: "pause.circle")
-                                .font(.headline)
-                                .foregroundColor(.secondary)
-                        }
-                        
+                    HStack(spacing: 12) {
                         Spacer()
-                        
+
                         Button(action: toggleSync) {
                             HStack(spacing: 4) {
                                 Image(systemName: walletService.isSyncing ? "pause.fill" : "play.fill")
@@ -66,6 +113,20 @@ var body: some View {
                             .foregroundColor(.white)
                             .cornerRadius(8)
                         }
+                        .buttonStyle(.plain)
+
+                        Button(action: clearSyncData) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                Text("Clear")
+                            }
+                            .padding(.horizontal, 16)
+                            .padding(.vertical, 8)
+                            .background(Color.red)
+                            .foregroundColor(.white)
+                            .cornerRadius(8)
+                        }
+                        .buttonStyle(.plain)
                     }
                     
                     // Headers sync progress
@@ -74,29 +135,46 @@ var body: some View {
                         progress: safeHeaderProgress,
                         detail: "\(Int(safeHeaderProgress * 100))% complete",
                         icon: "doc.text",
-                        trailingValue: formattedHeight(walletService.latestHeaderHeight),
+                        trailingValue: headerHeightsDisplay,
                         onRestart: restartHeaderSync
                     )
-                    
-                    // Masternode list sync progress
+
+                    // Filter header sync progress (BIP157 stage 2)
                     SyncProgressRow(
-                        title: "Masternode List",
-                        progress: safeMasternodeProgress,
-                        detail: "\(Int(safeMasternodeProgress * 100))% complete",
-                        icon: "server.rack",
-                        trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
-                        onRestart: restartMasternodeSync
+                        title: "Filter Headers",
+                        progress: safeFilterHeaderProgress,
+                        detail: "\(Int(safeFilterHeaderProgress * 100))% complete",
+                        icon: "line.3.horizontal.decrease.circle",
+                        trailingValue: filterHeaderHeightsDisplay,
+                        onRestart: restartFilterHeaderSync
                     )
                     
-                    // Transactions sync progress (filters/blocks)
+                    if walletService.shouldSyncMasternodes {
+                        // Masternode list sync progress
+                        // TODO: Populate with real masternode sync metrics when exposed via FFI.
+                        SyncProgressRow(
+                            title: "Masternode List",
+                            progress: walletService.masternodeProgress,
+                            detail: "\(Int(walletService.masternodeProgress * 100))% complete",
+                            icon: "server.rack",
+                            trailingValue: formattedHeight(walletService.latestMasternodeListHeight),
+                            onRestart: restartMasternodeSync
+                        )
+                    }
+
+                    // Compact filters download progress (BIP157 stage 3)
                     SyncProgressRow(
-                        title: "Transactions",
+                        title: "Filters",
                         progress: safeTransactionProgress,
-                        detail: "Filters & Blocks: \(Int(safeTransactionProgress * 100))%",
+                        detail: "Compact Filters: \(Int(safeTransactionProgress * 100))%",
                         icon: "arrow.left.arrow.right",
-                        trailingValue: formattedHeight(walletService.latestFilterHeight),
+                        trailingValue: filterHeightsDisplay,
                         onRestart: restartTransactionSync
                     )
+                    // Blocks hit counter
+                    Text("Blocks hit: \(walletService.blocksHit)")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
                 }
                 .padding(.vertical, 8)
             }
@@ -195,19 +273,30 @@ var body: some View {
             print("Restarting header sync...")
         }
     }
-    
+
+    private func restartFilterHeaderSync() {
+        if walletService.isSyncing {
+            // TODO: Call walletService.restartFilterHeaderSync() when implemented
+            print("Restarting filter header sync...")
+        }
+    }
+
     private func restartMasternodeSync() {
         if walletService.isSyncing {
             // TODO: Call walletService.restartMasternodeSync() when implemented
             print("Restarting masternode sync...")
         }
     }
-    
+
     private func restartTransactionSync() {
         if walletService.isSyncing {
             // TODO: Call walletService.restartTransactionSync() when implemented
             print("Restarting transaction sync...")
         }
+    }
+
+    private func clearSyncData() {
+        walletService.clearSpvStorage(fullReset: true)
     }
 }
 
