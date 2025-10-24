@@ -152,7 +152,7 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
-platform_wallet_manager = ["platform-wallet/manager"]
+wallet = ["dep:platform-wallet", "platform-wallet/manager"]
 
 [[example]]
 
