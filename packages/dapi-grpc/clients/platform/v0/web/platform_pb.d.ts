@@ -34,6 +34,9 @@ export namespace PlatformSubscriptionRequest {
     getFilter(): PlatformFilterV0 | undefined;
     setFilter(value?: PlatformFilterV0): void;
 
+    getKeepalive(): number;
+    setKeepalive(value: number): void;
+
     serializeBinary(): Uint8Array;
     toObject(includeInstance?: boolean): PlatformSubscriptionRequestV0.AsObject;
     static toObject(includeInstance: boolean, msg: PlatformSubscriptionRequestV0): PlatformSubscriptionRequestV0.AsObject;
@@ -47,6 +50,7 @@ export namespace PlatformSubscriptionRequest {
   export namespace PlatformSubscriptionRequestV0 {
     export type AsObject = {
       filter?: PlatformFilterV0.AsObject,
+      keepalive: number,
     }
   }
 
@@ -187,6 +191,11 @@ export class PlatformEventV0 extends jspb.Message {
   getStateTransitionFinalized(): PlatformEventV0.StateTransitionFinalized | undefined;
   setStateTransitionFinalized(value?: PlatformEventV0.StateTransitionFinalized): void;
 
+  hasKeepalive(): boolean;
+  clearKeepalive(): void;
+  getKeepalive(): PlatformEventV0.Keepalive | undefined;
+  setKeepalive(value?: PlatformEventV0.Keepalive): void;
+
   getEventCase(): PlatformEventV0.EventCase;
   serializeBinary(): Uint8Array;
   toObject(includeInstance?: boolean): PlatformEventV0.AsObject;
@@ -202,6 +211,7 @@ export namespace PlatformEventV0 {
   export type AsObject = {
     blockCommitted?: PlatformEventV0.BlockCommitted.AsObject,
     stateTransitionFinalized?: PlatformEventV0.StateTransitionFinalized.AsObject,
+    keepalive?: PlatformEventV0.Keepalive.AsObject,
   }
 
   export class BlockMetadata extends jspb.Message {
@@ -288,10 +298,27 @@ export namespace PlatformEventV0 {
     }
   }
 
+  export class Keepalive extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): Keepalive.AsObject;
+    static toObject(includeInstance: boolean, msg: Keepalive): Keepalive.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: Keepalive, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): Keepalive;
+    static deserializeBinaryFromReader(message: Keepalive, reader: jspb.BinaryReader): Keepalive;
+  }
+
+  export namespace Keepalive {
+    export type AsObject = {
+    }
+  }
+
   export enum EventCase {
     EVENT_NOT_SET = 0,
     BLOCK_COMMITTED = 1,
     STATE_TRANSITION_FINALIZED = 2,
+    KEEPALIVE = 3,
   }
 }
 

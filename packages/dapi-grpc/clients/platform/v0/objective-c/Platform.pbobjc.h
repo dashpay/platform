@@ -231,6 +231,7 @@ CF_EXTERN_C_BEGIN
 @class PlatformEventV0;
 @class PlatformEventV0_BlockCommitted;
 @class PlatformEventV0_BlockMetadata;
+@class PlatformEventV0_Keepalive;
 @class PlatformEventV0_StateTransitionFinalized;
 @class PlatformFilterV0;
 @class PlatformSubscriptionRequest_PlatformSubscriptionRequestV0;
@@ -480,6 +481,7 @@ void PlatformSubscriptionRequest_ClearVersionOneOfCase(PlatformSubscriptionReque
 
 typedef GPB_ENUM(PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber) {
   PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber_Filter = 1,
+  PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber_Keepalive = 2,
 };
 
 GPB_FINAL @interface PlatformSubscriptionRequest_PlatformSubscriptionRequestV0 : GPBMessage
@@ -487,6 +489,12 @@ GPB_FINAL @interface PlatformSubscriptionRequest_PlatformSubscriptionRequestV0 :
 @property(nonatomic, readwrite, strong, null_resettable) PlatformFilterV0 *filter;
 /** Test to see if @c filter has been set. */
 @property(nonatomic, readwrite) BOOL hasFilter;
+
+/**
+ * Interval in seconds between keepalive events (min 25, max 300, 0 disables
+ * keepalive).
+ **/
+@property(nonatomic, readwrite) uint32_t keepalive;
 
 @end
 
@@ -590,12 +598,14 @@ void PlatformFilterV0_ClearKindOneOfCase(PlatformFilterV0 *message);
 typedef GPB_ENUM(PlatformEventV0_FieldNumber) {
   PlatformEventV0_FieldNumber_BlockCommitted = 1,
   PlatformEventV0_FieldNumber_StateTransitionFinalized = 2,
+  PlatformEventV0_FieldNumber_Keepalive = 3,
 };
 
 typedef GPB_ENUM(PlatformEventV0_Event_OneOfCase) {
   PlatformEventV0_Event_OneOfCase_GPBUnsetOneOfCase = 0,
   PlatformEventV0_Event_OneOfCase_BlockCommitted = 1,
   PlatformEventV0_Event_OneOfCase_StateTransitionFinalized = 2,
+  PlatformEventV0_Event_OneOfCase_Keepalive = 3,
 };
 
 GPB_FINAL @interface PlatformEventV0 : GPBMessage
@@ -605,6 +615,8 @@ GPB_FINAL @interface PlatformEventV0 : GPBMessage
 @property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_BlockCommitted *blockCommitted;
 
 @property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_StateTransitionFinalized *stateTransitionFinalized;
+
+@property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0_Keepalive *keepalive;
 
 @end
 
@@ -662,6 +674,12 @@ GPB_FINAL @interface PlatformEventV0_StateTransitionFinalized : GPBMessage
 @property(nonatomic, readwrite) BOOL hasMeta;
 
 @property(nonatomic, readwrite, copy, null_resettable) NSData *txHash;
+
+@end
+
+#pragma mark - PlatformEventV0_Keepalive
+
+GPB_FINAL @interface PlatformEventV0_Keepalive : GPBMessage
 
 @end
 

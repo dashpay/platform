@@ -320,6 +320,7 @@ GPBObjCClassDeclaration(KeyRequestType);
 GPBObjCClassDeclaration(PlatformEventV0);
 GPBObjCClassDeclaration(PlatformEventV0_BlockCommitted);
 GPBObjCClassDeclaration(PlatformEventV0_BlockMetadata);
+GPBObjCClassDeclaration(PlatformEventV0_Keepalive);
 GPBObjCClassDeclaration(PlatformEventV0_StateTransitionFinalized);
 GPBObjCClassDeclaration(PlatformFilterV0);
 GPBObjCClassDeclaration(PlatformSubscriptionRequest);
@@ -465,9 +466,11 @@ void PlatformSubscriptionRequest_ClearVersionOneOfCase(PlatformSubscriptionReque
 @implementation PlatformSubscriptionRequest_PlatformSubscriptionRequestV0
 
 @dynamic hasFilter, filter;
+@dynamic keepalive;
 
 typedef struct PlatformSubscriptionRequest_PlatformSubscriptionRequestV0__storage_ {
   uint32_t _has_storage_[1];
+  uint32_t keepalive;
   PlatformFilterV0 *filter;
 } PlatformSubscriptionRequest_PlatformSubscriptionRequestV0__storage_;
 
@@ -485,6 +488,15 @@ typedef struct PlatformSubscriptionRequest_PlatformSubscriptionRequestV0__storag
         .offset = (uint32_t)offsetof(PlatformSubscriptionRequest_PlatformSubscriptionRequestV0__storage_, filter),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "keepalive",
+        .dataTypeSpecific.clazz = Nil,
+        .number = PlatformSubscriptionRequest_PlatformSubscriptionRequestV0_FieldNumber_Keepalive,
+        .hasIndex = 1,
+        .offset = (uint32_t)offsetof(PlatformSubscriptionRequest_PlatformSubscriptionRequestV0__storage_, keepalive),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
       },
     };
     GPBDescriptor *localDescriptor =
@@ -749,11 +761,13 @@ void PlatformFilterV0_ClearKindOneOfCase(PlatformFilterV0 *message) {
 @dynamic eventOneOfCase;
 @dynamic blockCommitted;
 @dynamic stateTransitionFinalized;
+@dynamic keepalive;
 
 typedef struct PlatformEventV0__storage_ {
   uint32_t _has_storage_[2];
   PlatformEventV0_BlockCommitted *blockCommitted;
   PlatformEventV0_StateTransitionFinalized *stateTransitionFinalized;
+  PlatformEventV0_Keepalive *keepalive;
 } PlatformEventV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -777,6 +791,15 @@ typedef struct PlatformEventV0__storage_ {
         .number = PlatformEventV0_FieldNumber_StateTransitionFinalized,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(PlatformEventV0__storage_, stateTransitionFinalized),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeMessage,
+      },
+      {
+        .name = "keepalive",
+        .dataTypeSpecific.clazz = GPBObjCClass(PlatformEventV0_Keepalive),
+        .number = PlatformEventV0_FieldNumber_Keepalive,
+        .hasIndex = -1,
+        .offset = (uint32_t)offsetof(PlatformEventV0__storage_, keepalive),
         .flags = GPBFieldOptional,
         .dataType = GPBDataTypeMessage,
       },
@@ -980,6 +1003,39 @@ typedef struct PlatformEventV0_StateTransitionFinalized__storage_ {
                                         fields:fields
                                     fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
                                    storageSize:sizeof(PlatformEventV0_StateTransitionFinalized__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(PlatformEventV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - PlatformEventV0_Keepalive
+
+@implementation PlatformEventV0_Keepalive
+
+
+typedef struct PlatformEventV0_Keepalive__storage_ {
+  uint32_t _has_storage_[1];
+} PlatformEventV0_Keepalive__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[PlatformEventV0_Keepalive class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(PlatformEventV0_Keepalive__storage_)
                                          flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
     [localDescriptor setupContainingMessageClass:GPBObjCClass(PlatformEventV0)];
     #if defined(DEBUG) && DEBUG

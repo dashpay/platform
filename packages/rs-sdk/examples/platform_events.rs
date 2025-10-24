@@ -74,9 +74,17 @@ mod subscribe {
 
         let config = Config::load();
         let sdk = setup_sdk(&config);
+        let address = sdk
+            .address_list()
+            .get_live_address()
+            .expect("no live DAPI address");
         // sanity check - fetch current epoch to see if connection works
         let epoch = Epoch::fetch_current(&sdk).await.expect("fetch epoch");
-        tracing::info!("Current epoch: {:?}", epoch);
+        tracing::info!(
+            ?address,
+            "Connection established; current epoch: {:?}",
+            epoch
+        );
 
         // Subscribe to BlockCommitted only
         let filter_block = PlatformFilterV0 {
@@ -86,7 +94,6 @@ mod subscribe {
             .subscribe_platform_events(filter_block)
             .await
             .expect("subscribe block_committed");
-
         // Subscribe to StateTransitionFinalized; optionally filter by tx hash if provided
         let tx_hash_bytes = config
             .state_transition_tx_hash_hex
@@ -136,6 +143,7 @@ mod subscribe {
     }
 
     async fn worker(mut stream: Streaming<PlatformSubscriptionResponse>, label: &str) {
+        let mut last_keepalive = std::time::Instant::now();
         while let Some(message) = stream.next().await {
             match message {
                 Ok(response) => {
@@ -166,7 +174,9 @@ mod subscribe {
                                         }
                                     }
                                     PlatformEvent::Keepalive(_) => {
-                                        info!("{label}: id={sub_id} keepalive");
+                                        let elapsed = last_keepalive.elapsed().as_secs();
+                                        info!("{label}: id={sub_id} KeepAlive received after {elapsed} seconds");
+                                        last_keepalive = std::time::Instant::now();
                                     }
                                 }
                             }
