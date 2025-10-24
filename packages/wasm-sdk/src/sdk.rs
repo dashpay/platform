@@ -682,7 +682,7 @@ impl WasmSdkBuilder {
             "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
@@ -718,7 +718,7 @@ impl WasmSdkBuilder {
             "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.164.23.245:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
             "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
         ];
