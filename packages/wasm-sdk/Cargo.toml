@@ -1,6 +1,6 @@
 [package]
 name = "wasm-sdk"
-version = "2.1.0-dev.8"
+version = "2.1.0-rc.1"
 edition = "2021"
 publish = false
 rust-version.workspace = true
@@ -9,30 +9,63 @@ rust-version.workspace = true
 crate-type = ["cdylib"]
 
 [features]
-default = ["dpns-contract", "dashpay-contract", "wallet-utils-contract", "token-history-contract", "keywords-contract"]
+default = [
+    "dpns-contract",
+    "dashpay-contract",
+    "wallet-utils-contract",
+    "token-history-contract",
+    "keywords-contract",
+    "mocks",
+]
 
 mocks = ["dash-sdk/mocks"]
 
 # All system contracts
-all-system-contracts = ["dash-sdk/all-system-contracts", "rs-sdk-trusted-context-provider/all-system-contracts"]
+all-system-contracts = [
+    "dash-sdk/all-system-contracts",
+    "rs-sdk-trusted-context-provider/all-system-contracts",
+]
 
 # Individual contract features
-withdrawals-contract = ["dash-sdk/withdrawals-contract", "rs-sdk-trusted-context-provider/withdrawals-contract"]
-dpns-contract = ["dash-sdk/dpns-contract", "rs-sdk-trusted-context-provider/dpns-contract"]
-dashpay-contract = ["dash-sdk/dashpay-contract", "rs-sdk-trusted-context-provider/dashpay-contract"]
-wallet-utils-contract = ["dash-sdk/wallet-utils-contract", "rs-sdk-trusted-context-provider/wallet-utils-contract"]
-token-history-contract = ["dash-sdk/token-history-contract", "rs-sdk-trusted-context-provider/token-history-contract"]
-keywords-contract = ["dash-sdk/keywords-contract", "rs-sdk-trusted-context-provider/keywords-contract"]
+withdrawals-contract = [
+    "dash-sdk/withdrawals-contract",
+    "rs-sdk-trusted-context-provider/withdrawals-contract",
+]
+dpns-contract = [
+    "dash-sdk/dpns-contract",
+    "rs-sdk-trusted-context-provider/dpns-contract",
+]
+dashpay-contract = [
+    "dash-sdk/dashpay-contract",
+    "rs-sdk-trusted-context-provider/dashpay-contract",
+]
+wallet-utils-contract = [
+    "dash-sdk/wallet-utils-contract",
+    "rs-sdk-trusted-context-provider/wallet-utils-contract",
+]
+token-history-contract = [
+    "dash-sdk/token-history-contract",
+    "rs-sdk-trusted-context-provider/token-history-contract",
+]
+keywords-contract = [
+    "dash-sdk/keywords-contract",
+    "rs-sdk-trusted-context-provider/keywords-contract",
+]
 
 token_reward_explanations = ["dash-sdk/token_reward_explanations"]
 
 [dependencies]
-dash-sdk = { path = "../rs-sdk", features = ["serde", "core_key_wallet"], default-features = false }
+dash-sdk = { path = "../rs-sdk", features = [
+    "serde",
+    "core_key_wallet",
+], default-features = false }
 simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
-drive = { path = "../rs-drive", default-features = false, features = ["verify"] }
+drive = { path = "../rs-drive", default-features = false, features = [
+    "verify",
+] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
-web-sys = { version = "0.3.4", features = [
+web-sys = { version = "0.3.64", features = [
     'console',
     'Document',
     'Element',
@@ -41,11 +74,14 @@ web-sys = { version = "0.3.4", features = [
     'Window',
     'Crypto',
 ] }
-wasm-bindgen = { version = "=0.2.100" }
+wasm-bindgen = { version = "=0.2.103" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
 tracing = { version = "0.1.41" }
-tracing-subscriber = { version = "0.3", default-features = false, features = ["env-filter", "registry"] }
+tracing-subscriber = { version = "0.3", default-features = false, features = [
+    "env-filter",
+    "registry",
+] }
 tracing-wasm = { version = "0.2.1" }
 wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
@@ -60,7 +96,7 @@ bip39 = { version = "2.0", features = ["rand", "all-languages"] }
 rand = { version = "0.8", features = ["std"] }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
 once_cell = "1.19"
-js-sys = "0.3"
+js-sys = "0.3.64"
 dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client" }
 hmac = { version = "0.12" }

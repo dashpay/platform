@@ -188,7 +188,6 @@ typedef struct FFIBLSAccount { unsigned char _private[0]; } FFIBLSAccount;
 typedef struct FFIEdDSAAccount { unsigned char _private[0]; } FFIEdDSAAccount;
 typedef struct FFIAddressPool { unsigned char _private[0]; } FFIAddressPool;
 typedef struct FFIManagedAccountCollection { unsigned char _private[0]; } FFIManagedAccountCollection;
-typedef struct FFIWalletManager { unsigned char _private[0]; } FFIWalletManager;
 typedef struct FFIManagedAccount { unsigned char _private[0]; } FFIManagedAccount;
 // Platform SDK opaque handles
 typedef struct SDKHandle { unsigned char _private[0]; } SDKHandle;

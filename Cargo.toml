@@ -37,6 +37,8 @@ members = [
     "packages/rs-sdk-ffi",
     "packages/wasm-drive-verify",
     "packages/dash-platform-balance-checker",
+    "packages/rs-dapi",
+    "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
     "packages/wasm-sdk",
 ]

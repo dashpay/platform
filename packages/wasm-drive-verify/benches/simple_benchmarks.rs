@@ -3,9 +3,12 @@
 //! This file contains timing benchmarks for various verification functions
 //! to measure performance characteristics with different proof sizes.
 
+use dpp::version::PlatformVersion;
 use js_sys::Uint8Array;
 use std::time::Instant;
 use wasm_bindgen::JsValue;
+use wasm_drive_verify::contract_verification::verify_contract::verify_contract as wasm_verify_contract;
+use wasm_drive_verify::document_verification::verify_proof::verify_document_proof;
 
 // Helper functions
 fn create_mock_proof(size: usize) -> Uint8Array {
@@ -16,10 +19,6 @@ fn create_mock_proof(size: usize) -> Uint8Array {
 fn create_mock_id(seed: u8) -> Uint8Array {
     let data: Vec<u8> = vec![seed; 32];
     Uint8Array::from(&data[..])
-}
-
-fn create_mock_query() -> JsValue {
-    JsValue::from_str("{}")
 }
 
 /// Time a function execution
@@ -64,12 +63,25 @@ fn main() {
     println!("\n=== Document Verification ===");
     for (size, label) in &proof_sizes {
         let proof = create_mock_proof(*size);
-        let contract_id = create_mock_id(2);
-        let query = create_mock_query();
+        let contract_js = JsValue::from(create_mock_proof(512));
 
-        time_function(&format!("verify_proof ({})", label), 100, || {
-            use wasm_drive_verify::document_verification::verify_proof;
-            let _ = verify_proof(&proof, &contract_id, "test_doc", &query, 1);
+        time_function(&format!("verify_document_proof ({})", label), 100, || {
+            let where_clauses = JsValue::UNDEFINED;
+            let order_by = JsValue::UNDEFINED;
+
+            let _ = verify_document_proof(
+                &proof,
+                &contract_js,
+                "test_doc",
+                &where_clauses,
+                &order_by,
+                None,
+                None,
+                None,
+                false,
+                None,
+                1,
+            );
         });
     }
 
@@ -79,36 +91,25 @@ fn main() {
         let contract_id = create_mock_id(3);
 
         time_function(&format!("verify_contract ({})", label), 100, || {
-            use wasm_drive_verify::contract_verification::verify_contract;
-            let _ = verify_contract(&proof, &contract_id, false, 1);
+            let _ = wasm_verify_contract(&proof, None, false, false, &contract_id, 1);
         });
     }
 
     println!("\n=== Platform Version Validation ===");
-    time_function(
-        "get_platform_version_with_validation (all versions)",
-        1000,
-        || {
-            use wasm_drive_verify::utils::platform_version::get_platform_version_with_validation;
-            for version in 1..=9 {
-                let _ = get_platform_version_with_validation(version);
-            }
-        },
-    );
+    time_function("PlatformVersion::get (all versions)", 1000, || {
+        for version in 1..=9 {
+            let _ = PlatformVersion::get(version);
+        }
+    });
 
     println!("\n=== Getter Performance ===");
     let data_sizes = vec![32, 256, 1024, 10240];
     for size in data_sizes {
         let data = vec![0u8; size];
 
-        time_function(
-            &format!("VecU8ToUint8Array::to_uint8array ({}B)", size),
-            1000,
-            || {
-                use wasm_drive_verify::utils::getters::VecU8ToUint8Array;
-                let _ = data.to_uint8array();
-            },
-        );
+        time_function(&format!("Uint8Array::from ({}B)", size), 1000, || {
+            let _ = Uint8Array::from(&data[..]);
+        });
     }
 
     println!("\nBenchmarks complete!");

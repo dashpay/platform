@@ -25,6 +25,35 @@ export default function resetNodeTaskFactory(
   generateEnvs,
 ) {
   /**
+   * Remove path but ignore permission issues to avoid failing reset on root-owned directories.
+   *
+   * @param {string} targetPath
+   * @param {Object} [task]
+   */
+  function removePathSafely(targetPath, task) {
+    try {
+      fs.rmSync(targetPath, {
+        recursive: true,
+        force: true,
+      });
+    } catch (e) {
+      if (e?.code === 'EACCES' || e?.code === 'EPERM') {
+        const message = `Skipping removal of '${targetPath}' due to insufficient permissions`;
+
+        if (task) {
+          // eslint-disable-next-line no-param-reassign
+          task.output = message;
+        } else if (process.env.DEBUG) {
+          // eslint-disable-next-line no-console
+          console.warn(message);
+        }
+      } else if (e?.code !== 'ENOENT') {
+        throw e;
+      }
+    }
+  }
+
+  /**
    * @typedef {resetNodeTask}
    * @param {Config} config
    */
@@ -126,21 +155,18 @@ export default function resetNodeTaskFactory(
       {
         title: `Remove config ${config.getName()}`,
         enabled: (ctx) => ctx.removeConfig,
-        task: () => {
+        task: (_, task) => {
           configFile.removeConfig(config.getName());
 
           const serviceConfigsPath = homeDir.joinPath(config.getName());
 
-          fs.rmSync(serviceConfigsPath, {
-            recursive: true,
-            force: true,
-          });
+          removePathSafely(serviceConfigsPath, task);
         },
       },
       {
         title: `Reset config ${config.getName()}`,
         enabled: (ctx) => !ctx.removeConfig && ctx.isHardReset,
-        task: (ctx) => {
+        task: (ctx, task) => {
           const groupName = config.get('group');
           const defaultConfigName = groupName || config.getName();
 
@@ -164,10 +190,7 @@ export default function resetNodeTaskFactory(
               serviceConfigsPath = path.join(serviceConfigsPath, 'platform');
             }
 
-            fs.rmSync(serviceConfigsPath, {
-              recursive: true,
-              force: true,
-            });
+            removePathSafely(serviceConfigsPath, task);
           } else {
             // Delete config if no base config
             configFile.removeConfig(config.getName());
@@ -175,10 +198,7 @@ export default function resetNodeTaskFactory(
             // Remove service configs
             const serviceConfigsPath = homeDir.joinPath(defaultConfigName);
 
-            fs.rmSync(serviceConfigsPath, {
-              recursive: true,
-              force: true,
-            });
+            removePathSafely(serviceConfigsPath, task);
           }
         },
       },
