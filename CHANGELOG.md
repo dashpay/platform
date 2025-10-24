@@ -1,3 +1,11 @@
+## [2.1.0-rc.2](https://github.com/dashpay/platform/compare/v2.1.0-rc.1...v2.1.0-rc.2) (2025-10-24)
+
+
+### Bug Fixes
+
+* **dashmate:** dapi not removed after migration to rs-dapi ([#2817](https://github.com/dashpay/platform/issues/2817))
+* **swift-sdk:** make SPV C callbacks Swift 6–safe; eliminate races and TOCTOU ([#2814](https://github.com/dashpay/platform/issues/2814))
+
 ## [2.1.0-rc.1](https://github.com/dashpay/platform/compare/v2.1.0-dev.8...v2.1.0-rc.1) (2025-10-21)
 
 
