@@ -147,7 +147,7 @@ mod subscribe {
                                     PlatformEvent::BlockCommitted(bc) => {
                                         if let Some(meta) = bc.meta {
                                             info!(
-                                                "{label}: sub_id={sub_id} height={} time_ms={} tx_count={} block_id_hash=0x{}",
+                                                "{label}: id={sub_id} height={} time_ms={} tx_count={} block_id_hash=0x{}",
                                                 meta.height,
                                                 meta.time_ms,
                                                 bc.tx_count,
@@ -164,6 +164,9 @@ mod subscribe {
                                                 hex::encode(meta.block_id_hash)
                                             );
                                         }
+                                    }
+                                    PlatformEvent::Keepalive(_) => {
+                                        info!("{label}: id={sub_id} keepalive");
                                     }
                                 }
                             }

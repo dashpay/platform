@@ -221,13 +221,13 @@
                   path: "/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: 300s
+                  idle_timeout: 305s
                   # Upstream response timeout
                   timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 3605s
-                    grpc_timeout_header_max: 3600s
+                    max_stream_duration: 605s
+                    grpc_timeout_header_max: 300s
               # rs-dapi waitForStateTransitionResult endpoint with bigger timeout (now exposed directly)
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"

@@ -36,6 +36,7 @@ async fn test_platform_events_subscribe_stream_opens() {
             filter: Some(PlatformFilterV0 {
                 kind: Some(dapi_grpc::platform::v0::platform_filter_v0::Kind::All(true)),
             }),
+            keepalive: 25,
         })),
     };
 

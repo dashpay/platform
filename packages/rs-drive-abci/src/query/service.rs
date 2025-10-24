@@ -10,6 +10,7 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
 use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::platform_event_v0::Keepalive;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
@@ -54,7 +55,7 @@ use dapi_grpc::tonic::{Code, Request, Response, Status};
 use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
@@ -294,6 +295,9 @@ impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
     fn matches(&self, event: &PlatformEvent) -> bool {
         use dapi_grpc::platform::v0::platform_event_v0::Event as Evt;
         use dapi_grpc::platform::v0::platform_filter_v0::Kind;
+        if matches!(event.event, Some(Evt::Keepalive(_))) {
+            return true;
+        }
         match self.inner.kind.as_ref() {
             None => false,
             Some(Kind::All(all)) => *all,
@@ -890,11 +894,27 @@ impl PlatformService for QueryService {
             }
         };
 
+        let keepalive = req_v0.keepalive;
         let filter = req_v0.filter.unwrap_or_default();
         if filter.kind.is_none() {
             tracing::warn!("subscribe_platform_events: filter kind is not specified");
             return Err(Status::invalid_argument("filter kind is not specified"));
         }
+
+        let keepalive_duration = if keepalive == 0 {
+            None
+        } else if keepalive < 25 || keepalive > 300 {
+            tracing::warn!(
+                interval = keepalive,
+                "subscribe_platform_events: keepalive interval out of range"
+            );
+            return Err(Status::invalid_argument(
+                "keepalive interval must be between 25 and 300 seconds",
+            ));
+        } else {
+            Some(Duration::from_secs(keepalive as u64))
+        };
+
         let subscription_id = format!("{:X}", rand::random::<u64>());
         tracing::trace!(
             subscription_id = %subscription_id,
@@ -932,22 +952,70 @@ impl PlatformService for QueryService {
 
         let worker = tokio::task::spawn(async move {
             let handle = subscription;
-            while let Some(event) = handle.recv().await {
-                let response = PlatformSubscriptionResponse {
-                    version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
-                        client_subscription_id: subscription_id.clone(),
-                        event: Some(event),
-                    })),
+
+            loop {
+                // next_item is Some(Ok(event)) when an event is received
+                // next_item is Some(Err(e)) when keepalive timeout elapses
+                // next_item is None when the stream is closed
+                let next_item = if let Some(duration) = keepalive_duration {
+                    match tokio::time::timeout(duration, handle.recv()).await {
+                        Ok(Some(event)) => Some(Ok(event)),
+                        Ok(None) => None,
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    match handle.recv().await {
+                        Some(event) => Some(Ok(event)),
+                        None => None,
+                    }
                 };
 
-                if downstream_tx.send(Ok(response)).await.is_err() {
-                    tracing::debug!(
-                        subscription_id = %subscription_id,
-                        "subscribe_platform_events: client stream closed"
-                    );
-                    break;
+                match next_item {
+                    Some(Ok(event)) => {
+                        let response = PlatformSubscriptionResponse {
+                            version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                                client_subscription_id: subscription_id.clone(),
+                                event: Some(event),
+                            })),
+                        };
+
+                        if downstream_tx.send(Ok(response)).await.is_err() {
+                            tracing::debug!(
+                                subscription_id = %subscription_id,
+                                "subscribe_platform_events: client stream closed"
+                            );
+                            break;
+                        }
+                    }
+                    Some(Err(_)) => {
+                        // timeout elapsed, emit keepalive event
+                        let keepalive_event = PlatformEvent {
+                            event: Some(
+                                dapi_grpc::platform::v0::platform_event_v0::Event::Keepalive(
+                                    Keepalive {},
+                                ),
+                            ),
+                        };
+
+                        let response = PlatformSubscriptionResponse {
+                            version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                                client_subscription_id: subscription_id.clone(),
+                                event: Some(keepalive_event),
+                            })),
+                        };
+
+                        if downstream_tx.send(Ok(response)).await.is_err() {
+                            tracing::debug!(
+                                subscription_id = %subscription_id,
+                                "subscribe_platform_events: client stream closed"
+                            );
+                            break;
+                        }
+                    }
+                    None => break,
                 }
             }
+
             tracing::debug!(
                 subscription_id = %subscription_id,
                 "subscribe_platform_events: event stream completed"
