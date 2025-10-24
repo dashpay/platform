@@ -70,7 +70,7 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.100
+        run: cargo binstall wasm-bindgen-cli@0.2.103
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-pack
@@ -189,6 +189,18 @@ jobs:
       image_org: dashpay
       image_name: dapi
       target: dapi
+      tag: ${{ inputs.tag || github.event.release.tag_name }}
+
+  release-rs-dapi-image:
+    name: Release RS-DAPI image
+    if: ${{ !inputs.only_drive }}
+    secrets: inherit
+    uses: ./.github/workflows/release-docker-image.yml
+    with:
+      name: RS-DAPI
+      image_org: dashpay
+      image_name: rs-dapi
+      target: rs-dapi
       tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-test-suite-image:

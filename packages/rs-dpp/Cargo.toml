@@ -1,6 +1,6 @@
 [package]
 name = "dpp"
-version = "2.1.0-dev.8"
+version = "2.1.0-rc.1"
 edition = "2021"
 rust-version.workspace = true
 authors = [
@@ -37,6 +37,7 @@ dashcore-rpc = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.
 
 env_logger = { version = "0.11" }
 getrandom = { version = "0.2", features = ["js"] }
+
 hex = { version = "0.4" }
 integer-encoding = { version = "4.0.0" }
 itertools = { version = "0.13" }
