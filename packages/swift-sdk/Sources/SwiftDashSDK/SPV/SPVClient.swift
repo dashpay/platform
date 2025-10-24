@@ -226,7 +226,10 @@ public class SPVClient: ObservableObject {
     // FFI handles
     private var client: UnsafeMutablePointer<FFIDashSpvClient>?
     private var config: UnsafeMutablePointer<FFIClientConfig>?
-    
+
+    // Event polling task
+    private var eventPollingTask: Task<Void, Never>?
+
     // Callback context
     private var callbackContext: CallbackContext?
     
@@ -263,6 +266,8 @@ public class SPVClient: ObservableObject {
     public var baseSyncHeight: UInt32 { startFromHeight }
     
     deinit {
+        // Stop event polling (synchronously cancel the task)
+        eventPollingTask?.cancel()
         // Minimal teardown; prefer explicit stop() by callers.
     }
     
@@ -340,9 +345,11 @@ public class SPVClient: ObservableObject {
             }
         }
         
-        // Enable mempool tracking
+        // Enable mempool tracking and ensure detailed events are available
         dash_spv_ffi_config_set_mempool_tracking(configPtr, true)
         dash_spv_ffi_config_set_mempool_strategy(configPtr, FFIMempoolStrategy(rawValue: 1)) // BloomFilter
+        _ = dash_spv_ffi_config_set_fetch_mempool_transactions(configPtr, true)
+        _ = dash_spv_ffi_config_set_persist_mempool(configPtr, true)
 
         // Set user agent to include SwiftDashSDK version from the framework bundle
         do {
@@ -526,6 +533,10 @@ public class SPVClient: ObservableObject {
         syncCancelled = false
         syncStartTime = Date()
         blocksHit = 0
+
+        // Start event polling to drain Rust event queue
+        startEventPolling()
+
         // Reset UI progress to known baseline (0%) before events arrive
         self.syncProgress = SPVSyncProgress(
             stage: .headers,
@@ -607,6 +618,9 @@ public class SPVClient: ObservableObject {
     public func stopSync(preserveProgress: Bool = true) {
         guard let client = client else { return }
 
+        // Stop event polling
+        stopEventPolling()
+
         let stopResult = dash_spv_ffi_client_stop(client)
         if stopResult != 0, let err = dash_spv_ffi_get_last_error() {
             let message = String(cString: err)
@@ -649,6 +663,90 @@ public class SPVClient: ObservableObject {
                 guard let client = context.client else { return }
                 client.blocksHit &+= 1
                 client.delegate?.spvClient(client, didUpdateBlocksHit: client.blocksHit)
+            }
+        }
+
+        // Mempool: unconfirmed transaction detected for any tracked address
+        callbacks.on_mempool_transaction_added = { txidPtr, amount, addressesPtr, _isInstantSend, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            var addresses: [String] = []
+            if let addressesPtr = addressesPtr {
+                let addressesStr = String(cString: addressesPtr)
+                addresses = addressesStr.components(separatedBy: ",")
+            }
+
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: false,
+                    amount: amount,
+                    addresses: addresses,
+                    blockHeight: nil
+                )
+            }
+        }
+
+        // Mempool: transaction confirmed
+        callbacks.on_mempool_transaction_confirmed = { txidPtr, blockHeight, _blockHashPtr, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            // Amount and addresses are not provided here; emit a confirmation-only update
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: true,
+                    amount: 0,
+                    addresses: [],
+                    blockHeight: blockHeight
+                )
+            }
+        }
+
+        // Mempool: transaction removed (expired/replaced/etc). No UI path yet; ignore for now.
+        callbacks.on_mempool_transaction_removed = { _txidPtr, _reason, _userData in
+            // Intentionally no-op; could surface to UI in future if needed
+        }
+
+        // Wallet-specific transaction callback (fires for our wallet, including mempool)
+        callbacks.on_wallet_transaction = { _walletId, _accountIndex, txidPtr, confirmed, amount, addressesPtr, blockHeight, _isOurs, userData in
+            guard let userData = userData else { return }
+            let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+
+            var txid = Data()
+            if let txidPtr = txidPtr {
+                txid = Data(bytes: txidPtr, count: 32)
+            }
+
+            var addresses: [String] = []
+            if let addressesPtr = addressesPtr {
+                let addressesStr = String(cString: addressesPtr)
+                addresses = addressesStr.components(separatedBy: ",")
+            }
+
+            let clientRef = context.client
+            Task { @MainActor [weak clientRef] in
+                clientRef?.handleTransactionEvent(
+                    txid: txid,
+                    confirmed: confirmed,
+                    amount: amount,
+                    addresses: addresses,
+                    blockHeight: blockHeight > 0 ? blockHeight : nil
+                )
             }
         }
 
@@ -751,16 +849,28 @@ public class SPVClient: ObservableObject {
             blockHeight: blockHeight
         )
 
-        // Debug: print tx event summary
-        if swiftLoggingEnabled {
-            let txidHex = txid.map { String(format: "%02x", $0) }.joined()
-            let bh = blockHeight.map(String.init) ?? "nil"
-            print("[SPV][Tx] txid=\(txidHex.prefix(16))… confirmed=\(confirmed) amount=\(amount) blockHeight=\(bh)")
-        }
-
         delegate?.spvClient(self, didReceiveTransaction: transaction)
     }
-    
+
+    // MARK: - Event Polling
+
+    private func startEventPolling() {
+        eventPollingTask?.cancel()
+
+        eventPollingTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self = self, let client = self.client else { break }
+                dash_spv_ffi_client_drain_events(client)
+                try? await Task.sleep(nanoseconds: 100_000_000)
+            }
+        }
+    }
+
+    private func stopEventPolling() {
+        eventPollingTask?.cancel()
+        eventPollingTask = nil
+    }
+
     // MARK: - Wallet Manager Access
     
     public func getWalletManager() -> UnsafeMutablePointer<FFIWalletManager>? {
