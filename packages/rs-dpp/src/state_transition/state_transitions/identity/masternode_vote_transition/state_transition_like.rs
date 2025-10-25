@@ -1,6 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
@@ -21,24 +23,6 @@ impl StateTransitionLike for MasternodeVoteTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.set_signature(signature),
-        }
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
 
@@ -65,6 +49,27 @@ impl StateTransitionLike for MasternodeVoteTransition {
             MasternodeVoteTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }
+        }
+    }
+}
+
+impl StateTransitionSingleSigned for MasternodeVoteTransition {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.signature(),
+        }
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.set_signature(signature),
+        }
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
 }

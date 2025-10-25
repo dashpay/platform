@@ -9,7 +9,7 @@ use crate::{
 };
 
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransitionV0;
-
+use crate::state_transition::StateTransitionSingleSigned;
 use crate::state_transition::StateTransitionType::DataContractUpdate;
 use crate::version::FeatureVersion;
 
@@ -25,18 +25,6 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         DataContractUpdate
-    }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
     }
 
     /// Get owner ID
@@ -59,5 +47,20 @@ impl StateTransitionLike for DataContractUpdateTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for DataContractUpdateTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 }

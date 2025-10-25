@@ -11,8 +11,8 @@ use crate::{
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
 
-use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityTopUp;
+use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 use crate::version::FeatureVersion;
 
 impl From<IdentityTopUpTransitionV0> for StateTransition {
@@ -31,21 +31,10 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
     fn state_transition_type(&self) -> StateTransitionType {
         IdentityTopUp
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
+
     /// Returns ID of the topUpd contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.identity_id]
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
     }
 
     /// Get owner ID
@@ -75,5 +64,19 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for IdentityTopUpTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 }

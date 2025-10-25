@@ -1,6 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
@@ -21,26 +23,6 @@ impl StateTransitionLike for DataContractUpdateTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             DataContractUpdateTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        match self {
-            DataContractUpdateTransition::V0(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            DataContractUpdateTransition::V0(transition) => transition.set_signature(signature),
-        }
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            DataContractUpdateTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
         }
     }
 
@@ -67,6 +49,29 @@ impl StateTransitionLike for DataContractUpdateTransition {
         match self {
             DataContractUpdateTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
+            }
+        }
+    }
+}
+
+impl StateTransitionSingleSigned for DataContractUpdateTransition {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        match self {
+            DataContractUpdateTransition::V0(transition) => transition.signature(),
+        }
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        match self {
+            DataContractUpdateTransition::V0(transition) => transition.set_signature(signature),
+        }
+    }
+
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        match self {
+            DataContractUpdateTransition::V0(transition) => {
+                transition.set_signature_bytes(signature)
             }
         }
     }

@@ -1,6 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+};
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
@@ -30,24 +32,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
             }
         }
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.signature(),
-            IdentityCreditWithdrawalTransition::V1(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => {
-                transition.set_signature(signature)
-            }
-            IdentityCreditWithdrawalTransition::V1(transition) => {
-                transition.set_signature(signature)
-            }
-        }
-    }
 
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease {
@@ -68,17 +52,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         }
     }
 
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
-            IdentityCreditWithdrawalTransition::V1(transition) => {
-                transition.set_signature_bytes(signature)
-            }
-        }
-    }
-
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
@@ -90,6 +63,37 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
             IdentityCreditWithdrawalTransition::V1(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionSingleSigned for IdentityCreditWithdrawalTransition {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.signature(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.signature(),
+        }
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_signature(signature)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.set_signature(signature)
+            }
+        }
+    }
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => {
+                transition.set_signature_bytes(signature)
+            }
+            IdentityCreditWithdrawalTransition::V1(transition) => {
+                transition.set_signature_bytes(signature)
+            }
         }
     }
 }

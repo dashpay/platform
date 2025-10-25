@@ -18,7 +18,7 @@ use crate::state_transition::identity_create_transition::accessors::IdentityCrea
 use crate::state_transition::identity_create_transition::fields::*;
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::StateTransitionValueConvert;
+use crate::state_transition::{StateTransitionSingleSigned, StateTransitionValueConvert};
 
 use platform_version::version::PlatformVersion;
 

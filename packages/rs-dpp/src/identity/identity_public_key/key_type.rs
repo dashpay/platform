@@ -17,14 +17,16 @@ use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
 use crate::fee::Credits;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
+use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]
 use rand::Rng;
+#[cfg(feature = "state-transition-serde-conversion")]
+use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
-use serde::{Deserialize, Serialize};
 
 #[allow(non_camel_case_types)]
 #[repr(u8)]
@@ -63,6 +65,8 @@ pub enum KeyType {
     PartialOrd,
     Encode,
     Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
     Default,
 )]
 #[cfg_attr(
@@ -70,6 +74,7 @@ pub enum KeyType {
     derive(Serialize, Deserialize),
     serde(rename_all = "camelCase")
 )]
+#[platform_serialize(unversioned)]
 pub struct KeyOfType {
     pub key_type: KeyType,
     pub key: Vec<u8>,

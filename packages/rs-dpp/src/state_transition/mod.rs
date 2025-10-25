@@ -97,8 +97,14 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
+use crate::state_transition::identity_create_from_addresses_transition::{
+    IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
+};
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
+};
+use crate::state_transition::identity_credit_transfer_to_address_transition::{
+    IdentityCreditTransferToAddressTransition, IdentityCreditTransferToAddressTransitionSignable,
 };
 use crate::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionSignable,
@@ -118,7 +124,6 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
-use crate::state_transition::identity_credit_transfer_to_single_key_transition::IdentityCreditTransferToSingleKeyTransition;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -135,6 +140,8 @@ macro_rules! call_method {
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($args),
+            StateTransition::IdentityCreateFromAddresses(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -148,6 +155,8 @@ macro_rules! call_method {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
+            StateTransition::IdentityCreateFromAddresses(st) => st.$method(),
         }
     };
 }
@@ -164,6 +173,8 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
             StateTransition::MasternodeVote(st) => Some(st.$method($args)),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method($args)),
+            StateTransition::IdentityCreateFromAddresses(st) => None,
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -177,6 +188,8 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
             StateTransition::MasternodeVote(st) => Some(st.$method()),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method()),
+            StateTransition::IdentityCreateFromAddresses(st) => None,
         }
     };
 }
@@ -193,6 +206,8 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($args),
+            StateTransition::IdentityCreateFromAddresses(st) => {}
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -206,6 +221,8 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
+            StateTransition::IdentityCreateFromAddresses(st) => {}
         }
     };
 }
@@ -227,6 +244,10 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
             StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityCreateFromAddresses(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity create from addresses can not be called for identity signing".to_string(),
+            )),
         }
     };
     ($state_transition:expr, $method:ident) => {
@@ -244,6 +265,10 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
+            StateTransition::IdentityCreateFromAddresses(st) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity create from addresses can not be called for identity signing".to_string(),
+            )),
         }
     };
 }
@@ -276,7 +301,8 @@ pub enum StateTransition {
     IdentityUpdate(IdentityUpdateTransition),
     IdentityCreditTransfer(IdentityCreditTransferTransition),
     MasternodeVote(MasternodeVoteTransition),
-    IdentityCreditTransferToSingleUseKey(IdentityCreditTransferToSingleKeyTransition),
+    IdentityCreditTransferToSingleUseKey(IdentityCreditTransferToAddressTransition),
+    IdentityCreateFromAddresses(IdentityCreateFromAddressesTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -349,6 +375,8 @@ impl StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
+            StateTransition::IdentityCreditTransferToSingleUseKey(_)
+            | StateTransition::IdentityCreateFromAddresses(_) => 11..=LATEST_VERSION,
         }
     }
 
@@ -453,6 +481,10 @@ impl StateTransition {
             Self::IdentityUpdate(_) => "IdentityUpdate".to_string(),
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
             Self::MasternodeVote(_) => "MasternodeVote".to_string(),
+            Self::IdentityCreditTransferToSingleUseKey(_) => {
+                "IdentityCreditTransferToSingleUseKey".to_string()
+            }
+            Self::IdentityCreateFromAddresses(_) => "IdentityCreateFromAddresses".to_string(),
         }
     }
 

@@ -6,11 +6,13 @@ pub mod v2;
 #[derive(Clone, Debug, Default)]
 pub struct DPPStateTransitionSerializationVersions {
     pub identity_public_key_in_creation: FeatureVersionBounds,
+    pub identity_create_from_addresses_state_transition: FeatureVersionBounds,
     pub identity_create_state_transition: FeatureVersionBounds,
     pub identity_update_state_transition: FeatureVersionBounds,
     pub identity_top_up_state_transition: FeatureVersionBounds,
     pub identity_credit_withdrawal_state_transition: FeatureVersionBounds,
     pub identity_credit_transfer_state_transition: FeatureVersionBounds,
+    pub identity_credit_transfer_to_address_state_transition: FeatureVersionBounds,
     pub masternode_vote_state_transition: FeatureVersionBounds,
     pub contract_create_state_transition: FeatureVersionBounds,
     pub contract_update_state_transition: FeatureVersionBounds,

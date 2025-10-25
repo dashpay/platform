@@ -29,7 +29,8 @@ pub enum StateTransitionType {
     IdentityCreditWithdrawal = 6,
     IdentityCreditTransfer = 7,
     MasternodeVote = 8,
-    IdentityCreditTransferToSingleKey = 9,
+    IdentityCreditTransferToAddress = 9,
+    IdentityCreateFromAddresses = 10,
 }
 
 impl std::fmt::Display for StateTransitionType {

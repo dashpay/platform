@@ -11,8 +11,8 @@ use crate::{
 use crate::state_transition::identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 
-use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionType::IdentityCreditTransfer;
+use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 use crate::version::FeatureVersion;
 
 impl From<IdentityCreditTransferTransitionV0> for StateTransition {
@@ -31,21 +31,10 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
     fn state_transition_type(&self) -> StateTransitionType {
         IdentityCreditTransfer
     }
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        &self.signature
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        self.signature = signature
-    }
+
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.identity_id, self.recipient_id]
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        self.signature = BinaryData::new(signature)
     }
 
     /// Get owner ID
@@ -68,5 +57,19 @@ impl StateTransitionLike for IdentityCreditTransferTransitionV0 {
 
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         self.user_fee_increase = user_fee_increase
+    }
+}
+
+impl StateTransitionSingleSigned for IdentityCreditTransferTransitionV0 {
+    /// returns the signature as a byte-array
+    fn signature(&self) -> &BinaryData {
+        &self.signature
+    }
+    /// set a new signature
+    fn set_signature(&mut self, signature: BinaryData) {
+        self.signature = signature
+    }
+    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
+        self.signature = BinaryData::new(signature)
     }
 }
