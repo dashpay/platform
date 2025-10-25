@@ -278,8 +278,36 @@ class WalletManager: ObservableObject {
         await loadWallets()
     }
     
+    // MARK: - Transaction Management
+
+    /// Get transactions for a wallet
+    /// - Parameters:
+    ///   - wallet: The wallet to get transactions for
+    ///   - accountIndex: The account index (default 0)
+    /// - Returns: Array of wallet transactions
+    func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        // Get managed account
+        let managedAccount = try sdkWalletManager.getManagedAccount(
+            walletId: walletId,
+            network: network,
+            accountIndex: accountIndex,
+            accountType: .standardBIP44
+        )
+
+        // Get current height (TODO: get from SPV client when available)
+        let currentHeight: UInt32 = 0
+
+        return try managedAccount.getTransactions(currentHeight: currentHeight)
+    }
+
     // MARK: - Account Management
-    
+
     /// Get detailed account information including xpub and addresses
     /// - Parameters:
     ///   - wallet: The wallet containing the account
@@ -323,18 +351,19 @@ class WalletManager: ObservableObject {
         var ffiType = FFIAccountType(rawValue: 0)
         if let m = managed {
             ffiType = FFIAccountType(rawValue: m.accountType?.rawValue ?? 0)
-            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            // Query all generated addresses (0 to 0 means "all addresses" in FFI)
+            if let pool = m.getExternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
-            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if let pool = m.getInternalAddressPool(), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 internalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
             }
             // Single pool fallback
-            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 100) {
+            if externalDetails.isEmpty && internalDetails.isEmpty, let pool = m.getAddressPool(type: .single), let infos = try? pool.getAddresses(from: 0, to: 0) {
                 externalDetails = infos.map { info in
                     AddressDetail(address: info.address, index: info.index, path: info.path, isUsed: info.used, publicKey: info.publicKey?.map { String(format: "%02x", $0) }.joined() ?? "")
                 }
@@ -612,7 +641,7 @@ class WalletManager: ObservableObject {
               let walletId = wallet.walletId else {
             return
         }
-        
+
         // Get balance via SDK wrappers
         do {
             let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: wallet.dashNetwork.toKeyWalletNetwork())
@@ -627,7 +656,69 @@ class WalletManager: ObservableObject {
             print("Failed to update balance: \(error)")
         }
     }
-    
+
+    /// Sync all wallet state from Rust WalletManager to SwiftData
+    /// This should be called whenever the Rust wallet state changes (e.g., after processing a transaction)
+    func syncWalletStateFromRust(for wallet: HDWallet) async {
+        guard let walletId = wallet.walletId else { return }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        do {
+            let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
+
+            // Sync all accounts
+            for account in wallet.accounts {
+                if let managed = collection.getBIP44Account(at: account.accountNumber) {
+                    // Sync balance from account
+                    if let bal = try? managed.getBalance() {
+                        account.confirmedBalance = bal.confirmed
+                        account.unconfirmedBalance = bal.unconfirmed
+                    }
+
+                    // Sync addresses (update isUsed flags and add new addresses)
+                    // Use 0 to 0 to get all addresses from the pool
+                    if let externalPool = managed.getExternalAddressPool() {
+                        if let infos = try? externalPool.getAddresses(from: 0, to: 0) {
+                            // Update existing addresses and add new ones if needed
+                            for info in infos {
+                                if let existingAddr = account.externalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    // New address discovered - add it
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .external, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.externalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+
+                    if let internalPool = managed.getInternalAddressPool() {
+                        if let infos = try? internalPool.getAddresses(from: 0, to: 0) {
+                            for info in infos {
+                                if let existingAddr = account.internalAddresses.first(where: { $0.address == info.address }) {
+                                    existingAddr.isUsed = info.used
+                                } else {
+                                    let hd = HDAddress(address: info.address, index: info.index, derivationPath: info.path, addressType: .internal, account: account)
+                                    hd.isUsed = info.used
+                                    modelContainer.mainContext.insert(hd)
+                                    account.internalAddresses.append(hd)
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Save all changes to SwiftData
+            try modelContainer.mainContext.save()
+        } catch {
+            print("❌ [WalletManager] Failed to sync wallet state: \(error)")
+        }
+    }
+
     // MARK: - Public Utility Methods
     
     func reloadWallets() async {
