@@ -1,6 +1,6 @@
 [package]
 name = "wasm-drive-verify"
-version = "2.1.0"
+version = "2.1.1"
 authors = ["Dash Core Group <dev@dash.org>"]
 edition = "2021"
 rust-version = "1.89"

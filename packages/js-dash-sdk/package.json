@@ -1,6 +1,6 @@
 {
   "name": "dash",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Dash library for JavaScript/TypeScript ecosystem (Wallet, DAPI, Primitives, BLS, ...)",
   "main": "build/index.js",
   "unpkg": "dist/dash.min.js",
