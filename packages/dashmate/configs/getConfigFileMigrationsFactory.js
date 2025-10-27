@@ -1213,6 +1213,59 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '2.1.0-pr.2716.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (options.platform?.dapi?.api && defaultConfig.has('platform.dapi.api.docker.image')) {
+              options.platform.dapi.api.docker.image = defaultConfig
+                .get('platform.dapi.api.docker.image');
+            }
+
+            options.platform.drive.abci.docker.image = defaultConfig
+              .get('platform.drive.abci.docker.image');
+
+            if (options.platform.dapi.rsDapi
+              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
+              options.platform.dapi.rsDapi.docker.image = defaultConfig
+                .get('platform.dapi.rsDapi.docker.image');
+            }
+
+            if (options.platform.drive.tenderdash
+              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
+              options.platform.drive.tenderdash.docker.image = defaultConfig
+                .get('platform.drive.tenderdash.docker.image');
+            }
+          });
+
+        return configFile;
+      },
+      '2.1.0-rc.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
+            if (options.platform?.dapi?.api) {
+              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
+            }
+            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2-rc';
+            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.5';
+          });
+
+        return configFile;
+      },
+      '2.1.0': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([, options]) => {
+            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
+            if (options.platform?.dapi?.api) {
+              options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
+            }
+            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2';
+          });
+
+        return configFile;
+      },
       '2.2.0-dev.1': (configFile) => {
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
@@ -1272,120 +1325,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
               delete upstreams.dapiApi;
               delete upstreams.dapiCoreStreams;
-            }
-          });
-
-        return configFile;
-      },
-      '2.1.0-pr.2716.1': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-
-            if (options.platform?.dapi?.api && defaultConfig.has('platform.dapi.api.docker.image')) {
-              options.platform.dapi.api.docker.image = defaultConfig
-                .get('platform.dapi.api.docker.image');
-            }
-
-            options.platform.drive.abci.docker.image = defaultConfig
-              .get('platform.drive.abci.docker.image');
-
-            if (options.platform.dapi.rsDapi
-              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
-              options.platform.dapi.rsDapi.docker.image = defaultConfig
-                .get('platform.dapi.rsDapi.docker.image');
-            }
-
-            if (options.platform.drive.tenderdash
-              && defaultConfig.has('platform.drive.tenderdash.docker.image')) {
-              options.platform.drive.tenderdash.docker.image = defaultConfig
-                .get('platform.drive.tenderdash.docker.image');
-            }
-          });
-
-        return configFile;
-      },
-      '2.1.0-rc.1': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2-rc';
-            if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2-rc';
-            }
-            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2-rc';
-            options.platform.drive.tenderdash.docker.image = 'dashpay/tenderdash:1.5';
-          });
-
-        return configFile;
-      },
-      '2.1.0': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([, options]) => {
-            options.platform.drive.abci.docker.image = 'dashpay/drive:2';
-            if (options.platform?.dapi?.api) {
-              options.platform.dapi.api.docker.image = 'dashpay/dapi:2';
-            }
-            options.platform.dapi.rsDapi.docker.image = 'dashpay/rs-dapi:2';
-          });
-
-        return configFile;
-      },
-      '2.2.0-dev.1': (configFile) => {
-        Object.entries(configFile.configs)
-          .forEach(([name, options]) => {
-            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-            }
-
-            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
-            const defaultZmqPort = defaultConfig.get('core.zmq.port');
-            const baseMetricsPort = base.get('platform.dapi.rsDapi.metrics.port');
-            const baseZmqPort = base.get('core.zmq.port');
-
-            if (!options.platform.dapi.rsDapi.metrics) {
-              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
-            }
-
-            if (typeof options.platform.dapi.rsDapi.metrics.enabled === 'undefined') {
-              options.platform.dapi.rsDapi.metrics.enabled = defaultMetrics.enabled;
-            }
-
-            if (!options.core.zmq) {
-              options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
-            } else {
-              options.core.zmq = lodash.cloneDeep(options.core.zmq);
-            }
-
-            if (typeof options.core.zmq.port === 'undefined') {
-              options.core.zmq.port = defaultConfig.get('core.zmq.port');
-            }
-
-            if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
-              options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
-            }
-
-            const targetMetricsPort = Number(defaultMetrics.port);
-            const targetZmqPort = Number(defaultZmqPort);
-            const configuredMetricsPort = Number(options.platform.dapi.rsDapi.metrics.port);
-            const configuredZmqPort = Number(options.core.zmq.port);
-            const baseMetricsPortNumber = Number(baseMetricsPort);
-            const baseZmqPortNumber = Number(baseZmqPort);
-
-            if (
-              !Number.isNaN(targetMetricsPort)
-              && targetMetricsPort !== configuredMetricsPort
-              && configuredMetricsPort === baseMetricsPortNumber
-            ) {
-              options.platform.dapi.rsDapi.metrics.port = targetMetricsPort;
-            }
-
-            if (
-              !Number.isNaN(targetZmqPort)
-              && targetZmqPort !== configuredZmqPort
-              && (configuredZmqPort === baseZmqPortNumber || configuredZmqPort === 29998)
-            ) {
-              options.core.zmq.port = targetZmqPort;
             }
           });
 
