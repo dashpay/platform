@@ -451,13 +451,28 @@ export default class DockerCompose {
    * @param {string[]} [options.profiles]
    * @return {Promise<void>}
    */
-  async rm(config, { serviceNames = [], profiles = [] } = {}) {
+  async rm(config, {
+    serviceNames = [],
+    profiles = [],
+    removeVolumes = false,
+    force = false,
+  } = {}) {
     await this.throwErrorIfNotInstalled();
+
+    const commandOptions = ['--stop'];
+
+    if (removeVolumes) {
+      commandOptions.push('-v');
+    }
+
+    if (force) {
+      commandOptions.push('--force');
+    }
 
     try {
       await dockerCompose.rm({
         ...this.#createOptions(config, { profiles }),
-        commandOptions: ['--stop'],
+        commandOptions,
       }, ...serviceNames);
     } catch (e) {
       throw new DockerComposeError(e);
