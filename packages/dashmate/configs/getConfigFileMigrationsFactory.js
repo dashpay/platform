@@ -1226,6 +1226,30 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
         return configFile;
       },
+      '2.2.0-dev.1': (configFile) => {
+        Object.entries(configFile.configs)
+          .forEach(([name, options]) => {
+            const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+              return;
+            }
+
+            const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+
+            if (!options.platform.dapi.rsDapi.metrics) {
+              options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
+              return;
+            }
+
+            if (typeof options.platform.dapi.rsDapi.metrics.enabled === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.enabled = defaultMetrics.enabled;
+            }
+          });
+
+        return configFile;
+      },
     };
   }
 

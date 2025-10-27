@@ -28,6 +28,22 @@ services:
       - {{=it.platform.drive.tenderdash.log.path}}:/var/log/tenderdash/tenderdash.log
   {{?}}
 
+  {{? it.platform.dapi && it.platform.dapi.rsDapi }}
+  rs_dapi:
+    expose:
+      - 3009
+      - 3010
+      {{? it.platform.dapi.rsDapi.metrics.enabled }}
+      - {{=it.platform.dapi.rsDapi.metrics.port}}
+      {{?}}
+    {{? it.platform.dapi.rsDapi.metrics.enabled }}
+    ports:
+      - {{=it.platform.dapi.rsDapi.metrics.host}}:{{=it.platform.dapi.rsDapi.metrics.port}}:{{=it.platform.dapi.rsDapi.metrics.port}}
+    {{??}}
+    ports: []
+    {{?}}
+  {{?}}
+
   {{ gatewayLogs = it.platform.gateway.log.accessLogs.filter((l) => l.type === 'file'); }}
   {{? gatewayLogs.length > 0 }}
   gateway:
