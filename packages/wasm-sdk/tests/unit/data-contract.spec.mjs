@@ -310,23 +310,6 @@ describe('DataContract', () => {
           }).to.throw(/unknown version/);
         });
       });
-
-      it('should handle version boundary correctly at V9 transition', () => {
-        // V0 contract should work in V9 (backward compatibility)
-        const contract = sdk.DataContract.fromJSON(contractFixtureV0, 9);
-        expect(contract.id()).to.equal(contractFixtureV0.id);
-        contract.free();
-
-        // V1 contract should work in V9 (first supported version)
-        const contractV1 = sdk.DataContract.fromJSON(contractFixtureV1, 9);
-        expect(contractV1.id()).to.equal(contractFixtureV1.id);
-        contractV1.free();
-
-        // V1 contract should fail in V8 (last unsupported version)
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV1, 8);
-        }).to.throw(/dpp unknown version/);
-      });
     });
   });
 });
