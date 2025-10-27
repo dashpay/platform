@@ -1,6 +1,6 @@
 [package]
 name = "platform-wallet"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2021"
 authors = ["Dash Core Team"]
 license = "MIT"
