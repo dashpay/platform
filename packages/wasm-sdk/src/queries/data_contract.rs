@@ -36,10 +36,14 @@ impl WasmSdk {
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
 
-        DataContract::fetch_by_identifier(self.as_ref(), id)
+        let contract = DataContract::fetch_by_identifier(self.as_ref(), id)
             .await?
-            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))
-            .map(Into::into)
+            .ok_or_else(|| WasmSdkError::not_found("Data contract not found"))?;
+
+        Ok(DataContractWasm::from_data_contract(
+            contract,
+            self.version(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]

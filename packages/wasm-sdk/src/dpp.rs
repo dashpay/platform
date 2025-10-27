@@ -295,18 +295,34 @@ impl IdentityWasm {
 // }
 
 #[wasm_bindgen(js_name=DataContract)]
-pub struct DataContractWasm(DataContract);
+pub struct DataContractWasm {
+    contract: DataContract,
+    platform_version: u32,
+}
 
-impl From<DataContract> for DataContractWasm {
-    fn from(value: DataContract) -> Self {
-        Self(value)
+impl DataContractWasm {
+    /// Create a DataContractWasm from a DataContract with platform version.
+    ///
+    /// This is the primary constructor for wrapping a data contract.
+    /// The platform version is stored and used for consistent serialization
+    /// to ensure version-specific fields (e.g., `groups` and `tokens` for
+    /// token contracts) are correctly included.
+    ///
+    /// # Arguments
+    /// * `data_contract` - The data contract to wrap
+    /// * `platform_version` - The platform version to use for operations
+    pub(crate) fn from_data_contract(data_contract: DataContract, platform_version: u32) -> Self {
+        Self {
+            contract: data_contract,
+            platform_version,
+        }
     }
 }
 
 #[wasm_bindgen(js_class=DataContract)]
 impl DataContractWasm {
     pub fn id(&self) -> String {
-        self.0.id().to_string(Encoding::Base58)
+        self.contract.id().to_string(Encoding::Base58)
     }
 
     #[wasm_bindgen(js_name=fromJSON)]
@@ -331,14 +347,22 @@ impl DataContractWasm {
             WasmSdkError::serialization(format!("failed to create DataContract from json: {}", e))
         })?;
 
-        Ok(data_contract.into())
+        Ok(DataContractWasm::from_data_contract(
+            data_contract,
+            platform_version.protocol_version,
+        ))
     }
 
     #[wasm_bindgen(js_name=toJSON)]
     pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
-        let platform_version = PlatformVersion::first();
+        let platform_version = &PlatformVersion::get(self.platform_version).map_err(|e| {
+            WasmSdkError::invalid_argument(format!(
+                "unknown platform version {}: {e}",
+                self.platform_version
+            ))
+        })?;
 
-        let json = self.0.to_json(platform_version).map_err(|e| {
+        let json = self.contract.to_json(platform_version).map_err(|e| {
             WasmSdkError::serialization(format!(
                 "failed to convert data contract convert to json: {}",
                 e
