@@ -18,6 +18,17 @@ const CONTRACT_FORMAT_VERSIONS = {
   V1: { introduced: 9, fixture: contractFixtureV1 },
 };
 
+// Validate configuration
+if (PLATFORM_VERSIONS.MIN >= PLATFORM_VERSIONS.MAX) {
+  throw new Error(`Invalid PLATFORM_VERSIONS: MIN (${PLATFORM_VERSIONS.MIN}) must be less than MAX (${PLATFORM_VERSIONS.MAX})`);
+}
+
+Object.entries(CONTRACT_FORMAT_VERSIONS).forEach(([key, config]) => {
+  if (config.introduced < PLATFORM_VERSIONS.MIN || config.introduced > PLATFORM_VERSIONS.MAX) {
+    throw new Error(`Invalid ${key}.introduced (${config.introduced}): must be between ${PLATFORM_VERSIONS.MIN} and ${PLATFORM_VERSIONS.MAX}`);
+  }
+});
+
 // Auto-generate compatibility data for all formats
 const FORMATS = Object.entries(CONTRACT_FORMAT_VERSIONS).reduce((acc, [formatKey, config]) => {
   const compatibleVersions = Array.from(
@@ -25,12 +36,10 @@ const FORMATS = Object.entries(CONTRACT_FORMAT_VERSIONS).reduce((acc, [formatKey
     (_, i) => i + config.introduced
   );
 
-  const allVersions = Array.from(
-    { length: PLATFORM_VERSIONS.MAX - PLATFORM_VERSIONS.MIN + 1 },
+  const incompatibleVersions = Array.from(
+    { length: Math.max(0, config.introduced - PLATFORM_VERSIONS.MIN) },
     (_, i) => i + PLATFORM_VERSIONS.MIN
   );
-
-  const incompatibleVersions = allVersions.filter(v => v < config.introduced);
 
   acc[formatKey] = {
     ...config,
