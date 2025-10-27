@@ -62,11 +62,6 @@ jobs:
           docker pull $DOCKER_HUB_ORG/drive:$SHA_TAG
           docker tag $DOCKER_HUB_ORG/drive:$SHA_TAG $DRIVE_IMAGE_AND_VERSION
 
-          # DAPI
-          DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.api.docker.image)
-          docker pull $DOCKER_HUB_ORG/dapi:$SHA_TAG
-          docker tag $DOCKER_HUB_ORG/dapi:$SHA_TAG $DAPI_IMAGE_AND_VERSION
-
           # RS-DAPI
           RS_DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.rsDapi.docker.image)
           docker pull $DOCKER_HUB_ORG/rs-dapi:$SHA_TAG

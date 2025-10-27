@@ -21,7 +21,7 @@ inputs:
     description: Push tags to registry or digest only
     default: "false"
   target:
-    description: "Target stage within Dockerfile: dapi, drive-abci, dashmate-helper, test-suite"
+    description: "Target stage within Dockerfile: drive-abci, rs-dapi, dashmate-helper, test-suite"
   platform:
     description: Platform to build for. i.e linux/amd64 or linux/arm64
     required: true

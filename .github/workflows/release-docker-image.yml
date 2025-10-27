@@ -7,7 +7,7 @@ on:
         required: true
       image_name:
         type: string
-        description: Image name. i.e. drive, dapi
+        description: Image name. i.e. drive, rs-dapi
         required: true
       image_org:
         type: string
@@ -15,7 +15,7 @@ on:
         required: true
       target:
         type: string
-        description: Image target. i.e. drive-abci, dapi
+        description: Image target. i.e. drive-abci, rs-dapi
         required: true
       tag:
         type: string
