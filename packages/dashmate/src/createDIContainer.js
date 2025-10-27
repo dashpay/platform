@@ -117,7 +117,6 @@ import assertLocalServicesRunningFactory from './test/asserts/assertLocalService
 import assertServiceRunningFactory from './test/asserts/assertServiceRunningFactory.js';
 import generateEnvsFactory from './config/generateEnvsFactory.js';
 import getConfigProfilesFactory from './config/getConfigProfilesFactory.js';
-import getPlatformProfilesFactory from './config/getPlatformProfilesFactory.js';
 import createIpAndPortsFormFactory from './listr/prompts/createIpAndPortsForm.js';
 import registerMasternodeWithCoreWalletFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithCoreWallet.js';
 import registerMasternodeWithDMTFactory from './listr/tasks/setup/regular/registerMasternode/registerMasternodeWithDMT.js';
@@ -170,7 +169,6 @@ export default async function createDIContainer(options = {}) {
     getConnectionHost: asFunction(getConnectionHostFactory).singleton(),
     generateEnvs: asFunction(generateEnvsFactory).singleton(),
     getConfigProfiles: asFunction(getConfigProfilesFactory).singleton(),
-    getPlatformProfiles: asFunction(getPlatformProfilesFactory).singleton(),
     ensureFileMountExists: asFunction(ensureFileMountExistsFactory).singleton(),
     // `configFile` and `config` are registering on command init
   });

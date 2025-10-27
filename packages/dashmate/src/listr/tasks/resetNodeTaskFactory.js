@@ -12,7 +12,7 @@ import wait from '../../util/wait.js';
  * @param {ConfigFile} configFile
  * @param {HomeDir} homeDir
  * @param {generateEnvs} generateEnvs
- * @param {getPlatformProfiles} getPlatformProfiles
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {resetNodeTask}
  */
 export default function resetNodeTaskFactory(
@@ -24,8 +24,13 @@ export default function resetNodeTaskFactory(
   configFile,
   homeDir,
   generateEnvs,
-  getPlatformProfiles,
+  getConfigProfiles,
 ) {
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
+      .filter((profile) => profile.startsWith('platform'));
+  }
+
   /**
    * Remove path but ignore permission issues to avoid failing reset on root-owned directories.
    *
@@ -73,7 +78,7 @@ export default function resetNodeTaskFactory(
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
           const profiles = ctx.isPlatformOnlyReset
-            ? getPlatformProfiles(config, { includeAll: true })
+            ? selectPlatformProfiles(config, { includeAll: true })
             : [];
 
           if (await dockerCompose.isNodeRunning(
@@ -104,7 +109,7 @@ export default function resetNodeTaskFactory(
         title: 'Remove platform services and associated data',
         enabled: (ctx) => ctx.isPlatformOnlyReset,
         task: async (ctx, task) => {
-          const profiles = getPlatformProfiles(config, { includeAll: true });
+          const profiles = selectPlatformProfiles(config, { includeAll: true });
 
           if (ctx.keepData) {
             // eslint-disable-next-line no-param-reassign
