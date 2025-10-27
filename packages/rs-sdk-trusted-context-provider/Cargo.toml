@@ -1,6 +1,6 @@
 [package]
 name = "rs-sdk-trusted-context-provider"
-version = "2.1.0-rc.1"
+version = "2.1.1"
 edition = "2021"
 authors = ["sam@dash.org"]
 license = "MIT"
