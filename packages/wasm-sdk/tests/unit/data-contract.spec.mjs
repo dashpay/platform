@@ -2,15 +2,56 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
 import contractFixtureV0 from './fixtures/data-contract-v0-crypto-card-game.mjs';
 import contractFixtureV1 from './fixtures/data-contract-v1-with-docs-tokens-groups.mjs';
 
-// Platform version constants
-const PLATFORM_VERSION_CONTRACT_V0 = 1;
-const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
+// Platform version configuration
+const PLATFORM_VERSIONS = {
+  MIN: 1,
+  MAX: 10, // Update as new platform versions are released
+};
 
-// Platform version compatibility ranges
-const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 works across all versions
-const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 only works from version 9+
-const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
-const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS);
+// Contract format version configuration
+// To add a new format version, add an entry here with:
+// - The Platform version when introduced
+// - A fixture for the new format
+// Example: V2: { introduced: 12, fixture: contractFixtureV2 }
+const CONTRACT_FORMAT_VERSIONS = {
+  V0: { introduced: 1, fixture: contractFixtureV0 },
+  V1: { introduced: 9, fixture: contractFixtureV1 },
+};
+
+// Validate configuration
+if (PLATFORM_VERSIONS.MIN >= PLATFORM_VERSIONS.MAX) {
+  throw new Error(`Invalid PLATFORM_VERSIONS: MIN (${PLATFORM_VERSIONS.MIN}) must be less than MAX (${PLATFORM_VERSIONS.MAX})`);
+}
+
+Object.entries(CONTRACT_FORMAT_VERSIONS).forEach(([key, config]) => {
+  if (config.introduced < PLATFORM_VERSIONS.MIN || config.introduced > PLATFORM_VERSIONS.MAX) {
+    throw new Error(`Invalid ${key}.introduced (${config.introduced}): must be between ${PLATFORM_VERSIONS.MIN} and ${PLATFORM_VERSIONS.MAX}`);
+  }
+});
+
+// Auto-generate compatibility data for all formats
+const FORMATS = Object.entries(CONTRACT_FORMAT_VERSIONS).reduce((acc, [formatKey, config]) => {
+  const compatibleVersions = Array.from(
+    { length: PLATFORM_VERSIONS.MAX - config.introduced + 1 },
+    (_, i) => i + config.introduced,
+  );
+
+  const incompatibleVersions = Array.from(
+    { length: Math.max(0, config.introduced - PLATFORM_VERSIONS.MIN) },
+    (_, i) => i + PLATFORM_VERSIONS.MIN,
+  );
+
+  acc[formatKey] = {
+    ...config,
+    compatibleVersions,
+    incompatibleVersions,
+    platformVersion: config.introduced,
+  };
+
+  return acc;
+}, {});
+
+const LATEST_KNOWN_VERSION = PLATFORM_VERSIONS.MAX;
 
 // Helper function for testing contract compatibility across versions
 const testContractAcrossVersions = (
@@ -48,7 +89,7 @@ describe('DataContract', () => {
 
   describe('Contract Creation', () => {
     it('should create a V0 contract from JSON and expose all properties', async () => {
-      const contract = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
+      const contract = sdk.DataContract.fromJSON(contractFixtureV0, FORMATS.V0.platformVersion);
 
       expect(contract).to.be.ok();
       expect(contract.id()).to.equal(contractFixtureV0.id);
@@ -74,7 +115,7 @@ describe('DataContract', () => {
 
     // TODO: enable test once an SDK fix to support this is merged
     it.skip('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
-      const contract = sdk.DataContract.fromJSON(contractFixtureV1, PLATFORM_VERSION_CONTRACT_V1);
+      const contract = sdk.DataContract.fromJSON(contractFixtureV1, FORMATS.V1.platformVersion);
 
       expect(contract).to.be.ok();
       expect(contract.id()).to.equal(contractFixtureV1.id);
@@ -105,7 +146,7 @@ describe('DataContract', () => {
 
     it('should create a contract with only document schemas (no tokens)', () => {
       // V0 fixture already has only documents, no tokens - verify it works
-      const contract = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
+      const contract = sdk.DataContract.fromJSON(contractFixtureV0, FORMATS.V0.platformVersion);
       const roundTripped = contract.toJSON();
 
       expect(roundTripped.documentSchemas.card).to.exist();
@@ -123,7 +164,7 @@ describe('DataContract', () => {
 
       const contract = sdk.DataContract.fromJSON(
         contractWithOnlyTokens,
-        PLATFORM_VERSION_CONTRACT_V1,
+        FORMATS.V1.platformVersion,
       );
       const roundTripped = contract.toJSON();
 
@@ -136,7 +177,7 @@ describe('DataContract', () => {
   describe('Version Compatibility', () => {
     it('should fail to create a V1 contract with V0 platform version', async () => {
       expect(() => {
-        sdk.DataContract.fromJSON(contractFixtureV1, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON(contractFixtureV1, FORMATS.V0.platformVersion);
       }).to.throw(/dpp unknown version.*known versions.*\[0\].*received.*1/);
     });
   });
@@ -144,15 +185,15 @@ describe('DataContract', () => {
   describe('Validation', () => {
     it('should handle invalid JSON input gracefully', () => {
       expect(() => {
-        sdk.DataContract.fromJSON(null, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON(null, FORMATS.V0.platformVersion);
       }).to.throw();
 
       expect(() => {
-        sdk.DataContract.fromJSON({}, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON({}, FORMATS.V0.platformVersion);
       }).to.throw();
 
       expect(() => {
-        sdk.DataContract.fromJSON({ id: 'invalid' }, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON({ id: 'invalid' }, FORMATS.V0.platformVersion);
       }).to.throw();
     });
 
@@ -162,7 +203,7 @@ describe('DataContract', () => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           id: 'invalid-not-base58!',
-        }, PLATFORM_VERSION_CONTRACT_V0);
+        }, FORMATS.V0.platformVersion);
       }).to.throw();
 
       // Test negative version number
@@ -170,7 +211,7 @@ describe('DataContract', () => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           version: -1,
-        }, PLATFORM_VERSION_CONTRACT_V0);
+        }, FORMATS.V0.platformVersion);
       }).to.throw();
 
       // Test invalid ownerId
@@ -178,7 +219,7 @@ describe('DataContract', () => {
         sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           ownerId: 'not-a-valid-id',
-        }, PLATFORM_VERSION_CONTRACT_V0);
+        }, FORMATS.V0.platformVersion);
       }).to.throw();
     });
 
@@ -193,18 +234,18 @@ describe('DataContract', () => {
       };
 
       expect(() => {
-        sdk.DataContract.fromJSON(contractWithEmptySchemas, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON(contractWithEmptySchemas, FORMATS.V0.platformVersion);
       }).to.throw(/must have at least one document type or token defined/);
     });
   });
 
   describe('Data Preservation', () => {
     it('should preserve all data through JSON round-trip for V0 contract', async () => {
-      const contract = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
+      const contract = sdk.DataContract.fromJSON(contractFixtureV0, FORMATS.V0.platformVersion);
       const roundTripped = contract.toJSON();
 
       // Create a new contract from the round-tripped JSON
-      const contract2 = sdk.DataContract.fromJSON(roundTripped, PLATFORM_VERSION_CONTRACT_V0);
+      const contract2 = sdk.DataContract.fromJSON(roundTripped, FORMATS.V0.platformVersion);
       const roundTripped2 = contract2.toJSON();
 
       expect(roundTripped2).to.deep.equal(roundTripped);
@@ -214,11 +255,11 @@ describe('DataContract', () => {
     });
 
     it('should preserve all data through JSON round-trip for V1 contract', async () => {
-      const contract = sdk.DataContract.fromJSON(contractFixtureV1, PLATFORM_VERSION_CONTRACT_V1);
+      const contract = sdk.DataContract.fromJSON(contractFixtureV1, FORMATS.V1.platformVersion);
       const roundTripped = contract.toJSON();
 
       // Create a new contract from the round-tripped JSON
-      const contract2 = sdk.DataContract.fromJSON(roundTripped, PLATFORM_VERSION_CONTRACT_V1);
+      const contract2 = sdk.DataContract.fromJSON(roundTripped, FORMATS.V1.platformVersion);
       const roundTripped2 = contract2.toJSON();
 
       expect(roundTripped2).to.deep.equal(roundTripped);
@@ -230,8 +271,8 @@ describe('DataContract', () => {
 
   describe('Memory Management', () => {
     it('should handle memory management properly with multiple contracts', async () => {
-      const contract1 = sdk.DataContract.fromJSON(contractFixtureV0, PLATFORM_VERSION_CONTRACT_V0);
-      const contract2 = sdk.DataContract.fromJSON(contractFixtureV1, PLATFORM_VERSION_CONTRACT_V1);
+      const contract1 = sdk.DataContract.fromJSON(contractFixtureV0, FORMATS.V0.platformVersion);
+      const contract2 = sdk.DataContract.fromJSON(contractFixtureV1, FORMATS.V1.platformVersion);
 
       expect(contract1.id()).to.equal(contractFixtureV0.id);
       expect(contract2.id()).to.equal(contractFixtureV1.id);
@@ -242,12 +283,16 @@ describe('DataContract', () => {
   });
 
   describe('Platform Version Compatibility Matrix', () => {
-    describe('V0 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV0, 'V0', V0_COMPATIBLE_VERSIONS);
-    });
-
-    describe('V1 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV1, 'V1', V1_COMPATIBLE_VERSIONS, V0_ONLY_VERSIONS);
+    // Dynamically test all defined contract formats
+    Object.entries(FORMATS).forEach(([formatKey, formatData]) => {
+      describe(`${formatKey} Contract Compatibility`, () => {
+        testContractAcrossVersions(
+          formatData.fixture,
+          formatKey,
+          formatData.compatibleVersions,
+          formatData.incompatibleVersions,
+        );
+      });
     });
 
     describe('Edge Cases', () => {
@@ -264,23 +309,6 @@ describe('DataContract', () => {
             sdk.DataContract.fromJSON(contractFixtureV0, version);
           }).to.throw(/unknown version/);
         });
-      });
-
-      it('should handle version boundary correctly at V9 transition', () => {
-        // V0 contract should work in V9 (backward compatibility)
-        const contract = sdk.DataContract.fromJSON(contractFixtureV0, 9);
-        expect(contract.id()).to.equal(contractFixtureV0.id);
-        contract.free();
-
-        // V1 contract should work in V9 (first supported version)
-        const contractV1 = sdk.DataContract.fromJSON(contractFixtureV1, 9);
-        expect(contractV1.id()).to.equal(contractFixtureV1.id);
-        contractV1.free();
-
-        // V1 contract should fail in V8 (last unsupported version)
-        expect(() => {
-          sdk.DataContract.fromJSON(contractFixtureV1, 8);
-        }).to.throw(/dpp unknown version/);
       });
     });
   });
