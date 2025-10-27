@@ -4,6 +4,11 @@ import { Observable } from 'rxjs';
 import { NETWORK_LOCAL } from '../../constants.js';
 import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
 
+const DAPI_PROFILE_SERVICES = {
+  'platform-dapi-deprecated': ['dapi_api', 'dapi_core_streams'],
+  'platform-dapi-rs': ['rs_dapi'],
+};
+
 /**
  *
  * @param {DockerCompose} dockerCompose
@@ -117,6 +122,31 @@ export default function startNodeTaskFactory(
         enabled: (ctx) => !ctx.skipBuildServices
           && isServiceBuildRequired(config),
         task: () => buildServicesTask(config),
+      },
+      {
+        title: 'Remove inactive DAPI stack',
+        enabled: () => config.get('platform.enable'),
+        task: async () => {
+          const deprecatedEnabled = config.has('platform.dapi.deprecated.enabled')
+            ? config.get('platform.dapi.deprecated.enabled')
+            : false;
+
+          const inactiveProfile = deprecatedEnabled
+            ? 'platform-dapi-rs'
+            : 'platform-dapi-deprecated';
+
+          const serviceNames = DAPI_PROFILE_SERVICES[inactiveProfile] ?? [];
+
+          if (serviceNames.length === 0) {
+            return;
+          }
+
+          await dockerCompose.rm(config, {
+            serviceNames,
+            profiles: [inactiveProfile],
+            force: true,
+          });
+        },
       },
       {
         title: 'Start services',
