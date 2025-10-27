@@ -33,12 +33,12 @@ Object.entries(CONTRACT_FORMAT_VERSIONS).forEach(([key, config]) => {
 const FORMATS = Object.entries(CONTRACT_FORMAT_VERSIONS).reduce((acc, [formatKey, config]) => {
   const compatibleVersions = Array.from(
     { length: PLATFORM_VERSIONS.MAX - config.introduced + 1 },
-    (_, i) => i + config.introduced
+    (_, i) => i + config.introduced,
   );
 
   const incompatibleVersions = Array.from(
     { length: Math.max(0, config.introduced - PLATFORM_VERSIONS.MIN) },
-    (_, i) => i + PLATFORM_VERSIONS.MIN
+    (_, i) => i + PLATFORM_VERSIONS.MIN,
   );
 
   acc[formatKey] = {
@@ -290,7 +290,7 @@ describe('DataContract', () => {
           formatData.fixture,
           formatKey,
           formatData.compatibleVersions,
-          formatData.incompatibleVersions
+          formatData.incompatibleVersions,
         );
       });
     });
