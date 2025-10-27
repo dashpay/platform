@@ -1,6 +1,6 @@
 [package]
 name = "rs-dash-event-bus"
-version = "2.1.1"
+version = "2.1.2"
 edition = "2024"
 license = "MIT"
 description = "Shared event bus and Platform events multiplexer for Dash Platform (rs-dapi, rs-drive-abci, rs-sdk)"
