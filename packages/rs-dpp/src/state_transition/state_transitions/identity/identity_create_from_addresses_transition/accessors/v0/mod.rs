@@ -18,8 +18,6 @@ pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>);
     /// Returns identity id
     fn identity_id(&self) -> Identifier;
-    /// Returns Owner ID
-    fn owner_id(&self) -> Identifier;
 
     /// Get inputs
     fn inputs(&self) -> &[KeyOfType];

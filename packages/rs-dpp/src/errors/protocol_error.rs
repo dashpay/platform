@@ -288,6 +288,14 @@ pub enum ProtocolError {
         expected: &'static str,
         found: &'static str,
     },
+    #[error(
+        "Invalid verification wrong number of elements: needed {needed}, using {using}, {msg}"
+    )]
+    InvalidVerificationWrongNumberOfElements {
+        needed: u16,
+        using: u16,
+        msg: &'static str,
+    },
 }
 
 impl From<&str> for ProtocolError {

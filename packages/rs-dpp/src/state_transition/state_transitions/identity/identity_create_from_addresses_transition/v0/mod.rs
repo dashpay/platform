@@ -82,11 +82,15 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
         // Generate identity_id from the hash of all inputs
         // This creates a deterministic identifier based on all inputs
         let identity_id = if !inputs.is_empty() {
-            let input_bytes = bincode::encode_to_vec(&inputs, bincode::config::standard())?;
-            let hash = hash_to_vec(input_bytes);
-            Identifier::from_bytes(&hash)?
+            use crate::util::hash::hash_double;
+            let input_bytes = bincode::encode_to_vec(&inputs, bincode::config::standard())
+                .map_err(|e| {
+                    ProtocolError::EncodingError(format!("Failed to encode inputs: {}", e))
+                })?;
+            let hash = hash_double(input_bytes);
+            Identifier::new(hash)
         } else {
-            return Err(ProtocolError::InvalidStateTransitionError(
+            return Err(ProtocolError::ParsingError(
                 "Identity creation requires at least one input".to_string(),
             ));
         };

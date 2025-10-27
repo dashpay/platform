@@ -120,11 +120,6 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
         self.identity_id
     }
 
-    /// Returns Owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
-
     /// Get inputs
     fn inputs(&self) -> &[crate::identity::KeyOfType] {
         &self.inputs

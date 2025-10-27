@@ -11,9 +11,8 @@ use crate::{
     ProtocolError,
 };
 
-use crate::prelude::AssetLockProof;
-
-use crate::identity::state_transition::AssetLockProved;
+use crate::fee::Credits;
+use crate::identity::KeyOfType;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::fields::*;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
@@ -32,6 +31,8 @@ impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0
         let mut transition_map = raw_object
             .into_btree_string_map()
             .map_err(ProtocolError::ValueError)?;
+
+        // Parse public keys
         if let Some(keys_value_array) = transition_map
             .remove_optional_inner_value_array::<Vec<_>>(PUBLIC_KEYS)
             .map_err(ProtocolError::ValueError)?
@@ -43,12 +44,33 @@ impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0
             state_transition.set_public_keys(keys);
         }
 
-        if let Some(proof) = transition_map.get(ASSET_LOCK_PROOF) {
-            state_transition.set_asset_lock_proof(AssetLockProof::try_from(proof)?)?;
+        // Parse inputs
+        if let Some(inputs_value) = transition_map.remove(INPUTS) {
+            let inputs: Vec<KeyOfType> = platform_value::from_value(inputs_value)?;
+            state_transition.set_inputs(inputs);
         }
 
-        if let Some(signature) = transition_map.get_optional_binary_data(SIGNATURE)? {
-            state_transition.set_signature(signature);
+        // Parse outputs
+        if let Some(outputs_value) = transition_map.remove(OUTPUTS) {
+            let outputs: BTreeMap<KeyOfType, Credits> = platform_value::from_value(outputs_value)?;
+            state_transition.set_outputs(outputs);
+        }
+
+        // Parse user fee increase
+        if let Some(user_fee_increase) = transition_map.get_u16(USER_FEE_INCREASE)? {
+            state_transition.user_fee_increase = user_fee_increase;
+        }
+
+        // Parse input signatures
+        if let Some(signatures_value) = transition_map
+            .remove_optional_inner_value_array::<Vec<_>>(INPUT_SIGNATURES)
+            .map_err(ProtocolError::ValueError)?
+        {
+            let signatures = signatures_value
+                .into_iter()
+                .map(|val| platform_value::from_value(val))
+                .collect::<Result<Vec<_>, _>>()?;
+            state_transition.input_signatures = signatures;
         }
 
         Ok(state_transition)

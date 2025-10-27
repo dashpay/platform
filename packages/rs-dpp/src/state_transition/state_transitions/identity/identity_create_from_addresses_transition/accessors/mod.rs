@@ -45,12 +45,6 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn inputs(&self) -> &[KeyOfType] {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => transition.inputs(),

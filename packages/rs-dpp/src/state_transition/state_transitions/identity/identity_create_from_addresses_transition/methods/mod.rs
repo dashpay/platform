@@ -40,7 +40,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         match platform_version
             .dpp
             .state_transition_conversion_versions
-            .identity_to_identity_create_from_addresses_transition_with_signer
+            .inputs_to_identity_create_from_addresses_transition_with_signer
         {
             0 => Ok(IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
                 identity,

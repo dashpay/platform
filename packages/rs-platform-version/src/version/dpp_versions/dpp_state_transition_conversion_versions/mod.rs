@@ -10,4 +10,5 @@ pub struct DPPStateTransitionConversionVersions {
     pub identity_to_identity_transfer_transition: FeatureVersion,
     pub identity_to_identity_withdrawal_transition: FeatureVersion,
     pub identity_to_identity_create_transition_with_signer: FeatureVersion,
+    pub inputs_to_identity_create_from_addresses_transition_with_signer: FeatureVersion,
 }

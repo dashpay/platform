@@ -97,6 +97,7 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
+use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
 };
@@ -174,7 +175,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
             StateTransition::MasternodeVote(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method($args)),
-            StateTransition::IdentityCreateFromAddresses(st) => None,
+            StateTransition::IdentityCreateFromAddresses(_) => None,
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -189,7 +190,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
             StateTransition::MasternodeVote(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method()),
-            StateTransition::IdentityCreateFromAddresses(st) => None,
+            StateTransition::IdentityCreateFromAddresses(_) => None,
         }
     };
 }
@@ -489,8 +490,28 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    pub fn signature(&self) -> &BinaryData {
-        call_method!(self, signature)
+    pub fn signature(&self) -> Option<&BinaryData> {
+        match self {
+            StateTransition::DataContractCreate(st) => Some(st.signature()),
+            StateTransition::DataContractUpdate(st) => Some(st.signature()),
+            StateTransition::Batch(st) => Some(st.signature()),
+            StateTransition::IdentityCreate(st) => Some(st.signature()),
+            StateTransition::IdentityTopUp(st) => Some(st.signature()),
+            StateTransition::IdentityCreditWithdrawal(st) => Some(st.signature()),
+            StateTransition::IdentityUpdate(st) => Some(st.signature()),
+            StateTransition::IdentityCreditTransfer(st) => Some(st.signature()),
+            StateTransition::MasternodeVote(st) => Some(st.signature()),
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.signature()),
+            StateTransition::IdentityCreateFromAddresses(_) => None,
+        }
+    }
+
+    /// returns the number of private keys
+    pub fn required_number_of_private_keys(&self) -> u16 {
+        match self {
+            StateTransition::IdentityCreateFromAddresses(st) => st.inputs().len() as u16,
+            _ => 1,
+        }
     }
 
     /// returns the fee_increase additional percentage multiplier, it affects only processing costs
@@ -531,8 +552,50 @@ impl StateTransition {
     }
 
     /// set a new signature
-    pub fn set_signature(&mut self, signature: BinaryData) {
-        call_method!(self, set_signature, signature)
+    pub fn set_signature(&mut self, signature: BinaryData) -> bool {
+        match self {
+            StateTransition::DataContractCreate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::DataContractUpdate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::Batch(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityCreate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityTopUp(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityUpdate(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityCreditTransfer(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::MasternodeVote(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => {
+                st.set_signature(signature);
+                true
+            }
+            StateTransition::IdentityCreateFromAddresses(_) => false,
+        }
     }
 
     /// set fee multiplier
@@ -649,6 +712,16 @@ impl StateTransition {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
+            StateTransition::IdentityCreditTransferToSingleUseKey(st) => {
+                st.verify_public_key_level_and_purpose(identity_public_key, options)?;
+                st.verify_public_key_is_enabled(identity_public_key)?;
+            }
+            StateTransition::IdentityCreateFromAddresses(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "identity create from addresses can not be called for identity signing"
+                        .to_string(),
+                ))
+            }
         }
         let data = self.signable_bytes()?;
         self.set_signature(signer.sign(identity_public_key, data.as_slice())?);
@@ -754,12 +827,26 @@ impl StateTransition {
     ) -> Result<(), ProtocolError> {
         let data = self.signable_bytes()?;
         match key_type {
-            KeyType::BLS12_381 => self.set_signature(bls.sign(&data, private_key)?.into()),
+            KeyType::BLS12_381 => {
+                if !self.set_signature(bls.sign(&data, private_key)?.into()) {
+                    return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                        needed: self.required_number_of_private_keys(),
+                        using: 1,
+                        msg: "failed to set BLS signature",
+                    });
+                }
+            }
 
             // https://github.com/dashevo/platform/blob/9c8e6a3b6afbc330a6ab551a689de8ccd63f9120/packages/js-dpp/lib/stateTransition/AbstractStateTransition.js#L169
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 let signature = signer::sign(&data, private_key)?;
-                self.set_signature(signature.to_vec().into());
+                if !self.set_signature(signature.to_vec().into()) {
+                    return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                        needed: self.required_number_of_private_keys(),
+                        using: 1,
+                        msg: "failed to set ECDSA signature",
+                    });
+                };
             }
 
             // the default behavior from
@@ -841,33 +928,48 @@ impl StateTransition {
         &self,
         public_key_hash: &[u8],
     ) -> Result<(), ProtocolError> {
-        if self.signature().is_empty() {
+        let Some(signature) = self.signature() else {
+            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                needed: self.required_number_of_private_keys(),
+                using: 1,
+                msg: "This state transition type should a single signature",
+            });
+        };
+        if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
         let data = self.signable_bytes()?;
         let data_hash = double_sha(data);
-        signer::verify_hash_signature(&data_hash, self.signature().as_slice(), public_key_hash)
-            .map_err(|e| {
+        signer::verify_hash_signature(&data_hash, signature.as_slice(), public_key_hash).map_err(
+            |e| {
                 ProtocolError::from(ConsensusError::SignatureError(
                     SignatureError::InvalidStateTransitionSignatureError(
                         InvalidStateTransitionSignatureError::new(e.to_string()),
                     ),
                 ))
-            })
+            },
+        )
     }
 
     #[cfg(feature = "state-transition-validation")]
     /// Verifies an ECDSA signature with the public key
     fn verify_ecdsa_signature_by_public_key(&self, public_key: &[u8]) -> Result<(), ProtocolError> {
-        if self.signature().is_empty() {
+        let Some(signature) = self.signature() else {
+            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                needed: self.required_number_of_private_keys(),
+                using: 1,
+                msg: "This state transition type should a single signature",
+            });
+        };
+        if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone()),
             ));
         }
         let data = self.signable_bytes()?;
-        signer::verify_data_signature(&data, self.signature().as_slice(), public_key).map_err(|e| {
+        signer::verify_data_signature(&data, signature.as_slice(), public_key).map_err(|e| {
             // TODO: it shouldn't respond with consensus error
 
             ProtocolError::from(ConsensusError::SignatureError(
@@ -885,7 +987,14 @@ impl StateTransition {
         public_key: &[u8],
         bls: &T,
     ) -> Result<(), ProtocolError> {
-        if self.signature().is_empty() {
+        let Some(signature) = self.signature() else {
+            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
+                needed: self.required_number_of_private_keys(),
+                using: 1,
+                msg: "This state transition type should a single signature",
+            });
+        };
+        if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone()),
             ));
@@ -893,7 +1002,7 @@ impl StateTransition {
 
         let data = self.signable_bytes()?;
 
-        bls.verify_signature(self.signature().as_slice(), &data, public_key)
+        bls.verify_signature(signature.as_slice(), &data, public_key)
             .map(|_| ())
             .map_err(|e| {
                 // TODO: it shouldn't respond with consensus error
