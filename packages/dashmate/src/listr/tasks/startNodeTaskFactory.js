@@ -19,7 +19,7 @@ const DAPI_PROFILE_SERVICES = {
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
  * @param {HomeDir} homeDir
- * @param {getConfigProfiles} getConfigProfiles
+ * @param {getPlatformProfiles} getPlatformProfiles
  * @return {startNodeTask}
  */
 export default function startNodeTaskFactory(
@@ -31,19 +31,8 @@ export default function startNodeTaskFactory(
   getConnectionHost,
   ensureFileMountExists,
   homeDir,
-  getConfigProfiles,
+  getPlatformProfiles,
 ) {
-  function getPlatformProfiles(config) {
-    const platformProfiles = getConfigProfiles(config)
-      .filter((profile) => profile.startsWith('platform'));
-
-    if (platformProfiles.length === 0) {
-      platformProfiles.push('platform');
-    }
-
-    return Array.from(new Set(platformProfiles));
-  }
-
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
