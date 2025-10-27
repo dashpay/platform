@@ -2,15 +2,54 @@ import init, * as sdk from '../../dist/sdk.compressed.js';
 import contractFixtureV0 from './fixtures/data-contract-v0-crypto-card-game.mjs';
 import contractFixtureV1 from './fixtures/data-contract-v1-with-docs-tokens-groups.mjs';
 
-// Platform version constants
-const PLATFORM_VERSION_CONTRACT_V0 = 1;
-const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
+// Platform version configuration
+const PLATFORM_VERSIONS = {
+  MIN: 1,
+  MAX: 10, // Update as new platform versions are released
+};
 
-// Platform version compatibility ranges
-const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 works across all versions
-const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 only works from version 9+
-const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
-const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS);
+// Contract format version configuration
+// To add a new format version, add an entry here with:
+// - The Platform version when introduced
+// - A fixture for the new format
+// Example: V2: { introduced: 12, fixture: contractFixtureV2 }
+const CONTRACT_FORMAT_VERSIONS = {
+  V0: { introduced: 1, fixture: contractFixtureV0 },
+  V1: { introduced: 9, fixture: contractFixtureV1 },
+};
+
+// Auto-generate compatibility data for all formats
+const FORMATS = Object.entries(CONTRACT_FORMAT_VERSIONS).reduce((acc, [formatKey, config]) => {
+  const compatibleVersions = Array.from(
+    { length: PLATFORM_VERSIONS.MAX - config.introduced + 1 },
+    (_, i) => i + config.introduced
+  );
+
+  const allVersions = Array.from(
+    { length: PLATFORM_VERSIONS.MAX - PLATFORM_VERSIONS.MIN + 1 },
+    (_, i) => i + PLATFORM_VERSIONS.MIN
+  );
+
+  const incompatibleVersions = allVersions.filter(v => v < config.introduced);
+
+  acc[formatKey] = {
+    ...config,
+    compatibleVersions,
+    incompatibleVersions,
+    platformVersion: config.introduced,
+  };
+
+  return acc;
+}, {});
+
+// Backward compatibility: Keep existing constant names as aliases
+const PLATFORM_VERSION_CONTRACT_V0 = FORMATS.V0.platformVersion;
+const PLATFORM_VERSION_CONTRACT_V1 = FORMATS.V1.platformVersion;
+const V0_COMPATIBLE_VERSIONS = FORMATS.V0.compatibleVersions;
+const V1_COMPATIBLE_VERSIONS = FORMATS.V1.compatibleVersions;
+const V0_ONLY_VERSIONS = FORMATS.V0.incompatibleVersions;
+
+const LATEST_KNOWN_VERSION = PLATFORM_VERSIONS.MAX;
 
 // Helper function for testing contract compatibility across versions
 const testContractAcrossVersions = (
@@ -242,12 +281,16 @@ describe('DataContract', () => {
   });
 
   describe('Platform Version Compatibility Matrix', () => {
-    describe('V0 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV0, 'V0', V0_COMPATIBLE_VERSIONS);
-    });
-
-    describe('V1 Contract Compatibility', () => {
-      testContractAcrossVersions(contractFixtureV1, 'V1', V1_COMPATIBLE_VERSIONS, V0_ONLY_VERSIONS);
+    // Dynamically test all defined contract formats
+    Object.entries(FORMATS).forEach(([formatKey, formatData]) => {
+      describe(`${formatKey} Contract Compatibility`, () => {
+        testContractAcrossVersions(
+          formatData.fixture,
+          formatKey,
+          formatData.compatibleVersions,
+          formatData.incompatibleVersions
+        );
+      });
     });
 
     describe('Edge Cases', () => {
