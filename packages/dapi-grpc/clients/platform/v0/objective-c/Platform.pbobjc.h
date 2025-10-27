@@ -3362,7 +3362,7 @@ GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosRespon
 /** The actual finalized information about the requested epochs */
 @property(nonatomic, readwrite, strong, null_resettable) GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos *epochs;
 
-/** Cryptographic proof of the finalized epoch information, if requested */
+/** Cryptographic proof of the finalized epoch */
 @property(nonatomic, readwrite, strong, null_resettable) Proof *proof;
 
 /** Metadata about the blockchain state */
@@ -3384,7 +3384,8 @@ typedef GPB_ENUM(GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0
 };
 
 /**
- * FinalizedEpochInfos holds a collection of finalized epoch information entries
+ * FinalizedEpochInfos holds a collection of finalized epoch information
+ * entries
  **/
 GPB_FINAL @interface GetFinalizedEpochInfosResponse_GetFinalizedEpochInfosResponseV0_FinalizedEpochInfos : GPBMessage
 
@@ -6438,7 +6439,10 @@ GPB_FINAL @interface GetTokenPerpetualDistributionLastClaimRequest_GetTokenPerpe
 /** 32‑byte token identifier */
 @property(nonatomic, readwrite, copy, null_resettable) NSData *tokenId;
 
-/** This should be set if you wish to get back the last claim info as a specific type */
+/**
+ * This should be set if you wish to get back the last claim info as a
+ * specific type
+ **/
 @property(nonatomic, readwrite, strong, null_resettable) GetTokenPerpetualDistributionLastClaimRequest_ContractTokenInfo *contractInfo;
 /** Test to see if @c contractInfo has been set. */
 @property(nonatomic, readwrite) BOOL hasContractInfo;
