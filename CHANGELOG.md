@@ -1,3 +1,234 @@
+### [2.1.1](https://github.com/dashpay/platform/compare/v2.1.0-rc.1...v2.1.1) (2025-10-27)
+
+
+### Features
+
+* **rs-sdk:** identity keys query ([#2806](https://github.com/dashpay/platform/issues/2806))
+* various swift sdk / ui improvements ([#2811](https://github.com/dashpay/platform/issues/2811))
+
+
+### Bug Fixes
+
+* **dashmate:** dapi not removed after migration to rs-dapi ([#2817](https://github.com/dashpay/platform/issues/2817))
+* **dashmate:** restart for rs-dapi and envoy ([#2821](https://github.com/dashpay/platform/issues/2821))
+* **swift-sdk:** make SPV C callbacks Swift 6–safe; eliminate races and TOCTOU ([#2814](https://github.com/dashpay/platform/issues/2814))
+
+
+### Documentation
+
+* **dpp:** add TokenPaymentInfo file description ([#2813](https://github.com/dashpay/platform/issues/2813))
+
+
+### Tests
+
+* **wasm-sdk:** expand data contract test coverage ([#2803](https://github.com/dashpay/platform/issues/2803))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and version to 2.1.0 ([#2820](https://github.com/dashpay/platform/issues/2820))
+* update testnet DAPI address whitelist with currently enabled masternodes ([#2816](https://github.com/dashpay/platform/issues/2816))
+
+## [2.1.0-rc.1](https://github.com/dashpay/platform/compare/v2.1.0-dev.8...v2.1.0-rc.1) (2025-10-21)
+
+
+### Features
+
+* **swift-sdk:** swift SDK improvements ([#2809](https://github.com/dashpay/platform/issues/2809))
+* **wasm-sdk:** add custom masternode address configuration ([#2805](https://github.com/dashpay/platform/issues/2805))
+
+
+### Code Refactoring
+
+* **dapi:** rewrite dapi in Rust as rs-dapi ([#2716](https://github.com/dashpay/platform/issues/2716))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-rc.1 ([#2812](https://github.com/dashpay/platform/issues/2812))
+* update to groveDB 3.1 ([#2808](https://github.com/dashpay/platform/issues/2808))
+* update to rust dash core v0.40.0 ([#2810](https://github.com/dashpay/platform/issues/2810))
+
+## [2.1.0-dev.8](https://github.com/dashpay/platform/compare/v2.1.0-dev.7...v2.1.0-dev.8) (2025-10-03)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** creator id and improved verification of document uniqueness before insertion (#2790)
+
+### Features
+
+* **platform:** creator id and improved verification of document uniqueness before insertion ([#2790](https://github.com/dashpay/platform/issues/2790))
+* **sdk:** expose data contract from json ([#2791](https://github.com/dashpay/platform/issues/2791))
+
+
+### Bug Fixes
+
+* **dashmate:** consensus params in dashmate different than on testnet ([#2682](https://github.com/dashpay/platform/issues/2682))
+* **sdk:** wasm is not initialized for some methods ([#2792](https://github.com/dashpay/platform/issues/2792))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.8 ([#2797](https://github.com/dashpay/platform/issues/2797))
+* script to backup and restore state
+
+### [2.0.1](https://github.com/dashpay/platform/compare/v2.0.0...v2.0.1) (2025-07-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* **platform:** update keyword search contract ID and owner ID bytes (#2693)
+
+### Bug Fixes
+
+* **platform:** update keyword search contract ID and owner ID bytes ([#2693](https://github.com/dashpay/platform/issues/2693))
+
+
+### Miscellaneous Chores
+
+* release version 2.0.1 ([#2695](https://github.com/dashpay/platform/issues/2695))
+
+## [2.1.0-dev.7](https://github.com/dashpay/platform/compare/v2.1.0-dev.6...v2.1.0-dev.7) (2025-09-29)
+
+
+### Bug Fixes
+
+* **sdk:** wasm sdk is not initialized for static methods ([#2788](https://github.com/dashpay/platform/issues/2788))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.7 ([#2789](https://github.com/dashpay/platform/issues/2789))
+
+## [2.1.0-dev.6](https://github.com/dashpay/platform/compare/v2.1.0-dev.5...v2.1.0-dev.6) (2025-09-24)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 2 ([#2781](https://github.com/dashpay/platform/issues/2781))
+* **sdk:** add more SDK methods ([#2784](https://github.com/dashpay/platform/issues/2784))
+
+
+### Bug Fixes
+
+* **dashmate:** incompatible tenderdash version ([#2786](https://github.com/dashpay/platform/issues/2786))
+
+
+### Performance Improvements
+
+* **rs-sdk:** optimize wasm-sdk bundle size ([#2783](https://github.com/dashpay/platform/issues/2783))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.6 ([#2785](https://github.com/dashpay/platform/issues/2785))
+
+## [2.1.0-dev.5](https://github.com/dashpay/platform/compare/v2.1.0-dev.4...v2.1.0-dev.5) (2025-09-19)
+
+
+### Features
+
+* **drive:** document filter for state transition subscriptions part 1 ([#2761](https://github.com/dashpay/platform/issues/2761))
+
+
+### Build System
+
+* fix sdk npm packaging ([#2780](https://github.com/dashpay/platform/issues/2780))
+
+
+### Miscellaneous Chores
+
+* **release:** update changelog and bump version to 2.1.0-dev.5 ([#2782](https://github.com/dashpay/platform/issues/2782))
+
+## [2.1.0-dev.4](https://github.com/dashpay/platform/compare/v2.0.1...v2.1.0-dev.4) (2025-09-19)
+
+
+### ⚠ BREAKING CHANGES
+
+* **wasm-sdk:**  handle identity create transition signing for all types of keys (#2754)
+* **wasm-sdk:** remove unused key_id parameters from state transitions (#2759)
+* **sdk:** provide all getStatus info (#2729)
+
+### Features
+
+* add tests for new token transitions
+* add wasm bindings for Drive verification functions ([#2660](https://github.com/dashpay/platform/issues/2660))
+* balance checker app ([#2688](https://github.com/dashpay/platform/issues/2688))
+* **dashmate:** allow configuring zmq using dashmate ([#2697](https://github.com/dashpay/platform/issues/2697))
+* evo sdk ([#2771](https://github.com/dashpay/platform/issues/2771))
+* **sdk:** add request settings in wasm sdk ([#2707](https://github.com/dashpay/platform/issues/2707))
+* **sdk:** add username search example in evo-sdk ([#2706](https://github.com/dashpay/platform/issues/2706))
+* **sdk:** adding a trusted context provider package ([#2687](https://github.com/dashpay/platform/issues/2687))
+* **sdk:** dpns sdk improvements ([#2692](https://github.com/dashpay/platform/issues/2692))
+* **sdk:** enable proof support for most queries ([#2718](https://github.com/dashpay/platform/issues/2718))
+* **sdk:** epic: rs-sdk-ffi and ios support ([#2756](https://github.com/dashpay/platform/issues/2756))
+* **sdk:** identity creation in wasm ([#2711](https://github.com/dashpay/platform/issues/2711))
+* **sdk:** make wasm sdk complete for all state transitions and most queries ([#2690](https://github.com/dashpay/platform/issues/2690))
+* **sdk:** provide all getStatus info ([#2729](https://github.com/dashpay/platform/issues/2729))
+* **sdk:** wasm docs and fixes ([#2700](https://github.com/dashpay/platform/issues/2700))
+* **sdk:** wasm drive verify optimization ([#2683](https://github.com/dashpay/platform/issues/2683))
+* **sdk:** wasm sdk core and test suite ([#2709](https://github.com/dashpay/platform/issues/2709))
+* **wasm-sdk:** implement four missing token transitions
+* **wasm-sdk:** remove unused key_id parameters from state transitions ([#2759](https://github.com/dashpay/platform/issues/2759))
+
+
+### Bug Fixes
+
+* **sdk:** fix documentation examples ([#2710](https://github.com/dashpay/platform/issues/2710))
+* **sdk:** fix generate docs ([#2730](https://github.com/dashpay/platform/issues/2730))
+* **sdk:** install wasm-opt from Github instead of apt ([#2701](https://github.com/dashpay/platform/issues/2701))
+* **sdk:** js sdk audit warnings by adding crypto-related dependencies to package.json ([#2757](https://github.com/dashpay/platform/issues/2757))
+* **sdk:** modifications to get wasm-sdk working again ([#2689](https://github.com/dashpay/platform/issues/2689))
+* **wasm-sdk:**  handle identity create transition signing for all types of keys ([#2754](https://github.com/dashpay/platform/issues/2754))
+* **wasm-sdk:** address compiler warnings ([#2734](https://github.com/dashpay/platform/issues/2734))
+* **wasm-sdk:** connect where and orderBy clause functionality for getDocuments ([#2753](https://github.com/dashpay/platform/issues/2753))
+* **wasm-sdk:** enable proofs for getContestedResourceVotersForIdentity ([#2732](https://github.com/dashpay/platform/issues/2732))
+* **wasm-sdk:** fix nft transitions ([#2751](https://github.com/dashpay/platform/issues/2751))
+* **wasm-sdk:** resolve CI test failures and build issues ([#2765](https://github.com/dashpay/platform/issues/2765))
+* **wasm-sdk:** resolve test failures and optimize CI workflow ([#2735](https://github.com/dashpay/platform/issues/2735))
+* **wasm-sdk:** use identity contract nonce for data contract updates ([#2738](https://github.com/dashpay/platform/issues/2738))
+
+
+### Tests
+
+* **sdk:** automate wasm-sdk page UI testing (partial) ([#2715](https://github.com/dashpay/platform/issues/2715))
+* **sdk:** expand wasm-sdk page UI testing ([#2720](https://github.com/dashpay/platform/issues/2720))
+* **wasm-sdk:** add ui tests for almost all state transitions ([#2739](https://github.com/dashpay/platform/issues/2739))
+
+
+### Build System
+
+* bump tenderdash-abci to v1.5.0-dev.2 ([#2770](https://github.com/dashpay/platform/issues/2770))
+* update rust to 1.89 ([#2755](https://github.com/dashpay/platform/issues/2755))
+
+
+### Code Refactoring
+
+* **sdk:** wasm-sdk doc generation refactor ([#2726](https://github.com/dashpay/platform/issues/2726))
+* swift sdk fixes ([#2772](https://github.com/dashpay/platform/issues/2772))
+* **wasm-sdk:** improve documentation generation maintainability ([#2773](https://github.com/dashpay/platform/issues/2773))
+
+
+### Continuous Integration
+
+* dont do CI when it's not needed ([#2774](https://github.com/dashpay/platform/issues/2774))
+* swift CI fixes ([#2775](https://github.com/dashpay/platform/issues/2775))
+* Use self hosted mac runner ([#2776](https://github.com/dashpay/platform/issues/2776))
+
+
+### Miscellaneous Chores
+
+* add wasm-sdk as scope for pr linting ([#2731](https://github.com/dashpay/platform/issues/2731))
+* clean dpp clippy ([#2764](https://github.com/dashpay/platform/issues/2764))
+* **drive:** fix drive linting ([#2763](https://github.com/dashpay/platform/issues/2763))
+* **platform:** add protocol version 10 support ([#2686](https://github.com/dashpay/platform/issues/2686))
+* **release:** update changelog and bump version to 2.1.0-dev.4 ([#2779](https://github.com/dashpay/platform/issues/2779))
+* sdk clippy issues ([#2767](https://github.com/dashpay/platform/issues/2767))
+* **sdk:** use correct port for evo-sdk mainnet ([#2699](https://github.com/dashpay/platform/issues/2699))
+* update yarn cache with new dependencies ([#2758](https://github.com/dashpay/platform/issues/2758))
+* **wasm-sdk:** apply cargo fmt and cleanup ([#2766](https://github.com/dashpay/platform/issues/2766))
+
 ## [2.1.0](https://github.com/dashpay/platform/compare/v2.1.0-rc.1...v2.1.0) (2025-10-24)
 
 

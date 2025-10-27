@@ -1,6 +1,6 @@
 [package]
 name = "json-schema-compatibility-validator"
-version = "2.1.0"
+version = "2.1.1"
 edition = "2021"
 rust-version.workspace = true
 authors = ["Ivan Shumkov <ivan@shumkov.ru>"]
