@@ -87,7 +87,6 @@ describe('Testnet Evonode', function main() {
       if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
         config.set('dashmate.helper.docker.build.enabled', true);
         config.set('platform.drive.abci.docker.build.enabled', true);
-        config.set('platform.dapi.api.docker.build.enabled', true);
         config.set('platform.dapi.rsDapi.docker.build.enabled', true);
       }
 

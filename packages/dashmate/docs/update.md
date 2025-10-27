@@ -29,7 +29,7 @@ $ dashmate update
 ║ Core             │ dashpay/dashd:19.1.0         │ up to date ║
 ║ Drive ABCI       │ dashpay/drive:0.24           │ updated    ║
 ║ Drive Tenderdash │ dashpay/tenderdash:0.11.2    │ up to date ║
-║ DAPI API         │ dashpay/dapi:0.24            │ updated    ║
+║ rs-dapi          │ dashpay/rs-dapi:0.24         │ updated    ║
 ║ Gateway          │ dashpay/envoy:0.24           │ updated    ║
 ║ Dashmate Helper  │ dashpay/dashmate-helper:0.24 │ updated    ║
 ╚══════════════════╧══════════════════════════════╧════════════╝
@@ -40,7 +40,7 @@ You can also use JSON format for programmatic access:
 
 ```bash
 $ dashmate update --format=json 
-[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"dapi_api","title":"DAPI API","pulled":false,"image":"dashpay/dapi:0.24"},{"name":"gateway","title":"Gateway","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
+[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"rs_dapi","title":"rs-dapi","pulled":false,"image":"dashpay/rs-dapi:0.24"},{"name":"gateway","title":"Gateway","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
 ```
 
 ## Major Updates with Platform Reset
