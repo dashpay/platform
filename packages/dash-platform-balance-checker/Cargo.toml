@@ -1,6 +1,6 @@
 [package]
 name = "dash-platform-balance-checker"
-version = "2.1.2"
+version.workspace = true
 edition = "2021"
 
 [[bin]]
