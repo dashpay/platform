@@ -39,6 +39,8 @@ members = [
     "packages/rs-dapi",
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
+    "packages/rs-platform-wallet-ffi",
+    "packages/rs-platform-encryption",
     "packages/wasm-sdk",
 ]
 

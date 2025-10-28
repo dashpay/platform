@@ -16,11 +16,11 @@ rs-dapi-client = { path = "../rs-dapi-client", default-features = false }
 drive = { path = "../rs-drive", default-features = false, features = [
   "verify",
 ] }
-platform-wallet = { path = "../rs-platform-wallet", optional = true }
 
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false }
 dash-context-provider = { path = "../rs-context-provider", default-features = false }
 dapi-grpc-macros = { path = "../rs-dapi-grpc-macros" }
+platform-encryption = { path = "../rs-platform-encryption" }
 http = { version = "1.1" }
 rustls-pemfile = { version = "2.0.0" }
 thiserror = "2.0.12"
@@ -73,7 +73,6 @@ default = [
   "offline-testing",
   "dapi-grpc/client",
   "token_reward_explanations",
-  "dep:platform-wallet",
 ]
 spv-client = [
   "core_spv",
@@ -152,7 +151,6 @@ core_key_wallet_manager = ["dpp/core_key_wallet_manager"]
 core_key_wallet_bip38 = ["dpp/core_key_wallet_bip_38"]
 core_spv = ["dpp/core_spv"]
 core_rpc_client = ["dpp/core_rpc_client"]
-wallet = ["dep:platform-wallet", "platform-wallet/manager"]
 
 [[example]]
 

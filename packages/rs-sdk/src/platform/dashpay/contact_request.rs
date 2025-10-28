@@ -18,7 +18,7 @@ use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
-use platform_wallet::crypto::{
+use platform_encryption::{
     derive_shared_key_ecdh, encrypt_account_label, encrypt_extended_public_key,
 };
 use std::collections::BTreeMap;

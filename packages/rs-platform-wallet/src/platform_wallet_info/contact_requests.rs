@@ -22,7 +22,7 @@ use key_wallet::Wallet;
 impl PlatformWalletInfo {
     /// Add a sent contact request for a specific identity on a specific network
     /// If there's already an incoming request from the recipient, automatically establish the contact
-    pub fn add_sent_contact_request(
+    pub(crate) fn add_sent_contact_request(
         &mut self,
         wallet: &mut Wallet,
         account_index: u32,
@@ -144,7 +144,7 @@ impl PlatformWalletInfo {
 
     /// Add an incoming contact request for a specific identity on a specific network
     /// If there's already a sent request to the sender, automatically establish the contact
-    pub fn add_incoming_contact_request(
+    pub(crate) fn add_incoming_contact_request(
         &mut self,
         wallet: &mut Wallet,
         network: Network,

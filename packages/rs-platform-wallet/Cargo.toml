@@ -9,6 +9,8 @@ description = "Platform wallet with identity management support"
 [dependencies]
 # Dash Platform packages
 dpp = { path = "../rs-dpp" }
+dash-sdk = { path = "../rs-sdk", optional = true }
+platform-encryption = { path = "../rs-platform-encryption" }
 
 # Key wallet dependencies (from rust-dashcore)
 key-wallet = { path = "../../../rust-dashcore/key-wallet" }
@@ -24,17 +26,13 @@ thiserror = "1.0"
 # Collections
 indexmap = "2.0"
 
-# Cryptography
-aes = "0.8"
-cbc = "0.1"
-sha2 = "0.10"
-
 [dev-dependencies]
 rand = "0.8"
 
 
 [features]
-default = ["bls", "eddsa", "manager"]
+default = ["bls", "eddsa", "manager", "sdk"]
 bls = ["key-wallet/bls"]
 eddsa = ["key-wallet/eddsa"]
 manager = ["key-wallet-manager"]
+sdk = ["dep:dash-sdk"]

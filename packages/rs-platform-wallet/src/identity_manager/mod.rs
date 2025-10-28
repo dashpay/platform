@@ -7,18 +7,36 @@ use crate::managed_identity::ManagedIdentity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
 
+#[cfg(feature = "sdk")]
+use std::sync::Arc;
+
 // Import implementation modules
 mod accessors;
 mod initializers;
 
 /// Manages identities for a platform wallet
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct IdentityManager {
     /// All managed identities owned by this wallet, indexed by identity ID
     pub identities: IndexMap<Identifier, ManagedIdentity>,
 
     /// The primary identity ID (if set)
     pub primary_identity_id: Option<Identifier>,
+
+    /// SDK instance for platform operations (optional, available with 'sdk' feature)
+    #[cfg(feature = "sdk")]
+    pub sdk: Option<Arc<dash_sdk::Sdk>>,
+}
+
+impl Default for IdentityManager {
+    fn default() -> Self {
+        Self {
+            identities: IndexMap::new(),
+            primary_identity_id: None,
+            #[cfg(feature = "sdk")]
+            sdk: None,
+        }
+    }
 }
 
 #[cfg(test)]

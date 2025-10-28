@@ -12,7 +12,7 @@ use dpp::prelude::Identifier;
 impl ManagedIdentity {
     /// Add a sent contact request
     /// If there's already an incoming request from the recipient, automatically establish the contact
-    pub fn add_sent_contact_request(&mut self, request: ContactRequest) {
+    pub(crate) fn add_sent_contact_request(&mut self, request: ContactRequest) {
         let recipient_id = request.recipient_id;
 
         // Check if there's already an incoming request from this recipient
@@ -27,7 +27,7 @@ impl ManagedIdentity {
     }
 
     /// Remove a sent contact request
-    pub fn remove_sent_contact_request(
+    pub(crate) fn remove_sent_contact_request(
         &mut self,
         recipient_id: &Identifier,
     ) -> Option<ContactRequest> {
@@ -36,7 +36,7 @@ impl ManagedIdentity {
 
     /// Add an incoming contact request
     /// If there's already a sent request to the sender, automatically establish the contact
-    pub fn add_incoming_contact_request(&mut self, request: ContactRequest) {
+    pub(crate) fn add_incoming_contact_request(&mut self, request: ContactRequest) {
         let sender_id = request.sender_id;
 
         // Check if there's already a sent request to this sender
@@ -51,7 +51,7 @@ impl ManagedIdentity {
     }
 
     /// Remove an incoming contact request
-    pub fn remove_incoming_contact_request(
+    pub(crate) fn remove_incoming_contact_request(
         &mut self,
         sender_id: &Identifier,
     ) -> Option<ContactRequest> {
