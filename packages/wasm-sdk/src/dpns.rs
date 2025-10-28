@@ -2,6 +2,9 @@ use crate::error::WasmSdkError;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
+use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
+use dash_sdk::dpp::identity::signer::Signer;
+use dash_sdk::dpp::identity::{Purpose, SecurityLevel};
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::dpns_usernames::{
     convert_to_homograph_safe_chars, is_contested_username, is_valid_username,
@@ -75,6 +78,74 @@ impl WasmSdk {
                 WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id))
             })?
             .clone();
+
+        // Validate the key meets DPNS requirements
+        let key_purpose = identity_public_key.purpose();
+        let key_security_level = identity_public_key.security_level();
+
+        // Check purpose
+        if key_purpose != Purpose::AUTHENTICATION {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Cannot register DPNS name with key ID {}: key has purpose {:?} but AUTHENTICATION is required.\n\
+                Use a key with purpose AUTHENTICATION.",
+                public_key_id, key_purpose
+            )));
+        }
+
+        // Check security level
+        if key_security_level != SecurityLevel::CRITICAL
+            && key_security_level != SecurityLevel::HIGH
+        {
+            let available_keys: Vec<String> = identity
+                .public_keys()
+                .iter()
+                .filter_map(|(key_id, k)| {
+                    if k.purpose() != Purpose::AUTHENTICATION {
+                        return None;
+                    }
+                    match k.security_level() {
+                        SecurityLevel::CRITICAL => {
+                            Some(format!("  Key {}: CRITICAL security level", key_id))
+                        }
+                        SecurityLevel::HIGH => {
+                            Some(format!("  Key {}: HIGH security level", key_id))
+                        }
+                        _ => None,
+                    }
+                })
+                .collect();
+
+            let suggestion = if available_keys.is_empty() {
+                "No suitable keys found in this identity.".to_string()
+            } else {
+                format!("Try one of these keys:\n{}", available_keys.join("\n"))
+            };
+
+            return Err(WasmSdkError::invalid_argument(format!(
+                "Cannot register DPNS name with key ID {}: key has {:?} security level but CRITICAL or HIGH is required.\n\
+                \n\
+                DPNS registration requires a key with:\n\
+                - Purpose: AUTHENTICATION\n\
+                - Security Level: CRITICAL or HIGH (not MASTER)\n\
+                \n\
+                {}",
+                public_key_id, key_security_level, suggestion
+            )));
+        }
+
+        // Validate private key matches public key
+        if !signer.can_sign_with(&identity_public_key) {
+            return Err(WasmSdkError::invalid_argument(format!(
+                "The provided private key does not match public key ID {}.\n\
+                \n\
+                Public key {} details:\n\
+                - Security Level: {:?}\n\
+                - Purpose: {:?}\n\
+                \n\
+                Please verify you're using the correct private key (WIF) for this key.",
+                public_key_id, public_key_id, key_security_level, key_purpose
+            )));
+        }
 
         // Store the JS callback in a thread-local variable that we can access from the closure
         thread_local! {
