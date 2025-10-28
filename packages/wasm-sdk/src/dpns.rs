@@ -257,7 +257,7 @@ impl WasmSdk {
         if key_purpose != Purpose::AUTHENTICATION {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Cannot register DPNS name with key ID {}: key has purpose {:?} but AUTHENTICATION is required.\n\
-                Use a key with purpose AUTHENTICATION (usually keys 0-2).",
+                Use a key with purpose AUTHENTICATION.",
                 public_key_id, key_purpose
             )));
         }
@@ -270,24 +270,17 @@ impl WasmSdk {
                 .public_keys()
                 .iter()
                 .filter_map(|(key_id, k)| {
-                    if k.purpose() == Purpose::AUTHENTICATION
-                        && (k.security_level() == SecurityLevel::CRITICAL
-                            || k.security_level() == SecurityLevel::HIGH)
-                    {
-                        let level_name = if k.security_level() == SecurityLevel::CRITICAL {
-                            "CRITICAL"
-                        } else {
-                            "HIGH"
-                        };
-                        Some(
-                            String::from("  Key ")
-                                + &key_id.to_string()
-                                + ": "
-                                + level_name
-                                + " security level",
-                        )
-                    } else {
-                        None
+                    if k.purpose() != Purpose::AUTHENTICATION {
+                        return None;
+                    }
+                    match k.security_level() {
+                        SecurityLevel::CRITICAL => {
+                            Some(format!("  Key {}: CRITICAL security level", key_id))
+                        }
+                        SecurityLevel::HIGH => {
+                            Some(format!("  Key {}: HIGH security level", key_id))
+                        }
+                        _ => None,
                     }
                 })
                 .collect();
