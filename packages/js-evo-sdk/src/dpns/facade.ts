@@ -52,8 +52,8 @@ export class DpnsFacade {
     // Validate inputs
     if (publicKeyId === undefined || publicKeyId === null) {
       throw new Error(
-        'publicKeyId is required for DPNS registration.\n' +
-        'DPNS requires a key with AUTHENTICATION purpose and CRITICAL or HIGH security level.\n'
+        'publicKeyId is required for DPNS registration.\n'
+        + 'DPNS requires a key with AUTHENTICATION purpose and CRITICAL or HIGH security level.\n',
       );
     }
 

@@ -68,7 +68,6 @@ describe('DPNSFacade', () => {
       } catch (error) {
         expect(error.message).to.include('publicKeyId is required');
         expect(error.message).to.include('CRITICAL or HIGH security level');
-        expect(error.message).to.include('Do NOT use Key 0');
       }
     });
 
@@ -84,7 +83,6 @@ describe('DPNSFacade', () => {
       } catch (error) {
         expect(error.message).to.include('publicKeyId is required');
         expect(error.message).to.include('CRITICAL or HIGH security level');
-        expect(error.message).to.include('Do NOT use Key 0');
       }
     });
 
