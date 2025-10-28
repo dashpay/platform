@@ -10,110 +10,148 @@ use drive_proof_verifier::types::ResourceVotesByIdentity;
 use js_sys::Array;
 use platform_value::string_encoding::Encoding;
 use platform_value::Identifier;
+use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
-#[wasm_bindgen(js_name = "ContestedResourceIdentityVotesQuery")]
-pub struct ContestedResourceIdentityVotesQueryWasm(ContestedResourceVotesGivenByIdentityQuery);
+#[wasm_bindgen(typescript_custom_section)]
+const CONTESTED_RESOURCE_IDENTITY_VOTES_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for fetching contested resource votes cast by an identity.
+ */
+export interface ContestedResourceIdentityVotesQuery {
+  /**
+   * Identity identifier (base58 string).
+   */
+  identityId: string;
 
-impl ContestedResourceIdentityVotesQueryWasm {
-    pub(crate) fn into_inner(self) -> ContestedResourceVotesGivenByIdentityQuery {
-        self.0
-    }
+  /**
+   * Maximum number of votes to return.
+   * @default undefined (no explicit limit)
+   */
+  limit?: number;
+
+  /**
+   * Vote identifier to resume from (exclusive by default).
+   * @default undefined
+   */
+  startAtVoteId?: string;
+
+  /**
+   * Include the `startAtVoteId` when true.
+   * @default true
+   */
+  startAtIncluded?: boolean;
+
+  /**
+   * Sort order. When omitted, defaults to ascending.
+   * @default true
+   */
+  orderAscending?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContestedResourceIdentityVotesQuery")]
+    pub type ContestedResourceIdentityVotesQueryJs;
 }
 
-#[wasm_bindgen(js_name = "ContestedResourceIdentityVotesQueryBuilder")]
-pub struct ContestedResourceIdentityVotesQueryBuilder {
-    identity_id: Identifier,
-    limit: Option<u16>,
-    start_at_vote: Option<([u8; 32], bool)>,
-    order_ascending: bool,
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContestedResourceIdentityVotesQueryFields {
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    start_at_vote_id: Option<String>,
+    #[serde(default)]
+    start_at_included: Option<bool>,
+    #[serde(default)]
+    order_ascending: Option<bool>,
 }
 
-#[wasm_bindgen(js_class = ContestedResourceIdentityVotesQueryBuilder)]
-impl ContestedResourceIdentityVotesQueryBuilder {
-    #[wasm_bindgen(constructor)]
-    pub fn new(
-        identity_id: &str,
-    ) -> Result<ContestedResourceIdentityVotesQueryBuilder, WasmSdkError> {
-        let identity_id = Identifier::from_string(
-            identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContestedResourceIdentityVotesQueryInput {
+    identity_id: String,
+    #[serde(flatten)]
+    fields: ContestedResourceIdentityVotesQueryFields,
+}
 
-        Ok(Self {
-            identity_id,
-            limit: None,
-            start_at_vote: None,
-            order_ascending: true,
-        })
-    }
-
-    #[wasm_bindgen(js_name = "withLimit")]
-    pub fn with_limit(
-        mut self,
-        limit: Option<u32>,
-    ) -> Result<ContestedResourceIdentityVotesQueryBuilder, WasmSdkError> {
-        self.limit = match limit {
-            Some(0) => None,
-            Some(count) => {
-                if count > u16::MAX as u32 {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "limit {} exceeds maximum of {}",
-                        count,
-                        u16::MAX
-                    )));
-                }
-                Some(count as u16)
+fn convert_limit(limit: Option<u32>) -> Result<Option<u16>, WasmSdkError> {
+    match limit {
+        Some(0) => Ok(None),
+        Some(value) => {
+            if value > u16::MAX as u32 {
+                return Err(WasmSdkError::invalid_argument(format!(
+                    "limit {} exceeds maximum of {}",
+                    value,
+                    u16::MAX
+                )));
             }
-            None => None,
-        };
-        Ok(self)
+            Ok(Some(value as u16))
+        }
+        None => Ok(None),
     }
+}
 
-    #[wasm_bindgen(js_name = "withOrderAscending")]
-    pub fn with_order_ascending(
-        mut self,
-        ascending: bool,
-    ) -> ContestedResourceIdentityVotesQueryBuilder {
-        self.order_ascending = ascending;
-        self
-    }
+fn build_contested_resource_identity_votes_query(
+    input: ContestedResourceIdentityVotesQueryInput,
+) -> Result<ContestedResourceVotesGivenByIdentityQuery, WasmSdkError> {
+    let ContestedResourceIdentityVotesQueryInput {
+        identity_id,
+        fields:
+            ContestedResourceIdentityVotesQueryFields {
+                limit,
+                start_at_vote_id,
+                start_at_included,
+                order_ascending,
+            },
+    } = input;
 
-    #[wasm_bindgen(js_name = "withStartAtVote")]
-    pub fn with_start_at_vote(
-        mut self,
-        vote_id: &str,
-        included: bool,
-    ) -> Result<ContestedResourceIdentityVotesQueryBuilder, WasmSdkError> {
-        let identifier = Identifier::from_string(
-            vote_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid vote ID: {}", e)))?;
+    let identity_id = Identifier::from_string(
+        &identity_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        self.start_at_vote = Some((identifier.to_buffer(), included));
-        Ok(self)
-    }
+    let limit = convert_limit(limit)?;
 
-    #[wasm_bindgen(js_name = "build")]
-    pub fn build(self) -> ContestedResourceIdentityVotesQueryWasm {
-        let ContestedResourceIdentityVotesQueryBuilder {
-            identity_id,
-            limit,
-            start_at_vote,
-            order_ascending,
-        } = self;
+    let start_at = match start_at_vote_id {
+        Some(vote_id) => {
+            let identifier = Identifier::from_string(
+                &vote_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid vote ID: {}", e)))?;
 
-        ContestedResourceIdentityVotesQueryWasm(ContestedResourceVotesGivenByIdentityQuery {
-            identity_id,
-            offset: None,
-            limit,
-            start_at: start_at_vote,
-            order_ascending,
-        })
-    }
+            Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
+        }
+        None => None,
+    };
+
+    Ok(ContestedResourceVotesGivenByIdentityQuery {
+        identity_id,
+        offset: None,
+        limit,
+        start_at,
+        order_ascending: order_ascending.unwrap_or(true),
+    })
+}
+
+fn parse_contested_resource_identity_votes_query(
+    query: ContestedResourceIdentityVotesQueryJs,
+) -> Result<ContestedResourceVotesGivenByIdentityQuery, WasmSdkError> {
+    let value: JsValue = query.into();
+    let input: ContestedResourceIdentityVotesQueryInput =
+        serde_wasm_bindgen::from_value(value).map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "Invalid contested resource identity votes query: {}",
+                err
+            ))
+        })?;
+
+    build_contested_resource_identity_votes_query(input)
 }
 
 fn resource_votes_to_json(
@@ -185,9 +223,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getContestedResourceIdentityVotes")]
     pub async fn get_contested_resource_identity_votes(
         &self,
-        query: ContestedResourceIdentityVotesQueryWasm,
+        query: ContestedResourceIdentityVotesQueryJs,
     ) -> Result<Array, WasmSdkError> {
-        let votes = ResourceVote::fetch_many(self.as_ref(), query.into_inner()).await?;
+        let drive_query = parse_contested_resource_identity_votes_query(query)?;
+
+        let votes = ResourceVote::fetch_many(self.as_ref(), drive_query).await?;
 
         let votes_json = resource_votes_to_json(votes)?;
         let array = Array::new();
@@ -207,11 +247,12 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getContestedResourceIdentityVotesWithProofInfo")]
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
-        query: ContestedResourceIdentityVotesQueryWasm,
+        query: ContestedResourceIdentityVotesQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
+        let drive_query = parse_contested_resource_identity_votes_query(query)?;
         let (votes, metadata, proof) = ResourceVote::fetch_many_with_metadata_and_proof(
             self.as_ref(),
-            query.into_inner(),
+            drive_query,
             None,
         )
         .await?;

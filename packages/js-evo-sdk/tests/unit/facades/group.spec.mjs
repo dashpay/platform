@@ -90,9 +90,35 @@ describe('GroupFacade', () => {
     await client.group.contestedResourceVotersForIdentityWithProof({
       contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v2'], contestantId: 'id',
     });
-    expect(wasmSdk.getContestedResources).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.getContestedResources).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      startAtValue: new Uint8Array([1]),
+      limit: 2,
+      orderAscending: false,
+    });
+    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+    });
+    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      contestantId: 'id',
+      startAtVoterId: 's',
+      limit: 3,
+      orderAscending: true,
+    });
+    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v2'],
+      contestantId: 'id',
+    });
   });
 });

@@ -8,28 +8,94 @@ use drive::query::vote_poll_vote_state_query::{
 use drive_proof_verifier::types::Contenders;
 use js_sys::Array;
 use platform_value::Identifier;
+use serde::Deserialize;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::block::BlockInfoWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::{ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm};
 
-type ContestedResourceVoteWinnerBlockWasm = BlockInfoWasm;
 use crate::sdk::WasmSdk;
 use crate::utils::js_values_to_platform_values;
 use crate::{ProofMetadataResponseWasm, WasmSdkError};
+
+#[wasm_bindgen(typescript_custom_section)]
+const CONTESTED_RESOURCE_VOTE_STATE_QUERY_TS: &'static str = r#"
+/**
+ * Query configuration for contested resource vote state.
+ */
+export interface ContestedResourceVoteStateQuery {
+  /**
+   * Data contract identifier (base58 string).
+   */
+  dataContractId: string;
+
+  /**
+   * Contested document type name.
+   */
+  documentTypeName: string;
+
+  /**
+   * Index name to query.
+   */
+  indexName: string;
+
+  /**
+   * Optional index values used as query parameters.
+   * @default undefined
+   */
+  indexValues?: unknown[];
+
+  /**
+   * Result projection type.
+   * @default 'documentsAndVoteTally'
+   */
+  resultType?: 'documents' | 'voteTally' | 'documentsAndVoteTally';
+
+  /**
+   * Maximum number of records to return.
+   * @default undefined (no explicit limit)
+   */
+  limit?: number;
+
+  /**
+   * Contender identifier to resume from (exclusive by default).
+   * @default undefined
+   */
+  startAtContenderId?: string;
+
+  /**
+   * Include the start contender when true.
+   * @default true
+   */
+  startAtIncluded?: boolean;
+
+  /**
+   * Include locked and abstaining tallies when true.
+   * @default false
+   */
+  includeLockedAndAbstaining?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "ContestedResourceVoteStateQuery")]
+    pub type ContestedResourceVoteStateQueryJs;
+}
 
 #[wasm_bindgen(js_name = "ContestedResourceVoteWinner")]
 #[derive(Clone)]
 pub struct ContestedResourceVoteWinnerWasm {
     info: ContestedDocumentVotePollWinnerInfoWasm,
-    block: ContestedResourceVoteWinnerBlockWasm,
+    block: BlockInfoWasm,
 }
 
 impl ContestedResourceVoteWinnerWasm {
     fn from_parts(
         info: ContestedDocumentVotePollWinnerInfo,
-        block: ContestedResourceVoteWinnerBlockWasm,
+        block: BlockInfoWasm,
     ) -> Self {
         Self {
             info: info.into(),
@@ -51,7 +117,7 @@ impl ContestedResourceVoteWinnerWasm {
     }
 
     #[wasm_bindgen(getter = block)]
-    pub fn block(&self) -> ContestedResourceVoteWinnerBlockWasm {
+    pub fn block(&self) -> BlockInfoWasm {
         self.block.clone()
     }
 
@@ -103,10 +169,14 @@ impl ContestedResourceContenderWasm {
 #[wasm_bindgen(js_name = "ContestedResourceVoteState")]
 #[derive(Clone)]
 pub struct ContestedResourceVoteStateWasm {
-    contenders: Vec<ContestedResourceContenderWasm>,
-    lock_vote_tally: Option<u32>,
-    abstain_vote_tally: Option<u32>,
-    winner: Option<ContestedResourceVoteWinnerWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub contenders: Array,
+    #[wasm_bindgen(getter_with_clone, js_name = "lockVoteTally")]
+    pub lock_vote_tally: Option<u32>,
+    #[wasm_bindgen(getter_with_clone, js_name = "abstainVoteTally")]
+    pub abstain_vote_tally: Option<u32>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub winner: Option<ContestedResourceVoteWinnerWasm>,
 }
 
 impl ContestedResourceVoteStateWasm {
@@ -116,39 +186,17 @@ impl ContestedResourceVoteStateWasm {
         abstain_vote_tally: Option<u32>,
         winner: Option<ContestedResourceVoteWinnerWasm>,
     ) -> Self {
+        let array = Array::new();
+        for contender in contenders {
+            array.push(&JsValue::from(contender));
+        }
+
         Self {
-            contenders,
+            contenders: array,
             lock_vote_tally,
             abstain_vote_tally,
             winner,
         }
-    }
-}
-
-#[wasm_bindgen(js_class = ContestedResourceVoteState)]
-impl ContestedResourceVoteStateWasm {
-    #[wasm_bindgen(getter = contenders)]
-    pub fn contenders(&self) -> Array {
-        let array = Array::new();
-        for contender in &self.contenders {
-            array.push(&JsValue::from(contender.clone()));
-        }
-        array
-    }
-
-    #[wasm_bindgen(getter = lockVoteTally)]
-    pub fn lock_vote_tally(&self) -> Option<u32> {
-        self.lock_vote_tally
-    }
-
-    #[wasm_bindgen(getter = abstainVoteTally)]
-    pub fn abstain_vote_tally(&self) -> Option<u32> {
-        self.abstain_vote_tally
-    }
-
-    #[wasm_bindgen(getter = winner)]
-    pub fn winner(&self) -> Option<ContestedResourceVoteWinnerWasm> {
-        self.winner.clone()
     }
 }
 
@@ -159,141 +207,174 @@ impl ContestedResourceVoteStateQueryWasm {
     pub(crate) fn into_inner(self) -> ContestedDocumentVotePollDriveQuery {
         self.0
     }
+
+    pub(crate) fn from_query(query: ContestedDocumentVotePollDriveQuery) -> Self {
+        Self(query)
+    }
 }
 
-#[wasm_bindgen(js_name = "ContestedResourceVoteStateQueryBuilder")]
-pub struct ContestedResourceVoteStateQueryBuilder {
-    vote_poll: ContestedDocumentResourceVotePoll,
-    result_type: ContestedDocumentVotePollDriveQueryResultType,
-    limit: Option<u16>,
-    start_at: Option<([u8; 32], bool)>,
-    allow_include_locked_and_abstaining_vote_tally: bool,
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContestedResourceVoteStateQueryFields {
+    #[serde(default)]
+    index_values: Option<Vec<JsonValue>>,
+    #[serde(default)]
+    result_type: Option<String>,
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    start_at_contender_id: Option<String>,
+    #[serde(default)]
+    start_at_included: Option<bool>,
+    #[serde(default)]
+    include_locked_and_abstaining: Option<bool>,
 }
 
-#[wasm_bindgen(js_class = ContestedResourceVoteStateQueryBuilder)]
-impl ContestedResourceVoteStateQueryBuilder {
-    #[wasm_bindgen(constructor)]
-    pub fn new(
-        data_contract_id: &str,
-        document_type_name: &str,
-        index_name: &str,
-    ) -> Result<ContestedResourceVoteStateQueryBuilder, WasmSdkError> {
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ContestedResourceVoteStateQueryInput {
+    data_contract_id: String,
+    document_type_name: String,
+    index_name: String,
+    #[serde(flatten)]
+    fields: ContestedResourceVoteStateQueryFields,
+}
 
-        Ok(Self {
-            vote_poll: ContestedDocumentResourceVotePoll {
-                contract_id,
-                document_type_name: document_type_name.to_string(),
-                index_name: index_name.to_string(),
-                index_values: Vec::new(),
-            },
-            result_type: ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally,
-            limit: None,
-            start_at: None,
-            allow_include_locked_and_abstaining_vote_tally: false,
-        })
-    }
-
-    #[wasm_bindgen(js_name = "withIndexValues")]
-    pub fn with_index_values(
-        mut self,
-        values: Vec<JsValue>,
-    ) -> Result<ContestedResourceVoteStateQueryBuilder, WasmSdkError> {
-        self.vote_poll.index_values = js_values_to_platform_values(values)?;
-        Ok(self)
-    }
-
-    #[wasm_bindgen(js_name = "withResultType")]
-    pub fn with_result_type(
-        mut self,
-        result_type: &str,
-    ) -> Result<ContestedResourceVoteStateQueryBuilder, WasmSdkError> {
-        self.result_type = match result_type {
-            "documents" | "DOCUMENTS" => ContestedDocumentVotePollDriveQueryResultType::Documents,
-            "voteTally" | "VOTE_TALLY" => ContestedDocumentVotePollDriveQueryResultType::VoteTally,
+fn parse_vote_state_result_type(
+    result_type: Option<String>,
+) -> Result<ContestedDocumentVotePollDriveQueryResultType, WasmSdkError> {
+    match result_type {
+        None => Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally),
+        Some(value) => match value.as_str() {
+            "documents" | "DOCUMENTS" => Ok(ContestedDocumentVotePollDriveQueryResultType::Documents),
+            "voteTally" | "VOTE_TALLY" => Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally),
             "documentsAndVoteTally" | "DOCUMENTS_AND_VOTE_TALLY" => {
-                ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally
+                Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally)
             }
-            other => {
+            other => Err(WasmSdkError::invalid_argument(format!(
+                "Unsupported result type '{}'",
+                other
+            ))),
+        },
+    }
+}
+
+fn convert_limit(limit: Option<u32>) -> Result<Option<u16>, WasmSdkError> {
+    match limit {
+        Some(0) => Ok(None),
+        Some(value) => {
+            if value > u16::MAX as u32 {
                 return Err(WasmSdkError::invalid_argument(format!(
-                    "Unsupported result type '{}'",
-                    other
-                )))
+                    "limit {} exceeds maximum of {}",
+                    value,
+                    u16::MAX
+                )));
             }
-        };
-        Ok(self)
+
+            Ok(Some(value as u16))
+        }
+        None => Ok(None),
     }
+}
 
-    #[wasm_bindgen(js_name = "withLimit")]
-    pub fn with_limit(
-        mut self,
-        limit: Option<u32>,
-    ) -> Result<ContestedResourceVoteStateQueryBuilder, WasmSdkError> {
-        self.limit = match limit {
-            Some(0) => None,
-            Some(count) => {
-                if count > u16::MAX as u32 {
-                    return Err(WasmSdkError::invalid_argument(format!(
-                        "limit {} exceeds maximum of {}",
-                        count,
-                        u16::MAX
-                    )));
-                }
-                Some(count as u16)
-            }
-            None => None,
-        };
-        Ok(self)
-    }
+fn create_contested_resource_vote_state_query(
+    query: ContestedResourceVoteStateQueryInput,
+) -> Result<ContestedDocumentVotePollDriveQuery, WasmSdkError> {
+    let ContestedResourceVoteStateQueryInput {
+        data_contract_id,
+        document_type_name,
+        index_name,
+        fields:
+            ContestedResourceVoteStateQueryFields {
+                index_values,
+                result_type,
+                limit,
+                start_at_contender_id,
+                start_at_included,
+                include_locked_and_abstaining,
+            },
+    } = query;
 
-    #[wasm_bindgen(js_name = "withStartAtContender")]
-    pub fn with_start_at_contender(
-        mut self,
-        contender_id: &str,
-        included: bool,
-    ) -> Result<ContestedResourceVoteStateQueryBuilder, WasmSdkError> {
-        let identifier = Identifier::from_string(
-            contender_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contender ID: {}", e)))?;
+    let index_values: Vec<JsValue> = index_values
+        .unwrap_or_default()
+        .into_iter()
+        .map(|value| {
+            serde_wasm_bindgen::to_value(&value).map_err(|err| {
+                WasmSdkError::invalid_argument(format!(
+                    "Invalid indexValues entry: {}",
+                    err
+                ))
+            })
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let index_values = js_values_to_platform_values(index_values)?;
 
-        self.start_at = Some((identifier.to_buffer(), included));
-        Ok(self)
-    }
+    let contract_id = Identifier::from_string(
+        &data_contract_id,
+        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+    )
+    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
 
-    #[wasm_bindgen(js_name = "withIncludeLockedAndAbstaining")]
-    pub fn with_include_locked_and_abstaining(
-        mut self,
-        include: bool,
-    ) -> ContestedResourceVoteStateQueryBuilder {
-        self.allow_include_locked_and_abstaining_vote_tally = include;
-        self
-    }
+    let result_type = parse_vote_state_result_type(result_type)?;
+    let limit = convert_limit(limit)?;
 
-    #[wasm_bindgen(js_name = "build")]
-    pub fn build(self) -> ContestedResourceVoteStateQueryWasm {
-        let ContestedResourceVoteStateQueryBuilder {
-            vote_poll,
-            result_type,
-            limit,
-            start_at,
-            allow_include_locked_and_abstaining_vote_tally,
-        } = self;
+    let start_at = match start_at_contender_id {
+        Some(contender_id) => {
+            let identifier = Identifier::from_string(
+                &contender_id,
+                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
+            )
+            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contender ID: {}", e)))?;
 
-        ContestedResourceVoteStateQueryWasm(ContestedDocumentVotePollDriveQuery {
-            vote_poll,
-            result_type,
-            offset: None,
-            limit,
-            start_at,
-            allow_include_locked_and_abstaining_vote_tally,
+            Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
+        }
+        None => None,
+    };
+
+    let allow_include_locked_and_abstaining_vote_tally =
+        include_locked_and_abstaining.unwrap_or(false);
+
+    Ok(ContestedDocumentVotePollDriveQuery {
+        vote_poll: ContestedDocumentResourceVotePoll {
+            contract_id,
+            document_type_name,
+            index_name,
+            index_values,
+        },
+        result_type,
+        offset: None,
+        limit,
+        start_at,
+        allow_include_locked_and_abstaining_vote_tally,
+    })
+}
+
+fn parse_contested_resource_vote_state_query(
+    query: JsValue,
+) -> Result<ContestedResourceVoteStateQueryInput, WasmSdkError> {
+    if query.is_null() || query.is_undefined() {
+        return Err(WasmSdkError::invalid_argument(
+            "Query object is required".to_string(),
+        ));
+    } else {
+        serde_wasm_bindgen::from_value(query).map_err(|err| {
+            WasmSdkError::invalid_argument(format!(
+                "Invalid contested resource vote state query: {}",
+                err
+            ))
         })
     }
+}
+
+#[wasm_bindgen(js_name = "buildContestedResourceVoteStateQuery")]
+pub fn build_contested_resource_vote_state_query(
+    query: ContestedResourceVoteStateQueryJs,
+) -> Result<ContestedResourceVoteStateQueryWasm, WasmSdkError> {
+    let query_value: JsValue = query.into();
+    let query = parse_contested_resource_vote_state_query(query_value)
+        .and_then(create_contested_resource_vote_state_query)?;
+
+    Ok(ContestedResourceVoteStateQueryWasm::from_query(query))
 }
 
 fn convert_contenders(contenders: Contenders) -> ContestedResourceVoteStateWasm {
@@ -320,21 +401,51 @@ fn convert_contenders(contenders: Contenders) -> ContestedResourceVoteStateWasm 
 
 #[wasm_bindgen]
 impl WasmSdk {
+    async fn fetch_contested_resource_vote_state(
+        &self,
+        query: ContestedDocumentVotePollDriveQuery,
+    ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
+        let contenders =
+            ContenderWithSerializedDocument::fetch_many(self.as_ref(), query).await?;
+
+        Ok(convert_contenders(contenders))
+    }
+
     #[wasm_bindgen(js_name = "getContestedResourceVoteState")]
     pub async fn get_contested_resource_vote_state(
         &self,
+        query: ContestedResourceVoteStateQueryJs,
+    ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
+        let query_value: JsValue = query.into();
+        let query = parse_contested_resource_vote_state_query(query_value)
+            .and_then(create_contested_resource_vote_state_query)?;
+
+        self.fetch_contested_resource_vote_state(query).await
+    }
+
+    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithQuery")]
+    pub async fn get_contested_resource_vote_state_with_query(
+        &self,
         query: ContestedResourceVoteStateQueryWasm,
     ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
-        let contenders =
-            ContenderWithSerializedDocument::fetch_many(self.as_ref(), query.into_inner()).await?;
-
-        let state = convert_contenders(contenders);
-
-        Ok(state)
+        self.fetch_contested_resource_vote_state(query.into_inner()).await
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
     pub async fn get_contested_resource_vote_state_with_proof_info(
+        &self,
+        query: ContestedResourceVoteStateQueryJs,
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        let query_value: JsValue = query.into();
+        let query = parse_contested_resource_vote_state_query(query_value)
+            .and_then(create_contested_resource_vote_state_query)?;
+
+        self.get_contested_resource_vote_state_with_proof_info_query(ContestedResourceVoteStateQueryWasm::from_query(query))
+            .await
+    }
+
+    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfoQuery")]
+    pub async fn get_contested_resource_vote_state_with_proof_info_query(
         &self,
         query: ContestedResourceVoteStateQueryWasm,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -348,10 +459,10 @@ impl WasmSdk {
 
         let state = convert_contenders(contenders);
 
-        Ok(ProofMetadataResponseWasm::from_parts(
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
             JsValue::from(state),
-            metadata.into(),
-            proof.into(),
+            metadata,
+            proof,
         ))
     }
 }

@@ -12,6 +12,62 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::VotePollWasm;
 
+#[wasm_bindgen(typescript_custom_section)]
+const VOTE_POLLS_BY_END_DATE_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving vote polls grouped by end date.
+ */
+export interface VotePollsByEndDateQuery {
+  /**
+   * Starting timestamp (milliseconds) to filter polls.
+   * @default undefined
+   */
+  startTimeMs?: number;
+
+  /**
+   * Include the `startTimeMs` boundary when true.
+   * @default true
+   */
+  startTimeIncluded?: boolean;
+
+  /**
+   * Ending timestamp (milliseconds) to filter polls.
+   * @default undefined
+   */
+  endTimeMs?: number;
+
+  /**
+   * Include the `endTimeMs` boundary when true.
+   * @default true
+   */
+  endTimeIncluded?: boolean;
+
+  /**
+   * Maximum number of buckets to return.
+   * @default undefined (no explicit limit)
+   */
+  limit?: number;
+
+  /**
+   * Offset into the paginated result set.
+   * @default undefined
+   */
+  offset?: number;
+
+  /**
+   * Sort order for timestamps; ascending by default.
+   * @default true
+   */
+  orderAscending?: boolean;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "VotePollsByEndDateQuery")]
+    pub type VotePollsByEndDateQueryJs;
+}
+
 fn timestamp_from_option(
     value: Option<f64>,
     field: &str,
@@ -58,18 +114,6 @@ fn convert_limit(limit: Option<u32>, field: &str) -> Result<Option<u16>, WasmSdk
     }
 }
 
-#[derive(Default, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct VotePollsByEndDateQueryOptions {
-    start_time_ms: Option<f64>,
-    start_time_included: Option<bool>,
-    end_time_ms: Option<f64>,
-    end_time_included: Option<bool>,
-    limit: Option<u32>,
-    offset: Option<u32>,
-    order_ascending: Option<bool>,
-}
-
 #[wasm_bindgen(js_name = "VotePollsByEndDateQuery")]
 pub struct VotePollsByEndDateQueryWasm(VotePollsByEndDateDriveQuery);
 
@@ -79,98 +123,29 @@ impl VotePollsByEndDateQueryWasm {
     }
 }
 
-#[wasm_bindgen(js_name = "VotePollsByEndDateQueryBuilder")]
-pub struct VotePollsByEndDateQueryBuilder {
-    start_time: Option<(TimestampMillis, TimestampIncluded)>,
-    end_time: Option<(TimestampMillis, TimestampIncluded)>,
-    limit: Option<u16>,
-    offset: Option<u16>,
-    order_ascending: bool,
+#[derive(Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct VotePollsByEndDateQueryInput {
+    #[serde(default)]
+    start_time_ms: Option<f64>,
+    #[serde(default)]
+    start_time_included: Option<bool>,
+    #[serde(default)]
+    end_time_ms: Option<f64>,
+    #[serde(default)]
+    end_time_included: Option<bool>,
+    #[serde(default)]
+    limit: Option<u32>,
+    #[serde(default)]
+    offset: Option<u32>,
+    #[serde(default)]
+    order_ascending: Option<bool>,
 }
 
-#[wasm_bindgen(js_class = VotePollsByEndDateQueryBuilder)]
-impl VotePollsByEndDateQueryBuilder {
-    #[wasm_bindgen(constructor)]
-    pub fn new() -> VotePollsByEndDateQueryBuilder {
-        Self {
-            start_time: None,
-            end_time: None,
-            limit: None,
-            offset: None,
-            order_ascending: true,
-        }
-    }
-
-    #[wasm_bindgen(js_name = "withStartTime")]
-    pub fn with_start_time(
-        mut self,
-        timestamp_ms: Option<f64>,
-        included: bool,
-    ) -> Result<VotePollsByEndDateQueryBuilder, WasmSdkError> {
-        self.start_time = timestamp_from_option(timestamp_ms, "startTimeMs")?
-            .map(|timestamp| (timestamp, included));
-        Ok(self)
-    }
-
-    #[wasm_bindgen(js_name = "withEndTime")]
-    pub fn with_end_time(
-        mut self,
-        timestamp_ms: Option<f64>,
-        included: bool,
-    ) -> Result<VotePollsByEndDateQueryBuilder, WasmSdkError> {
-        self.end_time = timestamp_from_option(timestamp_ms, "endTimeMs")?
-            .map(|timestamp| (timestamp, included));
-        Ok(self)
-    }
-
-    #[wasm_bindgen(js_name = "withLimit")]
-    pub fn with_limit(
-        mut self,
-        limit: Option<u32>,
-    ) -> Result<VotePollsByEndDateQueryBuilder, WasmSdkError> {
-        self.limit = convert_limit(limit, "limit")?;
-        Ok(self)
-    }
-
-    #[wasm_bindgen(js_name = "withOffset")]
-    pub fn with_offset(
-        mut self,
-        offset: Option<u32>,
-    ) -> Result<VotePollsByEndDateQueryBuilder, WasmSdkError> {
-        self.offset = convert_limit(offset, "offset")?;
-        Ok(self)
-    }
-
-    #[wasm_bindgen(js_name = "withOrderAscending")]
-    pub fn with_order_ascending(mut self, ascending: bool) -> VotePollsByEndDateQueryBuilder {
-        self.order_ascending = ascending;
-        self
-    }
-
-    #[wasm_bindgen(js_name = "build")]
-    pub fn build(self) -> VotePollsByEndDateQueryWasm {
-        let VotePollsByEndDateQueryBuilder {
-            start_time,
-            end_time,
-            limit,
-            offset,
-            order_ascending,
-        } = self;
-
-        VotePollsByEndDateQueryWasm(VotePollsByEndDateDriveQuery {
-            start_time,
-            end_time,
-            limit,
-            offset,
-            order_ascending,
-        })
-    }
-}
-
-fn build_query_from_options(
-    opts: VotePollsByEndDateQueryOptions,
+fn build_vote_polls_by_end_date_drive_query(
+    input: VotePollsByEndDateQueryInput,
 ) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
-    let VotePollsByEndDateQueryOptions {
+    let VotePollsByEndDateQueryInput {
         start_time_ms,
         start_time_included,
         end_time_ms,
@@ -178,7 +153,7 @@ fn build_query_from_options(
         limit,
         offset,
         order_ascending,
-    } = opts;
+    } = input;
 
     if start_time_ms.is_none() && start_time_included.is_some() {
         return Err(WasmSdkError::invalid_argument(
@@ -192,47 +167,50 @@ fn build_query_from_options(
         ));
     }
 
-    let mut builder = VotePollsByEndDateQueryBuilder::new();
+    let start_time = timestamp_from_option(start_time_ms, "startTimeMs")?
+        .map(|timestamp| (timestamp, start_time_included.unwrap_or(true)));
 
-    if start_time_ms.is_some() || start_time_included.is_some() {
-        builder = builder.with_start_time(start_time_ms, start_time_included.unwrap_or(true))?;
-    }
+    let end_time = timestamp_from_option(end_time_ms, "endTimeMs")?
+        .map(|timestamp| (timestamp, end_time_included.unwrap_or(true)));
 
-    if end_time_ms.is_some() || end_time_included.is_some() {
-        builder = builder.with_end_time(end_time_ms, end_time_included.unwrap_or(true))?;
-    }
+    let limit = convert_limit(limit, "limit")?;
+    let offset = convert_limit(offset, "offset")?;
 
-    if limit.is_some() {
-        builder = builder.with_limit(limit)?;
-    }
-
-    if offset.is_some() {
-        builder = builder.with_offset(offset)?;
-    }
-
-    if let Some(order) = order_ascending {
-        builder = builder.with_order_ascending(order);
-    }
-
-    Ok(builder.build())
+    Ok(VotePollsByEndDateQueryWasm(VotePollsByEndDateDriveQuery {
+        start_time,
+        end_time,
+        limit,
+        offset,
+        order_ascending: order_ascending.unwrap_or(true),
+    }))
 }
 
-#[wasm_bindgen(js_name = "buildVotePollsByEndDateQuery")]
-pub fn build_vote_polls_by_end_date_query(
-    options: JsValue,
+fn parse_vote_polls_by_end_date_query(
+    query: Option<VotePollsByEndDateQueryJs>,
 ) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
-    let opts = if options.is_null() || options.is_undefined() {
-        VotePollsByEndDateQueryOptions::default()
+    let value: JsValue = query
+        .map(Into::into)
+        .unwrap_or(JsValue::UNDEFINED);
+
+    let input: VotePollsByEndDateQueryInput = if value.is_null() || value.is_undefined() {
+        VotePollsByEndDateQueryInput::default()
     } else {
-        serde_wasm_bindgen::from_value(options).map_err(|err| {
+        serde_wasm_bindgen::from_value(value).map_err(|err| {
             WasmSdkError::invalid_argument(format!(
-                "Invalid vote polls by end date options: {}",
+                "Invalid vote polls by end date query: {}",
                 err
             ))
         })?
     };
 
-    build_query_from_options(opts)
+    build_vote_polls_by_end_date_drive_query(input)
+}
+
+#[wasm_bindgen(js_name = "buildVotePollsByEndDateQuery")]
+pub fn build_vote_polls_by_end_date_query(
+    query: Option<VotePollsByEndDateQueryJs>,
+) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
+    parse_vote_polls_by_end_date_query(query)
 }
 
 #[derive(Clone)]
@@ -330,10 +308,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getVotePollsByEndDate")]
     pub async fn get_vote_polls_by_end_date(
         &self,
-        options: JsValue,
+        query: Option<VotePollsByEndDateQueryJs>,
     ) -> Result<VotePollsByEndDateResultWasm, WasmSdkError> {
-        let query = build_vote_polls_by_end_date_query(options)?;
-        self.fetch_vote_polls_by_end_date(query).await
+        let drive_query = parse_vote_polls_by_end_date_query(query)?;
+        self.fetch_vote_polls_by_end_date(drive_query).await
     }
 
     #[wasm_bindgen(js_name = "getVotePollsByEndDateWithQuery")]
@@ -347,10 +325,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfo")]
     pub async fn get_vote_polls_by_end_date_with_proof_info(
         &self,
-        options: JsValue,
+        query: Option<VotePollsByEndDateQueryJs>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query = build_vote_polls_by_end_date_query(options)?;
-        self.get_vote_polls_by_end_date_with_proof_info_query(query)
+        let drive_query = parse_vote_polls_by_end_date_query(query)?;
+        self.get_vote_polls_by_end_date_with_proof_info_query(drive_query)
             .await
     }
 
