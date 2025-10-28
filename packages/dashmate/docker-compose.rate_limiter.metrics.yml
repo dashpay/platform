@@ -12,6 +12,7 @@ services:
     image: ${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway rate limiter metrics exporter"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
       prometheus.io/scrape: "${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_ENABLED:-false}"
       prometheus.io/port: "${PLATFORM_GATEWAY_RATE_LIMITER_METRICS_PORT:?err}"
       prometheus.io/path: "/metrics"

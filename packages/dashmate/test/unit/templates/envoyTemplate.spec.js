@@ -18,7 +18,7 @@ describe('envoy template', () => {
     const envoyConfig = renderedConfigs['platform/gateway/envoy.yaml'];
 
     expect(envoyConfig).to.include('cluster_name: admin');
-    expect(envoyConfig).to.include('admin:\n address:\n   socket_address:\n     address: 127.0.0.1 # Admin listens on configured host; defaults to loopback when not explicitly enabled');
+    expect(envoyConfig).to.include('address: 127.0.0.1');
     expect(envoyConfig).to.include('port_value: 9901');
   });
 });

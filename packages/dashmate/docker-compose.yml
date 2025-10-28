@@ -54,6 +54,7 @@ services:
     image: ${PLATFORM_DRIVE_ABCI_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Drive ABCI"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
       prometheus.io/scrape: "${PLATFORM_DRIVE_ABCI_METRICS_ENABLED:-false}"
       prometheus.io/port: "${PLATFORM_DRIVE_ABCI_METRICS_PORT:?err}"
       prometheus.io/path: "/metrics"
@@ -114,6 +115,7 @@ services:
     image: ${PLATFORM_DRIVE_TENDERDASH_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Drive Tenderdash"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
       prometheus.io/scrape: "${PLATFORM_DRIVE_TENDERDASH_METRICS_ENABLED:-false}"
       prometheus.io/port: "${PLATFORM_DRIVE_TENDERDASH_METRICS_PORT:?err}"
       prometheus.io/path: "/metrics"
@@ -202,7 +204,8 @@ services:
     image: ${PLATFORM_DAPI_RS_DAPI_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "rs-dapi (Rust DAPI)"
-      prometheus.io/scrape: "true"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
+      prometheus.io/scrape:  "${PLATFORM_DAPI_RS_DAPI_METRICS_ENABLED:-false}"
       prometheus.io/port: "${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}"
       prometheus.io/path: "/metrics"
     restart: unless-stopped
@@ -245,9 +248,10 @@ services:
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
     labels:
       org.dashmate.service.title: "Gateway"
+      org.dashmate.config.name: "${CONFIG_NAME:?err}"
       prometheus.io/scrape: "${PLATFORM_GATEWAY_METRICS_ENABLED:-false}"
       prometheus.io/port: "${PLATFORM_GATEWAY_METRICS_PORT:?err}"
-      prometheus.io/path: "/stats/prometheus"
+      prometheus.io/path: "/metrics"
     restart: unless-stopped
     logging: *default-logging
     ports:
