@@ -14,8 +14,8 @@
         "rpcport": {{= it.core.rpc.port }},
         "rpcuser": "dashmate",
         "rpcpassword": "{{= it.core.rpc.users.dashmate.password }}",
-        "zmqpubrawtx": "tcp://core:29998",
-        "zmqpubhashblock": "tcp://core:29998"
+        "zmqpubrawtx": "tcp://core:{{= it.core.zmq.port }}",
+        "zmqpubhashblock": "tcp://core:{{= it.core.zmq.port }}"
       }]
     },
     "@dashevo/insight-api": {
