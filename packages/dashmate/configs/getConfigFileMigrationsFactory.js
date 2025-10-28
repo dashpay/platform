@@ -1230,9 +1230,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
-            const baseMetricsPort = base.get('platform.dapi.rsDapi.metrics.port');
-            const baseZmqPort = base.get('core.zmq.port');
-
             if (!options.platform.dapi.rsDapi) {
               options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
             }
@@ -1255,28 +1252,8 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.core.zmq.port = defaultConfig.get('core.zmq.port');
             }
 
-            const { network } = options;
-
-            let metricsPortDelta = null;
-            if (network === NETWORK_TESTNET) {
-              metricsPortDelta = 10000;
-            } else if (network === NETWORK_LOCAL) {
-              metricsPortDelta = 20000;
-            }
-
-            if (metricsPortDelta !== null) {
-              const targetMetricsPort = baseMetricsPort + metricsPortDelta;
-
-              if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined'
-                || options.platform.dapi.rsDapi.metrics.port === baseMetricsPort) {
-                options.platform.dapi.rsDapi.metrics.port = targetMetricsPort;
-              }
-
-              const targetZmqPort = baseZmqPort + metricsPortDelta;
-
-              if (options.core.zmq.port === baseZmqPort) {
-                options.core.zmq.port = targetZmqPort;
-              }
+            if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
+              options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
             }
           });
 
