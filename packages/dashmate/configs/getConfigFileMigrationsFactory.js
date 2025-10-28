@@ -1275,9 +1275,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
-            const defaultZmqPort = defaultConfig.get('core.zmq.port');
-            const baseMetricsPort = base.get('platform.dapi.rsDapi.metrics.port');
-            const baseZmqPort = base.get('core.zmq.port');
 
             if (!options.platform.dapi.rsDapi.metrics) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
@@ -1301,27 +1298,21 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
             }
 
-            const targetMetricsPort = Number(defaultMetrics.port);
-            const targetZmqPort = Number(defaultZmqPort);
             const configuredMetricsPort = Number(options.platform.dapi.rsDapi.metrics.port);
             const configuredZmqPort = Number(options.core.zmq.port);
-            const baseMetricsPortNumber = Number(baseMetricsPort);
-            const baseZmqPortNumber = Number(baseZmqPort);
+            const isLocal = options.network === NETWORK_LOCAL || name === 'local';
+            const isTestnet = options.network === NETWORK_TESTNET || name === 'testnet';
 
-            if (
-              !Number.isNaN(targetMetricsPort)
-              && targetMetricsPort !== configuredMetricsPort
-              && configuredMetricsPort === baseMetricsPortNumber
-            ) {
-              options.platform.dapi.rsDapi.metrics.port = targetMetricsPort;
+            if (isLocal && configuredMetricsPort === 9091) {
+              options.platform.dapi.rsDapi.metrics.port = 29091;
+            } else if (isTestnet && configuredMetricsPort === 9091) {
+              options.platform.dapi.rsDapi.metrics.port = 19091;
             }
 
-            if (
-              !Number.isNaN(targetZmqPort)
-              && targetZmqPort !== configuredZmqPort
-              && (configuredZmqPort === baseZmqPortNumber || configuredZmqPort === 29998)
-            ) {
-              options.core.zmq.port = targetZmqPort;
+            if (isLocal && configuredZmqPort === 29998) {
+              options.core.zmq.port = 49998;
+            } else if (isTestnet && configuredZmqPort === 29998) {
+              options.core.zmq.port = 39998;
             }
           });
 

@@ -8,7 +8,7 @@ export default function getConfigProfilesFactory() {
    * @param {{ includeAll?: boolean }} [options]
    * @returns {string[]}
    */
-  function getConfigProfiles(config, { includeAll = false } = {}) {
+  function getConfigProfiles(config) {
     const profiles = [];
 
     profiles.push('core');
