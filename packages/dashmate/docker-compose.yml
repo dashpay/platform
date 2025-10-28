@@ -229,9 +229,6 @@ services:
     expose:
       - 3009 # JSON-RPC
       - 3010 # gRPC (different from current DAPI to avoid conflict)
-      - ${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err} # Metrics
-    ports:
-      - ${PLATFORM_DAPI_RS_DAPI_METRICS_HOST:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
     profiles:
       - platform-dapi-rs
 

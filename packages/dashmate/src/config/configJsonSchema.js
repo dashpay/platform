@@ -880,20 +880,7 @@ export default {
                   additionalProperties: false,
                 },
                 metrics: {
-                  type: 'object',
-                  properties: {
-                    host: {
-                      type: 'string',
-                      minLength: 1,
-                    },
-                    port: {
-                      type: 'integer',
-                      minimum: 1,
-                      maximum: 65535,
-                    },
-                  },
-                  required: ['host', 'port'],
-                  additionalProperties: false,
+                  $ref: '#/definitions/enabledHostPort',
                 },
                 logs: {
                   type: 'object',

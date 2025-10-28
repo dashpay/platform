@@ -135,6 +135,13 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
       envs.PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH = '';
     }
 
+    if (
+      config.has('platform.dapi.rsDapi.metrics.enabled')
+      && !config.get('platform.dapi.rsDapi.metrics.enabled')
+    ) {
+      envs.PLATFORM_DAPI_RS_DAPI_METRICS_PORT = '0';
+    }
+
     return envs;
   }
 
