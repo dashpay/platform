@@ -19,8 +19,8 @@ pub use sdk::{WasmSdk, WasmSdkBuilder};
 pub use state_transitions::identity as state_transition_identity;
 pub use wallet::*;
 
-#[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+// Use Rust's default allocator (dlmalloc) for wasm32-unknown-unknown
+// This is more maintainable than third-party allocators and is actively supported by the Rust team
 
 #[wasm_bindgen(start)]
 pub async fn start() -> Result<(), WasmSdkError> {
