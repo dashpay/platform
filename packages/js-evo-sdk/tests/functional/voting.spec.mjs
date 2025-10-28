@@ -12,7 +12,7 @@ describe('Voting', function votingSuite() {
 
   it('contestedResourceVoteState() returns a vote state (may be empty)', async () => {
     const res = await sdk.voting.contestedResourceVoteState({
-      contractId: TEST_IDS.dataContractId,
+      dataContractId: TEST_IDS.dataContractId,
       documentTypeName: 'domain',
       indexName: 'parentNameAndLabel',
       indexValues: ['dash', TEST_IDS.username],
@@ -22,7 +22,10 @@ describe('Voting', function votingSuite() {
   });
 
   it('contestedResourceIdentityVotes() returns votes for identity (may be empty)', async () => {
-    const res = await sdk.voting.contestedResourceIdentityVotes(TEST_IDS.identityId, { limit: 5 });
+    const res = await sdk.voting.contestedResourceIdentityVotes({
+      identityId: TEST_IDS.identityId,
+      limit: 5,
+    });
     expect(res).to.exist();
   });
 });

@@ -16,8 +16,11 @@ use wasm_dpp2::block::BlockInfoWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::{ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWinnerInfoWasm};
 
+use crate::queries::utils::{
+    convert_json_values_to_platform_values, convert_optional_limit, deserialize_required_query,
+    identifier_from_base58,
+};
 use crate::sdk::WasmSdk;
-use crate::utils::js_values_to_platform_values;
 use crate::{ProofMetadataResponseWasm, WasmSdkError};
 
 #[wasm_bindgen(typescript_custom_section)]
@@ -93,10 +96,7 @@ pub struct ContestedResourceVoteWinnerWasm {
 }
 
 impl ContestedResourceVoteWinnerWasm {
-    fn from_parts(
-        info: ContestedDocumentVotePollWinnerInfo,
-        block: BlockInfoWasm,
-    ) -> Self {
+    fn from_parts(info: ContestedDocumentVotePollWinnerInfo, block: BlockInfoWasm) -> Self {
         Self {
             info: info.into(),
             block,
@@ -200,22 +200,12 @@ impl ContestedResourceVoteStateWasm {
     }
 }
 
-#[wasm_bindgen(js_name = "ContestedResourceVoteStateQuery")]
-pub struct ContestedResourceVoteStateQueryWasm(ContestedDocumentVotePollDriveQuery);
-
-impl ContestedResourceVoteStateQueryWasm {
-    pub(crate) fn into_inner(self) -> ContestedDocumentVotePollDriveQuery {
-        self.0
-    }
-
-    pub(crate) fn from_query(query: ContestedDocumentVotePollDriveQuery) -> Self {
-        Self(query)
-    }
-}
-
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ContestedResourceVoteStateQueryFields {
+struct ContestedResourceVoteStateQueryInput {
+    data_contract_id: String,
+    document_type_name: String,
+    index_name: String,
     #[serde(default)]
     index_values: Option<Vec<JsonValue>>,
     #[serde(default)]
@@ -230,24 +220,18 @@ struct ContestedResourceVoteStateQueryFields {
     include_locked_and_abstaining: Option<bool>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ContestedResourceVoteStateQueryInput {
-    data_contract_id: String,
-    document_type_name: String,
-    index_name: String,
-    #[serde(flatten)]
-    fields: ContestedResourceVoteStateQueryFields,
-}
-
 fn parse_vote_state_result_type(
     result_type: Option<String>,
 ) -> Result<ContestedDocumentVotePollDriveQueryResultType, WasmSdkError> {
     match result_type {
         None => Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally),
         Some(value) => match value.as_str() {
-            "documents" | "DOCUMENTS" => Ok(ContestedDocumentVotePollDriveQueryResultType::Documents),
-            "voteTally" | "VOTE_TALLY" => Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally),
+            "documents" | "DOCUMENTS" => {
+                Ok(ContestedDocumentVotePollDriveQueryResultType::Documents)
+            }
+            "voteTally" | "VOTE_TALLY" => {
+                Ok(ContestedDocumentVotePollDriveQueryResultType::VoteTally)
+            }
             "documentsAndVoteTally" | "DOCUMENTS_AND_VOTE_TALLY" => {
                 Ok(ContestedDocumentVotePollDriveQueryResultType::DocumentsAndVoteTally)
             }
@@ -259,24 +243,6 @@ fn parse_vote_state_result_type(
     }
 }
 
-fn convert_limit(limit: Option<u32>) -> Result<Option<u16>, WasmSdkError> {
-    match limit {
-        Some(0) => Ok(None),
-        Some(value) => {
-            if value > u16::MAX as u32 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "limit {} exceeds maximum of {}",
-                    value,
-                    u16::MAX
-                )));
-            }
-
-            Ok(Some(value as u16))
-        }
-        None => Ok(None),
-    }
-}
-
 fn create_contested_resource_vote_state_query(
     query: ContestedResourceVoteStateQueryInput,
 ) -> Result<ContestedDocumentVotePollDriveQuery, WasmSdkError> {
@@ -284,47 +250,24 @@ fn create_contested_resource_vote_state_query(
         data_contract_id,
         document_type_name,
         index_name,
-        fields:
-            ContestedResourceVoteStateQueryFields {
-                index_values,
-                result_type,
-                limit,
-                start_at_contender_id,
-                start_at_included,
-                include_locked_and_abstaining,
-            },
+        index_values,
+        result_type,
+        limit,
+        start_at_contender_id,
+        start_at_included,
+        include_locked_and_abstaining,
     } = query;
 
-    let index_values: Vec<JsValue> = index_values
-        .unwrap_or_default()
-        .into_iter()
-        .map(|value| {
-            serde_wasm_bindgen::to_value(&value).map_err(|err| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid indexValues entry: {}",
-                    err
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let index_values = js_values_to_platform_values(index_values)?;
+    let index_values = convert_json_values_to_platform_values(index_values, "indexValues")?;
 
-    let contract_id = Identifier::from_string(
-        &data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+    let contract_id = identifier_from_base58(&data_contract_id, "contract ID")?;
 
     let result_type = parse_vote_state_result_type(result_type)?;
-    let limit = convert_limit(limit)?;
+    let limit = convert_optional_limit(limit, "limit")?;
 
     let start_at = match start_at_contender_id {
         Some(contender_id) => {
-            let identifier = Identifier::from_string(
-                &contender_id,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contender ID: {}", e)))?;
+            let identifier = identifier_from_base58(&contender_id, "contender ID")?;
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }
@@ -350,31 +293,13 @@ fn create_contested_resource_vote_state_query(
 }
 
 fn parse_contested_resource_vote_state_query(
-    query: JsValue,
-) -> Result<ContestedResourceVoteStateQueryInput, WasmSdkError> {
-    if query.is_null() || query.is_undefined() {
-        return Err(WasmSdkError::invalid_argument(
-            "Query object is required".to_string(),
-        ));
-    } else {
-        serde_wasm_bindgen::from_value(query).map_err(|err| {
-            WasmSdkError::invalid_argument(format!(
-                "Invalid contested resource vote state query: {}",
-                err
-            ))
-        })
-    }
-}
-
-#[wasm_bindgen(js_name = "buildContestedResourceVoteStateQuery")]
-pub fn build_contested_resource_vote_state_query(
     query: ContestedResourceVoteStateQueryJs,
-) -> Result<ContestedResourceVoteStateQueryWasm, WasmSdkError> {
-    let query_value: JsValue = query.into();
-    let query = parse_contested_resource_vote_state_query(query_value)
-        .and_then(create_contested_resource_vote_state_query)?;
-
-    Ok(ContestedResourceVoteStateQueryWasm::from_query(query))
+) -> Result<ContestedResourceVoteStateQueryInput, WasmSdkError> {
+    deserialize_required_query(
+        query,
+        "Query object is required",
+        "contested resource vote state query",
+    )
 }
 
 fn convert_contenders(contenders: Contenders) -> ContestedResourceVoteStateWasm {
@@ -401,34 +326,18 @@ fn convert_contenders(contenders: Contenders) -> ContestedResourceVoteStateWasm 
 
 #[wasm_bindgen]
 impl WasmSdk {
-    async fn fetch_contested_resource_vote_state(
-        &self,
-        query: ContestedDocumentVotePollDriveQuery,
-    ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
-        let contenders =
-            ContenderWithSerializedDocument::fetch_many(self.as_ref(), query).await?;
-
-        Ok(convert_contenders(contenders))
-    }
-
     #[wasm_bindgen(js_name = "getContestedResourceVoteState")]
     pub async fn get_contested_resource_vote_state(
         &self,
         query: ContestedResourceVoteStateQueryJs,
     ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
-        let query_value: JsValue = query.into();
-        let query = parse_contested_resource_vote_state_query(query_value)
+        let drive_query = parse_contested_resource_vote_state_query(query)
             .and_then(create_contested_resource_vote_state_query)?;
 
-        self.fetch_contested_resource_vote_state(query).await
-    }
+        let contenders =
+            ContenderWithSerializedDocument::fetch_many(self.as_ref(), drive_query).await?;
 
-    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithQuery")]
-    pub async fn get_contested_resource_vote_state_with_query(
-        &self,
-        query: ContestedResourceVoteStateQueryWasm,
-    ) -> Result<ContestedResourceVoteStateWasm, WasmSdkError> {
-        self.fetch_contested_resource_vote_state(query.into_inner()).await
+        Ok(convert_contenders(contenders))
     }
 
     #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
@@ -436,23 +345,13 @@ impl WasmSdk {
         &self,
         query: ContestedResourceVoteStateQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let query_value: JsValue = query.into();
-        let query = parse_contested_resource_vote_state_query(query_value)
+        let drive_query = parse_contested_resource_vote_state_query(query)
             .and_then(create_contested_resource_vote_state_query)?;
 
-        self.get_contested_resource_vote_state_with_proof_info_query(ContestedResourceVoteStateQueryWasm::from_query(query))
-            .await
-    }
-
-    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfoQuery")]
-    pub async fn get_contested_resource_vote_state_with_proof_info_query(
-        &self,
-        query: ContestedResourceVoteStateQueryWasm,
-    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let (contenders, metadata, proof) =
             ContenderWithSerializedDocument::fetch_many_with_metadata_and_proof(
                 self.as_ref(),
-                query.into_inner(),
+                drive_query,
                 None,
             )
             .await?;
@@ -460,9 +359,7 @@ impl WasmSdk {
         let state = convert_contenders(contenders);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
-            JsValue::from(state),
-            metadata,
-            proof,
+            state, metadata, proof,
         ))
     }
 }

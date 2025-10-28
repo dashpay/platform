@@ -6,6 +6,7 @@ pub mod identity;
 pub mod protocol;
 pub mod system;
 pub mod token;
+pub(crate) mod utils;
 pub mod voting;
 
 // Re-export all query functions for easy access
