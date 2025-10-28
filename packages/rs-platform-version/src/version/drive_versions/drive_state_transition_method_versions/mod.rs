@@ -41,6 +41,7 @@ pub struct DriveStateTransitionActionConvertToHighLevelOperationsMethodVersions 
     pub token_claim_transition: FeatureVersion,
     pub token_direct_purchase_transition: FeatureVersion,
     pub token_set_price_for_direct_purchase_transition: FeatureVersion,
+    pub identity_credit_transfer_to_addresses_transition: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

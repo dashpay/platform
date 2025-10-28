@@ -4,21 +4,21 @@ use platform_value::Value;
 
 use crate::ProtocolError;
 
-use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
-use crate::state_transition::identity_credit_transfer_to_address_transition::IdentityCreditTransferToAddressTransition;
-use crate::state_transition::state_transitions::identity_credit_transfer_to_address_transition::fields::*;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+use crate::state_transition::state_transitions::identity_credit_transfer_to_addresses_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;
 use platform_value::btreemap_extensions::BTreeValueRemoveFromMapHelper;
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl ValueConvertible<'_> for IdentityCreditTransferToAddressTransition {}
+impl ValueConvertible<'_> for IdentityCreditTransferToAddressesTransition {}
 
-impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransition {
+impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressesTransition {
     fn to_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 let mut value = transition.to_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
@@ -28,7 +28,7 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
 
     fn to_canonical_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 let mut value = transition.to_canonical_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
@@ -38,7 +38,7 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
 
     fn to_canonical_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 let mut value = transition.to_canonical_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
@@ -48,7 +48,7 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
 
     fn to_cleaned_object(&self, skip_signature: bool) -> Result<Value, ProtocolError> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 let mut value = transition.to_cleaned_object(skip_signature)?;
                 value.insert(STATE_TRANSITION_PROTOCOL_VERSION.to_string(), Value::U16(0))?;
                 Ok(value)
@@ -72,13 +72,13 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
             });
 
         match version {
-            0 => Ok(IdentityCreditTransferToAddressTransitionV0::from_object(
+            0 => Ok(IdentityCreditTransferToAddressesTransitionV0::from_object(
                 raw_object,
                 platform_version,
             )?
             .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreditTransferToAddressTransition version {n}"
+                "Unknown IdentityCreditTransferToAddressesTransition version {n}"
             ))),
         }
     }
@@ -99,13 +99,15 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
             });
 
         match version {
-            0 => Ok(IdentityCreditTransferToAddressTransitionV0::from_value_map(
-                raw_value_map,
-                platform_version,
-            )?
-            .into()),
+            0 => Ok(
+                IdentityCreditTransferToAddressesTransitionV0::from_value_map(
+                    raw_value_map,
+                    platform_version,
+                )?
+                .into(),
+            ),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreditTransferToAddressTransition version {n}"
+                "Unknown IdentityCreditTransferToAddressesTransition version {n}"
             ))),
         }
     }
@@ -116,9 +118,9 @@ impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransiti
             .map_err(ProtocolError::ValueError)?;
 
         match version {
-            0 => IdentityCreditTransferToAddressTransitionV0::clean_value(value),
+            0 => IdentityCreditTransferToAddressesTransitionV0::clean_value(value),
             n => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown IdentityCreditTransferToAddressTransition version {n}"
+                "Unknown IdentityCreditTransferToAddressesTransition version {n}"
             ))),
         }
     }

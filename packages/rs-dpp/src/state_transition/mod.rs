@@ -104,7 +104,7 @@ use crate::state_transition::identity_create_from_addresses_transition::{
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
-use crate::state_transition::identity_credit_transfer_to_address_transition::{
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::{
     IdentityCreditTransferToAddressTransition, IdentityCreditTransferToAddressTransitionSignable,
 };
 use crate::state_transition::identity_credit_transfer_transition::{

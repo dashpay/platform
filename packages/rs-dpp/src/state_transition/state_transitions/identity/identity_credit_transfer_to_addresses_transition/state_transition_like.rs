@@ -1,16 +1,16 @@
 use crate::prelude::UserFeeIncrease;
-use crate::state_transition::identity_credit_transfer_to_address_transition::IdentityCreditTransferToAddressTransition;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
-impl StateTransitionLike for IdentityCreditTransferToAddressTransition {
+impl StateTransitionLike for IdentityCreditTransferToAddressesTransition {
     /// Returns ID of the credit_transferred contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.modified_data_ids()
             }
         }
@@ -18,13 +18,13 @@ impl StateTransitionLike for IdentityCreditTransferToAddressTransition {
 
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(_) => 0,
+            IdentityCreditTransferToAddressesTransition::V0(_) => 0,
         }
     }
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.state_transition_type()
             }
         }
@@ -33,7 +33,7 @@ impl StateTransitionLike for IdentityCreditTransferToAddressTransition {
     /// returns the fee multiplier
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.user_fee_increase()
             }
         }
@@ -41,7 +41,7 @@ impl StateTransitionLike for IdentityCreditTransferToAddressTransition {
     /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.set_user_fee_increase(user_fee_increase)
             }
         }
@@ -49,30 +49,30 @@ impl StateTransitionLike for IdentityCreditTransferToAddressTransition {
 
     fn owner_id(&self) -> Identifier {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => transition.owner_id(),
+            IdentityCreditTransferToAddressesTransition::V0(transition) => transition.owner_id(),
         }
     }
 
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.unique_identifiers()
             }
         }
     }
 }
 
-impl StateTransitionSingleSigned for IdentityCreditTransferToAddressTransition {
+impl StateTransitionSingleSigned for IdentityCreditTransferToAddressesTransition {
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => transition.signature(),
+            IdentityCreditTransferToAddressesTransition::V0(transition) => transition.signature(),
         }
     }
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.set_signature(signature)
             }
         }
@@ -80,7 +80,7 @@ impl StateTransitionSingleSigned for IdentityCreditTransferToAddressTransition {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.set_signature_bytes(signature)
             }
         }

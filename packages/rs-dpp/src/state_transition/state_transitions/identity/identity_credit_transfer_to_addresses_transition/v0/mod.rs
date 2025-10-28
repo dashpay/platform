@@ -38,7 +38,7 @@ use serde::{Deserialize, Serialize};
 )]
 #[platform_serialize(unversioned)]
 #[derive(Default)]
-pub struct IdentityCreditTransferToAddressTransitionV0 {
+pub struct IdentityCreditTransferToAddressesTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
     pub recipient_keys: BTreeMap<KeyOfType, Credits>,
@@ -55,12 +55,12 @@ mod test {
 
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
-    use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
+    use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
     use platform_value::Identifier;
     use rand::Rng;
     use std::fmt::Debug;
 
-    fn test_identity_credit_transfer_to_address_transition<
+    fn test_identity_credit_transfer_to_addresses_transition<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
@@ -74,9 +74,9 @@ mod test {
     }
 
     #[test]
-    fn test_identity_credit_transfer_to_address_transition1() {
+    fn test_identity_credit_transfer_to_addresses_transition1() {
         let mut rng = rand::thread_rng();
-        let transition = IdentityCreditTransferToAddressTransitionV0 {
+        let transition = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: Identifier::random(),
             recipient_keys: Identifier::random(),
             amount: rng.gen(),
@@ -86,6 +86,6 @@ mod test {
             signature: [0; 65].to_vec().into(),
         };
 
-        test_identity_credit_transfer_to_address_transition(transition);
+        test_identity_credit_transfer_to_addresses_transition(transition);
     }
 }

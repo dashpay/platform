@@ -1,11 +1,11 @@
 use crate::identity::{KeyID, Purpose, SecurityLevel};
-use crate::state_transition::identity_credit_transfer_to_address_transition::IdentityCreditTransferToAddressTransition;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use crate::state_transition::StateTransitionIdentitySigned;
 
-impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressTransition {
+impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressesTransition {
     fn signature_public_key_id(&self) -> KeyID {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.signature_public_key_id()
             }
         }
@@ -13,7 +13,7 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressTransition
 
     fn set_signature_public_key_id(&mut self, key_id: KeyID) {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.set_signature_public_key_id(key_id)
             }
         }
@@ -21,7 +21,7 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressTransition
 
     fn security_level_requirement(&self, purpose: Purpose) -> Vec<SecurityLevel> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.security_level_requirement(purpose)
             }
         }
@@ -29,7 +29,7 @@ impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressTransition
 
     fn purpose_requirement(&self) -> Vec<Purpose> {
         match self {
-            IdentityCreditTransferToAddressTransition::V0(transition) => {
+            IdentityCreditTransferToAddressesTransition::V0(transition) => {
                 transition.purpose_requirement()
             }
         }

@@ -18,15 +18,15 @@ use std::collections::BTreeMap;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
-use crate::state_transition::identity_credit_transfer_to_address_transition::methods::IdentityCreditTransferToAddressTransitionMethodsV0;
-use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl IdentityCreditTransferToAddressTransitionMethodsV0
-    for IdentityCreditTransferToAddressTransitionV0
+impl IdentityCreditTransferToAddressesTransitionMethodsV0
+    for IdentityCreditTransferToAddressesTransitionV0
 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
@@ -43,7 +43,7 @@ impl IdentityCreditTransferToAddressTransitionMethodsV0
         tracing::debug!(identity_id = %identity.id(), "try_from_identity");
         tracing::debug!(recipient_key = %to_recipient_keys, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
 
-        let mut transition: StateTransition = IdentityCreditTransferToAddressTransitionV0 {
+        let mut transition: StateTransition = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: identity.id(),
             recipient_keys: to_recipient_keys,
             nonce,

@@ -8,21 +8,21 @@ use crate::{
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
-use crate::state_transition::identity_credit_transfer_to_address_transition::IdentityCreditTransferToAddressTransition;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 
 use crate::state_transition::StateTransitionType::IdentityCreditTransfer;
 use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 use crate::version::FeatureVersion;
 
-impl From<IdentityCreditTransferToAddressTransitionV0> for StateTransition {
-    fn from(value: IdentityCreditTransferToAddressTransitionV0) -> Self {
-        let identity_credit_transfer_to_address_transition: IdentityCreditTransferToAddressTransition = value.into();
-        identity_credit_transfer_to_address_transition.into()
+impl From<IdentityCreditTransferToAddressesTransitionV0> for StateTransition {
+    fn from(value: IdentityCreditTransferToAddressesTransitionV0) -> Self {
+        let identity_credit_transfer_to_addresses_transition: IdentityCreditTransferToAddressesTransition = value.into();
+        identity_credit_transfer_to_addresses_transition.into()
     }
 }
 
-impl StateTransitionLike for IdentityCreditTransferToAddressTransitionV0 {
+impl StateTransitionLike for IdentityCreditTransferToAddressesTransitionV0 {
     fn state_transition_protocol_version(&self) -> FeatureVersion {
         0
     }
@@ -60,7 +60,7 @@ impl StateTransitionLike for IdentityCreditTransferToAddressTransitionV0 {
     }
 }
 
-impl StateTransitionSingleSigned for IdentityCreditTransferToAddressTransitionV0 {
+impl StateTransitionSingleSigned for IdentityCreditTransferToAddressesTransitionV0 {
     /// returns the signature as a byte-array
     fn signature(&self) -> &BinaryData {
         &self.signature

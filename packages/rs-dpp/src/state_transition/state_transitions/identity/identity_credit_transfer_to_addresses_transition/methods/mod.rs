@@ -8,13 +8,13 @@ pub use v0::*;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
-use crate::state_transition::identity_credit_transfer_to_address_transition::IdentityCreditTransferToAddressTransition;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
-        identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0,
+        identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0,
         StateTransition,
     },
     ProtocolError,
@@ -22,8 +22,8 @@ use crate::{
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
 
-impl IdentityCreditTransferToAddressTransitionMethodsV0
-    for IdentityCreditTransferToAddressTransition
+impl IdentityCreditTransferToAddressesTransitionMethodsV0
+    for IdentityCreditTransferToAddressesTransition
 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer>(
@@ -43,7 +43,7 @@ impl IdentityCreditTransferToAddressTransitionMethodsV0
                 .identity_to_identity_transfer_transition,
         ) {
             0 => Ok(
-                IdentityCreditTransferToAddressTransitionV0::try_from_identity(
+                IdentityCreditTransferToAddressesTransitionV0::try_from_identity(
                     identity,
                     to_recipient_keys,
                     user_fee_increase,
@@ -55,7 +55,8 @@ impl IdentityCreditTransferToAddressTransitionMethodsV0
                 )?,
             ),
             version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "IdentityCreditTransferToAddressTransition::try_from_identity".to_string(),
+                method: "IdentityCreditTransferToAddressesTransition::try_from_identity"
+                    .to_string(),
                 known_versions: vec![0],
                 received: version,
             }),

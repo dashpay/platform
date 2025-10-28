@@ -1,9 +1,9 @@
 use crate::identity::SecurityLevel::CRITICAL;
 use crate::identity::{KeyID, Purpose, SecurityLevel};
-use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 use crate::state_transition::StateTransitionIdentitySigned;
 
-impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressTransitionV0 {
+impl StateTransitionIdentitySigned for IdentityCreditTransferToAddressesTransitionV0 {
     fn signature_public_key_id(&self) -> KeyID {
         self.signature_public_key_id
     }

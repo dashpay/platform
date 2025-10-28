@@ -4,13 +4,13 @@ use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
 use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
-use crate::state_transition::identity_credit_transfer_to_address_transition::fields::*;
-use crate::state_transition::identity_credit_transfer_to_address_transition::v0::IdentityCreditTransferToAddressTransitionV0;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::fields::*;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 
 use platform_version::version::PlatformVersion;
 
-impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressTransitionV0 {
+impl StateTransitionValueConvert<'_> for IdentityCreditTransferToAddressesTransitionV0 {
     fn from_object(
         raw_object: Value,
         _platform_version: &PlatformVersion,

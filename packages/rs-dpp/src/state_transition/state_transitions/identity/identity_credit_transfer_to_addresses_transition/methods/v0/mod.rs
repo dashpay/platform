@@ -15,7 +15,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 #[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
-pub trait IdentityCreditTransferToAddressTransitionMethodsV0 {
+pub trait IdentityCreditTransferToAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     fn try_from_identity<S: Signer>(
@@ -31,6 +31,6 @@ pub trait IdentityCreditTransferToAddressTransitionMethodsV0 {
 
     /// Get State Transition Type
     fn get_type() -> StateTransitionType {
-        StateTransitionType::IdentityCreditTransferToAddress
+        StateTransitionType::IdentityCreditTransferToAddresses
     }
 }

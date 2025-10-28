@@ -5,7 +5,7 @@ use crate::fee::Credits;
 use crate::identity::KeyOfType;
 use platform_value::Identifier;
 
-pub trait IdentityCreditTransferToAddressTransitionAccessorsV0 {
+pub trait IdentityCreditTransferToAddressesTransitionAccessorsV0 {
     fn identity_id(&self) -> Identifier;
     fn set_identity_id(&mut self, identity_id: Identifier);
     fn recipient_keys(&self) -> &BTreeMap<KeyOfType, Credits>;
