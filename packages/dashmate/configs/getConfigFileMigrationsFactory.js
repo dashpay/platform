@@ -1230,21 +1230,53 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const baseMetricsPort = base.get('platform.dapi.rsDapi.metrics.port');
+            const baseZmqPort = base.get('core.zmq.port');
 
             if (!options.platform.dapi.rsDapi) {
               options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-              return;
             }
 
             const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
 
             if (!options.platform.dapi.rsDapi.metrics) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
-              return;
             }
 
             if (typeof options.platform.dapi.rsDapi.metrics.enabled === 'undefined') {
               options.platform.dapi.rsDapi.metrics.enabled = defaultMetrics.enabled;
+            }
+
+            if (!options.core.zmq) {
+              options.core.zmq = lodash.cloneDeep(defaultConfig.get('core.zmq'));
+            }
+
+            if (typeof options.core.zmq.port === 'undefined') {
+              options.core.zmq.port = defaultConfig.get('core.zmq.port');
+            }
+
+            const { network } = options;
+
+            let metricsPortDelta = null;
+            if (network === NETWORK_TESTNET) {
+              metricsPortDelta = 10000;
+            } else if (network === NETWORK_LOCAL) {
+              metricsPortDelta = 20000;
+            }
+
+            if (metricsPortDelta !== null) {
+              const targetMetricsPort = baseMetricsPort + metricsPortDelta;
+
+              if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined'
+                || options.platform.dapi.rsDapi.metrics.port === baseMetricsPort) {
+                options.platform.dapi.rsDapi.metrics.port = targetMetricsPort;
+              }
+
+              const targetZmqPort = baseZmqPort + metricsPortDelta;
+
+              if (options.core.zmq.port === baseZmqPort) {
+                options.core.zmq.port = targetZmqPort;
+              }
             }
           });
 
