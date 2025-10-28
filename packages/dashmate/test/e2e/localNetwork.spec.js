@@ -46,6 +46,7 @@ describe('Local Network', function main() {
       localConfig.set('dashmate.helper.docker.build.enabled', true);
       localConfig.set('platform.drive.abci.docker.build.enabled', true);
       localConfig.set('platform.dapi.api.docker.build.enabled', true);
+      localConfig.set('platform.dapi.rsDapi.docker.build.enabled', true);
     }
 
     localConfig.set('docker.network.subnet', '172.30.0.0/24');

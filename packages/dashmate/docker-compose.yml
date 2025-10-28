@@ -1,5 +1,4 @@
 ---
-
 x-default-logging: &default-logging
   driver: local
   options:
@@ -161,7 +160,7 @@ services:
       - 3004
       - 3005
     profiles:
-      - platform
+      - platform-dapi-deprecated
 
   dapi_core_streams:
     image: ${PLATFORM_DAPI_API_DOCKER_IMAGE:?err}
@@ -190,7 +189,51 @@ services:
     command: yarn run core-streams
     stop_grace_period: 10s
     profiles:
-      - platform
+      - platform-dapi-deprecated
+
+  # Uses existing configuration variables but deploys on different port (3010)
+  rs_dapi:
+    image: ${PLATFORM_DAPI_RS_DAPI_DOCKER_IMAGE:?err}
+    labels:
+      org.dashmate.service.title: "rs-dapi (Rust DAPI)"
+    restart: unless-stopped
+    logging: *default-logging
+    deploy:
+      replicas: ${PLATFORM_DAPI_API_DOCKER_DEPLOY_REPLICAS:-1}
+    depends_on:
+      - drive_tenderdash
+    environment:
+      # Use same configuration as JS DAPI but different gRPC port for parallel deployment
+      - DAPI_GRPC_SERVER_PORT=3010
+      - DAPI_JSON_RPC_PORT=3009
+      - DAPI_REST_GATEWAY_PORT=8080
+      - DAPI_METRICS_PORT=${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
+      - DAPI_BIND_ADDRESS=0.0.0.0
+      - DAPI_ENABLE_REST=false
+      - DAPI_DRIVE_URI=http://drive_abci:26670
+      - DAPI_TENDERDASH_URI=http://drive_tenderdash:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}
+      - DAPI_TENDERDASH_WEBSOCKET_URI=ws://drive_tenderdash:${PLATFORM_DRIVE_TENDERDASH_RPC_PORT:?err}/websocket
+      - DAPI_CORE_ZMQ_URL=tcp://core:${CORE_ZMQ_PORT:?err}
+      - DAPI_CORE_RPC_URL=http://core:${CORE_RPC_PORT:?err}
+      - DAPI_CORE_RPC_USER=dapi
+      - DAPI_CORE_RPC_PASS=${CORE_RPC_USERS_DAPI_PASSWORD:?err}
+      - DAPI_STATE_TRANSITION_WAIT_TIMEOUT=${PLATFORM_DAPI_API_WAIT_FOR_ST_RESULT_TIMEOUT:?err}
+      - DAPI_LOGGING_LEVEL=${PLATFORM_DAPI_RS_DAPI_LOGS_LEVEL:-info}
+      - DAPI_LOGGING_JSON_FORMAT=${PLATFORM_DAPI_RS_DAPI_LOGS_JSON_FORMAT:-false}
+      - DAPI_LOGGING_ACCESS_LOG_PATH=${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_PATH:-}
+      - DAPI_LOGGING_ACCESS_LOG_FORMAT=${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_FORMAT:-combined}
+    volumes:
+      - type: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_TYPE:-volume}
+        source: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_VOLUME_SOURCE:-rs-dapi-access-logs}
+        target: ${PLATFORM_DAPI_RS_DAPI_LOGS_ACCESS_LOG_CONTAINER_DIR}
+    expose:
+      - 3009 # JSON-RPC
+      - 3010 # gRPC (different from current DAPI to avoid conflict)
+      - ${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err} # Metrics
+    ports:
+      - ${PLATFORM_DAPI_RS_DAPI_METRICS_HOST:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}:${PLATFORM_DAPI_RS_DAPI_METRICS_PORT:?err}
+    profiles:
+      - platform-dapi-rs
 
   gateway:
     image: ${PLATFORM_GATEWAY_DOCKER_IMAGE:?err}
@@ -206,8 +249,6 @@ services:
       - ${PLATFORM_GATEWAY_METRICS_HOST:?err}:${PLATFORM_GATEWAY_METRICS_PORT:?err}:9090
       - ${PLATFORM_GATEWAY_ADMIN_HOST:?err}:${PLATFORM_GATEWAY_ADMIN_PORT:?err}:9901
     depends_on:
-      - dapi_api
-      - dapi_core_streams
       - drive_abci
     networks:
       - default
@@ -228,6 +269,7 @@ volumes:
   core_data:
   drive_abci_data:
   drive_tenderdash:
+  rs-dapi-access-logs:
 
 networks:
   default:

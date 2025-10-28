@@ -67,6 +67,11 @@ jobs:
           docker pull $DOCKER_HUB_ORG/dapi:$SHA_TAG
           docker tag $DOCKER_HUB_ORG/dapi:$SHA_TAG $DAPI_IMAGE_AND_VERSION
 
+          # RS-DAPI
+          RS_DAPI_IMAGE_AND_VERSION=$(yarn dashmate config get --config=local platform.dapi.rsDapi.docker.image)
+          docker pull $DOCKER_HUB_ORG/rs-dapi:$SHA_TAG
+          docker tag $DOCKER_HUB_ORG/rs-dapi:$SHA_TAG $RS_DAPI_IMAGE_AND_VERSION
+
           # Dashmate helper image is hardcoded so we replace it with the built one
           VERSION=$(cat package.json | jq -r '.version')
           docker pull $DOCKER_HUB_ORG/dashmate-helper:$SHA_TAG

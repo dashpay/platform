@@ -176,6 +176,7 @@ export default function setupLocalPresetTaskFactory(
                   config.set('platform.drive.abci.grovedbVisualizer.port', config.get('platform.drive.abci.grovedbVisualizer.port') + (i * 100));
                   config.set('platform.drive.abci.tokioConsole.port', config.get('platform.drive.abci.tokioConsole.port') + (i * 100));
                   config.set('platform.drive.abci.metrics.port', config.get('platform.drive.abci.metrics.port') + (i * 100));
+                  config.set('platform.dapi.rsDapi.metrics.port', config.get('platform.dapi.rsDapi.metrics.port') + (i * 100));
                   config.set('platform.gateway.admin.port', config.get('platform.gateway.admin.port') + (i * 100));
                   config.set('platform.gateway.listeners.dapiAndDrive.port', config.get('platform.gateway.listeners.dapiAndDrive.port') + (i * 100));
                   config.set('platform.gateway.metrics.port', config.get('platform.gateway.metrics.port') + (i * 100));

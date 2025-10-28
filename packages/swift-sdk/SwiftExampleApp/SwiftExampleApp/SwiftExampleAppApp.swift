@@ -8,6 +8,9 @@
 import SwiftUI
 import SwiftData
 
+// Pull in logging helpers for SDKLogger and presets
+import SwiftDashSDK
+
 @main
 struct SwiftExampleAppApp: App {
     @StateObject private var unifiedState = UnifiedAppState()
@@ -47,9 +50,9 @@ struct SwiftExampleAppApp: App {
                     .environmentObject(unifiedState.unifiedState)
                     .environment(\.modelContext, unifiedState.modelContainer.mainContext)
                     .task {
-                        NSLog("🚀 SwiftExampleApp: Starting initialization...")
+                        SDKLogger.log("🚀 SwiftExampleApp: Starting initialization...", minimumLevel: .medium)
                         await unifiedState.initialize()
-                        NSLog("🚀 SwiftExampleApp: Initialization complete")
+                        SDKLogger.log("🚀 SwiftExampleApp: Initialization complete", minimumLevel: .medium)
                     }
             }
         }

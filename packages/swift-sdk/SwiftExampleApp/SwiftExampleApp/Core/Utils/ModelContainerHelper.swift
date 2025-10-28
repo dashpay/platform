@@ -10,7 +10,7 @@ public struct ModelContainerHelper {
             HDTransaction.self,
             HDUTXO.self,
             HDWatchedAddress.self,
-            
+
             // Platform models
             PersistentIdentity.self,
             PersistentPublicKey.self,
@@ -22,13 +22,13 @@ public struct ModelContainerHelper {
             PersistentTokenHistoryEvent.self,
             PersistentKeyword.self
         ])
-        
+
         let modelConfiguration = ModelConfiguration(
             schema: schema,
             isStoredInMemoryOnly: false,
             allowsSave: true
         )
-        
+
         return try ModelContainer(
             for: schema,
             configurations: [modelConfiguration]

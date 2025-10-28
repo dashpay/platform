@@ -26,10 +26,7 @@ public class WalletManager {
     /// Create a wallet manager from an SPV client
     /// - Parameter spvClient: The FFI SPV client handle to get the wallet manager from
     public init(fromSPVClient spvClient: UnsafeMutablePointer<FFIDashSpvClient>) throws {
-        // Note: dash_spv_ffi_client_get_wallet_manager returns a pointer to FFIWalletManager
-        // but Swift can't see that type, so we treat it as OpaquePointer
-        let managerPtr = dash_spv_ffi_client_get_wallet_manager(spvClient)
-        guard let managerHandle = managerPtr?.assumingMemoryBound(to: FFIWalletManager.self) else {
+        guard let managerHandle = dash_spv_ffi_client_get_wallet_manager(spvClient) else {
             throw KeyWalletError.walletError("Failed to get wallet manager from SPV client")
         }
         
@@ -46,7 +43,7 @@ public class WalletManager {
     
     deinit {
         if ownsHandle {
-            wallet_manager_free(handle)
+            dash_spv_ffi_wallet_manager_free(handle)
         }
     }
     

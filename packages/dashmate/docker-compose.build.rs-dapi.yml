@@ -1,0 +1,22 @@
+---
+
+services:
+  rs_dapi:
+    build:
+      context: ${PLATFORM_DAPI_RS_DAPI_DOCKER_BUILD_CONTEXT:?err}
+      dockerfile: ${PLATFORM_DAPI_RS_DAPI_DOCKER_BUILD_DOCKER_FILE:?err}
+      target: rs-dapi
+      args:
+        RUSTC_WRAPPER: ${RUSTC_WRAPPER}
+        SCCACHE_MEMCACHED: ${SCCACHE_MEMCACHED}
+        SCCACHE_GHA_ENABLED: ${SCCACHE_GHA_ENABLED}
+        ACTIONS_CACHE_URL: ${ACTIONS_CACHE_URL}
+        ACTIONS_RUNTIME_TOKEN: ${ACTIONS_RUNTIME_TOKEN}
+        SCCACHE_BUCKET: ${SCCACHE_BUCKET}
+        SCCACHE_REGION: ${SCCACHE_REGION}
+        SCCACHE_S3_KEY_PREFIX: ${SCCACHE_S3_KEY_PREFIX}
+      cache_from:
+        - ${CACHE_RS_DAPI_FROM:-${PLATFORM_DAPI_RS_DAPI_DOCKER_IMAGE}}
+      cache_to:
+        - ${CACHE_RS_DAPI_TO:-type=inline}
+    image: rs-dapi:local
