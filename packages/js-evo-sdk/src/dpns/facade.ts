@@ -42,20 +42,9 @@ export class DpnsFacade {
    *   IMPORTANT: Must be a key with:
    *   - Purpose: AUTHENTICATION (not TRANSFER)
    *   - Security Level: CRITICAL or HIGH (NOT MASTER)
-   *   Typically use key ID 1 (CRITICAL) or key ID 2 (HIGH)
    * @param args.privateKeyWif - The private key in WIF format matching publicKeyId
    * @param args.onPreorder - Optional callback called after preorder succeeds
    * @returns Registration result with document IDs
-   *
-   * @example
-   * ```javascript
-   * await sdk.dpns.registerName({
-   *   label: 'myname',
-   *   identityId: 'xxx',
-   *   publicKeyId: 1,  // Use key 1 (CRITICAL) or 2 (HIGH), NOT 0 (MASTER)
-   *   privateKeyWif: 'xxx'
-   * });
-   * ```
    */
   async registerName(args: { label: string; identityId: string; publicKeyId: number; privateKeyWif: string; onPreorder?: Function }): Promise<any> {
     const { label, identityId, publicKeyId, privateKeyWif, onPreorder } = args;
@@ -64,11 +53,7 @@ export class DpnsFacade {
     if (publicKeyId === undefined || publicKeyId === null) {
       throw new Error(
         'publicKeyId is required for DPNS registration.\n' +
-        'DPNS requires a key with AUTHENTICATION purpose and CRITICAL or HIGH security level.\n' +
-        'Common key IDs:\n' +
-        '  - Key 1: CRITICAL security level\n' +
-        '  - Key 2: HIGH security level\n' +
-        'Do NOT use Key 0 (MASTER security level).'
+        'DPNS requires a key with AUTHENTICATION purpose and CRITICAL or HIGH security level.\n'
       );
     }
 
