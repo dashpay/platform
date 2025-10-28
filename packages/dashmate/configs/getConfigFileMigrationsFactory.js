@@ -1230,11 +1230,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
         Object.entries(configFile.configs)
           .forEach(([name, options]) => {
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
+            const baseMetricsPort = base.get('platform.dapi.rsDapi.metrics.port');
+            const baseZmqPort = base.get('core.zmq.port');
             if (!options.platform.dapi.rsDapi) {
               options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
             }
 
             const defaultMetrics = defaultConfig.get('platform.dapi.rsDapi.metrics');
+            const defaultZmqPort = defaultConfig.get('core.zmq.port');
 
             if (!options.platform.dapi.rsDapi.metrics) {
               options.platform.dapi.rsDapi.metrics = lodash.cloneDeep(defaultMetrics);
@@ -1254,6 +1257,28 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (typeof options.platform.dapi.rsDapi.metrics.port === 'undefined') {
               options.platform.dapi.rsDapi.metrics.port = defaultMetrics.port;
+            }
+
+            const configuredMetricsPort = Number(options.platform.dapi.rsDapi.metrics.port);
+            const configuredZmqPort = Number(options.core.zmq.port);
+            const targetMetricsPort = Number(defaultMetrics.port);
+            const targetZmqPort = Number(defaultZmqPort);
+            const baseMetricsPortNumber = Number(baseMetricsPort);
+            const baseZmqPortNumber = Number(baseZmqPort);
+
+            // Only change the ports if it was not customized
+            if (
+              targetMetricsPort !== baseMetricsPortNumber
+              && configuredMetricsPort === baseMetricsPortNumber
+            ) {
+              options.platform.dapi.rsDapi.metrics.port = targetMetricsPort;
+            }
+
+            if (
+              targetZmqPort !== baseZmqPortNumber
+              && configuredZmqPort === baseZmqPortNumber
+            ) {
+              options.core.zmq.port = targetZmqPort;
             }
           });
 
