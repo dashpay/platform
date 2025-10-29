@@ -355,12 +355,7 @@ where
                             purpose: Purpose::SYSTEM,
                             security_level: SecurityLevel::CRITICAL,
                             read_only: true,
-                            data: BinaryData::new(
-                                platform_node_id_change
-                                    .as_ref()
-                                    .expect("platform node id confirmed is some")
-                                    .to_vec(),
-                            ),
+                            data: BinaryData::new(new_platform_node_id.to_vec()),
                             disabled_at: None,
                             contract_bounds: None,
                         }
@@ -403,6 +398,8 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
     use dpp::dashcore_rpc::json::DMNState;
     use dpp::identifier::MasternodeIdentifiers;
+    use dpp::identity::accessors::IdentityGettersV0;
+    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
@@ -1021,6 +1018,145 @@ mod tests {
                 None,
             )
             .expect("expected to apply drive operations");
+    }
+
+    #[test]
+    fn test_update_operator_identity_reuses_node_id_without_change() {
+        let platform_version = PlatformVersion::latest();
+        let platform = TestPlatformBuilder::new()
+            .build_with_mock_rpc()
+            .set_genesis_state();
+
+        let block_info = BlockInfo::default();
+
+        let mut rng = StdRng::seed_from_u64(5);
+
+        let (
+            pro_tx_hash,
+            _identity,
+            operator_payout_address,
+            original_pub_key_operator,
+            node_id_bytes,
+        ) = create_operator_identity(&platform, &mut rng);
+
+        // Pre-create an operator identity for the new operator key that lacks the platform node key
+        let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
+            .expect("expected to generate a private key")
+            .to_bytes()
+            .to_vec();
+        let private_key_operator = BlsPrivateKey::<Bls12381G2Impl>::from_be_bytes(
+            &private_key_operator_bytes
+                .try_into()
+                .expect("expected the secret key to be 32 bytes"),
+        )
+        .expect(
+            "expected the conversion between bls signatures library and blsful to happen without failing",
+        );
+        let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
+
+        let new_operator_identifier = Identifier::create_operator_identifier(
+            pro_tx_hash.as_byte_array(),
+            &new_pub_key_operator,
+        );
+
+        let operator_key_without_node_id: IdentityPublicKey = IdentityPublicKeyV0 {
+            id: 0,
+            key_type: KeyType::BLS12_381,
+            purpose: Purpose::SYSTEM,
+            security_level: SecurityLevel::CRITICAL,
+            read_only: true,
+            data: BinaryData::new(new_pub_key_operator.clone()),
+            disabled_at: None,
+            contract_bounds: None,
+        }
+        .into();
+
+        let mut identity_without_node_id =
+            Identity::create_basic_identity(new_operator_identifier, platform_version)
+                .expect("expected to create identity");
+        identity_without_node_id.add_public_keys(vec![operator_key_without_node_id]);
+
+        platform
+            .drive
+            .add_new_identity(
+                identity_without_node_id,
+                true,
+                &block_info,
+                true,
+                None,
+                platform_version,
+            )
+            .expect("expected to add pre-existing operator identity");
+
+        // Create an old masternode state with the original operator key and node id
+        let masternode_list_item = MasternodeListItem {
+            node_type: MasternodeType::Regular,
+            pro_tx_hash,
+            collateral_hash: Txid::from_byte_array(rng.gen::<[u8; 32]>()),
+            collateral_index: 0,
+            collateral_address: [0; 20],
+            operator_reward: 0.0,
+            state: DMNState {
+                service: SocketAddr::from_str("1.0.1.1:1234").unwrap(),
+                registered_height: 0,
+                pose_revived_height: None,
+                pose_ban_height: None,
+                revocation_reason: 0,
+                owner_address: rng.gen::<[u8; 20]>(),
+                voting_address: rng.gen::<[u8; 20]>(),
+                payout_address: rng.gen::<[u8; 20]>(),
+                pub_key_operator: original_pub_key_operator.clone(),
+                operator_payout_address: Some(operator_payout_address),
+                platform_node_id: Some(node_id_bytes),
+                platform_p2p_port: None,
+                platform_http_port: None,
+            },
+        };
+
+        let mut platform_state = platform.state.load().clone().deref().clone();
+        platform_state
+            .full_masternode_list_mut()
+            .insert(pro_tx_hash, masternode_list_item);
+
+        let transaction = platform.drive.grove.start_transaction();
+
+        let mut drive_operations = vec![];
+
+        platform
+            .update_operator_identity_v0(
+                &pro_tx_hash,
+                Some(&new_pub_key_operator),
+                None,
+                None,
+                &platform_state,
+                &transaction,
+                &mut drive_operations,
+                platform_version,
+            )
+            .expect("expected to update operator identity without panic");
+
+        let expected_identity_bytes = new_operator_identifier.to_buffer();
+        let expected_node_id = node_id_bytes.to_vec();
+
+        let added_platform_node_key = drive_operations.iter().any(|operation| {
+            if let drive::util::batch::DriveOperation::IdentityOperation(
+                drive::util::batch::IdentityOperationType::AddNewKeysToIdentity {
+                    identity_id,
+                    non_unique_keys_to_add,
+                    ..
+                },
+            ) = operation
+            {
+                if identity_id == &expected_identity_bytes {
+                    return non_unique_keys_to_add
+                        .iter()
+                        .any(|key| key.data().as_slice() == expected_node_id.as_slice());
+                }
+            }
+            false
+        });
+
+        assert!(added_platform_node_key);
     }
 
     #[test]
