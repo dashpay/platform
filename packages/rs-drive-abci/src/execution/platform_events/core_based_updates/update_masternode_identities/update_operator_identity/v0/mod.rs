@@ -398,8 +398,6 @@ mod tests {
     use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
     use dpp::dashcore_rpc::json::DMNState;
     use dpp::identifier::MasternodeIdentifiers;
-    use dpp::identity::accessors::IdentityGettersV0;
-    use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};
     use dpp::platform_value::BinaryData;
