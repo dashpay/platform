@@ -139,9 +139,25 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
 
 impl From<TenderdashStatus> for StateTransitionBroadcastError {
     fn from(err: TenderdashStatus) -> Self {
+        let message = if let Some(msg) = err.message {
+            msg
+        } else {
+            // try to extract from consensus error
+            if let Some(consensus_error_bytes) = &err.consensus_error
+                && let Ok(consensus_error) =
+                    ConsensusError::deserialize_from_bytes(consensus_error_bytes).inspect_err(|e| {
+                        tracing::debug!("Failed to deserialize consensus error: {}", e);
+                    })
+            {
+                consensus_error.to_string()
+            } else {
+                "Unknown error".to_string()
+            }
+        };
+
         StateTransitionBroadcastError {
             code: err.code.clamp(0, u32::MAX as i64) as u32,
-            message: err.message.unwrap_or_else(|| "Unknown error".to_string()),
+            message,
             data: err.consensus_error.clone().unwrap_or_default(),
         }
     }
