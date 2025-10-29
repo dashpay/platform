@@ -1,5 +1,5 @@
 import * as wasm from '../wasm.js';
-import { asJsonString } from '../util.js';
+import { asJsonString, generateEntropy } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
 export class DocumentsFacade {
@@ -35,10 +35,12 @@ export class DocumentsFacade {
     type: string;
     ownerId: wasm.IdentifierLike;
     data: unknown;
-    entropyHex: string;
+    entropyHex?: string; // Now optional - will auto-generate if not provided
     privateKeyWif: string;
   }): Promise<any> {
-    const { contractId, type, ownerId, data, entropyHex, privateKeyWif } = args;
+    const { contractId, type, ownerId, data, privateKeyWif } = args;
+    // Auto-generate entropy if not provided
+    const entropyHex = args.entropyHex ?? generateEntropy();
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentCreate(
       contractId,
