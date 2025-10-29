@@ -73,13 +73,13 @@ Dashmate runs and orchestrate Dash Platform components:
 | Type                | Ports                                                        | Default Host Binding |
 |---------------------|--------------------------------------------------------------|---------------------|
 | **Public-facing**   | Core P2P (9999)<br>Tenderdash P2P (26656)<br>Gateway API (443) | 0.0.0.0 (all)       |
-| **Configurable**    | Core ZMQ (29998)                                             | configurable (see below) |
+| **Configurable**    | Core ZMQ (29998 mainnet / 39998 testnet / 49998 local)       | configurable (see below) |
 | **Localhost-only**  | Core RPC (9998)<br>Insight UI (3001)<br>Dashmate Helper (9100)<br>Drive ABCI Metrics (29090)<br>Drive Debug Tools (6669, 8083)<br>Tenderdash RPC (26657)<br>Tenderdash Metrics (26660)<br>Tenderdash Debug (6060)<br>Gateway Metrics (9090)<br>Gateway Admin (9901)<br>Rate Limiter Metrics (9102) | 127.0.0.1 (local)   |
 | **Internal only**   | Drive ABCI (26658)<br>Drive gRPC (26670)<br>DAPI JSON-RPC (3004)<br>DAPI gRPC (3005)<br>DAPI Streams (3006)<br>Rate Limiter gRPC (8081)<br>Rate Limiter StatsD (9125)<br>Rate Limiter Redis (6379) | (not exposed)       |
 
 #### Core ZMQ Exposure Configuration
 
-The Core ZMQ port (29998) exposure is configurable via `core.zmq.host`:
+The Core ZMQ port (29998 on mainnet, 39998 on testnet, 49998 on local presets) exposure is configurable via `core.zmq.host`:
 - **`host: '127.0.0.1'`** (default): ZMQ port exposed on localhost only
 - **`host: '0.0.0.0'`**: ZMQ port exposed on all interfaces (use with caution)
 

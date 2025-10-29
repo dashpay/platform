@@ -1,10 +1,11 @@
 use dash_sdk::platform::types::identity::{NonUniquePublicKeyHashQuery, PublicKeyHash};
-use dash_sdk::platform::{Fetch, FetchMany};
+use dash_sdk::platform::{Fetch, FetchMany, IdentityKeysQuery};
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::prelude::IdentityPublicKey;
 use dpp::{identity::hash::IdentityPublicKeyHashMethodsV0, prelude::Identity};
 use drive_proof_verifier::types::{IdentityBalance, IdentityBalanceAndRevision};
+use std::collections::BTreeSet;
 
 use super::{common::setup_logs, config::Config};
 
@@ -115,6 +116,74 @@ async fn test_identity_public_keys_all_read() {
 
         assert_eq!(id, pubkey.id());
     }
+}
+
+/// Given some existing identity ID and selected key IDs, when I fetch specific identity keys, I get only those keys.
+#[tokio::test(flavor = "multi_thread", worker_threads = 1)]
+async fn test_identity_public_keys_specific_read() {
+    setup_logs();
+
+    let cfg = Config::new();
+    let identity_id: dpp::prelude::Identifier = cfg.existing_identity_id;
+
+    let sdk = cfg
+        .setup_api("test_identity_public_keys_specific_read")
+        .await;
+
+    let all_public_keys = IdentityPublicKey::fetch_many(&sdk, identity_id)
+        .await
+        .expect("fetch identity public keys");
+
+    assert!(
+        !all_public_keys.is_empty(),
+        "identity must expose at least one public key"
+    );
+
+    let requested_key_ids = vec![0, 2];
+
+    let query = IdentityKeysQuery::new(identity_id, requested_key_ids.clone());
+
+    let fetched_subset = IdentityPublicKey::fetch_many(&sdk, query)
+        .await
+        .expect("fetch selected identity public keys");
+
+    assert_eq!(
+        fetched_subset.len(),
+        requested_key_ids.len(),
+        "number of fetched keys should match the requested set"
+    );
+
+    let requested_key_set: BTreeSet<u32> = requested_key_ids.iter().copied().collect();
+
+    for key_id in &requested_key_ids {
+        let expected = all_public_keys
+            .get(key_id)
+            .and_then(|value| value.as_ref())
+            .expect("expected key in base dataset");
+
+        let actual = fetched_subset
+            .get(key_id)
+            .and_then(|value| value.as_ref())
+            .expect("expected key in fetched subset");
+
+        assert_eq!(
+            actual, expected,
+            "fetched key {} does not match the original key",
+            key_id
+        );
+    }
+
+    let unexpected: Vec<u32> = fetched_subset
+        .keys()
+        .filter(|key| !requested_key_set.contains(key))
+        .copied()
+        .collect();
+
+    assert!(
+        unexpected.is_empty(),
+        "subset should not include unrequested keys: {:?}",
+        unexpected
+    );
 }
 
 /// Given some non-unique public key, when I fetch identity that uses this key, I get associated identities containing this key.

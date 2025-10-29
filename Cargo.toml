@@ -45,4 +45,5 @@ members = [
 
 [workspace.package]
 
+version = "2.1.2"
 rust-version = "1.89"

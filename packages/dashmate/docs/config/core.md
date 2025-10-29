@@ -73,7 +73,7 @@ The `core.zmq` section configures the ZeroMQ notification interface, which provi
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `core.zmq.port` | Port for ZMQ notifications | `29998` | `30998` |
+| `core.zmq.port` | Port for ZMQ notifications | `29998` (mainnet),`39998` (testnet), `49998` (local) | `30998` |
 | `core.zmq.host` | Host binding for Docker port mapping | `127.0.0.1` | `0.0.0.0` |
 
 ZMQ settings control real-time blockchain event notifications:
@@ -81,7 +81,7 @@ ZMQ settings control real-time blockchain event notifications:
 - **host**: Controls Docker port exposure:
   - `127.0.0.1`: ZMQ port exposed only on localhost (local machine access)
   - `0.0.0.0`: ZMQ port exposed on all interfaces (public internet access - use with caution)
-- **port**: The port number for ZMQ notifications
+- **port**: The port number for ZMQ notifications. Dashmate offsets the default to prevent clashes between environments (`29998` mainnet, `39998` testnet, `49998` local presets).
 - DAPI uses ZMQ to receive real-time blockchain data for streaming to clients
 - ZMQ notifications include raw transactions, blocks, instantlocks, and chainlocks
 - ZMQ is always enabled in Dash Core as it's used by internal components

@@ -265,6 +265,7 @@ export default function getBaseConfigFactory() {
               },
             },
             metrics: {
+              enabled: false,
               host: '127.0.0.1',
               port: 9091,
             },
