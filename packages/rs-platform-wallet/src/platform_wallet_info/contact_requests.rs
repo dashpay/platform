@@ -19,6 +19,13 @@ use key_wallet::wallet::managed_wallet_info::ManagedAccountOperations;
 use key_wallet::Network;
 use key_wallet::Wallet;
 
+#[cfg(feature = "sdk")]
+use dpp::identity::signer::Signer;
+#[cfg(feature = "sdk")]
+use dpp::identity::IdentityPublicKey;
+#[cfg(feature = "sdk")]
+use dpp::document::DocumentV0Getters;
+
 impl PlatformWalletInfo {
     /// Add a sent contact request for a specific identity on a specific network
     /// If there's already an incoming request from the recipient, automatically establish the contact
@@ -290,6 +297,181 @@ impl PlatformWalletInfo {
             .add_incoming_contact_request(request);
 
         Ok(())
+    }
+
+    /// Send a contact request to the platform and store it locally
+    ///
+    /// This is a wrapper around the SDK's send_contact_request that:
+    /// - Derives the DashPay receiving account xpub from the wallet
+    /// - Delegates to the SDK for encryption and platform submission
+    /// - Stores the sent request in the local managed identity
+    ///
+    /// # Arguments
+    ///
+    /// * `wallet` - The wallet to use for account derivation
+    /// * `network` - The network to operate on
+    /// * `sender_identity` - The sender's identity
+    /// * `recipient_identity` - The recipient's identity
+    /// * `sender_key_index` - Optional index of sender's encryption key (if None, uses first encryption key)
+    /// * `recipient_key_index` - Optional index of recipient's decryption key (if None, uses first encryption key)
+    /// * `account_index` - Index for the DashPay receiving account
+    /// * `auto_accept_proof` - Optional auto-accept proof (38-102 bytes)
+    /// * `identity_public_key` - The public key to use for signing the state transition
+    /// * `signer` - The signer for the identity
+    /// * `ecdh_provider` - Provider for ECDH key exchange (client-side or SDK-side)
+    ///
+    /// # Returns
+    ///
+    /// Returns the document ID and recipient ID on success
+    #[cfg(feature = "sdk")]
+    pub async fn send_contact_request<S, F, Fut, G, Gut>(
+        &mut self,
+        wallet: &mut Wallet,
+        network: Network,
+        sender_identity: &Identity,
+        recipient_identity: &Identity,
+        sender_key_index: Option<u32>,
+        recipient_key_index: Option<u32>,
+        account_index: u32,
+        auto_accept_proof: Option<Vec<u8>>,
+        identity_public_key: IdentityPublicKey,
+        signer: S,
+        ecdh_provider: dash_sdk::platform::dashpay::EcdhProvider<F, Fut, G, Gut>,
+    ) -> Result<(Identifier, Identifier), PlatformWalletError>
+    where
+        S: Signer,
+        F: FnOnce(&IdentityPublicKey, u32) -> Fut,
+        Fut: std::future::Future<Output = Result<dashcore::secp256k1::SecretKey, dash_sdk::Error>>,
+        G: FnOnce(&dashcore::secp256k1::PublicKey) -> Gut,
+        Gut: std::future::Future<Output = Result<[u8; 32], dash_sdk::Error>>,
+    {
+        let sender_identity_id = sender_identity.id();
+        let recipient_id = recipient_identity.id();
+
+        // Find sender's encryption key index if not provided
+        let sender_key_index = match sender_key_index {
+            Some(index) => index,
+            None => {
+                // Find first encryption key
+                sender_identity
+                    .public_keys()
+                    .iter()
+                    .find(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
+                    .map(|(id, _)| *id)
+                    .ok_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(
+                            "Sender identity has no encryption key".to_string(),
+                        )
+                    })?
+            }
+        };
+
+        // Find recipient's encryption key index if not provided
+        let recipient_key_index = match recipient_key_index {
+            Some(index) => index,
+            None => {
+                // Find first encryption key (used for decryption on recipient side)
+                recipient_identity
+                    .public_keys()
+                    .iter()
+                    .find(|(_, key)| key.purpose() == Purpose::ENCRYPTION)
+                    .map(|(id, _)| *id)
+                    .ok_or_else(|| {
+                        PlatformWalletError::InvalidIdentityData(
+                            "Recipient identity has no encryption key".to_string(),
+                        )
+                    })?
+            }
+        };
+
+        // Get SDK from identity manager
+        let sdk = self
+            .identity_manager(network)
+            .and_then(|manager| manager.sdk.as_ref())
+            .ok_or_else(|| {
+                PlatformWalletError::InvalidIdentityData(
+                    "SDK not configured in identity manager".to_string(),
+                )
+            })?
+            .clone();
+
+        // Prepare the contact request input
+        let contact_request_input = dash_sdk::platform::dashpay::ContactRequestInput {
+            sender_identity: sender_identity.clone(),
+            recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(recipient_identity.clone()),
+            sender_key_index,
+            recipient_key_index,
+            account_reference: account_index,
+            account_label: None,
+            auto_accept_proof,
+        };
+
+        // Get extended public key for the DashPay receiving account
+        let account_type = AccountType::DashpayReceivingFunds {
+            index: account_index,
+            user_identity_id: sender_identity_id.to_buffer(),
+            friend_identity_id: recipient_id.to_buffer(),
+        };
+
+        // Derive the account path and xpub
+        let account_path = account_type.derivation_path(network).map_err(|err| {
+            PlatformWalletError::InvalidIdentityData(format!(
+                "Failed to derive DashPay receiving account path: {err}"
+            ))
+        })?;
+
+        let account_xpub = wallet
+            .derive_extended_public_key(network, &account_path)
+            .map_err(|err| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to derive DashPay receiving account xpub: {err}"
+                ))
+            })?;
+
+        let xpub_bytes = account_xpub.encode();
+
+        // Prepare SDK input
+        let send_input = dash_sdk::platform::dashpay::SendContactRequestInput {
+            contact_request: contact_request_input,
+            identity_public_key,
+            signer,
+        };
+
+        // Call SDK's send_contact_request
+        let result = sdk
+            .send_contact_request(
+                send_input,
+                ecdh_provider,
+                |_account_ref: u32| async move { Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes.clone()) },
+            )
+            .await
+            .map_err(|e| {
+                PlatformWalletError::InvalidIdentityData(format!(
+                    "Failed to send contact request: {e}"
+                ))
+            })?;
+
+        // Store the request locally using the existing add_sent_contact_request function
+        let contact_request = ContactRequest::new(
+            sender_identity_id,
+            result.recipient_id,
+            sender_key_index,
+            recipient_key_index,
+            result.account_reference,
+            vec![0u8; 96], // The encrypted xpub - already on platform
+            100000, // core_height_created_at - we don't have this info
+            result.document.created_at().unwrap_or(0),
+        );
+
+        self.add_sent_contact_request(
+            wallet,
+            account_index,
+            network,
+            &sender_identity_id,
+            contact_request,
+        )?;
+
+        Ok((result.document.id(), result.recipient_id))
     }
 
     /// Accept an incoming contact request and establish the contact on a specific network
