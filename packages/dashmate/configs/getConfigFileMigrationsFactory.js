@@ -1327,7 +1327,7 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete options.platform.dapi.deprecated;
             }
 
-            if (options.platform.gateway?.upstreams) {
+            if (options.platform?.gateway?.upstreams) {
               const { upstreams } = options.platform.gateway;
               const defaultUpstreams = defaultConfig.get('platform.gateway.upstreams');
 
@@ -1377,6 +1377,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             if (typeof rsDapi.waitForStResultTimeout === 'undefined') {
               rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
+            }
+
+            if (options.platform?.drive?.abci?.docker
+              && defaultConfig.has('platform.drive.abci.docker.image')) {
+              options.platform.drive.abci.docker.image = defaultConfig.get('platform.drive.abci.docker.image');
+            }
+
+            if (options.platform.dapi?.rsDapi?.docker
+              && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
+              options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
           });
 
