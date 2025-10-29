@@ -1,7 +1,7 @@
 {
   "name": "@dashevo/bench-suite",
   "private": true,
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "Dash Platform benchmark tool",
   "scripts": {
     "bench": "node ./bin/bench.js",

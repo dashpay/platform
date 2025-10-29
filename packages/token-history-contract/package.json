@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/token-history-contract",
-  "version": "2.1.2",
+  "version": "2.1.3",
   "description": "The token history contract",
   "scripts": {
     "lint": "eslint .",

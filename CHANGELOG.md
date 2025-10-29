@@ -1,3 +1,10 @@
+### [2.1.3](https://github.com/dashpay/platform/compare/v2.1.2...v2.1.3) (2025-10-29)
+
+
+### Bug Fixes
+
+* **drive:** reuse existing platform node id during operator update ([#2834](https://github.com/dashpay/platform/issues/2834))
+
 ### [2.1.2](https://github.com/dashpay/platform/compare/v2.1.1...v2.1.2) (2025-10-27)
 
 
