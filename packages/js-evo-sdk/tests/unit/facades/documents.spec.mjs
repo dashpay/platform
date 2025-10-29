@@ -53,7 +53,7 @@ describe('DocumentsFacade', () => {
     expect(wasmSdk.getDocumentWithProofInfo).to.be.calledOnceWithExactly('c', 't', 'id');
   });
 
-  it('create() calls wasmSdk.documentCreate with JSON data', async () => {
+  it('create() calls wasmSdk.documentCreate with JSON data and provided entropy', async () => {
     const data = { foo: 'bar' };
     await client.documents.create({
       contractId: 'c',
@@ -64,6 +64,34 @@ describe('DocumentsFacade', () => {
       privateKeyWif: 'wif',
     });
     expect(wasmSdk.documentCreate).to.be.calledOnceWithExactly('c', 't', 'o', JSON.stringify(data), 'ee', 'wif');
+  });
+
+  it('create() auto-generates entropy when not provided', async () => {
+    const data = { foo: 'bar' };
+    await client.documents.create({
+      contractId: 'c',
+      type: 't',
+      ownerId: 'o',
+      data,
+      // No entropyHex provided - should auto-generate
+      privateKeyWif: 'wif',
+    });
+
+    // Check that documentCreate was called
+    expect(wasmSdk.documentCreate).to.be.calledOnce();
+    const [contractId, type, ownerId, jsonData, entropy, wif] = wasmSdk.documentCreate.firstCall.args;
+
+    // Verify all params except entropy
+    expect(contractId).to.equal('c');
+    expect(type).to.equal('t');
+    expect(ownerId).to.equal('o');
+    expect(jsonData).to.equal(JSON.stringify(data));
+    expect(wif).to.equal('wif');
+
+    // Verify that entropy was auto-generated (should be 64 hex chars = 32 bytes)
+    expect(entropy).to.be.a('string');
+    expect(entropy).to.match(/^[0-9a-f]{64}$/i);
+    expect(entropy.length).to.equal(64);
   });
 
   it('replace() calls wasmSdk.documentReplace with BigInt revision', async () => {
