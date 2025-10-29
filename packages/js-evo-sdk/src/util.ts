@@ -22,14 +22,14 @@ export function generateEntropy(): string {
   if (typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.getRandomValues) {
     const buffer = new Uint8Array(32);
     globalThis.crypto.getRandomValues(buffer);
-    return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(buffer).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   // Fallback for older environments
   if (typeof window !== 'undefined' && window.crypto && window.crypto.getRandomValues) {
     const buffer = new Uint8Array(32);
     window.crypto.getRandomValues(buffer);
-    return Array.from(buffer).map(b => b.toString(16).padStart(2, '0')).join('');
+    return Array.from(buffer).map((b) => b.toString(16).padStart(2, '0')).join('');
   }
 
   throw new Error('No secure random source available. This environment does not support crypto.randomBytes or crypto.getRandomValues.');

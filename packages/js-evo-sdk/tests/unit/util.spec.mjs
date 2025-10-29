@@ -3,11 +3,11 @@ import { asJsonString, generateEntropy } from '../../dist/util.js';
 describe('Util Functions', () => {
   describe('asJsonString', () => {
     it('returns undefined for null', () => {
-      expect(asJsonString(null)).to.be.undefined;
+      expect(asJsonString(null)).to.be.undefined();
     });
 
     it('returns undefined for undefined', () => {
-      expect(asJsonString(undefined)).to.be.undefined;
+      expect(asJsonString(undefined)).to.be.undefined();
     });
 
     it('returns string as-is', () => {
@@ -53,7 +53,7 @@ describe('Util Functions', () => {
       // Convert hex string to bytes
       const bytes = [];
       for (let i = 0; i < entropy.length; i += 2) {
-        bytes.push(parseInt(entropy.substr(i, 2), 16));
+        bytes.push(parseInt(entropy.substring(i, 2), 16));
       }
       expect(bytes.length).to.equal(32);
     });
@@ -61,7 +61,7 @@ describe('Util Functions', () => {
     it('generates values with good distribution', () => {
       // Generate multiple samples and check that we get a variety of hex digits
       const samples = [];
-      for (let i = 0; i < 10; i++) {
+      for (let i = 0; i < 10; i += 1) {
         samples.push(generateEntropy());
       }
 
