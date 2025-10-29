@@ -23,10 +23,10 @@ describe('Epochs and evonode blocks', function describeEpochs() {
     const start = Math.max(0, currentIndex - 5);
 
     const infos = await client.getEpochsInfo(start, 5, true);
-    expect(infos instanceof Map).to.be(true);
+    expect(infos).to.be.instanceOf(Map);
 
     const finalized = await client.getFinalizedEpochInfos(start, 5);
-    expect(finalized instanceof Map).to.be(true);
+    expect(finalized).to.be.instanceOf(Map);
   });
 
   it('queries evonode proposed blocks by id/range', async () => {
