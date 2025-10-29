@@ -39,8 +39,48 @@ $ dashmate start
 You can also use JSON format for programmatic access:
 
 ```bash
-$ dashmate update --format=json 
-[{"name":"core","title":"Core","updated":false,"image":"dashpay/dashd:19.2.0"},{"name":"drive_abci","title":"Drive ABCI","pulled":false,"image":"dashpay/drive:0.24"},{"name":"drive_tenderdash","title":"Drive Tenderdash","pulled":true,"image":"dashpay/tenderdash:0.11.2"},{"name":"rs_dapi","title":"rs-dapi","pulled":false,"image":"dashpay/rs-dapi:0.24"},{"name":"gateway","title":"Gateway","pulled":false,"image":"dashpay/envoy:0.24"},{"name":"dashmate_helper","title":"Dashmate Helper","pulled":false,"image":"dashpay/dashmate-helper:0.24"}]
+$  dashmate update --format=json --config local_1 | jq
+```
+
+```json
+[
+  {
+    "name": "dashmate_helper",
+    "title": "Dashmate Helper",
+    "updated": "error",
+    "image": "dashpay/dashmate-helper:2.2.0-dev.1"
+  },
+  {
+    "name": "core",
+    "title": "Core",
+    "updated": "up to date",
+    "image": "dashpay/dashd:22"
+  },
+  {
+    "name": "drive_abci",
+    "title": "Drive ABCI",
+    "updated": "error",
+    "image": "drive:local"
+  },
+  {
+    "name": "drive_tenderdash",
+    "title": "Drive Tenderdash",
+    "updated": "up to date",
+    "image": "dashpay/tenderdash:1.5"
+  },
+  {
+    "name": "rs_dapi",
+    "title": "rs-dapi (Rust DAPI)",
+    "updated": "error",
+    "image": "rs-dapi:local"
+  },
+  {
+    "name": "gateway",
+    "title": "Gateway",
+    "updated": "up to date",
+    "image": "dashpay/envoy:1.30.2-impr.1"
+  }
+]
 ```
 
 ## Major Updates with Platform Reset
