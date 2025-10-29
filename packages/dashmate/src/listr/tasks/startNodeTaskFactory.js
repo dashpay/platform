@@ -113,10 +113,10 @@ export default function startNodeTaskFactory(
         task: () => buildServicesTask(config),
       },
       {
-        title: 'Remove inactive DAPI stack',
+        title: 'Remove legacy DAPI stack',
         enabled: () => config.get('platform.enable'),
         task: async () => {
-          const legacyServiceNames = ['dapi_api', 'dapi_core_streams', 'rs_dapi'];
+          const legacyServiceNames = ['dapi_api', 'dapi_core_streams'];
 
           for (const serviceName of legacyServiceNames) {
             try {

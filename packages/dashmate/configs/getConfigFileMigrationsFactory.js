@@ -1327,31 +1327,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete options.platform.dapi.deprecated;
             }
 
-            if (!options.platform?.dapi) {
-              return;
-            }
-
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
-            }
-
-            const { rsDapi } = options.platform.dapi;
-
-            if (options.platform.dapi.api) {
-              const { waitForStResultTimeout } = options.platform.dapi.api;
-
-              if (typeof waitForStResultTimeout === 'number'
-                && typeof rsDapi.waitForStResultTimeout === 'undefined') {
-                rsDapi.waitForStResultTimeout = waitForStResultTimeout;
-              }
-
-              delete options.platform.dapi.api;
-            }
-
-            if (typeof rsDapi.waitForStResultTimeout === 'undefined') {
-              rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
-            }
-
             if (options.platform.gateway?.upstreams) {
               const { upstreams } = options.platform.gateway;
               const defaultUpstreams = defaultConfig.get('platform.gateway.upstreams');
@@ -1377,6 +1352,31 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
               delete upstreams.dapiApi;
               delete upstreams.dapiCoreStreams;
+            }
+
+            if (!options.platform?.dapi) {
+              return;
+            }
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = lodash.cloneDeep(defaultConfig.get('platform.dapi.rsDapi'));
+            }
+
+            const { rsDapi } = options.platform.dapi;
+
+            if (options.platform.dapi.api) {
+              const { waitForStResultTimeout } = options.platform.dapi.api;
+
+              if (typeof waitForStResultTimeout === 'number'
+                && typeof rsDapi.waitForStResultTimeout === 'undefined') {
+                rsDapi.waitForStResultTimeout = waitForStResultTimeout;
+              }
+
+              delete options.platform.dapi.api;
+            }
+
+            if (typeof rsDapi.waitForStResultTimeout === 'undefined') {
+              rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
             }
           });
 
