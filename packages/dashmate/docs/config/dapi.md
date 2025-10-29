@@ -53,9 +53,11 @@ This timeout setting controls how long DAPI will wait for state transition resul
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.dapi.rsDapi.metrics.host` | Host interface exposed on the Docker host | `127.0.0.1` | `0.0.0.0` |
-| `platform.dapi.rsDapi.metrics.port` | Host port for both health checks and Prometheus metrics | `9091` | `9191` |
+| `platform.dapi.rsDapi.metrics.port` | Host port for both health checks and Prometheus metrics | `9091` (mainnet), `19091` (testnet), `29091` (local) | `9191` |
 
 The rs-dapi metrics server exposes `/health` and `/metrics`. Prometheus-compatible metrics are served from `/metrics` on the configured port, allowing separate node instances on the same machine to use distinct ports. The `/health` endpoint aggregates dependency checks (Drive, Tenderdash, Core) and returns `503` when any upstream component is unhealthy.
+
+Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 19091, local 29091) to avoid clashes when running multiple environments concurrently.
 
 ### Logging
 
