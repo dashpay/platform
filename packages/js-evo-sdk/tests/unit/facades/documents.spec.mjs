@@ -79,7 +79,9 @@ describe('DocumentsFacade', () => {
 
     // Check that documentCreate was called
     expect(wasmSdk.documentCreate).to.be.calledOnce();
-    const [contractId, type, ownerId, jsonData, entropy, wif] = wasmSdk.documentCreate.firstCall.args;
+    const [
+      contractId, type, ownerId, jsonData, entropy, wif,
+    ] = wasmSdk.documentCreate.firstCall.args;
 
     // Verify all params except entropy
     expect(contractId).to.equal('c');
