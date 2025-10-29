@@ -281,14 +281,14 @@ where
                     old_masternode.state.operator_payout_address
                 };
 
-            let new_platform_node_id = if let Some(platform_node_id) = platform_node_id_change {
-                // if it changed it means it always existed
-                Some(platform_node_id)
-            } else {
-                // we need to use the old platform_node_id, we shouldn't do the same as with the withdrawal address
-                old_masternode.state.platform_node_id
-            };
             if identity_to_enable_old_keys.is_empty() {
+                let new_platform_node_id = if let Some(platform_node_id) = platform_node_id_change {
+                    // if it changed it means it always existed
+                    Some(platform_node_id)
+                } else {
+                    // we need to use the old platform_node_id, we shouldn't do the same as with the withdrawal address
+                    old_masternode.state.platform_node_id
+                };
                 // Now we need to create the new operator identity with the new keys
                 let mut identity =
                     Identity::create_basic_identity(operator_identifier, platform_version)?;
@@ -340,10 +340,10 @@ where
                     }
                 }
 
-                if let Some(new_platform_node_id) = new_platform_node_id {
+                if let Some(new_platform_node_id_changed) = platform_node_id_change {
                     if let Some((key_id, found_old_key)) = identity_to_enable_old_keys
                         .into_iter()
-                        .find(|(_, key)| key.data().as_slice() == new_platform_node_id)
+                        .find(|(_, key)| key.data().as_slice() == new_platform_node_id_changed)
                     {
                         if found_old_key.is_disabled() {
                             key_ids_to_reenable.push(key_id)
@@ -355,7 +355,7 @@ where
                             purpose: Purpose::SYSTEM,
                             security_level: SecurityLevel::CRITICAL,
                             read_only: true,
-                            data: BinaryData::new(new_platform_node_id.to_vec()),
+                            data: BinaryData::new(new_platform_node_id_changed.to_vec()),
                             disabled_at: None,
                             contract_bounds: None,
                         }
