@@ -1,0 +1,33 @@
+---
+
+services:
+  docker_socket_proxy:
+    image: tecnativa/docker-socket-proxy:latest
+    container_name: prometheus-docker-socket-proxy
+    restart: unless-stopped
+    environment:
+      - CONTAINERS=1
+      - NETWORKS=1
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "127.0.0.1:2375:2375"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus-rsdapi
+    network_mode: host
+    depends_on:
+      - docker_socket_proxy
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+      - --web.listen-address=:9080
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
