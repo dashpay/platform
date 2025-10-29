@@ -1,6 +1,6 @@
 [package]
 name = "dash-sdk"
-version = "2.1.1"
+version.workspace = true
 edition = "2021"
 
 [dependencies]

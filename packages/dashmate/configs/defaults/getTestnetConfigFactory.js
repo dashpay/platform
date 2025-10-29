@@ -30,6 +30,9 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
         rpc: {
           port: 19998,
         },
+        zmq: {
+          port: 39998,
+        },
         spork: {
           address: 'yjPtiKh2uwk3bDutTEA2q9mCtXyiZRWn55',
         },
@@ -150,6 +153,13 @@ export default function getTestnetConfigFactory(homeDir, getBaseConfig) {
                   recheck_tx: true,
                 },
               },
+            },
+          },
+        },
+        dapi: {
+          rsDapi: {
+            metrics: {
+              port: 19091,
             },
           },
         },
