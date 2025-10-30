@@ -69,7 +69,7 @@ describe('Platform', () => {
 
       const documentSchema = invalidDataContract.getDocumentSchema('niceDocument');
       documentSchema.properties.name.position = 5;
-      invalidDataContract.setDocumentSchema('niceDocument', documentSchema);
+      invalidDataContract.setDocumentSchema('niceDocument', documentSchema, { skipValidation: true });
 
       let broadcastError;
 
