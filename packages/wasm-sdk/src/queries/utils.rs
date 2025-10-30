@@ -5,7 +5,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 
-use crate::utils::{js_value_to_platform_value, js_values_to_platform_values};
+use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 
 pub(crate) fn deserialize_required_query<T, Q>(
@@ -82,17 +82,6 @@ pub(crate) fn convert_json_values_to_platform_values(
         .collect::<Result<Vec<_>, _>>()?;
 
     js_values_to_platform_values(js_values)
-}
-
-pub(crate) fn convert_json_value_to_platform_value(
-    value: JsonValue,
-    field_name: &str,
-) -> Result<PlatformValue, WasmSdkError> {
-    let js_value = serde_wasm_bindgen::to_value(&value).map_err(|err| {
-        WasmSdkError::invalid_argument(format!("Invalid {} entry: {}", field_name, err))
-    })?;
-
-    js_value_to_platform_value(js_value)
 }
 
 pub(crate) fn identifier_from_base58(value: &str, field: &str) -> Result<Identifier, WasmSdkError> {
