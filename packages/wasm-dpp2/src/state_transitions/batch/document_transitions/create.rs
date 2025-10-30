@@ -130,10 +130,7 @@ impl DocumentCreateTransitionWasm {
     pub fn get_prefunded_voting_balance(&self) -> Option<PrefundedVotingBalanceWasm> {
         let rs_balance = self.0.prefunded_voting_balance();
 
-        match rs_balance {
-            Some(balance) => Some(balance.clone().into()),
-            None => None,
-        }
+        rs_balance.as_ref().map(|balance| balance.clone().into())
     }
 
     #[wasm_bindgen(setter = "prefundedVotingBalance")]

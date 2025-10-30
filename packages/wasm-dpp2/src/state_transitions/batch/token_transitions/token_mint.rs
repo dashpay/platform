@@ -63,10 +63,7 @@ impl TokenMintTransitionWasm {
 
     #[wasm_bindgen(getter = issuedToIdentityId)]
     pub fn issued_to_identity_id(&self) -> Option<IdentifierWasm> {
-        match self.0.issued_to_identity_id() {
-            None => None,
-            Some(id) => Some(id.into()),
-        }
+        self.0.issued_to_identity_id().map(|id| id.into())
     }
 
     #[wasm_bindgen(getter = amount)]

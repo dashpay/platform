@@ -6,6 +6,7 @@ use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
+use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::platform::FetchMany;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
@@ -133,18 +134,16 @@ fn resource_votes_to_json(
     let mut results = Vec::new();
 
     for (vote_id, vote_opt) in votes.into_iter() {
-        let vote = match vote_opt {
-            Some(vote) => vote,
-            None => continue,
+        let Some(vote) = vote_opt else {
+            continue;
         };
 
-        let inner = match vote {
-            ResourceVote::V0(inner) => inner,
-        };
+        let ResourceVote::V0(ResourceVoteV0 {
+            vote_poll,
+            resource_vote_choice,
+        }) = vote;
 
-        let vote_poll = match inner.vote_poll {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll,
-        };
+        let VotePoll::ContestedDocumentResourceVotePoll(vote_poll) = vote_poll;
 
         let poll_unique_id = vote_poll.unique_id().map_err(|e| {
             WasmSdkError::serialization(format!("Failed to derive vote poll unique id: {}", e))
@@ -172,7 +171,7 @@ fn resource_votes_to_json(
             "indexValues": index_values_json,
         });
 
-        let choice_json = match inner.resource_vote_choice {
+        let choice_json = match resource_vote_choice {
             ResourceVoteChoice::TowardsIdentity(identifier) => serde_json::json!({
                 "type": "towardsIdentity",
                 "identityId": identifier.to_string(Encoding::Base58),

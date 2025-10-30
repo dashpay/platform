@@ -76,15 +76,12 @@ impl ContractBoundsWasm {
 
     #[wasm_bindgen(getter = "identifier")]
     pub fn id(&self) -> IdentifierWasm {
-        self.0.identifier().clone().into()
+        (*self.0.identifier()).into()
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
     pub fn document_type_name(&self) -> Option<String> {
-        match self.0.document_type() {
-            Some(name) => Some(name.clone()),
-            None => None,
-        }
+        self.0.document_type().cloned()
     }
 
     #[wasm_bindgen(getter = "contractBoundsType")]

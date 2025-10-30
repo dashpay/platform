@@ -69,7 +69,7 @@ impl InstantLockWasm {
         self.0
             .inputs
             .iter()
-            .map(|input| input.clone().into())
+            .map(|input| (*input).into())
             .collect()
     }
 

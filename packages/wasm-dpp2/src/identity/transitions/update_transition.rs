@@ -86,7 +86,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .purpose_requirement()
             .iter()
-            .map(|purpose| PurposeWasm::from(purpose.clone()).into())
+            .map(|purpose| PurposeWasm::from(*purpose).into())
             .collect()
     }
 
@@ -95,7 +95,7 @@ impl IdentityUpdateTransitionWasm {
         self.0
             .modified_data_ids()
             .iter()
-            .map(|id| id.clone().into())
+            .map(|id| (*id).into())
             .collect()
     }
 
@@ -140,7 +140,7 @@ impl IdentityUpdateTransitionWasm {
     #[wasm_bindgen(setter = "identityIdentifier")]
     pub fn set_identity_identifier(&mut self, js_identity_id: &JsValue) -> WasmDppResult<()> {
         let identity_id = IdentifierWasm::try_from(js_identity_id)?;
-        self.0.set_identity_id(identity_id.clone().into());
+        self.0.set_identity_id(identity_id.into());
         Ok(())
     }
 

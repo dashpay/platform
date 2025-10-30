@@ -89,7 +89,7 @@ impl TokenPricingScheduleWasm {
                     Reflect::set(
                         &price_object,
                         &JsValue::from(key.to_string()),
-                        &value.clone().into(),
+                        &(*value).into(),
                     )
                     .map_err(|err| {
                         let message = err.error_message();

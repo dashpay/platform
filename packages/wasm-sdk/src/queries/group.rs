@@ -400,7 +400,7 @@ impl WasmSdk {
                 ))
             })?;
 
-            let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
             // Fetch all groups for this contract
             let query = GroupInfosQuery {
@@ -792,7 +792,7 @@ impl WasmSdk {
                     contract_id_str, e
                 ))
             })?;
-            let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
             // Fetch all groups for this contract with proof
             let query = GroupInfosQuery {

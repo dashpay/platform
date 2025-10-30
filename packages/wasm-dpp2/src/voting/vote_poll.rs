@@ -61,28 +61,28 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(js_name = "toString")]
-    pub fn to_string(&self) -> String {
+    pub fn to_string_js(&self) -> String {
         self.0.to_string()
     }
 
     #[wasm_bindgen(getter = "contractId")]
     pub fn contract_id(&self) -> IdentifierWasm {
-        match self.0.clone() {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.contract_id.into(),
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => IdentifierWasm::from(poll.contract_id),
         }
     }
 
     #[wasm_bindgen(getter = "documentTypeName")]
     pub fn document_type_name(&self) -> String {
-        match self.0.clone() {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.document_type_name.into(),
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.document_type_name.clone(),
         }
     }
 
     #[wasm_bindgen(getter = "indexName")]
     pub fn index_name(&self) -> String {
-        match self.0.clone() {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.index_name.into(),
+        match &self.0 {
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll.index_name.clone(),
         }
     }
 
@@ -92,7 +92,7 @@ impl VotePollWasm {
             .with_big_endian()
             .with_no_limit();
 
-        match self.0.clone() {
+        match &self.0 {
             VotePoll::ContestedDocumentResourceVotePoll(poll) => {
                 let encoded: WasmDppResult<Vec<Vec<u8>>> = poll
                     .index_values

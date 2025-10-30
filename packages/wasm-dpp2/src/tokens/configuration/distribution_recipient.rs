@@ -58,10 +58,10 @@ impl TokenDistributionRecipientWasm {
                 String::from("EvonodesByParticipation")
             }
             TokenDistributionRecipient::ContractOwner => String::from("ContractOwner"),
-            TokenDistributionRecipient::Identity(identity) => String::from(format!(
+            TokenDistributionRecipient::Identity(identity) => format!(
                 "Identity({})",
                 IdentifierWasm::from(identity).get_base58()
-            )),
+            ),
         }
     }
 

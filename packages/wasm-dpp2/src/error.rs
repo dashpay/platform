@@ -1,9 +1,7 @@
 use anyhow::Error as AnyhowError;
 use dpp::ProtocolError;
-use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
-use crate::utils::JsValueExt;
 
 /// Structured error returned by wasm-dpp2 APIs.
 #[wasm_bindgen]

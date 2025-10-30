@@ -93,10 +93,7 @@ impl DocumentBaseTransitionWasm {
 
     #[wasm_bindgen(getter = "tokenPaymentInfo")]
     pub fn get_token_payment_info(&self) -> Option<TokenPaymentInfoWasm> {
-        match self.0.token_payment_info() {
-            None => None,
-            Some(info) => Some(info.into()),
-        }
+        self.0.token_payment_info().map(|info| info.into())
     }
 
     #[wasm_bindgen(setter = "id")]

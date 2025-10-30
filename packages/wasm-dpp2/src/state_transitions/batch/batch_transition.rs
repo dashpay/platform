@@ -159,7 +159,7 @@ impl BatchTransitionWasm {
         self.0
             .modified_data_ids()
             .iter()
-            .map(|id| id.clone().into())
+            .map(|id| (*id).into())
             .collect()
     }
 

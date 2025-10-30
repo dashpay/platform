@@ -101,7 +101,7 @@ impl StateTransitionWasm {
         };
 
         self.0.sign_by_private_key(
-            &private_key.to_bytes().as_slice(),
+            private_key.to_bytes().as_slice(),
             KeyType::from(key_type),
             &MockBLS {},
         )?;
@@ -258,13 +258,11 @@ impl StateTransitionWasm {
 
     #[wasm_bindgen(js_name = "hash")]
     pub fn get_hash(&self, skip_signature: bool) -> WasmDppResult<String> {
-        let payload: Vec<u8>;
-
-        if skip_signature {
-            payload = self.0.signable_bytes()?;
+        let payload = if skip_signature {
+            self.0.signable_bytes()?
         } else {
-            payload = dpp::serialization::PlatformSerializable::serialize_to_bytes(&self.0)?;
-        }
+            dpp::serialization::PlatformSerializable::serialize_to_bytes(&self.0)?
+        };
 
         Ok(Sha256::digest(payload).to_hex_string(Lower))
     }
@@ -313,15 +311,10 @@ impl StateTransitionWasm {
     pub fn get_purpose_requirement(&self) -> Option<Vec<String>> {
         let requirements = self.0.purpose_requirement();
 
-        match requirements {
-            None => None,
-            Some(req) => Some(
-                req.iter()
-                    .map(|purpose| PurposeWasm::from(purpose.clone()))
+        requirements.map(|req| req.iter()
+                    .map(|purpose| PurposeWasm::from(*purpose))
                     .map(String::from)
-                    .collect(),
-            ),
-        }
+                    .collect())
     }
 
     #[wasm_bindgen(js_name = "getKeyLevelRequirement")]
@@ -337,7 +330,7 @@ impl StateTransitionWasm {
             None => Ok(None),
             Some(req) => Ok(Some(
                 req.iter()
-                    .map(|security_level| SecurityLevelWasm::from(security_level.clone()))
+                    .map(|security_level| SecurityLevelWasm::from(*security_level))
                     .map(String::from)
                     .collect(),
             )),

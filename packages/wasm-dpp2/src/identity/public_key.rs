@@ -50,6 +50,7 @@ impl IdentityPublicKeyWasm {
     }
 
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u32,
         js_purpose: JsValue,

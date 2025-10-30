@@ -44,6 +44,7 @@ impl TokenConfigurationWasm {
     }
 
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         conventions: &TokenConfigurationConventionWasm,
         conventions_change_rules: &ChangeControlRulesWasm,
@@ -105,7 +106,7 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(getter = "keepsHistory")]
     pub fn get_keeps_history(&self) -> TokenKeepsHistoryRulesWasm {
-        self.0.keeps_history().clone().into()
+        (*self.0.keeps_history()).into()
     }
 
     #[wasm_bindgen(getter = "startAsPaused")]
@@ -177,7 +178,7 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(getter = "mainControlGroupCanBeModified")]
     pub fn get_main_control_group_can_be_modified(&self) -> AuthorizedActionTakersWasm {
-        self.0.main_control_group_can_be_modified().clone().into()
+        (*self.0.main_control_group_can_be_modified()).into()
     }
 
     #[wasm_bindgen(getter = "description")]
@@ -202,13 +203,7 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(setter = "keepsHistory")]
     pub fn set_keeps_history(&mut self, keeps_history: &TokenKeepsHistoryRulesWasm) {
-        self.0 = match self.0.clone() {
-            TokenConfiguration::V0(mut v0) => {
-                v0.keeps_history = keeps_history.clone().into();
-
-                TokenConfiguration::V0(v0)
-            }
-        };
+        *self.0.keeps_history_mut() = keeps_history.clone().into();
     }
 
     #[wasm_bindgen(setter = "startAsPaused")]

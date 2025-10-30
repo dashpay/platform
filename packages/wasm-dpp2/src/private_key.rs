@@ -1,3 +1,5 @@
+use std::convert::TryInto;
+
 use crate::enums::network::NetworkWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::public_key::PublicKeyWasm;
@@ -35,7 +37,11 @@ impl PrivateKeyWasm {
     pub fn from_bytes(bytes: Vec<u8>, js_network: JsValue) -> WasmDppResult<Self> {
         let network = NetworkWasm::try_from(js_network)?;
 
-        let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
+        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+            WasmDppError::invalid_argument("Private key bytes must be exactly 32 bytes".to_string())
+        })?;
+
+        let pk = PrivateKey::from_byte_array(&key_bytes, network.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))
@@ -48,7 +54,11 @@ impl PrivateKeyWasm {
         let bytes = Vec::from_hex(hex_key)
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        let pk = PrivateKey::from_slice(bytes.as_slice(), network.into())
+        let key_bytes: [u8; 32] = bytes.try_into().map_err(|_| {
+            WasmDppError::invalid_argument("Private key hex must decode to 32 bytes".to_string())
+        })?;
+
+        let pk = PrivateKey::from_byte_array(&key_bytes, network.into())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
         Ok(PrivateKeyWasm(pk))

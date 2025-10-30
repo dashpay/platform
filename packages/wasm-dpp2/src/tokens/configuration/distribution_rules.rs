@@ -9,8 +9,6 @@ use dpp::data_contract::associated_token::token_distribution_rules::accessors::v
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
-use dpp::data_contract::associated_token::token_perpetual_distribution::TokenPerpetualDistribution;
-use dpp::data_contract::associated_token::token_pre_programmed_distribution::TokenPreProgrammedDistribution;
 use dpp::prelude::Identifier;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -44,6 +42,7 @@ impl TokenDistributionRulesWasm {
     }
 
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         js_perpetual_distribution: &JsValue,
         perpetual_distribution_rules: &ChangeControlRulesWasm,
@@ -54,33 +53,38 @@ impl TokenDistributionRulesWasm {
         minting_allow_choosing_destination_rules: &ChangeControlRulesWasm,
         change_direct_purchase_pricing_rules: &ChangeControlRulesWasm,
     ) -> WasmDppResult<TokenDistributionRulesWasm> {
-        let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
-            true => None,
-            false => Some(TokenPerpetualDistribution::from(
+        let perpetual_distribution = if js_perpetual_distribution.is_undefined() {
+            None
+        } else {
+            Some(
                 js_perpetual_distribution
                     .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
-                    .clone(),
-            )),
+                    .clone()
+                    .into(),
+            )
         };
 
-        let pre_programmed_distribution = match js_pre_programmed_distribution.is_undefined() {
-            true => None,
-            false => Some(TokenPreProgrammedDistribution::from(
+        let pre_programmed_distribution = if js_pre_programmed_distribution.is_undefined() {
+            None
+        } else {
+            Some(
                 js_pre_programmed_distribution
                     .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
-                    .clone(),
-            )),
+                    .clone()
+                    .into(),
+            )
         };
 
-        let new_tokens_destination_identity =
-            match js_new_tokens_destination_identity.is_undefined() {
-                true => None,
-                false => Some(Identifier::from(IdentifierWasm::try_from(
-                    js_new_tokens_destination_identity,
-                )?)),
-            };
+        let new_tokens_destination_identity = if js_new_tokens_destination_identity.is_undefined()
+        {
+            None
+        } else {
+            Some(Identifier::from(IdentifierWasm::try_from(
+                js_new_tokens_destination_identity,
+            )?))
+        };
 
         Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
             TokenDistributionRulesV0 {
@@ -104,10 +108,9 @@ impl TokenDistributionRulesWasm {
 
     #[wasm_bindgen(getter = "perpetualDistribution")]
     pub fn get_perpetual_distribution(&self) -> Option<TokenPerpetualDistributionWasm> {
-        match self.0.perpetual_distribution() {
-            Some(perp) => Some(perp.clone().into()),
-            None => None,
-        }
+        self.0
+            .perpetual_distribution()
+            .map(|perp| perp.clone().into())
     }
 
     #[wasm_bindgen(getter = "perpetualDistributionRules")]
@@ -117,18 +120,16 @@ impl TokenDistributionRulesWasm {
 
     #[wasm_bindgen(getter = "preProgrammedDistribution")]
     pub fn get_pre_programmed_distribution(&self) -> Option<TokenPreProgrammedDistributionWasm> {
-        match self.0.pre_programmed_distribution() {
-            Some(pre) => Some(pre.clone().into()),
-            None => None,
-        }
+        self.0
+            .pre_programmed_distribution()
+            .map(|pre| pre.clone().into())
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentity")]
     pub fn get_new_tokens_destination_identity(&self) -> Option<IdentifierWasm> {
-        match self.0.new_tokens_destination_identity().clone() {
-            Some(id) => Some(id.clone().into()),
-            None => None,
-        }
+        self.0
+            .new_tokens_destination_identity()
+            .map(|id| IdentifierWasm::from(*id))
     }
 
     #[wasm_bindgen(getter = "newTokenDestinationIdentityRules")]
@@ -164,11 +165,12 @@ impl TokenDistributionRulesWasm {
     ) -> WasmDppResult<()> {
         let perpetual_distribution = match js_perpetual_distribution.is_undefined() {
             true => None,
-            false => Some(TokenPerpetualDistribution::from(
+            false => Some(
                 js_perpetual_distribution
                     .to_wasm::<TokenPerpetualDistributionWasm>("TokenPerpetualDistribution")?
-                    .clone(),
-            )),
+                    .clone()
+                    .into(),
+            ),
         };
 
         self.0.set_perpetual_distribution(perpetual_distribution);
@@ -188,13 +190,14 @@ impl TokenDistributionRulesWasm {
     ) -> WasmDppResult<()> {
         let distribution = match js_distribution.is_undefined() {
             true => None,
-            false => Some(TokenPreProgrammedDistribution::from(
+            false => Some(
                 js_distribution
                     .to_wasm::<TokenPreProgrammedDistributionWasm>(
                         "TokenPreProgrammedDistribution",
                     )?
-                    .clone(),
-            )),
+                    .clone()
+                    .into(),
+            ),
         };
 
         self.0.set_pre_programmed_distribution(distribution);
@@ -208,9 +211,7 @@ impl TokenDistributionRulesWasm {
     ) -> WasmDppResult<()> {
         let identifier = match js_identifier.is_undefined() {
             true => None,
-            false => Some(Identifier::from(
-                IdentifierWasm::try_from(js_identifier)?.clone(),
-            )),
+            false => Some(Identifier::from(IdentifierWasm::try_from(js_identifier)?)),
         };
 
         self.0.set_new_tokens_destination_identity(identifier);

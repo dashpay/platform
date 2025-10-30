@@ -178,7 +178,7 @@ impl WasmSdk {
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid token ID: {}", e)))?;
-        let token_identifier_wasm = IdentifierWasm::from(token_identifier.clone());
+        let token_identifier_wasm = IdentifierWasm::from(token_identifier);
 
         // Fetch token prices
         let prices_result: drive_proof_verifier::types::TokenDirectPurchasePrices =
@@ -264,8 +264,8 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from((*identifier).clone()));
-                let value = JsValue::from(BigInt::from(*balance as u64));
+                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
         }
@@ -438,7 +438,7 @@ impl WasmSdk {
         let prices_map = Map::new();
         for token in tokens {
             if let Some(Some(schedule)) = prices_result.get(&token) {
-                let token_id_wasm = IdentifierWasm::from(token.clone());
+                let token_id_wasm = IdentifierWasm::from(token);
                 let (base_price, current_price) = match schedule {
                     dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
                         (price.to_string(), price.to_string())
@@ -695,8 +695,8 @@ impl WasmSdk {
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
-                let key = JsValue::from(IdentifierWasm::from((*identifier).clone()));
-                let value = JsValue::from(BigInt::from(*balance as u64));
+                let key = JsValue::from(IdentifierWasm::from(*identifier));
+                let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
         }
@@ -924,7 +924,7 @@ impl WasmSdk {
         let prices_map = Map::new();
         for token in tokens {
             if let Some(Some(schedule)) = prices_result.get(&token) {
-                let token_id_wasm = IdentifierWasm::from(token.clone());
+                let token_id_wasm = IdentifierWasm::from(token);
                 let (base_price, current_price) = match schedule {
                     dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
                         (price.to_string(), price.to_string())

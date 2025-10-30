@@ -114,10 +114,10 @@ impl TokenPreProgrammedDistributionWasm {
             for (identifiers_key, identifiers_value) in value {
                 Reflect::set(
                     &identifiers_obj,
-                    &IdentifierWasm::from(identifiers_key.clone())
+                    &IdentifierWasm::from(*identifiers_key)
                         .get_base58()
                         .into(),
-                    &BigInt::from(identifiers_value.clone()).into(),
+                    &BigInt::from(*identifiers_value).into(),
                 )
                 .map_err(|err| {
                     let message = err.error_message();

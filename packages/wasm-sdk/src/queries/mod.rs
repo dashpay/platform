@@ -269,8 +269,4 @@ impl ProofMetadataResponseWasm {
             proof: proof.into(),
         }
     }
-
-    pub(crate) fn into_parts(self) -> (JsValue, ResponseMetadataWasm, ProofInfoWasm) {
-        (self.data, self.metadata, self.proof)
-    }
 }

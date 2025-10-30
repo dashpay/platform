@@ -53,7 +53,7 @@ impl ResourceVoteChoiceWasm {
 
     #[wasm_bindgen(js_name = "getValue")]
     pub fn get_value(&self) -> JsValue {
-        match self.0.clone() {
+        match self.0 {
             ResourceVoteChoice::TowardsIdentity(id) => JsValue::from(IdentifierWasm::from(id)),
             ResourceVoteChoice::Abstain => JsValue::undefined(),
             ResourceVoteChoice::Lock => JsValue::undefined(),
@@ -62,7 +62,7 @@ impl ResourceVoteChoiceWasm {
 
     #[wasm_bindgen(js_name = "getType")]
     pub fn get_type(&self) -> String {
-        match self.0.clone() {
+        match self.0 {
             ResourceVoteChoice::TowardsIdentity(_) => "TowardsIdentity".to_string(),
             ResourceVoteChoice::Abstain => "Abstain".to_string(),
             ResourceVoteChoice::Lock => "Lock".to_string(),

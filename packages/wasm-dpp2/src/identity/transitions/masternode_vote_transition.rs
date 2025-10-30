@@ -64,7 +64,7 @@ impl MasternodeVoteTransitionWasm {
                 vote: vote.clone().into(),
                 nonce,
                 signature_public_key_id: signature_public_key.unwrap_or(0),
-                signature: BinaryData::from(signature.unwrap_or(vec![])),
+                signature: BinaryData::from(signature.unwrap_or_default()),
             },
         )))
     }
@@ -183,10 +183,7 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(getter = "assetLock")]
     pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
-        match self.0.optional_asset_lock_proof().clone() {
-            None => None,
-            Some(asset_lock_proof) => Some(AssetLockProofWasm::from(asset_lock_proof.clone())),
-        }
+        self.0.optional_asset_lock_proof().map(|asset_lock_proof| AssetLockProofWasm::from(asset_lock_proof.clone()))
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]
@@ -199,7 +196,7 @@ impl MasternodeVoteTransitionWasm {
         self.0
             .modified_data_ids()
             .iter()
-            .map(|id| id.clone().into())
+            .map(|id| (*id).into())
             .collect()
     }
 

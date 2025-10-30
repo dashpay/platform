@@ -46,10 +46,7 @@ impl TryFrom<JsValue> for IdentityPublicKeyInCreationWasm {
 
 impl From<IdentityPublicKeyInCreationWasm> for IdentityPublicKey {
     fn from(value: IdentityPublicKeyInCreationWasm) -> Self {
-        let contract_bounds = match value.0.contract_bounds() {
-            None => None,
-            Some(bounds) => Some(bounds.clone()),
-        };
+        let contract_bounds = value.0.contract_bounds().cloned();
 
         IdentityPublicKey::V0(IdentityPublicKeyV0 {
             id: value.0.id(),
@@ -77,6 +74,7 @@ impl IdentityPublicKeyInCreationWasm {
     }
 
     #[wasm_bindgen(constructor)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         id: u32,
         js_purpose: JsValue,
@@ -110,14 +108,14 @@ impl IdentityPublicKeyInCreationWasm {
                 contract_bounds,
                 read_only,
                 data: BinaryData::from(binary_data),
-                signature: BinaryData::from(signature.unwrap_or(Vec::new())),
+                signature: BinaryData::from(signature.unwrap_or_default()),
             }),
         ))
     }
 
     #[wasm_bindgen(js_name = toIdentityPublicKey)]
     pub fn to_identity_public_key(&self) -> WasmDppResult<IdentityPublicKeyWasm> {
-        Ok(IdentityPublicKeyWasm::new(
+        IdentityPublicKeyWasm::new(
             self.0.id(),
             JsValue::from(PurposeWasm::from(self.0.purpose())),
             JsValue::from(SecurityLevelWasm::from(self.0.security_level())),
@@ -126,7 +124,7 @@ impl IdentityPublicKeyInCreationWasm {
             self.0.data().to_string(Hex).as_str(),
             None,
             &JsValue::from(self.get_contract_bounds().clone()),
-        )?)
+        )
     }
 
     #[wasm_bindgen(js_name = "getHash")]
@@ -137,10 +135,7 @@ impl IdentityPublicKeyInCreationWasm {
 
     #[wasm_bindgen(getter = "contractBounds")]
     pub fn get_contract_bounds(&self) -> Option<ContractBoundsWasm> {
-        match self.0.contract_bounds() {
-            Some(bounds) => Some(ContractBoundsWasm::from(bounds.clone())),
-            None => None,
-        }
+        self.0.contract_bounds().map(|bounds| ContractBoundsWasm::from(bounds.clone()))
     }
 
     #[wasm_bindgen(getter = keyId)]

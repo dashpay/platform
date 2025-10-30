@@ -93,7 +93,7 @@ impl GroupWasm {
             Reflect::set(
                 &js_members,
                 &JsValue::from(k.to_string(Encoding::Base58)),
-                &JsValue::from(v.clone()),
+                &JsValue::from(*v),
             )
             .map_err(|err| {
                 let message = err.error_message();

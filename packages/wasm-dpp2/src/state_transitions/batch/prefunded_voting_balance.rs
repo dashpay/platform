@@ -50,6 +50,6 @@ impl PrefundedVotingBalanceWasm {
 
     #[wasm_bindgen(getter)]
     pub fn credits(&self) -> Credits {
-        self.credits.clone()
+        self.credits
     }
 }

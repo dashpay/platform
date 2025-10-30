@@ -147,7 +147,7 @@ impl ContestedResourceContenderWasm {
 impl ContestedResourceContenderWasm {
     #[wasm_bindgen(getter = identityId)]
     pub fn identity_id(&self) -> IdentifierWasm {
-        IdentifierWasm::from(self.identity_id.clone())
+        IdentifierWasm::from(self.identity_id)
     }
 
     #[wasm_bindgen(getter = serializedDocument)]

@@ -54,7 +54,7 @@ impl IdentityTopUpTransitionWasm {
         self.0
             .modified_data_ids()
             .iter()
-            .map(|id| id.clone().into())
+            .map(|id| (*id).into())
             .collect()
     }
 
@@ -73,7 +73,7 @@ impl IdentityTopUpTransitionWasm {
 
     #[wasm_bindgen(getter = "identityIdentifier")]
     pub fn get_identity_identifier(&self) -> IdentifierWasm {
-        self.0.identity_id().clone().into()
+        (*self.0.identity_id()).into()
     }
 
     #[wasm_bindgen(getter = "assetLockProof")]
@@ -93,7 +93,7 @@ impl IdentityTopUpTransitionWasm {
     ) -> WasmDppResult<()> {
         let identity_identifier: Identifier =
             IdentifierWasm::try_from(js_identity_identifier)?.into();
-        self.0.set_identity_id(identity_identifier.clone().into());
+        self.0.set_identity_id(identity_identifier);
         Ok(())
     }
 

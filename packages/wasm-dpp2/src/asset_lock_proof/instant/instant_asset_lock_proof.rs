@@ -88,18 +88,12 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "getOutput")]
     pub fn get_output(&self) -> Option<TxOutWasm> {
-        match self.0.output() {
-            Some(output) => Some(output.clone().into()),
-            None => None,
-        }
+        self.0.output().map(|output| output.clone().into())
     }
 
     #[wasm_bindgen(js_name = "getOutPoint")]
     pub fn get_out_point(&self) -> Option<OutPointWasm> {
-        match self.0.out_point() {
-            Some(output) => Some(output.clone().into()),
-            None => None,
-        }
+        self.0.out_point().map(|output| output.into())
     }
 
     #[wasm_bindgen(getter = "outputIndex")]

@@ -184,7 +184,7 @@ impl WasmSdk {
         epoch: u16,
         limit: Option<u32>,
         start_after: Option<String>,
-        order_ascending: Option<bool>,
+        _order_ascending: Option<bool>,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::QueryStartInfo;
         use drive_proof_verifier::types::ProposerBlockCounts;
