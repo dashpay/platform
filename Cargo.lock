@@ -7618,7 +7618,6 @@ dependencies = [
  "wasm-bindgen-futures",
  "wasm-dpp2",
  "wasm-sdk",
- "web-sys",
  "wee_alloc",
 ]
 
