@@ -393,6 +393,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -484,6 +485,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -569,6 +571,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
@@ -844,6 +847,7 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
