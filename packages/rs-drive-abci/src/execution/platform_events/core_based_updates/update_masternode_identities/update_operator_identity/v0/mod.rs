@@ -1022,15 +1022,15 @@ mod tests {
 
     #[test]
     fn test_update_operator_identity_reuses_node_id_without_change() {
+        // Initialize Platform
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
             .set_genesis_state();
-
         let block_info = BlockInfo::default();
-
         let mut rng = StdRng::seed_from_u64(5);
 
+        // Add the original operator identity (A) to the state (contains operator key and node id key)
         let (
             pro_tx_hash,
             _identity,
@@ -1039,7 +1039,7 @@ mod tests {
             node_id_bytes,
         ) = create_operator_identity(&platform, &mut rng);
 
-        // Pre-create an operator identity for the new operator key that lacks the platform node key
+        // Also add a second identity (B) to the state with an operator key for the same masternode, but not the node id key
         let private_key_operator_bytes = bls_signatures::PrivateKey::generate_dash(&mut rng)
             .expect("expected to generate a private key")
             .to_bytes()
@@ -1053,12 +1053,10 @@ mod tests {
             "expected the conversion between bls signatures library and blsful to happen without failing",
         );
         let new_pub_key_operator = private_key_operator.public_key().0.to_compressed().to_vec();
-
         let new_operator_identifier = Identifier::create_operator_identifier(
             pro_tx_hash.as_byte_array(),
             &new_pub_key_operator,
         );
-
         let operator_key_without_node_id: IdentityPublicKey = IdentityPublicKeyV0 {
             id: 0,
             key_type: KeyType::BLS12_381,
@@ -1070,12 +1068,10 @@ mod tests {
             contract_bounds: None,
         }
         .into();
-
         let mut identity_without_node_id =
             Identity::create_basic_identity(new_operator_identifier, platform_version)
                 .expect("expected to create identity");
         identity_without_node_id.add_public_keys(vec![operator_key_without_node_id]);
-
         platform
             .drive
             .add_new_identity(
@@ -1088,7 +1084,7 @@ mod tests {
             )
             .expect("expected to add pre-existing operator identity");
 
-        // Create an old masternode state with the original operator key and node id
+        // Insert a masternode into the masternode list with the original operator identity (A)
         let masternode_list_item = MasternodeListItem {
             node_type: MasternodeType::Regular,
             pro_tx_hash,
@@ -1112,16 +1108,15 @@ mod tests {
                 platform_http_port: None,
             },
         };
-
         let mut platform_state = platform.state.load().clone().deref().clone();
         platform_state
             .full_masternode_list_mut()
             .insert(pro_tx_hash, masternode_list_item);
 
+        // Call update_operator_identity_v0 to change the operator public key to the new one (from identity B)
+        // This disables the old operator key and node id key from identity A, and adds the node id key to identity B
         let transaction = platform.drive.grove.start_transaction();
-
         let mut drive_operations = vec![];
-
         platform
             .update_operator_identity_v0(
                 &pro_tx_hash,
@@ -1135,9 +1130,12 @@ mod tests {
             )
             .expect("expected to update operator identity without panic");
 
+        // Check there are exactly two operations: one to disable old keys, one to add node id key to new identity
+        assert!(drive_operations.len() == 2);
+
+        // Check that the node id key was added to the new identity properly
         let expected_identity_bytes = new_operator_identifier.to_buffer();
         let expected_node_id = node_id_bytes.to_vec();
-
         let added_platform_node_key = drive_operations.iter().any(|operation| {
             if let drive::util::batch::DriveOperation::IdentityOperation(
                 drive::util::batch::IdentityOperationType::AddNewKeysToIdentity {
@@ -1155,8 +1153,32 @@ mod tests {
             }
             false
         });
-
         assert!(added_platform_node_key);
+
+        // Check that the old keys were disabled on the old identity properly
+        let expected_old_identity_bytes = Identifier::create_operator_identifier(
+            pro_tx_hash.as_byte_array(),
+            &original_pub_key_operator,
+        )
+        .to_buffer();
+        let expected_old_operator_key_id = 0;
+        let expected_old_node_id_key_id = 2;
+        let disabled_old_keys = drive_operations.iter().any(|operation| {
+            if let drive::util::batch::DriveOperation::IdentityOperation(
+                drive::util::batch::IdentityOperationType::DisableIdentityKeys {
+                    identity_id,
+                    keys_ids,
+                },
+            ) = operation
+            {
+                if identity_id == &expected_old_identity_bytes {
+                    return keys_ids.contains(&expected_old_operator_key_id)
+                        && keys_ids.contains(&expected_old_node_id_key_id);
+                }
+            }
+            false
+        });
+        assert!(disabled_old_keys);
     }
 
     #[test]
