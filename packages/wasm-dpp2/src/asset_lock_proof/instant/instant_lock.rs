@@ -66,11 +66,7 @@ impl InstantLockWasm {
 
     #[wasm_bindgen(getter = "inputs")]
     pub fn get_inputs(&self) -> Vec<OutPointWasm> {
-        self.0
-            .inputs
-            .iter()
-            .map(|input| (*input).into())
-            .collect()
+        self.0.inputs.iter().map(|input| (*input).into()).collect()
     }
 
     #[wasm_bindgen(getter = "txid")]

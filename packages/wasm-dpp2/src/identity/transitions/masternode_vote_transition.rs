@@ -183,7 +183,9 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(getter = "assetLock")]
     pub fn get_asset_lock_proof(&self) -> Option<AssetLockProofWasm> {
-        self.0.optional_asset_lock_proof().map(|asset_lock_proof| AssetLockProofWasm::from(asset_lock_proof.clone()))
+        self.0
+            .optional_asset_lock_proof()
+            .map(|asset_lock_proof| AssetLockProofWasm::from(asset_lock_proof.clone()))
     }
 
     #[wasm_bindgen(setter = "userFeeIncrease")]

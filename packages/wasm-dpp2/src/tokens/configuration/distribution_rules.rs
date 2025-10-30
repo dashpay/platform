@@ -77,8 +77,7 @@ impl TokenDistributionRulesWasm {
             )
         };
 
-        let new_tokens_destination_identity = if js_new_tokens_destination_identity.is_undefined()
-        {
+        let new_tokens_destination_identity = if js_new_tokens_destination_identity.is_undefined() {
             None
         } else {
             Some(Identifier::from(IdentifierWasm::try_from(

@@ -103,12 +103,18 @@ impl TokenTransferTransitionWasm {
 
     #[wasm_bindgen(getter = "sharedEncryptedNote")]
     pub fn get_shared_encrypted_note(&self) -> Option<SharedEncryptedNoteWasm> {
-        self.clone().0.shared_encrypted_note_owned().map(|shared_encrypted_note| shared_encrypted_note.into())
+        self.clone()
+            .0
+            .shared_encrypted_note_owned()
+            .map(|shared_encrypted_note| shared_encrypted_note.into())
     }
 
     #[wasm_bindgen(getter = "privateEncryptedNote")]
     pub fn get_private_encrypted_note(&self) -> Option<PrivateEncryptedNoteWasm> {
-        self.clone().0.private_encrypted_note_owned().map(|private_encrypted_note| private_encrypted_note.into())
+        self.clone()
+            .0
+            .private_encrypted_note_owned()
+            .map(|private_encrypted_note| private_encrypted_note.into())
     }
 
     #[wasm_bindgen(getter = recipientId)]

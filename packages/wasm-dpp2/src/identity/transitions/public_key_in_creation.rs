@@ -135,7 +135,9 @@ impl IdentityPublicKeyInCreationWasm {
 
     #[wasm_bindgen(getter = "contractBounds")]
     pub fn get_contract_bounds(&self) -> Option<ContractBoundsWasm> {
-        self.0.contract_bounds().map(|bounds| ContractBoundsWasm::from(bounds.clone()))
+        self.0
+            .contract_bounds()
+            .map(|bounds| ContractBoundsWasm::from(bounds.clone()))
     }
 
     #[wasm_bindgen(getter = keyId)]

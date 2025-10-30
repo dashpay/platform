@@ -94,11 +94,10 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "getPublicKeys")]
     pub fn get_public_keys(&self) -> Vec<IdentityPublicKeyWasm> {
-        
-
-        self
-            .0
-            .public_keys().values().map(|key| IdentityPublicKeyWasm::from(key.clone()))
+        self.0
+            .public_keys()
+            .values()
+            .map(|key| IdentityPublicKeyWasm::from(key.clone()))
             .collect()
     }
 

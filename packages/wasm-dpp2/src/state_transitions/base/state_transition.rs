@@ -311,10 +311,12 @@ impl StateTransitionWasm {
     pub fn get_purpose_requirement(&self) -> Option<Vec<String>> {
         let requirements = self.0.purpose_requirement();
 
-        requirements.map(|req| req.iter()
-                    .map(|purpose| PurposeWasm::from(*purpose))
-                    .map(String::from)
-                    .collect())
+        requirements.map(|req| {
+            req.iter()
+                .map(|purpose| PurposeWasm::from(*purpose))
+                .map(String::from)
+                .collect()
+        })
     }
 
     #[wasm_bindgen(js_name = "getKeyLevelRequirement")]

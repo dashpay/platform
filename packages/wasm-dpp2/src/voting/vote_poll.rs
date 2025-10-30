@@ -68,7 +68,9 @@ impl VotePollWasm {
     #[wasm_bindgen(getter = "contractId")]
     pub fn contract_id(&self) -> IdentifierWasm {
         match &self.0 {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => IdentifierWasm::from(poll.contract_id),
+            VotePoll::ContestedDocumentResourceVotePoll(poll) => {
+                IdentifierWasm::from(poll.contract_id)
+            }
         }
     }
 

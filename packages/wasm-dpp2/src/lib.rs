@@ -36,9 +36,9 @@ pub use epoch::*;
 pub use group::*;
 pub use identity::{
     IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
-    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm,
-    IdentityPublicKeyWasm, IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm,
-    IdentityWasm, MasternodeVoteTransitionWasm, PartialIdentityWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
+    MasternodeVoteTransitionWasm, PartialIdentityWasm,
 };
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
