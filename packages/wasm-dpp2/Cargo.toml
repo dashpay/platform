@@ -7,9 +7,9 @@ edition = "2024"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
+# TODO: Consider to use talc allocator
+#talc = { version = "=4.4.2", default-features = false, features = ["lock_api"] }
 bincode = "=2.0.0-rc.3"
-bincode_derive = "=2.0.0-rc.3"
 wasm-bindgen = { version = "=0.2.103", default-features = false, features = ["serde-serialize"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-signing",

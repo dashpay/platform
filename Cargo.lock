@@ -6415,15 +6415,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
-name = "talc"
-version = "4.4.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3fcad3be1cfe36eb7d716a04791eba36a197da9d9b6ea1e28e64ac569da3701d"
-dependencies = [
- "lock_api",
-]
-
-[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7547,7 +7538,6 @@ version = "1.0.5"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
- "bincode_derive",
  "dpp",
  "hex",
  "js-sys",
@@ -7555,7 +7545,6 @@ dependencies = [
  "serde-wasm-bindgen 0.5.0",
  "serde_json",
  "sha2",
- "talc",
  "thiserror 1.0.69",
  "wasm-bindgen",
 ]
