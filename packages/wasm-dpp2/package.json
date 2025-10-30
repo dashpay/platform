@@ -28,7 +28,7 @@
     "node": ">=18.18"
   },
   "scripts": {
-    "build:dev": "./scripts/build.sh && node ./scripts/bundle.cjs",
+    "build": "./scripts/build.sh && node ./scripts/bundle.cjs",
     "build:release": "./scripts/build-optimized.sh && node ./scripts/bundle.cjs",
     "test": "yarn run test:unit",
     "test:unit": "mocha tests/unit/**/*.spec.mjs && karma start ./tests/karma/karma.conf.cjs --single-run",
