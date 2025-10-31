@@ -1472,6 +1472,37 @@ public final class PlatformGrpc {
     return getGetGroupActionSignersMethod;
   }
 
+  private static volatile io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> getSubscribePlatformEventsMethod;
+
+  @io.grpc.stub.annotations.RpcMethod(
+      fullMethodName = SERVICE_NAME + '/' + "SubscribePlatformEvents",
+      requestType = org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest.class,
+      responseType = org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse.class,
+      methodType = io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+  public static io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest,
+      org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> getSubscribePlatformEventsMethod() {
+    io.grpc.MethodDescriptor<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest, org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> getSubscribePlatformEventsMethod;
+    if ((getSubscribePlatformEventsMethod = PlatformGrpc.getSubscribePlatformEventsMethod) == null) {
+      synchronized (PlatformGrpc.class) {
+        if ((getSubscribePlatformEventsMethod = PlatformGrpc.getSubscribePlatformEventsMethod) == null) {
+          PlatformGrpc.getSubscribePlatformEventsMethod = getSubscribePlatformEventsMethod =
+              io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest, org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse>newBuilder()
+              .setType(io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SubscribePlatformEvents"))
+              .setSampledToLocalTracing(true)
+              .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest.getDefaultInstance()))
+              .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
+                  org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse.getDefaultInstance()))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("SubscribePlatformEvents"))
+              .build();
+        }
+      }
+    }
+    return getSubscribePlatformEventsMethod;
+  }
+
   /**
    * Creates a new async stub that supports all call types for the service
    */
@@ -1864,6 +1895,16 @@ public final class PlatformGrpc {
       io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getGetGroupActionSignersMethod(), responseObserver);
     }
 
+    /**
+     * <pre>
+     * Bi-directional stream for multiplexed platform events subscriptions
+     * </pre>
+     */
+    public void subscribePlatformEvents(org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> responseObserver) {
+      io.grpc.stub.ServerCalls.asyncUnimplementedUnaryCall(getSubscribePlatformEventsMethod(), responseObserver);
+    }
+
     @java.lang.Override public final io.grpc.ServerServiceDefinition bindService() {
       return io.grpc.ServerServiceDefinition.builder(getServiceDescriptor())
           .addMethod(
@@ -2195,6 +2236,13 @@ public final class PlatformGrpc {
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersRequest,
                 org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersResponse>(
                   this, METHODID_GET_GROUP_ACTION_SIGNERS)))
+          .addMethod(
+            getSubscribePlatformEventsMethod(),
+            io.grpc.stub.ServerCalls.asyncServerStreamingCall(
+              new MethodHandlers<
+                org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest,
+                org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse>(
+                  this, METHODID_SUBSCRIBE_PLATFORM_EVENTS)))
           .build();
     }
   }
@@ -2603,6 +2651,17 @@ public final class PlatformGrpc {
       io.grpc.stub.ClientCalls.asyncUnaryCall(
           getChannel().newCall(getGetGroupActionSignersMethod(), getCallOptions()), request, responseObserver);
     }
+
+    /**
+     * <pre>
+     * Bi-directional stream for multiplexed platform events subscriptions
+     * </pre>
+     */
+    public void subscribePlatformEvents(org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest request,
+        io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> responseObserver) {
+      io.grpc.stub.ClientCalls.asyncServerStreamingCall(
+          getChannel().newCall(getSubscribePlatformEventsMethod(), getCallOptions()), request, responseObserver);
+    }
   }
 
   /**
@@ -2961,6 +3020,17 @@ public final class PlatformGrpc {
     public org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersResponse getGroupActionSigners(org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersRequest request) {
       return io.grpc.stub.ClientCalls.blockingUnaryCall(
           getChannel(), getGetGroupActionSignersMethod(), getCallOptions(), request);
+    }
+
+    /**
+     * <pre>
+     * Bi-directional stream for multiplexed platform events subscriptions
+     * </pre>
+     */
+    public java.util.Iterator<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> subscribePlatformEvents(
+        org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest request) {
+      return io.grpc.stub.ClientCalls.blockingServerStreamingCall(
+          getChannel(), getSubscribePlatformEventsMethod(), getCallOptions(), request);
     }
   }
 
@@ -3417,6 +3487,7 @@ public final class PlatformGrpc {
   private static final int METHODID_GET_GROUP_INFOS = 44;
   private static final int METHODID_GET_GROUP_ACTIONS = 45;
   private static final int METHODID_GET_GROUP_ACTION_SIGNERS = 46;
+  private static final int METHODID_SUBSCRIBE_PLATFORM_EVENTS = 47;
 
   private static final class MethodHandlers<Req, Resp> implements
       io.grpc.stub.ServerCalls.UnaryMethod<Req, Resp>,
@@ -3623,6 +3694,10 @@ public final class PlatformGrpc {
           serviceImpl.getGroupActionSigners((org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersRequest) request,
               (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.GetGroupActionSignersResponse>) responseObserver);
           break;
+        case METHODID_SUBSCRIBE_PLATFORM_EVENTS:
+          serviceImpl.subscribePlatformEvents((org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest) request,
+              (io.grpc.stub.StreamObserver<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse>) responseObserver);
+          break;
         default:
           throw new AssertionError();
       }
@@ -3731,6 +3806,7 @@ public final class PlatformGrpc {
               .addMethod(getGetGroupInfosMethod())
               .addMethod(getGetGroupActionsMethod())
               .addMethod(getGetGroupActionSignersMethod())
+              .addMethod(getSubscribePlatformEventsMethod())
               .build();
         }
       }

@@ -14,6 +14,7 @@ from datetime import datetime
 # Queries that should be excluded from the check
 EXCLUDED_QUERIES = {
     'broadcastStateTransition',  # Explicitly excluded as per requirement
+    'SubscribePlatformEvents',  # Streaming RPC, excluded
 }
 
 # Mapping of proto query names to their expected SDK implementations

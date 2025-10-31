@@ -1075,5 +1075,38 @@
              responseClass:[GetGroupActionSignersResponse class]];
 }
 
+#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)subscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  [[self RPCToSubscribePlatformEventsWithRequest:request eventHandler:eventHandler] start];
+}
+// Returns a not-yet-started RPC object.
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCToSubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  return [self RPCToMethod:@"SubscribePlatformEvents"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[PlatformSubscriptionResponse class]
+        responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
+}
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ */
+- (GRPCUnaryProtoCall *)subscribePlatformEventsWithMessage:(PlatformSubscriptionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"SubscribePlatformEvents"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[PlatformSubscriptionResponse class]];
+}
+
 @end
 #endif

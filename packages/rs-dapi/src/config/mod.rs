@@ -85,6 +85,18 @@ pub struct DapiConfig {
         deserialize_with = "from_str_or_number"
     )]
     pub state_transition_wait_timeout: u64,
+    /// Timeout for platform event subscriptions (in milliseconds)
+    #[serde(
+        rename = "dapi_platform_events_timeout",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub platform_events_timeout: u64,
+    /// Timeout for core streaming subscriptions (in milliseconds)
+    #[serde(
+        rename = "dapi_core_stream_timeout",
+        deserialize_with = "from_str_or_number"
+    )]
+    pub core_stream_timeout: u64,
     /// Logging configuration
     #[serde(flatten)]
     pub logging: LoggingConfig,
@@ -140,6 +152,8 @@ impl Default for DapiConfig {
             core: CoreConfig::default(),
             platform_cache_bytes: 2 * 1024 * 1024,
             state_transition_wait_timeout: 30000, // 30 seconds default
+            platform_events_timeout: 600000, // 10 minutes default
+            core_stream_timeout: 600000,     // 10 minutes default
             logging: LoggingConfig::default(),
         }
     }

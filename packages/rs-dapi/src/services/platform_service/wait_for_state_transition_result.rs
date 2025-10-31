@@ -161,8 +161,8 @@ impl PlatformServiceImpl {
         }
 
         // No error; generate proof if requested
-        if prove && !tx_response.tx.is_empty() {
-            if let Ok(tx_data) =
+        if prove && !tx_response.tx.is_empty()
+            && let Ok(tx_data) =
                 base64::prelude::Engine::decode(&base64::prelude::BASE64_STANDARD, &tx_response.tx)
             {
                 match self.fetch_proof_for_state_transition(tx_data).await {
@@ -178,7 +178,6 @@ impl PlatformServiceImpl {
                     }
                 }
             }
-        }
 
         let body = WaitForStateTransitionResultResponse {
             version: Some(wait_for_state_transition_result_response::Version::V0(

@@ -6,6 +6,68 @@ package org.dash.platform.dapi.v0;
 
 import "google/protobuf/timestamp.proto";
 
+// Platform events subscription (v0)
+message PlatformSubscriptionRequest {
+  message PlatformSubscriptionRequestV0 {
+    PlatformFilterV0 filter = 1;
+    // Interval in seconds between keepalive events (min 25, max 300, 0 disables
+    // keepalive).
+    uint32 keepalive = 2;
+  }
+  oneof version { PlatformSubscriptionRequestV0 v0 = 1; }
+}
+
+message PlatformSubscriptionResponse {
+  message PlatformSubscriptionResponseV0 {
+    string client_subscription_id = 1;
+    PlatformEventV0 event = 2;
+  }
+  oneof version { PlatformSubscriptionResponseV0 v0 = 1; }
+}
+
+// Initial placeholder filter and event to be refined during integration
+// Filter for StateTransitionResult events
+message StateTransitionResultFilter {
+  // When set, only match StateTransitionResult events for this tx hash.
+  optional bytes tx_hash = 1;
+}
+
+message PlatformFilterV0 {
+  oneof kind {
+    bool all = 1;             // subscribe to all platform events
+    bool block_committed = 2; // subscribe to BlockCommitted events only
+    StateTransitionResultFilter state_transition_result =
+        3; // subscribe to StateTransitionResult events (optionally filtered by
+           // tx_hash)
+  }
+}
+
+message PlatformEventV0 {
+  message BlockMetadata {
+    uint64 height = 1 [ jstype = JS_STRING ];
+    uint64 time_ms = 2 [ jstype = JS_STRING ];
+    bytes block_id_hash = 3;
+  }
+
+  message BlockCommitted {
+    BlockMetadata meta = 1;
+    uint32 tx_count = 2;
+  }
+
+  message StateTransitionFinalized {
+    BlockMetadata meta = 1;
+    bytes tx_hash = 2;
+  }
+
+  message Keepalive {}
+
+  oneof event {
+    BlockCommitted block_committed = 1;
+    StateTransitionFinalized state_transition_finalized = 2;
+    Keepalive keepalive = 3;
+  }
+}
+
 service Platform {
   rpc broadcastStateTransition(BroadcastStateTransitionRequest)
       returns (BroadcastStateTransitionResponse);
@@ -104,6 +166,10 @@ service Platform {
   rpc getGroupActions(GetGroupActionsRequest) returns (GetGroupActionsResponse);
   rpc getGroupActionSigners(GetGroupActionSignersRequest)
       returns (GetGroupActionSignersResponse);
+
+  // Bi-directional stream for multiplexed platform events subscriptions
+  rpc SubscribePlatformEvents(PlatformSubscriptionRequest)
+      returns (stream PlatformSubscriptionResponse);
 }
 
 // Proof message includes cryptographic proofs for validating responses

@@ -1,4 +1,18 @@
 {{ useDeprecated = it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled; }}
+{{ const msToEnvoySeconds = (ms) => `${Math.ceil(ms / 1000)}s`; }}
+{{ const addGraceBuffer = (ms) => ms + 5000; }}
+{{ const rsDapiTimeouts = (it.platform.dapi.rsDapi && it.platform.dapi.rsDapi.timeouts)
+  || {
+    waitForStateTransitionResult: 120000,
+    subscribePlatformEvents: 600000,
+    coreStreams: 600000,
+  }; }}
+{{ const waitForStateTransitionMs = rsDapiTimeouts.waitForStateTransitionResult; }}
+{{ const waitForStateTransitionTimeout = msToEnvoySeconds(addGraceBuffer(waitForStateTransitionMs)); }}
+{{ const subscribePlatformEventsMs = rsDapiTimeouts.subscribePlatformEvents; }}
+{{ const subscribePlatformEventsTimeout = msToEnvoySeconds(addGraceBuffer(subscribePlatformEventsMs)); }}
+{{ const coreStreamsMs = rsDapiTimeouts.coreStreams; }}
+{{ const coreStreamsTimeout = msToEnvoySeconds(addGraceBuffer(coreStreamsMs)); }}
 !ignore filters: &filters
   - name: envoy.http_connection_manager
     typed_config:
@@ -118,13 +132,13 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: dapi_core_streams
-                  idle_timeout: 300s
+                  idle_timeout: {{= coreStreamsTimeout }}
                   # Upstream response timeout
-                  timeout: 600s
+                  timeout: {{= coreStreamsTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 600s
-                    grpc_timeout_header_max: 600s
+                    max_stream_duration: {{= coreStreamsTimeout }}
+                    grpc_timeout_header_max: {{= coreStreamsTimeout }}
               # Other DAPI Core endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
@@ -137,13 +151,13 @@
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: dapi_api
-                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  idle_timeout: {{= waitForStateTransitionTimeout }}
                   # Upstream response timeout
-                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  timeout: {{= waitForStateTransitionTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                    max_stream_duration: {{= waitForStateTransitionTimeout }}
+                    grpc_timeout_header_max: {{= waitForStateTransitionTimeout }}
               # DAPI getConsensusParams endpoint
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"
@@ -202,13 +216,13 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: 300s
+                  idle_timeout: {{= coreStreamsTimeout }}
                   # Upstream response timeout
-                  timeout: 601s
+                  timeout: {{= coreStreamsTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: 601s
-                    grpc_timeout_header_max: 600s
+                    max_stream_duration: {{= coreStreamsTimeout }}
+                    grpc_timeout_header_max: {{= coreStreamsTimeout }}
               # Core endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core"
@@ -218,28 +232,28 @@
                   timeout: 15s
               # rs-dapi subscribePlatformEvents endpoint with bigger timeout (now exposed directly)
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents"
+                  path: "/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  idle_timeout: {{= subscribePlatformEventsTimeout }}
                   # Upstream response timeout
-                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  timeout: {{= subscribePlatformEventsTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                    max_stream_duration: {{= subscribePlatformEventsTimeout }}
+                    grpc_timeout_header_max: {{= subscribePlatformEventsTimeout }}
               # rs-dapi waitForStateTransitionResult endpoint with bigger timeout (now exposed directly)
               - match:
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  idle_timeout: {{= waitForStateTransitionTimeout }}
                   # Upstream response timeout
-                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                  timeout: {{= waitForStateTransitionTimeout }}
                   max_stream_duration:
                     # Entire stream/request timeout
-                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
+                    max_stream_duration: {{= waitForStateTransitionTimeout }}
+                    grpc_timeout_header_max: {{= waitForStateTransitionTimeout }}
               # rs-dapi Platform endpoints (now exposed directly)
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Platform"

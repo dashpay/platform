@@ -271,14 +271,15 @@ where
                 if let Ok(handle) = tokio::runtime::Handle::try_current() {
                     handle.spawn(async move {
                         bus.remove_subscription(id).await;
-                        tracing::trace!("event_bus: removed subscription id={} on drop", id);
                     });
                 } else {
                     // Fallback: best-effort synchronous removal using try_write()
-                    tracing::debug!(
-                        "event_bus: no current tokio runtime, not removing subscription id={}",
-                        id
-                    );
+                    if let Ok(mut subs) = bus.subs.try_write()
+                        && subs.remove(&id).is_some()
+                    {
+                        metrics_unsubscribe_inc();
+                        metrics_active_gauge_set(subs.len());
+                    }
                 }
             }
         }

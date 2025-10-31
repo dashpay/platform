@@ -170,6 +170,8 @@ impl StreamingServiceImpl {
             .ok_or_else(|| Status::invalid_argument("Must specify from_block"))?;
 
         let (tx, rx) = mpsc::channel(TRANSACTION_STREAM_BUFFER);
+        let timeout = Duration::from_millis(self.config.dapi.core_stream_timeout);
+        self.schedule_stream_timeout(tx.clone(), timeout, "transactions with proofs stream deadline exceeded");
         if count > 0 {
             // Historical mode
             self.spawn_fetch_transactions_history(

@@ -42,6 +42,7 @@ lru = { version = "0.12.5", optional = true }
 bip37-bloom-filter = { git = "https://github.com/dashpay/rs-bip37-bloom-filter", branch = "develop" }
 zeroize = { version = "1.8", features = ["derive"] }
 
+
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 tokio = { version = "1.40", features = ["macros", "time", "rt-multi-thread"] }
 
@@ -51,8 +52,8 @@ js-sys = "0.3.64"
 [dev-dependencies]
 rs-dapi-client = { path = "../rs-dapi-client" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier" }
+tokio = { version = "1.40", features = ["macros", "rt-multi-thread", "signal"] }
 rs-sdk-trusted-context-provider = { path = "../rs-sdk-trusted-context-provider" }
-tokio = { version = "1.40", features = ["macros", "rt-multi-thread"] }
 base64 = { version = "0.22.1" }
 tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
@@ -73,6 +74,7 @@ default = [
   "offline-testing",
   "dapi-grpc/client",
   "token_reward_explanations",
+  "subscriptions",
 ]
 spv-client = [
   "core_spv",
@@ -81,7 +83,6 @@ spv-client = [
   "core_bincode",
   "core_key_wallet_bincode",
 ]
-
 mocks = [
   "dep:serde",
   "dep:serde_json",
@@ -97,6 +98,8 @@ mocks = [
   "dep:lru",
   "zeroize/serde",
 ]
+
+subscriptions = []
 
 # Run integration tests using test vectors from `tests/vectors/` instead of connecting to live Dash Platform.
 #

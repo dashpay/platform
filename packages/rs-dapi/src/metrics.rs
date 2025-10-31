@@ -66,12 +66,8 @@ pub enum Metric {
     RequestDuration,
     /// Platform events: active sessions gauge
     PlatformEventsActiveSessions,
-    /// Platform events: commands processed, labels [op]
-    PlatformEventsCommands,
     /// Platform events: forwarded events counter
     PlatformEventsForwardedEvents,
-    /// Platform events: forwarded acks counter
-    PlatformEventsForwardedAcks,
     /// Platform events: forwarded errors counter
     PlatformEventsForwardedErrors,
     /// Platform events: upstream streams started counter
@@ -91,11 +87,9 @@ impl Metric {
             Metric::RequestCount => "rsdapi_requests_total",
             Metric::RequestDuration => "rsdapi_request_duration_seconds",
             Metric::PlatformEventsActiveSessions => "rsdapi_platform_events_active_sessions",
-            Metric::PlatformEventsCommands => "rsdapi_platform_events_commands_total",
             Metric::PlatformEventsForwardedEvents => {
                 "rsdapi_platform_events_forwarded_events_total"
             }
-            Metric::PlatformEventsForwardedAcks => "rsdapi_platform_events_forwarded_acks_total",
             Metric::PlatformEventsForwardedErrors => {
                 "rsdapi_platform_events_forwarded_errors_total"
             }
@@ -120,9 +114,7 @@ impl Metric {
             Metric::PlatformEventsActiveSessions => {
                 "Current number of active Platform events sessions"
             }
-            Metric::PlatformEventsCommands => "Platform events commands processed by operation",
             Metric::PlatformEventsForwardedEvents => "Platform events forwarded to clients",
-            Metric::PlatformEventsForwardedAcks => "Platform acks forwarded to clients",
             Metric::PlatformEventsForwardedErrors => "Platform errors forwarded to clients",
             Metric::PlatformEventsUpstreamStreams => {
                 "Upstream subscribePlatformEvents streams started"
@@ -159,7 +151,6 @@ pub enum Label {
     // TODO: ensure we have a limited set of endpoints, so that cardinality is controlled and we don't overload Prometheus
     Endpoint,
     Status,
-    Op,
 }
 
 impl Label {
@@ -172,7 +163,6 @@ impl Label {
             Label::Protocol => "protocol",
             Label::Endpoint => "endpoint",
             Label::Status => "status",
-            Label::Op => "op",
         }
     }
 }
@@ -251,27 +241,10 @@ pub static REQUEST_DURATION_SECONDS: Lazy<HistogramVec> = Lazy::new(|| {
     .expect("create histogram vec")
 });
 
-pub static PLATFORM_EVENTS_COMMANDS: Lazy<IntCounterVec> = Lazy::new(|| {
-    register_int_counter_vec!(
-        Metric::PlatformEventsCommands.name(),
-        Metric::PlatformEventsCommands.help(),
-        &[Label::Op.name()]
-    )
-    .expect("create counter vec")
-});
-
 pub static PLATFORM_EVENTS_FORWARDED_EVENTS: Lazy<IntCounter> = Lazy::new(|| {
     register_int_counter!(
         Metric::PlatformEventsForwardedEvents.name(),
         Metric::PlatformEventsForwardedEvents.help()
-    )
-    .expect("create counter")
-});
-
-pub static PLATFORM_EVENTS_FORWARDED_ACKS: Lazy<IntCounter> = Lazy::new(|| {
-    register_int_counter!(
-        Metric::PlatformEventsForwardedAcks.name(),
-        Metric::PlatformEventsForwardedAcks.help()
     )
     .expect("create counter")
 });
@@ -534,18 +507,8 @@ pub fn platform_events_active_sessions_dec() {
 }
 
 #[inline]
-pub fn platform_events_command(op: &str) {
-    PLATFORM_EVENTS_COMMANDS.with_label_values(&[op]).inc();
-}
-
-#[inline]
 pub fn platform_events_forwarded_event() {
     PLATFORM_EVENTS_FORWARDED_EVENTS.inc();
-}
-
-#[inline]
-pub fn platform_events_forwarded_ack() {
-    PLATFORM_EVENTS_FORWARDED_ACKS.inc();
 }
 
 #[inline]

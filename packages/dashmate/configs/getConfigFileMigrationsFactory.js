@@ -1283,6 +1283,40 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             ) {
               options.core.zmq.port = targetZmqPort;
             }
+
+            if (!options.platform?.dapi) {
+              return;
+            }
+
+            if (!options.platform.dapi.rsDapi) {
+              options.platform.dapi.rsDapi = {};
+            }
+
+            const existingTimeouts = options.platform.dapi.rsDapi.timeouts
+              ?? options.platform.dapi.api?.timeouts;
+            const waitForStateTransitionResult = existingTimeouts?.waitForStateTransitionResult
+              ?? options.platform?.dapi?.api?.waitForStResultTimeout
+              ?? 120000;
+            const subscribePlatformEvents = existingTimeouts?.subscribePlatformEvents ?? 600000;
+            const coreStreams = existingTimeouts?.coreStreams ?? 600000;
+
+            options.platform.dapi.rsDapi.timeouts = {
+              waitForStateTransitionResult,
+              subscribePlatformEvents,
+              coreStreams,
+            };
+
+            if (options.platform?.dapi?.api?.timeouts) {
+              delete options.platform.dapi.api.timeouts;
+            }
+
+            if (typeof options.platform?.dapi?.api?.waitForStResultTimeout !== 'undefined') {
+              delete options.platform.dapi.api.waitForStResultTimeout;
+            }
+
+            if (options.platform?.gateway?.listeners?.dapiAndDrive) {
+              delete options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout;
+            }
           });
 
         return configFile;

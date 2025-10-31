@@ -22,6 +22,8 @@ Service Configuration:
   DAPI_CORE_RPC_USER          - Dash Core RPC username (default: empty)
   DAPI_CORE_RPC_PASS          - Dash Core RPC password (default: empty)
   DAPI_STATE_TRANSITION_WAIT_TIMEOUT - Timeout in ms (default: 30000)
+  DAPI_PLATFORM_EVENTS_TIMEOUT - Platform events stream timeout in ms (default: 600000)
+  DAPI_CORE_STREAM_TIMEOUT - Core streaming timeout in ms (default: 600000)
 
 CONFIGURATION LOADING:
 1. Command line environment variables (highest priority)

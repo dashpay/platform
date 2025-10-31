@@ -427,6 +427,15 @@ type PlatformgetGroupActionSigners = {
   readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
 };
 
+type PlatformSubscribePlatformEvents = {
+  readonly methodName: string;
+  readonly service: typeof Platform;
+  readonly requestStream: false;
+  readonly responseStream: true;
+  readonly requestType: typeof platform_pb.PlatformSubscriptionRequest;
+  readonly responseType: typeof platform_pb.PlatformSubscriptionResponse;
+};
+
 export class Platform {
   static readonly serviceName: string;
   static readonly broadcastStateTransition: PlatformbroadcastStateTransition;
@@ -476,6 +485,7 @@ export class Platform {
   static readonly getGroupInfos: PlatformgetGroupInfos;
   static readonly getGroupActions: PlatformgetGroupActions;
   static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
+  static readonly SubscribePlatformEvents: PlatformSubscribePlatformEvents;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }
@@ -933,5 +943,6 @@ export class PlatformClient {
     requestMessage: platform_pb.GetGroupActionSignersRequest,
     callback: (error: ServiceError|null, responseMessage: platform_pb.GetGroupActionSignersResponse|null) => void
   ): UnaryResponse;
+  subscribePlatformEvents(requestMessage: platform_pb.PlatformSubscriptionRequest, metadata?: grpc.Metadata): ResponseStream<platform_pb.PlatformSubscriptionResponse>;
 }
 

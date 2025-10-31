@@ -17,11 +17,12 @@ The listener configuration controls the API endpoints exposed by the Gateway:
 | `platform.gateway.listeners.dapiAndDrive.port` | Gateway API port | `443` | `8443` |
 | `platform.gateway.listeners.dapiAndDrive.host` | Gateway API host binding | `0.0.0.0` | `127.0.0.1` |
 | `platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams` | Max concurrent HTTP/2 streams per connection | `10` | `100` |
-| `platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout` | Timeout for state transition results | `125s` | `300s` |
 
 Host binding notes:
 - Setting `0.0.0.0` allows connections from any IP address
 - Setting `127.0.0.1` restricts connections to localhost only
+
+Timeouts for long-running routes are configured via `platform.dapi.rsDapi.timeouts.*` and automatically include a five-second grace period in Envoy.
 
 ## Performance
 

@@ -105,6 +105,8 @@
 @class GetTotalCreditsInPlatformResponse;
 @class GetVotePollsByEndDateRequest;
 @class GetVotePollsByEndDateResponse;
+@class PlatformSubscriptionRequest;
+@class PlatformSubscriptionResponse;
 @class WaitForStateTransitionResultRequest;
 @class WaitForStateTransitionResultResponse;
 
@@ -339,6 +341,13 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark getGroupActionSigners(GetGroupActionSignersRequest) returns (GetGroupActionSignersResponse)
 
 - (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
+
+#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ */
+- (GRPCUnaryProtoCall *)subscribePlatformEventsWithMessage:(PlatformSubscriptionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
 @end
 
@@ -725,6 +734,23 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)getGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 - (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
+
+
+#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (void)subscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+
+/**
+ * Bi-directional stream for multiplexed platform events subscriptions
+ *
+ * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
+ */
+- (GRPCProtoCall *)RPCToSubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 @end

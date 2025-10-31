@@ -564,9 +564,6 @@ export default {
                       additionalProperties: false,
                       required: ['maxConcurrentStreams'],
                     },
-                    waitForStResultTimeout: {
-                      $ref: '#/definitions/durationInSeconds',
-                    },
                     host: {
                       type: 'string',
                       minLength: 1,
@@ -576,7 +573,7 @@ export default {
                       $ref: '#/definitions/port',
                     },
                   },
-                  required: ['http2', 'host', 'port', 'waitForStResultTimeout'],
+                  required: ['http2', 'host', 'port'],
                   additionalProperties: false,
                 },
               },
@@ -842,13 +839,8 @@ export default {
                   required: ['image', 'build', 'deploy'],
                   additionalProperties: false,
                 },
-                waitForStResultTimeout: {
-                  type: 'integer',
-                  minimum: 1,
-                  description: 'How many millis to wait for state transition result before timeout',
-                },
               },
-              required: ['docker', 'waitForStResultTimeout'],
+              required: ['docker'],
               additionalProperties: false,
             },
             rsDapi: {
@@ -877,6 +869,32 @@ export default {
                     },
                   },
                   required: ['image', 'build', 'deploy'],
+                  additionalProperties: false,
+                },
+                timeouts: {
+                  type: 'object',
+                  properties: {
+                    waitForStateTransitionResult: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'How many millis to wait for state transition result before timeout',
+                    },
+                    subscribePlatformEvents: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'How many millis to keep platform event subscriptions open before timeout',
+                    },
+                    coreStreams: {
+                      type: 'integer',
+                      minimum: 1,
+                      description: 'How many millis to keep core streaming subscriptions open before timeout',
+                    },
+                  },
+                  required: [
+                    'waitForStateTransitionResult',
+                    'subscribePlatformEvents',
+                    'coreStreams',
+                  ],
                   additionalProperties: false,
                 },
                 metrics: {
@@ -909,7 +927,7 @@ export default {
                   additionalProperties: false,
                 },
               },
-              required: ['docker', 'metrics', 'logs'],
+              required: ['docker', 'timeouts', 'metrics', 'logs'],
               additionalProperties: false,
             },
           },

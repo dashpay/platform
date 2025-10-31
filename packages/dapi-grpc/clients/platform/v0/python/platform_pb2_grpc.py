@@ -249,6 +249,11 @@ class PlatformStub(object):
                 request_serializer=platform__pb2.GetGroupActionSignersRequest.SerializeToString,
                 response_deserializer=platform__pb2.GetGroupActionSignersResponse.FromString,
                 )
+        self.SubscribePlatformEvents = channel.unary_stream(
+                '/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents',
+                request_serializer=platform__pb2.PlatformSubscriptionRequest.SerializeToString,
+                response_deserializer=platform__pb2.PlatformSubscriptionResponse.FromString,
+                )
 
 
 class PlatformServicer(object):
@@ -541,6 +546,13 @@ class PlatformServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def SubscribePlatformEvents(self, request, context):
+        """Bi-directional stream for multiplexed platform events subscriptions
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_PlatformServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -778,6 +790,11 @@ def add_PlatformServicer_to_server(servicer, server):
                     servicer.getGroupActionSigners,
                     request_deserializer=platform__pb2.GetGroupActionSignersRequest.FromString,
                     response_serializer=platform__pb2.GetGroupActionSignersResponse.SerializeToString,
+            ),
+            'SubscribePlatformEvents': grpc.unary_stream_rpc_method_handler(
+                    servicer.SubscribePlatformEvents,
+                    request_deserializer=platform__pb2.PlatformSubscriptionRequest.FromString,
+                    response_serializer=platform__pb2.PlatformSubscriptionResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1585,5 +1602,22 @@ class Platform(object):
         return grpc.experimental.unary_unary(request, target, '/org.dash.platform.dapi.v0.Platform/getGroupActionSigners',
             platform__pb2.GetGroupActionSignersRequest.SerializeToString,
             platform__pb2.GetGroupActionSignersResponse.FromString,
+            options, channel_credentials,
+            insecure, call_credentials, compression, wait_for_ready, timeout, metadata)
+
+    @staticmethod
+    def SubscribePlatformEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(request, target, '/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents',
+            platform__pb2.PlatformSubscriptionRequest.SerializeToString,
+            platform__pb2.PlatformSubscriptionResponse.FromString,
             options, channel_credentials,
             insecure, call_credentials, compression, wait_for_ready, timeout, metadata)

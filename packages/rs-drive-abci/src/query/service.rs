@@ -10,6 +10,7 @@ use crate::utils::spawn_blocking_task_with_name_if_supported;
 use async_trait::async_trait;
 use dapi_grpc::drive::v0::drive_internal_server::DriveInternal;
 use dapi_grpc::drive::v0::{GetProofsRequest, GetProofsResponse};
+use dapi_grpc::platform::v0::platform_event_v0::Keepalive;
 use dapi_grpc::platform::v0::platform_server::Platform as PlatformService;
 use dapi_grpc::platform::v0::{
     BroadcastStateTransitionRequest, BroadcastStateTransitionResponse, GetConsensusParamsRequest,
@@ -47,20 +48,38 @@ use dapi_grpc::platform::v0::{
     GetTokenPreProgrammedDistributionsResponse, GetTokenStatusesRequest, GetTokenStatusesResponse,
     GetTokenTotalSupplyRequest, GetTokenTotalSupplyResponse, GetTotalCreditsInPlatformRequest,
     GetTotalCreditsInPlatformResponse, GetVotePollsByEndDateRequest, GetVotePollsByEndDateResponse,
+    PlatformEventV0 as PlatformEvent, PlatformSubscriptionRequest, PlatformSubscriptionResponse,
     WaitForStateTransitionResultRequest, WaitForStateTransitionResultResponse,
 };
 use dapi_grpc::tonic::{Code, Request, Response, Status};
+use dash_event_bus::event_bus::{EventBus, Filter as EventBusFilter};
 use dpp::version::PlatformVersion;
 use std::fmt::Debug;
 use std::sync::atomic::Ordering;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::thread::sleep;
 use std::time::Duration;
+use tokio::sync::mpsc;
+use tokio_stream::wrappers::ReceiverStream;
 use tracing::Instrument;
+
+const PLATFORM_EVENTS_STREAM_BUFFER: usize = 128;
 
 /// Service to handle platform queries
 pub struct QueryService {
     platform: Arc<Platform<DefaultCoreRPC>>,
+    event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    /// background worker tasks
+    workers: Mutex<Vec<tokio::task::JoinHandle<()>>>,
+}
+
+impl Drop for QueryService {
+    fn drop(&mut self) {
+        let mut workers = self.workers.lock().unwrap();
+        for handle in workers.drain(..) {
+            handle.abort();
+        }
+    }
 }
 
 type QueryMethod<RQ, RS> = fn(
@@ -72,8 +91,15 @@ type QueryMethod<RQ, RS> = fn(
 
 impl QueryService {
     /// Creates new QueryService
-    pub fn new(platform: Arc<Platform<DefaultCoreRPC>>) -> Self {
-        Self { platform }
+    pub fn new(
+        platform: Arc<Platform<DefaultCoreRPC>>,
+        event_bus: EventBus<PlatformEvent, PlatformFilterAdapter>,
+    ) -> Self {
+        Self {
+            platform,
+            event_bus,
+            workers: Mutex::new(Vec::new()),
+        }
     }
 
     async fn handle_blocking_query<RQ, RS>(
@@ -250,6 +276,50 @@ fn respond_with_unimplemented<RS>(name: &str) -> Result<Response<RS>, Status> {
     tracing::error!("{} endpoint is called but it's not supported", name);
 
     Err(Status::unimplemented("the endpoint is not supported"))
+}
+
+/// Adapter implementing EventBus filter semantics based on incoming gRPC `PlatformFilterV0`.
+#[derive(Clone, Debug)]
+pub struct PlatformFilterAdapter {
+    inner: dapi_grpc::platform::v0::PlatformFilterV0,
+}
+
+impl PlatformFilterAdapter {
+    /// Create a new adapter wrapping the provided gRPC `PlatformFilterV0`.
+    pub fn new(inner: dapi_grpc::platform::v0::PlatformFilterV0) -> Self {
+        Self { inner }
+    }
+}
+
+impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
+    fn matches(&self, event: &PlatformEvent) -> bool {
+        use dapi_grpc::platform::v0::platform_event_v0::Event as Evt;
+        use dapi_grpc::platform::v0::platform_filter_v0::Kind;
+        if matches!(event.event, Some(Evt::Keepalive(_))) {
+            return true;
+        }
+        match self.inner.kind.as_ref() {
+            None => false,
+            Some(Kind::All(all)) => *all,
+            Some(Kind::BlockCommitted(b)) => {
+                if !*b {
+                    return false;
+                }
+                matches!(event.event, Some(Evt::BlockCommitted(_)))
+            }
+            Some(Kind::StateTransitionResult(filter)) => {
+                // If tx_hash is provided, match only that hash; otherwise match any STR
+                if let Some(Evt::StateTransitionFinalized(ref r)) = event.event {
+                    match &filter.tx_hash {
+                        Some(h) => r.tx_hash == *h,
+                        None => true,
+                    }
+                } else {
+                    false
+                }
+            }
+        }
+    }
 }
 
 #[async_trait]
@@ -802,8 +872,160 @@ impl PlatformService for QueryService {
         )
         .await
     }
-}
 
+    type SubscribePlatformEventsStream =
+        ReceiverStream<Result<PlatformSubscriptionResponse, Status>>;
+
+    async fn subscribe_platform_events(
+        &self,
+        request: Request<PlatformSubscriptionRequest>,
+    ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
+        use dapi_grpc::platform::v0::platform_subscription_request::Version as RequestVersion;
+        use dapi_grpc::platform::v0::platform_subscription_response::{
+            PlatformSubscriptionResponseV0, Version as ResponseVersion,
+        };
+
+        let request = request.into_inner();
+        let req_v0 = match request.version {
+            Some(RequestVersion::V0(v0)) => v0,
+            _ => {
+                tracing::warn!("subscribe_platform_events: unsupported request version");
+                return Err(Status::invalid_argument("unsupported request version"));
+            }
+        };
+
+        let keepalive = req_v0.keepalive;
+        let filter = req_v0.filter.unwrap_or_default();
+        if filter.kind.is_none() {
+            tracing::warn!("subscribe_platform_events: filter kind is not specified");
+            return Err(Status::invalid_argument("filter kind is not specified"));
+        }
+
+        let keepalive_duration = if keepalive == 0 {
+            None
+        } else if keepalive < 25 || keepalive > 300 {
+            tracing::warn!(
+                interval = keepalive,
+                "subscribe_platform_events: keepalive interval out of range"
+            );
+            return Err(Status::invalid_argument(
+                "keepalive interval must be between 25 and 300 seconds",
+            ));
+        } else {
+            Some(Duration::from_secs(keepalive as u64))
+        };
+
+        let subscription_id = format!("{:X}", rand::random::<u64>());
+        tracing::trace!(
+            subscription_id = %subscription_id,
+            "subscribe_platform_events: generated subscription id"
+        );
+
+        let subscription = self
+            .event_bus
+            .add_subscription(PlatformFilterAdapter::new(filter))
+            .await;
+
+        let (downstream_tx, rx) = mpsc::channel::<Result<PlatformSubscriptionResponse, Status>>(
+            PLATFORM_EVENTS_STREAM_BUFFER,
+        );
+
+        let handshake_tx = downstream_tx.clone();
+        {
+            let subscription_id = subscription_id.clone();
+            let handshake = PlatformSubscriptionResponse {
+                version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                    client_subscription_id: subscription_id.clone(),
+                    event: None,
+                })),
+            };
+
+            if let Err(err) = handshake_tx.send(Ok(handshake)).await {
+                tracing::debug!(
+                    subscription_id = %subscription_id,
+                    error = %err,
+                    "subscribe_platform_events: client disconnected before handshake"
+                );
+                return Err(Status::cancelled("client disconnected before handshake"));
+            }
+        }
+
+        let worker = tokio::task::spawn(async move {
+            let handle = subscription;
+
+            loop {
+                // next_item is Some(Ok(event)) when an event is received
+                // next_item is Some(Err(e)) when keepalive timeout elapses
+                // next_item is None when the stream is closed
+                let next_item = if let Some(duration) = keepalive_duration {
+                    match tokio::time::timeout(duration, handle.recv()).await {
+                        Ok(Some(event)) => Some(Ok(event)),
+                        Ok(None) => None,
+                        Err(e) => Some(Err(e)),
+                    }
+                } else {
+                    match handle.recv().await {
+                        Some(event) => Some(Ok(event)),
+                        None => None,
+                    }
+                };
+
+                match next_item {
+                    Some(Ok(event)) => {
+                        let response = PlatformSubscriptionResponse {
+                            version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                                client_subscription_id: subscription_id.clone(),
+                                event: Some(event),
+                            })),
+                        };
+
+                        if downstream_tx.send(Ok(response)).await.is_err() {
+                            tracing::debug!(
+                                subscription_id = %subscription_id,
+                                "subscribe_platform_events: client stream closed"
+                            );
+                            break;
+                        }
+                    }
+                    Some(Err(_)) => {
+                        // timeout elapsed, emit keepalive event
+                        let keepalive_event = PlatformEvent {
+                            event: Some(
+                                dapi_grpc::platform::v0::platform_event_v0::Event::Keepalive(
+                                    Keepalive {},
+                                ),
+                            ),
+                        };
+
+                        let response = PlatformSubscriptionResponse {
+                            version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
+                                client_subscription_id: subscription_id.clone(),
+                                event: Some(keepalive_event),
+                            })),
+                        };
+
+                        if downstream_tx.send(Ok(response)).await.is_err() {
+                            tracing::debug!(
+                                subscription_id = %subscription_id,
+                                "subscribe_platform_events: client stream closed"
+                            );
+                            break;
+                        }
+                    }
+                    None => break,
+                }
+            }
+
+            tracing::debug!(
+                subscription_id = %subscription_id,
+                "subscribe_platform_events: event stream completed"
+            );
+        });
+        self.workers.lock().unwrap().push(worker);
+
+        Ok(Response::new(ReceiverStream::new(rx)))
+    }
+}
 #[async_trait]
 impl DriveInternal for QueryService {
     async fn get_proofs(

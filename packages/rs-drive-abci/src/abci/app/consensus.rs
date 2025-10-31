@@ -1,11 +1,16 @@
-use crate::abci::app::{BlockExecutionApplication, PlatformApplication, TransactionalApplication};
+use crate::abci::app::{
+    BlockExecutionApplication, EventBusApplication, PlatformApplication, TransactionalApplication,
+};
 use crate::abci::handler;
 use crate::abci::handler::error::error_into_exception;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::block_execution_context::BlockExecutionContext;
 use crate::platform_types::platform::Platform;
+use crate::query::PlatformFilterAdapter;
 use crate::rpc::core::CoreRPCLike;
+use dapi_grpc::platform::v0::PlatformEventV0;
+use dash_event_bus::event_bus::EventBus;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use std::fmt::Debug;
@@ -23,15 +28,21 @@ pub struct ConsensusAbciApplication<'a, C> {
     transaction: RwLock<Option<Transaction<'a>>>,
     /// The current block execution context
     block_execution_context: RwLock<Option<BlockExecutionContext>>,
+    /// In-process Platform event bus used to publish events at finalize_block
+    event_bus: EventBus<PlatformEventV0, PlatformFilterAdapter>,
 }
 
 impl<'a, C> ConsensusAbciApplication<'a, C> {
     /// Create new ABCI app
-    pub fn new(platform: &'a Platform<C>) -> Self {
+    pub fn new(
+        platform: &'a Platform<C>,
+        event_bus: EventBus<PlatformEventV0, PlatformFilterAdapter>,
+    ) -> Self {
         Self {
             platform,
             transaction: Default::default(),
             block_execution_context: Default::default(),
+            event_bus,
         }
     }
 }
@@ -45,6 +56,12 @@ impl<C> PlatformApplication<C> for ConsensusAbciApplication<'_, C> {
 impl<C> BlockExecutionApplication for ConsensusAbciApplication<'_, C> {
     fn block_execution_context(&self) -> &RwLock<Option<BlockExecutionContext>> {
         &self.block_execution_context
+    }
+}
+
+impl<C> EventBusApplication for ConsensusAbciApplication<'_, C> {
+    fn event_bus(&self) -> &EventBus<PlatformEventV0, PlatformFilterAdapter> {
+        &self.event_bus
     }
 }
 

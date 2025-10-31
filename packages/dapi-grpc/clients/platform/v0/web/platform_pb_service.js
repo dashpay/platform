@@ -433,6 +433,15 @@ Platform.getGroupActionSigners = {
   responseType: platform_pb.GetGroupActionSignersResponse
 };
 
+Platform.SubscribePlatformEvents = {
+  methodName: "SubscribePlatformEvents",
+  service: Platform,
+  requestStream: false,
+  responseStream: true,
+  requestType: platform_pb.PlatformSubscriptionRequest,
+  responseType: platform_pb.PlatformSubscriptionResponse
+};
+
 exports.Platform = Platform;
 
 function PlatformClient(serviceHost, options) {
@@ -1892,6 +1901,45 @@ PlatformClient.prototype.getGroupActionSigners = function getGroupActionSigners(
   return {
     cancel: function () {
       callback = null;
+      client.close();
+    }
+  };
+};
+
+PlatformClient.prototype.subscribePlatformEvents = function subscribePlatformEvents(requestMessage, metadata) {
+  var listeners = {
+    data: [],
+    end: [],
+    status: []
+  };
+  var client = grpc.invoke(Platform.SubscribePlatformEvents, {
+    request: requestMessage,
+    host: this.serviceHost,
+    metadata: metadata,
+    transport: this.options.transport,
+    debug: this.options.debug,
+    onMessage: function (responseMessage) {
+      listeners.data.forEach(function (handler) {
+        handler(responseMessage);
+      });
+    },
+    onEnd: function (status, statusMessage, trailers) {
+      listeners.status.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners.end.forEach(function (handler) {
+        handler({ code: status, details: statusMessage, metadata: trailers });
+      });
+      listeners = null;
+    }
+  });
+  return {
+    on: function (type, handler) {
+      listeners[type].push(handler);
+      return this;
+    },
+    cancel: function () {
+      listeners = null;
       client.close();
     }
   };
