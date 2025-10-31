@@ -10,7 +10,7 @@ before(async () => {
   ({ PlatformVersion } = wasm);
 });
 
-describe('DataContract Updatet Transition', () => {
+describe('DataContract Update Transition', () => {
   describe('serialization / deserialization', () => {
     it('should allow to create document_transitions from data contract', () => {
       const dataContract = wasm.DataContract.fromValue(value, false, PlatformVersion.PLATFORM_V1);
