@@ -15,6 +15,9 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
     ) -> Result<QueryValidationResult<GetStatusResponseV0>, Error> {
         let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
+        let next_epoch_version = match self.state.load().as_ref() {
+            PlatformState::V0(state) => state.next_epoch_protocol_version(),
+        };
 
         let version = get_status_response_v0::Version {
             protocol: Some(get_status_response_v0::version::Protocol {
@@ -22,6 +25,7 @@ impl<C> Platform<C> {
                 drive: Some(get_status_response_v0::version::protocol::Drive {
                     latest: latest_supported_protocol_version,
                     current: platform_state.current_protocol_version_in_consensus(),
+                    next_epoch: next_epoch_version,
                 }),
             }),
             software: Some(get_status_response_v0::version::Software {
