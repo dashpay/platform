@@ -7,6 +7,7 @@
 - Docs in `docs/`, scripts in `scripts/`, Docker config at repo root, local fixtures in `db/`.
 
 ## Build, Test, and Development Commands
+- Dependencies: `scripts/setup-ai-agent-environment.sh`
 - Setup: `yarn setup` (install, build, configure).
 - Dev network: `yarn start` (start), `yarn stop`, `yarn restart`; dashmate CLI: `yarn dashmate`.
 - Build all: `yarn build`.
