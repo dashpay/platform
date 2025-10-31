@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use dapi_grpc::drive::v0::drive_internal_client::DriveInternalClient;
-use dapi_grpc::platform::v0::{GetStatusRequest, platform_client::PlatformClient};
-use serde::{Deserialize, Serialize};
+use dapi_grpc::platform::v0::{
+    GetStatusRequest,
+    get_status_response::{self, GetStatusResponseV0},
+    platform_client::PlatformClient,
+};
 
 use tower::ServiceBuilder;
 use tower_http::{
@@ -35,48 +38,7 @@ impl std::fmt::Debug for DriveClient {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveStatusResponse {
-    pub version: Option<DriveVersion>,
-    pub chain: Option<DriveChain>,
-    pub time: Option<DriveTime>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveVersion {
-    pub software: Option<DriveSoftware>,
-    pub protocol: Option<DriveProtocol>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveSoftware {
-    pub drive: Option<String>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveProtocol {
-    pub drive: Option<DriveProtocolVersion>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveProtocolVersion {
-    pub current: Option<u64>,
-    pub latest: Option<u64>,
-    pub next_epoch: Option<u64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveChain {
-    #[serde(rename = "coreChainLockedHeight")]
-    pub core_chain_locked_height: Option<u64>,
-}
-
-#[derive(Debug, Serialize, Deserialize, Default)]
-pub struct DriveTime {
-    pub block: Option<u64>,
-    pub genesis: Option<u64>,
-    pub epoch: Option<u64>,
-}
+pub type DriveStatusResponse = GetStatusResponseV0;
 
 pub type DriveChannel = Trace<
     tonic::transport::Channel,
@@ -178,53 +140,8 @@ impl DriveClient {
         let drive_response = self.get_client().get_status(*request).await?.into_inner();
 
         // Convert Drive's GetStatusResponse to our DriveStatusResponse format
-        if let Some(dapi_grpc::platform::v0::get_status_response::Version::V0(v0)) =
-            drive_response.version
-        {
-            let mut drive_status = DriveStatusResponse::default();
-
-            // Extract version information
-            if let Some(version) = v0.version {
-                let mut drive_version = DriveVersion::default();
-
-                if let Some(software) = version.software {
-                    drive_version.software = Some(DriveSoftware {
-                        drive: software.drive,
-                    });
-                }
-
-                if let Some(protocol) = version.protocol
-                    && let Some(drive_proto) = protocol.drive
-                {
-                    drive_version.protocol = Some(DriveProtocol {
-                        drive: Some(DriveProtocolVersion {
-                            current: Some(drive_proto.current as u64),
-                            latest: Some(drive_proto.latest as u64),
-                            next_epoch: Some(drive_proto.next_epoch as u64),
-                        }),
-                    });
-                }
-
-                drive_status.version = Some(drive_version);
-            }
-
-            // Extract chain information
-            if let Some(chain) = v0.chain {
-                drive_status.chain = Some(DriveChain {
-                    core_chain_locked_height: chain.core_chain_locked_height.map(|h| h as u64),
-                });
-            }
-
-            // Extract time information
-            if let Some(time) = v0.time {
-                drive_status.time = Some(DriveTime {
-                    block: Some(time.local),
-                    genesis: time.genesis,
-                    epoch: time.epoch.map(|e| e as u64),
-                });
-            }
-
-            Ok(drive_status)
+        if let Some(get_status_response::Version::V0(v0)) = drive_response.version {
+            Ok(v0)
         } else {
             Err(tonic::Status::internal(
                 "Drive returned unexpected response format",

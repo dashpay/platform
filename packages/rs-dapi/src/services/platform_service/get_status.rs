@@ -201,13 +201,7 @@ fn build_version_info(
         && let Some(protocol_info) = &version_info.protocol
         && let Some(drive_protocol) = &protocol_info.drive
     {
-        let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
-            current: drive_protocol.current.unwrap_or(0).min(u32::MAX as u64) as u32,
-            latest: drive_protocol.latest.unwrap_or(0).min(u32::MAX as u64) as u32,
-            next_epoch: drive_protocol.next_epoch.unwrap_or(0).min(u32::MAX as u64) as u32,
-        };
-
-        protocol.drive = Some(drive_protocol_version);
+        protocol.drive = Some(drive_protocol.clone());
     }
 
     version.protocol = Some(protocol);
@@ -405,7 +399,7 @@ fn build_time_info(drive_status: &DriveStatusResponse) -> get_status_response_v0
     if let Some(drive_time) = &drive_status.time {
         time.block = drive_time.block;
         time.genesis = drive_time.genesis;
-        time.epoch = drive_time.epoch.map(|e| e.min(u32::MAX as u64) as u32);
+        time.epoch = drive_time.epoch;
     }
 
     time.local = chrono::Utc::now().timestamp().max(0) as u64;
