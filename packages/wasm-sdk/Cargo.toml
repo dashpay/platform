@@ -74,7 +74,6 @@ tracing-subscriber = { version = "0.3", default-features = false, features = [
     "registry",
 ] }
 tracing-wasm = { version = "0.2.1" }
-wee_alloc = "0.4"
 platform-value = { path = "../rs-platform-value", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde-wasm-bindgen = { version = "0.6.5" }
