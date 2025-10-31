@@ -17,6 +17,8 @@ fn cleanup_env_vars() {
         "DAPI_TENDERDASH_WEBSOCKET_URI",
         "DAPI_CORE_ZMQ_URL",
         "DAPI_STATE_TRANSITION_WAIT_TIMEOUT",
+        "DAPI_PLATFORM_EVENTS_TIMEOUT",
+        "DAPI_CORE_STREAM_TIMEOUT",
     ];
 
     for var in &env_vars {
@@ -104,6 +106,8 @@ DAPI_TENDERDASH_URI=http://test-tenderdash:8000
 DAPI_TENDERDASH_WEBSOCKET_URI=ws://test-tenderdash:8000/websocket
 DAPI_CORE_ZMQ_URL=tcp://test-core:30000
 DAPI_STATE_TRANSITION_WAIT_TIMEOUT=45000
+DAPI_PLATFORM_EVENTS_TIMEOUT=510000
+DAPI_CORE_STREAM_TIMEOUT=610000
 "#;
 
     fs::write(temp_file.path(), env_content).expect("Failed to write temp file");
@@ -125,6 +129,8 @@ DAPI_STATE_TRANSITION_WAIT_TIMEOUT=45000
     );
     assert_eq!(config.dapi.core.zmq_url, "tcp://test-core:30000");
     assert_eq!(config.dapi.state_transition_wait_timeout, 45000);
+    assert_eq!(config.dapi.platform_events_timeout, 510000);
+    assert_eq!(config.dapi.core_stream_timeout, 610000);
 
     // Cleanup
     cleanup_env_vars();
@@ -157,6 +163,8 @@ DAPI_DRIVE_URI=http://partial-drive:8000
     // Verify defaults are used for unspecified values
     assert_eq!(config.dapi.tenderdash.uri, "http://127.0.0.1:26657"); // default
     assert_eq!(config.dapi.state_transition_wait_timeout, 30000); // default
+    assert_eq!(config.dapi.platform_events_timeout, 600000); // default
+    assert_eq!(config.dapi.core_stream_timeout, 600000); // default
 
     // Cleanup
     cleanup_env_vars();

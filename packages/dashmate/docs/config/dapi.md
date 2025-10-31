@@ -31,9 +31,11 @@ These settings allow you to build the DAPI API Docker image from source. If `ena
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.dapi.api.waitForStResultTimeout` | Timeout for state transitions (ms) | `120000` | `240000` |
+| `platform.dapi.rsDapi.timeouts.waitForStateTransitionResult` | Timeout for waiting on state transition results before rs-dapi aborts (milliseconds) | `120000` | `240000` |
+| `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` | Timeout for platform event subscriptions before rs-dapi closes the stream (milliseconds) | `600000` | `300000` |
+| `platform.dapi.rsDapi.timeouts.coreStreams` | Timeout for Core streaming subscriptions (block headers, masternodes, transactions) before rs-dapi closes the stream (milliseconds) | `600000` | `300000` |
 
-This timeout setting controls how long DAPI will wait for state transition results before returning a timeout error to the client. It is specified in milliseconds.
+All timeout values are expressed in milliseconds. Dashmate automatically configures Envoy to allow an additional five-second grace period so that rs-dapi can terminate requests cleanly before the proxy times out.
 
 ## rs-dapi (Rust)
 

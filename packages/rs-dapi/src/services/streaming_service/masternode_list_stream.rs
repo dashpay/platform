@@ -3,6 +3,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::ReceiverStream;
 use tracing::debug;
+use std::time::Duration;
 
 use crate::DapiError;
 use crate::services::streaming_service::{FilterType, StreamingEvent, StreamingServiceImpl};
@@ -19,6 +20,9 @@ impl StreamingServiceImpl {
 
         // Create channel for streaming responses
         let (tx, rx) = mpsc::channel(MASTERNODE_STREAM_BUFFER);
+
+        let timeout = Duration::from_millis(self.config.dapi.core_stream_timeout);
+        self.schedule_stream_timeout(tx.clone(), timeout, "masternode list stream deadline exceeded");
 
         // Add subscription to manager
         let subscription_handle = self.subscriber_manager.add_subscription(filter).await;

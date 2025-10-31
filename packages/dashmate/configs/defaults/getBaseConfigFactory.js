@@ -185,7 +185,6 @@ export default function getBaseConfigFactory() {
               http2: {
                 maxConcurrentStreams: 10,
               },
-              waitForStResultTimeout: '125s',
               host: '0.0.0.0',
               port: 443,
             },
@@ -249,7 +248,6 @@ export default function getBaseConfigFactory() {
                 target: 'dapi',
               },
             },
-            waitForStResultTimeout: 120000,
           },
           rsDapi: {
             docker: {
@@ -263,6 +261,11 @@ export default function getBaseConfigFactory() {
                 dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
                 target: 'rs-dapi',
               },
+            },
+            timeouts: {
+              waitForStateTransitionResult: 120000,
+              subscribePlatformEvents: 600000,
+              coreStreams: 600000,
             },
             metrics: {
               enabled: false,

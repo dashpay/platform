@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 use std::sync::Arc;
+use std::time::Duration;
 
 use dapi_grpc::core::v0::block_headers_with_chain_locks_request::FromBlock;
 use dapi_grpc::core::v0::{
@@ -80,6 +81,9 @@ impl StreamingServiceImpl {
     ) -> Result<BlockHeaderResponse, Status> {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
 
+        let timeout = Duration::from_millis(self.config.dapi.core_stream_timeout);
+        self.schedule_stream_timeout(tx.clone(), timeout, "block header stream deadline exceeded");
+
         self.send_initial_chainlock(tx.clone()).await?;
 
         self.spawn_fetch_historical_headers(from_block, Some(count as usize), None, tx, None, None)
@@ -97,6 +101,9 @@ impl StreamingServiceImpl {
         let (tx, rx) = mpsc::channel(BLOCK_HEADER_STREAM_BUFFER);
         let delivered_hashes: DeliveredHashSet = Arc::new(AsyncMutex::new(HashSet::new()));
         let (delivery_gate_tx, delivery_gate_rx) = watch::channel(false);
+
+        let timeout = Duration::from_millis(self.config.dapi.core_stream_timeout);
+        self.schedule_stream_timeout(tx.clone(), timeout, "block header stream deadline exceeded");
 
         let subscriber_id = self
             .start_live_stream(

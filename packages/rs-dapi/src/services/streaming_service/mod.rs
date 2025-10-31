@@ -13,10 +13,11 @@ use crate::DapiError;
 use crate::clients::{CoreClient, TenderdashClient};
 use crate::config::Config;
 use crate::sync::Workers;
+use dapi_grpc::tonic::Status;
 use dash_spv::Hash;
 use std::sync::Arc;
-use tokio::sync::broadcast;
 use tokio::sync::broadcast::error::RecvError;
+use tokio::sync::{broadcast, mpsc};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, trace};
 
@@ -129,6 +130,25 @@ impl StreamingServiceImpl {
             masternode_list_sync,
             workers,
         })
+    }
+
+    /// Schedule a timeout for a streaming response so clients receive a graceful deadline exceeded error.
+    fn schedule_stream_timeout<T>(
+        &self,
+        tx: mpsc::Sender<Result<T, Status>>,
+        duration: Duration,
+        context: &'static str,
+    ) where
+        T: Send + 'static,
+    {
+        self.workers.spawn(async move {
+            sleep(duration).await;
+            let status = Status::deadline_exceeded(context);
+            if tx.send(Err(status.clone())).await.is_ok() {
+                debug!(context = context, "stream timeout elapsed; closing channel");
+            }
+            Ok::<(), DapiError>(())
+        });
     }
 
     /// Background worker: subscribe to Tenderdash transactions and forward to subscribers

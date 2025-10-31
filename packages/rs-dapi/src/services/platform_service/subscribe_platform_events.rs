@@ -4,6 +4,7 @@ use dapi_grpc::tonic::{Request, Response, Status};
 use futures::StreamExt;
 use std::sync::Arc;
 use tokio::sync::mpsc;
+use tokio::time::{Duration, sleep};
 use tokio_stream::wrappers::ReceiverStream;
 
 use super::PlatformServiceImpl;
@@ -32,10 +33,13 @@ impl PlatformServiceImpl {
     /// Forwards a subscription request upstream to Drive and streams responses back to the caller.
     pub async fn subscribe_platform_events_impl(
         &self,
-        request: Request<PlatformSubscriptionRequest>,
+        mut request: Request<PlatformSubscriptionRequest>,
     ) -> Result<Response<ReceiverStream<Result<PlatformSubscriptionResponse, Status>>>, Status>
     {
         let active_session = ActiveSessionGuard::new();
+
+        let timeout_duration = Duration::from_millis(self.config.dapi.platform_events_timeout);
+        request.set_timeout(timeout_duration);
 
         let mut client = self.drive_client.get_client();
         let uplink_resp = client.subscribe_platform_events(request).await?;
@@ -46,6 +50,20 @@ impl PlatformServiceImpl {
         let (downlink_resp_tx, downlink_resp_rx) = mpsc::channel::<
             Result<PlatformSubscriptionResponse, Status>,
         >(PLATFORM_EVENTS_STREAM_BUFFER);
+
+        {
+            let timeout_tx = downlink_resp_tx.clone();
+            self.workers.spawn(async move {
+                sleep(timeout_duration).await;
+                let status =
+                    Status::deadline_exceeded("platform events subscription deadline exceeded");
+                metrics::platform_events_forwarded_error();
+                if timeout_tx.send(Err(status.clone())).await.is_ok() {
+                    tracing::debug!("Platform events stream timeout elapsed");
+                }
+                Ok::<(), DapiError>(())
+            });
+        }
 
         // Spawn a task to forward uplink responses -> downlink
         {
