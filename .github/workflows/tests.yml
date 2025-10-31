@@ -78,9 +78,6 @@ jobs:
           - name: Drive
             image_name: drive
             target: drive-abci
-          - name: DAPI
-            image_name: dapi
-            target: dapi
           - name: RS-DAPI
             image_name: rs-dapi
             target: rs-dapi

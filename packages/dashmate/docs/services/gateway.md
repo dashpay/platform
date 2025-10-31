@@ -24,18 +24,18 @@ It uses Envoy, a high-performance proxy, to route HTTP requests to the appropria
              ┌───────────────────┬┴─────────────┐      │                   │
              │                   │              │      │  Rate Limiter     │
              │                   │              │      │  Redis Storage    │
-      ┌──────▼─────┐     ┌──────▼─────┐  ┌─────▼─────┐ └───────────────────┘
-      │            │     │            │  │           │
-      │  DAPI API  │     │  DAPI Core │  │ Drive ABCI│
-      │            │     │  Streams   │  │           │
-      └────────────┘     └────────────┘  └───────────┘
+      ┌──────▼─────┐                      ┌─────▼─────┐ └───────────────────┘
+      │            │                      │           │
+      │  rs-dapi   │                      │ Drive ABCI│
+      │            │                      │           │
+      └────────────┘                      └───────────┘
 ```
 
 ## Overview
 
 The Gateway service performs several key functions:
 
-1. **Request Routing**: Directs incoming API requests to the appropriate backend services (DAPI API, DAPI Core Streams, Drive gRPC)
+1. **Request Routing**: Directs incoming API requests to the appropriate backend services (rs-dapi, Drive gRPC)
 2. **Protocol Support**: Handles HTTP/1.1, HTTP/2, and gRPC-Web protocols
 3. **Connection Management**: Controls connection timeouts, idle timeouts, and concurrent stream limits
 4. **Load Protection**: Implements circuit breaking, rate limiting, and resource monitoring
@@ -58,9 +58,8 @@ Listeners define how the Gateway accepts connections:
 
 Clusters define the backend services the Gateway connects to:
 
-- **dapi_api**: Handles general DAPI requests
-- **dapi_core_streams**: Handles streaming Core endpoints
-- **dapi_json_rpc**: Handles JSON-RPC requests
+- **rs_dapi**: Handles gRPC/gRPC-Web and streaming endpoints
+- **rs_dapi_json_rpc**: Handles JSON-RPC requests
 - **drive_grpc**: Handles Platform requests
 - **ratelimit_service**: Optional service for rate limiting
 - **admin**: Internal administrative interface
@@ -69,11 +68,12 @@ Clusters define the backend services the Gateway connects to:
 
 The Gateway routes requests to different backend services based on URL path:
 
-- Core streaming endpoints (`/org.dash.platform.dapi.v0.Core/subscribeTo*`): routed to `dapi_core_streams`
-- Other Core endpoints (`/org.dash.platform.dapi.v0.Core*`): routed to `dapi_api`
-- Platform waitForStateTransitionResult (`/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult`): routed to `dapi_api` with extended timeout
-- Platform endpoints (`/org.dash.platform.dapi.v0.Platform*`): routed to `drive_grpc`
-- JSON-RPC endpoints (`/`): routed to `dapi_json_rpc`
+- Core streaming endpoints (`/org.dash.platform.dapi.v0.Core/subscribeTo*`): routed to `rs_dapi`
+- Other Core endpoints (`/org.dash.platform.dapi.v0.Core*`): routed to `rs_dapi`
+- Platform streaming endpoints (`/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents`): routed to `rs_dapi` with extended timeout
+- Platform waitForStateTransitionResult (`/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult`): routed to `rs_dapi` with extended timeout
+- Other Platform endpoints (`/org.dash.platform.dapi.v0.Platform*`): routed to `rs_dapi`
+- JSON-RPC endpoints (`/`): routed to `rs_dapi_json_rpc`
 
 ## Configuration Options
 
@@ -125,9 +125,8 @@ circuit_breakers:
 Each backend service has its own circuit breaker configuration with a default of 100 max requests.
 
 **Config options**:
-- DAPI API: `platform.gateway.upstreams.dapiApi.maxRequests`
-- DAPI Core Streams: `platform.gateway.upstreams.dapiCoreStreams.maxRequests`
-- DAPI JSON-RPC: `platform.gateway.upstreams.dapiJsonRpc.maxRequests`
+- rs-dapi gRPC: `platform.gateway.upstreams.rsDapi.maxRequests`
+- rs-dapi JSON-RPC: `platform.gateway.upstreams.dapiJsonRpc.maxRequests`
 - Drive gRPC: `platform.gateway.upstreams.driveGrpc.maxRequests`
 
 ### Resource Monitoring and Overload Protection
