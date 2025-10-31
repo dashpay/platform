@@ -1196,8 +1196,12 @@ message GetStatusResponse {
         }
 
         message Drive {
+          // Highest protocol version supported by this node
           uint32 latest = 3;
+          // Protocol version used in current epoch
           uint32 current = 4;
+          // Protocol version that will be used in the next epoch
+          uint32 next_epoch = 5;
         }
 
         Tenderdash tenderdash = 1;

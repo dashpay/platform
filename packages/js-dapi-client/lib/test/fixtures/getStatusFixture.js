@@ -17,6 +17,7 @@ function getStatusFixture() {
         drive: {
           latest: 9,
           current: 8,
+          nextEpoch: 10,
         },
       },
     },
