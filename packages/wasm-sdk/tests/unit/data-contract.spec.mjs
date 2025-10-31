@@ -7,8 +7,8 @@ const PLATFORM_VERSION_CONTRACT_V0 = 1;
 const PLATFORM_VERSION_CONTRACT_V1 = 9; // V1 contracts introduced in Platform v9
 
 // Platform version compatibility ranges
-const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9]; // V0 supported versions
-const V1_COMPATIBLE_VERSIONS = [9]; // V1 starts at platform version 9
+const V0_COMPATIBLE_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]; // V0 supported versions
+const V1_COMPATIBLE_VERSIONS = [9, 10]; // V1 starts at platform version 9
 const V0_ONLY_VERSIONS = [1, 2, 3, 4, 5, 6, 7, 8]; // Versions that only support V0
 const LATEST_KNOWN_VERSION = Math.max(...V0_COMPATIBLE_VERSIONS);
 
