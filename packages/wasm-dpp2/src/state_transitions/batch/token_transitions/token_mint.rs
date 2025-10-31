@@ -81,7 +81,7 @@ impl TokenMintTransitionWasm {
         self.clone().0.public_note_owned()
     }
 
-    #[wasm_bindgen(js_name = getRecipitnId)]
+    #[wasm_bindgen(js_name = getRecipientId)]
     pub fn recipient_id(&self, config: &TokenConfigurationWasm) -> WasmDppResult<IdentifierWasm> {
         Ok(self.0.recipient_id(&config.clone().into())?.into())
     }
