@@ -15,7 +15,7 @@ impl<C> Platform<C> {
         platform_state: &PlatformState,
     ) -> Result<QueryValidationResult<GetStatusResponseV0>, Error> {
         let latest_supported_protocol_version = PlatformVersion::latest().protocol_version;
-        let next_epoch_version = match self.state.load().as_ref() {
+        let next_epoch_version = match platform_state {
             PlatformState::V0(state) => state.next_epoch_protocol_version(),
         };
 
