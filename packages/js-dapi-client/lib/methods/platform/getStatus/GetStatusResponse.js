@@ -79,6 +79,7 @@ class GetStatusResponse {
     const tenderdashBlockProtocol = v0.getVersion().getProtocol().getTenderdash().getBlock();
     const driveCurrentProtocol = v0.getVersion().getProtocol().getDrive().getCurrent();
     const driveLatestProtocol = v0.getVersion().getProtocol().getDrive().getLatest();
+    const driveNextEpochProtocol = v0.getVersion().getProtocol().getDrive().getNextEpoch();
 
     const version = new VersionStatus(
       dapiVersion,
@@ -88,6 +89,7 @@ class GetStatusResponse {
       tenderdashBlockProtocol,
       driveCurrentProtocol,
       driveLatestProtocol,
+      driveNextEpochProtocol,
     );
 
     const nodeId = Buffer.from(v0.getNode().getId()).toString('hex');

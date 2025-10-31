@@ -38,7 +38,8 @@ describe('GetStatusResponse', () => {
               .setDrive(new GetStatusResponse.GetStatusResponseV0
                 .Version.Protocol.Drive()
                 .setLatest(statusFixture.version.protocol.drive.latest)
-                .setCurrent(statusFixture.version.protocol.drive.current))
+                .setCurrent(statusFixture.version.protocol.drive.current)
+                .setNextEpoch(statusFixture.version.protocol.drive.nextEpoch))
               .setTenderdash(new GetStatusResponse.GetStatusResponseV0
                 .Version.Protocol.Tenderdash()
                 .setP2p(statusFixture.version.protocol.tenderdash.p2p)
@@ -85,6 +86,7 @@ describe('GetStatusResponse', () => {
       statusFixture.version.protocol.tenderdash.block,
       statusFixture.version.protocol.drive.current,
       statusFixture.version.protocol.drive.latest,
+      statusFixture.version.protocol.drive.nextEpoch,
     );
 
     const node = new NodeStatus(
@@ -142,7 +144,8 @@ describe('GetStatusResponse', () => {
               .setDrive(new GetStatusResponse.GetStatusResponseV0
                 .Version.Protocol.Drive()
                 .setLatest(statusFixture.version.protocol.drive.latest)
-                .setCurrent(statusFixture.version.protocol.drive.current))
+                .setCurrent(statusFixture.version.protocol.drive.current)
+                .setNextEpoch(statusFixture.version.protocol.drive.nextEpoch))
               .setTenderdash(new GetStatusResponse.GetStatusResponseV0
                 .Version.Protocol.Tenderdash()
                 .setP2p(statusFixture.version.protocol.tenderdash.p2p)
@@ -212,6 +215,8 @@ describe('GetStatusResponse', () => {
       .to.equal(statusFixture.version.protocol.drive.current);
     expect(versionStatus.getDriveLatestProtocol())
       .to.equal(statusFixture.version.protocol.drive.latest);
+    expect(versionStatus.getDriveNextEpochProtocol())
+      .to.equal(statusFixture.version.protocol.drive.nextEpoch);
 
     expect(nodeStatus).to.be.an.instanceOf(NodeStatus);
     expect(nodeStatus.getNodeId()).to.equal(Buffer.from(statusFixture.node.id).toString('hex'));
