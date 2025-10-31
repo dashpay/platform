@@ -204,6 +204,7 @@ fn build_version_info(
         let drive_protocol_version = get_status_response_v0::version::protocol::Drive {
             current: drive_protocol.current.unwrap_or(0).min(u32::MAX as u64) as u32,
             latest: drive_protocol.latest.unwrap_or(0).min(u32::MAX as u64) as u32,
+            next_epoch: drive_protocol.next_epoch.unwrap_or(0).min(u32::MAX as u64) as u32,
         };
 
         protocol.drive = Some(drive_protocol_version);

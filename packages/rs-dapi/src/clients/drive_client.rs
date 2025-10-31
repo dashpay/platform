@@ -62,6 +62,7 @@ pub struct DriveProtocol {
 pub struct DriveProtocolVersion {
     pub current: Option<u64>,
     pub latest: Option<u64>,
+    pub next_epoch: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -199,6 +200,7 @@ impl DriveClient {
                         drive: Some(DriveProtocolVersion {
                             current: Some(drive_proto.current as u64),
                             latest: Some(drive_proto.latest as u64),
+                            next_epoch: Some(drive_proto.next_epoch as u64),
                         }),
                     });
                 }
