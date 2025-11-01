@@ -9,6 +9,7 @@ use dpp::data_contract::GroupContractPosition;
 use dpp::data_contract::change_control_rules::ChangeControlRules;
 use dpp::data_contract::change_control_rules::v0::ChangeControlRulesV0;
 use dpp::data_contract::group::Group;
+use dpp::prelude::Identifier;
 use js_sys::{Object, Reflect};
 use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
@@ -157,13 +158,14 @@ impl ChangeControlRulesWasm {
     pub fn can_change_admin_action_takers(
         &self,
         admin_action_takers: &AuthorizedActionTakersWasm,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_contract_owner_id: &JsValue,
         main_group: Option<GroupContractPosition>,
         js_groups: &JsValue,
         action_taker: &ActionTakerWasm,
         js_goal: &JsValue,
     ) -> WasmDppResult<bool> {
-        let contract_owner_id = IdentifierWasm::try_from(js_contract_owner_id)?;
+        let contract_owner_id: Identifier = IdentifierWasm::try_from(js_contract_owner_id)?.into();
         let goal = ActionGoalWasm::try_from(js_goal.clone())?;
 
         let groups_object = Object::from(js_groups.clone());

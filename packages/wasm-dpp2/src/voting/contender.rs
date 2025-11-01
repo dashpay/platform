@@ -1,4 +1,6 @@
+use crate::error::WasmDppResult;
 use crate::identifier::IdentifierWasm;
+use dpp::prelude::Identifier;
 use dpp::voting::contender_structs::{
     ContenderWithSerializedDocument, ContenderWithSerializedDocumentV0,
 };
@@ -26,17 +28,20 @@ impl From<ContenderWithSerializedDocumentWasm> for ContenderWithSerializedDocume
 impl ContenderWithSerializedDocumentWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        identity_id: &IdentifierWasm,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: &JsValue,
         serialized_document: Option<Vec<u8>>,
         vote_tally: Option<u32>,
-    ) -> Self {
+    ) -> WasmDppResult<Self> {
+        let identity: Identifier = IdentifierWasm::try_from(identity_id)?.into();
+
         let inner = ContenderWithSerializedDocument::V0(ContenderWithSerializedDocumentV0 {
-            identity_id: (*identity_id).into(),
+            identity_id: identity,
             serialized_document,
             vote_tally,
         });
 
-        Self(inner)
+        Ok(Self(inner))
     }
 
     #[wasm_bindgen(getter = identityId)]

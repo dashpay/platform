@@ -40,6 +40,7 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_frozen_identity_id: &JsValue,
         public_note: Option<String>,
     ) -> WasmDppResult<TokenDestroyFrozenFundsTransitionWasm> {
@@ -81,7 +82,11 @@ impl TokenDestroyFrozenFundsTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "frozenIdentityId")]
-    pub fn set_frozen_identity_id(&mut self, js_frozen_identity_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_frozen_identity_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_frozen_identity_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_frozen_identity_id(IdentifierWasm::try_from(js_frozen_identity_id)?.into());
         Ok(())

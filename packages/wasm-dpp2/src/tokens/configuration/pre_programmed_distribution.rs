@@ -60,7 +60,7 @@ pub fn js_distributions_to_distributions(
         let mut ids = BTreeMap::new();
 
         for id_key in identifiers_keys.iter() {
-            let identifier = Identifier::from(IdentifierWasm::try_from(id_key.clone())?);
+            let identifier = IdentifierWasm::try_from(id_key.clone())?.into();
 
             let amount_js = Reflect::get(&identifiers_object, &id_key).map_err(|err| {
                 let message = err.error_message();

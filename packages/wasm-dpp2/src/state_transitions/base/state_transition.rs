@@ -12,6 +12,7 @@ use dpp::data_contract::serialized_version::DataContractInSerializationFormat;
 use dpp::identity::{KeyID, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::{Encoding, decode, encode};
+use dpp::prelude::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, Signable};
 use dpp::state_transition::StateTransition::{
@@ -395,19 +396,23 @@ impl StateTransitionWasm {
     }
 
     #[wasm_bindgen(js_name = "setOwnerId")]
-    pub fn set_owner_id(&mut self, js_owner_id: &JsValue) -> WasmDppResult<()> {
-        let owner_id = IdentifierWasm::try_from(js_owner_id.clone())?;
+    pub fn set_owner_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_owner_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
 
         match self.0.clone() {
             DataContractCreate(mut contract_create) => {
                 let new_contract = match contract_create.data_contract().clone() {
                     DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id.into();
+                        v0.owner_id = owner_id.clone();
 
                         DataContractInSerializationFormat::V0(v0)
                     }
                     DataContractInSerializationFormat::V1(mut v1) => {
-                        v1.owner_id = owner_id.into();
+                        v1.owner_id = owner_id.clone();
 
                         DataContractInSerializationFormat::V1(v1)
                     }
@@ -420,12 +425,12 @@ impl StateTransitionWasm {
             DataContractUpdate(mut contract_update) => {
                 let new_contract = match contract_update.data_contract().clone() {
                     DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id.into();
+                        v0.owner_id = owner_id.clone();
 
                         DataContractInSerializationFormat::V0(v0)
                     }
                     DataContractInSerializationFormat::V1(mut v1) => {
-                        v1.owner_id = owner_id.into();
+                        v1.owner_id = owner_id.clone();
 
                         DataContractInSerializationFormat::V1(v1)
                     }
@@ -438,12 +443,12 @@ impl StateTransitionWasm {
             Batch(mut batch) => {
                 batch = match batch {
                     BatchTransition::V0(mut v0) => {
-                        v0.owner_id = owner_id.into();
+                        v0.owner_id = owner_id.clone();
 
                         BatchTransition::V0(v0)
                     }
                     BatchTransition::V1(mut v1) => {
-                        v1.owner_id = owner_id.into();
+                        v1.owner_id = owner_id.clone();
 
                         BatchTransition::V1(v1)
                     }
@@ -457,27 +462,27 @@ impl StateTransitionWasm {
                 ));
             }
             IdentityTopUp(mut top_up) => {
-                top_up.set_identity_id(owner_id.into());
+                top_up.set_identity_id(owner_id.clone());
 
                 self.0 = IdentityTopUp(top_up);
             }
             IdentityCreditWithdrawal(mut withdrawal) => {
-                withdrawal.set_identity_id(owner_id.into());
+                withdrawal.set_identity_id(owner_id.clone());
 
                 self.0 = IdentityCreditWithdrawal(withdrawal);
             }
             IdentityUpdate(mut identity_update) => {
-                identity_update.set_identity_id(owner_id.into());
+                identity_update.set_identity_id(owner_id.clone());
 
                 self.0 = IdentityUpdate(identity_update);
             }
             IdentityCreditTransfer(mut credit_transfer) => {
-                credit_transfer.set_identity_id(owner_id.into());
+                credit_transfer.set_identity_id(owner_id.clone());
 
                 self.0 = IdentityCreditTransfer(credit_transfer);
             }
             MasternodeVote(mut mn_vote) => {
-                mn_vote.set_voter_identity_id(owner_id.into());
+                mn_vote.set_voter_identity_id(owner_id);
 
                 self.0 = MasternodeVote(mn_vote);
             }

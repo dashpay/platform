@@ -9,7 +9,6 @@ use dpp::data_contract::associated_token::token_distribution_rules::accessors::v
     TokenDistributionRulesV0Getters, TokenDistributionRulesV0Setters,
 };
 use dpp::data_contract::associated_token::token_distribution_rules::v0::TokenDistributionRulesV0;
-use dpp::prelude::Identifier;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -47,6 +46,7 @@ impl TokenDistributionRulesWasm {
         js_perpetual_distribution: &JsValue,
         perpetual_distribution_rules: &ChangeControlRulesWasm,
         js_pre_programmed_distribution: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_new_tokens_destination_identity: &JsValue,
         new_tokens_destination_identity_rules: &ChangeControlRulesWasm,
         minting_allow_choosing_destination: bool,
@@ -80,9 +80,7 @@ impl TokenDistributionRulesWasm {
         let new_tokens_destination_identity = if js_new_tokens_destination_identity.is_undefined() {
             None
         } else {
-            Some(Identifier::from(IdentifierWasm::try_from(
-                js_new_tokens_destination_identity,
-            )?))
+            Some(IdentifierWasm::try_from(js_new_tokens_destination_identity)?.into())
         };
 
         Ok(TokenDistributionRulesWasm(TokenDistributionRules::V0(
@@ -206,11 +204,12 @@ impl TokenDistributionRulesWasm {
     #[wasm_bindgen(setter = "newTokenDestinationIdentity")]
     pub fn set_new_tokens_destination_identity(
         &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_identifier: &JsValue,
     ) -> WasmDppResult<()> {
         let identifier = match js_identifier.is_undefined() {
             true => None,
-            false => Some(Identifier::from(IdentifierWasm::try_from(js_identifier)?)),
+            false => Some(IdentifierWasm::try_from(js_identifier)?.into()),
         };
 
         self.0.set_new_tokens_destination_identity(identifier);

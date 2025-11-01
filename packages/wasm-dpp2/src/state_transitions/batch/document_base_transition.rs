@@ -41,9 +41,11 @@ impl DocumentBaseTransitionWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_document_id: &JsValue,
         identity_contract_nonce: IdentityNonce,
         document_type_name: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_data_contract_id: &JsValue,
         js_token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentBaseTransitionWasm> {
@@ -97,7 +99,10 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0.set_id(IdentifierWasm::try_from(js_id)?.into());
         Ok(())
     }
@@ -108,7 +113,11 @@ impl DocumentBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_data_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
         Ok(())
