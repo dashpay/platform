@@ -79,13 +79,11 @@ impl ActionTakerWasm {
     #[wasm_bindgen(getter = "value")]
     pub fn get_value(&self) -> JsValue {
         match &self.0 {
-            ActionTaker::SingleIdentity(value) => {
-                JsValue::from(IdentifierWasm::from(value.clone()))
-            }
+            ActionTaker::SingleIdentity(value) => JsValue::from(IdentifierWasm::from(*value)),
             ActionTaker::SpecifiedIdentities(value) => {
                 let array = Array::new();
                 for identifier in value.iter() {
-                    array.push(&IdentifierWasm::from(identifier.clone()).into());
+                    array.push(&IdentifierWasm::from(*identifier).into());
                 }
                 array.into()
             }

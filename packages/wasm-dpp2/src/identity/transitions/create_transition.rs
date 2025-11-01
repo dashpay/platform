@@ -61,7 +61,7 @@ impl IdentityCreateTransitionWasm {
                 public_keys: public_keys.iter().map(|key| key.clone().into()).collect(),
                 asset_lock_proof: asset_lock.clone().into(),
                 user_fee_increase: user_fee_increase.unwrap_or(0),
-                signature: BinaryData::from(signature.unwrap_or(vec![])),
+                signature: BinaryData::from(signature.unwrap_or_default()),
                 identity_id: asset_lock.create_identifier()?.into(),
             },
         )))

@@ -22,13 +22,35 @@ describe('VotingFacade', () => {
 
   it('contestedResourceVoteState and related queries forward correctly', async () => {
     await client.voting.contestedResourceVoteState({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt',
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
     });
     await client.voting.contestedResourceVoteStateWithProof({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt', allowIncludeLockedAndAbstainingVoteTally: true, startAtIdentifierInfo: 's', startAtIncluded: true, count: 2,
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
+      includeLockedAndAbstaining: true,
+      startAtContenderId: 's',
+      startAtIncluded: true,
+      limit: 2,
     });
-    await client.voting.contestedResourceIdentityVotes('id', { limit: 3, startAtVotePollIdInfo: 's', orderAscending: true });
-    await client.voting.contestedResourceIdentityVotesWithProof('id', { limit: 4, startAtVotePollIdInfo: 'p', orderAscending: false });
+    await client.voting.contestedResourceIdentityVotes({
+      identityId: 'id',
+      limit: 3,
+      startAtVoteId: 's',
+      orderAscending: true,
+    });
+    await client.voting.contestedResourceIdentityVotesWithProof({
+      identityId: 'id',
+      limit: 4,
+      startAtVoteId: 'p',
+      orderAscending: false,
+    });
     await client.voting.votePollsByEndDate({
       startTimeMs: 1000,
       startTimeIncluded: true,

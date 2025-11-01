@@ -1,18 +1,20 @@
+use crate::queries::utils::{
+    convert_optional_limit, deserialize_required_query, identifier_from_base58,
+};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
+use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
 use dash_sdk::dpp::voting::votes::resource_vote::ResourceVote;
 use dash_sdk::platform::FetchMany;
 use drive::query::contested_resource_votes_given_by_identity_query::ContestedResourceVotesGivenByIdentityQuery;
 use drive_proof_verifier::types::ResourceVotesByIdentity;
 use js_sys::Array;
 use platform_value::string_encoding::Encoding;
-use platform_value::Identifier;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
-use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTESTED_RESOURCE_IDENTITY_VOTES_QUERY_TS: &'static str = r#"
@@ -78,23 +80,6 @@ struct ContestedResourceIdentityVotesQueryInput {
     fields: ContestedResourceIdentityVotesQueryFields,
 }
 
-fn convert_limit(limit: Option<u32>) -> Result<Option<u16>, WasmSdkError> {
-    match limit {
-        Some(0) => Ok(None),
-        Some(value) => {
-            if value > u16::MAX as u32 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "limit {} exceeds maximum of {}",
-                    value,
-                    u16::MAX
-                )));
-            }
-            Ok(Some(value as u16))
-        }
-        None => Ok(None),
-    }
-}
-
 fn build_contested_resource_identity_votes_query(
     input: ContestedResourceIdentityVotesQueryInput,
 ) -> Result<ContestedResourceVotesGivenByIdentityQuery, WasmSdkError> {
@@ -109,21 +94,13 @@ fn build_contested_resource_identity_votes_query(
             },
     } = input;
 
-    let identity_id = Identifier::from_string(
-        &identity_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+    let identity_id = identifier_from_base58(&identity_id, "identity ID")?;
 
-    let limit = convert_limit(limit)?;
+    let limit = convert_optional_limit(limit, "limit")?;
 
     let start_at = match start_at_vote_id {
         Some(vote_id) => {
-            let identifier = Identifier::from_string(
-                &vote_id,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid vote ID: {}", e)))?;
+            let identifier = identifier_from_base58(&vote_id, "vote ID")?;
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }
@@ -142,14 +119,11 @@ fn build_contested_resource_identity_votes_query(
 fn parse_contested_resource_identity_votes_query(
     query: ContestedResourceIdentityVotesQueryJs,
 ) -> Result<ContestedResourceVotesGivenByIdentityQuery, WasmSdkError> {
-    let value: JsValue = query.into();
-    let input: ContestedResourceIdentityVotesQueryInput =
-        serde_wasm_bindgen::from_value(value).map_err(|err| {
-            WasmSdkError::invalid_argument(format!(
-                "Invalid contested resource identity votes query: {}",
-                err
-            ))
-        })?;
+    let input: ContestedResourceIdentityVotesQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "contested resource identity votes query",
+    )?;
 
     build_contested_resource_identity_votes_query(input)
 }
@@ -160,18 +134,16 @@ fn resource_votes_to_json(
     let mut results = Vec::new();
 
     for (vote_id, vote_opt) in votes.into_iter() {
-        let vote = match vote_opt {
-            Some(vote) => vote,
-            None => continue,
+        let Some(vote) = vote_opt else {
+            continue;
         };
 
-        let inner = match vote {
-            ResourceVote::V0(inner) => inner,
-        };
+        let ResourceVote::V0(ResourceVoteV0 {
+            vote_poll,
+            resource_vote_choice,
+        }) = vote;
 
-        let vote_poll = match inner.vote_poll {
-            VotePoll::ContestedDocumentResourceVotePoll(poll) => poll,
-        };
+        let VotePoll::ContestedDocumentResourceVotePoll(vote_poll) = vote_poll;
 
         let poll_unique_id = vote_poll.unique_id().map_err(|e| {
             WasmSdkError::serialization(format!("Failed to derive vote poll unique id: {}", e))
@@ -199,7 +171,7 @@ fn resource_votes_to_json(
             "indexValues": index_values_json,
         });
 
-        let choice_json = match inner.resource_vote_choice {
+        let choice_json = match resource_vote_choice {
             ResourceVoteChoice::TowardsIdentity(identifier) => serde_json::json!({
                 "type": "towardsIdentity",
                 "identityId": identifier.to_string(Encoding::Base58),
@@ -248,14 +220,11 @@ impl WasmSdk {
     pub async fn get_contested_resource_identity_votes_with_proof_info(
         &self,
         query: ContestedResourceIdentityVotesQueryJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let drive_query = parse_contested_resource_identity_votes_query(query)?;
-        let (votes, metadata, proof) = ResourceVote::fetch_many_with_metadata_and_proof(
-            self.as_ref(),
-            drive_query,
-            None,
-        )
-        .await?;
+        let (votes, metadata, proof) =
+            ResourceVote::fetch_many_with_metadata_and_proof(self.as_ref(), drive_query, None)
+                .await?;
 
         let votes_json = resource_votes_to_json(votes)?;
 
@@ -269,8 +238,8 @@ impl WasmSdk {
             ))
         })?;
 
-        let response = ProofMetadataResponseWasm::from_parts(data, metadata.into(), proof.into());
-
-        Ok(JsValue::from(response))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            data, metadata, proof,
+        ))
     }
 }

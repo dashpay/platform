@@ -51,6 +51,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "StepDecreasingAmount")]
+    #[allow(clippy::too_many_arguments)]
     pub fn step_decreasing_amount(
         step_count: u32,
         decrease_per_interval_numerator: u16,
@@ -127,6 +128,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "Polynomial")]
+    #[allow(clippy::too_many_arguments)]
     pub fn polynomial(
         a: i64,
         d: u64,
@@ -152,6 +154,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "Exponential")]
+    #[allow(clippy::too_many_arguments)]
     pub fn exponential(
         a: u64,
         d: u64,
@@ -177,6 +180,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "Logarithmic")]
+    #[allow(clippy::too_many_arguments)]
     pub fn logarithmic(
         a: i64,
         d: u64,
@@ -202,6 +206,7 @@ impl DistributionFunctionWasm {
     }
 
     #[wasm_bindgen(js_name = "InvertedLogarithmic")]
+    #[allow(clippy::too_many_arguments)]
     pub fn inverted_logarithmic(
         a: i64,
         d: u64,

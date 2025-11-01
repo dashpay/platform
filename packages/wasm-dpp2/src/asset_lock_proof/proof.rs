@@ -129,10 +129,7 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "getOutPoint")]
     pub fn get_out_point(&self) -> Option<OutPointWasm> {
-        match self.0.out_point() {
-            Some(out_point) => Some(OutPointWasm::from(out_point)),
-            None => None,
-        }
+        self.0.out_point().map(OutPointWasm::from)
     }
 
     #[wasm_bindgen(js_name = "createIdentityId")]

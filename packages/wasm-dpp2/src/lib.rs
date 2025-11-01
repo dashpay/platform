@@ -28,10 +28,18 @@ pub mod tokens;
 pub mod utils;
 pub mod voting;
 
-pub use data_contract::*;
+pub use data_contract::{
+    ContractBoundsWasm, DataContractCreateTransitionWasm, DataContractUpdateTransitionWasm,
+    DataContractWasm, DocumentWasm, tokens_configuration_from_js_value,
+};
 pub use epoch::*;
 pub use group::*;
-pub use identity::*;
+pub use identity::{
+    IdentityCreateTransitionWasm, IdentityCreditTransferWasm,
+    IdentityCreditWithdrawalTransitionWasm, IdentityPublicKeyInCreationWasm, IdentityPublicKeyWasm,
+    IdentityTopUpTransitionWasm, IdentityUpdateTransitionWasm, IdentityWasm,
+    MasternodeVoteTransitionWasm, PartialIdentityWasm,
+};
 pub use state_transitions::base::{GroupStateTransitionInfoWasm, StateTransitionWasm};
 pub use tokens::*;
 pub use voting::{

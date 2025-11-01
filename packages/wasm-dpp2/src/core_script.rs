@@ -80,7 +80,7 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "toString")]
-    pub fn to_string(&self) -> String {
+    pub fn to_string_js(&self) -> String {
         self.0.to_string(Base64)
     }
 

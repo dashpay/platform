@@ -63,10 +63,7 @@ impl TokenMintTransitionWasm {
 
     #[wasm_bindgen(getter = issuedToIdentityId)]
     pub fn issued_to_identity_id(&self) -> Option<IdentifierWasm> {
-        match self.0.issued_to_identity_id() {
-            None => None,
-            Some(id) => Some(id.into()),
-        }
+        self.0.issued_to_identity_id().map(|id| id.into())
     }
 
     #[wasm_bindgen(getter = amount)]
@@ -84,7 +81,7 @@ impl TokenMintTransitionWasm {
         self.clone().0.public_note_owned()
     }
 
-    #[wasm_bindgen(js_name = getRecipitnId)]
+    #[wasm_bindgen(js_name = getRecipientId)]
     pub fn recipient_id(&self, config: &TokenConfigurationWasm) -> WasmDppResult<IdentifierWasm> {
         Ok(self.0.recipient_id(&config.clone().into())?.into())
     }

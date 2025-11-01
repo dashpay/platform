@@ -1,6 +1,7 @@
+use crate::queries::utils::{convert_optional_limit, deserialize_query_with_default};
 use crate::sdk::WasmSdk;
 use crate::{ProofMetadataResponseWasm, WasmSdkError};
-use dash_sdk::dpp::prelude::{TimestampIncluded, TimestampMillis};
+use dash_sdk::dpp::prelude::TimestampMillis;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::platform::FetchMany;
 use drive::query::VotePollsByEndDateDriveQuery;
@@ -95,34 +96,6 @@ fn timestamp_from_option(
     }
 }
 
-fn convert_limit(limit: Option<u32>, field: &str) -> Result<Option<u16>, WasmSdkError> {
-    match limit {
-        Some(0) => Ok(None),
-        Some(value) => {
-            if value > u16::MAX as u32 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "{} {} exceeds maximum of {}",
-                    field,
-                    value,
-                    u16::MAX
-                )));
-            }
-
-            Ok(Some(value as u16))
-        }
-        None => Ok(None),
-    }
-}
-
-#[wasm_bindgen(js_name = "VotePollsByEndDateQuery")]
-pub struct VotePollsByEndDateQueryWasm(VotePollsByEndDateDriveQuery);
-
-impl VotePollsByEndDateQueryWasm {
-    pub(crate) fn into_inner(self) -> VotePollsByEndDateDriveQuery {
-        self.0
-    }
-}
-
 #[derive(Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VotePollsByEndDateQueryInput {
@@ -144,7 +117,7 @@ struct VotePollsByEndDateQueryInput {
 
 fn build_vote_polls_by_end_date_drive_query(
     input: VotePollsByEndDateQueryInput,
-) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
+) -> Result<VotePollsByEndDateDriveQuery, WasmSdkError> {
     let VotePollsByEndDateQueryInput {
         start_time_ms,
         start_time_included,
@@ -173,51 +146,32 @@ fn build_vote_polls_by_end_date_drive_query(
     let end_time = timestamp_from_option(end_time_ms, "endTimeMs")?
         .map(|timestamp| (timestamp, end_time_included.unwrap_or(true)));
 
-    let limit = convert_limit(limit, "limit")?;
-    let offset = convert_limit(offset, "offset")?;
+    let limit = convert_optional_limit(limit, "limit")?;
+    let offset = convert_optional_limit(offset, "offset")?;
 
-    Ok(VotePollsByEndDateQueryWasm(VotePollsByEndDateDriveQuery {
+    Ok(VotePollsByEndDateDriveQuery {
         start_time,
         end_time,
         limit,
         offset,
         order_ascending: order_ascending.unwrap_or(true),
-    }))
+    })
 }
 
 fn parse_vote_polls_by_end_date_query(
     query: Option<VotePollsByEndDateQueryJs>,
-) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
-    let value: JsValue = query
-        .map(Into::into)
-        .unwrap_or(JsValue::UNDEFINED);
-
-    let input: VotePollsByEndDateQueryInput = if value.is_null() || value.is_undefined() {
-        VotePollsByEndDateQueryInput::default()
-    } else {
-        serde_wasm_bindgen::from_value(value).map_err(|err| {
-            WasmSdkError::invalid_argument(format!(
-                "Invalid vote polls by end date query: {}",
-                err
-            ))
-        })?
-    };
+) -> Result<VotePollsByEndDateDriveQuery, WasmSdkError> {
+    let input: VotePollsByEndDateQueryInput =
+        deserialize_query_with_default(query, "vote polls by end date query")?;
 
     build_vote_polls_by_end_date_drive_query(input)
-}
-
-#[wasm_bindgen(js_name = "buildVotePollsByEndDateQuery")]
-pub fn build_vote_polls_by_end_date_query(
-    query: Option<VotePollsByEndDateQueryJs>,
-) -> Result<VotePollsByEndDateQueryWasm, WasmSdkError> {
-    parse_vote_polls_by_end_date_query(query)
 }
 
 #[derive(Clone)]
 #[wasm_bindgen(js_name = "VotePollsByEndDateEntry")]
 pub struct VotePollsByEndDateEntryWasm {
     timestamp_ms: TimestampMillis,
-    polls_js: Rc<Array>,
+    polls: Rc<Array>,
 }
 
 impl VotePollsByEndDateEntryWasm {
@@ -229,7 +183,7 @@ impl VotePollsByEndDateEntryWasm {
 
         Self {
             timestamp_ms,
-            polls_js: Rc::new(array),
+            polls: Rc::new(array),
         }
     }
 }
@@ -243,83 +197,30 @@ impl VotePollsByEndDateEntryWasm {
 
     #[wasm_bindgen(getter = votePolls)]
     pub fn vote_polls(&self) -> Array {
-        self.polls_js.as_ref().clone()
+        self.polls.as_ref().clone()
     }
 }
 
-#[derive(Clone)]
-#[wasm_bindgen(js_name = "VotePollsByEndDateResult")]
-pub struct VotePollsByEndDateResultWasm {
-    entries: Vec<VotePollsByEndDateEntryWasm>,
-    entries_js: Rc<Array>,
-}
-
-impl VotePollsByEndDateResultWasm {
-    fn new(entries: Vec<VotePollsByEndDateEntryWasm>) -> Self {
-        let array = Array::new();
-        for entry in &entries {
-            array.push(&JsValue::from(entry.clone()));
-        }
-
-        Self {
-            entries,
-            entries_js: Rc::new(array),
-        }
+fn vote_polls_grouped_to_entries(grouped: VotePollsGroupedByTimestamp) -> Array {
+    let entries = Array::new();
+    for (timestamp, polls) in grouped {
+        let poll_wrappers = polls.into_iter().map(VotePollWasm::from).collect();
+        let entry = VotePollsByEndDateEntryWasm::new(timestamp, poll_wrappers);
+        entries.push(&JsValue::from(entry));
     }
-}
-
-#[wasm_bindgen(js_class = VotePollsByEndDateResult)]
-impl VotePollsByEndDateResultWasm {
-    #[wasm_bindgen(getter = entries)]
-    pub fn entries(&self) -> Array {
-        self.entries_js.as_ref().clone()
-    }
-
-    #[wasm_bindgen(js_name = "isEmpty")]
-    pub fn is_empty(&self) -> bool {
-        self.entries.is_empty()
-    }
-}
-
-impl From<VotePollsGroupedByTimestamp> for VotePollsByEndDateResultWasm {
-    fn from(grouped: VotePollsGroupedByTimestamp) -> Self {
-        let entries = grouped
-            .into_iter()
-            .map(|(timestamp, polls)| {
-                let poll_wrappers = polls.into_iter().map(VotePollWasm::from).collect();
-                VotePollsByEndDateEntryWasm::new(timestamp, poll_wrappers)
-            })
-            .collect();
-
-        VotePollsByEndDateResultWasm::new(entries)
-    }
+    entries
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
-    async fn fetch_vote_polls_by_end_date(
-        &self,
-        query: VotePollsByEndDateQueryWasm,
-    ) -> Result<VotePollsByEndDateResultWasm, WasmSdkError> {
-        let polls = VotePoll::fetch_many(self.as_ref(), query.into_inner()).await?;
-        Ok(polls.into())
-    }
-
     #[wasm_bindgen(js_name = "getVotePollsByEndDate")]
     pub async fn get_vote_polls_by_end_date(
         &self,
         query: Option<VotePollsByEndDateQueryJs>,
-    ) -> Result<VotePollsByEndDateResultWasm, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         let drive_query = parse_vote_polls_by_end_date_query(query)?;
-        self.fetch_vote_polls_by_end_date(drive_query).await
-    }
-
-    #[wasm_bindgen(js_name = "getVotePollsByEndDateWithQuery")]
-    pub async fn get_vote_polls_by_end_date_with_query(
-        &self,
-        query: VotePollsByEndDateQueryWasm,
-    ) -> Result<VotePollsByEndDateResultWasm, WasmSdkError> {
-        self.fetch_vote_polls_by_end_date(query).await
+        let polls = VotePoll::fetch_many(self.as_ref(), drive_query).await?;
+        Ok(vote_polls_grouped_to_entries(polls))
     }
 
     #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfo")]
@@ -328,25 +229,13 @@ impl WasmSdk {
         query: Option<VotePollsByEndDateQueryJs>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let drive_query = parse_vote_polls_by_end_date_query(query)?;
-        self.get_vote_polls_by_end_date_with_proof_info_query(drive_query)
-            .await
-    }
-
-    #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfoQuery")]
-    pub async fn get_vote_polls_by_end_date_with_proof_info_query(
-        &self,
-        query: VotePollsByEndDateQueryWasm,
-    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let (polls, metadata, proof) =
-            VotePoll::fetch_many_with_metadata_and_proof(self.as_ref(), query.into_inner(), None)
-                .await?;
+            VotePoll::fetch_many_with_metadata_and_proof(self.as_ref(), drive_query, None).await?;
 
-        let result = VotePollsByEndDateResultWasm::from(polls);
+        let entries = vote_polls_grouped_to_entries(polls);
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(result),
-            metadata.into(),
-            proof.into(),
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            entries, metadata, proof,
         ))
     }
 }

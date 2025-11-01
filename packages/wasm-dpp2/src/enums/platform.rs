@@ -9,6 +9,7 @@ use dpp::version::v6::PLATFORM_V6;
 use dpp::version::v7::PLATFORM_V7;
 use dpp::version::v8::PLATFORM_V8;
 use dpp::version::v9::PLATFORM_V9;
+use dpp::version::v10::PLATFORM_V10;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -26,6 +27,7 @@ pub enum PlatformVersionWasm {
     PLATFORM_V7 = 7,
     PLATFORM_V8 = 8,
     PLATFORM_V9 = 9,
+    PLATFORM_V10 = 10,
 }
 
 impl TryFrom<JsValue> for PlatformVersionWasm {
@@ -46,6 +48,7 @@ impl TryFrom<JsValue> for PlatformVersionWasm {
                     "platform_v7" => Ok(PlatformVersionWasm::PLATFORM_V7),
                     "platform_v8" => Ok(PlatformVersionWasm::PLATFORM_V8),
                     "platform_v9" => Ok(PlatformVersionWasm::PLATFORM_V9),
+                    "platform_v10" => Ok(PlatformVersionWasm::PLATFORM_V10),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown platform version value: {}",
                         enum_val
@@ -66,6 +69,7 @@ impl TryFrom<JsValue> for PlatformVersionWasm {
                     7 => Ok(PlatformVersionWasm::PLATFORM_V7),
                     8 => Ok(PlatformVersionWasm::PLATFORM_V8),
                     9 => Ok(PlatformVersionWasm::PLATFORM_V9),
+                    10 => Ok(PlatformVersionWasm::PLATFORM_V10),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "unknown platform version value: {}",
                         enum_val
@@ -88,6 +92,7 @@ impl From<PlatformVersionWasm> for String {
             PlatformVersionWasm::PLATFORM_V7 => String::from("PLATFORM_V7"),
             PlatformVersionWasm::PLATFORM_V8 => String::from("PLATFORM_V8"),
             PlatformVersionWasm::PLATFORM_V9 => String::from("PLATFORM_V9"),
+            PlatformVersionWasm::PLATFORM_V10 => String::from("PLATFORM_V10"),
         }
     }
 }
@@ -104,6 +109,7 @@ impl From<PlatformVersionWasm> for PlatformVersion {
             PlatformVersionWasm::PLATFORM_V7 => PLATFORM_V7,
             PlatformVersionWasm::PLATFORM_V8 => PLATFORM_V8,
             PlatformVersionWasm::PLATFORM_V9 => PLATFORM_V9,
+            PlatformVersionWasm::PLATFORM_V10 => PLATFORM_V10,
         }
     }
 }

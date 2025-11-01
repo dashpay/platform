@@ -8,7 +8,7 @@ before(async () => {
 
 describe('DistributionFunction', function () {
   describe('serialization / deserialization', function () {
-    it('shoulda allow to create FixedAmountDistribution', () => {
+    it('should allow to create FixedAmountDistribution', () => {
       const distributionFunction = wasm.DistributionFunction.FixedAmountDistribution(
         BigInt(111)
       )
@@ -16,7 +16,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Random', () => {
+    it('should allow to create Random', () => {
       const distributionFunction = wasm.DistributionFunction.Random(
         BigInt(111),
         BigInt(113)
@@ -25,7 +25,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create StepDecreasingAmount', () => {
+    it('should allow to create StepDecreasingAmount', () => {
       const distributionFunction = wasm.DistributionFunction.StepDecreasingAmount(
         11,
         11,
@@ -40,7 +40,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Stepwise', () => {
+    it('should allow to create Stepwise', () => {
       const distributionFunction = wasm.DistributionFunction.Stepwise(
         {
           11111111121: BigInt(111)
@@ -50,7 +50,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Linear', () => {
+    it('should allow to create Linear', () => {
       const distributionFunction = wasm.DistributionFunction.Linear(
         BigInt(111),
         BigInt(113),
@@ -63,7 +63,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Polynomial', () => {
+    it('should allow to create Polynomial', () => {
       const distributionFunction = wasm.DistributionFunction.Polynomial(
         BigInt(111),
         BigInt(113),
@@ -79,7 +79,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Exponential', () => {
+    it('should allow to create Exponential', () => {
       const distributionFunction = wasm.DistributionFunction.Exponential(
         BigInt(111),
         BigInt(113),
@@ -95,7 +95,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create Logarithmic', () => {
+    it('should allow to create Logarithmic', () => {
       const distributionFunction = wasm.DistributionFunction.Logarithmic(
         BigInt(111),
         BigInt(113),
@@ -111,7 +111,7 @@ describe('DistributionFunction', function () {
       expect(distributionFunction.__wbg_ptr).to.not.equal(0)
     })
 
-    it('shoulda allow to create InvertedLogarithmic', () => {
+    it('should allow to create InvertedLogarithmic', () => {
       const distributionFunction = wasm.DistributionFunction.InvertedLogarithmic(
         BigInt(111),
         BigInt(113),

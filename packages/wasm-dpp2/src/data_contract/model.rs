@@ -226,7 +226,7 @@ impl DataContractWasm {
         };
 
         let rs_data_contract = DataContract::versioned_deserialize(
-            &bytes.as_slice(),
+            bytes.as_slice(),
             full_validation,
             &platform_version.into(),
         )?;
@@ -339,7 +339,7 @@ impl DataContractWasm {
         for (key, value) in self.0.tokens().iter() {
             Reflect::set(
                 &tokens_object,
-                &JsValue::from(key.clone()),
+                &JsValue::from(*key),
                 &JsValue::from(TokenConfigurationWasm::from(value.clone())),
             )
             .map_err(|err| {
@@ -361,7 +361,7 @@ impl DataContractWasm {
         for (key, value) in self.0.groups().iter() {
             Reflect::set(
                 &groups_object,
-                &JsValue::from(key.clone()),
+                &JsValue::from(*key),
                 &JsValue::from(GroupWasm::from(value.clone())),
             )
             .map_err(|err| {

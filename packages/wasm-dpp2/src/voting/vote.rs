@@ -44,15 +44,15 @@ impl VoteWasm {
 
     #[wasm_bindgen(getter = votePoll)]
     pub fn vote_poll(&self) -> VotePollWasm {
-        match self.0.clone() {
+        match &self.0 {
             Vote::ResourceVote(vote) => vote.vote_poll().clone().into(),
         }
     }
 
     #[wasm_bindgen(getter = resourceVoteChoice)]
     pub fn resource_vote_choice(&self) -> ResourceVoteChoiceWasm {
-        match self.0.clone() {
-            Vote::ResourceVote(vote) => vote.resource_vote_choice().clone().into(),
+        match &self.0 {
+            Vote::ResourceVote(vote) => vote.resource_vote_choice().into(),
         }
     }
 

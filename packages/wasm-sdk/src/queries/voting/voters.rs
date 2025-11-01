@@ -1,6 +1,9 @@
+use crate::queries::utils::{
+    convert_json_values_to_platform_values, convert_optional_limit, deserialize_required_query,
+    identifier_from_base58,
+};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
-use crate::utils::js_values_to_platform_values;
 use crate::WasmSdkError;
 use dash_sdk::dpp::voting::vote_polls::contested_document_resource_vote_poll::ContestedDocumentResourceVotePoll;
 use dash_sdk::platform::FetchMany;
@@ -8,7 +11,6 @@ use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVot
 use drive_proof_verifier::types::Voter;
 use js_sys::Array;
 use platform_value::string_encoding::Encoding;
-use platform_value::Identifier;
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -79,9 +81,13 @@ extern "C" {
     pub type ContestedResourceVotersQueryJs;
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ContestedResourceVotersQueryFields {
+struct ContestedResourceVotersQueryInput {
+    data_contract_id: String,
+    document_type_name: String,
+    index_name: String,
+    contestant_id: String,
     #[serde(default)]
     index_values: Option<Vec<JsonValue>>,
     #[serde(default)]
@@ -94,34 +100,6 @@ struct ContestedResourceVotersQueryFields {
     order_ascending: Option<bool>,
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ContestedResourceVotersQueryInput {
-    data_contract_id: String,
-    document_type_name: String,
-    index_name: String,
-    contestant_id: String,
-    #[serde(flatten)]
-    fields: ContestedResourceVotersQueryFields,
-}
-
-fn convert_limit(limit: Option<u32>) -> Result<Option<u16>, WasmSdkError> {
-    match limit {
-        Some(0) => Ok(None),
-        Some(value) => {
-            if value > u16::MAX as u32 {
-                return Err(WasmSdkError::invalid_argument(format!(
-                    "limit {} exceeds maximum of {}",
-                    value,
-                    u16::MAX
-                )));
-            }
-            Ok(Some(value as u16))
-        }
-        None => Ok(None),
-    }
-}
-
 fn build_contested_resource_voters_query(
     query: ContestedResourceVotersQueryInput,
 ) -> Result<ContestedDocumentVotePollVotesDriveQuery, WasmSdkError> {
@@ -130,56 +108,29 @@ fn build_contested_resource_voters_query(
         document_type_name,
         index_name,
         contestant_id,
-        fields:
-            ContestedResourceVotersQueryFields {
-                index_values,
-                limit,
-                start_at_voter_id,
-                start_at_included,
-                order_ascending,
-            },
+        index_values,
+        limit,
+        start_at_voter_id,
+        start_at_included,
+        order_ascending,
     } = query;
 
-    let contract_id = Identifier::from_string(
-        &data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+    let contract_id = identifier_from_base58(&data_contract_id, "contract ID")?;
 
-    let contestant_id = Identifier::from_string(
-        &contestant_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contestant ID: {}", e)))?;
+    let contestant_id = identifier_from_base58(&contestant_id, "contestant ID")?;
 
-    let index_values_js: Vec<JsValue> = index_values
-        .unwrap_or_default()
-        .into_iter()
-        .map(|value| {
-            serde_wasm_bindgen::to_value(&value).map_err(|err| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid indexValues entry: {}",
-                    err
-                ))
-            })
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    let index_values = js_values_to_platform_values(index_values_js)?;
+    let index_values = convert_json_values_to_platform_values(index_values, "indexValues")?;
 
     let start_at = match start_at_voter_id {
         Some(voter_id) => {
-            let identifier = Identifier::from_string(
-                &voter_id,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid voter ID: {}", e)))?;
+            let identifier = identifier_from_base58(&voter_id, "voter ID")?;
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }
         None => None,
     };
 
-    let limit = convert_limit(limit)?;
+    let limit = convert_optional_limit(limit, "limit")?;
     let order_ascending = order_ascending.unwrap_or(true);
 
     Ok(ContestedDocumentVotePollVotesDriveQuery {
@@ -200,14 +151,11 @@ fn build_contested_resource_voters_query(
 fn parse_contested_resource_voters_query(
     query: ContestedResourceVotersQueryJs,
 ) -> Result<ContestedDocumentVotePollVotesDriveQuery, WasmSdkError> {
-    let query_value: JsValue = query.into();
-    let input: ContestedResourceVotersQueryInput = serde_wasm_bindgen::from_value(query_value)
-        .map_err(|err| {
-            WasmSdkError::invalid_argument(format!(
-                "Invalid contested resource voters query: {}",
-                err
-            ))
-        })?;
+    let input: ContestedResourceVotersQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "contested resource voters query",
+    )?;
 
     build_contested_resource_voters_query(input)
 }
@@ -238,7 +186,7 @@ impl WasmSdk {
     pub async fn get_contested_resource_voters_for_identity_with_proof_info(
         &self,
         query: ContestedResourceVotersQueryJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let drive_query = parse_contested_resource_voters_query(query)?;
 
         let (voters, metadata, proof) =
@@ -257,8 +205,8 @@ impl WasmSdk {
             ))
         })?;
 
-        let response = ProofMetadataResponseWasm::from_parts(data, metadata.into(), proof.into());
-
-        Ok(JsValue::from(response))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            data, metadata, proof,
+        ))
     }
 }

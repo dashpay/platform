@@ -194,30 +194,6 @@ pub struct StatusStateSyncWasm {
     pub backfill_blocks_total: String,
 }
 
-impl StatusStateSyncWasm {
-    fn new(
-        total_synced_time: String,
-        remaining_time: String,
-        total_snapshots: u32,
-        chunk_process_avg_time: String,
-        snapshot_height: String,
-        snapshot_chunks_count: String,
-        backfilled_blocks: String,
-        backfill_blocks_total: String,
-    ) -> Self {
-        Self {
-            total_synced_time,
-            remaining_time,
-            total_snapshots,
-            chunk_process_avg_time,
-            snapshot_height,
-            snapshot_chunks_count,
-            backfilled_blocks,
-            backfill_blocks_total,
-        }
-    }
-}
-
 #[wasm_bindgen(js_name = "StatusTime")]
 #[derive(Clone)]
 pub struct StatusTimeWasm {
@@ -391,7 +367,7 @@ impl PrefundedSpecializedBalanceWasm {
 impl PrefundedSpecializedBalanceWasm {
     #[wasm_bindgen(getter = "balance")]
     pub fn balance(&self) -> BigInt {
-        BigInt::from(self.balance as u64)
+        BigInt::from(self.balance)
     }
 }
 
@@ -610,48 +586,48 @@ impl WasmSdk {
                 .unwrap_or(false),
         );
 
-        let state_sync = StatusStateSyncWasm::new(
-            v0_response
+        let state_sync = StatusStateSyncWasm {
+            total_synced_time: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.total_synced_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            remaining_time: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.remaining_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            total_snapshots: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.total_snapshots)
                 .unwrap_or(0),
-            v0_response
+            chunk_process_avg_time: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.chunk_process_avg_time.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            snapshot_height: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.snapshot_height.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            snapshot_chunks_count: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.snapshot_chunks_count.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            backfilled_blocks: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.backfilled_blocks.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-            v0_response
+            backfill_blocks_total: v0_response
                 .state_sync
                 .as_ref()
                 .map(|s| s.backfill_blocks_total.to_string())
                 .unwrap_or_else(|| "0".to_string()),
-        );
+        };
 
         let time = StatusTimeWasm::new(
             v0_response
@@ -773,7 +749,7 @@ impl WasmSdk {
             0
         };
 
-        Ok(BigInt::from(credits_value as u64))
+        Ok(BigInt::from(credits_value))
     }
 
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
@@ -943,7 +919,7 @@ impl WasmSdk {
                 .await?;
 
         let data = total_credits_result
-            .map(|credits| JsValue::from(BigInt::from(credits.0 as u64)))
+            .map(|credits| JsValue::from(BigInt::from(credits.0)))
             .unwrap_or(JsValue::UNDEFINED);
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(

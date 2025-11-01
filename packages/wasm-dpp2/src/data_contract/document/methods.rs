@@ -93,10 +93,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(getter=entropy)]
     pub fn get_entropy(&self) -> Option<Vec<u8>> {
-        match self.entropy {
-            Some(entropy) => Some(entropy.to_vec()),
-            None => None,
-        }
+        self.entropy.map(|entropy| entropy.to_vec())
     }
 
     #[wasm_bindgen(getter=dataContractId)]
@@ -180,7 +177,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(setter=id)]
     pub fn set_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
-        self.id = IdentifierWasm::try_from(id)?.clone();
+        self.id = IdentifierWasm::try_from(id)?;
         Ok(())
     }
 
@@ -214,7 +211,7 @@ impl DocumentWasm {
 
     #[wasm_bindgen(setter=ownerId)]
     pub fn set_owner_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
-        self.owner_id = IdentifierWasm::try_from(id)?.clone();
+        self.owner_id = IdentifierWasm::try_from(id)?;
         Ok(())
     }
 
@@ -454,6 +451,6 @@ impl DocumentWasm {
     }
 
     fn set_data_contract_id(&mut self, data_contract_id: &IdentifierWasm) {
-        self.data_contract_id = data_contract_id.clone();
+        self.data_contract_id = *data_contract_id;
     }
 }

@@ -53,7 +53,7 @@ impl TokenPerpetualDistributionWasm {
 
     #[wasm_bindgen(getter = distributionRecipient)]
     pub fn recipient(&self) -> TokenDistributionRecipientWasm {
-        self.0.distribution_recipient().clone().into()
+        self.0.distribution_recipient().into()
     }
 
     #[wasm_bindgen(setter = distributionType)]

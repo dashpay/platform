@@ -9,7 +9,7 @@ before(async () => {
 
 describe('TokenDistributionRules', () => {
   describe('serialization / deserialization', () => {
-    it('shoulda allow to create with undefined values', () => {
+    it('should allow to create with undefined values', () => {
       const noOne = wasm.AuthorizedActionTakers.NoOne();
 
       const changeRules = new wasm.ChangeControlRules(
@@ -35,7 +35,7 @@ describe('TokenDistributionRules', () => {
       expect(changeRules.__wbg_ptr).to.not.equal(0);
     });
 
-    it('shoulda allow to create without undefined values', () => {
+    it('should allow to create without undefined values', () => {
       const noOne = wasm.AuthorizedActionTakers.NoOne();
 
       const changeRules = new wasm.ChangeControlRules(
@@ -89,7 +89,7 @@ describe('TokenDistributionRules', () => {
   });
 
   describe('getters', () => {
-    it('shoulda allow to get values', () => {
+    it('should allow to get values', () => {
       const noOne = wasm.AuthorizedActionTakers.NoOne();
 
       const changeRules = new wasm.ChangeControlRules(

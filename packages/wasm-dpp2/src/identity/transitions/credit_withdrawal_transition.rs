@@ -76,10 +76,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
     #[wasm_bindgen(getter = "outputScript")]
     pub fn get_output_script(&self) -> Option<CoreScriptWasm> {
-        match self.0.output_script() {
-            None => None,
-            Some(script) => Some(script.into()),
-        }
+        self.0.output_script().map(|script| script.into())
     }
 
     #[wasm_bindgen(getter = "pooling")]
@@ -112,7 +109,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         self.0
             .purpose_requirement()
             .iter()
-            .map(|purpose| PurposeWasm::from(purpose.clone()).into())
+            .map(|purpose| PurposeWasm::from(*purpose).into())
             .collect()
     }
 
@@ -121,7 +118,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         self.0
             .modified_data_ids()
             .iter()
-            .map(|id| id.clone().into())
+            .map(|id| (*id).into())
             .collect()
     }
 

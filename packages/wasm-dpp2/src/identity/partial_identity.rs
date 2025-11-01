@@ -90,7 +90,7 @@ impl PartialIdentityWasm {
             arr.push(&v.into());
         }
 
-        arr.into()
+        arr
     }
 
     #[wasm_bindgen(setter = "id")]

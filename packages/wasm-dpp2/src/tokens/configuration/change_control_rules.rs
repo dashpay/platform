@@ -61,15 +61,12 @@ impl ChangeControlRulesWasm {
 
     #[wasm_bindgen(getter = "authorizedToMakeChange")]
     pub fn get_authorized_to_make_change(&self) -> AuthorizedActionTakersWasm {
-        self.0
-            .authorized_to_make_change_action_takers()
-            .clone()
-            .into()
+        (*self.0.authorized_to_make_change_action_takers()).into()
     }
 
     #[wasm_bindgen(getter = "adminActionTakers")]
     pub fn get_admin_action_takers(&self) -> AuthorizedActionTakersWasm {
-        self.0.admin_action_takers().clone().into()
+        (*self.0.admin_action_takers()).into()
     }
 
     #[wasm_bindgen(getter = "changingAuthorizedActionTakersToNoOneAllowed")]
@@ -201,7 +198,7 @@ impl ChangeControlRulesWasm {
 
         Ok(self.0.can_change_admin_action_takers(
             &admin_action_takers.clone().into(),
-            &contract_owner_id.clone().into(),
+            &contract_owner_id.into(),
             main_group,
             &groups,
             &action_taker.clone().into(),

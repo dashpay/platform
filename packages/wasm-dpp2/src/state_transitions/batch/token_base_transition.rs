@@ -90,10 +90,9 @@ impl TokenBaseTransitionWasm {
 
     #[wasm_bindgen(getter = usingGroupInfo)]
     pub fn get_using_group_info(&self) -> Option<GroupStateTransitionInfoWasm> {
-        match self.0.using_group_info() {
-            Some(using_group_info) => Some(using_group_info.clone().into()),
-            None => None,
-        }
+        self.0
+            .using_group_info()
+            .map(|using_group_info| using_group_info.into())
     }
 
     #[wasm_bindgen(setter = identityContractNonce)]

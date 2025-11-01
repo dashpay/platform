@@ -29,7 +29,7 @@ impl From<[u8; 32]> for IdentifierWasm {
 
 impl From<&IdentifierWasm> for Identifier {
     fn from(identifier: &IdentifierWasm) -> Self {
-        identifier.clone().into()
+        (*identifier).into()
     }
 }
 
@@ -56,7 +56,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         match value.is_object() {
             true => match get_class_type(&value) {
                 Ok(class_type) => match class_type.as_str() {
-                    "Identifier" => Ok(value.to_wasm::<IdentifierWasm>("Identifier")?.clone()),
+                    "Identifier" => Ok(*value.to_wasm::<IdentifierWasm>("Identifier")?),
                     "" => Ok(identifier_from_js_value(&value)?.into()),
                     _ => Err(WasmDppError::invalid_argument(format!(
                         "Invalid type of data for identifier (passed {})",
@@ -163,6 +163,6 @@ impl IdentifierWasm {
 
 impl IdentifierWasm {
     pub fn to_slice(&self) -> [u8; 32] {
-        self.0.as_bytes().clone()
+        *self.0.as_bytes()
     }
 }

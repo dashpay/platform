@@ -1034,7 +1034,7 @@ impl WasmSdk {
         for token_id in token_identifiers {
             if let Some(Some(balance)) = balances.get(&token_id) {
                 let key = JsValue::from(IdentifierWasm::from(token_id));
-                let value = JsValue::from(BigInt::from(*balance as u64));
+                let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
         }
@@ -1566,7 +1566,7 @@ impl WasmSdk {
         for token_id in token_identifiers {
             if let Some(Some(balance)) = balances.get(&token_id) {
                 let key = JsValue::from(IdentifierWasm::from(token_id));
-                let value = JsValue::from(BigInt::from(*balance as u64));
+                let value = JsValue::from(BigInt::from(*balance));
                 balances_map.set(&key, &value);
             }
         }

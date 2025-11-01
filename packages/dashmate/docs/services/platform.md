@@ -154,6 +154,6 @@ Tenderdash is the consensus engine that provides Byzantine Fault Tolerant (BFT) 
 | **DAPI API**              | JSON-RPC             | 3004          | (fixed internal)                                 | (internal)          | -               |
 |                           | gRPC                 | 3005          | (fixed internal)                                 | (internal)          | -               |
 | **DAPI Core Streams**     | gRPC Streaming       | 3006          | (fixed internal)                                 | (internal)          | -               |
-| **rs-dapi (Rust)**        | Health + Metrics     | 9091          | `platform.dapi.rsDapi.metrics.port`              | 127.0.0.1           | `platform.dapi.rsDapi.metrics.host` |
+| **rs-dapi (Rust)**        | Health + Metrics     | 9091 (mainnet), 19091 (testnet), 29091 (local) | `platform.dapi.rsDapi.metrics.port`              | 127.0.0.1           | `platform.dapi.rsDapi.metrics.host` |
 
-The rs-dapi metrics server exposes health endpoints alongside Prometheus data on `/metrics` from the same port.
+The rs-dapi metrics server exposes health endpoints alongside Prometheus data on `/metrics` from the same port. Dashmate applies network-specific defaults (mainnet 9091, testnet 19091, local 29091) so multiple presets can coexist on a host without conflicts.

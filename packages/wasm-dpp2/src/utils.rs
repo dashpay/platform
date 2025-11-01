@@ -199,7 +199,7 @@ pub fn generic_of_js_val<T: RefFromWasmAbi<Abi = u32>>(
 }
 
 pub fn get_class_type(value: &JsValue) -> WasmDppResult<String> {
-    let class_type = js_sys::Reflect::get(&value, &JsValue::from_str("__type")).map_err(|err| {
+    let class_type = js_sys::Reflect::get(value, &JsValue::from_str("__type")).map_err(|err| {
         let message = err.error_message();
         WasmDppError::generic(format!(
             "failed to read '__type' property from JS value: {}",
