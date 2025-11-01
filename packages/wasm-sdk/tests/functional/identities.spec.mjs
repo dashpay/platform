@@ -37,7 +37,10 @@ describe('Identity queries', function describeBlock() {
 
   it('gets contract nonce and keys', async () => {
     await client.getIdentityContractNonce(TEST_IDENTITY, DPNS_CONTRACT);
-    const keys = await client.getIdentityKeys(TEST_IDENTITY, 'all');
+    const keys = await client.getIdentityKeys({
+      identityId: TEST_IDENTITY,
+      request: { type: 'all' },
+    });
     expect(keys).to.be.an('array');
   });
 
