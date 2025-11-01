@@ -37,8 +37,11 @@ impl DocumentWasm {
         js_raw_document: JsValue,
         js_document_type_name: &str,
         js_revision: u64,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_data_contract_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_owner_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_document_id: &JsValue,
     ) -> WasmDppResult<DocumentWasm> {
         let data_contract_id: Identifier = IdentifierWasm::try_from(js_data_contract_id)?.into();

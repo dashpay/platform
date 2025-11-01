@@ -1,10 +1,10 @@
 use crate::error::{WasmDppError, WasmDppResult};
+use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
 use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
-use wasm_bindgen::JsCast;
 
 #[derive(Copy, Clone)]
 #[wasm_bindgen(js_name = "Identifier")]
@@ -60,8 +60,8 @@ impl TryFrom<JsValue> for IdentifierWasm {
             ));
         }
 
-        if let Ok(existing) = value.clone().dyn_into::<IdentifierWasm>() {
-            return Ok(existing);
+        if let Ok(existing) = value.clone().to_wasm::<IdentifierWasm>("Identifier") {
+            return Ok(*existing);
         }
 
         if let Some(string) = value.as_string() {
@@ -76,10 +76,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
                 .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
         }
 
-        if value.is_instance_of::<js_sys::Uint8Array>()
-            || value.is_array()
-            || value.is_object()
-        {
+        if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
             let uint8_array = Uint8Array::from(value.clone());
             let bytes = uint8_array.to_vec();
 
@@ -114,7 +111,10 @@ impl IdentifierWasm {
     }
 
     #[wasm_bindgen(constructor)]
-    pub fn new(js_identifier: &JsValue) -> WasmDppResult<IdentifierWasm> {
+    pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<IdentifierWasm> {
         IdentifierWasm::try_from(js_identifier)
     }
 
