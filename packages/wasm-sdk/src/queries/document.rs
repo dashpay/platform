@@ -8,6 +8,7 @@ use dash_sdk::dpp::platform_value::{platform_value, Value};
 use dash_sdk::dpp::prelude::Identifier;
 use dash_sdk::platform::documents::document_query::DocumentQuery;
 use dash_sdk::platform::Fetch;
+use dash_sdk::platform::FetchMany;
 use drive::query::{OrderClause, WhereClause, WhereOperator};
 use js_sys::Map;
 use serde::Deserialize;
@@ -16,7 +17,6 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
-
 #[wasm_bindgen(js_name = "DocumentProofResponse")]
 #[derive(Clone)]
 pub struct DocumentProofResponseWasm {

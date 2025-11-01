@@ -22,13 +22,21 @@ export class ContractsFacade {
   async getHistory(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistory(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
+    return w.getDataContractHistory({
+      dataContractId: contractId,
+      limit,
+      startAtMs: startAtMs != null ? BigInt(startAtMs) : undefined,
+    });
   }
 
   async getHistoryWithProof(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistoryWithProofInfo(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
+    return w.getDataContractHistoryWithProofInfo({
+      dataContractId: contractId,
+      limit,
+      startAtMs: startAtMs != null ? BigInt(startAtMs) : undefined,
+    });
   }
 
   async getMany(contractIds: string[]): Promise<any> {

@@ -4,7 +4,7 @@ use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataW
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
-use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
+use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
 use js_sys::{Array, BigInt, Map};
 use rs_dapi_client::IntoInner;
@@ -478,71 +478,18 @@ impl WasmSdk {
                 IdentityPublicKey::fetch_many(self.as_ref(), identity_id.clone()).await?
             }
             IdentityKeysRequestInput::Specific { specific_key_ids } => {
-                use dash_sdk::platform::proto::{
-                    get_identity_keys_request::{GetIdentityKeysRequestV0, Version},
-                    key_request_type::Request,
-                    GetIdentityKeysRequest, KeyRequestType, SpecificKeys,
-                };
-                use rs_dapi_client::{DapiRequest, RequestSettings};
-
                 if specific_key_ids.is_empty() {
                     return Err(WasmSdkError::invalid_argument(
                         "specificKeyIds must contain at least one entry",
                     ));
                 }
 
-                let request = GetIdentityKeysRequest {
-                    version: Some(Version::V0(GetIdentityKeysRequestV0 {
-                        identity_id: identity_id.to_vec(),
-                        prove: false,
-                        limit: Some(limit.unwrap_or(100)),
-                        offset: None,
-                        request_type: Some(KeyRequestType {
-                            request: Some(Request::SpecificKeys(SpecificKeys {
-                                key_ids: specific_key_ids,
-                            })),
-                        }),
-                    })),
-                };
+                let request_limit = limit.unwrap_or(100);
 
-                let response = request
-                    .execute(self.as_ref(), RequestSettings::default())
-                    .await
-                    .map_err(|e| {
-                        WasmSdkError::generic(format!(
-                            "Failed to fetch specific identity keys: {}",
-                            e
-                        ))
-                    })?;
+                let query = IdentityKeysQuery::new(identity_id.clone(), specific_key_ids)
+                    .with_limit(request_limit);
 
-                use dash_sdk::platform::proto::{
-                    get_identity_keys_response::Version as ResponseVersion, GetIdentityKeysResponse,
-                };
-                use rs_dapi_client::IntoInner;
-
-                let response: GetIdentityKeysResponse = response.into_inner();
-                match response.version {
-                    Some(ResponseVersion::V0(response_v0)) => {
-                        if let Some(result) = response_v0.result {
-                            match result {
-                                dash_sdk::platform::proto::get_identity_keys_response::get_identity_keys_response_v0::Result::Keys(keys_response) => {
-                                    let mut key_map: IdentityPublicKeys = IndexMap::new();
-                                    for key_bytes in keys_response.keys_bytes {
-                                        use dash_sdk::dpp::serialization::PlatformDeserializable;
-                                        let key = dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey::deserialize_from_bytes(key_bytes.as_slice())
-                                            .map_err(|e| WasmSdkError::serialization(format!("Failed to deserialize identity public key: {}", e)))?;
-                                        key_map.insert(key.id(), Some(key));
-                                    }
-                                    key_map
-                                }
-                                _ => return Err(WasmSdkError::generic("Unexpected response format")),
-                            }
-                        } else {
-                            IndexMap::new()
-                        }
-                    }
-                    _ => return Err(WasmSdkError::generic("Unexpected response version")),
-                }
+                IdentityPublicKey::fetch_many(self.as_ref(), query).await?
             }
             IdentityKeysRequestInput::Search { purpose_map } => {
                 use dash_sdk::platform::proto::{
