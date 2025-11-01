@@ -162,7 +162,11 @@ impl DocumentTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_data_contract_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_data_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
         Ok(())

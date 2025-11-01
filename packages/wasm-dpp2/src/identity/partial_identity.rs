@@ -24,20 +24,20 @@ impl From<PartialIdentity> for PartialIdentityWasm {
 impl PartialIdentityWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        js_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
         js_loaded_public_keys: &JsValue,
         balance: Option<Credits>,
         revision: Option<Revision>,
         js_not_found_public_keys: Option<Array>,
     ) -> WasmDppResult<Self> {
-        let id = IdentifierWasm::try_from(js_id)?;
+        let id = IdentifierWasm::try_from(js_id)?.into();
         let loaded_public_keys = js_value_to_loaded_public_keys(js_loaded_public_keys)?;
 
         let not_found_public_keys: BTreeSet<KeyID> =
             option_array_to_not_found(js_not_found_public_keys)?;
 
         Ok(PartialIdentityWasm(PartialIdentity {
-            id: id.into(),
+            id,
             loaded_public_keys,
             balance,
             revision,
@@ -94,10 +94,13 @@ impl PartialIdentityWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_id: &JsValue) -> WasmDppResult<()> {
-        let identifier: IdentifierWasm = IdentifierWasm::try_from(js_id)?;
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] js_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let identifier = IdentifierWasm::try_from(js_id)?.into();
 
-        self.0.id = identifier.into();
+        self.0.id = identifier;
 
         Ok(())
     }

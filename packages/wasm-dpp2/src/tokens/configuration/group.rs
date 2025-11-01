@@ -41,9 +41,11 @@ pub fn js_members_to_map(
             .as_string()
             .ok_or_else(|| WasmDppError::invalid_argument("cannot convert key to string"))?;
 
-        let id_wasm = IdentifierWasm::try_from(key.clone()).map_err(|_| {
-            WasmDppError::invalid_argument(format!("Invalid identifier: {}", key_str))
-        })?;
+        let identifier: Identifier = IdentifierWasm::try_from(key.clone())
+            .map_err(|_| {
+                WasmDppError::invalid_argument(format!("Invalid identifier: {}", key_str))
+            })?
+            .into();
 
         let val = Reflect::get(js_members, &key).map_err(|_| {
             WasmDppError::invalid_argument(format!("Invalid value at key '{}'", key_str))
@@ -52,7 +54,7 @@ pub fn js_members_to_map(
         let power: GroupMemberPower = serde_wasm_bindgen::from_value(val)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        members.insert(Identifier::from(id_wasm), power);
+        members.insert(identifier, power);
     }
 
     Ok(members)
@@ -130,13 +132,13 @@ impl GroupWasm {
     #[wasm_bindgen(js_name = "setMemberRequiredPower")]
     pub fn set_member_required_power(
         &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_member: &JsValue,
         member_required_power: GroupRequiredPower,
     ) -> WasmDppResult<()> {
-        let member = IdentifierWasm::try_from(js_member.clone())?;
+        let member: Identifier = IdentifierWasm::try_from(js_member)?.into();
 
-        self.0
-            .set_member_power(member.into(), member_required_power);
+        self.0.set_member_power(member, member_required_power);
 
         Ok(())
     }

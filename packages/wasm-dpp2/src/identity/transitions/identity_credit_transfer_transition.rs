@@ -32,7 +32,9 @@ impl IdentityCreditTransferWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         amount: u64,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_sender: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_recipient: &JsValue,
         nonce: u64,
         user_fee_increase: Option<UserFeeIncrease>,
@@ -93,7 +95,11 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_id(&mut self, js_recipient: &JsValue) -> WasmDppResult<()> {
+    pub fn set_recipient_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_recipient: &JsValue,
+    ) -> WasmDppResult<()> {
         let recipient: Identifier = IdentifierWasm::try_from(js_recipient)?.into();
 
         self.0.set_recipient_id(recipient);
@@ -101,7 +107,11 @@ impl IdentityCreditTransferWasm {
     }
 
     #[wasm_bindgen(setter = "senderId")]
-    pub fn set_sender_id(&mut self, js_sender: &JsValue) -> WasmDppResult<()> {
+    pub fn set_sender_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_sender: &JsValue,
+    ) -> WasmDppResult<()> {
         let sender: Identifier = IdentifierWasm::try_from(js_sender)?.into();
 
         self.0.set_identity_id(sender);

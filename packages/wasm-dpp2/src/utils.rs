@@ -272,30 +272,3 @@ pub fn generate_document_id_v0(
 // } else {
 // web_sys::console::error_1(&"Expected string | MyClass".into());
 // }
-
-// Try to extract Identifier from **stringified** identifier_utils.
-// The `js_value` can be a stringified instance of: `Identifier`, `Buffer` or `Array`
-pub fn identifier_from_js_value(js_value: &JsValue) -> WasmDppResult<Identifier> {
-    if js_value.is_undefined() || js_value.is_null() {
-        return Err(WasmDppError::invalid_argument(
-            "the identifier cannot be null or undefined",
-        ));
-    }
-
-    match js_value.is_string() {
-        true => Identifier::from_string(js_value.as_string().unwrap_or("".into()).as_str(), Base58)
-            .map_err(|err| WasmDppError::invalid_argument(err.to_string())),
-        false => match js_value.is_object() || js_value.is_array() {
-            true => {
-                let uint8_array = Uint8Array::from(js_value.clone());
-                let bytes = uint8_array.to_vec();
-
-                Identifier::from_bytes(&bytes)
-                    .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
-            }
-            false => Err(WasmDppError::invalid_argument(
-                "Invalid ID. Expected array or string",
-            )),
-        },
-    }
-}

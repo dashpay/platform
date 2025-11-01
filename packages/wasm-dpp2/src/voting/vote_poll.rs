@@ -38,12 +38,13 @@ impl VotePollWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_contract_id: &JsValue,
         document_type_name: String,
         index_name: String,
         js_index_values: JsValue,
     ) -> WasmDppResult<VotePollWasm> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();
 
         let index_values_value = js_index_values.with_serde_to_platform_value()?;
         let index_values = index_values_value
@@ -52,7 +53,7 @@ impl VotePollWasm {
 
         Ok(VotePollWasm(VotePoll::ContestedDocumentResourceVotePoll(
             ContestedDocumentResourceVotePoll {
-                contract_id: contract_id.into(),
+                contract_id,
                 document_type_name,
                 index_name,
                 index_values,
@@ -117,12 +118,16 @@ impl VotePollWasm {
     }
 
     #[wasm_bindgen(setter = "contractId")]
-    pub fn set_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
+    pub fn set_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let contract_id = IdentifierWasm::try_from(js_contract_id)?.into();
 
         self.0 = match self.0.clone() {
             VotePoll::ContestedDocumentResourceVotePoll(mut poll) => {
-                poll.contract_id = contract_id.into();
+                poll.contract_id = contract_id;
 
                 VotePoll::ContestedDocumentResourceVotePoll(poll)
             }

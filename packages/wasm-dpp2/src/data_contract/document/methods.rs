@@ -41,8 +41,8 @@ impl DocumentWasm {
         js_owner_id: &JsValue,
         js_document_id: &JsValue,
     ) -> WasmDppResult<DocumentWasm> {
-        let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
-        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
+        let data_contract_id: Identifier = IdentifierWasm::try_from(js_data_contract_id)?.into();
+        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
 
         let revision = Revision::from(js_revision);
 
@@ -54,23 +54,23 @@ impl DocumentWasm {
             .generate()
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let document_id: IdentifierWasm = match js_document_id.is_undefined() {
+        let document_id: Identifier = match js_document_id.is_undefined() {
             true => crate::utils::generate_document_id_v0(
-                &data_contract_id.into(),
-                &owner_id.into(),
+                &data_contract_id,
+                &owner_id,
                 js_document_type_name,
                 &entropy,
             )?
             .into(),
-            false => js_document_id.try_into()?,
+            false => IdentifierWasm::try_from(js_document_id)?.into(),
         };
 
         Ok(DocumentWasm {
-            owner_id,
+            owner_id: owner_id.into(),
             entropy: Some(entropy),
-            id: document_id,
+            id: document_id.into(),
             document_type_name: js_document_type_name.to_string(),
-            data_contract_id,
+            data_contract_id: data_contract_id.into(),
             properties: document,
             revision: Some(revision),
             created_at: None,
@@ -176,7 +176,10 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=id)]
-    pub fn set_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.id = IdentifierWasm::try_from(id)?;
         Ok(())
     }
@@ -203,14 +206,21 @@ impl DocumentWasm {
     }
 
     #[wasm_bindgen(setter=dataContractId)]
-    pub fn set_js_data_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
-        self.data_contract_id = IdentifierWasm::try_from(js_contract_id.clone())?;
+    pub fn set_js_data_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        self.data_contract_id = IdentifierWasm::try_from(js_contract_id)?;
 
         Ok(())
     }
 
     #[wasm_bindgen(setter=ownerId)]
-    pub fn set_owner_id(&mut self, id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_owner_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")] id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.owner_id = IdentifierWasm::try_from(id)?;
         Ok(())
     }
@@ -398,12 +408,14 @@ impl DocumentWasm {
     #[wasm_bindgen(js_name=generateId)]
     pub fn generate_id(
         js_document_type_name: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_owner_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_data_contract_id: &JsValue,
         opt_entropy: Option<Vec<u8>>,
     ) -> WasmDppResult<Vec<u8>> {
-        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
-        let data_contract_id = IdentifierWasm::try_from(js_data_contract_id)?;
+        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
+        let data_contract_id: Identifier = IdentifierWasm::try_from(js_data_contract_id)?.into();
 
         let entropy: [u8; 32] = match opt_entropy {
             Some(entropy_vec) => {
@@ -419,8 +431,8 @@ impl DocumentWasm {
         };
 
         let identifier = crate::utils::generate_document_id_v0(
-            &data_contract_id.into(),
-            &owner_id.into(),
+            &data_contract_id,
+            &owner_id,
             js_document_type_name,
             &entropy,
         )?;

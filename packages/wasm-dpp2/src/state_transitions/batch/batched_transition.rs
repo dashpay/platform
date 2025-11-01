@@ -3,6 +3,7 @@ use crate::identifier::IdentifierWasm;
 use crate::state_transitions::batch::document_transition::DocumentTransitionWasm;
 use crate::state_transitions::batch::token_transition::TokenTransitionWasm;
 use crate::utils::{IntoWasm, get_class_type};
+use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
@@ -91,17 +92,21 @@ impl BatchedTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "dataContractId")]
-    pub fn set_data_contract_id(&mut self, js_contract_id: &JsValue) -> WasmDppResult<()> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
+    pub fn set_data_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
 
         self.0 = match self.0.clone() {
             BatchedTransition::Document(mut document_transition) => {
-                document_transition.set_data_contract_id(contract_id.into());
+                document_transition.set_data_contract_id(contract_id.clone());
 
                 BatchedTransition::Document(document_transition)
             }
             BatchedTransition::Token(mut token_transition) => {
-                token_transition.set_data_contract_id(contract_id.into());
+                token_transition.set_data_contract_id(contract_id);
 
                 BatchedTransition::Token(token_transition)
             }

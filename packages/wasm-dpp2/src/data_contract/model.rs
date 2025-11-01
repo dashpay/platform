@@ -20,7 +20,7 @@ use dpp::data_contract::{
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
 use dpp::platform_value::{Value, ValueMap};
-use dpp::prelude::IdentityNonce;
+use dpp::prelude::{Identifier, IdentityNonce};
 use dpp::serialization::{
     PlatformDeserializableWithPotentialValidationFromVersionedStructure,
     PlatformSerializableWithPlatformVersion,
@@ -377,14 +377,22 @@ impl DataContractWasm {
     }
 
     #[wasm_bindgen(setter = "id")]
-    pub fn set_id(&mut self, js_data_contract_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_data_contract_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_id(IdentifierWasm::try_from(js_data_contract_id)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(setter = "ownerId")]
-    pub fn set_owner_id(&mut self, js_owner_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_owner_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_owner_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_owner_id(IdentifierWasm::try_from(js_owner_id)?.into());
         Ok(())
@@ -508,14 +516,13 @@ impl DataContractWasm {
 
     #[wasm_bindgen(js_name = "generateId")]
     pub fn generate_id(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_owner_id: &JsValue,
         identity_nonce: IdentityNonce,
     ) -> WasmDppResult<IdentifierWasm> {
-        Ok(DataContract::generate_data_contract_id_v0(
-            IdentifierWasm::try_from(js_owner_id)?.to_bytes(),
-            identity_nonce,
-        )
-        .into())
+        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
+
+        Ok(DataContract::generate_data_contract_id_v0(owner_id.to_buffer(), identity_nonce).into())
     }
 }
 

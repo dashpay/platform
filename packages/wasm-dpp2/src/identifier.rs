@@ -1,9 +1,10 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{IntoWasm, get_class_type, identifier_from_js_value};
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
+use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
+use wasm_bindgen::JsCast;
 
 #[derive(Copy, Clone)]
 #[wasm_bindgen(js_name = "Identifier")]
@@ -53,34 +54,43 @@ impl TryFrom<&[u8]> for IdentifierWasm {
 impl TryFrom<JsValue> for IdentifierWasm {
     type Error = WasmDppError;
     fn try_from(value: JsValue) -> Result<Self, Self::Error> {
-        match value.is_object() {
-            true => match get_class_type(&value) {
-                Ok(class_type) => match class_type.as_str() {
-                    "Identifier" => Ok(*value.to_wasm::<IdentifierWasm>("Identifier")?),
-                    "" => Ok(identifier_from_js_value(&value)?.into()),
-                    _ => Err(WasmDppError::invalid_argument(format!(
-                        "Invalid type of data for identifier (passed {})",
-                        class_type
-                    ))),
-                },
-                Err(_) => Ok(identifier_from_js_value(&value)?.into()),
-            },
-            false => match value.is_string() {
-                false => Ok(identifier_from_js_value(&value)?.into()),
-                true => {
-                    let id_str = value.as_string().unwrap();
-                    match id_str.len() == 64 {
-                        true => {
-                            let bytes = decode(value.as_string().unwrap().as_str(), Hex)
-                                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
-
-                            Ok(IdentifierWasm::try_from(bytes.as_slice())?)
-                        }
-                        false => Ok(identifier_from_js_value(&value)?.into()),
-                    }
-                }
-            },
+        if value.is_undefined() || value.is_null() {
+            return Err(WasmDppError::invalid_argument(
+                "the identifier cannot be null or undefined",
+            ));
         }
+
+        if let Ok(existing) = value.clone().dyn_into::<IdentifierWasm>() {
+            return Ok(existing);
+        }
+
+        if let Some(string) = value.as_string() {
+            if string.len() == 64 && string.chars().all(|c| c.is_ascii_hexdigit()) {
+                let bytes = decode(string.as_str(), Hex)
+                    .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+                return IdentifierWasm::try_from(bytes.as_slice());
+            }
+
+            return Identifier::from_string(string.as_str(), Base58)
+                .map(Into::into)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
+        }
+
+        if value.is_instance_of::<js_sys::Uint8Array>()
+            || value.is_array()
+            || value.is_object()
+        {
+            let uint8_array = Uint8Array::from(value.clone());
+            let bytes = uint8_array.to_vec();
+
+            return Identifier::from_bytes(&bytes)
+                .map(Into::into)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "Invalid identifier. Expected Identifier, Uint8Array or string",
+        ))
     }
 }
 

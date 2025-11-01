@@ -12,6 +12,7 @@ use dpp::data_contract::associated_token::token_configuration::accessors::v0::{
 };
 use dpp::data_contract::associated_token::token_configuration::v0::TokenConfigurationV0;
 use dpp::data_contract::{GroupContractPosition, TokenConfiguration, TokenContractPosition};
+use dpp::prelude::Identifier;
 use dpp::tokens::calculate_token_id;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -297,13 +298,14 @@ impl TokenConfigurationWasm {
 
     #[wasm_bindgen(js_name = "calculateTokenId")]
     pub fn calculate_token_id(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_contract_id: &JsValue,
         token_pos: TokenContractPosition,
     ) -> WasmDppResult<IdentifierWasm> {
-        let contract_id = IdentifierWasm::try_from(js_contract_id)?;
+        let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
 
         Ok(IdentifierWasm::from(calculate_token_id(
-            &contract_id.to_slice(),
+            contract_id.as_bytes(),
             token_pos,
         )))
     }
