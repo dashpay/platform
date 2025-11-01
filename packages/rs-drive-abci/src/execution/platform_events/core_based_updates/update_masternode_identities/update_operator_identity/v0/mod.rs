@@ -43,6 +43,7 @@ where
         drive_operations: &mut Vec<DriveOperation>,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
+        // Bail out quickly when Core reported no operator-related changes.
         if pub_key_operator_change.is_none()
             && operator_payout_address_change.is_none()
             && platform_node_id_change.is_none()
@@ -50,9 +51,11 @@ where
             return Ok(());
         }
 
+        // Track which pieces of the identity we must touch in this update.
         let needs_change_operator_payout_address = operator_payout_address_change.is_some();
         let needs_change_platform_node_id = platform_node_id_change.is_some();
 
+        // Fetch the cached masternode entry so we can compare against historical values.
         let old_masternode = platform_state
             .full_masternode_list()
             .get(masternode_pro_tx_hash)
@@ -63,6 +66,8 @@ where
                 )))
             })?;
 
+        // Determine which operator identity we will mutate. Rotating the operator public key
+        // implies a brand-new identity ID; otherwise we continue updating the existing one.
         let old_operator_identifier = Self::get_operator_identifier_from_masternode_list_item(
             old_masternode,
             platform_version,
@@ -88,6 +93,8 @@ where
             offset: None,
         };
 
+        // Snapshot the current keys on the existing identity so we can disable, re-enable, or
+        // clone them as needed.
         let old_identity_keys = self
             .drive
             .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
@@ -96,16 +103,18 @@ where
                 platform_version,
             )?;
 
-        // two possibilities, same identity or identity switch.
+        // Two execution paths: either we keep updating the same identity or we are switching to
+        // a different operator identity (due to public key rotation).
         if !changed_identity {
-            // we are on same identity for platform
-
+            // Same identity: disable old keys, re-enable ones that return, and append new keys.
             let mut old_operator_node_id_to_re_enable = None;
 
             let mut old_operator_payout_address_to_re_enable = None;
 
             let last_key_id = old_identity_keys.keys().max().copied().unwrap_or_default();
 
+            // Collect the keys that should be disabled on the existing identity and remember any
+            // candidates that can simply be re-enabled instead of being recreated.
             let old_operator_identity_key_ids_to_disable: Vec<KeyID> = old_identity_keys
                 .into_iter()
                 .filter_map(|(key_id, key)| {
@@ -146,6 +155,7 @@ where
                 .collect();
 
             if !old_operator_identity_key_ids_to_disable.is_empty() {
+                // Disable the stale payout or node-id keys tied to the previous state values.
                 drive_operations.push(IdentityOperation(DisableIdentityKeys {
                     identity_id: operator_identifier.to_buffer(),
                     keys_ids: old_operator_identity_key_ids_to_disable,
@@ -158,6 +168,8 @@ where
             let mut new_key_id = last_key_id + 1;
 
             if let Some(old_operator_pub_key_to_re_enable) = old_operator_node_id_to_re_enable {
+                // The target node ID already exists but was disabled; re-enable it instead of
+                // allocating a new key slot.
                 keys_to_re_enable.push(old_operator_pub_key_to_re_enable);
             } else if needs_change_platform_node_id {
                 let key: IdentityPublicKey = IdentityPublicKeyV0 {
@@ -183,6 +195,7 @@ where
             if let Some(old_operator_payout_address_to_re_enable) =
                 old_operator_payout_address_to_re_enable
             {
+                // Re-enable the old payout key when it already matches the target value.
                 keys_to_re_enable.push(old_operator_payout_address_to_re_enable);
             } else if needs_change_operator_payout_address {
                 if let Some(new_operator_payout_address) = operator_payout_address_change
@@ -205,6 +218,7 @@ where
             }
 
             if !keys_to_re_enable.is_empty() {
+                // Some keys already existed but were disabled; simply re-enable them.
                 drive_operations.push(IdentityOperation(ReEnableIdentityKeys {
                     identity_id: operator_identifier.to_buffer(),
                     keys_ids: keys_to_re_enable,
@@ -212,6 +226,7 @@ where
             }
 
             if !non_unique_keys_to_add.is_empty() {
+                // Any missing payout or node-id keys are appended to the identity.
                 drive_operations.push(IdentityOperation(AddNewKeysToIdentity {
                     identity_id: operator_identifier.to_buffer(),
                     unique_keys_to_add: vec![],
@@ -220,7 +235,7 @@ where
             }
         } else {
             // We have changed operator keys, this means we are now on a new operator identity
-            // Or as a rare case an operator identity that already existed
+            // or, as a rare case, an operator identity that already existed.
 
             let key_request = IdentityKeysRequest {
                 identity_id: operator_identifier.to_buffer(),
@@ -230,7 +245,7 @@ where
             };
 
             // We can not disable previous withdrawal keys,
-            // Let's disable other two keys
+            // let's disable the operator authentication key and platform node key instead.
             let old_operator_identity_key_ids_to_disable: Vec<KeyID> = old_identity_keys
                 .into_iter()
                 .filter_map(|(key_id, key)| {
@@ -255,6 +270,8 @@ where
                 }));
             }
 
+            // Look up keys on the destination identity so we can re-enable them if they already
+            // exist on disk.
             let identity_to_enable_old_keys = self
                 .drive
                 .fetch_identity_keys::<KeyIDIdentityPublicKeyPairBTreeMap>(
@@ -263,6 +280,7 @@ where
                     platform_version,
                 )?;
 
+            // Determine which payout address should end up on the destination identity.
             let new_payout_address =
                 if let Some(operator_payout_address) = operator_payout_address_change {
                     operator_payout_address
@@ -281,6 +299,8 @@ where
                     old_masternode.state.operator_payout_address
                 };
 
+            // Same for the platform node ID: use the change when provided, otherwise fall back
+            // to the existing cached value.
             let new_platform_node_id = if let Some(platform_node_id) = platform_node_id_change {
                 // if it changed it means it always existed
                 Some(platform_node_id)
@@ -305,6 +325,7 @@ where
                     is_masternode_identity: true,
                 }));
             } else {
+                // Identity already exists: selectively re-enable existing keys or append missing ones.
                 let mut key_ids_to_reenable = vec![];
                 let mut non_unique_keys_to_add = vec![];
 
@@ -355,6 +376,7 @@ where
                             purpose: Purpose::SYSTEM,
                             security_level: SecurityLevel::CRITICAL,
                             read_only: true,
+                            // TODO: should be `new_platform_node_id`
                             data: BinaryData::new(
                                 platform_node_id_change
                                     .as_ref()

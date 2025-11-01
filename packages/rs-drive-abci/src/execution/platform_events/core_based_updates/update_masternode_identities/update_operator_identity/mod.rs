@@ -17,25 +17,23 @@ where
     C: CoreRPCLike,
 {
     /// Handles the update of an operator identity.
+    /// Updates the operator identity when the masternode state reports a change.
     ///
-    /// An operator is an entity that has the right to operate a node within a blockchain
-    /// network. This method is responsible for updating the details of the operator on the blockchain.
-    ///
-    /// There are three main attributes of an operator that can be changed: the public key,
-    /// the payout address, and the platform node id.
-    ///
-    /// The `update_operator_identity` function is implemented as a versioned function.
-    /// Different versions of the function are maintained to handle changes in the logic over time,
-    /// and also to provide backwards compatibility.
+    /// The operator may rotate its BLS operator key, change the payout address, or
+    /// update the platform node identifier. This method orchestrates the Drive
+    /// operations required to reflect those updates on chain, delegating the actual
+    /// logic to the versioned implementation.
     ///
     /// # Arguments
     ///
-    /// * `masternode`: a tuple of ProTxHash and DMNStateDiff containing the masternode details and state difference.
-    /// * `block_info`: an object containing information about the block where this operation is happening.
-    /// * `platform_state`: the current state of the platform.
-    /// * `transaction`: the transaction in which this operation is happening.
-    /// * `drive_operations`: a mutable reference to a vector of DriveOperations.
-    /// * `platform_version`: the current version of the platform.
+    /// * `masternode_pro_tx_hash` - ProTx hash of the masternode whose identity is being updated.
+    /// * `pub_key_operator_change` - Optional new operator public key; `None` when the key is unchanged.
+    /// * `operator_payout_address_change` - Optional new payout address (`Some(None)` clears it).
+    /// * `platform_node_id_change` - Optional new platform node identifier.
+    /// * `platform_state` - View of the cached platform state used to look up prior data.
+    /// * `transaction` - GroveDB transaction under which Drive operations will run.
+    /// * `drive_operations` - Accumulator for Drive batch operations to perform the update.
+    /// * `platform_version` - Platform version providing dispatch to the proper implementation.
     ///
     /// # Errors
     ///
