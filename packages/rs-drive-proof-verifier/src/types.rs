@@ -43,6 +43,7 @@ use dpp::{
     identity::KeyID,
     prelude::{DataContract, Identifier, IdentityPublicKey, Revision},
     util::deserializer::ProtocolVersion,
+    ProtocolError,
 };
 use drive::grovedb::query_result_type::Path;
 use drive::grovedb::Element;
