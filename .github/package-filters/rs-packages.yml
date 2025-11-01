@@ -48,6 +48,11 @@ wasm-dpp:
   - packages/wasm-dpp/**
   - *dpp
 
+wasm-dpp2:
+  - .github/workflows/tests*
+  - packages/wasm-dpp2/**
+  - *dpp
+
 drive: &drive
   - .github/workflows/tests*
   - packages/rs-drive/**

@@ -25,6 +25,9 @@ dpp:
 wasm-dpp:
   - packages/wasm-dpp/**
 
+wasm-dpp2:
+  - packages/wasm-dpp2/**
+
 drive:
   - packages/rs-drive/**
 

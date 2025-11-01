@@ -65,15 +65,6 @@ drive = { path = "../rs-drive", default-features = false, features = [
 ] }
 console_error_panic_hook = { version = "0.1.6" }
 thiserror = { version = "2.0.12" }
-web-sys = { version = "0.3.64", features = [
-    'console',
-    'Document',
-    'Element',
-    'HtmlElement',
-    'Node',
-    'Window',
-    'Crypto',
-] }
 wasm-bindgen = { version = "=0.2.103" }
 wasm-bindgen-futures = { version = "0.4.49" }
 drive-proof-verifier = { path = "../rs-drive-proof-verifier", default-features = false } # TODO: I think it's not needed (LKl)
@@ -100,6 +91,7 @@ dapi-grpc = { path = "../dapi-grpc" }
 rs-dapi-client = { path = "../rs-dapi-client" }
 hmac = { version = "0.12" }
 sha2 = { version = "0.10" }
+wasm-dpp2 = { path = "../wasm-dpp2" }
 
 [dev-dependencies]
 wasm-sdk = { path = ".", features = ["mocks", "all-system-contracts"] }

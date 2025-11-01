@@ -24,7 +24,7 @@ describe('System info', function describeSystemInfo() {
 
   it('getTotalCreditsInPlatform', async () => {
     const r = await client.getTotalCreditsInPlatform();
-    expect(r).to.be.an('object');
-    expect(String(r.totalCreditsInPlatform)).to.match(/^\d+$/);
+    expect(typeof r).to.equal('bigint');
+    expect(String(r)).to.match(/^\d+$/);
   });
 });

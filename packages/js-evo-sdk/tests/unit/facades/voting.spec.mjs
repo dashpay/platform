@@ -22,25 +22,97 @@ describe('VotingFacade', () => {
 
   it('contestedResourceVoteState and related queries forward correctly', async () => {
     await client.voting.contestedResourceVoteState({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt',
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
     });
     await client.voting.contestedResourceVoteStateWithProof({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], resultType: 'rt', allowIncludeLockedAndAbstainingVoteTally: true, startAtIdentifierInfo: 's', count: 2, orderAscending: false,
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
+      includeLockedAndAbstaining: true,
+      startAtContenderId: 's',
+      startAtIncluded: true,
+      limit: 2,
     });
-    await client.voting.contestedResourceIdentityVotes('id', { limit: 3, startAtVotePollIdInfo: 's', orderAscending: true });
-    await client.voting.contestedResourceIdentityVotesWithProof('id', { limit: 4, offset: 1, orderAscending: false });
+    await client.voting.contestedResourceIdentityVotes({
+      identityId: 'id',
+      limit: 3,
+      startAtVoteId: 's',
+      orderAscending: true,
+    });
+    await client.voting.contestedResourceIdentityVotesWithProof({
+      identityId: 'id',
+      limit: 4,
+      startAtVoteId: 'p',
+      orderAscending: false,
+    });
     await client.voting.votePollsByEndDate({
-      startTimeInfo: 'a', endTimeInfo: 'b', limit: 2, orderAscending: true,
+      startTimeMs: 1000,
+      startTimeIncluded: true,
+      endTimeMs: 2000,
+      endTimeIncluded: false,
+      limit: 2,
+      offset: 1,
+      orderAscending: true,
     });
     await client.voting.votePollsByEndDateWithProof({
-      startTimeMs: 10, endTimeMs: 20, limit: 1, offset: 0, orderAscending: false,
+      startTimeMs: 10,
+      endTimeMs: 20,
+      limit: 1,
+      offset: 0,
+      orderAscending: false,
     });
-    expect(wasmSdk.getContestedResourceVoteState).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourceVoteStateWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourceIdentityVotes).to.be.calledOnce();
-    expect(wasmSdk.getContestedResourceIdentityVotesWithProofInfo).to.be.calledOnce();
-    expect(wasmSdk.getVotePollsByEndDate).to.be.calledOnce();
-    expect(wasmSdk.getVotePollsByEndDateWithProofInfo).to.be.calledOnce();
+    expect(wasmSdk.getContestedResourceVoteState).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
+    });
+    expect(wasmSdk.getContestedResourceVoteStateWithProofInfo).to.be.calledOnceWithExactly({
+      dataContractId: 'c',
+      documentTypeName: 'dt',
+      indexName: 'i',
+      indexValues: ['v1'],
+      resultType: 'rt',
+      includeLockedAndAbstaining: true,
+      startAtContenderId: 's',
+      startAtIncluded: true,
+      limit: 2,
+    });
+    expect(wasmSdk.getContestedResourceIdentityVotes).to.be.calledOnceWithExactly({
+      identityId: 'id',
+      limit: 3,
+      startAtVoteId: 's',
+      orderAscending: true,
+    });
+    expect(wasmSdk.getContestedResourceIdentityVotesWithProofInfo).to.be.calledOnceWithExactly({
+      identityId: 'id',
+      limit: 4,
+      startAtVoteId: 'p',
+      orderAscending: false,
+    });
+    expect(wasmSdk.getVotePollsByEndDate).to.be.calledOnceWithExactly({
+      startTimeMs: 1000,
+      startTimeIncluded: true,
+      endTimeMs: 2000,
+      endTimeIncluded: false,
+      limit: 2,
+      offset: 1,
+      orderAscending: true,
+    });
+    expect(wasmSdk.getVotePollsByEndDateWithProofInfo).to.be.calledOnceWithExactly({
+      startTimeMs: 10,
+      endTimeMs: 20,
+      limit: 1,
+      offset: 0,
+      orderAscending: false,
+    });
   });
 
   it('masternodeVote() stringifies array indexValues and forwards', async () => {

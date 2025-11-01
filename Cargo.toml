@@ -24,6 +24,7 @@ members = [
     "packages/rs-context-provider",
     "packages/rs-sdk-trusted-context-provider",
     "packages/wasm-dpp",
+    "packages/wasm-dpp2",
     "packages/rs-dapi-client",
     "packages/rs-sdk",
     "packages/strategy-tests",

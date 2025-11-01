@@ -18,12 +18,15 @@ describe('Epochs and evonode blocks', function describeEpochs() {
   });
 
   it('gets epochs info and finalized epochs', async () => {
-    const current = await client.getCurrentEpoch().catch(() => 1000);
-    const start = Math.max(0, (current || 1000) - 5);
+    const current = await client.getCurrentEpoch().catch(() => null);
+    const currentIndex = current ? Number(current.index) : 1000;
+    const start = Math.max(0, currentIndex - 5);
+
     const infos = await client.getEpochsInfo(start, 5, true);
-    expect(infos).to.be.an('array');
+    expect(infos).to.be.instanceOf(Map);
+
     const finalized = await client.getFinalizedEpochInfos(start, 5);
-    expect(finalized).to.be.an('array');
+    expect(finalized).to.be.instanceOf(Map);
   });
 
   it('queries evonode proposed blocks by id/range', async () => {

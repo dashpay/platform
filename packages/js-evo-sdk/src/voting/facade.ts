@@ -1,3 +1,8 @@
+import type {
+  ContestedResourceIdentityVotesQuery,
+  ContestedResourceVoteStateQuery,
+  VotePollsByEndDateQuery,
+} from '@dashevo/wasm-sdk';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
 
@@ -5,42 +10,36 @@ export class VotingFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async contestedResourceVoteState(params: { contractId: string; documentTypeName: string; indexName: string; indexValues: any[]; resultType: string; allowIncludeLockedAndAbstainingVoteTally?: boolean; startAtIdentifierInfo?: string; count?: number; orderAscending?: boolean }): Promise<any> {
-    const { contractId, documentTypeName, indexName, indexValues, resultType, allowIncludeLockedAndAbstainingVoteTally, startAtIdentifierInfo, count, orderAscending } = params;
+  async contestedResourceVoteState(query: ContestedResourceVoteStateQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContestedResourceVoteState(contractId, documentTypeName, indexName, indexValues, resultType, allowIncludeLockedAndAbstainingVoteTally ?? null, startAtIdentifierInfo ?? null, count ?? null, orderAscending ?? null);
+    return w.getContestedResourceVoteState(query);
   }
 
-  async contestedResourceVoteStateWithProof(params: { contractId: string; documentTypeName: string; indexName: string; indexValues: any[]; resultType: string; allowIncludeLockedAndAbstainingVoteTally?: boolean; startAtIdentifierInfo?: string; count?: number; orderAscending?: boolean }): Promise<any> {
-    const { contractId, documentTypeName, indexName, indexValues, resultType, allowIncludeLockedAndAbstainingVoteTally, startAtIdentifierInfo, count, orderAscending } = params;
+  async contestedResourceVoteStateWithProof(query: ContestedResourceVoteStateQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContestedResourceVoteStateWithProofInfo(contractId, documentTypeName, indexName, indexValues, resultType, allowIncludeLockedAndAbstainingVoteTally ?? null, startAtIdentifierInfo ?? null, count ?? null, orderAscending ?? null);
+    return w.getContestedResourceVoteStateWithProofInfo(query);
   }
 
-  async contestedResourceIdentityVotes(identityId: string, opts: { limit?: number; startAtVotePollIdInfo?: string; orderAscending?: boolean } = {}): Promise<any> {
-    const { limit, startAtVotePollIdInfo, orderAscending } = opts;
+  async contestedResourceIdentityVotes(query: ContestedResourceIdentityVotesQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContestedResourceIdentityVotes(identityId, limit ?? null, startAtVotePollIdInfo ?? null, orderAscending ?? null);
+    return w.getContestedResourceIdentityVotes(query);
   }
 
-  async contestedResourceIdentityVotesWithProof(identityId: string, opts: { limit?: number; offset?: number; orderAscending?: boolean } = {}): Promise<any> {
-    const { limit, offset, orderAscending } = opts;
+  async contestedResourceIdentityVotesWithProof(query: ContestedResourceIdentityVotesQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getContestedResourceIdentityVotesWithProofInfo(identityId, limit ?? null, offset ?? null, orderAscending ?? null);
+    return w.getContestedResourceIdentityVotesWithProofInfo(query);
   }
 
-  async votePollsByEndDate(opts: { startTimeInfo?: string; endTimeInfo?: string; limit?: number; orderAscending?: boolean } = {}): Promise<any> {
-    const { startTimeInfo, endTimeInfo, limit, orderAscending } = opts;
+  async votePollsByEndDate(query?: VotePollsByEndDateQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getVotePollsByEndDate(startTimeInfo ?? null, endTimeInfo ?? null, limit ?? null, orderAscending ?? null);
+
+    return w.getVotePollsByEndDate(query ?? null);
   }
 
-  async votePollsByEndDateWithProof(opts: { startTimeMs?: number | bigint | null; endTimeMs?: number | bigint | null; limit?: number; offset?: number; orderAscending?: boolean } = {}): Promise<any> {
-    const { startTimeMs, endTimeMs, limit, offset, orderAscending } = opts;
-    const start = startTimeMs != null ? BigInt(startTimeMs) : null;
-    const end = endTimeMs != null ? BigInt(endTimeMs) : null;
+  async votePollsByEndDateWithProof(query?: VotePollsByEndDateQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getVotePollsByEndDateWithProofInfo(start ?? null, end ?? null, limit ?? null, offset ?? null, orderAscending ?? null);
+
+    return w.getVotePollsByEndDateWithProofInfo(query ?? null);
   }
 
   async masternodeVote(args: { masternodeProTxHash: string; contractId: string; documentTypeName: string; indexName: string; indexValues: string | any[]; voteChoice: string; votingKeyWif: string }): Promise<any> {

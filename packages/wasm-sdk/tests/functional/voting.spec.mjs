@@ -24,26 +24,21 @@ describe('Contested resources & voting', function describeContestedResources() {
     const PARENT = 'dash';
     const LABEL = 'therealslimshaddy5';
 
-    await client.getContestedResources(
-      'domain',
-      DPNS_CONTRACT,
-      'parentNameAndLabel',
-      null,
-      50,
-      null,
-      true,
-    );
+    await client.getContestedResources({
+      dataContractId: DPNS_CONTRACT,
+      documentTypeName: 'domain',
+      indexName: 'parentNameAndLabel',
+      orderAscending: true,
+    });
 
-    await client.getContestedResourceVoteState(
-      DPNS_CONTRACT,
-      'domain',
-      'parentNameAndLabel',
-      [PARENT, LABEL],
-      'documents',
-      null,
-      null,
-      50,
-      true,
-    );
+    await client.getContestedResourceVoteState({
+      dataContractId: DPNS_CONTRACT,
+      documentTypeName: 'domain',
+      indexName: 'parentNameAndLabel',
+      indexValues: [PARENT, LABEL],
+      resultType: 'documents',
+      limit: 50,
+      includeLockedAndAbstaining: true,
+    });
   });
 });

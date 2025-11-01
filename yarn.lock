@@ -2000,6 +2000,38 @@ __metadata:
   languageName: unknown
   linkType: soft
 
+"@dashevo/wasm-dpp2@workspace:packages/wasm-dpp2":
+  version: 0.0.0-use.local
+  resolution: "@dashevo/wasm-dpp2@workspace:packages/wasm-dpp2"
+  dependencies:
+    assert: "npm:^2.0.0"
+    buffer: "npm:^6.0.3"
+    chai: "npm:^4.3.10"
+    chai-as-promised: "npm:^7.1.1"
+    dirty-chai: "npm:^2.0.1"
+    eslint: "npm:^8.53.0"
+    eslint-config-airbnb-base: "npm:^15.0.0"
+    eslint-plugin-import: "npm:^2.29.0"
+    eslint-plugin-jsdoc: "npm:^46.9.0"
+    events: "npm:^3.3.0"
+    karma: "npm:^6.4.3"
+    karma-chai: "npm:^0.1.0"
+    karma-chrome-launcher: "npm:^3.1.0"
+    karma-firefox-launcher: "npm:^2.1.2"
+    karma-mocha: "npm:^2.0.1"
+    karma-mocha-reporter: "npm:^2.2.5"
+    karma-webpack: "npm:^5.0.0"
+    mocha: "npm:^11.1.0"
+    path-browserify: "npm:^1.0.1"
+    process: "npm:^0.11.10"
+    string_decoder: "npm:^1.3.0"
+    url: "npm:^0.11.3"
+    util: "npm:^0.12.4"
+    webpack: "npm:^5.94.0"
+    webpack-cli: "npm:^4.9.1"
+  languageName: unknown
+  linkType: soft
+
 "@dashevo/wasm-dpp@workspace:*, @dashevo/wasm-dpp@workspace:packages/wasm-dpp":
   version: 0.0.0-use.local
   resolution: "@dashevo/wasm-dpp@workspace:packages/wasm-dpp"
