@@ -196,8 +196,8 @@ impl DataContractWasm {
         Ok(DataContractWasm(data_contract_with_tokens))
     }
 
-    #[wasm_bindgen(js_name = "fromValue")]
-    pub fn from_value(
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(
         js_value: JsValue,
         full_validation: bool,
         js_platform_version: JsValue,

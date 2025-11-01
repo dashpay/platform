@@ -35,7 +35,7 @@ describe('DataContract', () => {
     });
 
     it('should allows to create DataContract from value with full validation and without platform version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
@@ -43,7 +43,7 @@ describe('DataContract', () => {
     it('should allows to convert DataContract to bytes and from bytes', () => {
       const [dataContractBytes] = dataContractsBytes;
 
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.toBytes()).to.deep.equal(fromHexString(dataContractBytes));
 
@@ -58,7 +58,7 @@ describe('DataContract', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), false, PlatformVersion.PLATFORM_V1);
-      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
+      const dataContractFromValue = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
     });
@@ -67,13 +67,13 @@ describe('DataContract', () => {
       const [dataContractBytes] = dataContractsBytes;
 
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true);
-      const dataContractFromValue = wasm.DataContract.fromValue(value, true);
+      const dataContractFromValue = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
     });
 
     it('should allow to get json', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.toJSON()).to.deep.equal(value);
     });
@@ -81,31 +81,31 @@ describe('DataContract', () => {
 
   describe('getters', () => {
     it('should allow to get schemas', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.getSchemas()).to.deep.equal(value.documentSchemas);
     });
 
     it('should allow to get version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.version).to.deep.equal(value.version);
     });
 
     it('should allow to get id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.id.base58()).to.deep.equal(id);
     });
 
     it('should allow to get owner id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.ownerId.base58()).to.deep.equal(ownerId);
     });
 
     it('should allow to get config', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       expect(dataContract.getConfig()).to.deep.equal(value.config);
     });
@@ -113,7 +113,7 @@ describe('DataContract', () => {
 
   describe('setters', () => {
     it('should allow to set id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       dataContract.id = new wasm.Identifier('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
 
@@ -121,7 +121,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set owner id', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       dataContract.ownerId = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 
@@ -129,7 +129,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set version', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       dataContract.version = 20;
 
@@ -137,7 +137,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set config', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       const oldConfig = dataContract.getConfig();
 
@@ -149,7 +149,7 @@ describe('DataContract', () => {
     });
 
     it('should allow to set schema', () => {
-      const dataContract = wasm.DataContract.fromValue(value, true);
+      const dataContract = wasm.DataContract.fromJSON(value, true);
 
       const oldSchema = dataContract.getSchemas();
 
