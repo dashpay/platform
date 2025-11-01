@@ -24,6 +24,45 @@ interface ContestedResourceVotersForIdentityQueryInput {
   orderAscending?: boolean;
 }
 
+interface GroupActionsStartAt {
+  actionId: string;
+  included?: boolean;
+}
+
+interface GroupActionsQueryInput {
+  dataContractId: string;
+  groupContractPosition: number;
+  status: 'ACTIVE' | 'CLOSED';
+  startAt?: GroupActionsStartAt;
+  limit?: number;
+}
+
+interface GroupInfosStartAt {
+  position: number;
+  included?: boolean;
+}
+
+interface GroupInfosQueryInput {
+  dataContractId: string;
+  startAt?: GroupInfosStartAt;
+  limit?: number;
+}
+
+interface GroupMembersQueryInput {
+  dataContractId: string;
+  groupContractPosition: number;
+  memberIds?: string[];
+  startAtMemberId?: string;
+  limit?: number;
+}
+
+interface IdentityGroupsQueryInput {
+  identityId: string;
+  memberDataContracts?: string[];
+  ownerDataContracts?: string[];
+  moderatorDataContracts?: string[];
+}
+
 export class GroupFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
@@ -38,60 +77,98 @@ export class GroupFacade {
     return w.getGroupInfoWithProofInfo(contractId, groupContractPosition);
   }
 
-  async infos(contractId: string, startAtInfo?: unknown, count?: number): Promise<any> {
+  async infos(contractId: string, startAt?: GroupInfosStartAt, limit?: number): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupInfos(contractId, startAtInfo ?? null, count ?? null);
+    const query: GroupInfosQueryInput = {
+      dataContractId: contractId,
+    };
+    if (startAt !== undefined) query.startAt = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupInfos(query);
   }
 
-  async infosWithProof(contractId: string, startAtInfo?: unknown, count?: number): Promise<any> {
+  async infosWithProof(contractId: string, startAt?: GroupInfosStartAt, limit?: number): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupInfosWithProofInfo(contractId, startAtInfo ?? null, count ?? null);
+    const query: GroupInfosQueryInput = {
+      dataContractId: contractId,
+    };
+    if (startAt !== undefined) query.startAt = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupInfosWithProofInfo(query);
   }
 
   async members(contractId: string, groupContractPosition: number, opts: { memberIds?: string[]; startAt?: string; limit?: number } = {}): Promise<any> {
     const { memberIds, startAt, limit } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupMembers(contractId, groupContractPosition, memberIds ?? null, startAt ?? null, limit ?? null);
+    const query: GroupMembersQueryInput = {
+      dataContractId: contractId,
+      groupContractPosition,
+    };
+    if (memberIds !== undefined) query.memberIds = memberIds;
+    if (startAt !== undefined) query.startAtMemberId = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupMembers(query);
   }
 
   async membersWithProof(contractId: string, groupContractPosition: number, opts: { memberIds?: string[]; startAt?: string; limit?: number } = {}): Promise<any> {
     const { memberIds, startAt, limit } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupMembersWithProofInfo(contractId, groupContractPosition, memberIds ?? null, startAt ?? null, limit ?? null);
+    const query: GroupMembersQueryInput = {
+      dataContractId: contractId,
+      groupContractPosition,
+    };
+    if (memberIds !== undefined) query.memberIds = memberIds;
+    if (startAt !== undefined) query.startAtMemberId = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupMembersWithProofInfo(query);
   }
 
   async identityGroups(identityId: string, opts: { memberDataContracts?: string[]; ownerDataContracts?: string[]; moderatorDataContracts?: string[] } = {}): Promise<any> {
     const { memberDataContracts, ownerDataContracts, moderatorDataContracts } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityGroups(
+    return w.getIdentityGroups({
       identityId,
-      memberDataContracts ?? null,
-      ownerDataContracts ?? null,
-      moderatorDataContracts ?? null,
-    );
+      memberDataContracts,
+      ownerDataContracts,
+      moderatorDataContracts,
+    });
   }
 
   async identityGroupsWithProof(identityId: string, opts: { memberDataContracts?: string[]; ownerDataContracts?: string[]; moderatorDataContracts?: string[] } = {}): Promise<any> {
     const { memberDataContracts, ownerDataContracts, moderatorDataContracts } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityGroupsWithProofInfo(
+    return w.getIdentityGroupsWithProofInfo({
       identityId,
-      memberDataContracts ?? null,
-      ownerDataContracts ?? null,
-      moderatorDataContracts ?? null,
-    );
+      memberDataContracts,
+      ownerDataContracts,
+      moderatorDataContracts,
+    });
   }
 
-  async actions(contractId: string, groupContractPosition: number, status: string, opts: { startAtInfo?: unknown; count?: number } = {}): Promise<any> {
-    const { startAtInfo, count } = opts;
+  async actions(contractId: string, groupContractPosition: number, status: 'ACTIVE' | 'CLOSED', opts: { startAt?: GroupActionsStartAt; limit?: number } = {}): Promise<any> {
+    const { startAt, limit } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActions(contractId, groupContractPosition, status, startAtInfo ?? null, count ?? null);
+    const query: GroupActionsQueryInput = {
+      dataContractId: contractId,
+      groupContractPosition,
+      status,
+    };
+    if (startAt !== undefined) query.startAt = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupActions(query);
   }
 
-  async actionsWithProof(contractId: string, groupContractPosition: number, status: string, opts: { startAtInfo?: unknown; count?: number } = {}): Promise<any> {
-    const { startAtInfo, count } = opts;
+  async actionsWithProof(contractId: string, groupContractPosition: number, status: 'ACTIVE' | 'CLOSED', opts: { startAt?: GroupActionsStartAt; limit?: number } = {}): Promise<any> {
+    const { startAt, limit } = opts;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionsWithProofInfo(contractId, groupContractPosition, status, startAtInfo ?? null, count ?? null);
+    const query: GroupActionsQueryInput = {
+      dataContractId: contractId,
+      groupContractPosition,
+      status,
+    };
+    if (startAt !== undefined) query.startAt = startAt;
+    if (limit !== undefined) query.limit = limit;
+    return w.getGroupActionsWithProofInfo(query);
   }
 
   async actionSigners(contractId: string, groupContractPosition: number, status: string, actionId: string): Promise<any> {
