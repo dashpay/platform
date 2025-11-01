@@ -1,0 +1,30 @@
+---
+
+global:
+  scrape_interval: 15s
+  scrape_timeout: 10s
+
+scrape_configs:
+  - job_name: dashmate
+    metrics_path: /metrics
+    docker_sd_configs:
+      - host: tcp://127.0.0.1:2375
+        refresh_interval: 15s
+    relabel_configs:
+      - source_labels: [__meta_docker_container_label_prometheus_io_scrape]
+        action: keep
+        regex: true
+      - source_labels: [__meta_docker_container_label_prometheus_io_path]
+        target_label: __metrics_path__
+        regex: (.+)
+      - source_labels: [__meta_docker_container_label_prometheus_io_port]
+        action: replace
+        regex: (.+)
+        replacement: 127.0.0.1:$1
+        target_label: __address__
+      - source_labels: [__meta_docker_container_label_org_dashmate_service_title]
+        target_label: service
+        regex: (.+)
+      - source_labels: [__meta_docker_container_label_org_dashmate_config_name]
+        target_label: config
+        regex: (.+)

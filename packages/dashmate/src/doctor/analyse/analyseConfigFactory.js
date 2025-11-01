@@ -16,17 +16,6 @@ export default function analyseConfigFactory() {
     const problems = [];
 
     if (config?.get('platform.enable')) {
-      // Gateway admin is disabled while metrics are enabled
-      if (config.get('platform.gateway.metrics.enabled') && !config.get('platform.gateway.admin.enabled')) {
-        const problem = new Problem(
-          'Gateway admin is disabled while metrics are enabled',
-          chalk`Please enable gateway admin: {bold.cyanBright dashmate config set platform.gateway.admin.enabled true}`,
-          SEVERITY.HIGH,
-        );
-
-        problems.push(problem);
-      }
-
       // Platform Node ID
       const masternodeStatus = samples.getServiceInfo('core', 'masternodeStatus');
       const platformNodeId = masternodeStatus?.dmnState?.platformNodeId;

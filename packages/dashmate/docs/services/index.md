@@ -119,3 +119,6 @@ Most services provide metrics endpoints:
 - Rate Limiter: Rate limiting metrics
 
 These can be integrated with monitoring systems like Prometheus and Grafana.
+All containers that expose Prometheus metrics also advertise the Docker label `org.dashmate.config.name`, which Dashmate sets to the active config name. When you run multiple nodes on the same host, you can use that label in Prometheus relabeling rules or dashboards to distinguish each instance.
+
+You can find example Prometheus config for local devnet monitoring in [../prometheus/](../prometheus/README.md).

@@ -39,8 +39,6 @@ services:
     {{? it.platform.dapi.rsDapi.metrics.enabled }}
     ports:
       - {{=it.platform.dapi.rsDapi.metrics.host}}:{{=it.platform.dapi.rsDapi.metrics.port}}:{{=it.platform.dapi.rsDapi.metrics.port}}
-    {{??}}
-    ports: []
     {{?}}
   {{?}}
 

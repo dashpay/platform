@@ -372,7 +372,7 @@ static_resources:
                       address: gateway_rate_limiter
                       port_value: 8081
     {{?}}
-    {{? it.platform.gateway.metrics.enabled && it.platform.gateway.admin.enabled }}
+    {{? it.platform.gateway.metrics.enabled }}
     - name: admin
       connect_timeout: 0.25s
       type: STATIC
@@ -387,11 +387,12 @@ static_resources:
                     port_value: 9901
     {{?}}
 
-{{? it.platform.gateway.admin.enabled }}
+{{? it.platform.gateway.admin.enabled || it.platform.gateway.metrics.enabled }}
+{{ adminHost = it.platform.gateway.admin.enabled ? '0.0.0.0' : '127.0.0.1'; }}
 admin:
  address:
    socket_address:
-     address: 0.0.0.0 # For docker container only. Must be a local/private interface.
+     address: {{= adminHost }} # defaults to loopback when not explicitly enabled
      port_value: 9901
 {{?}}
 
