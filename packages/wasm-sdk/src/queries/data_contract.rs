@@ -52,9 +52,9 @@ const DATA_CONTRACT_HISTORY_QUERY_TS: &'static str = r#"
  */
 export interface DataContractHistoryQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Maximum number of entries to return.
@@ -79,7 +79,7 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DataContractHistoryQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
@@ -100,17 +100,18 @@ fn parse_data_contract_history_query(
         "Query object is required",
         "data contract history query",
     )?;
+    let DataContractHistoryQueryInput {
+        data_contract_id,
+        limit,
+        start_at_ms,
+    } = input;
 
-    let contract_id = Identifier::from_string(
-        &input.data_contract_id,
-        dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-    )
-    .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
+    let contract_id: Identifier = data_contract_id.into();
 
     Ok(DataContractHistoryQueryParsed {
         contract_id,
-        limit: input.limit,
-        start_at_ms: input.start_at_ms,
+        limit,
+        start_at_ms,
     })
 }
 
@@ -127,13 +128,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContract")]
     pub async fn get_data_contract(
         &self,
-        base58_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract: JsValue,
     ) -> Result<Option<DataContractWasm>, WasmSdkError> {
-        let id = Identifier::from_string(
-            base58_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
+        let id: Identifier = IdentifierWasm::try_from(&contract)
+            .map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+            })?
+            .into();
 
         let data_contract = DataContract::fetch_by_identifier(self.as_ref(), id)
             .await?
@@ -145,13 +147,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]
     pub async fn get_data_contract_with_proof_info(
         &self,
-        base58_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract: JsValue,
     ) -> Result<DataContractProofResponseWasm, WasmSdkError> {
-        let id = Identifier::from_string(
-            base58_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
+        let id: Identifier = IdentifierWasm::try_from(&contract)
+            .map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+            })?
+            .into();
 
         let (contract, metadata, proof) =
             DataContract::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
@@ -191,18 +194,21 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getDataContracts")]
-    pub async fn get_data_contracts(&self, ids: Vec<String>) -> Result<Map, WasmSdkError> {
+    pub async fn get_data_contracts(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")] ids: Vec<
+            JsValue,
+        >,
+    ) -> Result<Map, WasmSdkError> {
         // Parse all contract IDs
         let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
-            .iter()
+            .into_iter()
             .map(|id| {
-                Identifier::from_string(
-                    id,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                )
-                .map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e))
-                })
+                IdentifierWasm::try_from(&id)
+                    .map(Identifier::from)
+                    .map_err(|err| {
+                        WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+                    })
             })
             .collect();
         let identifiers = identifiers?;
@@ -257,19 +263,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContractsWithProofInfo")]
     pub async fn get_data_contracts_with_proof_info(
         &self,
-        ids: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")] ids: Vec<
+            JsValue,
+        >,
     ) -> Result<DataContractsProofResponseWasm, WasmSdkError> {
         // Parse all contract IDs
         let identifiers: Result<Vec<Identifier>, WasmSdkError> = ids
-            .iter()
+            .into_iter()
             .map(|id| {
-                Identifier::from_string(
-                    id,
-                    dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                )
-                .map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e))
-                })
+                IdentifierWasm::try_from(&id)
+                    .map(Identifier::from)
+                    .map_err(|err| {
+                        WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+                    })
             })
             .collect();
         let identifiers = identifiers?;

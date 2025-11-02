@@ -1,6 +1,6 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::{
-    convert_optional_limit, deserialize_required_query, identifier_from_base58,
+    convert_optional_limit, deserialize_required_query, identifiers_from_js,
 };
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -14,14 +14,13 @@ use dash_sdk::platform::group_actions::{
     GroupActionSignersQuery, GroupActionsQuery, GroupInfosQuery, GroupQuery,
 };
 use dash_sdk::platform::{Fetch, FetchMany, Identifier};
-use js_sys::{Array, BigInt, Map, Number, Reflect};
+use js_sys::{Array, BigInt, Map, Number};
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::group::GroupActionWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::tokens::GroupWasm;
-use wasm_dpp2::utils::JsValueExt;
 
 // Proof info functions are now included below
 
@@ -84,9 +83,9 @@ export type GroupActionStatusFilter = 'ACTIVE' | 'CLOSED';
  */
 export interface GroupActionsStartAt {
   /**
-   * Group action identifier (base58 string).
+   * Group action identifier.
    */
-  actionId: string;
+  actionId: Identifier | Uint8Array | string;
 
   /**
    * Include the `actionId` entry in the result set.
@@ -100,9 +99,9 @@ export interface GroupActionsStartAt {
  */
 export interface GroupActionsQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Position of the group within the contract.
@@ -137,7 +136,7 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupActionsQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     group_contract_position: u32,
     status: String,
     #[serde(default)]
@@ -149,7 +148,7 @@ struct GroupActionsQueryInput {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupActionsStartAtInput {
-    action_id: String,
+    action_id: IdentifierWasm,
     #[serde(default)]
     included: Option<bool>,
 }
@@ -179,21 +178,29 @@ fn parse_group_actions_query(
     let input: GroupActionsQueryInput =
         deserialize_required_query(query, "Query object is required", "group actions query")?;
 
-    let contract_id = identifier_from_base58(&input.data_contract_id, "contract ID")?;
+    let GroupActionsQueryInput {
+        data_contract_id,
+        group_contract_position,
+        status,
+        start_at,
+        limit,
+    } = input;
 
-    let group_contract_position = input.group_contract_position as GroupContractPosition;
+    let contract_id: Identifier = data_contract_id.into();
 
-    let status = parse_group_action_status(&input.status)?;
+    let group_contract_position = group_contract_position as GroupContractPosition;
 
-    let start_at = if let Some(cursor) = input.start_at {
-        let action_id = identifier_from_base58(&cursor.action_id, "action ID")?;
+    let status = parse_group_action_status(&status)?;
+
+    let start_at = if let Some(cursor) = start_at {
+        let action_id: Identifier = cursor.action_id.into();
         let included = cursor.included.unwrap_or(false);
         Some((action_id, included))
     } else {
         None
     };
 
-    let limit = convert_optional_limit(input.limit, "limit")?;
+    let limit = convert_optional_limit(limit, "limit")?;
 
     Ok(GroupActionsQueryParsed {
         contract_id,
@@ -227,9 +234,9 @@ export interface GroupInfosStartAt {
  */
 export interface GroupInfosQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Cursor describing where to resume from.
@@ -254,7 +261,7 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupInfosQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     #[serde(default)]
     start_at: Option<GroupInfosStartAtInput>,
     #[serde(default)]
@@ -281,9 +288,15 @@ fn parse_group_infos_query(
     let input: GroupInfosQueryInput =
         deserialize_required_query(query, "Query object is required", "group infos query")?;
 
-    let contract_id = identifier_from_base58(&input.data_contract_id, "contract ID")?;
+    let GroupInfosQueryInput {
+        data_contract_id,
+        start_at,
+        limit,
+    } = input;
 
-    let start_at = if let Some(cursor) = input.start_at {
+    let contract_id: Identifier = data_contract_id.into();
+
+    let start_at = if let Some(cursor) = start_at {
         let position = cursor.position as GroupContractPosition;
         let included = cursor.included.unwrap_or(false);
         Some((position, included))
@@ -291,7 +304,7 @@ fn parse_group_infos_query(
         None
     };
 
-    let limit = convert_optional_limit(input.limit, "limit")?;
+    let limit = convert_optional_limit(limit, "limit")?;
 
     Ok(GroupInfosQueryParsed {
         contract_id,
@@ -307,9 +320,9 @@ const GROUP_MEMBERS_QUERY_TS: &'static str = r#"
  */
 export interface GroupMembersQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Group position inside the contract.
@@ -320,13 +333,13 @@ export interface GroupMembersQuery {
    * Optional list of member IDs to retrieve. When provided, pagination options are ignored.
    * @default undefined
    */
-  memberIds?: string[];
+  memberIds?: Array<Identifier | Uint8Array | string>;
 
   /**
-   * Member identifier (base58 string) to resume from.
+   * Member identifier to resume from.
    * @default undefined
    */
-  startAtMemberId?: string;
+  startAtMemberId?: Identifier | Uint8Array | string;
 
   /**
    * Maximum number of members to return when not requesting specific IDs.
@@ -349,29 +362,29 @@ const IDENTITY_GROUPS_QUERY_TS: &'static str = r#"
  */
 export interface IdentityGroupsQuery {
   /**
-   * Identity identifier (base58 string).
+   * Identity identifier.
    */
-  identityId: string;
+  identityId: Identifier | Uint8Array | string;
 
   /**
    * Data contracts where the identity participates as a member.
    * @default undefined
    */
-  memberDataContracts?: string[];
+  memberDataContracts?: Array<Identifier | Uint8Array | string>;
 
   /**
    * Data contracts where the identity participates as an owner.
    * (Currently not implemented server-side.)
    * @default undefined
    */
-  ownerDataContracts?: string[];
+  ownerDataContracts?: Array<Identifier | Uint8Array | string>;
 
   /**
    * Data contracts where the identity participates as a moderator.
    * (Currently not implemented server-side.)
    * @default undefined
    */
-  moderatorDataContracts?: string[];
+  moderatorDataContracts?: Array<Identifier | Uint8Array | string>;
 }
 "#;
 
@@ -384,12 +397,12 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupMembersQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     group_contract_position: u32,
     #[serde(default)]
-    member_ids: Option<Vec<String>>,
+    member_ids: Option<Vec<IdentifierWasm>>,
     #[serde(default)]
-    start_at_member_id: Option<String>,
+    start_at_member_id: Option<IdentifierWasm>,
     #[serde(default)]
     limit: Option<u32>,
 }
@@ -397,8 +410,8 @@ struct GroupMembersQueryInput {
 struct GroupMembersQueryParsed {
     contract_id: Identifier,
     group_contract_position: GroupContractPosition,
-    member_ids: Option<Vec<String>>,
-    start_at_member_id: Option<String>,
+    member_ids: Option<Vec<Identifier>>,
+    start_at_member_id: Option<Identifier>,
     limit: Option<u16>,
 }
 
@@ -408,15 +421,27 @@ fn parse_group_members_query(
     let input: GroupMembersQueryInput =
         deserialize_required_query(query, "Query object is required", "group members query")?;
 
-    let contract_id = identifier_from_base58(&input.data_contract_id, "contract ID")?;
+    let GroupMembersQueryInput {
+        data_contract_id,
+        group_contract_position,
+        member_ids: raw_member_ids,
+        start_at_member_id: raw_start_at,
+        limit,
+    } = input;
 
-    let limit = convert_optional_limit(input.limit, "limit")?;
+    let contract_id: Identifier = data_contract_id.into();
+
+    let limit = convert_optional_limit(limit, "limit")?;
+
+    let member_ids = raw_member_ids.map(|ids| ids.into_iter().map(Identifier::from).collect());
+
+    let start_at_member_id = raw_start_at.map(Identifier::from);
 
     Ok(GroupMembersQueryParsed {
         contract_id,
-        group_contract_position: input.group_contract_position as GroupContractPosition,
-        member_ids: input.member_ids,
-        start_at_member_id: input.start_at_member_id,
+        group_contract_position: group_contract_position as GroupContractPosition,
+        member_ids,
+        start_at_member_id,
         limit,
     })
 }
@@ -424,20 +449,20 @@ fn parse_group_members_query(
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentityGroupsQueryInput {
-    identity_id: String,
+    identity_id: IdentifierWasm,
     #[serde(default)]
-    member_data_contracts: Option<Vec<String>>,
+    member_data_contracts: Option<Vec<IdentifierWasm>>,
     #[serde(default)]
-    owner_data_contracts: Option<Vec<String>>,
+    owner_data_contracts: Option<Vec<IdentifierWasm>>,
     #[serde(default)]
-    moderator_data_contracts: Option<Vec<String>>,
+    moderator_data_contracts: Option<Vec<IdentifierWasm>>,
 }
 
 struct IdentityGroupsQueryParsed {
     identity_id: Identifier,
-    member_data_contracts: Option<Vec<String>>,
-    owner_data_contracts: Option<Vec<String>>,
-    moderator_data_contracts: Option<Vec<String>>,
+    member_data_contracts: Option<Vec<Identifier>>,
+    owner_data_contracts: Option<Vec<Identifier>>,
+    moderator_data_contracts: Option<Vec<Identifier>>,
 }
 
 fn parse_identity_groups_query(
@@ -446,13 +471,29 @@ fn parse_identity_groups_query(
     let input: IdentityGroupsQueryInput =
         deserialize_required_query(query, "Query object is required", "identity groups query")?;
 
-    let identity_id = identifier_from_base58(&input.identity_id, "identity ID")?;
+    let IdentityGroupsQueryInput {
+        identity_id: identity_js,
+        member_data_contracts: member_contracts,
+        owner_data_contracts: owner_contracts,
+        moderator_data_contracts: moderator_contracts,
+    } = input;
+
+    let identity_id: Identifier = identity_js.into();
+
+    let member_data_contracts =
+        member_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
+
+    let owner_data_contracts =
+        owner_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
+
+    let moderator_data_contracts =
+        moderator_contracts.map(|values| values.into_iter().map(Identifier::from).collect());
 
     Ok(IdentityGroupsQueryParsed {
         identity_id,
-        member_data_contracts: input.member_data_contracts,
-        owner_data_contracts: input.owner_data_contracts,
-        moderator_data_contracts: input.moderator_data_contracts,
+        member_data_contracts,
+        owner_data_contracts,
+        moderator_data_contracts,
     })
 }
 
@@ -461,15 +502,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupInfo")]
     pub async fn get_group_info(
         &self,
-        data_contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         group_contract_position: u32,
     ) -> Result<Option<GroupWasm>, WasmSdkError> {
         // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
 
         // Create group query
         let query = GroupQuery {
@@ -528,9 +568,8 @@ impl WasmSdk {
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
-            for contract_id_str in contracts {
-                let contract_id = identifier_from_base58(&contract_id_str, "contract ID")?;
-
+            for contract_id in contracts {
+                let contract_id_str = IdentifierWasm::from(contract_id.clone()).get_base58();
                 // Fetch all groups for this contract
                 let query = GroupInfosQuery {
                     contract_id,
@@ -623,13 +662,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupActionSigners")]
     pub async fn get_group_action_signers(
         &self,
-        contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
         group_contract_position: u32,
         status: &str,
-        action_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        action_id: JsValue,
     ) -> Result<Map, WasmSdkError> {
-        let contract_id = identifier_from_base58(contract_id, "contract ID")?;
-        let action_id = identifier_from_base58(action_id, "action ID")?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
+        let action_id: Identifier = IdentifierWasm::try_from(&action_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", err)))?
+            .into();
         let status = parse_group_action_status(status)?;
 
         // Create query
@@ -658,23 +703,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupsDataContracts")]
     pub async fn get_groups_data_contracts(
         &self,
-        data_contract_ids: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
+        data_contract_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
         let contracts_map = Map::new();
 
-        for contract_id_str in data_contract_ids {
-            let contract_id = Identifier::from_string(
-                &contract_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid contract ID '{}': {}",
-                    contract_id_str, e
-                ))
-            })?;
+        for contract_js in data_contract_ids {
+            let contract_id: Identifier = IdentifierWasm::try_from(&contract_js)
+                .map_err(|err| {
+                    WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err))
+                })?
+                .into();
 
-            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
 
             // Fetch all groups for this contract
             let query = GroupInfosQuery {
@@ -704,15 +745,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupInfoWithProofInfo")]
     pub async fn get_group_info_with_proof_info(
         &self,
-        data_contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         group_contract_position: u32,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse data contract ID
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
 
         // Create group query
         let query = GroupQuery {
@@ -819,9 +859,8 @@ impl WasmSdk {
 
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
-            for contract_id_str in contracts {
-                let contract_id = identifier_from_base58(&contract_id_str, "contract ID")?;
-
+            for contract_id in contracts {
+                let contract_id_str = IdentifierWasm::from(contract_id.clone()).get_base58();
                 // Fetch all groups for this contract with proof
                 let query = GroupInfosQuery {
                     contract_id,
@@ -906,13 +945,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
-        contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
         group_contract_position: u32,
         status: &str,
-        action_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        action_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let contract_id = identifier_from_base58(contract_id, "contract ID")?;
-        let action_id = identifier_from_base58(action_id, "action ID")?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
+            .into();
+        let action_id: Identifier = IdentifierWasm::try_from(&action_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", err)))?
+            .into();
         let status = parse_group_action_status(status)?;
 
         // Create query
@@ -945,23 +990,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupsDataContractsWithProofInfo")]
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
-        data_contract_ids: Vec<String>,
+        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
+        data_contract_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let contracts_map = Map::new();
         let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
         let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
-        for contract_id_str in data_contract_ids {
-            let contract_id = Identifier::from_string(
-                &contract_id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid contract ID '{}': {}",
-                    contract_id_str, e
-                ))
-            })?;
+        let contract_identifiers = identifiers_from_js(data_contract_ids, "contract ID")?;
+
+        for contract_id in contract_identifiers {
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
 
             // Fetch all groups for this contract with proof
@@ -1010,38 +1048,20 @@ fn insert_member(
 
 fn collect_group_members_map(
     group: &Group,
-    member_ids: &Option<Vec<String>>,
-    start_at: &Option<String>,
+    member_ids: &Option<Vec<Identifier>>,
+    start_at: &Option<Identifier>,
     limit: Option<u16>,
 ) -> Result<Map, WasmSdkError> {
     let members_map = Map::new();
 
     if let Some(requested_ids) = member_ids {
-        for id_str in requested_ids {
-            let identifier = Identifier::from_string(
-                id_str,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid member identity ID: {}", e))
-            })?;
-
-            if let Ok(power) = group.member_power(identifier) {
-                insert_member(&members_map, identifier, power)?;
+        for identifier in requested_ids {
+            if let Ok(power) = group.member_power(*identifier) {
+                insert_member(&members_map, *identifier, power)?;
             }
         }
     } else {
-        let mut start_identifier = None;
-        if let Some(start_id) = start_at {
-            let identifier = Identifier::from_string(
-                start_id,
-                dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-            )
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid start identity ID: {}", e))
-            })?;
-            start_identifier = Some(identifier);
-        }
+        let start_identifier = start_at.clone();
 
         let mut added = 0usize;
         for (identifier, power) in group.members().iter() {

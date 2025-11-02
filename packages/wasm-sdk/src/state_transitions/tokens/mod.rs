@@ -3,6 +3,7 @@
 //! This module provides WASM bindings for token operations like mint, burn, transfer, etc.
 
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::document::DocumentV0Getters;
@@ -26,26 +27,21 @@ impl WasmSdk {
     /// Parse and validate token operation parameters
     async fn parse_token_params(
         &self,
-        data_contract_id: &str,
-        identity_id: &str,
+        data_contract_id: &JsValue,
+        identity_id: &JsValue,
         amount: &str,
-        recipient_id: Option<String>,
+        recipient_id: Option<&JsValue>,
     ) -> Result<(Identifier, Identifier, TokenAmount, Option<Identifier>), WasmSdkError> {
         // Parse identifiers
-        let contract_id = Identifier::from_string(data_contract_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_id = identifier_from_js(data_contract_id, "contract ID")?;
 
-        let identity_identifier = Identifier::from_string(identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_identifier = identifier_from_js(identity_id, "identity ID")?;
 
-        let recipient = if let Some(recipient_str) = recipient_id {
-            Some(
-                Identifier::from_string(&recipient_str, Encoding::Base58).map_err(|e| {
-                    WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e))
-                })?,
-            )
-        } else {
-            None
+        let recipient = match recipient_id {
+            Some(value) if !value.is_null() && !value.is_undefined() => {
+                Some(identifier_from_js(value, "recipient ID")?)
+            }
+            _ => None,
         };
 
         // Parse amount
@@ -161,19 +157,28 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenMint)]
     pub async fn token_mint(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         amount: String,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         private_key_wif: String,
-        recipient_id: Option<String>,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
+        recipient_id: JsValue,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
+        let recipient_option = if recipient_id.is_null() || recipient_id.is_undefined() {
+            None
+        } else {
+            Some(&recipient_id)
+        };
+
         // Parse and validate parameters
         let (contract_id, issuer_id, token_amount, recipient) = self
-            .parse_token_params(&data_contract_id, &identity_id, &amount, recipient_id)
+            .parse_token_params(&data_contract_id, &identity_id, &amount, recipient_option)
             .await?;
 
         // Fetch and cache the data contract
@@ -244,10 +249,12 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenBurn)]
     pub async fn token_burn(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         amount: String,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -327,11 +334,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenTransfer)]
     pub async fn token_transfer(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         amount: String,
-        sender_id: String,
-        recipient_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        sender_id: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        recipient_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -343,8 +353,7 @@ impl WasmSdk {
             .await?;
 
         // Parse recipient ID
-        let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e)))?;
+        let recipient_identifier = identifier_from_js(&recipient_id, "recipient ID")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -417,10 +426,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenFreeze)]
     pub async fn token_freeze(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
-        identity_to_freeze: String,
-        freezer_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_to_freeze: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        freezer_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -437,10 +449,7 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to freeze
-        let frozen_identity_id = Identifier::from_string(&identity_to_freeze, Encoding::Base58)
-            .map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid identity to freeze: {}", e))
-            })?;
+        let frozen_identity_id = identifier_from_js(&identity_to_freeze, "identity to freeze")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -509,10 +518,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenUnfreeze)]
     pub async fn token_unfreeze(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
-        identity_to_unfreeze: String,
-        unfreezer_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_to_unfreeze: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        unfreezer_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -529,10 +541,7 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to unfreeze
-        let frozen_identity_id = Identifier::from_string(&identity_to_unfreeze, Encoding::Base58)
-            .map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid identity to unfreeze: {}", e))
-        })?;
+        let frozen_identity_id = identifier_from_js(&identity_to_unfreeze, "identity to unfreeze")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -603,10 +612,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenDestroyFrozen)]
     pub async fn token_destroy_frozen(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
-        identity_id: String,
-        destroyer_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        destroyer_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -624,12 +636,7 @@ impl WasmSdk {
 
         // Parse identity whose frozen tokens to destroy
         let frozen_identity_id =
-            Identifier::from_string(&identity_id, Encoding::Base58).map_err(|e| {
-                WasmSdkError::invalid_argument(format!(
-                    "Invalid identity to destroy frozen funds: {}",
-                    e
-                ))
-            })?;
+            identifier_from_js(&identity_id, "identity to destroy frozen funds")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -703,9 +710,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenSetPriceForDirectPurchase)]
     pub async fn token_set_price_for_direct_purchase(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         price_type: String,
         price_data: String,
         private_key_wif: String,
@@ -900,10 +909,12 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenDirectPurchase)]
     pub async fn token_direct_purchase(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         amount: String,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         total_agreed_price: Option<String>,
         private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
@@ -926,13 +937,15 @@ impl WasmSdk {
             }
             None => {
                 // Fetch price from pricing schedule
-                let token_id =
-                    Self::calculate_token_id_from_contract(&data_contract_id, token_position)
-                        .map_err(|e| {
-                            WasmSdkError::generic(format!("Failed to calculate token ID: {:?}", e))
-                        })?;
+                let token_id = Self::calculate_token_id_from_contract(
+                    data_contract_id.clone(),
+                    token_position,
+                )
+                .map_err(|e| {
+                    WasmSdkError::generic(format!("Failed to calculate token ID: {:?}", e))
+                })?;
 
-                let token_ids = vec![token_id];
+                let token_ids = vec![JsValue::from_str(&token_id)];
                 let prices = self.get_token_direct_purchase_prices(token_ids).await?;
 
                 // Use js_sys to work with JavaScript objects
@@ -1039,10 +1052,12 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenClaim)]
     pub async fn token_claim(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         distribution_type: String,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
@@ -1142,11 +1157,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenConfigUpdate)]
     pub async fn token_config_update(
         &self,
-        data_contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         token_position: u16,
         config_item_type: String,
         config_value: String,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         private_key_wif: String,
         public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {

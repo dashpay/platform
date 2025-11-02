@@ -1,4 +1,4 @@
-use crate::queries::utils::{deserialize_required_query, identifier_from_base58};
+use crate::queries::utils::deserialize_required_query;
 use crate::queries::{ProofInfoWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
@@ -76,9 +76,9 @@ export type DocumentOrderByClause = [string, 'asc' | 'desc'];
  */
 export interface DocumentsQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Document type name.
@@ -107,13 +107,13 @@ export interface DocumentsQuery {
    * Exclusive document ID to resume from.
    * @default undefined
    */
-  startAfter?: string;
+  startAfter?: Identifier | Uint8Array | string;
 
   /**
    * Inclusive document ID to start from.
    * @default undefined
    */
-  startAt?: string;
+  startAt?: Identifier | Uint8Array | string;
 }
 "#;
 
@@ -126,7 +126,7 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DocumentsQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     document_type_name: String,
     #[serde(rename = "where", default)]
     where_clauses: Option<Vec<JsonValue>>,
@@ -135,9 +135,9 @@ struct DocumentsQueryInput {
     #[serde(default)]
     limit: Option<u32>,
     #[serde(rename = "startAfter", default)]
-    start_after: Option<String>,
+    start_after: Option<IdentifierWasm>,
     #[serde(rename = "startAt", default)]
-    start_at: Option<String>,
+    start_at: Option<IdentifierWasm>,
 }
 
 async fn build_documents_query(
@@ -154,7 +154,7 @@ async fn build_documents_query(
         start_at,
     } = input;
 
-    let contract_id = identifier_from_base58(&data_contract_id, "data contract ID")?;
+    let contract_id: Identifier = data_contract_id.into();
 
     let mut query =
         DocumentQuery::new_with_data_contract_id(sdk.as_ref(), contract_id, &document_type_name)
@@ -163,14 +163,14 @@ async fn build_documents_query(
     query.limit = limit.unwrap_or(100);
 
     if let Some(start_after_id) = start_after {
-        let document_id = identifier_from_base58(&start_after_id, "startAfter document ID")?;
+        let document_id: Identifier = start_after_id.into();
         query.start = Some(
             dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAfter(
                 document_id.to_vec(),
             ),
         );
     } else if let Some(start_at_id) = start_at {
-        let document_id = identifier_from_base58(&start_at_id, "startAt document ID")?;
+        let document_id: Identifier = start_at_id.into();
         query.start = Some(
             dash_sdk::dapi_grpc::platform::v0::get_documents_request::get_documents_request_v0::Start::StartAt(
                 document_id.to_vec(),
@@ -410,24 +410,24 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
-        data_contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         document_type: &str,
-        document_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        document_id: JsValue,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
 
         // Parse IDs
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+            })?
+            .into();
 
-        let doc_id = Identifier::from_string(
-            document_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", e)))?;
+        let doc_id: Identifier = IdentifierWasm::try_from(&document_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
+            .into();
 
         // Create document query
         let query =
@@ -455,24 +455,24 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocumentWithProofInfo")]
     pub async fn get_document_with_proof_info(
         &self,
-        data_contract_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        data_contract_id: JsValue,
         document_type: &str,
-        document_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        document_id: JsValue,
     ) -> Result<DocumentProofResponseWasm, WasmSdkError> {
         use dash_sdk::platform::documents::document_query::DocumentQuery;
 
         // Parse IDs
-        let contract_id = Identifier::from_string(
-            data_contract_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", e)))?;
+        let contract_id: Identifier = IdentifierWasm::try_from(&data_contract_id)
+            .map_err(|err| {
+                WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
+            })?
+            .into();
 
-        let doc_id = Identifier::from_string(
-            document_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", e)))?;
+        let doc_id: Identifier = IdentifierWasm::try_from(&document_id)
+            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid document ID: {}", err)))?
+            .into();
 
         // Create document query
         let query =
