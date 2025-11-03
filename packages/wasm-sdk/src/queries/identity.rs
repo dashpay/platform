@@ -1,20 +1,21 @@
-use crate::dpp::IdentityWasm;
 use crate::error::WasmSdkError;
-use crate::queries::{ProofInfo, ProofMetadataResponse, ResponseMetadata};
+use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity};
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
-use js_sys::Array;
+use js_sys::{Array, BigInt, Map};
 use rs_dapi_client::IntoInner;
-use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::identifier::IdentifierWasm;
+use wasm_dpp2::identity::IdentityWasm;
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IdentityKeyResponse {
+#[wasm_bindgen(js_name = "IdentityKeyInfo")]
+#[derive(Clone)]
+pub struct IdentityKeyInfoWasm {
     key_id: u32,
     key_type: String,
     public_key_data: String,
@@ -24,68 +25,228 @@ pub(crate) struct IdentityKeyResponse {
     disabled: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IdentityBalanceResponse {
-    identity_id: String,
-    balance: String, // String to handle large numbers
+impl IdentityKeyInfoWasm {
+    fn from_entry(key_id: u32, key: &IdentityPublicKey) -> Self {
+        IdentityKeyInfoWasm {
+            key_id,
+            key_type: format!("{:?}", key.key_type()),
+            public_key_data: hex::encode(key.data().as_slice()),
+            purpose: format!("{:?}", key.purpose()),
+            security_level: format!("{:?}", key.security_level()),
+            read_only: key.read_only(),
+            disabled: key.disabled_at().is_some(),
+        }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IdentityBalanceAndRevisionResponse {
-    balance: String, // String to handle large numbers
+#[wasm_bindgen(js_class = IdentityKeyInfo)]
+impl IdentityKeyInfoWasm {
+    #[wasm_bindgen(getter = "keyId")]
+    pub fn key_id(&self) -> u32 {
+        self.key_id
+    }
+
+    #[wasm_bindgen(getter = "keyType")]
+    pub fn key_type(&self) -> String {
+        self.key_type.clone()
+    }
+
+    #[wasm_bindgen(getter = "publicKeyData")]
+    pub fn public_key_data(&self) -> String {
+        self.public_key_data.clone()
+    }
+
+    #[wasm_bindgen(getter = "purpose")]
+    pub fn purpose(&self) -> String {
+        self.purpose.clone()
+    }
+
+    #[wasm_bindgen(getter = "securityLevel")]
+    pub fn security_level(&self) -> String {
+        self.security_level.clone()
+    }
+
+    #[wasm_bindgen(getter = "readOnly")]
+    pub fn read_only(&self) -> bool {
+        self.read_only
+    }
+
+    #[wasm_bindgen(getter = "disabled")]
+    pub fn disabled(&self) -> bool {
+        self.disabled
+    }
+}
+
+#[wasm_bindgen(js_name = "IdentityContractKeys")]
+#[derive(Clone)]
+pub struct IdentityContractKeysWasm {
+    identity_id: String,
+    keys: Vec<IdentityKeyInfoWasm>,
+}
+
+impl IdentityContractKeysWasm {
+    fn new(identity_id: String, keys: Vec<IdentityKeyInfoWasm>) -> Self {
+        IdentityContractKeysWasm { identity_id, keys }
+    }
+}
+
+#[wasm_bindgen(js_class = IdentityContractKeys)]
+impl IdentityContractKeysWasm {
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> String {
+        self.identity_id.clone()
+    }
+
+    #[wasm_bindgen(getter = "keys")]
+    pub fn keys(&self) -> Array {
+        let array = Array::new();
+        for key in &self.keys {
+            array.push(&JsValue::from(key.clone()));
+        }
+        array
+    }
+}
+
+#[wasm_bindgen(js_name = "IdentityBalanceInfo")]
+#[derive(Clone)]
+pub struct IdentityBalanceWasm {
+    balance: u64,
+}
+
+impl IdentityBalanceWasm {
+    fn new(balance: u64) -> Self {
+        IdentityBalanceWasm { balance }
+    }
+}
+
+#[wasm_bindgen(js_class = IdentityBalanceInfo)]
+impl IdentityBalanceWasm {
+    #[wasm_bindgen(getter = "balance")]
+    pub fn balance(&self) -> BigInt {
+        BigInt::from(self.balance)
+    }
+}
+
+#[wasm_bindgen(js_name = "IdentityBalanceEntry")]
+#[derive(Clone)]
+pub struct IdentityBalanceEntryWasm {
+    identity_id: String,
+    balance: u64,
+}
+
+impl IdentityBalanceEntryWasm {
+    fn new(identity_id: String, balance: u64) -> Self {
+        IdentityBalanceEntryWasm {
+            identity_id,
+            balance,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = IdentityBalanceEntry)]
+impl IdentityBalanceEntryWasm {
+    #[wasm_bindgen(getter = "identityId")]
+    pub fn identity_id(&self) -> String {
+        self.identity_id.clone()
+    }
+
+    #[wasm_bindgen(getter = "balance")]
+    pub fn balance(&self) -> BigInt {
+        BigInt::from(self.balance)
+    }
+}
+
+#[wasm_bindgen(js_name = "IdentityBalanceAndRevision")]
+#[derive(Clone)]
+pub struct IdentityBalanceAndRevisionWasm {
+    balance: u64,
     revision: u64,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IdentityContractKeyResponse {
-    identity_id: String,
-    purpose: u32,
-    key_id: u32,
-    key_type: String,
-    public_key_data: String,
-    security_level: String,
-    read_only: bool,
-    disabled: bool,
+impl IdentityBalanceAndRevisionWasm {
+    fn new(balance: u64, revision: u64) -> Self {
+        IdentityBalanceAndRevisionWasm { balance, revision }
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct IdentityContractKeysResponse {
-    identity_id: String,
-    keys: Vec<IdentityKeyResponse>,
+#[wasm_bindgen(js_class = IdentityBalanceAndRevision)]
+impl IdentityBalanceAndRevisionWasm {
+    #[wasm_bindgen(getter = "balance")]
+    pub fn balance(&self) -> BigInt {
+        BigInt::from(self.balance)
+    }
+
+    #[wasm_bindgen(getter = "revision")]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct TokenBalanceResponse {
-    token_id: String,
-    balance: String, // String to handle large numbers
+#[wasm_bindgen(js_name = "IdentityNonce")]
+#[derive(Clone)]
+pub struct IdentityNonceWasm {
+    nonce: u64,
+}
+
+impl IdentityNonceWasm {
+    fn new(nonce: u64) -> Self {
+        IdentityNonceWasm { nonce }
+    }
+}
+
+#[wasm_bindgen(js_class = IdentityNonce)]
+impl IdentityNonceWasm {
+    #[wasm_bindgen(getter = "nonce")]
+    pub fn nonce(&self) -> BigInt {
+        BigInt::from(self.nonce)
+    }
+}
+
+#[wasm_bindgen(js_name = "IdentityProofResponse")]
+#[derive(Clone)]
+pub struct IdentityProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub identity: Option<IdentityWasm>,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
+}
+
+#[wasm_bindgen(js_name = "IdentityKeysProofResponse")]
+#[derive(Clone)]
+pub struct IdentityKeysProofResponseWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub keys: Array,
+    #[wasm_bindgen(getter_with_clone)]
+    pub metadata: ResponseMetadataWasm,
+    #[wasm_bindgen(getter_with_clone)]
+    pub proof: ProofInfoWasm,
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentity")]
-    pub async fn get_identity(&self, base58_id: &str) -> Result<IdentityWasm, WasmSdkError> {
+    pub async fn get_identity(
+        &self,
+        base58_id: &str,
+    ) -> Result<Option<IdentityWasm>, WasmSdkError> {
         let id = Identifier::from_string(
             base58_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
         )
         .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
 
-        Identity::fetch_by_identifier(self.as_ref(), id)
-            .await?
-            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))
-            .map(Into::into)
+        let identity = Identity::fetch_by_identifier(self.as_ref(), id).await?;
+
+        Ok(identity.map(IdentityWasm::from))
     }
 
     #[wasm_bindgen(js_name = "getIdentityWithProofInfo")]
     pub async fn get_identity_with_proof_info(
         &self,
         base58_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
         let id = Identifier::from_string(
             base58_id,
             dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
@@ -96,34 +257,11 @@ impl WasmSdk {
             Identity::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
 
         match identity {
-            Some(identity) => {
-                // Convert identity to JSON value first
-                let identity_json = IdentityWasm::from(identity).to_json().map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert identity to JSON: {:?}",
-                        e
-                    ))
-                })?;
-                let identity_value: serde_json::Value =
-                    serde_wasm_bindgen::from_value(identity_json).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert to JSON value: {}",
-                            e
-                        ))
-                    })?;
-
-                let response = ProofMetadataResponse {
-                    data: identity_value,
-                    metadata: metadata.into(),
-                    proof: proof.into(),
-                };
-
-                // Use json_compatible serializer
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
+            Some(identity) => Ok(IdentityProofResponseWasm {
+                identity: Some(IdentityWasm::from(identity)),
+                metadata: metadata.into(),
+                proof: proof.into(),
+            }),
             None => Err(WasmSdkError::not_found("Identity not found")),
         }
     }
@@ -189,7 +327,7 @@ impl WasmSdk {
         search_purpose_map: Option<String>, // JSON string for SearchKey purpose map
         limit: Option<u32>,
         offset: Option<u32>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         // DapiRequestExecutor not needed anymore
 
         if identity_id.is_empty() {
@@ -294,8 +432,8 @@ impl WasmSdk {
                 })?;
 
                 // Parse the JSON purpose map
-                let purpose_map_json: serde_json::Value = serde_json::from_str(&purpose_map_str)
-                    .map_err(|e| {
+                let purpose_map_json: JsonValue =
+                    serde_json::from_str(&purpose_map_str).map_err(|e| {
                         WasmSdkError::invalid_argument(format!(
                             "Invalid JSON in search_purpose_map: {}",
                             e
@@ -305,7 +443,7 @@ impl WasmSdk {
                 // Convert JSON to gRPC structure
                 let mut purpose_map = HashMap::new();
 
-                if let serde_json::Value::Object(map) = purpose_map_json {
+                if let JsonValue::Object(map) = purpose_map_json {
                     for (purpose_str, security_levels) in map {
                         let purpose = purpose_str.parse::<u32>().map_err(|_| {
                             WasmSdkError::invalid_argument(format!(
@@ -316,7 +454,7 @@ impl WasmSdk {
 
                         let mut security_level_map = HashMap::new();
 
-                        if let serde_json::Value::Object(levels) = security_levels {
+                        if let JsonValue::Object(levels) = security_levels {
                             for (level_str, kind_str) in levels {
                                 let level = level_str.parse::<u32>().map_err(|_| {
                                     WasmSdkError::invalid_argument(format!(
@@ -413,7 +551,7 @@ impl WasmSdk {
         };
 
         // Convert keys to response format
-        let mut keys: Vec<IdentityKeyResponse> = Vec::new();
+        let mut keys: Vec<IdentityKeyInfoWasm> = Vec::new();
 
         // Apply offset and limit if provided
         let start = offset.unwrap_or(0) as usize;
@@ -432,25 +570,23 @@ impl WasmSdk {
             }
 
             if let Some(key) = key_opt {
-                keys.push(IdentityKeyResponse {
-                    key_id,
-                    key_type: format!("{:?}", key.key_type()),
-                    public_key_data: hex::encode(key.data().as_slice()),
-                    purpose: format!("{:?}", key.purpose()),
-                    security_level: format!("{:?}", key.security_level()),
-                    read_only: key.read_only(),
-                    disabled: key.disabled_at().is_some(),
-                });
+                keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
             }
         }
 
-        serde_wasm_bindgen::to_value(&keys).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        let array = Array::new();
+        for key in keys {
+            array.push(&JsValue::from(key));
+        }
+
+        Ok(array)
     }
 
     #[wasm_bindgen(js_name = "getIdentityNonce")]
-    pub async fn get_identity_nonce(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_identity_nonce(
+        &self,
+        identity_id: &str,
+    ) -> Result<IdentityNonceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
@@ -470,28 +606,14 @@ impl WasmSdk {
             .map(|fetcher| fetcher.0)
             .ok_or_else(|| WasmSdkError::not_found("Identity nonce not found"))?;
 
-        // Return as a JSON object with nonce as string to avoid BigInt serialization issues
-        #[derive(Serialize)]
-        struct NonceResponse {
-            nonce: String,
-        }
-
-        let response = NonceResponse {
-            nonce: nonce.to_string(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(IdentityNonceWasm::new(nonce))
     }
 
     #[wasm_bindgen(js_name = "getIdentityNonceWithProofInfo")]
     pub async fn get_identity_nonce_with_proof_info(
         &self,
         identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityNonceFetcher;
 
@@ -512,21 +634,12 @@ impl WasmSdk {
             .map(|fetcher| fetcher.0)
             .ok_or_else(|| WasmSdkError::not_found("Identity nonce not found"))?;
 
-        let data = serde_json::json!({
-            "nonce": nonce.to_string()
-        });
-
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        let data = IdentityNonceWasm::new(nonce);
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(data),
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityContractNonce")]
@@ -534,7 +647,7 @@ impl WasmSdk {
         &self,
         identity_id: &str,
         contract_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<IdentityNonceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
@@ -565,21 +678,7 @@ impl WasmSdk {
             .map(|fetcher| fetcher.0)
             .ok_or_else(|| WasmSdkError::not_found("Identity contract nonce not found"))?;
 
-        // Return as a JSON object with nonce as string to avoid BigInt serialization issues
-        #[derive(Serialize)]
-        struct NonceResponse {
-            nonce: String,
-        }
-
-        let response = NonceResponse {
-            nonce: nonce.to_string(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(IdentityNonceWasm::new(nonce))
     }
 
     #[wasm_bindgen(js_name = "getIdentityContractNonceWithProofInfo")]
@@ -587,7 +686,7 @@ impl WasmSdk {
         &self,
         identity_id: &str,
         contract_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
 
@@ -623,25 +722,19 @@ impl WasmSdk {
             .map(|fetcher| fetcher.0)
             .ok_or_else(|| WasmSdkError::not_found("Identity contract nonce not found"))?;
 
-        let data = serde_json::json!({
-            "nonce": nonce.to_string()
-        });
-
-        let response = ProofMetadataResponse {
-            data,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        let data = IdentityNonceWasm::new(nonce);
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(data),
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityBalance")]
-    pub async fn get_identity_balance(&self, id: &str) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_identity_balance(
+        &self,
+        id: &str,
+    ) -> Result<IdentityBalanceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
 
@@ -657,32 +750,16 @@ impl WasmSdk {
 
         let balance_result = IdentityBalance::fetch(self.as_ref(), identity_id).await?;
 
-        if let Some(balance) = balance_result {
-            // Return as object with balance as string to handle large numbers
-            #[derive(Serialize)]
-            struct BalanceResponse {
-                balance: String,
-            }
-
-            let response = BalanceResponse {
-                balance: balance.to_string(),
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
-        } else {
-            Err(WasmSdkError::not_found("Identity balance not found"))
-        }
+        balance_result
+            .map(IdentityBalanceWasm::new)
+            .ok_or_else(|| WasmSdkError::not_found("Identity balance not found"))
     }
 
     #[wasm_bindgen(js_name = "getIdentitiesBalances")]
     pub async fn get_identities_balances(
         &self,
         identity_ids: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
 
         // Convert string IDs to Identifiers
@@ -700,31 +777,27 @@ impl WasmSdk {
         let balances_result: drive_proof_verifier::types::IdentityBalances =
             IdentityBalance::fetch_many(self.as_ref(), identifiers.clone()).await?;
 
-        // Convert to response format
-        let responses: Vec<IdentityBalanceResponse> = identifiers
-            .into_iter()
-            .filter_map(|id| {
-                balances_result.get(&id).and_then(|balance_opt| {
-                    balance_opt.map(|balance| IdentityBalanceResponse {
-                        identity_id: id.to_string(
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        ),
-                        balance: balance.to_string(),
-                    })
-                })
-            })
-            .collect();
+        let results_array = Array::new();
 
-        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        for id in identifiers {
+            if let Some(Some(balance)) = balances_result.get(&id) {
+                let identity_id =
+                    id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58);
+                results_array.push(&JsValue::from(IdentityBalanceEntryWasm::new(
+                    identity_id,
+                    *balance,
+                )));
+            }
+        }
+
+        Ok(results_array)
     }
 
     #[wasm_bindgen(js_name = "getIdentityBalanceAndRevision")]
     pub async fn get_identity_balance_and_revision(
         &self,
         identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<IdentityBalanceAndRevisionWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
@@ -740,22 +813,9 @@ impl WasmSdk {
 
         let result = IdentityBalanceAndRevision::fetch(self.as_ref(), id).await?;
 
-        if let Some(balance_and_revision) = result {
-            let response = IdentityBalanceAndRevisionResponse {
-                balance: balance_and_revision.0.to_string(),
-                revision: balance_and_revision.1,
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-            })
-        } else {
-            Err(WasmSdkError::not_found(
-                "Identity balance and revision not found",
-            ))
-        }
+        result
+            .map(|(balance, revision)| IdentityBalanceAndRevisionWasm::new(balance, revision))
+            .ok_or_else(|| WasmSdkError::not_found("Identity balance and revision not found"))
     }
 
     #[wasm_bindgen(js_name = "getIdentityByPublicKeyHash")]
@@ -792,7 +852,7 @@ impl WasmSdk {
         identities_ids: Vec<String>,
         contract_id: &str,
         purposes: Option<Vec<u32>>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         use dash_sdk::dpp::identity::Purpose;
 
         // Convert string IDs to Identifiers
@@ -831,7 +891,7 @@ impl WasmSdk {
 
         // For now, we'll implement this by fetching keys for each identity individually
         // The SDK doesn't fully expose the batch query yet
-        let mut responses: Vec<IdentityContractKeysResponse> = Vec::new();
+        let mut responses: Vec<IdentityContractKeysWasm> = Vec::new();
 
         for identity_id_str in identities_ids {
             let identity_id = Identifier::from_string(
@@ -860,30 +920,24 @@ impl WasmSdk {
                         }
                     }
 
-                    let key_response = IdentityKeyResponse {
-                        key_id,
-                        key_type: format!("{:?}", key.key_type()),
-                        public_key_data: hex::encode(key.data().as_slice()),
-                        purpose: format!("{:?}", key.purpose()),
-                        security_level: format!("{:?}", key.security_level()),
-                        read_only: key.read_only(),
-                        disabled: key.disabled_at().is_some(),
-                    };
-                    identity_keys.push(key_response);
+                    identity_keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
                 }
             }
 
             if !identity_keys.is_empty() {
-                responses.push(IdentityContractKeysResponse {
-                    identity_id: identity_id_str,
-                    keys: identity_keys,
-                });
+                responses.push(IdentityContractKeysWasm::new(
+                    identity_id_str,
+                    identity_keys,
+                ));
             }
         }
 
-        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        let array = Array::new();
+        for response in responses {
+            array.push(&JsValue::from(response));
+        }
+
+        Ok(array)
     }
 
     #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHash")]
@@ -891,7 +945,7 @@ impl WasmSdk {
         &self,
         public_key_hash: &str,
         start_after: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Array, WasmSdkError> {
         // Parse the hex-encoded public key hash
         let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
             WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
@@ -931,28 +985,13 @@ impl WasmSdk {
             after: start_id.map(|id| *id.as_bytes()),
         };
 
-        // Fetch identity by non-unique public key hash
         let identity = Identity::fetch(self.as_ref(), query).await?;
 
-        // Return array with single identity if found
-        let results = if let Some(id) = identity {
-            vec![id]
-        } else {
-            vec![]
-        };
-
-        // Convert results to IdentityWasm
-        let identities: Vec<IdentityWasm> = results.into_iter().map(Into::into).collect();
-
-        // Create JS array directly
         let js_array = Array::new();
-        for identity in identities {
-            let json = identity.to_json().map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to convert identity to JSON: {:?}", e))
-            })?;
-            js_array.push(&json);
+        if let Some(identity) = identity {
+            js_array.push(&JsValue::from(IdentityWasm::from(identity)));
         }
-        Ok(js_array.into())
+        Ok(js_array)
     }
 
     #[wasm_bindgen(js_name = "getIdentityTokenBalances")]
@@ -960,7 +999,7 @@ impl WasmSdk {
         &self,
         identity_id: &str,
         token_ids: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Map, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 
@@ -991,23 +1030,16 @@ impl WasmSdk {
         let balances: drive_proof_verifier::types::identity_token_balance::IdentityTokenBalances =
             TokenAmount::fetch_many(self.as_ref(), query).await?;
 
-        // Convert to response format
-        let responses: Vec<TokenBalanceResponse> = token_identifiers
-            .into_iter()
-            .zip(token_ids.into_iter())
-            .filter_map(|(token_id, token_id_str)| {
-                balances.get(&token_id).and_then(|balance_opt| {
-                    balance_opt.map(|balance| TokenBalanceResponse {
-                        token_id: token_id_str,
-                        balance: balance.to_string(),
-                    })
-                })
-            })
-            .collect();
+        let balances_map = Map::new();
+        for token_id in token_identifiers {
+            if let Some(Some(balance)) = balances.get(&token_id) {
+                let key = JsValue::from(IdentifierWasm::from(token_id));
+                let value = JsValue::from(BigInt::from(*balance));
+                balances_map.set(&key, &value);
+            }
+        }
 
-        serde_wasm_bindgen::to_value(&responses).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(balances_map)
     }
 
     // Proof info versions for identity queries
@@ -1020,7 +1052,7 @@ impl WasmSdk {
         specific_key_ids: Option<Vec<u32>>,
         limit: Option<u32>,
         offset: Option<u32>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<IdentityKeysProofResponseWasm, WasmSdkError> {
         if identity_id.is_empty() {
             return Err(WasmSdkError::invalid_argument("Identity ID is required"));
         }
@@ -1133,7 +1165,7 @@ impl WasmSdk {
         };
 
         // Convert keys to response format
-        let mut keys: Vec<IdentityKeyResponse> = Vec::new();
+        let mut keys: Vec<IdentityKeyInfoWasm> = Vec::new();
 
         // Apply offset and limit if provided
         let start = offset.unwrap_or(0) as usize;
@@ -1152,28 +1184,19 @@ impl WasmSdk {
             }
 
             if let Some(key) = key_opt {
-                keys.push(IdentityKeyResponse {
-                    key_id,
-                    key_type: format!("{:?}", key.key_type()),
-                    public_key_data: hex::encode(key.data().as_slice()),
-                    purpose: format!("{:?}", key.purpose()),
-                    security_level: format!("{:?}", key.security_level()),
-                    read_only: key.read_only(),
-                    disabled: key.disabled_at().is_some(),
-                });
+                keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
             }
         }
 
-        let response = ProofMetadataResponse {
-            data: keys,
+        let keys_array = Array::new();
+        for key in keys {
+            keys_array.push(&JsValue::from(key));
+        }
+
+        Ok(IdentityKeysProofResponseWasm {
+            keys: keys_array,
             metadata: metadata.into(),
             proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
         })
     }
 
@@ -1181,7 +1204,7 @@ impl WasmSdk {
     pub async fn get_identity_balance_with_proof_info(
         &self,
         id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalance;
 
@@ -1199,37 +1222,22 @@ impl WasmSdk {
             IdentityBalance::fetch_with_metadata_and_proof(self.as_ref(), identity_id, None)
                 .await?;
 
-        if let Some(balance) = balance_result {
-            #[derive(Serialize)]
-            struct BalanceResponse {
-                balance: String,
-            }
-
-            let data = BalanceResponse {
-                balance: balance.to_string(),
-            };
-
-            let response = ProofMetadataResponse {
-                data,
-                metadata: metadata.into(),
-                proof: proof.into(),
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        balance_result
+            .map(|balance| {
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    JsValue::from(IdentityBalanceWasm::new(balance)),
+                    metadata,
+                    proof,
+                )
             })
-        } else {
-            Err(WasmSdkError::not_found("Identity balance not found"))
-        }
+            .ok_or_else(|| WasmSdkError::not_found("Identity balance not found"))
     }
 
     #[wasm_bindgen(js_name = "getIdentitiesBalancesWithProofInfo")]
     pub async fn get_identities_balances_with_proof_info(
         &self,
         identity_ids: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::IdentityBalance;
 
         // Convert string IDs to Identifiers
@@ -1255,39 +1263,28 @@ impl WasmSdk {
         )
         .await?;
 
-        // Convert to response format
-        let responses: Vec<IdentityBalanceResponse> = identifiers
-            .into_iter()
-            .filter_map(|id| {
-                balances_result.get(&id).and_then(|balance_opt| {
-                    balance_opt.map(|balance| IdentityBalanceResponse {
-                        identity_id: id.to_string(
-                            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-                        ),
-                        balance: balance.to_string(),
-                    })
-                })
-            })
-            .collect();
+        let balances_array = Array::new();
+        for id in identifiers {
+            if let Some(Some(balance)) = balances_result.get(&id) {
+                balances_array.push(&JsValue::from(IdentityBalanceEntryWasm::new(
+                    id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58),
+                    *balance,
+                )));
+            }
+        }
 
-        let response = ProofMetadataResponse {
-            data: responses,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            balances_array,
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityBalanceAndRevisionWithProofInfo")]
     pub async fn get_identity_balance_and_revision_with_proof_info(
         &self,
         identity_id: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityBalanceAndRevision;
 
@@ -1305,35 +1302,22 @@ impl WasmSdk {
             IdentityBalanceAndRevision::fetch_with_metadata_and_proof(self.as_ref(), id, None)
                 .await?;
 
-        if let Some(balance_and_revision) = result {
-            let data = IdentityBalanceAndRevisionResponse {
-                balance: balance_and_revision.0.to_string(),
-                revision: balance_and_revision.1,
-            };
-
-            let response = ProofMetadataResponse {
-                data,
-                metadata: metadata.into(),
-                proof: proof.into(),
-            };
-
-            // Use json_compatible serializer
-            let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-            response.serialize(&serializer).map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
+        result
+            .map(|(balance, revision)| {
+                ProofMetadataResponseWasm::from_sdk_parts(
+                    JsValue::from(IdentityBalanceAndRevisionWasm::new(balance, revision)),
+                    metadata,
+                    proof,
+                )
             })
-        } else {
-            Err(WasmSdkError::not_found(
-                "Identity balance and revision not found",
-            ))
-        }
+            .ok_or_else(|| WasmSdkError::not_found("Identity balance and revision not found"))
     }
 
     #[wasm_bindgen(js_name = "getIdentityByPublicKeyHashWithProofInfo")]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,
         public_key_hash: &str,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
 
         // Parse the hex-encoded public key hash
@@ -1355,33 +1339,11 @@ impl WasmSdk {
                 .await?;
 
         match result {
-            Some(identity) => {
-                let identity_json = IdentityWasm::from(identity).to_json().map_err(|e| {
-                    WasmSdkError::serialization(format!(
-                        "Failed to convert identity to JSON: {:?}",
-                        e
-                    ))
-                })?;
-                let identity_value: serde_json::Value =
-                    serde_wasm_bindgen::from_value(identity_json).map_err(|e| {
-                        WasmSdkError::serialization(format!(
-                            "Failed to convert to JSON value: {}",
-                            e
-                        ))
-                    })?;
-
-                let response = ProofMetadataResponse {
-                    data: identity_value,
-                    metadata: metadata.into(),
-                    proof: proof.into(),
-                };
-
-                // Use json_compatible serializer
-                let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-                response.serialize(&serializer).map_err(|e| {
-                    WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-                })
-            }
+            Some(identity) => Ok(IdentityProofResponseWasm {
+                identity: Some(IdentityWasm::from(identity)),
+                metadata: metadata.into(),
+                proof: proof.into(),
+            }),
             None => Err(WasmSdkError::not_found(
                 "Identity not found for public key hash",
             )),
@@ -1393,7 +1355,7 @@ impl WasmSdk {
         &self,
         public_key_hash: &str,
         start_after: Option<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse the hex-encoded public key hash
         let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
             WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
@@ -1437,39 +1399,16 @@ impl WasmSdk {
         let (identity, metadata, proof) =
             Identity::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Return array with single identity if found
-        let results = if let Some(id) = identity {
-            vec![id]
-        } else {
-            vec![]
-        };
+        let identities_array = Array::new();
+        if let Some(identity) = identity {
+            identities_array.push(&JsValue::from(IdentityWasm::from(identity)));
+        }
 
-        // Convert results to JSON
-        let identities_json: Vec<serde_json::Value> = results
-            .into_iter()
-            .map(|identity| {
-                let identity_wasm: IdentityWasm = identity.into();
-                let json = identity_wasm.to_json().map_err(|_| {
-                    serde_wasm_bindgen::Error::new("Failed to convert identity to JSON")
-                })?;
-                serde_wasm_bindgen::from_value(json)
-            })
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| {
-                WasmSdkError::serialization(format!("Failed to convert identity to JSON: {}", e))
-            })?;
-
-        let response = ProofMetadataResponse {
-            data: identities_json,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            identities_array,
+            metadata,
+            proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentitiesContractKeysWithProofInfo")]
@@ -1478,7 +1417,7 @@ impl WasmSdk {
         identities_ids: Vec<String>,
         contract_id: &str,
         purposes: Option<Vec<u32>>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::identity::Purpose;
 
         // Convert string IDs to Identifiers
@@ -1517,9 +1456,9 @@ impl WasmSdk {
 
         // For now, we'll implement this by fetching keys for each identity individually with proof
         // The SDK doesn't fully expose the batch query with proof yet
-        let mut all_responses: Vec<IdentityContractKeysResponse> = Vec::new();
-        let mut combined_metadata: Option<ResponseMetadata> = None;
-        let mut combined_proof: Option<ProofInfo> = None;
+        let mut all_responses: Vec<IdentityContractKeysWasm> = Vec::new();
+        let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
+        let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
 
         for identity_id_str in identities_ids {
             let identity_id = Identifier::from_string(
@@ -1544,8 +1483,8 @@ impl WasmSdk {
 
             // Store first metadata and proof
             if combined_metadata.is_none() {
-                combined_metadata = Some(metadata.into());
-                combined_proof = Some(proof.into());
+                combined_metadata = Some(metadata);
+                combined_proof = Some(proof);
             }
 
             let mut identity_keys = Vec::new();
@@ -1560,52 +1499,28 @@ impl WasmSdk {
                         }
                     }
 
-                    let key_response = IdentityKeyResponse {
-                        key_id,
-                        key_type: format!("{:?}", key.key_type()),
-                        public_key_data: hex::encode(key.data().as_slice()),
-                        purpose: format!("{:?}", key.purpose()),
-                        security_level: format!("{:?}", key.security_level()),
-                        read_only: key.read_only(),
-                        disabled: key.disabled_at().is_some(),
-                    };
-                    identity_keys.push(key_response);
+                    identity_keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
                 }
             }
 
             if !identity_keys.is_empty() {
-                all_responses.push(IdentityContractKeysResponse {
-                    identity_id: identity_id_str,
-                    keys: identity_keys,
-                });
+                all_responses.push(IdentityContractKeysWasm::new(
+                    identity_id_str,
+                    identity_keys,
+                ));
             }
         }
 
-        let response = ProofMetadataResponse {
-            data: all_responses,
-            metadata: combined_metadata.unwrap_or_else(|| ResponseMetadata {
-                height: 0,
-                core_chain_locked_height: 0,
-                epoch: 0,
-                time_ms: 0,
-                protocol_version: 0,
-                chain_id: String::new(),
-            }),
-            proof: combined_proof.unwrap_or_else(|| ProofInfo {
-                grovedb_proof: String::new(),
-                quorum_hash: String::new(),
-                signature: String::new(),
-                round: 0,
-                block_id_hash: String::new(),
-                quorum_type: 0,
-            }),
-        };
+        let responses_array = Array::new();
+        for response in all_responses {
+            responses_array.push(&JsValue::from(response));
+        }
 
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            responses_array,
+            combined_metadata.unwrap_or_default(),
+            combined_proof.unwrap_or_default(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "getIdentityTokenBalancesWithProofInfo")]
@@ -1613,7 +1528,7 @@ impl WasmSdk {
         &self,
         identity_id: &str,
         token_ids: Vec<String>,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::credits::TokenAmount;
         use dash_sdk::platform::tokens::identity_token_balances::IdentityTokenBalancesQuery;
 
@@ -1647,30 +1562,19 @@ impl WasmSdk {
             _,
         ) = TokenAmount::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        // Convert to response format
-        let responses: Vec<TokenBalanceResponse> = token_identifiers
-            .into_iter()
-            .zip(token_ids.into_iter())
-            .filter_map(|(token_id, token_id_str)| {
-                balances.get(&token_id).and_then(|balance_opt| {
-                    balance_opt.map(|balance| TokenBalanceResponse {
-                        token_id: token_id_str,
-                        balance: balance.to_string(),
-                    })
-                })
-            })
-            .collect();
+        let balances_map = Map::new();
+        for token_id in token_identifiers {
+            if let Some(Some(balance)) = balances.get(&token_id) {
+                let key = JsValue::from(IdentifierWasm::from(token_id));
+                let value = JsValue::from(BigInt::from(*balance));
+                balances_map.set(&key, &value);
+            }
+        }
 
-        let response = ProofMetadataResponse {
-            data: responses,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            JsValue::from(balances_map),
+            metadata,
+            proof,
+        ))
     }
 }

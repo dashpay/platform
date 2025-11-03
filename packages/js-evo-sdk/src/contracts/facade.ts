@@ -9,7 +9,7 @@ export class ContractsFacade {
     this.sdk = sdk;
   }
 
-  async fetch(contractId: string): Promise<wasm.DataContract> {
+  async fetch(contractId: string): Promise<wasm.DataContract | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDataContract(contractId);
   }
@@ -22,23 +22,13 @@ export class ContractsFacade {
   async getHistory(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistory(
-      contractId,
-      limit ?? null,
-      null,
-      startAtMs != null ? BigInt(startAtMs) : null,
-    );
+    return w.getDataContractHistory(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
   }
 
   async getHistoryWithProof(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
     const { contractId, limit, startAtMs } = args;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistoryWithProofInfo(
-      contractId,
-      limit ?? null,
-      null,
-      startAtMs != null ? BigInt(startAtMs) : null,
-    );
+    return w.getDataContractHistoryWithProofInfo(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
   }
 
   async getMany(contractIds: string[]): Promise<any> {

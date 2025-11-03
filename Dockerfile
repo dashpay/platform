@@ -393,6 +393,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -484,6 +485,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -569,6 +571,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
@@ -604,7 +607,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
-    yarn build && \
+    # Build JS Dash SDK and dependencies
+    yarn run ultra -r --filter '+dash' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
@@ -806,6 +810,7 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \

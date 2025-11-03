@@ -9,7 +9,7 @@ export class IdentitiesFacade {
     this.sdk = sdk;
   }
 
-  async fetch(identityId: string): Promise<wasm.IdentityWasm> {
+  async fetch(identityId: string): Promise<wasm.Identity | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentity(identityId);
   }
@@ -19,7 +19,7 @@ export class IdentitiesFacade {
     return w.getIdentityWithProofInfo(identityId);
   }
 
-  async fetchUnproved(identityId: string): Promise<wasm.IdentityWasm> {
+  async fetchUnproved(identityId: string): Promise<wasm.Identity> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityUnproved(identityId);
   }
@@ -100,7 +100,7 @@ export class IdentitiesFacade {
     return w.getIdentityBalanceAndRevisionWithProofInfo(identityId);
   }
 
-  async byPublicKeyHash(publicKeyHash: string): Promise<wasm.IdentityWasm> {
+  async byPublicKeyHash(publicKeyHash: string): Promise<wasm.Identity> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityByPublicKeyHash(publicKeyHash);
   }

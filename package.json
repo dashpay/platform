@@ -66,6 +66,7 @@
     "packages/masternode-reward-shares-contract",
     "packages/dash-spv",
     "packages/wasm-dpp",
+    "packages/wasm-dpp2",
     "packages/withdrawals-contract",
     "packages/token-history-contract",
     "packages/keyword-search-contract",

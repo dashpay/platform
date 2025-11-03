@@ -3,7 +3,7 @@
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
 use crate::error::WasmSdkError;
-use crate::WasmSdk;
+use crate::sdk::WasmSdk;
 use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
