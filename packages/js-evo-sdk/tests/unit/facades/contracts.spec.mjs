@@ -36,27 +36,25 @@ describe('ContractsFacade', () => {
     expect(wasmSdk.getDataContractWithProofInfo).to.be.calledOnceWithExactly('c2');
   });
 
-  it('getHistory() converts startAtMs to BigInt and forwards', async () => {
+  it('getHistory() forwards query object', async () => {
     await client.contracts.getHistory({
-      contractId: 'c',
+      dataContractId: 'c',
       limit: 3,
       startAtMs: 5,
     });
-    expect(wasmSdk.getDataContractHistory).to.be.calledOnce();
-    const { args } = wasmSdk.getDataContractHistory.firstCall;
-    expect(args[0]).to.deep.equal({
+    expect(wasmSdk.getDataContractHistory).to.be.calledOnceWithExactly({
       dataContractId: 'c',
       limit: 3,
-      startAtMs: BigInt(5),
+      startAtMs: 5,
     });
   });
 
-  it('getHistoryWithProof() forwards similarly', async () => {
-    await client.contracts.getHistoryWithProof({ contractId: 'c' });
+  it('getHistoryWithProof() forwards query object', async () => {
+    await client.contracts.getHistoryWithProof({
+      dataContractId: 'c',
+    });
     expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly({
       dataContractId: 'c',
-      limit: undefined,
-      startAtMs: undefined,
     });
   });
 
