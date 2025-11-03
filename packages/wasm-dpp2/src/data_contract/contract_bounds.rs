@@ -107,9 +107,9 @@ impl ContractBoundsWasm {
         let contract_id: Identifier = IdentifierWasm::try_from(js_contract_id)?.into();
 
         self.0 = match self.clone().0 {
-            ContractBounds::SingleContract { .. } => ContractBounds::SingleContract {
-                id: contract_id,
-            },
+            ContractBounds::SingleContract { .. } => {
+                ContractBounds::SingleContract { id: contract_id }
+            }
             ContractBounds::SingleContractDocumentType {
                 document_type_name, ..
             } => ContractBounds::SingleContractDocumentType {
