@@ -200,7 +200,7 @@ impl ChangeControlRulesWasm {
 
         Ok(self.0.can_change_admin_action_takers(
             &admin_action_takers.clone().into(),
-            &contract_owner_id.into(),
+            &contract_owner_id,
             main_group,
             &groups,
             &action_taker.clone().into(),

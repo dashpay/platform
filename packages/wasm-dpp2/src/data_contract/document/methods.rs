@@ -63,8 +63,7 @@ impl DocumentWasm {
                 &owner_id,
                 js_document_type_name,
                 &entropy,
-            )?
-            .into(),
+            )?,
             false => IdentifierWasm::try_from(js_document_id)?.into(),
         };
 
