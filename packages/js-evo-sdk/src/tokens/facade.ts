@@ -114,7 +114,7 @@ export class TokensFacade {
   async mint(args: { contractId: string; tokenPosition: number; amount: number | string | bigint; identityId: string; privateKeyWif: string; recipientId?: string; publicNote?: string }): Promise<any> {
     const { contractId, tokenPosition, amount, identityId, privateKeyWif, recipientId, publicNote } = args;
     const w = await this.sdk.getWasmSdkConnected();
-    return w.tokenMint(contractId, tokenPosition, String(amount), identityId, privateKeyWif, recipientId ?? null, publicNote ?? null);
+    return w.tokenMint(contractId, tokenPosition, String(amount), identityId, privateKeyWif, recipientId, publicNote ?? null);
   }
 
   async burn(args: { contractId: string; tokenPosition: number; amount: number | string | bigint; identityId: string; privateKeyWif: string; publicNote?: string }): Promise<any> {

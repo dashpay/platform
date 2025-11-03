@@ -1,6 +1,7 @@
 import * as wasm from '../wasm.js';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
+import type { IdentityKeysQuery } from '../wasm.js';
 
 export class IdentitiesFacade {
   private sdk: EvoSDK;
@@ -24,30 +25,14 @@ export class IdentitiesFacade {
     return w.getIdentityUnproved(identityId);
   }
 
-  async getKeys(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; searchPurposeMap?: unknown; limit?: number; offset?: number }): Promise<any> {
-    const { identityId, keyRequestType, specificKeyIds, searchPurposeMap, limit, offset } = args;
-    const mapJson = asJsonString(searchPurposeMap);
+  async getKeys(query: IdentityKeysQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityKeys(
-      identityId,
-      keyRequestType,
-      specificKeyIds ? Uint32Array.from(specificKeyIds) : null,
-      mapJson ?? null,
-      limit ?? null,
-      offset ?? null,
-    );
+    return w.getIdentityKeys(query);
   }
 
-  async getKeysWithProof(args: { identityId: string; keyRequestType: 'all' | 'specific' | 'search'; specificKeyIds?: number[]; limit?: number; offset?: number }): Promise<any> {
-    const { identityId, keyRequestType, specificKeyIds, limit, offset } = args;
+  async getKeysWithProof(query: IdentityKeysQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityKeysWithProofInfo(
-      identityId,
-      keyRequestType,
-      specificKeyIds ? Uint32Array.from(specificKeyIds) : null,
-      limit ?? null,
-      offset ?? null,
-    );
+    return w.getIdentityKeysWithProofInfo(query);
   }
 
   async nonce(identityId: string): Promise<any> {
@@ -110,16 +95,14 @@ export class IdentitiesFacade {
     return w.getIdentityByPublicKeyHashWithProofInfo(publicKeyHash);
   }
 
-  async byNonUniquePublicKeyHash(publicKeyHash: string, opts: { startAfter?: string } = {}): Promise<any> {
-    const { startAfter } = opts;
+  async byNonUniquePublicKeyHash(publicKeyHash: string, startAfter?: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityByNonUniquePublicKeyHash(publicKeyHash, startAfter ?? null);
+    return w.getIdentityByNonUniquePublicKeyHash(publicKeyHash, startAfter);
   }
 
-  async byNonUniquePublicKeyHashWithProof(publicKeyHash: string, opts: { startAfter?: string } = {}): Promise<any> {
-    const { startAfter } = opts;
+  async byNonUniquePublicKeyHashWithProof(publicKeyHash: string, startAfter?: string): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getIdentityByNonUniquePublicKeyHashWithProofInfo(publicKeyHash, startAfter ?? null);
+    return w.getIdentityByNonUniquePublicKeyHashWithProofInfo(publicKeyHash, startAfter || undefined);
   }
 
   async contractKeys(args: { identityIds: string[]; contractId: string; purposes?: number[] }): Promise<any> {
