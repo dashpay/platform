@@ -1898,7 +1898,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * Server-streaming subscription for platform events.
-     * Allows subscribint to various Platform events.
+     * Allows subscribing to various Platform events.
      * 
      * Once connected, it sends handshake response with empty event.
      * </pre>
@@ -2658,7 +2658,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * Server-streaming subscription for platform events.
-     * Allows subscribint to various Platform events.
+     * Allows subscribing to various Platform events.
      * 
      * Once connected, it sends handshake response with empty event.
      * </pre>
@@ -3031,7 +3031,7 @@ public final class PlatformGrpc {
     /**
      * <pre>
      * Server-streaming subscription for platform events.
-     * Allows subscribint to various Platform events.
+     * Allows subscribing to various Platform events.
      * 
      * Once connected, it sends handshake response with empty event.
      * </pre>

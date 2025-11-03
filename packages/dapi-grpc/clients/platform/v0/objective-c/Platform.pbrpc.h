@@ -347,7 +347,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Server-streaming subscription for platform events.
  * 
- * Allows subscribint to various Platform events.
+ * Allows subscribing to various Platform events.
  * 
  * Once connected, it sends handshake response with empty event.
  */
@@ -745,7 +745,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Server-streaming subscription for platform events.
  * 
- * Allows subscribint to various Platform events.
+ * Allows subscribing to various Platform events.
  * 
  * Once connected, it sends handshake response with empty event.
  *
@@ -756,7 +756,7 @@ NS_ASSUME_NONNULL_BEGIN
 /**
  * Server-streaming subscription for platform events.
  * 
- * Allows subscribint to various Platform events.
+ * Allows subscribing to various Platform events.
  * 
  * Once connected, it sends handshake response with empty event.
  *
