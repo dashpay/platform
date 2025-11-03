@@ -1,4 +1,3 @@
-use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
 use dash_sdk::dpp::platform_value::{
     string_encoding::Encoding, Identifier, Value as PlatformValue,
 };
@@ -84,11 +83,6 @@ pub(crate) fn convert_json_values_to_platform_values(
         .collect::<Result<Vec<_>, _>>()?;
 
     js_values_to_platform_values(js_values)
-}
-
-pub(crate) fn identifier_from_base58(value: &str, field: &str) -> Result<Identifier, WasmSdkError> {
-    Identifier::from_string(value, Encoding::Base58)
-        .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid {}: {}", field, err)))
 }
 
 pub(crate) fn identifier_from_js(value: &JsValue, field: &str) -> Result<Identifier, WasmSdkError> {

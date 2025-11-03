@@ -1,5 +1,4 @@
 use crate::error::{WasmDppError, WasmDppResult};
-use crate::utils::{IntoWasm, get_class_type, identifier_from_js_value};
 use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;

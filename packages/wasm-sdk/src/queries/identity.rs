@@ -136,15 +136,6 @@ pub struct IdentityBalanceEntryWasm {
     balance: u64,
 }
 
-impl IdentityBalanceEntryWasm {
-    fn new(identity_id: String, balance: u64) -> Self {
-        IdentityBalanceEntryWasm {
-            identity_id,
-            balance,
-        }
-    }
-}
-
 #[wasm_bindgen(js_class = IdentityBalanceEntry)]
 impl IdentityBalanceEntryWasm {
     #[wasm_bindgen(getter = "identityId")]
@@ -359,13 +350,6 @@ impl IdentityBalanceEntryWasm {
         }
     }
 }
-
-#[wasm_bindgen(js_class = IdentityBalanceEntry)]
-impl IdentityBalanceEntryWasm {
-    #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> String {
-        self.identity_id.clone()
-    }
 
 fn parse_identity_keys_query(
     query: IdentityKeysQueryJs,
