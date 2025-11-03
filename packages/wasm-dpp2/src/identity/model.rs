@@ -1,6 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::identity::public_key::IdentityPublicKeyWasm;
+use crate::utils::{IntoWasm, JsValueExt};
 use dpp::identity::accessors::{IdentityGettersV0, IdentitySettersV0};
 use dpp::identity::fields::IDENTIFIER_FIELDS_RAW_OBJECT;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -8,13 +9,12 @@ use dpp::identity::identity_public_key::fields::BINARY_DATA_FIELDS;
 use dpp::identity::v0::IdentityV0;
 use dpp::identity::{self, Identity, KeyID};
 use dpp::platform_value::ReplacementType;
+use dpp::platform_value::Value;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
-use dpp::platform_value::Value;
 use dpp::prelude::{Identifier, IdentityPublicKey};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable, ValueConvertible};
 use dpp::version::PlatformVersion;
-use crate::utils::{IntoWasm, JsValueExt};
 use js_sys::{Array, BigInt, Error as JsError, Object, RangeError, Reflect};
 use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::{from_value, to_value};
@@ -195,7 +195,9 @@ impl IdentityWasm {
 
         let public_keys = Array::new();
         for public_key in self.0.public_keys().values() {
-            public_keys.push(&JsValue::from(IdentityPublicKeyWasm::from(public_key.clone())));
+            public_keys.push(&JsValue::from(IdentityPublicKeyWasm::from(
+                public_key.clone(),
+            )));
         }
         Reflect::set(
             &object,
@@ -210,12 +212,7 @@ impl IdentityWasm {
         })?;
 
         let balance = big_int_from_u64(self.0.balance())?;
-        Reflect::set(
-            &object,
-            &JsValue::from_str("balance"),
-            &balance.into(),
-        )
-        .map_err(|err| {
+        Reflect::set(&object, &JsValue::from_str("balance"), &balance.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "unable to set identity balance: {}",
                 err.error_message()
@@ -223,12 +220,7 @@ impl IdentityWasm {
         })?;
 
         let revision = big_int_from_u64(self.0.revision())?;
-        Reflect::set(
-            &object,
-            &JsValue::from_str("revision"),
-            &revision.into(),
-        )
-        .map_err(|err| {
+        Reflect::set(&object, &JsValue::from_str("revision"), &revision.into()).map_err(|err| {
             WasmDppError::serialization(format!(
                 "unable to set identity revision: {}",
                 err.error_message()
@@ -246,8 +238,8 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<IdentityWasm> {
-        let json_value: JsonValue = from_value(js_value)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        let json_value: JsonValue =
+            from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let value = Value::from(json_value);
 
@@ -284,8 +276,7 @@ fn identity_from_platform_value(mut value: Value) -> WasmDppResult<IdentityWasm>
         }
     }
 
-    let identity_v0 =
-        IdentityV0::try_from(value).map_err(WasmDppError::from)?;
+    let identity_v0 = IdentityV0::try_from(value).map_err(WasmDppError::from)?;
 
     Ok(IdentityWasm(Identity::from(identity_v0)))
 }
@@ -305,11 +296,8 @@ fn js_big_int_to_u64(value: &JsValue) -> WasmDppResult<u64> {
     })?;
 
     let js_string = BigInt::to_string(&bigint, 10).map_err(|err: RangeError| {
-            WasmDppError::serialization(format!(
-                "unable to stringify BigInt: {}",
-                err.message()
-            ))
-        })?;
+        WasmDppError::serialization(format!("unable to stringify BigInt: {}", err.message()))
+    })?;
 
     let string = js_string.as_string().ok_or_else(|| {
         WasmDppError::serialization("unable to convert BigInt to string".to_string())
@@ -352,15 +340,14 @@ impl IdentityWasm {
             if !js_public_keys.is_undefined() && !js_public_keys.is_null() {
                 let array = Array::from(&js_public_keys);
                 for value in array.iter() {
-                    let public_key_wasm =
-                        value.to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey").map_err(
-                            |err| {
-                                WasmDppError::invalid_argument(format!(
-                                    "identity publicKeys must contain IdentityPublicKey instances: {}",
-                                    err
-                                ))
-                            },
-                        )?;
+                    let public_key_wasm = value
+                        .to_wasm::<IdentityPublicKeyWasm>("IdentityPublicKey")
+                        .map_err(|err| {
+                            WasmDppError::invalid_argument(format!(
+                                "identity publicKeys must contain IdentityPublicKey instances: {}",
+                                err
+                            ))
+                        })?;
                     let public_key: IdentityPublicKey = public_key_wasm.clone().into();
                     public_keys.insert(public_key.id(), public_key);
                 }
@@ -402,8 +389,8 @@ impl IdentityWasm {
             return Ok(IdentityWasm(Identity::from(identity_v0)));
         }
 
-        let json_value: JsonValue = from_value(js_value)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        let json_value: JsonValue =
+            from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
         let value = Value::from(json_value);
 

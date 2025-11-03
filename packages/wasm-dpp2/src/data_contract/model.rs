@@ -27,8 +27,8 @@ use dpp::serialization::{
 };
 use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
-use std::collections::BTreeMap;
 use serde_json::Value as JsonValue;
+use std::collections::BTreeMap;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
