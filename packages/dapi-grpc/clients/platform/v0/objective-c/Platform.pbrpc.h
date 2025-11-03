@@ -345,7 +345,11 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  */
 - (GRPCUnaryProtoCall *)subscribePlatformEventsWithMessage:(PlatformSubscriptionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
@@ -739,14 +743,22 @@ NS_ASSUME_NONNULL_BEGIN
 #pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
 - (void)subscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */

@@ -533,6 +533,7 @@ GPB_FINAL @interface PlatformSubscriptionResponse_PlatformSubscriptionResponseV0
 
 @property(nonatomic, readwrite, copy, null_resettable) NSString *clientSubscriptionId;
 
+/** Event details; can be nil/None, eg. during handshake */
 @property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0 *event;
 /** Test to see if @c event has been set. */
 @property(nonatomic, readwrite) BOOL hasEvent;

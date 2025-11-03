@@ -1078,7 +1078,11 @@
 #pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
@@ -1087,7 +1091,11 @@
 }
 // Returns a not-yet-started RPC object.
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
@@ -1098,7 +1106,11 @@
         responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
 }
 /**
- * Bi-directional stream for multiplexed platform events subscriptions
+ * Server-streaming subscription for platform events.
+ * 
+ * Allows subscribint to various Platform events.
+ * 
+ * Once connected, it sends handshake response with empty event.
  */
 - (GRPCUnaryProtoCall *)subscribePlatformEventsWithMessage:(PlatformSubscriptionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
   return [self RPCToMethod:@"subscribePlatformEvents"

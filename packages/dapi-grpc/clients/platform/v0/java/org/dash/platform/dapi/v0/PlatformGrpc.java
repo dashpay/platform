@@ -1897,7 +1897,10 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Bi-directional stream for multiplexed platform events subscriptions
+     * Server-streaming subscription for platform events.
+     * Allows subscribint to various Platform events.
+     * 
+     * Once connected, it sends handshake response with empty event.
      * </pre>
      */
     public void subscribePlatformEvents(org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest request,
@@ -2654,7 +2657,10 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Bi-directional stream for multiplexed platform events subscriptions
+     * Server-streaming subscription for platform events.
+     * Allows subscribint to various Platform events.
+     * 
+     * Once connected, it sends handshake response with empty event.
      * </pre>
      */
     public void subscribePlatformEvents(org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest request,
@@ -3024,7 +3030,10 @@ public final class PlatformGrpc {
 
     /**
      * <pre>
-     * Bi-directional stream for multiplexed platform events subscriptions
+     * Server-streaming subscription for platform events.
+     * Allows subscribint to various Platform events.
+     * 
+     * Once connected, it sends handshake response with empty event.
      * </pre>
      */
     public java.util.Iterator<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> subscribePlatformEvents(

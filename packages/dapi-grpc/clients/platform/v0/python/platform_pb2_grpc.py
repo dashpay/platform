@@ -547,7 +547,11 @@ class PlatformServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def subscribePlatformEvents(self, request, context):
-        """Bi-directional stream for multiplexed platform events subscriptions
+        """Server-streaming subscription for platform events.
+
+        Allows subscribint to various Platform events.
+
+        Once connected, it sends handshake response with empty event.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
