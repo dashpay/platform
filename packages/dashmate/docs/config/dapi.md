@@ -39,6 +39,6 @@ Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 1909
 
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
-| `platform.dapi.rsDapi.waitForStResultTimeout` | Timeout for state transition results (ms) | `120000` | `240000` |
-
-This timeout controls how long rs-dapi waits for Drive to report the outcome of a state transition before returning a timeout error to the client.
+| `platform.dapi.rsDapi.timeouts.waitForStateTransitionResult` | How long rs-dapi waits for Drive to return the outcome of a state transition before timing out (ms) | `120000` | `240000` |
+| `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` | Maximum duration for a platform events subscription stream before rs-dapi closes it (ms) | `600000` | `900000` |
+| `platform.dapi.rsDapi.timeouts.coreStreams` | Maximum duration for Core streaming subscriptions (e.g., block headers) before rs-dapi closes them (ms) | `600000` | `900000` |

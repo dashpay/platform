@@ -1376,21 +1376,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             }
 
             const { rsDapi } = options.platform.dapi;
+            const defaultTimeouts = defaultConfig.get('platform.dapi.rsDapi.timeouts');
 
-            // Carry over wait-for-ST timeout before dropping legacy API section
+            let legacyWaitForStResultTimeout;
+            let legacyTimeouts;
+
             if (options.platform.dapi.api) {
-              const { waitForStResultTimeout } = options.platform.dapi.api;
-
-              if (typeof waitForStResultTimeout === 'number'
-                && typeof rsDapi.waitForStResultTimeout === 'undefined') {
-                rsDapi.waitForStResultTimeout = waitForStResultTimeout;
-              }
+              legacyWaitForStResultTimeout = options.platform.dapi.api.waitForStResultTimeout;
+              legacyTimeouts = options.platform.dapi.api.timeouts;
 
               delete options.platform.dapi.api;
-            }
-
-            if (typeof rsDapi.waitForStResultTimeout === 'undefined') {
-              rsDapi.waitForStResultTimeout = defaultConfig.get('platform.dapi.rsDapi.waitForStResultTimeout');
             }
 
             // Align docker images with defaults
@@ -1406,12 +1401,14 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
 
             // Normalize rsDapi timeout structure and remove redundant legacy fields
             const existingTimeouts = options.platform.dapi.rsDapi.timeouts
-              ?? options.platform.dapi.api?.timeouts;
+              ?? legacyTimeouts;
             const waitForStateTransitionResult = existingTimeouts?.waitForStateTransitionResult
-              ?? options.platform?.dapi?.api?.waitForStResultTimeout
-              ?? 120000;
-            const subscribePlatformEvents = existingTimeouts?.subscribePlatformEvents ?? 600000;
-            const coreStreams = existingTimeouts?.coreStreams ?? 600000;
+              ?? legacyWaitForStResultTimeout
+              ?? defaultTimeouts.waitForStateTransitionResult;
+            const subscribePlatformEvents = existingTimeouts?.subscribePlatformEvents
+              ?? defaultTimeouts.subscribePlatformEvents;
+            const coreStreams = existingTimeouts?.coreStreams
+              ?? defaultTimeouts.coreStreams;
 
             options.platform.dapi.rsDapi.timeouts = {
               waitForStateTransitionResult,
