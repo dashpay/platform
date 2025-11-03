@@ -912,7 +912,7 @@ impl PlatformService for QueryService {
             Some(Duration::from_secs(keepalive as u64))
         };
 
-        let subscription_id = format!("{:X}", rand::random::<u64>());
+        let subscription_id = rand::random::<u64>();
         tracing::trace!(
             subscription_id = %subscription_id,
             "subscribe_platform_events: generated subscription id"
@@ -929,10 +929,9 @@ impl PlatformService for QueryService {
 
         let handshake_tx = downstream_tx.clone();
         {
-            let subscription_id = subscription_id.clone();
             let handshake = PlatformSubscriptionResponse {
                 version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
-                    client_subscription_id: subscription_id.clone(),
+                    subscription_id,
                     event: None,
                 })),
             };
@@ -968,7 +967,7 @@ impl PlatformService for QueryService {
                     Some(Ok(event)) => {
                         let response = PlatformSubscriptionResponse {
                             version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
-                                client_subscription_id: subscription_id.clone(),
+                                subscription_id: subscription_id.clone(),
                                 event: Some(event),
                             })),
                         };
@@ -993,7 +992,7 @@ impl PlatformService for QueryService {
 
                         let response = PlatformSubscriptionResponse {
                             version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
-                                client_subscription_id: subscription_id.clone(),
+                                subscription_id,
                                 event: Some(keepalive_event),
                             })),
                         };

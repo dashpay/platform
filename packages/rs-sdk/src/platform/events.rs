@@ -2,7 +2,6 @@ use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::platform_subscription_request::{
     PlatformSubscriptionRequestV0, Version as RequestVersion,
 };
-use dapi_grpc::platform::v0::platform_subscription_response::Version as ResponseVersion;
 use dapi_grpc::platform::v0::{
     PlatformFilterV0, PlatformSubscriptionRequest, PlatformSubscriptionResponse,
 };
@@ -10,7 +9,7 @@ use dapi_grpc::tonic::{Request, Streaming};
 use rs_dapi_client::transport::{create_channel, PlatformGrpcClient};
 use rs_dapi_client::{RequestSettings, Uri};
 use std::time::Duration;
-pub type EventSubscriptionId = String;
+pub type EventSubscriptionId = u64;
 impl crate::Sdk {
     /// Subscribe to Platform events using the gRPC streaming API.
     ///
@@ -59,22 +58,5 @@ impl crate::Sdk {
             .into_inner();
 
         Ok(response)
-    }
-}
-
-/// Trait for managing subscriptions.
-pub trait Subscription {
-    /// Get the subscription id associated with this response.
-    ///
-    /// Returns an empty string if no subscription id is available.
-    fn subscription_id(&self) -> EventSubscriptionId;
-}
-
-impl Subscription for PlatformSubscriptionResponse {
-    fn subscription_id(&self) -> EventSubscriptionId {
-        match &self.version {
-            Some(ResponseVersion::V0(v0)) => v0.client_subscription_id.clone(),
-            _ => "".to_string(),
-        }
     }
 }

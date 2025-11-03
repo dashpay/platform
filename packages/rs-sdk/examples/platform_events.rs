@@ -148,7 +148,7 @@ mod subscribe {
             match message {
                 Ok(response) => {
                     if let Some(ResponseVersion::V0(v0)) = response.version {
-                        let sub_id = v0.client_subscription_id;
+                        let sub_id = v0.subscription_id;
                         if let Some(event_v0) = v0.event {
                             if let Some(event) = event_v0.event {
                                 match event {

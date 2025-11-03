@@ -19,7 +19,8 @@ message PlatformSubscriptionRequest {
 
 message PlatformSubscriptionResponse {
   message PlatformSubscriptionResponseV0 {
-    string client_subscription_id = 1;
+    // Server-generated ID for this subscription; not guaranteed to be unique
+    uint64 subscription_id = 1;
     // Event details; can be nil/None, eg. during handshake
     PlatformEventV0 event = 2;
   }
