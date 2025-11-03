@@ -1,4 +1,4 @@
-{{ const formatTimeout = (value) => `${Math.max(1, Math.ceil((Number(value ?? 0) + 1000) / 1000))}s`; }}
+{{ const formatTimeout = (value) => `${Math.max(1, Math.ceil((Number(value ?? 0) + 5000) / 1000))}s`; }}
 {{ const rsDapiTimeouts = it.platform?.dapi?.rsDapi?.timeouts ?? {}; }}
 {{ const coreStreamsTimeout = formatTimeout(rsDapiTimeouts.coreStreams ?? 0); }}
 {{ const subscribePlatformEventsTimeout = formatTimeout(rsDapiTimeouts.subscribePlatformEvents ?? 0); }}
