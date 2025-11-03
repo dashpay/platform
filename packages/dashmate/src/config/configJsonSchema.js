@@ -527,10 +527,7 @@ export default {
                   required: ['maxRequests'],
                   additionalProperties: false,
                 },
-                dapiApi: {
-                  $ref: 'gatewayUpstream',
-                },
-                dapiCoreStreams: {
+                rsDapi: {
                   $ref: 'gatewayUpstream',
                 },
                 dapiJsonRpc: {
@@ -538,7 +535,7 @@ export default {
                 },
               },
               additionalProperties: false,
-              required: ['driveGrpc', 'dapiApi', 'dapiCoreStreams', 'dapiJsonRpc'],
+              required: ['driveGrpc', 'rsDapi', 'dapiJsonRpc'],
             },
             metrics: {
               $ref: '#/definitions/enabledHostPort',
@@ -804,53 +801,6 @@ export default {
         dapi: {
           type: 'object',
           properties: {
-            deprecated: {
-              type: 'object',
-              properties: {
-                enabled: {
-                  type: 'boolean',
-                },
-              },
-              required: ['enabled'],
-              additionalProperties: false,
-            },
-            api: {
-              type: 'object',
-              properties: {
-                docker: {
-                  type: 'object',
-                  properties: {
-                    image: {
-                      type: 'string',
-                      minLength: 1,
-                    },
-                    deploy: {
-                      type: 'object',
-                      properties: {
-                        replicas: {
-                          type: 'integer',
-                          minimum: 0,
-                        },
-                      },
-                      additionalProperties: false,
-                      required: ['replicas'],
-                    },
-                    build: {
-                      $ref: '#/definitions/dockerBuild',
-                    },
-                  },
-                  required: ['image', 'build', 'deploy'],
-                  additionalProperties: false,
-                },
-                waitForStResultTimeout: {
-                  type: 'integer',
-                  minimum: 1,
-                  description: 'How many millis to wait for state transition result before timeout',
-                },
-              },
-              required: ['docker', 'waitForStResultTimeout'],
-              additionalProperties: false,
-            },
             rsDapi: {
               type: 'object',
               properties: {
@@ -908,12 +858,17 @@ export default {
                   required: ['level', 'jsonFormat', 'accessLogPath', 'accessLogFormat'],
                   additionalProperties: false,
                 },
+                waitForStResultTimeout: {
+                  type: 'integer',
+                  minimum: 1,
+                  description: 'How many millis to wait for state transition result before timeout',
+                },
               },
-              required: ['docker', 'metrics', 'logs'],
+              required: ['docker', 'metrics', 'logs', 'waitForStResultTimeout'],
               additionalProperties: false,
             },
           },
-          required: ['api', 'rsDapi'],
+          required: ['rsDapi'],
           additionalProperties: false,
         },
         drive: {

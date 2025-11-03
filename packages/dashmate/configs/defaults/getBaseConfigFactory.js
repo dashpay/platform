@@ -160,10 +160,7 @@ export default function getBaseConfigFactory() {
             driveGrpc: {
               maxRequests: 100,
             },
-            dapiApi: {
-              maxRequests: 100,
-            },
-            dapiCoreStreams: {
+            rsDapi: {
               maxRequests: 100,
             },
             dapiJsonRpc: {
@@ -230,27 +227,6 @@ export default function getBaseConfigFactory() {
           },
         },
         dapi: {
-          // Controls whether to use the deprecated JS DAPI stack
-          // If enabled = true -> use old DAPI (JS)
-          // If enabled = false -> use rs-dapi (Rust) [default]
-          deprecated: {
-            enabled: false,
-          },
-          api: {
-            docker: {
-              image: `dashpay/dapi:${dockerImageVersion}`,
-              deploy: {
-                replicas: 1,
-              },
-              build: {
-                enabled: false,
-                context: path.join(PACKAGE_ROOT_DIR, '..', '..'),
-                dockerFile: path.join(PACKAGE_ROOT_DIR, '..', '..', 'Dockerfile'),
-                target: 'dapi',
-              },
-            },
-            waitForStResultTimeout: 120000,
-          },
           rsDapi: {
             docker: {
               image: `dashpay/rs-dapi:${dockerImageVersion}`,
@@ -275,6 +251,7 @@ export default function getBaseConfigFactory() {
               accessLogPath: null,
               accessLogFormat: 'combined',
             },
+            waitForStResultTimeout: 120000,
           },
         },
         drive: {

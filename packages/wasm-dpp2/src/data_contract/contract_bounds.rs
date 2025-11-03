@@ -43,7 +43,7 @@ impl ContractBoundsWasm {
 
         Ok(ContractBoundsWasm(match document_type_name {
             Some(document_type_name) => ContractBounds::SingleContractDocumentType {
-                id: contract_id.clone(),
+                id: contract_id,
                 document_type_name,
             },
             None => ContractBounds::SingleContract { id: contract_id },
@@ -108,7 +108,7 @@ impl ContractBoundsWasm {
 
         self.0 = match self.clone().0 {
             ContractBounds::SingleContract { .. } => ContractBounds::SingleContract {
-                id: contract_id.clone(),
+                id: contract_id,
             },
             ContractBounds::SingleContractDocumentType {
                 document_type_name, ..
