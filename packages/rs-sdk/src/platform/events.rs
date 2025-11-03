@@ -41,13 +41,13 @@ impl crate::Sdk {
         let mut client: PlatformGrpcClient = PlatformClient::new(channel);
 
         // Keepalive should be less than the timeout to avoid unintentional disconnects.
-        let keepalive = (settings.timeout.saturating_sub(Duration::from_secs(5)))
+        let keepalive_secs = (settings.timeout.saturating_sub(Duration::from_secs(5)))
             .as_secs()
             .clamp(25, 300) as u32;
         let request = PlatformSubscriptionRequest {
             version: Some(RequestVersion::V0(PlatformSubscriptionRequestV0 {
                 filter: Some(filter),
-                keepalive,
+                keepalive_secs,
             })),
         };
 

@@ -12,7 +12,7 @@ message PlatformSubscriptionRequest {
     PlatformFilterV0 filter = 1;
     // Interval in seconds between keepalive events (min 25, max 300, 0 disables
     // keepalive).
-    uint32 keepalive = 2;
+    uint32 keepalive_secs = 2;
   }
   oneof version { PlatformSubscriptionRequestV0 v0 = 1; }
 }

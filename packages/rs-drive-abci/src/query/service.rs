@@ -891,7 +891,7 @@ impl PlatformService for QueryService {
             }
         };
 
-        let keepalive = req_v0.keepalive;
+        let keepalive = req_v0.keepalive_secs;
         let filter = req_v0.filter.unwrap_or_default();
         if filter.kind.is_none() {
             tracing::warn!("subscribe_platform_events: filter kind is not specified");
@@ -1014,7 +1014,13 @@ impl PlatformService for QueryService {
                 "subscribe_platform_events: event stream completed"
             );
         });
-        self.workers.lock().unwrap().push(worker);
+
+        {
+            let mut workers = self.workers.lock().unwrap();
+            workers.push(worker);
+            // Clean up finished workers to prevent memory leak
+            workers.retain(|h| !h.is_finished());
+        }
 
         Ok(Response::new(ReceiverStream::new(rx)))
     }
