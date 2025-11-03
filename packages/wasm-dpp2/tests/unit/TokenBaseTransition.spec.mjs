@@ -32,13 +32,13 @@ describe('TokenBaseTransition', function () {
     it('should allow to get dataContractId', () => {
       const baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId)
 
-      expect(baseTransition.dataContractId.base58()).to.deep.equal(dataContractId)
+      expect(baseTransition.dataContractId.toBase58()).to.deep.equal(dataContractId)
     })
 
     it('should allow to get tokenId', () => {
       const baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId)
 
-      expect(baseTransition.tokenId.base58()).to.deep.equal(ownerId)
+      expect(baseTransition.tokenId.toBase58()).to.deep.equal(ownerId)
     })
 
     it('should allow to get usingGroupInfo', () => {
@@ -73,7 +73,7 @@ describe('TokenBaseTransition', function () {
 
       baseTransition.dataContractId = ownerId
 
-      expect(baseTransition.dataContractId.base58()).to.deep.equal(ownerId)
+      expect(baseTransition.dataContractId.toBase58()).to.deep.equal(ownerId)
     })
 
     it('should allow to set tokenId', () => {
@@ -81,7 +81,7 @@ describe('TokenBaseTransition', function () {
 
       baseTransition.tokenId = dataContractId
 
-      expect(baseTransition.tokenId.base58()).to.deep.equal(dataContractId)
+      expect(baseTransition.tokenId.toBase58()).to.deep.equal(dataContractId)
     })
 
     it('should allow to set usingGroupInfo', () => {

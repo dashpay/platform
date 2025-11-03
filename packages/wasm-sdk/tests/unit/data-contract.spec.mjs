@@ -21,9 +21,9 @@ const testContractAcrossVersions = (
 ) => {
   compatibleVersions.forEach((version) => {
     it(`should work with platform version ${version}`, () => {
-      const contract = sdk.DataContract.fromValue(contractFixture, true, version);
+      const contract = sdk.DataContract.fromJSON(contractFixture, true, version);
       expect(contract).to.be.ok();
-      expect(contract.id.base58()).to.equal(contractFixture.id);
+      expect(contract.id.toBase58()).to.equal(contractFixture.id);
 
       const roundTripped = contract.toJSON(version);
       expect(roundTripped.id).to.equal(contractFixture.id);
@@ -35,7 +35,7 @@ const testContractAcrossVersions = (
   incompatibleVersions.forEach((version) => {
     it(`should fail with platform version ${version}`, () => {
       expect(() => {
-        sdk.DataContract.fromValue(contractFixture, true, version);
+        sdk.DataContract.fromJSON(contractFixture, true, version);
       }).to.throw(/unknown version|dpp unknown version/);
     });
   });
@@ -48,14 +48,14 @@ describe('DataContract', () => {
 
   describe('Contract Creation', () => {
     it('should create a V0 contract from JSON and expose all properties', async () => {
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractFixtureV0,
         true,
         PLATFORM_VERSION_CONTRACT_V0,
       );
 
       expect(contract).to.be.ok();
-      expect(contract.id.base58()).to.equal(contractFixtureV0.id);
+      expect(contract.id.toBase58()).to.equal(contractFixtureV0.id);
 
       const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V0);
       expect(roundTripped).to.be.an('object');
@@ -78,14 +78,14 @@ describe('DataContract', () => {
 
     // TODO: enable test once an SDK fix to support this is merged
     it.skip('should create a V1 contract from JSON and expose all properties including tokens and groups', async () => {
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractFixtureV1,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
       );
 
       expect(contract).to.be.ok();
-      expect(contract.id.base58()).to.equal(contractFixtureV1.id);
+      expect(contract.id.toBase58()).to.equal(contractFixtureV1.id);
 
       const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
       expect(roundTripped).to.be.an('object');
@@ -113,7 +113,7 @@ describe('DataContract', () => {
 
     it('should create a contract with only document schemas (no tokens)', () => {
       // V0 fixture already has only documents, no tokens - verify it works
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractFixtureV0,
         true,
         PLATFORM_VERSION_CONTRACT_V0,
@@ -133,7 +133,7 @@ describe('DataContract', () => {
         documentSchemas: {},
       };
 
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractWithOnlyTokens,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
@@ -149,7 +149,7 @@ describe('DataContract', () => {
   describe('Version Compatibility', () => {
     it('should fail to create a V1 contract with V0 platform version', async () => {
       expect(() => {
-        sdk.DataContract.fromValue(
+        sdk.DataContract.fromJSON(
           contractFixtureV1,
           true,
           PLATFORM_VERSION_CONTRACT_V0,
@@ -161,22 +161,22 @@ describe('DataContract', () => {
   describe('Validation', () => {
     it('should handle invalid JSON input gracefully', () => {
       expect(() => {
-        sdk.DataContract.fromValue(null, true, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON(null, true, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
 
       expect(() => {
-        sdk.DataContract.fromValue({}, true, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON({}, true, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
 
       expect(() => {
-        sdk.DataContract.fromValue({ id: 'invalid' }, true, PLATFORM_VERSION_CONTRACT_V0);
+        sdk.DataContract.fromJSON({ id: 'invalid' }, true, PLATFORM_VERSION_CONTRACT_V0);
       }).to.throw();
     });
 
     it('should reject contracts with invalid property values', () => {
       // Test invalid Base58 ID
       expect(() => {
-        sdk.DataContract.fromValue({
+        sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           id: 'invalid-not-base58!',
         }, true, PLATFORM_VERSION_CONTRACT_V0);
@@ -184,7 +184,7 @@ describe('DataContract', () => {
 
       // Test negative version number
       expect(() => {
-        sdk.DataContract.fromValue({
+        sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           version: -1,
         }, true, PLATFORM_VERSION_CONTRACT_V0);
@@ -192,7 +192,7 @@ describe('DataContract', () => {
 
       // Test invalid ownerId
       expect(() => {
-        sdk.DataContract.fromValue({
+        sdk.DataContract.fromJSON({
           ...contractFixtureV0,
           ownerId: 'not-a-valid-id',
         }, true, PLATFORM_VERSION_CONTRACT_V0);
@@ -210,7 +210,7 @@ describe('DataContract', () => {
       };
 
       expect(() => {
-        sdk.DataContract.fromValue(
+        sdk.DataContract.fromJSON(
           contractWithEmptySchemas,
           true,
           PLATFORM_VERSION_CONTRACT_V0,
@@ -221,7 +221,7 @@ describe('DataContract', () => {
 
   describe('Data Preservation', () => {
     it('should preserve all data through JSON round-trip for V0 contract', async () => {
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractFixtureV0,
         true,
         PLATFORM_VERSION_CONTRACT_V0,
@@ -229,7 +229,7 @@ describe('DataContract', () => {
       const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V0);
 
       // Create a new contract from the round-tripped JSON
-      const contract2 = sdk.DataContract.fromValue(
+      const contract2 = sdk.DataContract.fromJSON(
         roundTripped,
         true,
         PLATFORM_VERSION_CONTRACT_V0,
@@ -243,7 +243,7 @@ describe('DataContract', () => {
     });
 
     it('should preserve all data through JSON round-trip for V1 contract', async () => {
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractFixtureV1,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
@@ -251,7 +251,7 @@ describe('DataContract', () => {
       const roundTripped = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
 
       // Create a new contract from the round-tripped JSON
-      const contract2 = sdk.DataContract.fromValue(
+      const contract2 = sdk.DataContract.fromJSON(
         roundTripped,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
@@ -263,23 +263,43 @@ describe('DataContract', () => {
       contract.free();
       contract2.free();
     });
+
+    it('should preserve all data through object round-trip for V1 contract', async () => {
+      const contract = sdk.DataContract.fromJSON(
+        contractFixtureV1,
+        true,
+        PLATFORM_VERSION_CONTRACT_V1,
+      );
+      const objectRepresentation = contract.toObject(PLATFORM_VERSION_CONTRACT_V1);
+
+      const contract2 = sdk.DataContract.fromObject(
+        objectRepresentation,
+        true,
+        PLATFORM_VERSION_CONTRACT_V1,
+      );
+
+      expect(contract2.toObject(PLATFORM_VERSION_CONTRACT_V1)).to.deep.equal(objectRepresentation);
+
+      contract.free();
+      contract2.free();
+    });
   });
 
   describe('Memory Management', () => {
     it('should handle memory management properly with multiple contracts', async () => {
-      const contract1 = sdk.DataContract.fromValue(
+      const contract1 = sdk.DataContract.fromJSON(
         contractFixtureV0,
         true,
         PLATFORM_VERSION_CONTRACT_V0,
       );
-      const contract2 = sdk.DataContract.fromValue(
+      const contract2 = sdk.DataContract.fromJSON(
         contractFixtureV1,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
       );
 
-      expect(contract1.id.base58()).to.equal(contractFixtureV0.id);
-      expect(contract2.id.base58()).to.equal(contractFixtureV1.id);
+      expect(contract1.id.toBase58()).to.equal(contractFixtureV0.id);
+      expect(contract2.id.toBase58()).to.equal(contractFixtureV1.id);
 
       contract1.free();
       contract2.free();
@@ -306,25 +326,25 @@ describe('DataContract', () => {
 
         invalidVersions.forEach((version) => {
           expect(() => {
-            sdk.DataContract.fromValue(contractFixtureV0, true, version);
+            sdk.DataContract.fromJSON(contractFixtureV0, true, version);
           }).to.throw(/unknown version|unknown platform version value/);
         });
       });
 
       it('should handle version boundary correctly at V9 transition', () => {
         // V0 contract should work in V9 (backward compatibility)
-        const contract = sdk.DataContract.fromValue(contractFixtureV0, true, 9);
-        expect(contract.id.base58()).to.equal(contractFixtureV0.id);
+        const contract = sdk.DataContract.fromJSON(contractFixtureV0, true, 9);
+        expect(contract.id.toBase58()).to.equal(contractFixtureV0.id);
         contract.free();
 
         // V1 contract should work in V9 (first supported version)
-        const contractV1 = sdk.DataContract.fromValue(contractFixtureV1, true, 9);
-        expect(contractV1.id.base58()).to.equal(contractFixtureV1.id);
+        const contractV1 = sdk.DataContract.fromJSON(contractFixtureV1, true, 9);
+        expect(contractV1.id.toBase58()).to.equal(contractFixtureV1.id);
         contractV1.free();
 
         // V1 contract should fail in V8 (last unsupported version)
         expect(() => {
-          sdk.DataContract.fromValue(contractFixtureV1, true, 8);
+          sdk.DataContract.fromJSON(contractFixtureV1, true, 8);
         }).to.throw(/dpp unknown version/);
       });
     });

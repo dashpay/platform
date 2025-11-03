@@ -62,7 +62,7 @@ impl TokenDistributionRecipientWasm {
             }
             TokenDistributionRecipient::ContractOwner => String::from("ContractOwner"),
             TokenDistributionRecipient::Identity(identity) => {
-                format!("Identity({})", IdentifierWasm::from(identity).get_base58())
+                format!("Identity({})", IdentifierWasm::from(identity).to_base58())
             }
         }
     }

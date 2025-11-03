@@ -16,6 +16,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
     "document-json-conversion",
     "identity-serialization",
     "identity-value-conversion",
+    "identity-json-conversion",
     "data-contract-json-conversion",
     "document-value-conversion",
     "bls-signatures",

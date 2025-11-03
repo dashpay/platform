@@ -113,18 +113,18 @@ impl IdentifierWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        js_identifier: &JsValue,
+        identifier: &JsValue,
     ) -> WasmDppResult<IdentifierWasm> {
-        IdentifierWasm::try_from(js_identifier)
+        IdentifierWasm::try_from(identifier)
     }
 
-    #[wasm_bindgen(js_name = "base58")]
-    pub fn get_base58(&self) -> String {
+    #[wasm_bindgen(js_name = "toBase58")]
+    pub fn to_base58(&self) -> String {
         self.0.to_string(Base58)
     }
 
-    #[wasm_bindgen(js_name = "base64")]
-    pub fn get_base64(&self) -> String {
+    #[wasm_bindgen(js_name = "toBase64")]
+    pub fn to_base64(&self) -> String {
         self.0.to_string(Base64)
     }
 

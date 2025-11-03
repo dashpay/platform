@@ -223,7 +223,7 @@ impl StateTransitionWasm {
         Ok(JsValue::from(encode(bytes.as_slice(), Encoding::Hex)))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<JsValue> {
         let bytes = self.0.serialize_to_bytes()?;
 

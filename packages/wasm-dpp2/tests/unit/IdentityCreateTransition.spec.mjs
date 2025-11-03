@@ -46,7 +46,7 @@ describe('IdentityCreateTransition', () => {
     it('should allow to get Identifier', () => {
       const transition = wasm.IdentityCreateTransition.default(1);
 
-      expect(transition.getIdentifier().base58()).to.equal('11111111111111111111111111111111');
+      expect(transition.getIdentifier().toBase58()).to.equal('11111111111111111111111111111111');
     });
 
     it('should allow to get PublicKeys', () => {

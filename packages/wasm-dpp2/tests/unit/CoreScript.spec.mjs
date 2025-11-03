@@ -37,5 +37,14 @@ describe('CoreScript', () => {
 
       expect(script.toAddress(wasm.Network.Testnet)).to.equal('yQW6TmUFef5CDyhEYwjoN8aUTMmKLYYNDm');
     });
+
+    it('should allow to get base64 representation', () => {
+      const script = wasm.CoreScript.fromBytes(Buffer.from('76a9142de40f87177f6e167fb9fcda9a3b3c64fc42468f88ac', 'hex'));
+
+      const base64 = script.toBase64();
+      const bytes = script.toBytes();
+
+      expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+    });
   });
 });

@@ -42,39 +42,42 @@ impl CoreScriptWasm {
     }
 
     #[wasm_bindgen(js_name = "newP2PKH")]
-    pub fn new_p2pkh(js_key_hash: Vec<u8>) -> Self {
-        let mut key_hash = [0u8; 20];
-        let bytes = js_key_hash.as_slice();
+    pub fn new_p2pkh(key_hash: Vec<u8>) -> Self {
+        let mut key_hash_bytes = [0u8; 20];
+        let bytes = key_hash.as_slice();
         let len = bytes.len().min(32);
-        key_hash[..len].copy_from_slice(&bytes[..len]);
+        key_hash_bytes[..len].copy_from_slice(&bytes[..len]);
 
-        CoreScriptWasm(CoreScript::new_p2pkh(key_hash))
+        CoreScriptWasm(CoreScript::new_p2pkh(key_hash_bytes))
     }
 
     #[wasm_bindgen(js_name = "newP2SH")]
-    pub fn new_p2sh(js_script_hash: Vec<u8>) -> Self {
-        let mut script_hash = [0u8; 20];
-        let bytes = js_script_hash.as_slice();
+    pub fn new_p2sh(script_hash: Vec<u8>) -> Self {
+        let mut script_hash_bytes = [0u8; 20];
+        let bytes = script_hash.as_slice();
         let len = bytes.len().min(32);
-        script_hash[..len].copy_from_slice(&bytes[..len]);
+        script_hash_bytes[..len].copy_from_slice(&bytes[..len]);
 
         let mut bytes = vec![
             opcodes::all::OP_HASH160.to_u8(),
             opcodes::all::OP_PUSHBYTES_20.to_u8(),
         ];
-        bytes.extend_from_slice(&script_hash);
+        bytes.extend_from_slice(&script_hash_bytes);
         bytes.push(opcodes::all::OP_EQUAL.to_u8());
         Self::from_bytes(bytes)
     }
 
     #[wasm_bindgen(js_name = "toAddress")]
-    pub fn to_address(&self, js_network: &JsValue) -> WasmDppResult<String> {
-        let network = NetworkWasm::try_from(js_network.clone())?;
+    pub fn to_address(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Network | string")] network: &JsValue,
+    ) -> WasmDppResult<String> {
+        let network_wasm = NetworkWasm::try_from(network.clone())?;
 
         let payload = Payload::from_script(self.0.as_script())
             .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
 
-        let address = Address::new(network.into(), payload);
+        let address = Address::new(network_wasm.into(), payload);
 
         Ok(address.to_string())
     }
@@ -94,7 +97,7 @@ impl CoreScriptWasm {
         encode(self.0.to_bytes().as_slice(), Hex)
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> String {
         encode(self.0.to_bytes().as_slice(), Base64)
     }

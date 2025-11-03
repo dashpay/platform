@@ -161,7 +161,7 @@ impl WasmSdk {
     ///     "Hqyu8WcRwXCTwbNxdga4CN5gsVEGc67wng4TFzceyLUv",
     ///     0
     /// );
-    /// console.log(`Token ${priceInfo.tokenId.base58()} current price: ${priceInfo.currentPrice}`);
+    /// console.log(`Token ${priceInfo.tokenId.toBase58()} current price: ${priceInfo.currentPrice}`);
     /// ```
     #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(

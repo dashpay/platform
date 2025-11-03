@@ -58,6 +58,24 @@ describe('AssetLockProof', () => {
 
       expect(newInstantLockProof.toObject()).to.deep.equal(instantLockProof.toObject());
     });
+
+    it('should recreate asset lock proof from object', () => {
+      const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+      const objectRepresentation = instantLockProof.toObject();
+
+      const restoredProof = wasm.AssetLockProof.fromObject(objectRepresentation);
+
+      expect(restoredProof.toObject()).to.deep.equal(objectRepresentation);
+    });
+
+    it('should recreate asset lock proof from JSON', () => {
+      const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+      const jsonRepresentation = instantLockProof.toObject(); // same as JSON structure
+
+      const restoredProof = wasm.AssetLockProof.fromJSON(jsonRepresentation);
+
+      expect(restoredProof.toObject()).to.deep.equal(jsonRepresentation);
+    });
   });
 
   describe('getters', () => {

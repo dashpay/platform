@@ -28,6 +28,7 @@ use dpp::serialization::{
 use dpp::version::PlatformVersion;
 use js_sys::{Object, Reflect};
 use std::collections::BTreeMap;
+use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 
@@ -108,7 +109,7 @@ impl DataContractWasm {
 
         let owner_id: IdentifierWasm = js_owner_id.clone().try_into()?;
 
-        let owner_id_value = Value::from(owner_id.get_base58());
+        let owner_id_value = Value::from(owner_id.to_base58());
 
         let schema: Value = serde_wasm_bindgen::from_value(js_schema)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
@@ -207,9 +208,37 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let value = js_value.with_serde_to_platform_value()?;
+        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value).map_err(|err| {
+            WasmDppError::serialization(format!(
+                "unable to deserialize JSON value for DataContract.fromJSON: {}",
+                err
+            ))
+        })?;
 
-        let contract = DataContract::from_value(value, full_validation, &platform_version.into())?;
+        let contract =
+            DataContract::from_json(json_value, full_validation, &platform_version.into())
+                .map_err(WasmDppError::from)?;
+
+        Ok(DataContractWasm(contract))
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(
+        js_value: JsValue,
+        full_validation: bool,
+        js_platform_version: JsValue,
+    ) -> WasmDppResult<DataContractWasm> {
+        let platform_version = match js_platform_version.is_undefined() {
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
+        };
+
+        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
+            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+
+        let contract =
+            DataContract::from_json(json_value, full_validation, &platform_version.into())
+                .map_err(WasmDppError::from)?;
 
         Ok(DataContractWasm(contract))
     }
@@ -275,7 +304,7 @@ impl DataContractWasm {
         Ok(encode(self.to_bytes(js_platform_version)?.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self, js_platform_version: JsValue) -> WasmDppResult<String> {
         Ok(encode(
             self.to_bytes(js_platform_version)?.as_slice(),
@@ -283,14 +312,14 @@ impl DataContractWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name = "toValue")]
-    pub fn to_value(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
         let platform_version = match js_platform_version.is_undefined() {
             true => PlatformVersionWasm::default(),
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer = serde_wasm_bindgen::Serializer::default();
 
         self.0
             .clone()

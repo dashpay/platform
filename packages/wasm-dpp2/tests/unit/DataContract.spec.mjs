@@ -60,7 +60,7 @@ describe('DataContract', () => {
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), false, PlatformVersion.PLATFORM_V1);
       const dataContractFromValue = wasm.DataContract.fromJSON(value, true);
 
-      expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
+      expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
     });
 
     it('should allows to create DataContract from bytes with full validation and without version', () => {
@@ -69,7 +69,36 @@ describe('DataContract', () => {
       const dataContractFromBytes = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true);
       const dataContractFromValue = wasm.DataContract.fromJSON(value, true);
 
-      expect(dataContractFromBytes.toValue()).to.deep.equal(dataContractFromValue.toValue());
+      expect(dataContractFromBytes.toObject()).to.deep.equal(dataContractFromValue.toObject());
+    });
+
+    it('should allow to create DataContract from object produced by toObject', () => {
+      const originalContract = wasm.DataContract.fromJSON(value, true);
+      const objectRepresentation = originalContract.toObject(PlatformVersion.PLATFORM_V1);
+
+      const reconstructedContract = wasm.DataContract.fromObject(
+        objectRepresentation,
+        true,
+        PlatformVersion.PLATFORM_V1,
+      );
+
+      expect(reconstructedContract.toObject(PlatformVersion.PLATFORM_V1)).to.deep.equal(objectRepresentation);
+    });
+
+    it('should allow to convert DataContract to base64 and from base64', () => {
+      const [dataContractBytes] = dataContractsBytes;
+
+      const dataContract = wasm.DataContract.fromBytes(fromHexString(dataContractBytes), true, PlatformVersion.PLATFORM_V1);
+
+      const base64 = dataContract.toBase64(PlatformVersion.PLATFORM_V1);
+      const bytes = dataContract.toBytes(PlatformVersion.PLATFORM_V1);
+      const bytesFromBase64 = Buffer.from(base64, 'base64');
+
+      expect(bytesFromBase64).to.deep.equal(Buffer.from(bytes));
+
+      const dataContractFromBase64 = wasm.DataContract.fromBase64(base64, true, PlatformVersion.PLATFORM_V1);
+
+      expect(Buffer.from(dataContractFromBase64.toBytes(PlatformVersion.PLATFORM_V1))).to.deep.equal(Buffer.from(bytes));
     });
 
     it('should allow to get json', () => {
@@ -95,13 +124,13 @@ describe('DataContract', () => {
     it('should allow to get id', () => {
       const dataContract = wasm.DataContract.fromJSON(value, true);
 
-      expect(dataContract.id.base58()).to.deep.equal(id);
+      expect(dataContract.id.toBase58()).to.deep.equal(id);
     });
 
     it('should allow to get owner id', () => {
       const dataContract = wasm.DataContract.fromJSON(value, true);
 
-      expect(dataContract.ownerId.base58()).to.deep.equal(ownerId);
+      expect(dataContract.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should allow to get config', () => {
@@ -117,7 +146,7 @@ describe('DataContract', () => {
 
       dataContract.id = new wasm.Identifier('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
 
-      expect(dataContract.id.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+      expect(dataContract.id.toBase58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });
 
     it('should allow to set owner id', () => {
@@ -125,7 +154,7 @@ describe('DataContract', () => {
 
       dataContract.ownerId = new wasm.Identifier('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
 
-      expect(dataContract.ownerId.base58()).to.deep.equal('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
+      expect(dataContract.ownerId.toBase58()).to.deep.equal('3bx13Wd5k4LwHAvXJrayc5HdKPyiccKWYECPQGGYfnVL');
     });
 
     it('should allow to set version', () => {
@@ -169,7 +198,7 @@ describe('DataContract', () => {
 
       const generatedId = wasm.DataContract.generateId(identifier, BigInt(4));
 
-      expect(generatedId.base58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
+      expect(generatedId.toBase58()).to.deep.equal('7ckT6Y19HnjfqoPFmfL995i4z2HwgZ8UttNmP99LtCBH');
     });
   });
 });

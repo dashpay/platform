@@ -458,7 +458,7 @@ describe('DocumentsTransitions', () => {
         const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
         const transferTransition = new wasm.DocumentTransferTransition(documentInstance, BigInt(1), documentInstance.ownerId);
 
-        expect(transferTransition.recipientId.base58()).to.deep.equal(documentInstance.ownerId.base58());
+        expect(transferTransition.recipientId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
       });
     });
 

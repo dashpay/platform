@@ -125,6 +125,17 @@ impl TokenConfigurationLocalizationWasm {
 
         Ok(object.into())
     }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(js_value: JsValue) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+        let localization = localization_from_plain_js_value(&js_value)?;
+        Ok(TokenConfigurationLocalizationWasm(localization))
+    }
+
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js_value: JsValue) -> WasmDppResult<TokenConfigurationLocalizationWasm> {
+        TokenConfigurationLocalizationWasm::from_object(js_value)
+    }
 }
 
 impl TokenConfigurationLocalizationWasm {

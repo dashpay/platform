@@ -221,7 +221,7 @@ impl BatchTransitionWasm {
         Ok(encode(self.to_bytes()?.as_slice(), Hex))
     }
 
-    #[wasm_bindgen(js_name = "base64")]
+    #[wasm_bindgen(js_name = "toBase64")]
     pub fn to_base64(&self) -> WasmDppResult<String> {
         Ok(encode(self.to_bytes()?.as_slice(), Base64))
     }

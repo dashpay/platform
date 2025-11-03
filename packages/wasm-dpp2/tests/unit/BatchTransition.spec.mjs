@@ -42,8 +42,25 @@ describe('BatchTransition', () => {
         expect(batchedTransition.__wbg_ptr).to.not.equal(0);
         expect(batch.__wbg_ptr).to.not.equal(0);
       });
-    });
-    describe('tokens', () => {
+      it('should allow to convert batch transition to base64 and back', () => {
+        const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+        const createTransition = new wasm.DocumentCreateTransition(documentInstance, BigInt(1));
+
+        const documentTransition = createTransition.toDocumentTransition();
+
+        const batch = wasm.BatchTransition.fromV0Transitions([documentTransition], documentInstance.ownerId, 1);
+
+        const base64 = batch.toBase64();
+        const bytes = batch.toBytes();
+
+        expect(Buffer.from(base64, 'base64')).to.deep.equal(Buffer.from(bytes));
+
+        const restoredBatch = wasm.BatchTransition.fromBase64(base64);
+
+        expect(Buffer.from(restoredBatch.toBytes())).to.deep.equal(Buffer.from(bytes));
+      });
+  });
+  describe('tokens', () => {
       it('should allow to create from v1 transition', () => {
         const baseTransition = new wasm.TokenBaseTransition(BigInt(1), 1, dataContractId, ownerId);
 
@@ -119,7 +136,7 @@ describe('BatchTransition', () => {
 
       const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
 
-      expect(batchTransition.ownerId.base58()).to.deep.equal(documentInstance.ownerId.base58());
+      expect(batchTransition.ownerId.toBase58()).to.deep.equal(documentInstance.ownerId.toBase58());
     });
 
     it('should allow to get modified data ids', () => {
@@ -130,7 +147,7 @@ describe('BatchTransition', () => {
 
       const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
 
-      expect(batchTransition.modifiedDataIds.map((identifier) => identifier.base58())).to.deep.equal([documentTransition.id.base58(), documentTransition.id.base58()]);
+      expect(batchTransition.modifiedDataIds.map((identifier) => identifier.toBase58())).to.deep.equal([documentTransition.id.toBase58(), documentTransition.id.toBase58()]);
     });
 
     it('should allow to get allConflictingIndexCollateralVotingFunds', () => {

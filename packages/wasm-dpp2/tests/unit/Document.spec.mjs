@@ -39,7 +39,7 @@ describe('Document', () => {
 
       const bytes = documentInstance.bytes(dataContract, PlatformVersion.PLATFORM_V1);
 
-      expect(documentInstance.dataContractId.base58()).to.equal(dataContract.id.base58());
+      expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
       expect(dataContract.__wbg_ptr).to.not.equal(0);
     });
@@ -49,19 +49,19 @@ describe('Document', () => {
     it('should return document id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.id.base58()).to.deep.equal(id);
+      expect(documentInstance.id.toBase58()).to.deep.equal(id);
     });
 
     it('should return owner id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.ownerId.base58()).to.deep.equal(ownerId);
+      expect(documentInstance.ownerId.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should return data contract id', () => {
       const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
 
-      expect(documentInstance.dataContractId.base58()).to.deep.equal(dataContractId);
+      expect(documentInstance.dataContractId.toBase58()).to.deep.equal(dataContractId);
     });
 
     it('should return properties', () => {
@@ -83,7 +83,7 @@ describe('Document', () => {
 
       documentInstance.id = ownerId;
 
-      expect(documentInstance.id.base58()).to.deep.equal(ownerId);
+      expect(documentInstance.id.toBase58()).to.deep.equal(ownerId);
     });
 
     it('should allow to set document owner id', () => {
@@ -91,7 +91,7 @@ describe('Document', () => {
 
       documentInstance.ownerId = id;
 
-      expect(documentInstance.ownerId.base58()).to.deep.equal(id);
+      expect(documentInstance.ownerId.toBase58()).to.deep.equal(id);
     });
 
     it('should allow to set entropy', () => {
