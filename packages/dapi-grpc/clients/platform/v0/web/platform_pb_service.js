@@ -433,8 +433,8 @@ Platform.getGroupActionSigners = {
   responseType: platform_pb.GetGroupActionSignersResponse
 };
 
-Platform.SubscribePlatformEvents = {
-  methodName: "SubscribePlatformEvents",
+Platform.subscribePlatformEvents = {
+  methodName: "subscribePlatformEvents",
   service: Platform,
   requestStream: false,
   responseStream: true,
@@ -1912,7 +1912,7 @@ PlatformClient.prototype.subscribePlatformEvents = function subscribePlatformEve
     end: [],
     status: []
   };
-  var client = grpc.invoke(Platform.SubscribePlatformEvents, {
+  var client = grpc.invoke(Platform.subscribePlatformEvents, {
     request: requestMessage,
     host: this.serviceHost,
     metadata: metadata,

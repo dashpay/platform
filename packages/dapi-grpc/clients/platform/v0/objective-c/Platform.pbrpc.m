@@ -1075,7 +1075,7 @@
              responseClass:[GetGroupActionSignersResponse class]];
 }
 
-#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+#pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
  * Bi-directional stream for multiplexed platform events subscriptions
@@ -1083,7 +1083,7 @@
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
 - (void)subscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler{
-  [[self RPCToSubscribePlatformEventsWithRequest:request eventHandler:eventHandler] start];
+  [[self RPCTosubscribePlatformEventsWithRequest:request eventHandler:eventHandler] start];
 }
 // Returns a not-yet-started RPC object.
 /**
@@ -1091,8 +1091,8 @@
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
-- (GRPCProtoCall *)RPCToSubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler{
-  return [self RPCToMethod:@"SubscribePlatformEvents"
+- (GRPCProtoCall *)RPCTosubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler{
+  return [self RPCToMethod:@"subscribePlatformEvents"
             requestsWriter:[GRXWriter writerWithValue:request]
              responseClass:[PlatformSubscriptionResponse class]
         responsesWriteable:[GRXWriteable writeableWithEventHandler:eventHandler]];
@@ -1101,7 +1101,7 @@
  * Bi-directional stream for multiplexed platform events subscriptions
  */
 - (GRPCUnaryProtoCall *)subscribePlatformEventsWithMessage:(PlatformSubscriptionRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
-  return [self RPCToMethod:@"SubscribePlatformEvents"
+  return [self RPCToMethod:@"subscribePlatformEvents"
                    message:message
            responseHandler:handler
                callOptions:callOptions

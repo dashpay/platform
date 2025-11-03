@@ -603,26 +603,6 @@ impl Sdk {
             SdkInstance::Mock { address_list, .. } => address_list,
         }
     }
-
-    /// Spawn a new worker task that will be managed by the Sdk.
-    #[cfg(feature = "subscriptions")]
-    pub(crate) async fn spawn(
-        &self,
-        task: impl std::future::Future<Output = ()> + Send + 'static,
-    ) -> tokio::sync::oneshot::Receiver<()> {
-        let (done_tx, done_rx) = tokio::sync::oneshot::channel();
-        let mut workers = self
-            .workers
-            .try_lock()
-            .expect("workers lock is poisoned or in use");
-        workers.spawn(async move {
-            task.await;
-            let _ = done_tx.send(());
-        });
-        tokio::task::yield_now().await;
-
-        done_rx
-    }
 }
 
 /// If received metadata time differs from local time by more than `tolerance`, the remote node is considered stale.

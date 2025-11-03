@@ -1476,7 +1476,7 @@ public final class PlatformGrpc {
       org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse> getSubscribePlatformEventsMethod;
 
   @io.grpc.stub.annotations.RpcMethod(
-      fullMethodName = SERVICE_NAME + '/' + "SubscribePlatformEvents",
+      fullMethodName = SERVICE_NAME + '/' + "subscribePlatformEvents",
       requestType = org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest.class,
       responseType = org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse.class,
       methodType = io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
@@ -1489,13 +1489,13 @@ public final class PlatformGrpc {
           PlatformGrpc.getSubscribePlatformEventsMethod = getSubscribePlatformEventsMethod =
               io.grpc.MethodDescriptor.<org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest, org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse>newBuilder()
               .setType(io.grpc.MethodDescriptor.MethodType.SERVER_STREAMING)
-              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "SubscribePlatformEvents"))
+              .setFullMethodName(generateFullMethodName(SERVICE_NAME, "subscribePlatformEvents"))
               .setSampledToLocalTracing(true)
               .setRequestMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionRequest.getDefaultInstance()))
               .setResponseMarshaller(io.grpc.protobuf.ProtoUtils.marshaller(
                   org.dash.platform.dapi.v0.PlatformOuterClass.PlatformSubscriptionResponse.getDefaultInstance()))
-              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("SubscribePlatformEvents"))
+              .setSchemaDescriptor(new PlatformMethodDescriptorSupplier("subscribePlatformEvents"))
               .build();
         }
       }

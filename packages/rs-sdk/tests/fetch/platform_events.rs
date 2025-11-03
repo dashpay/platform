@@ -1,3 +1,5 @@
+#![cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
+
 use super::{common::setup_logs, config::Config};
 use dapi_grpc::platform::v0::platform_client::PlatformClient;
 use dapi_grpc::platform::v0::platform_subscription_request::{
@@ -11,7 +13,6 @@ use rs_dapi_client::{RequestSettings, Uri};
 use tokio::time::{timeout, Duration};
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-#[cfg(all(feature = "network-testing", not(feature = "offline-testing")))]
 async fn test_platform_events_subscribe_stream_opens() {
     setup_logs();
 

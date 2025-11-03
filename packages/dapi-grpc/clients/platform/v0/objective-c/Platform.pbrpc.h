@@ -342,7 +342,7 @@ NS_ASSUME_NONNULL_BEGIN
 
 - (GRPCUnaryProtoCall *)getGroupActionSignersWithMessage:(GetGroupActionSignersRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions;
 
-#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+#pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
  * Bi-directional stream for multiplexed platform events subscriptions
@@ -736,7 +736,7 @@ NS_ASSUME_NONNULL_BEGIN
 - (GRPCProtoCall *)RPCTogetGroupActionSignersWithRequest:(GetGroupActionSignersRequest *)request handler:(void(^)(GetGroupActionSignersResponse *_Nullable response, NSError *_Nullable error))handler;
 
 
-#pragma mark SubscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
+#pragma mark subscribePlatformEvents(PlatformSubscriptionRequest) returns (stream PlatformSubscriptionResponse)
 
 /**
  * Bi-directional stream for multiplexed platform events subscriptions
@@ -750,7 +750,7 @@ NS_ASSUME_NONNULL_BEGIN
  *
  * This method belongs to a set of APIs that have been deprecated. Using the v2 API is recommended.
  */
-- (GRPCProtoCall *)RPCToSubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler;
+- (GRPCProtoCall *)RPCTosubscribePlatformEventsWithRequest:(PlatformSubscriptionRequest *)request eventHandler:(void(^)(BOOL done, PlatformSubscriptionResponse *_Nullable response, NSError *_Nullable error))eventHandler;
 
 
 @end

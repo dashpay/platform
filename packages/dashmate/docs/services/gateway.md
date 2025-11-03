@@ -72,7 +72,7 @@ The Gateway routes requests to different backend services based on URL path:
 - Core streaming endpoints (`/org.dash.platform.dapi.v0.Core/subscribeTo*`): routed to `dapi_core_streams`
 - Other Core endpoints (`/org.dash.platform.dapi.v0.Core*`): routed to `dapi_api`
 - Platform waitForStateTransitionResult (`/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult`): routed to `dapi_api` with an extended timeout
-- Platform SubscribePlatformEvents (`/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents`): routed to `rs_dapi` with an extended timeout
+- Platform subscribePlatformEvents (`/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents`): routed to `rs_dapi` with an extended timeout
 - Platform endpoints (`/org.dash.platform.dapi.v0.Platform*`): routed to `drive_grpc`
 - JSON-RPC endpoints (`/`): routed to `dapi_json_rpc`
 
@@ -109,7 +109,7 @@ Dashmate exposes per-endpoint timeout controls that are shared between rs-dapi a
 - Standard API endpoints: 10-15 seconds (fixed in Envoy configuration)
  - Core streaming endpoints: derived from `platform.dapi.rsDapi.timeouts.coreStreams` (default 600 000 ms)
  - waitForStateTransitionResult endpoint: derived from `platform.dapi.rsDapi.timeouts.waitForStateTransitionResult` (default 120 000 ms)
- - SubscribePlatformEvents endpoint: derived from `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` (default 600 000 ms)
+ - subscribePlatformEvents endpoint: derived from `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` (default 600 000 ms)
 
 ### Circuit Breaking
 

@@ -873,13 +873,13 @@ impl PlatformService for QueryService {
         .await
     }
 
-    type SubscribePlatformEventsStream =
+    type subscribePlatformEventsStream =
         ReceiverStream<Result<PlatformSubscriptionResponse, Status>>;
 
     async fn subscribe_platform_events(
         &self,
         request: Request<PlatformSubscriptionRequest>,
-    ) -> Result<Response<Self::SubscribePlatformEventsStream>, Status> {
+    ) -> Result<Response<Self::subscribePlatformEventsStream>, Status> {
         use dapi_grpc::platform::v0::platform_subscription_request::Version as RequestVersion;
         use dapi_grpc::platform::v0::platform_subscription_response::{
             PlatformSubscriptionResponseV0, Version as ResponseVersion,

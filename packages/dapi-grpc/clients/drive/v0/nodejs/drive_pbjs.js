@@ -4610,28 +4610,28 @@ $root.org = (function() {
                         /**
                          * Callback as used by {@link org.dash.platform.dapi.v0.Platform#subscribePlatformEvents}.
                          * @memberof org.dash.platform.dapi.v0.Platform
-                         * @typedef SubscribePlatformEventsCallback
+                         * @typedef subscribePlatformEventsCallback
                          * @type {function}
                          * @param {Error|null} error Error, if any
                          * @param {org.dash.platform.dapi.v0.PlatformSubscriptionResponse} [response] PlatformSubscriptionResponse
                          */
 
                         /**
-                         * Calls SubscribePlatformEvents.
+                         * Calls subscribePlatformEvents.
                          * @function subscribePlatformEvents
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance
                          * @param {org.dash.platform.dapi.v0.IPlatformSubscriptionRequest} request PlatformSubscriptionRequest message or plain object
-                         * @param {org.dash.platform.dapi.v0.Platform.SubscribePlatformEventsCallback} callback Node-style callback called with the error, if any, and PlatformSubscriptionResponse
+                         * @param {org.dash.platform.dapi.v0.Platform.subscribePlatformEventsCallback} callback Node-style callback called with the error, if any, and PlatformSubscriptionResponse
                          * @returns {undefined}
                          * @variation 1
                          */
                         Object.defineProperty(Platform.prototype.subscribePlatformEvents = function subscribePlatformEvents(request, callback) {
                             return this.rpcCall(subscribePlatformEvents, $root.org.dash.platform.dapi.v0.PlatformSubscriptionRequest, $root.org.dash.platform.dapi.v0.PlatformSubscriptionResponse, request, callback);
-                        }, "name", { value: "SubscribePlatformEvents" });
+                        }, "name", { value: "subscribePlatformEvents" });
 
                         /**
-                         * Calls SubscribePlatformEvents.
+                         * Calls subscribePlatformEvents.
                          * @function subscribePlatformEvents
                          * @memberof org.dash.platform.dapi.v0.Platform
                          * @instance

@@ -208,7 +208,7 @@ mod tests {
         use drive_abci::query::PlatformFilterAdapter;
 
         let config = PlatformConfig::default();
-        let mut platform = TestPlatformBuilder::new()
+        let platform = TestPlatformBuilder::new()
             .with_config(config.clone())
             .build_with_mock_rpc();
 

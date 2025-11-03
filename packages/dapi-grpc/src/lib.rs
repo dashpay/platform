@@ -21,6 +21,7 @@ pub mod core {
 }
 
 #[cfg(feature = "platform")]
+#[allow(non_camel_case_types)]
 pub mod platform {
     pub mod v0 {
         #[cfg(all(feature = "server", not(target_arch = "wasm32")))]

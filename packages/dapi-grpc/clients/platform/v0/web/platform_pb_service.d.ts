@@ -427,7 +427,7 @@ type PlatformgetGroupActionSigners = {
   readonly responseType: typeof platform_pb.GetGroupActionSignersResponse;
 };
 
-type PlatformSubscribePlatformEvents = {
+type PlatformsubscribePlatformEvents = {
   readonly methodName: string;
   readonly service: typeof Platform;
   readonly requestStream: false;
@@ -485,7 +485,7 @@ export class Platform {
   static readonly getGroupInfos: PlatformgetGroupInfos;
   static readonly getGroupActions: PlatformgetGroupActions;
   static readonly getGroupActionSigners: PlatformgetGroupActionSigners;
-  static readonly SubscribePlatformEvents: PlatformSubscribePlatformEvents;
+  static readonly subscribePlatformEvents: PlatformsubscribePlatformEvents;
 }
 
 export type ServiceError = { message: string, code: number; metadata: grpc.Metadata }

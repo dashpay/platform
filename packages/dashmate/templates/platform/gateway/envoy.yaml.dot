@@ -232,7 +232,7 @@
                   timeout: 15s
               # rs-dapi subscribePlatformEvents endpoint with bigger timeout (now exposed directly)
               - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/SubscribePlatformEvents"
+                  path: "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents"
                 route:
                   cluster: rs_dapi
                   idle_timeout: {{= subscribePlatformEventsTimeout }}

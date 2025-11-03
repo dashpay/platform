@@ -169,7 +169,7 @@ impl Platform for PlatformServiceImpl {
     // Manually implemented methods
 
     // Streaming: multiplexed platform events
-    type SubscribePlatformEventsStream = tokio_stream::wrappers::ReceiverStream<
+    type subscribePlatformEventsStream = tokio_stream::wrappers::ReceiverStream<
         Result<dapi_grpc::platform::v0::PlatformSubscriptionResponse, dapi_grpc::tonic::Status>,
     >;
 
@@ -177,7 +177,7 @@ impl Platform for PlatformServiceImpl {
         &self,
         request: dapi_grpc::tonic::Request<dapi_grpc::platform::v0::PlatformSubscriptionRequest>,
     ) -> Result<
-        dapi_grpc::tonic::Response<Self::SubscribePlatformEventsStream>,
+        dapi_grpc::tonic::Response<Self::subscribePlatformEventsStream>,
         dapi_grpc::tonic::Status,
     > {
         self.subscribe_platform_events_impl(request).await
