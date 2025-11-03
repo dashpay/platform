@@ -7522,7 +7522,7 @@ dependencies = [
 
 [[package]]
 name = "wasm-dpp2"
-version = "1.0.5"
+version = "2.2.0-dev.1"
 dependencies = [
  "anyhow",
  "bincode 2.0.0-rc.3",
