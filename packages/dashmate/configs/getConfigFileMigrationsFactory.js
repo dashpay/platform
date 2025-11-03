@@ -1165,9 +1165,13 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
             const defaultConfig = getDefaultConfigByNameOrGroup(name, options.group);
 
             if (!options.platform.dapi.deprecated) {
-              options.platform.dapi.deprecated = defaultConfig.get('platform.dapi.deprecated');
+              if (defaultConfig.has('platform.dapi.deprecated')) {
+                options.platform.dapi.deprecated = defaultConfig.get('platform.dapi.deprecated');
+              }
             } else if (typeof options.platform.dapi.deprecated.enabled === 'undefined') {
-              options.platform.dapi.deprecated.enabled = defaultConfig.get('platform.dapi.deprecated.enabled');
+              if (defaultConfig.has('platform.dapi.deprecated.enabled')) {
+                options.platform.dapi.deprecated.enabled = defaultConfig.get('platform.dapi.deprecated.enabled');
+              }
             }
 
             if (!options.platform.dapi.rsDapi) {
@@ -1422,6 +1426,10 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               subscribePlatformEvents,
               coreStreams,
             };
+
+            if (typeof rsDapi.waitForStResultTimeout !== 'undefined') {
+              delete rsDapi.waitForStResultTimeout;
+            }
 
             if (options.platform?.dapi?.api?.timeouts) {
               delete options.platform.dapi.api.timeouts;

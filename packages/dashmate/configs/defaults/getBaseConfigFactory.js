@@ -255,7 +255,6 @@ export default function getBaseConfigFactory() {
               accessLogPath: null,
               accessLogFormat: 'combined',
             },
-            waitForStResultTimeout: 120000,
           },
         },
         drive: {
