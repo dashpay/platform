@@ -967,7 +967,7 @@ impl PlatformService for QueryService {
                     Some(Ok(event)) => {
                         let response = PlatformSubscriptionResponse {
                             version: Some(ResponseVersion::V0(PlatformSubscriptionResponseV0 {
-                                subscription_id: subscription_id.clone(),
+                                subscription_id,
                                 event: Some(event),
                             })),
                         };
