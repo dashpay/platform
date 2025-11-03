@@ -1414,211 +1414,15 @@ $root.org = (function() {
                         return PlatformSubscriptionResponse;
                     })();
 
-                    v0.StateTransitionResultFilter = (function() {
-
-                        /**
-                         * Properties of a StateTransitionResultFilter.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @interface IStateTransitionResultFilter
-                         * @property {Uint8Array|null} [txHash] StateTransitionResultFilter txHash
-                         */
-
-                        /**
-                         * Constructs a new StateTransitionResultFilter.
-                         * @memberof org.dash.platform.dapi.v0
-                         * @classdesc Represents a StateTransitionResultFilter.
-                         * @implements IStateTransitionResultFilter
-                         * @constructor
-                         * @param {org.dash.platform.dapi.v0.IStateTransitionResultFilter=} [properties] Properties to set
-                         */
-                        function StateTransitionResultFilter(properties) {
-                            if (properties)
-                                for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
-                                    if (properties[keys[i]] != null)
-                                        this[keys[i]] = properties[keys[i]];
-                        }
-
-                        /**
-                         * StateTransitionResultFilter txHash.
-                         * @member {Uint8Array} txHash
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @instance
-                         */
-                        StateTransitionResultFilter.prototype.txHash = $util.newBuffer([]);
-
-                        /**
-                         * Creates a new StateTransitionResultFilter instance using the specified properties.
-                         * @function create
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStateTransitionResultFilter=} [properties] Properties to set
-                         * @returns {org.dash.platform.dapi.v0.StateTransitionResultFilter} StateTransitionResultFilter instance
-                         */
-                        StateTransitionResultFilter.create = function create(properties) {
-                            return new StateTransitionResultFilter(properties);
-                        };
-
-                        /**
-                         * Encodes the specified StateTransitionResultFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.StateTransitionResultFilter.verify|verify} messages.
-                         * @function encode
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStateTransitionResultFilter} message StateTransitionResultFilter message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StateTransitionResultFilter.encode = function encode(message, writer) {
-                            if (!writer)
-                                writer = $Writer.create();
-                            if (message.txHash != null && Object.hasOwnProperty.call(message, "txHash"))
-                                writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.txHash);
-                            return writer;
-                        };
-
-                        /**
-                         * Encodes the specified StateTransitionResultFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.StateTransitionResultFilter.verify|verify} messages.
-                         * @function encodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.IStateTransitionResultFilter} message StateTransitionResultFilter message or plain object to encode
-                         * @param {$protobuf.Writer} [writer] Writer to encode to
-                         * @returns {$protobuf.Writer} Writer
-                         */
-                        StateTransitionResultFilter.encodeDelimited = function encodeDelimited(message, writer) {
-                            return this.encode(message, writer).ldelim();
-                        };
-
-                        /**
-                         * Decodes a StateTransitionResultFilter message from the specified reader or buffer.
-                         * @function decode
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @param {number} [length] Message length if known beforehand
-                         * @returns {org.dash.platform.dapi.v0.StateTransitionResultFilter} StateTransitionResultFilter
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StateTransitionResultFilter.decode = function decode(reader, length) {
-                            if (!(reader instanceof $Reader))
-                                reader = $Reader.create(reader);
-                            var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.StateTransitionResultFilter();
-                            while (reader.pos < end) {
-                                var tag = reader.uint32();
-                                switch (tag >>> 3) {
-                                case 1:
-                                    message.txHash = reader.bytes();
-                                    break;
-                                default:
-                                    reader.skipType(tag & 7);
-                                    break;
-                                }
-                            }
-                            return message;
-                        };
-
-                        /**
-                         * Decodes a StateTransitionResultFilter message from the specified reader or buffer, length delimited.
-                         * @function decodeDelimited
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
-                         * @returns {org.dash.platform.dapi.v0.StateTransitionResultFilter} StateTransitionResultFilter
-                         * @throws {Error} If the payload is not a reader or valid buffer
-                         * @throws {$protobuf.util.ProtocolError} If required fields are missing
-                         */
-                        StateTransitionResultFilter.decodeDelimited = function decodeDelimited(reader) {
-                            if (!(reader instanceof $Reader))
-                                reader = new $Reader(reader);
-                            return this.decode(reader, reader.uint32());
-                        };
-
-                        /**
-                         * Verifies a StateTransitionResultFilter message.
-                         * @function verify
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {Object.<string,*>} message Plain object to verify
-                         * @returns {string|null} `null` if valid, otherwise the reason why it is not
-                         */
-                        StateTransitionResultFilter.verify = function verify(message) {
-                            if (typeof message !== "object" || message === null)
-                                return "object expected";
-                            if (message.txHash != null && message.hasOwnProperty("txHash"))
-                                if (!(message.txHash && typeof message.txHash.length === "number" || $util.isString(message.txHash)))
-                                    return "txHash: buffer expected";
-                            return null;
-                        };
-
-                        /**
-                         * Creates a StateTransitionResultFilter message from a plain object. Also converts values to their respective internal types.
-                         * @function fromObject
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {Object.<string,*>} object Plain object
-                         * @returns {org.dash.platform.dapi.v0.StateTransitionResultFilter} StateTransitionResultFilter
-                         */
-                        StateTransitionResultFilter.fromObject = function fromObject(object) {
-                            if (object instanceof $root.org.dash.platform.dapi.v0.StateTransitionResultFilter)
-                                return object;
-                            var message = new $root.org.dash.platform.dapi.v0.StateTransitionResultFilter();
-                            if (object.txHash != null)
-                                if (typeof object.txHash === "string")
-                                    $util.base64.decode(object.txHash, message.txHash = $util.newBuffer($util.base64.length(object.txHash)), 0);
-                                else if (object.txHash.length >= 0)
-                                    message.txHash = object.txHash;
-                            return message;
-                        };
-
-                        /**
-                         * Creates a plain object from a StateTransitionResultFilter message. Also converts values to other types if specified.
-                         * @function toObject
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @static
-                         * @param {org.dash.platform.dapi.v0.StateTransitionResultFilter} message StateTransitionResultFilter
-                         * @param {$protobuf.IConversionOptions} [options] Conversion options
-                         * @returns {Object.<string,*>} Plain object
-                         */
-                        StateTransitionResultFilter.toObject = function toObject(message, options) {
-                            if (!options)
-                                options = {};
-                            var object = {};
-                            if (options.defaults)
-                                if (options.bytes === String)
-                                    object.txHash = "";
-                                else {
-                                    object.txHash = [];
-                                    if (options.bytes !== Array)
-                                        object.txHash = $util.newBuffer(object.txHash);
-                                }
-                            if (message.txHash != null && message.hasOwnProperty("txHash"))
-                                object.txHash = options.bytes === String ? $util.base64.encode(message.txHash, 0, message.txHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.txHash) : message.txHash;
-                            return object;
-                        };
-
-                        /**
-                         * Converts this StateTransitionResultFilter to JSON.
-                         * @function toJSON
-                         * @memberof org.dash.platform.dapi.v0.StateTransitionResultFilter
-                         * @instance
-                         * @returns {Object.<string,*>} JSON object
-                         */
-                        StateTransitionResultFilter.prototype.toJSON = function toJSON() {
-                            return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
-                        };
-
-                        return StateTransitionResultFilter;
-                    })();
-
                     v0.PlatformFilterV0 = (function() {
 
                         /**
                          * Properties of a PlatformFilterV0.
                          * @memberof org.dash.platform.dapi.v0
                          * @interface IPlatformFilterV0
-                         * @property {boolean|null} [all] PlatformFilterV0 all
-                         * @property {boolean|null} [blockCommitted] PlatformFilterV0 blockCommitted
-                         * @property {org.dash.platform.dapi.v0.IStateTransitionResultFilter|null} [stateTransitionResult] PlatformFilterV0 stateTransitionResult
+                         * @property {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents|null} [all] PlatformFilterV0 all
+                         * @property {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted|null} [blockCommitted] PlatformFilterV0 blockCommitted
+                         * @property {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter|null} [stateTransitionResult] PlatformFilterV0 stateTransitionResult
                          */
 
                         /**
@@ -1638,23 +1442,23 @@ $root.org = (function() {
 
                         /**
                          * PlatformFilterV0 all.
-                         * @member {boolean} all
+                         * @member {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents|null|undefined} all
                          * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
                          * @instance
                          */
-                        PlatformFilterV0.prototype.all = false;
+                        PlatformFilterV0.prototype.all = null;
 
                         /**
                          * PlatformFilterV0 blockCommitted.
-                         * @member {boolean} blockCommitted
+                         * @member {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted|null|undefined} blockCommitted
                          * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
                          * @instance
                          */
-                        PlatformFilterV0.prototype.blockCommitted = false;
+                        PlatformFilterV0.prototype.blockCommitted = null;
 
                         /**
                          * PlatformFilterV0 stateTransitionResult.
-                         * @member {org.dash.platform.dapi.v0.IStateTransitionResultFilter|null|undefined} stateTransitionResult
+                         * @member {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter|null|undefined} stateTransitionResult
                          * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
                          * @instance
                          */
@@ -1699,11 +1503,11 @@ $root.org = (function() {
                             if (!writer)
                                 writer = $Writer.create();
                             if (message.all != null && Object.hasOwnProperty.call(message, "all"))
-                                writer.uint32(/* id 1, wireType 0 =*/8).bool(message.all);
+                                $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.encode(message.all, writer.uint32(/* id 1, wireType 2 =*/10).fork()).ldelim();
                             if (message.blockCommitted != null && Object.hasOwnProperty.call(message, "blockCommitted"))
-                                writer.uint32(/* id 2, wireType 0 =*/16).bool(message.blockCommitted);
+                                $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.encode(message.blockCommitted, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                             if (message.stateTransitionResult != null && Object.hasOwnProperty.call(message, "stateTransitionResult"))
-                                $root.org.dash.platform.dapi.v0.StateTransitionResultFilter.encode(message.stateTransitionResult, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
+                                $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.encode(message.stateTransitionResult, writer.uint32(/* id 3, wireType 2 =*/26).fork()).ldelim();
                             return writer;
                         };
 
@@ -1739,13 +1543,13 @@ $root.org = (function() {
                                 var tag = reader.uint32();
                                 switch (tag >>> 3) {
                                 case 1:
-                                    message.all = reader.bool();
+                                    message.all = $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.decode(reader, reader.uint32());
                                     break;
                                 case 2:
-                                    message.blockCommitted = reader.bool();
+                                    message.blockCommitted = $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.decode(reader, reader.uint32());
                                     break;
                                 case 3:
-                                    message.stateTransitionResult = $root.org.dash.platform.dapi.v0.StateTransitionResultFilter.decode(reader, reader.uint32());
+                                    message.stateTransitionResult = $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.decode(reader, reader.uint32());
                                     break;
                                 default:
                                     reader.skipType(tag & 7);
@@ -1785,22 +1589,28 @@ $root.org = (function() {
                             var properties = {};
                             if (message.all != null && message.hasOwnProperty("all")) {
                                 properties.kind = 1;
-                                if (typeof message.all !== "boolean")
-                                    return "all: boolean expected";
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.verify(message.all);
+                                    if (error)
+                                        return "all." + error;
+                                }
                             }
                             if (message.blockCommitted != null && message.hasOwnProperty("blockCommitted")) {
                                 if (properties.kind === 1)
                                     return "kind: multiple values";
                                 properties.kind = 1;
-                                if (typeof message.blockCommitted !== "boolean")
-                                    return "blockCommitted: boolean expected";
+                                {
+                                    var error = $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.verify(message.blockCommitted);
+                                    if (error)
+                                        return "blockCommitted." + error;
+                                }
                             }
                             if (message.stateTransitionResult != null && message.hasOwnProperty("stateTransitionResult")) {
                                 if (properties.kind === 1)
                                     return "kind: multiple values";
                                 properties.kind = 1;
                                 {
-                                    var error = $root.org.dash.platform.dapi.v0.StateTransitionResultFilter.verify(message.stateTransitionResult);
+                                    var error = $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.verify(message.stateTransitionResult);
                                     if (error)
                                         return "stateTransitionResult." + error;
                                 }
@@ -1820,14 +1630,20 @@ $root.org = (function() {
                             if (object instanceof $root.org.dash.platform.dapi.v0.PlatformFilterV0)
                                 return object;
                             var message = new $root.org.dash.platform.dapi.v0.PlatformFilterV0();
-                            if (object.all != null)
-                                message.all = Boolean(object.all);
-                            if (object.blockCommitted != null)
-                                message.blockCommitted = Boolean(object.blockCommitted);
+                            if (object.all != null) {
+                                if (typeof object.all !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.PlatformFilterV0.all: object expected");
+                                message.all = $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.fromObject(object.all);
+                            }
+                            if (object.blockCommitted != null) {
+                                if (typeof object.blockCommitted !== "object")
+                                    throw TypeError(".org.dash.platform.dapi.v0.PlatformFilterV0.blockCommitted: object expected");
+                                message.blockCommitted = $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.fromObject(object.blockCommitted);
+                            }
                             if (object.stateTransitionResult != null) {
                                 if (typeof object.stateTransitionResult !== "object")
                                     throw TypeError(".org.dash.platform.dapi.v0.PlatformFilterV0.stateTransitionResult: object expected");
-                                message.stateTransitionResult = $root.org.dash.platform.dapi.v0.StateTransitionResultFilter.fromObject(object.stateTransitionResult);
+                                message.stateTransitionResult = $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.fromObject(object.stateTransitionResult);
                             }
                             return message;
                         };
@@ -1846,17 +1662,17 @@ $root.org = (function() {
                                 options = {};
                             var object = {};
                             if (message.all != null && message.hasOwnProperty("all")) {
-                                object.all = message.all;
+                                object.all = $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.toObject(message.all, options);
                                 if (options.oneofs)
                                     object.kind = "all";
                             }
                             if (message.blockCommitted != null && message.hasOwnProperty("blockCommitted")) {
-                                object.blockCommitted = message.blockCommitted;
+                                object.blockCommitted = $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.toObject(message.blockCommitted, options);
                                 if (options.oneofs)
                                     object.kind = "blockCommitted";
                             }
                             if (message.stateTransitionResult != null && message.hasOwnProperty("stateTransitionResult")) {
-                                object.stateTransitionResult = $root.org.dash.platform.dapi.v0.StateTransitionResultFilter.toObject(message.stateTransitionResult, options);
+                                object.stateTransitionResult = $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.toObject(message.stateTransitionResult, options);
                                 if (options.oneofs)
                                     object.kind = "stateTransitionResult";
                             }
@@ -1873,6 +1689,522 @@ $root.org = (function() {
                         PlatformFilterV0.prototype.toJSON = function toJSON() {
                             return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
                         };
+
+                        PlatformFilterV0.AllEvents = (function() {
+
+                            /**
+                             * Properties of an AllEvents.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @interface IAllEvents
+                             */
+
+                            /**
+                             * Constructs a new AllEvents.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @classdesc Represents an AllEvents.
+                             * @implements IAllEvents
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents=} [properties] Properties to set
+                             */
+                            function AllEvents(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new AllEvents instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents} AllEvents instance
+                             */
+                            AllEvents.create = function create(properties) {
+                                return new AllEvents(properties);
+                            };
+
+                            /**
+                             * Encodes the specified AllEvents message. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents} message AllEvents message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AllEvents.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified AllEvents message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IAllEvents} message AllEvents message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            AllEvents.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes an AllEvents message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents} AllEvents
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AllEvents.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes an AllEvents message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents} AllEvents
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            AllEvents.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies an AllEvents message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            AllEvents.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates an AllEvents message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents} AllEvents
+                             */
+                            AllEvents.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents();
+                            };
+
+                            /**
+                             * Creates a plain object from an AllEvents message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents} message AllEvents
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            AllEvents.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this AllEvents to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.AllEvents
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            AllEvents.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return AllEvents;
+                        })();
+
+                        PlatformFilterV0.BlockCommitted = (function() {
+
+                            /**
+                             * Properties of a BlockCommitted.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @interface IBlockCommitted
+                             */
+
+                            /**
+                             * Constructs a new BlockCommitted.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @classdesc Represents a BlockCommitted.
+                             * @implements IBlockCommitted
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted=} [properties] Properties to set
+                             */
+                            function BlockCommitted(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * Creates a new BlockCommitted instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted} BlockCommitted instance
+                             */
+                            BlockCommitted.create = function create(properties) {
+                                return new BlockCommitted(properties);
+                            };
+
+                            /**
+                             * Encodes the specified BlockCommitted message. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted} message BlockCommitted message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            BlockCommitted.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified BlockCommitted message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IBlockCommitted} message BlockCommitted message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            BlockCommitted.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a BlockCommitted message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted} BlockCommitted
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            BlockCommitted.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a BlockCommitted message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted} BlockCommitted
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            BlockCommitted.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a BlockCommitted message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            BlockCommitted.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a BlockCommitted message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted} BlockCommitted
+                             */
+                            BlockCommitted.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted)
+                                    return object;
+                                return new $root.org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted();
+                            };
+
+                            /**
+                             * Creates a plain object from a BlockCommitted message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted} message BlockCommitted
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            BlockCommitted.toObject = function toObject() {
+                                return {};
+                            };
+
+                            /**
+                             * Converts this BlockCommitted to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.BlockCommitted
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            BlockCommitted.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return BlockCommitted;
+                        })();
+
+                        PlatformFilterV0.StateTransitionResultFilter = (function() {
+
+                            /**
+                             * Properties of a StateTransitionResultFilter.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @interface IStateTransitionResultFilter
+                             * @property {Uint8Array|null} [txHash] StateTransitionResultFilter txHash
+                             */
+
+                            /**
+                             * Constructs a new StateTransitionResultFilter.
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0
+                             * @classdesc Represents a StateTransitionResultFilter.
+                             * @implements IStateTransitionResultFilter
+                             * @constructor
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter=} [properties] Properties to set
+                             */
+                            function StateTransitionResultFilter(properties) {
+                                if (properties)
+                                    for (var keys = Object.keys(properties), i = 0; i < keys.length; ++i)
+                                        if (properties[keys[i]] != null)
+                                            this[keys[i]] = properties[keys[i]];
+                            }
+
+                            /**
+                             * StateTransitionResultFilter txHash.
+                             * @member {Uint8Array} txHash
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @instance
+                             */
+                            StateTransitionResultFilter.prototype.txHash = $util.newBuffer([]);
+
+                            /**
+                             * Creates a new StateTransitionResultFilter instance using the specified properties.
+                             * @function create
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter=} [properties] Properties to set
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter} StateTransitionResultFilter instance
+                             */
+                            StateTransitionResultFilter.create = function create(properties) {
+                                return new StateTransitionResultFilter(properties);
+                            };
+
+                            /**
+                             * Encodes the specified StateTransitionResultFilter message. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.verify|verify} messages.
+                             * @function encode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter} message StateTransitionResultFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateTransitionResultFilter.encode = function encode(message, writer) {
+                                if (!writer)
+                                    writer = $Writer.create();
+                                if (message.txHash != null && Object.hasOwnProperty.call(message, "txHash"))
+                                    writer.uint32(/* id 1, wireType 2 =*/10).bytes(message.txHash);
+                                return writer;
+                            };
+
+                            /**
+                             * Encodes the specified StateTransitionResultFilter message, length delimited. Does not implicitly {@link org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter.verify|verify} messages.
+                             * @function encodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.IStateTransitionResultFilter} message StateTransitionResultFilter message or plain object to encode
+                             * @param {$protobuf.Writer} [writer] Writer to encode to
+                             * @returns {$protobuf.Writer} Writer
+                             */
+                            StateTransitionResultFilter.encodeDelimited = function encodeDelimited(message, writer) {
+                                return this.encode(message, writer).ldelim();
+                            };
+
+                            /**
+                             * Decodes a StateTransitionResultFilter message from the specified reader or buffer.
+                             * @function decode
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @param {number} [length] Message length if known beforehand
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter} StateTransitionResultFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateTransitionResultFilter.decode = function decode(reader, length) {
+                                if (!(reader instanceof $Reader))
+                                    reader = $Reader.create(reader);
+                                var end = length === undefined ? reader.len : reader.pos + length, message = new $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter();
+                                while (reader.pos < end) {
+                                    var tag = reader.uint32();
+                                    switch (tag >>> 3) {
+                                    case 1:
+                                        message.txHash = reader.bytes();
+                                        break;
+                                    default:
+                                        reader.skipType(tag & 7);
+                                        break;
+                                    }
+                                }
+                                return message;
+                            };
+
+                            /**
+                             * Decodes a StateTransitionResultFilter message from the specified reader or buffer, length delimited.
+                             * @function decodeDelimited
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {$protobuf.Reader|Uint8Array} reader Reader or buffer to decode from
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter} StateTransitionResultFilter
+                             * @throws {Error} If the payload is not a reader or valid buffer
+                             * @throws {$protobuf.util.ProtocolError} If required fields are missing
+                             */
+                            StateTransitionResultFilter.decodeDelimited = function decodeDelimited(reader) {
+                                if (!(reader instanceof $Reader))
+                                    reader = new $Reader(reader);
+                                return this.decode(reader, reader.uint32());
+                            };
+
+                            /**
+                             * Verifies a StateTransitionResultFilter message.
+                             * @function verify
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {Object.<string,*>} message Plain object to verify
+                             * @returns {string|null} `null` if valid, otherwise the reason why it is not
+                             */
+                            StateTransitionResultFilter.verify = function verify(message) {
+                                if (typeof message !== "object" || message === null)
+                                    return "object expected";
+                                if (message.txHash != null && message.hasOwnProperty("txHash"))
+                                    if (!(message.txHash && typeof message.txHash.length === "number" || $util.isString(message.txHash)))
+                                        return "txHash: buffer expected";
+                                return null;
+                            };
+
+                            /**
+                             * Creates a StateTransitionResultFilter message from a plain object. Also converts values to their respective internal types.
+                             * @function fromObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {Object.<string,*>} object Plain object
+                             * @returns {org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter} StateTransitionResultFilter
+                             */
+                            StateTransitionResultFilter.fromObject = function fromObject(object) {
+                                if (object instanceof $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter)
+                                    return object;
+                                var message = new $root.org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter();
+                                if (object.txHash != null)
+                                    if (typeof object.txHash === "string")
+                                        $util.base64.decode(object.txHash, message.txHash = $util.newBuffer($util.base64.length(object.txHash)), 0);
+                                    else if (object.txHash.length >= 0)
+                                        message.txHash = object.txHash;
+                                return message;
+                            };
+
+                            /**
+                             * Creates a plain object from a StateTransitionResultFilter message. Also converts values to other types if specified.
+                             * @function toObject
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @static
+                             * @param {org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter} message StateTransitionResultFilter
+                             * @param {$protobuf.IConversionOptions} [options] Conversion options
+                             * @returns {Object.<string,*>} Plain object
+                             */
+                            StateTransitionResultFilter.toObject = function toObject(message, options) {
+                                if (!options)
+                                    options = {};
+                                var object = {};
+                                if (options.defaults)
+                                    if (options.bytes === String)
+                                        object.txHash = "";
+                                    else {
+                                        object.txHash = [];
+                                        if (options.bytes !== Array)
+                                            object.txHash = $util.newBuffer(object.txHash);
+                                    }
+                                if (message.txHash != null && message.hasOwnProperty("txHash"))
+                                    object.txHash = options.bytes === String ? $util.base64.encode(message.txHash, 0, message.txHash.length) : options.bytes === Array ? Array.prototype.slice.call(message.txHash) : message.txHash;
+                                return object;
+                            };
+
+                            /**
+                             * Converts this StateTransitionResultFilter to JSON.
+                             * @function toJSON
+                             * @memberof org.dash.platform.dapi.v0.PlatformFilterV0.StateTransitionResultFilter
+                             * @instance
+                             * @returns {Object.<string,*>} JSON object
+                             */
+                            StateTransitionResultFilter.prototype.toJSON = function toJSON() {
+                                return this.constructor.toObject(this, $protobuf.util.toJSONOptions);
+                            };
+
+                            return StateTransitionResultFilter;
+                        })();
 
                         return PlatformFilterV0;
                     })();

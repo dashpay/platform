@@ -323,6 +323,9 @@ GPBObjCClassDeclaration(PlatformEventV0_BlockMetadata);
 GPBObjCClassDeclaration(PlatformEventV0_Keepalive);
 GPBObjCClassDeclaration(PlatformEventV0_StateTransitionFinalized);
 GPBObjCClassDeclaration(PlatformFilterV0);
+GPBObjCClassDeclaration(PlatformFilterV0_AllEvents);
+GPBObjCClassDeclaration(PlatformFilterV0_BlockCommitted);
+GPBObjCClassDeclaration(PlatformFilterV0_StateTransitionResultFilter);
 GPBObjCClassDeclaration(PlatformSubscriptionRequest);
 GPBObjCClassDeclaration(PlatformSubscriptionRequest_PlatformSubscriptionRequestV0);
 GPBObjCClassDeclaration(PlatformSubscriptionResponse);
@@ -333,7 +336,6 @@ GPBObjCClassDeclaration(SearchKey);
 GPBObjCClassDeclaration(SecurityLevelMap);
 GPBObjCClassDeclaration(SpecificKeys);
 GPBObjCClassDeclaration(StateTransitionBroadcastError);
-GPBObjCClassDeclaration(StateTransitionResultFilter);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest);
 GPBObjCClassDeclaration(WaitForStateTransitionResultRequest_WaitForStateTransitionResultRequestV0);
 GPBObjCClassDeclaration(WaitForStateTransitionResultResponse);
@@ -632,51 +634,6 @@ typedef struct PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__stor
 
 @end
 
-#pragma mark - StateTransitionResultFilter
-
-@implementation StateTransitionResultFilter
-
-@dynamic hasTxHash, txHash;
-
-typedef struct StateTransitionResultFilter__storage_ {
-  uint32_t _has_storage_[1];
-  NSData *txHash;
-} StateTransitionResultFilter__storage_;
-
-// This method is threadsafe because it is initially called
-// in +initialize for each subclass.
-+ (GPBDescriptor *)descriptor {
-  static GPBDescriptor *descriptor = nil;
-  if (!descriptor) {
-    static GPBMessageFieldDescription fields[] = {
-      {
-        .name = "txHash",
-        .dataTypeSpecific.clazz = Nil,
-        .number = StateTransitionResultFilter_FieldNumber_TxHash,
-        .hasIndex = 0,
-        .offset = (uint32_t)offsetof(StateTransitionResultFilter__storage_, txHash),
-        .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeBytes,
-      },
-    };
-    GPBDescriptor *localDescriptor =
-        [GPBDescriptor allocDescriptorForClass:[StateTransitionResultFilter class]
-                                     rootClass:[PlatformRoot class]
-                                          file:PlatformRoot_FileDescriptor()
-                                        fields:fields
-                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
-                                   storageSize:sizeof(StateTransitionResultFilter__storage_)
-                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
-    #if defined(DEBUG) && DEBUG
-      NSAssert(descriptor == nil, @"Startup recursed!");
-    #endif  // DEBUG
-    descriptor = localDescriptor;
-  }
-  return descriptor;
-}
-
-@end
-
 #pragma mark - PlatformFilterV0
 
 @implementation PlatformFilterV0
@@ -688,7 +645,9 @@ typedef struct StateTransitionResultFilter__storage_ {
 
 typedef struct PlatformFilterV0__storage_ {
   uint32_t _has_storage_[2];
-  StateTransitionResultFilter *stateTransitionResult;
+  PlatformFilterV0_AllEvents *all;
+  PlatformFilterV0_BlockCommitted *blockCommitted;
+  PlatformFilterV0_StateTransitionResultFilter *stateTransitionResult;
 } PlatformFilterV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -699,25 +658,25 @@ typedef struct PlatformFilterV0__storage_ {
     static GPBMessageFieldDescription fields[] = {
       {
         .name = "all",
-        .dataTypeSpecific.clazz = Nil,
+        .dataTypeSpecific.clazz = GPBObjCClass(PlatformFilterV0_AllEvents),
         .number = PlatformFilterV0_FieldNumber_All,
         .hasIndex = -1,
-        .offset = 0,  // Stored in _has_storage_ to save space.
+        .offset = (uint32_t)offsetof(PlatformFilterV0__storage_, all),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeBool,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "blockCommitted",
-        .dataTypeSpecific.clazz = Nil,
+        .dataTypeSpecific.clazz = GPBObjCClass(PlatformFilterV0_BlockCommitted),
         .number = PlatformFilterV0_FieldNumber_BlockCommitted,
         .hasIndex = -1,
-        .offset = 1,  // Stored in _has_storage_ to save space.
+        .offset = (uint32_t)offsetof(PlatformFilterV0__storage_, blockCommitted),
         .flags = GPBFieldOptional,
-        .dataType = GPBDataTypeBool,
+        .dataType = GPBDataTypeMessage,
       },
       {
         .name = "stateTransitionResult",
-        .dataTypeSpecific.clazz = GPBObjCClass(StateTransitionResultFilter),
+        .dataTypeSpecific.clazz = GPBObjCClass(PlatformFilterV0_StateTransitionResultFilter),
         .number = PlatformFilterV0_FieldNumber_StateTransitionResult,
         .hasIndex = -1,
         .offset = (uint32_t)offsetof(PlatformFilterV0__storage_, stateTransitionResult),
@@ -754,6 +713,118 @@ void PlatformFilterV0_ClearKindOneOfCase(PlatformFilterV0 *message) {
   GPBOneofDescriptor *oneof = [descriptor.oneofs objectAtIndex:0];
   GPBClearOneof(message, oneof);
 }
+#pragma mark - PlatformFilterV0_AllEvents
+
+@implementation PlatformFilterV0_AllEvents
+
+
+typedef struct PlatformFilterV0_AllEvents__storage_ {
+  uint32_t _has_storage_[1];
+} PlatformFilterV0_AllEvents__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[PlatformFilterV0_AllEvents class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(PlatformFilterV0_AllEvents__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(PlatformFilterV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - PlatformFilterV0_BlockCommitted
+
+@implementation PlatformFilterV0_BlockCommitted
+
+
+typedef struct PlatformFilterV0_BlockCommitted__storage_ {
+  uint32_t _has_storage_[1];
+} PlatformFilterV0_BlockCommitted__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[PlatformFilterV0_BlockCommitted class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:NULL
+                                    fieldCount:0
+                                   storageSize:sizeof(PlatformFilterV0_BlockCommitted__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(PlatformFilterV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
+#pragma mark - PlatformFilterV0_StateTransitionResultFilter
+
+@implementation PlatformFilterV0_StateTransitionResultFilter
+
+@dynamic hasTxHash, txHash;
+
+typedef struct PlatformFilterV0_StateTransitionResultFilter__storage_ {
+  uint32_t _has_storage_[1];
+  NSData *txHash;
+} PlatformFilterV0_StateTransitionResultFilter__storage_;
+
+// This method is threadsafe because it is initially called
+// in +initialize for each subclass.
++ (GPBDescriptor *)descriptor {
+  static GPBDescriptor *descriptor = nil;
+  if (!descriptor) {
+    static GPBMessageFieldDescription fields[] = {
+      {
+        .name = "txHash",
+        .dataTypeSpecific.clazz = Nil,
+        .number = PlatformFilterV0_StateTransitionResultFilter_FieldNumber_TxHash,
+        .hasIndex = 0,
+        .offset = (uint32_t)offsetof(PlatformFilterV0_StateTransitionResultFilter__storage_, txHash),
+        .flags = GPBFieldOptional,
+        .dataType = GPBDataTypeBytes,
+      },
+    };
+    GPBDescriptor *localDescriptor =
+        [GPBDescriptor allocDescriptorForClass:[PlatformFilterV0_StateTransitionResultFilter class]
+                                     rootClass:[PlatformRoot class]
+                                          file:PlatformRoot_FileDescriptor()
+                                        fields:fields
+                                    fieldCount:(uint32_t)(sizeof(fields) / sizeof(GPBMessageFieldDescription))
+                                   storageSize:sizeof(PlatformFilterV0_StateTransitionResultFilter__storage_)
+                                         flags:(GPBDescriptorInitializationFlags)(GPBDescriptorInitializationFlag_UsesClassRefs | GPBDescriptorInitializationFlag_Proto3OptionalKnown)];
+    [localDescriptor setupContainingMessageClass:GPBObjCClass(PlatformFilterV0)];
+    #if defined(DEBUG) && DEBUG
+      NSAssert(descriptor == nil, @"Startup recursed!");
+    #endif  // DEBUG
+    descriptor = localDescriptor;
+  }
+  return descriptor;
+}
+
+@end
+
 #pragma mark - PlatformEventV0
 
 @implementation PlatformEventV0

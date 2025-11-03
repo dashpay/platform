@@ -114,45 +114,21 @@ export namespace PlatformSubscriptionResponse {
   }
 }
 
-export class StateTransitionResultFilter extends jspb.Message {
-  hasTxHash(): boolean;
-  clearTxHash(): void;
-  getTxHash(): Uint8Array | string;
-  getTxHash_asU8(): Uint8Array;
-  getTxHash_asB64(): string;
-  setTxHash(value: Uint8Array | string): void;
-
-  serializeBinary(): Uint8Array;
-  toObject(includeInstance?: boolean): StateTransitionResultFilter.AsObject;
-  static toObject(includeInstance: boolean, msg: StateTransitionResultFilter): StateTransitionResultFilter.AsObject;
-  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
-  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
-  static serializeBinaryToWriter(message: StateTransitionResultFilter, writer: jspb.BinaryWriter): void;
-  static deserializeBinary(bytes: Uint8Array): StateTransitionResultFilter;
-  static deserializeBinaryFromReader(message: StateTransitionResultFilter, reader: jspb.BinaryReader): StateTransitionResultFilter;
-}
-
-export namespace StateTransitionResultFilter {
-  export type AsObject = {
-    txHash: Uint8Array | string,
-  }
-}
-
 export class PlatformFilterV0 extends jspb.Message {
   hasAll(): boolean;
   clearAll(): void;
-  getAll(): boolean;
-  setAll(value: boolean): void;
+  getAll(): PlatformFilterV0.AllEvents | undefined;
+  setAll(value?: PlatformFilterV0.AllEvents): void;
 
   hasBlockCommitted(): boolean;
   clearBlockCommitted(): void;
-  getBlockCommitted(): boolean;
-  setBlockCommitted(value: boolean): void;
+  getBlockCommitted(): PlatformFilterV0.BlockCommitted | undefined;
+  setBlockCommitted(value?: PlatformFilterV0.BlockCommitted): void;
 
   hasStateTransitionResult(): boolean;
   clearStateTransitionResult(): void;
-  getStateTransitionResult(): StateTransitionResultFilter | undefined;
-  setStateTransitionResult(value?: StateTransitionResultFilter): void;
+  getStateTransitionResult(): PlatformFilterV0.StateTransitionResultFilter | undefined;
+  setStateTransitionResult(value?: PlatformFilterV0.StateTransitionResultFilter): void;
 
   getKindCase(): PlatformFilterV0.KindCase;
   serializeBinary(): Uint8Array;
@@ -167,9 +143,65 @@ export class PlatformFilterV0 extends jspb.Message {
 
 export namespace PlatformFilterV0 {
   export type AsObject = {
-    all: boolean,
-    blockCommitted: boolean,
-    stateTransitionResult?: StateTransitionResultFilter.AsObject,
+    all?: PlatformFilterV0.AllEvents.AsObject,
+    blockCommitted?: PlatformFilterV0.BlockCommitted.AsObject,
+    stateTransitionResult?: PlatformFilterV0.StateTransitionResultFilter.AsObject,
+  }
+
+  export class AllEvents extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): AllEvents.AsObject;
+    static toObject(includeInstance: boolean, msg: AllEvents): AllEvents.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: AllEvents, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): AllEvents;
+    static deserializeBinaryFromReader(message: AllEvents, reader: jspb.BinaryReader): AllEvents;
+  }
+
+  export namespace AllEvents {
+    export type AsObject = {
+    }
+  }
+
+  export class BlockCommitted extends jspb.Message {
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): BlockCommitted.AsObject;
+    static toObject(includeInstance: boolean, msg: BlockCommitted): BlockCommitted.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: BlockCommitted, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): BlockCommitted;
+    static deserializeBinaryFromReader(message: BlockCommitted, reader: jspb.BinaryReader): BlockCommitted;
+  }
+
+  export namespace BlockCommitted {
+    export type AsObject = {
+    }
+  }
+
+  export class StateTransitionResultFilter extends jspb.Message {
+    hasTxHash(): boolean;
+    clearTxHash(): void;
+    getTxHash(): Uint8Array | string;
+    getTxHash_asU8(): Uint8Array;
+    getTxHash_asB64(): string;
+    setTxHash(value: Uint8Array | string): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): StateTransitionResultFilter.AsObject;
+    static toObject(includeInstance: boolean, msg: StateTransitionResultFilter): StateTransitionResultFilter.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: StateTransitionResultFilter, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): StateTransitionResultFilter;
+    static deserializeBinaryFromReader(message: StateTransitionResultFilter, reader: jspb.BinaryReader): StateTransitionResultFilter;
+  }
+
+  export namespace StateTransitionResultFilter {
+    export type AsObject = {
+      txHash: Uint8Array | string,
+    }
   }
 
   export enum KindCase {
