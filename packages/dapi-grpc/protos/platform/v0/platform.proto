@@ -20,6 +20,7 @@ message PlatformSubscriptionRequest {
 message PlatformSubscriptionResponse {
   message PlatformSubscriptionResponseV0 {
     string client_subscription_id = 1;
+    // Event details; can be nil/None, eg. during handshake
     PlatformEventV0 event = 2;
   }
   oneof version { PlatformSubscriptionResponseV0 v0 = 1; }
@@ -167,7 +168,11 @@ service Platform {
   rpc getGroupActionSigners(GetGroupActionSignersRequest)
       returns (GetGroupActionSignersResponse);
 
-  // Server-streaming subscription for platform events
+  // Server-streaming subscription for platform events.
+  //
+  // Allows subscribint to various Platform events.
+  // 
+  // Once connected, it sends handshake response with empty event.
   rpc subscribePlatformEvents(PlatformSubscriptionRequest)
       returns (stream PlatformSubscriptionResponse);
 }
