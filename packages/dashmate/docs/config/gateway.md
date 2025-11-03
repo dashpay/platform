@@ -39,8 +39,7 @@ The upstreams configuration controls connections to backend services:
 | Option | Description | Default | Example |
 |--------|-------------|---------|---------|
 | `platform.gateway.upstreams.driveGrpc.maxRequests` | Maximum parallel requests to Drive gRPC | `100` | `200` |
-| `platform.gateway.upstreams.dapiApi.maxRequests` | Maximum parallel requests to DAPI API | `100` | `200` |
-| `platform.gateway.upstreams.dapiCoreStreams.maxRequests` | Maximum parallel requests to DAPI Core streams | `100` | `200` |
+| `platform.gateway.upstreams.rsDapi.maxRequests` | Maximum parallel requests to rs-dapi gRPC | `100` | `200` |
 | `platform.gateway.upstreams.dapiJsonRpc.maxRequests` | Maximum parallel requests to DAPI JSON-RPC | `100` | `200` |
 
 ## Metrics

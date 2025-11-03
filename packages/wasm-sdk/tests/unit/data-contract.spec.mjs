@@ -133,7 +133,7 @@ describe('DataContract', () => {
         documentSchemas: {},
       };
 
-      const contract = sdk.DataContract.fromJSON(
+      const contract = sdk.DataContract.fromValue(
         contractWithOnlyTokens,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
@@ -176,7 +176,7 @@ describe('DataContract', () => {
     it('should reject contracts with invalid property values', () => {
       // Test invalid Base58 ID
       expect(() => {
-        sdk.DataContract.fromJSON({
+        sdk.DataContract.fromValue({
           ...contractFixtureV0,
           id: 'invalid-not-base58!',
         }, true, PLATFORM_VERSION_CONTRACT_V0);
@@ -184,7 +184,7 @@ describe('DataContract', () => {
 
       // Test negative version number
       expect(() => {
-        sdk.DataContract.fromJSON({
+        sdk.DataContract.fromValue({
           ...contractFixtureV0,
           version: -1,
         }, true, PLATFORM_VERSION_CONTRACT_V0);
@@ -192,7 +192,7 @@ describe('DataContract', () => {
 
       // Test invalid ownerId
       expect(() => {
-        sdk.DataContract.fromJSON({
+        sdk.DataContract.fromValue({
           ...contractFixtureV0,
           ownerId: 'not-a-valid-id',
         }, true, PLATFORM_VERSION_CONTRACT_V0);

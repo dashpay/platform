@@ -101,7 +101,7 @@ impl BatchedTransitionWasm {
 
         self.0 = match self.0.clone() {
             BatchedTransition::Document(mut document_transition) => {
-                document_transition.set_data_contract_id(contract_id.clone());
+                document_transition.set_data_contract_id(contract_id);
 
                 BatchedTransition::Document(document_transition)
             }

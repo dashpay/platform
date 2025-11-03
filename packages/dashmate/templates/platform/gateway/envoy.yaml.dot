@@ -1,4 +1,3 @@
-{{ useDeprecated = it.platform.dapi.deprecated && it.platform.dapi.deprecated.enabled; }}
 !ignore filters: &filters
   - name: envoy.http_connection_manager
     typed_config:
@@ -112,91 +111,6 @@
           - name: http_services
             domains: [ "*" ]
             routes:
-              {{? useDeprecated }}
-              # DAPI core streaming endpoints
-              - match:
-                  prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
-                route:
-                  cluster: dapi_core_streams
-                  idle_timeout: 300s
-                  # Upstream response timeout
-                  timeout: 600s
-                  max_stream_duration:
-                    # Entire stream/request timeout
-                    max_stream_duration: 600s
-                    grpc_timeout_header_max: 600s
-              # Other DAPI Core endpoints
-              - match:
-                  prefix: "/org.dash.platform.dapi.v0.Core"
-                route:
-                  cluster: dapi_api
-                  # Upstream response timeout
-                  timeout: 15s
-              # DAPI waitForStateTransitionResult endpoint with bigger timeout
-              - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
-                route:
-                  cluster: dapi_api
-                  idle_timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                  # Upstream response timeout
-                  timeout: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                  max_stream_duration:
-                    # Entire stream/request timeout
-                    max_stream_duration: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-                    grpc_timeout_header_max: {{= it.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout }}
-              # DAPI getConsensusParams endpoint
-              - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/getConsensusParams"
-                route:
-                  cluster: dapi_api
-                  # Upstream response timeout
-                  timeout: 10s
-              # DAPI broadcastStateTransition endpoint
-              - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/broadcastStateTransition"
-                route:
-                  cluster: dapi_api
-                  # Upstream response timeout
-                  timeout: 10s
-              # DAPI broadcastStateTransition endpoint
-              - match:
-                  path: "/org.dash.platform.dapi.v0.Platform/getStatus"
-                route:
-                  cluster: dapi_api
-                  # Upstream response timeout
-                  timeout: 10s
-              # Drive gRPC endpoints
-              - match:
-                  prefix: "/org.dash.platform.dapi.v0.Platform"
-                route:
-                  cluster: drive_grpc
-                  # Upstream response timeout
-                  timeout: 10s
-              # Static responses of unsupported api versions
-              # core static response
-              - match:
-                  safe_regex:
-                    regex: "\/org\\.dash\\.platform\\.dapi\\.v[1-9]+\\."
-                response_headers_to_add:
-                  - header:
-                      key: "Content-Type"
-                      value: "application/grpc-web+proto"
-                  - header:
-                      key: "grpc-status"
-                      value: "12"
-                  - header:
-                      key: "grpc-message"
-                      value: "Specified service version is not supported"
-                direct_response:
-                  status: 204
-              # JSON RPC endpoints
-              - match:
-                  path: "/"
-                route:
-                  cluster: dapi_json_rpc
-                  # Upstream response timeout
-                  timeout: 10s
-              {{??}}
               # Core streaming endpoints
               - match:
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
@@ -271,7 +185,6 @@
                   cluster: rs_dapi_json_rpc
                   # Upstream response timeout
                   timeout: 10s
-              {{?}}
             {{? it.platform.gateway.rateLimiter.enabled }}
             rate_limits:
               - actions:
@@ -378,7 +291,7 @@ static_resources:
         thresholds:
           - priority: DEFAULT
             # The maximum number of parallel requests
-            max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
+            max_requests: {{= it.platform.gateway.upstreams.rsDapi.maxRequests }}
       upstream_connection_options:
         tcp_keepalive:
           keepalive_probes: 3
@@ -393,74 +306,6 @@ static_resources:
                 socket_address:
                   address: rs_dapi
                   port_value: 3010
-
-    # Depcreated DAPI
-    - name: dapi_api
-      type: STRICT_DNS
-      per_connection_buffer_limit_bytes: 32768  # 32 KiB
-      typed_extension_protocol_options:
-        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-          explicit_http_config:
-            http2_protocol_options:
-              initial_stream_window_size: 65536  # 64 KiB
-              initial_connection_window_size: 1048576  # 1 MiB
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            # The maximum number of parallel requests
-            max_requests: {{= it.platform.gateway.upstreams.dapiApi.maxRequests }}
-      load_assignment:
-        cluster_name: dapi_api
-        endpoints:
-        - lb_endpoints:
-          - endpoint:
-              address:
-                socket_address:
-                  address: dapi_api
-                  port_value: 3005
-    - name: dapi_core_streams
-      type: STRICT_DNS
-      per_connection_buffer_limit_bytes: 32768  # 32 KiB
-      typed_extension_protocol_options:
-        envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
-          "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
-          explicit_http_config:
-            http2_protocol_options:
-              initial_stream_window_size: 65536  # 64 KiB
-              initial_connection_window_size: 1048576  # 1 MiB
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            max_requests: {{= it.platform.gateway.upstreams.dapiCoreStreams.maxRequests }}
-      load_assignment:
-        cluster_name: dapi_core_streams
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: dapi_core_streams
-                      port_value: 3006
-    - name: dapi_json_rpc
-      type: STRICT_DNS
-      per_connection_buffer_limit_bytes: 32768  # 32 KiB
-      circuit_breakers:
-        thresholds:
-          - priority: DEFAULT
-            # The maximum number of parallel connections
-            max_connections: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
-            # The maximum number of parallel requests
-            max_requests: {{= it.platform.gateway.upstreams.dapiJsonRpc.maxRequests }}
-      load_assignment:
-        cluster_name: dapi_json_rpc
-        endpoints:
-          - lb_endpoints:
-              - endpoint:
-                  address:
-                    socket_address:
-                      address: dapi_api
-                      port_value: 3004
 
     # rs-dapi JSON-RPC cluster
     - name: rs_dapi_json_rpc

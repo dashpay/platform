@@ -4897,13 +4897,19 @@ GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tend
 typedef GPB_ENUM(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber) {
   GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Latest = 3,
   GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Current = 4,
+  GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_NextEpoch = 5,
 };
 
 GPB_FINAL @interface GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive : GPBMessage
 
+/** Highest protocol version supported by this node */
 @property(nonatomic, readwrite) uint32_t latest;
 
+/** Protocol version used in current epoch */
 @property(nonatomic, readwrite) uint32_t current;
+
+/** Protocol version that will be used in the next epoch */
+@property(nonatomic, readwrite) uint32_t nextEpoch;
 
 @end
 
