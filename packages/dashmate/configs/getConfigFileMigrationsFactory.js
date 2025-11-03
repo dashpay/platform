@@ -1420,14 +1420,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               delete rsDapi.waitForStResultTimeout;
             }
 
-            if (options.platform?.dapi?.api?.timeouts) {
-              delete options.platform.dapi.api.timeouts;
-            }
-
-            if (typeof options.platform?.dapi?.api?.waitForStResultTimeout !== 'undefined') {
-              delete options.platform.dapi.api.waitForStResultTimeout;
-            }
-
             if (options.platform?.gateway?.listeners?.dapiAndDrive) {
               delete options.platform.gateway.listeners.dapiAndDrive.waitForStResultTimeout;
             }
