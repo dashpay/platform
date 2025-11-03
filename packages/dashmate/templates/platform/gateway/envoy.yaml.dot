@@ -1,5 +1,6 @@
 {{ const formatTimeout = (value) => `${Math.max(1, Math.ceil((Number(value ?? 0) + 5000) / 1000))}s`; }}
 {{ const rsDapiTimeouts = it.platform?.dapi?.rsDapi?.timeouts ?? {}; }}
+{{ const streamIdleTimeout = '300s'; }}
 {{ const coreStreamsTimeout = formatTimeout(rsDapiTimeouts.coreStreams ?? 0); }}
 {{ const subscribePlatformEventsTimeout = formatTimeout(rsDapiTimeouts.subscribePlatformEvents ?? 0); }}
 {{ const waitForStateTransitionTimeout = formatTimeout(rsDapiTimeouts.waitForStateTransitionResult ?? 0); }}
@@ -17,7 +18,7 @@
         # A single HTTP connection timeout.
         max_connection_duration: 600s
         # How long to keep the connection alive when there are no streams (requests).
-        idle_timeout: 300s
+        idle_timeout: {{= streamIdleTimeout }}
         # Request (stream) timeout.
         # HTTP2 support multiple streams (requests) per connection.
         # For HTTP1 it applies for single request.
@@ -37,7 +38,7 @@
         # It means N requests can be in flight at the same time on a single connection.
         max_concurrent_streams: {{= it.platform.gateway.listeners.dapiAndDrive.http2.maxConcurrentStreams }}
       # Stream idle timeout
-      stream_idle_timeout: 15s
+      stream_idle_timeout: {{= streamIdleTimeout }}
 {{? it.platform.gateway.log.accessLogs }}
       access_log:
       {{~ it.platform.gateway.log.accessLogs :log }}
@@ -121,7 +122,7 @@
                   prefix: "/org.dash.platform.dapi.v0.Core/subscribeTo"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: {{= coreStreamsTimeout }}
+                  idle_timeout: {{= streamIdleTimeout }}
                   # Upstream response timeout
                   timeout: {{= coreStreamsTimeout }}
                   max_stream_duration:
@@ -140,7 +141,7 @@
                   path: "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: {{= subscribePlatformEventsTimeout }}
+                  idle_timeout: {{= streamIdleTimeout }}
                   # Upstream response timeout
                   timeout: {{= subscribePlatformEventsTimeout }}
                   max_stream_duration:
@@ -152,7 +153,7 @@
                   path: "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult"
                 route:
                   cluster: rs_dapi
-                  idle_timeout: {{= waitForStateTransitionTimeout }}
+                  idle_timeout: {{= streamIdleTimeout }}
                   # Upstream response timeout
                   timeout: {{= waitForStateTransitionTimeout }}
                   max_stream_duration:

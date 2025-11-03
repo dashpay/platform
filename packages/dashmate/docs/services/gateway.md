@@ -109,6 +109,7 @@ Dashmate exposes per-endpoint timeout controls that are shared between rs-dapi a
  - Core streaming endpoints: derived from `platform.dapi.rsDapi.timeouts.coreStreams` (default 600 000 ms)
  - waitForStateTransitionResult endpoint: derived from `platform.dapi.rsDapi.timeouts.waitForStateTransitionResult` (default 120 000 ms)
  - subscribePlatformEvents endpoint: derived from `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` (default 600 000 ms)
+ - All streaming routes share a fixed Envoy `idle_timeout` of 300s so that connections can stay open while rs-dapi manages its own deadlines.
 
 ### Circuit Breaking
 
