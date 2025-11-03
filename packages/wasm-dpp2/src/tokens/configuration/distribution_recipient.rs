@@ -38,11 +38,14 @@ impl TokenDistributionRecipientWasm {
     }
 
     #[wasm_bindgen(js_name = "Identity")]
-    pub fn identity(js_identity_id: &JsValue) -> WasmDppResult<TokenDistributionRecipientWasm> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
+    pub fn identity(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identity_id: &JsValue,
+    ) -> WasmDppResult<TokenDistributionRecipientWasm> {
+        let identity_id = IdentifierWasm::try_from(js_identity_id)?.into();
 
         Ok(TokenDistributionRecipientWasm(
-            TokenDistributionRecipient::Identity(identity_id.into()),
+            TokenDistributionRecipient::Identity(identity_id),
         ))
     }
 

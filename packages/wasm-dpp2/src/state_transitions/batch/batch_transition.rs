@@ -9,6 +9,7 @@ use dpp::identity::KeyID;
 use dpp::platform_value::BinaryData;
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
+use dpp::prelude::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -68,6 +69,7 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromV1BatchedTransitions")]
     pub fn from_v1_batched_transitions(
         js_batched_transitions: &js_sys::Array,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: &JsValue,
         user_fee_increase: UserFeeIncrease,
         signature_public_key_id: Option<u32>,
@@ -89,12 +91,13 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromV0Transitions")]
     pub fn from_v0_transitions(
         document_transitions: &js_sys::Array,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_owner_id: &JsValue,
         user_fee_increase: Option<UserFeeIncrease>,
         signature_public_key_id: Option<KeyID>,
         signature: Option<Vec<u8>>,
     ) -> WasmDppResult<BatchTransitionWasm> {
-        let owner_id = IdentifierWasm::try_from(js_owner_id)?;
+        let owner_id: Identifier = IdentifierWasm::try_from(js_owner_id)?.into();
 
         let mut transitions: Vec<DocumentTransition> =
             Vec::with_capacity(document_transitions.length() as usize);
@@ -109,7 +112,7 @@ impl BatchTransitionWasm {
 
         Ok(BatchTransitionWasm(BatchTransition::V0(
             BatchTransitionV0 {
-                owner_id: owner_id.into(),
+                owner_id,
                 transitions,
                 user_fee_increase: user_fee_increase.unwrap_or(0),
                 signature_public_key_id: signature_public_key_id.unwrap_or(0),

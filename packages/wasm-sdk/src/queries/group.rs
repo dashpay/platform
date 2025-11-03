@@ -717,6 +717,8 @@ impl WasmSdk {
 
             let contract_key = JsValue::from(IdentifierWasm::from(contract_id.clone()));
 
+            let contract_key = JsValue::from(IdentifierWasm::from(contract_id));
+
             // Fetch all groups for this contract
             let query = GroupInfosQuery {
                 contract_id,

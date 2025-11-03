@@ -38,6 +38,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_identity_id: JsValue,
         amount: u64,
         core_fee_per_byte: u32,
@@ -47,7 +48,7 @@ impl IdentityCreditWithdrawalTransitionWasm {
         user_fee_increase: Option<UserFeeIncrease>,
     ) -> WasmDppResult<IdentityCreditWithdrawalTransitionWasm> {
         let pooling = PoolingWasm::try_from(js_pooling)?;
-        let identity_id: Identifier = IdentifierWasm::try_from(js_identity_id)?.into();
+        let identity_id: Identifier = IdentifierWasm::try_from(&js_identity_id)?.into();
 
         let output_script: Option<CoreScript> = match js_output_script.is_undefined() {
             true => None,
@@ -150,10 +151,14 @@ impl IdentityCreditWithdrawalTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "identityId")]
-    pub fn set_identity_id(&mut self, js_identity_id: JsValue) -> WasmDppResult<()> {
-        let identity_id = IdentifierWasm::try_from(js_identity_id)?;
+    pub fn set_identity_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identity_id: JsValue,
+    ) -> WasmDppResult<()> {
+        let identity_id = IdentifierWasm::try_from(&js_identity_id)?.into();
 
-        self.0.set_identity_id(identity_id.into());
+        self.0.set_identity_id(identity_id);
         Ok(())
     }
 

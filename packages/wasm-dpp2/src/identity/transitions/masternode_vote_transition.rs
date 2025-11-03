@@ -47,20 +47,22 @@ impl MasternodeVoteTransitionWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_pro_tx_hash: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_voter_identity_id: &JsValue,
         vote: &VoteWasm,
         nonce: IdentityNonce,
         signature_public_key: Option<KeyID>,
         signature: Option<Vec<u8>>,
     ) -> WasmDppResult<MasternodeVoteTransitionWasm> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?;
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?;
+        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
+        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
 
         Ok(MasternodeVoteTransitionWasm(MasternodeVoteTransition::V0(
             MasternodeVoteTransitionV0 {
-                pro_tx_hash: pro_tx_hash.into(),
-                voter_identity_id: voter_identity_id.into(),
+                pro_tx_hash,
+                voter_identity_id,
                 vote: vote.clone().into(),
                 nonce,
                 signature_public_key_id: signature_public_key.unwrap_or(0),
@@ -100,19 +102,27 @@ impl MasternodeVoteTransitionWasm {
     }
 
     #[wasm_bindgen(setter = proTxHash)]
-    pub fn set_pro_tx_hash(&mut self, js_pro_tx_hash: &JsValue) -> WasmDppResult<()> {
-        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?;
+    pub fn set_pro_tx_hash(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_pro_tx_hash: &JsValue,
+    ) -> WasmDppResult<()> {
+        let pro_tx_hash = IdentifierWasm::try_from(js_pro_tx_hash)?.into();
 
-        self.0.set_pro_tx_hash(pro_tx_hash.into());
+        self.0.set_pro_tx_hash(pro_tx_hash);
 
         Ok(())
     }
 
     #[wasm_bindgen(setter = voterIdentityId)]
-    pub fn set_voter_identity_id(&mut self, js_voter_identity_id: &JsValue) -> WasmDppResult<()> {
-        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?;
+    pub fn set_voter_identity_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_voter_identity_id: &JsValue,
+    ) -> WasmDppResult<()> {
+        let voter_identity_id = IdentifierWasm::try_from(js_voter_identity_id)?.into();
 
-        self.0.set_voter_identity_id(voter_identity_id.into());
+        self.0.set_voter_identity_id(voter_identity_id);
 
         Ok(())
     }

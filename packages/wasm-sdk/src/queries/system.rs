@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::queries::ProofMetadataResponseWasm;
 use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;

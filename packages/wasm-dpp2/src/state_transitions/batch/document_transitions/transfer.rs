@@ -45,6 +45,7 @@ impl DocumentTransferTransitionWasm {
     pub fn new(
         document: &DocumentWasm,
         identity_contract_nonce: IdentityNonce,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_recipient_owner_id: &JsValue,
         js_token_payment_info: &JsValue,
     ) -> WasmDppResult<DocumentTransferTransitionWasm> {
@@ -85,7 +86,11 @@ impl DocumentTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = "recipientId")]
-    pub fn set_recipient_owner_id(&mut self, js_recipient_owner_id: &JsValue) -> WasmDppResult<()> {
+    pub fn set_recipient_owner_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_recipient_owner_id: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_recipient_owner_id(IdentifierWasm::try_from(js_recipient_owner_id)?.into());
         Ok(())
