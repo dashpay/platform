@@ -1,47 +1,32 @@
 import type { EvoSDK } from '../sdk.js';
+import type {
+  EpochsQuery,
+  FinalizedEpochsQuery,
+  EvonodeProposedBlocksRangeQuery,
+} from '../wasm.js';
 
 export class EpochFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async epochsInfo(params: { startEpoch?: number; count?: number; ascending?: boolean } = {}): Promise<any> {
-    const { startEpoch, count, ascending } = params;
+  async epochsInfo(query: EpochsQuery = {}): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getEpochsInfo({
-      startEpoch,
-      count,
-      ascending,
-    });
+    return w.getEpochsInfo(query);
   }
 
-  async epochsInfoWithProof(params: { startEpoch?: number; count?: number; ascending?: boolean } = {}): Promise<any> {
-    const { startEpoch, count, ascending } = params;
+  async epochsInfoWithProof(query: EpochsQuery = {}): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getEpochsInfoWithProofInfo({
-      startEpoch,
-      count,
-      ascending,
-    });
+    return w.getEpochsInfoWithProofInfo(query);
   }
 
-  async finalizedInfos(params: { startEpoch: number; count?: number; ascending?: boolean }): Promise<any> {
-    const { startEpoch, count, ascending } = params;
+  async finalizedInfos(query: FinalizedEpochsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getFinalizedEpochInfos({
-      startEpoch,
-      count,
-      ascending,
-    });
+    return w.getFinalizedEpochInfos(query);
   }
 
-  async finalizedInfosWithProof(params: { startEpoch: number; count?: number; ascending?: boolean }): Promise<any> {
-    const { startEpoch, count, ascending } = params;
+  async finalizedInfosWithProof(query: FinalizedEpochsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getFinalizedEpochInfosWithProofInfo({
-      startEpoch,
-      count,
-      ascending,
-    });
+    return w.getFinalizedEpochInfosWithProofInfo(query);
   }
 
   async current(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getCurrentEpoch(); }
@@ -57,25 +42,13 @@ export class EpochFacade {
     return w.getEvonodesProposedEpochBlocksByIdsWithProofInfo(epoch, ids);
   }
 
-  async evonodesProposedBlocksByRange(epoch: number, opts: { limit?: number; startAfter?: string; orderAscending?: boolean } = {}): Promise<any> {
-    const { limit, startAfter, orderAscending } = opts;
+  async evonodesProposedBlocksByRange(query: EvonodeProposedBlocksRangeQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getEvonodesProposedEpochBlocksByRange({
-      epoch,
-      limit,
-      startAfter,
-      orderAscending,
-    });
+    return w.getEvonodesProposedEpochBlocksByRange(query);
   }
 
-  async evonodesProposedBlocksByRangeWithProof(epoch: number, opts: { limit?: number; startAfter?: string; orderAscending?: boolean } = {}): Promise<any> {
-    const { limit, startAfter, orderAscending } = opts;
+  async evonodesProposedBlocksByRangeWithProof(query: EvonodeProposedBlocksRangeQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getEvonodesProposedEpochBlocksByRangeWithProofInfo({
-      epoch,
-      limit,
-      startAfter,
-      orderAscending,
-    });
+    return w.getEvonodesProposedEpochBlocksByRangeWithProofInfo(query);
   }
 }
