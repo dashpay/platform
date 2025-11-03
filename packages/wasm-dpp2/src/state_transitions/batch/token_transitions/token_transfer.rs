@@ -44,6 +44,7 @@ impl TokenTransferTransitionWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         base: &TokenBaseTransitionWasm,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_recipient_id: &JsValue,
         amount: u64,
         public_note: Option<String>,
@@ -123,10 +124,14 @@ impl TokenTransferTransitionWasm {
     }
 
     #[wasm_bindgen(setter = recipientId)]
-    pub fn set_recipient_id(&mut self, js_recipient: &JsValue) -> WasmDppResult<()> {
-        let recipient = IdentifierWasm::try_from(js_recipient)?;
+    pub fn set_recipient_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_recipient: &JsValue,
+    ) -> WasmDppResult<()> {
+        let recipient = IdentifierWasm::try_from(js_recipient)?.into();
 
-        self.0.set_recipient_id(recipient.into());
+        self.0.set_recipient_id(recipient);
 
         Ok(())
     }

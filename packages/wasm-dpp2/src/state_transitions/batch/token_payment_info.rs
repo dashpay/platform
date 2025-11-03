@@ -41,6 +41,7 @@ impl TokenPaymentInfoWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_payment_token_contract_id: &JsValue,
         token_contract_position: TokenContractPosition,
         minimum_token_cost: Option<TokenAmount>,
@@ -52,7 +53,7 @@ impl TokenPaymentInfoWasm {
             | js_payment_token_contract_id.is_undefined()
         {
             true => None,
-            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id.clone())?.into()),
+            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id)?.into()),
         };
 
         let gas_fees_paid_by =
@@ -102,6 +103,7 @@ impl TokenPaymentInfoWasm {
     #[wasm_bindgen(setter = "paymentTokenContractId")]
     pub fn set_payment_token_contract_id(
         &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_payment_token_contract_id: &JsValue,
     ) -> WasmDppResult<()> {
         let payment_token_contract_id: Option<Identifier> = match js_payment_token_contract_id
@@ -109,7 +111,7 @@ impl TokenPaymentInfoWasm {
             | js_payment_token_contract_id.is_undefined()
         {
             true => None,
-            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id.clone())?.into()),
+            false => Some(IdentifierWasm::try_from(js_payment_token_contract_id)?.into()),
         };
 
         self.0

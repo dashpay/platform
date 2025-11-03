@@ -42,7 +42,9 @@ impl TokenBaseTransitionWasm {
     pub fn new(
         identity_contract_nonce: IdentityNonce,
         token_contract_position: u16,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_data_contract_id: &JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         js_token_id: &JsValue,
         js_using_group_info: &JsValue,
     ) -> WasmDppResult<TokenBaseTransitionWasm> {
@@ -106,14 +108,22 @@ impl TokenBaseTransitionWasm {
     }
 
     #[wasm_bindgen(setter = dataContractId)]
-    pub fn set_data_contract_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
+    pub fn set_data_contract_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_data_contract_id(IdentifierWasm::try_from(js_identifier)?.into());
         Ok(())
     }
 
     #[wasm_bindgen(setter = tokenId)]
-    pub fn set_token_id(&mut self, js_identifier: &JsValue) -> WasmDppResult<()> {
+    pub fn set_token_id(
+        &mut self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        js_identifier: &JsValue,
+    ) -> WasmDppResult<()> {
         self.0
             .set_token_id(IdentifierWasm::try_from(js_identifier)?.into());
 
