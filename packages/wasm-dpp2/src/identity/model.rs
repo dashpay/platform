@@ -184,7 +184,7 @@ impl IdentityWasm {
         Reflect::set(
             &object,
             &JsValue::from_str("id"),
-            &JsValue::from(IdentifierWasm::from(self.0.id().clone())),
+            &JsValue::from(IdentifierWasm::from(self.0.id())),
         )
         .map_err(|err| {
             WasmDppError::serialization(format!(
@@ -249,12 +249,7 @@ impl IdentityWasm {
         let json_value: JsonValue = from_value(js_value)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let value = Value::try_from(json_value).map_err(|err| {
-            WasmDppError::serialization(format!(
-                "unable to convert JSON into platform value: {}",
-                err
-            ))
-        })?;
+        let value = Value::from(json_value);
 
         identity_from_platform_value(value)
     }
@@ -410,12 +405,7 @@ impl IdentityWasm {
         let json_value: JsonValue = from_value(js_value)
             .map_err(|err| WasmDppError::serialization(err.to_string()))?;
 
-        let value = Value::try_from(json_value).map_err(|err| {
-            WasmDppError::serialization(format!(
-                "unable to convert JSON into platform value: {}",
-                err
-            ))
-        })?;
+        let value = Value::from(json_value);
 
         identity_from_platform_value(value)
     }

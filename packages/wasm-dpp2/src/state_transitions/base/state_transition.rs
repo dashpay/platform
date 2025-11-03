@@ -407,12 +407,12 @@ impl StateTransitionWasm {
             DataContractCreate(mut contract_create) => {
                 let new_contract = match contract_create.data_contract().clone() {
                     DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id.clone();
+                        v0.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V0(v0)
                     }
                     DataContractInSerializationFormat::V1(mut v1) => {
-                        v1.owner_id = owner_id.clone();
+                        v1.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V1(v1)
                     }
@@ -425,12 +425,12 @@ impl StateTransitionWasm {
             DataContractUpdate(mut contract_update) => {
                 let new_contract = match contract_update.data_contract().clone() {
                     DataContractInSerializationFormat::V0(mut v0) => {
-                        v0.owner_id = owner_id.clone();
+                        v0.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V0(v0)
                     }
                     DataContractInSerializationFormat::V1(mut v1) => {
-                        v1.owner_id = owner_id.clone();
+                        v1.owner_id = owner_id;
 
                         DataContractInSerializationFormat::V1(v1)
                     }
@@ -443,12 +443,12 @@ impl StateTransitionWasm {
             Batch(mut batch) => {
                 batch = match batch {
                     BatchTransition::V0(mut v0) => {
-                        v0.owner_id = owner_id.clone();
+                        v0.owner_id = owner_id;
 
                         BatchTransition::V0(v0)
                     }
                     BatchTransition::V1(mut v1) => {
-                        v1.owner_id = owner_id.clone();
+                        v1.owner_id = owner_id;
 
                         BatchTransition::V1(v1)
                     }
@@ -462,22 +462,22 @@ impl StateTransitionWasm {
                 ));
             }
             IdentityTopUp(mut top_up) => {
-                top_up.set_identity_id(owner_id.clone());
+                top_up.set_identity_id(owner_id);
 
                 self.0 = IdentityTopUp(top_up);
             }
             IdentityCreditWithdrawal(mut withdrawal) => {
-                withdrawal.set_identity_id(owner_id.clone());
+                withdrawal.set_identity_id(owner_id);
 
                 self.0 = IdentityCreditWithdrawal(withdrawal);
             }
             IdentityUpdate(mut identity_update) => {
-                identity_update.set_identity_id(owner_id.clone());
+                identity_update.set_identity_id(owner_id);
 
                 self.0 = IdentityUpdate(identity_update);
             }
             IdentityCreditTransfer(mut credit_transfer) => {
-                credit_transfer.set_identity_id(owner_id.clone());
+                credit_transfer.set_identity_id(owner_id);
 
                 self.0 = IdentityCreditTransfer(credit_transfer);
             }

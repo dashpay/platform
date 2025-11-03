@@ -156,12 +156,7 @@ impl AssetLockProofWasm {
     pub fn from_object(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
         let json_value: JsonValue =
             from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        let value = Value::try_from(json_value).map_err(|err| {
-            WasmDppError::serialization(format!(
-                "unable to convert object to platform value: {}",
-                err
-            ))
-        })?;
+        let value = Value::from(json_value);
         let proof = AssetLockProof::try_from(value).map_err(WasmDppError::from)?;
         Ok(AssetLockProofWasm(proof))
     }
