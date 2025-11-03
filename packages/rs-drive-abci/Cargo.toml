@@ -82,8 +82,6 @@ rs-dash-event-bus = { path = "../rs-dash-event-bus" }
 sha2 = { version = "0.10" }
 
 [dev-dependencies]
-bs58 = { version = "0.5.0" }
-base64 = "0.22.1"
 platform-version = { path = "../rs-platform-version", features = [
   "mock-versions",
 ] }
@@ -111,7 +109,7 @@ rocksdb = { version = "0.23.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
-default = ["bls-signatures"]
+default = ["bls-signatures","mocks","console","grovedbg"]
 mocks = ["mockall", "drive/fixtures-and-mocks", "bls-signatures"]
 console = ["console-subscriber", "tokio/tracing"]
 testing-config = []
@@ -126,3 +124,7 @@ unexpected_cfgs = { level = "warn", check-cfg = [
   'cfg(tokio_unstable)',
   'cfg(create_sdk_test_data)',
 ] }
+
+[package.metadata.cargo-machete]
+
+ignored = ["rs-dash-event-bus"]

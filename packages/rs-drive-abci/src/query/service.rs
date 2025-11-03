@@ -900,7 +900,7 @@ impl PlatformService for QueryService {
 
         let keepalive_duration = if keepalive == 0 {
             None
-        } else if keepalive < 25 || keepalive > 300 {
+        } else if !(25..=300).contains(&keepalive) {
             tracing::warn!(
                 interval = keepalive,
                 "subscribe_platform_events: keepalive interval out of range"
@@ -961,10 +961,7 @@ impl PlatformService for QueryService {
                         Err(e) => Some(Err(e)),
                     }
                 } else {
-                    match handle.recv().await {
-                        Some(event) => Some(Ok(event)),
-                        None => None,
-                    }
+                    handle.recv().await.map(Ok)
                 };
 
                 match next_item {

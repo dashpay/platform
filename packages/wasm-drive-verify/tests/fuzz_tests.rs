@@ -7,7 +7,6 @@ use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 
 mod common;
-use common::*;
 
 wasm_bindgen_test_configure!(run_in_browser);
 
@@ -71,7 +70,7 @@ fn fuzz_document_query_with_nested_structures() {
 
     // Test with deeply nested query objects
     for depth in [1, 5, 10, 50] {
-        let mut query = Object::new();
+        let query = Object::new();
 
         // Create nested where clauses
         let where_array = Array::new();

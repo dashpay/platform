@@ -131,7 +131,6 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
 
         let partial_identity = match maybe_partial_identity {
             None => {
-                // dbg!(bs58::encode(&state_transition.get_owner_id()).into_string());
                 validation_result.add_error(SignatureError::IdentityNotFoundError(
                     IdentityNotFoundError::new(owner_id),
                 ));
