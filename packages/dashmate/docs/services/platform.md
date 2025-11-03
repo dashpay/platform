@@ -113,47 +113,30 @@ Tenderdash is the consensus engine that provides Byzantine Fault Tolerant (BFT) 
 
 ## DAPI Services
 
-### 5. DAPI API
+### 5. rs-dapi (Rust)
 
-**Service Name**: `dapi_api`
+**Service Name**: `rs_dapi`
 
-**Description**: The API service for Dash Platform that exposes JSON-RPC and gRPC interfaces.
-
-**Responsibilities**:
-- Provide JSON-RPC API
-- Provide gRPC API
-- Connect clients to platform services
-
-**Communication**:
-- Connects to Core via RPC
-- Connects to Drive ABCI via gRPC
-- Connects to Tenderdash via RPC
-- Served to external clients via Gateway
-
-### 6. DAPI Core Streams
-
-**Service Name**: `dapi_core_streams`
-
-**Description**: Provides streaming services for Dash Platform transactions.
+**Description**: Rust implementation of DAPI that serves all Platform client traffic (gRPC, gRPC-Web, JSON-RPC, streaming, metrics).
 
 **Responsibilities**:
-- Stream blockchain events
-- Filter transactions
-- Provide real-time updates
+- Provide JSON-RPC, gRPC, and gRPC-Web APIs
+- Stream Core and Platform events
+- Proxy client traffic to Drive ABCI, Tenderdash, and Core
+- Expose health checks and Prometheus metrics
 
 **Communication**:
 - Connects to Core via RPC and ZMQ
 - Connects to Drive ABCI via gRPC
-- Connects to Tenderdash via RPC
-- Served to external clients via Gateway
+- Connects to Tenderdash via RPC and WebSockets
+- Served to external clients via the Gateway
 
-**DAPI Exposed Ports and Configuration**:
+**rs-dapi Ports and Configuration**:
 
-| Service                   | Port Purpose         | Default Value | Config Path                                      | Default Host Binding | Host Config Path |
-|---------------------------|----------------------|---------------|--------------------------------------------------|---------------------|-----------------|
-| **DAPI API**              | JSON-RPC             | 3004          | (fixed internal)                                 | (internal)          | -               |
-|                           | gRPC                 | 3005          | (fixed internal)                                 | (internal)          | -               |
-| **DAPI Core Streams**     | gRPC Streaming       | 3006          | (fixed internal)                                 | (internal)          | -               |
-| **rs-dapi (Rust)**        | Health + Metrics     | 9091 (mainnet), 19091 (testnet), 29091 (local) | `platform.dapi.rsDapi.metrics.port`              | 127.0.0.1           | `platform.dapi.rsDapi.metrics.host` |
+| Service              | Port Purpose     | Default Value | Config Path                                     | Default Host Binding | Host Config Path |
+|----------------------|------------------|---------------|-------------------------------------------------|----------------------|------------------|
+| **rs-dapi (Rust)**   | JSON-RPC         | 3009          | (fixed internal)                                | (internal)           | -                |
+|                      | gRPC / gRPC-Web  | 3010          | (fixed internal)                                | (internal)           | -                |
+|                      | Metrics & Health | 9091 (mainnet), 19091 (testnet), 29091 (local)| `platform.dapi.rsDapi.metrics.port`             | 127.0.0.1            | `platform.dapi.rsDapi.metrics.host` |
 
 The rs-dapi metrics server exposes health endpoints alongside Prometheus data on `/metrics` from the same port. Dashmate applies network-specific defaults (mainnet 9091, testnet 19091, local 29091) so multiple presets can coexist on a host without conflicts.

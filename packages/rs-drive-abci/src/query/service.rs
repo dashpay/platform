@@ -300,11 +300,8 @@ impl EventBusFilter<PlatformEvent> for PlatformFilterAdapter {
         }
         match self.inner.kind.as_ref() {
             None => false,
-            Some(Kind::All(all)) => *all,
-            Some(Kind::BlockCommitted(b)) => {
-                if !*b {
-                    return false;
-                }
+            Some(Kind::All(_)) => true,
+            Some(Kind::BlockCommitted(_)) => {
                 matches!(event.event, Some(Evt::BlockCommitted(_)))
             }
             Some(Kind::StateTransitionResult(filter)) => {

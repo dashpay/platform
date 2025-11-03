@@ -1,12 +1,13 @@
 use crate::error::WasmSdkError;
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
-use serde::{Deserialize, Serialize};
+use js_sys::Map;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct ProtocolVersionUpgradeState {
+#[wasm_bindgen(js_name = "ProtocolVersionUpgradeState")]
+#[derive(Clone)]
+pub struct ProtocolVersionUpgradeStateWasm {
     current_protocol_version: u32,
     next_protocol_version: Option<u32>,
     activation_height: Option<u64>,
@@ -14,17 +15,87 @@ struct ProtocolVersionUpgradeState {
     threshold_reached: bool,
 }
 
-#[derive(Serialize, Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-struct ProtocolVersionUpgradeVoteStatus {
+impl ProtocolVersionUpgradeStateWasm {
+    fn new(
+        current_protocol_version: u32,
+        next_protocol_version: Option<u32>,
+        activation_height: Option<u64>,
+        vote_count: Option<u32>,
+        threshold_reached: bool,
+    ) -> Self {
+        Self {
+            current_protocol_version,
+            next_protocol_version,
+            activation_height,
+            vote_count,
+            threshold_reached,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = ProtocolVersionUpgradeState)]
+impl ProtocolVersionUpgradeStateWasm {
+    #[wasm_bindgen(getter = "currentProtocolVersion")]
+    pub fn current_protocol_version(&self) -> u32 {
+        self.current_protocol_version
+    }
+
+    #[wasm_bindgen(getter = "nextProtocolVersion")]
+    pub fn next_protocol_version(&self) -> Option<u32> {
+        self.next_protocol_version
+    }
+
+    #[wasm_bindgen(getter = "activationHeight")]
+    pub fn activation_height(&self) -> Option<u64> {
+        self.activation_height
+    }
+
+    #[wasm_bindgen(getter = "voteCount")]
+    pub fn vote_count(&self) -> Option<u32> {
+        self.vote_count
+    }
+
+    #[wasm_bindgen(getter = "thresholdReached")]
+    pub fn threshold_reached(&self) -> bool {
+        self.threshold_reached
+    }
+}
+
+#[wasm_bindgen(js_name = "ProtocolVersionUpgradeVoteStatus")]
+#[derive(Clone)]
+pub struct ProtocolVersionUpgradeVoteStatusWasm {
     pro_tx_hash: String,
     version: u32,
+}
+
+impl ProtocolVersionUpgradeVoteStatusWasm {
+    fn new(pro_tx_hash: String, version: u32) -> Self {
+        Self {
+            pro_tx_hash,
+            version,
+        }
+    }
+}
+
+#[wasm_bindgen(js_class = ProtocolVersionUpgradeVoteStatus)]
+impl ProtocolVersionUpgradeVoteStatusWasm {
+    #[wasm_bindgen(getter = "proTxHash")]
+    pub fn pro_tx_hash(&self) -> String {
+        self.pro_tx_hash.clone()
+    }
+
+    #[wasm_bindgen(getter = "version")]
+    pub fn version(&self) -> u32 {
+        self.version
+    }
 }
 
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeState")]
-    pub async fn get_protocol_version_upgrade_state(&self) -> Result<JsValue, WasmSdkError> {
+    pub async fn get_protocol_version_upgrade_state(
+        &self,
+    ) -> Result<ProtocolVersionUpgradeStateWasm, WasmSdkError> {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
@@ -52,17 +123,13 @@ impl WasmSdk {
             }
         }
 
-        let state = ProtocolVersionUpgradeState {
-            current_protocol_version: current_version,
-            next_protocol_version: next_version,
+        Ok(ProtocolVersionUpgradeStateWasm::new(
+            current_version,
+            next_version,
             activation_height,
             vote_count,
             threshold_reached,
-        };
-
-        serde_wasm_bindgen::to_value(&state).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        ))
     }
 
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatus")]
@@ -70,7 +137,7 @@ impl WasmSdk {
         &self,
         start_pro_tx_hash: &str,
         count: u32,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<Map, WasmSdkError> {
         use dash_sdk::dpp::dashcore::ProTxHash;
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
         use drive_proof_verifier::types::MasternodeProtocolVote;
@@ -90,20 +157,19 @@ impl WasmSdk {
             MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
 
         // Convert to our response format
-        let votes: Vec<ProtocolVersionUpgradeVoteStatus> = votes_result
-            .into_iter()
-            .filter_map(|(pro_tx_hash, vote_opt)| {
-                // vote_opt is Option<MasternodeProtocolVote>
-                vote_opt.map(|vote| ProtocolVersionUpgradeVoteStatus {
-                    pro_tx_hash: pro_tx_hash.to_string(),
-                    version: vote.voted_version,
-                })
-            })
-            .collect();
+        let votes_map = Map::new();
+        for (pro_tx_hash, vote_opt) in votes_result {
+            if let Some(vote) = vote_opt {
+                let key = JsValue::from_str(&pro_tx_hash.to_string());
+                let value = JsValue::from(ProtocolVersionUpgradeVoteStatusWasm::new(
+                    pro_tx_hash.to_string(),
+                    vote.voted_version,
+                ));
+                votes_map.set(&key, &value);
+            }
+        }
 
-        serde_wasm_bindgen::to_value(&votes).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(votes_map)
     }
 
     // Proof versions for protocol queries
@@ -111,8 +177,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeStateWithProofInfo")]
     pub async fn get_protocol_version_upgrade_state_with_proof_info(
         &self,
-    ) -> Result<JsValue, WasmSdkError> {
-        use crate::queries::ProofMetadataResponse;
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::FetchMany;
         use drive_proof_verifier::types::ProtocolVersionVoteCount;
 
@@ -142,25 +207,17 @@ impl WasmSdk {
             }
         }
 
-        let state = ProtocolVersionUpgradeState {
-            current_protocol_version: current_version,
-            next_protocol_version: next_version,
+        let state = ProtocolVersionUpgradeStateWasm::new(
+            current_version,
+            next_version,
             activation_height,
             vote_count,
             threshold_reached,
-        };
+        );
 
-        let response = ProofMetadataResponse {
-            data: state,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        };
-
-        // Use json_compatible serializer
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
-        response.serialize(&serializer).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
-        })
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            state, metadata, proof,
+        ))
     }
 
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]

@@ -12924,11 +12924,13 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Tenderdash
 
 @dynamic latest;
 @dynamic current;
+@dynamic nextEpoch;
 
 typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_ {
   uint32_t _has_storage_[1];
   uint32_t latest;
   uint32_t current;
+  uint32_t nextEpoch;
 } GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_;
 
 // This method is threadsafe because it is initially called
@@ -12952,6 +12954,15 @@ typedef struct GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__sto
         .number = GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_Current,
         .hasIndex = 1,
         .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, current),
+        .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
+        .dataType = GPBDataTypeUInt32,
+      },
+      {
+        .name = "nextEpoch",
+        .dataTypeSpecific.clazz = Nil,
+        .number = GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive_FieldNumber_NextEpoch,
+        .hasIndex = 2,
+        .offset = (uint32_t)offsetof(GetStatusResponse_GetStatusResponseV0_Version_Protocol_Drive__storage_, nextEpoch),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
         .dataType = GPBDataTypeUInt32,
       },

@@ -48014,7 +48014,8 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.toObject = function(includeInstance, msg) {
   var f, obj = {
     latest: jspb.Message.getFieldWithDefault(msg, 3, 0),
-    current: jspb.Message.getFieldWithDefault(msg, 4, 0)
+    current: jspb.Message.getFieldWithDefault(msg, 4, 0),
+    nextEpoch: jspb.Message.getFieldWithDefault(msg, 5, 0)
   };
 
   if (includeInstance) {
@@ -48059,6 +48060,10 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
       var value = /** @type {number} */ (reader.readUint32());
       msg.setCurrent(value);
       break;
+    case 5:
+      var value = /** @type {number} */ (reader.readUint32());
+      msg.setNextEpoch(value);
+      break;
     default:
       reader.skipField();
       break;
@@ -48102,6 +48107,13 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
       f
     );
   }
+  f = message.getNextEpoch();
+  if (f !== 0) {
+    writer.writeUint32(
+      5,
+      f
+    );
+  }
 };
 
 
@@ -48138,6 +48150,24 @@ proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Pr
  */
 proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.setCurrent = function(value) {
   return jspb.Message.setProto3IntField(this, 4, value);
+};
+
+
+/**
+ * optional uint32 next_epoch = 5;
+ * @return {number}
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.getNextEpoch = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 5, 0));
+};
+
+
+/**
+ * @param {number} value
+ * @return {!proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive} returns this
+ */
+proto.org.dash.platform.dapi.v0.GetStatusResponse.GetStatusResponseV0.Version.Protocol.Drive.prototype.setNextEpoch = function(value) {
+  return jspb.Message.setProto3IntField(this, 5, value);
 };
 
 

@@ -11,11 +11,11 @@ fn main() {
 mod subscribe {
 
     use dapi_grpc::platform::v0::platform_event_v0::Event as PlatformEvent;
-    use dapi_grpc::platform::v0::platform_filter_v0::Kind as FilterKind;
-    use dapi_grpc::platform::v0::platform_subscription_response::Version as ResponseVersion;
-    use dapi_grpc::platform::v0::{
-        PlatformFilterV0, PlatformSubscriptionResponse, StateTransitionResultFilter,
+    use dapi_grpc::platform::v0::platform_filter_v0::{
+        Kind as FilterKind, StateTransitionResultFilter,
     };
+    use dapi_grpc::platform::v0::platform_subscription_response::Version as ResponseVersion;
+    use dapi_grpc::platform::v0::{PlatformFilterV0, PlatformSubscriptionResponse};
     use dapi_grpc::tonic::Streaming;
     use dash_sdk::platform::fetch_current_no_parameters::FetchCurrent;
     use dash_sdk::platform::types::epoch::Epoch;
@@ -88,7 +88,7 @@ mod subscribe {
 
         // Subscribe to BlockCommitted only
         let filter_block = PlatformFilterV0 {
-            kind: Some(FilterKind::BlockCommitted(true)),
+            kind: Some(FilterKind::BlockCommitted(Default::default())),
         };
         let block_stream = sdk
             .subscribe_platform_events(filter_block)
@@ -113,7 +113,7 @@ mod subscribe {
 
         // Subscribe to All events as a separate stream (demonstration)
         let filter_all = PlatformFilterV0 {
-            kind: Some(FilterKind::All(true)),
+            kind: Some(FilterKind::All(Default::default())),
         };
         let all_stream = sdk
             .subscribe_platform_events(filter_all)

@@ -1,41 +1,6 @@
 # DAPI Configuration
 
-DAPI provides API services for Dash Platform, allowing external applications to interact with the platform.
-
-## Docker
-
-| Option | Description | Default | Example                 |
-|--------|-------------|---------|-------------------------|
-| `platform.dapi.api.docker.image` | Docker image for DAPI | `dashpay/dapi:${version}` | `dashpay/dapi:latest`   |
-| `platform.dapi.api.docker.build.enabled` | Enable custom build | `false` | `true`                  |
-| `platform.dapi.api.docker.build.context` | Build context directory | `null` | `"/path/to/context"`    |
-| `platform.dapi.api.docker.build.dockerFile` | Path to Dockerfile | `null` | `"/path/to/Dockerfile"` |
-| `platform.dapi.api.docker.build.target` | Target build stage in multi-stage builds | `null` | `"dapi"` |
-| `platform.dapi.api.docker.deploy.replicas` | Number of DAPI replicas | `1` | `3`                     |
-
-The `docker.build` object allows for custom build settings:
-```json
-{
-  "build": {
-    "enabled": true,
-    "context": "/path/to/build/context",
-    "dockerFile": "/path/to/Dockerfile",
-    "target": "dapi"
-  }
-}
-```
-
-These settings allow you to build the DAPI API Docker image from source. If `enabled` is set to `true`, Dashmate will build the Docker image using the specified context directory and Dockerfile.
-
-## Other
-
-| Option | Description | Default | Example |
-|--------|-------------|---------|---------|
-| `platform.dapi.rsDapi.timeouts.waitForStateTransitionResult` | Timeout for waiting on state transition results before rs-dapi aborts (milliseconds) | `120000` | `240000` |
-| `platform.dapi.rsDapi.timeouts.subscribePlatformEvents` | Timeout for platform event subscriptions before rs-dapi closes the stream (milliseconds) | `600000` | `300000` |
-| `platform.dapi.rsDapi.timeouts.coreStreams` | Timeout for Core streaming subscriptions (block headers, masternodes, transactions) before rs-dapi closes the stream (milliseconds) | `600000` | `300000` |
-
-All timeout values are expressed in milliseconds. Dashmate automatically configures Envoy to allow an additional five-second grace period so that rs-dapi can terminate requests cleanly before the proxy times out.
+Dashmate runs the Rust implementation of DAPI (`rs-dapi`) to expose gRPC, gRPC-Web, JSON-RPC, and streaming endpoints for Dash Platform.
 
 ## rs-dapi (Rust)
 
@@ -69,3 +34,11 @@ Dashmate offsets the default metrics port per preset (mainnet 9091, testnet 1909
 | `platform.dapi.rsDapi.logs.jsonFormat` | Enable structured JSON application logs (`true`) or human-readable logs (`false`) | `false` | `true` |
 | `platform.dapi.rsDapi.logs.accessLogPath` | Absolute path for HTTP/gRPC access logs. Empty or `null` disables access logging | `null` | `"/var/log/rs-dapi/access.log"` |
 | `platform.dapi.rsDapi.logs.accessLogFormat` | Access log output format | `combined` | `json` |
+
+## Timeouts
+
+| Option | Description | Default | Example |
+|--------|-------------|---------|---------|
+| `platform.dapi.rsDapi.waitForStResultTimeout` | Timeout for state transition results (ms) | `120000` | `240000` |
+
+This timeout controls how long rs-dapi waits for Drive to report the outcome of a state transition before returning a timeout error to the client.

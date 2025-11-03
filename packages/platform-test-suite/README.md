@@ -39,6 +39,7 @@ Run test suite
 Usage: test <seed> [options]
 
   <seed> can be IP or IP:port (or pass via DAPI_SEED env)
+  Set DAPI_ADDRESSES="ip:port" to bypass SML discovery and connect only to the given node(s)
 
   Options:
   -s=a,b,c    --scope=a,b,c                                 - test scope to run
@@ -78,6 +79,7 @@ Run test suite
 Usage: test <seed> [options]
 
   <seed> can be IP or IP:port (or pass via DAPI_SEED env)
+  Set DAPI_ADDRESSES="ip:port" to bypass SML discovery and connect only to the given node(s)
 
   Options:
   -s=a,b,c    --scope=a,b,c                                 - test scope to run

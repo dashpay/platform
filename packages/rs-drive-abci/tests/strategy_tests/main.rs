@@ -215,7 +215,7 @@ mod tests {
         // Create ABCI app and subscribe to all events
         let abci_application = FullAbciApplication::new(&platform.platform);
         let filter = PlatformFilterV0 {
-            kind: Some(FilterKind::All(true)),
+            kind: Some(FilterKind::All(Default::default())),
         };
         let handle = abci_application
             .event_bus

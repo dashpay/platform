@@ -46,14 +46,13 @@ describe('ContractsFacade', () => {
     const { args } = wasmSdk.getDataContractHistory.firstCall;
     expect(args[0]).to.equal('c');
     expect(args[1]).to.equal(3);
-    expect(args[2]).to.equal(null);
-    expect(typeof args[3]).to.equal('bigint');
-    expect(args[3]).to.equal(BigInt(5));
+    expect(args[2]).to.be.a('bigint');
+    expect(args[2]).to.equal(BigInt(5));
   });
 
   it('getHistoryWithProof() forwards similarly', async () => {
     await client.contracts.getHistoryWithProof({ contractId: 'c' });
-    expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly('c', null, null, null);
+    expect(wasmSdk.getDataContractHistoryWithProofInfo).to.be.calledOnceWithExactly('c', null, null);
   });
 
   it('getMany() and getManyWithProof() forward arrays', async () => {

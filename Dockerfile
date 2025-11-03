@@ -10,7 +10,7 @@
 # - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
 # - build-planner - image used to prepare build plan for rs-drive-abci
 # - build-* - actual build process of given image
-# - drive-abci, dashmate-helper, test-suite, dapi - final images
+# - drive-abci, dashmate-helper, test-suite, rs-dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
@@ -393,6 +393,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -484,6 +485,7 @@ COPY --parents \
     packages/rs-sdk-trusted-context-provider \
     packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
@@ -569,6 +571,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
@@ -604,7 +607,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
-    yarn build && \
+    # Build JS Dash SDK and dependencies
+    yarn run ultra -r --filter '+dash' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
@@ -740,44 +744,6 @@ EXPOSE 2500 2501 2510
 USER node
 ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 
-#
-# STAGE: DAPI BUILD
-#
-FROM build-js AS build-dapi
-
-COPY packages/dapi packages/dapi
-
-# Install Test Suite specific dependencies using previous
-# node_modules directory to reuse built binaries
-RUN yarn workspaces focus --production @dashevo/dapi
-
-#
-# STAGE: FINAL DAPI IMAGE
-#
-FROM node:20-alpine${ALPINE_VERSION} AS dapi
-
-LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="DAPI Node.JS"
-
-# Install ZMQ shared library
-RUN apk add --no-cache zeromq-dev
-
-WORKDIR /platform/packages/dapi
-
-# TODO: Do one COPY with --parents
-COPY --from=build-dapi /platform/.yarn /platform/.yarn
-COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
-# List of required dependencies. Based on:
-# yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
-COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
-COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
-COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
-COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
-COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
-COPY --from=build-dapi /platform/packages/keyword-search-contract /platform/packages/keyword-search-contract
-
-RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
-
 EXPOSE 2500 2501 2510
 USER node
 
@@ -844,6 +810,7 @@ COPY --parents \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
