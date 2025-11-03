@@ -10,8 +10,6 @@ use dapi_grpc::platform::v0::{
     wait_for_state_transition_result_response,
 };
 use dapi_grpc::tonic::{Request, Response};
-use std::time::Duration;
-use tokio::time::timeout;
 use tracing::{Instrument, debug, trace};
 
 impl PlatformServiceImpl {
@@ -76,50 +74,32 @@ impl PlatformServiceImpl {
                 }
             };
 
-            // Wait for transaction event with timeout
-            let timeout_duration =
-                Duration::from_millis(self.config.dapi.state_transition_wait_timeout);
+            trace!("Waiting for transaction event");
 
-            trace!(
-                "Waiting for transaction event with timeout: {:?}",
-                timeout_duration
-            );
-
-            // Filter events to find our specific transaction
-            timeout(timeout_duration, async {
-                loop {
-                    let result = sub_handle.recv().await;
-                    match result {
-                        Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
-                            debug!(tx = hash_hex, "Received matching transaction event");
-                            return self.build_response_from_event(event, v0.prove).await;
-                        }
-                        Some(message) => {
-                            // Ignore other message types
-                            trace!(
-                                ?message,
-                                "Received non-matching message, ignoring; this should not happen due to filtering"
-                            );
-                            continue;
-                        }
-                        None => {
-                            debug!("Platform tx subscription channel closed unexpectedly");
-                            return Err(DapiError::Unavailable(
-                                "Platform tx subscription channel closed unexpectedly".to_string(),
-                            ));
-                        }
+            loop {
+                // gRPC TimeoutLayer enforces overall deadline; this loop exits when the request is cancelled.
+                let result = sub_handle.recv().await;
+                match result {
+                    Some(crate::services::streaming_service::StreamingEvent::PlatformTx { event }) => {
+                        debug!(tx = hash_hex, "Received matching transaction event");
+                        return self.build_response_from_event(event, v0.prove).await;
+                    }
+                    Some(message) => {
+                        // Ignore other message types
+                        trace!(
+                            ?message,
+                            "Received non-matching message, ignoring; this should not happen due to filtering"
+                        );
+                        continue;
+                    }
+                    None => {
+                        debug!("Platform tx subscription channel closed unexpectedly");
+                        return Err(DapiError::Unavailable(
+                            "Platform tx subscription channel closed unexpectedly".to_string(),
+                        ));
                     }
                 }
-            })
-            .await
-            .map_err(|msg| DapiError::Timeout(msg.to_string()))
-            .inspect_err(|e| {
-                tracing::debug!(
-                    error = %e,
-                    tx = %hash_hex,
-                    "wait_for_state_transition_result: timed out"
-                );
-            })?
+            }
         }
         .instrument(span)
         .await

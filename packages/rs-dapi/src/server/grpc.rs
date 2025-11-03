@@ -1,7 +1,7 @@
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use std::time::Duration;
-use tracing::{info, trace};
+use tracing::info;
 
 use crate::error::DAPIResult;
 use crate::logging::AccessLogLayer;
@@ -18,8 +18,6 @@ use super::DapiServer;
 
 /// Timeouts for regular requests - sync with envoy config if changed there
 const UNARY_TIMEOUT_SECS: u64 = 15;
-/// Timeouts for streaming requests - sync with envoy config if changed there
-const STREAMING_TIMEOUT_SECS: u64 = 600;
 /// Safety margin to ensure we respond before client-side gRPC deadlines fire
 const GRPC_REQUEST_TIME_SAFETY_MARGIN: Duration = Duration::from_millis(50);
 
@@ -40,16 +38,16 @@ impl DapiServer {
         const MAX_DECODING_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
         const MAX_ENCODING_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
 
+        // TCP keepalive a bit higher than app layer keepalive to avoid connection drops
         let builder = dapi_grpc::tonic::transport::Server::builder()
-            .tcp_keepalive(Some(Duration::from_secs(25)))
-            .timeout(Duration::from_secs(
-                STREAMING_TIMEOUT_SECS.max(UNARY_TIMEOUT_SECS) + 5,
-            )); // failsafe timeout - we handle timeouts in the timeout_layer
+            .tcp_keepalive(Some(Duration::from_secs(26)));
 
-        // Create timeout layer with different timeouts for unary vs streaming
+        // Apply method-specific deadlines; service handlers rely on this layer for cancellation.
         let timeout_layer = TimeoutLayer::new(
             Duration::from_secs(UNARY_TIMEOUT_SECS),
-            Duration::from_secs(STREAMING_TIMEOUT_SECS),
+            Duration::from_millis(self.config.dapi.state_transition_wait_timeout),
+            Duration::from_millis(self.config.dapi.platform_events_timeout),
+            Duration::from_millis(self.config.dapi.core_stream_timeout),
         );
 
         let metrics_layer = MetricsLayer::new();
@@ -88,38 +86,50 @@ impl DapiServer {
 #[derive(Clone)]
 struct TimeoutLayer {
     unary_timeout: Duration,
-    streaming_timeout: Duration,
+    state_transition_timeout: Duration,
+    platform_events_timeout: Duration,
+    core_stream_timeout: Duration,
 }
 
 impl TimeoutLayer {
-    fn new(unary_timeout: Duration, streaming_timeout: Duration) -> Self {
+    fn new(
+        unary_timeout: Duration,
+        state_transition_timeout: Duration,
+        platform_events_timeout: Duration,
+        core_stream_timeout: Duration,
+    ) -> Self {
         Self {
             unary_timeout,
-            streaming_timeout,
+            state_transition_timeout,
+            platform_events_timeout,
+            core_stream_timeout,
         }
     }
 
     /// Determine the appropriate timeout for a given gRPC method path.
     fn timeout_for_method(&self, path: &str) -> Duration {
-        // All known streaming methods in Core service (all use "stream" return type)
-        const STREAMING_METHODS: &[&str] = &[
-            "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks",
-            "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs",
-            "/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList",
-            "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult",
-            "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents",
-        ];
+        let timeout = match path {
+            "/org.dash.platform.dapi.v0.Platform/waitForStateTransitionResult" => {
+                self.state_transition_timeout
+            }
+            "/org.dash.platform.dapi.v0.Platform/subscribePlatformEvents" => {
+                self.platform_events_timeout
+            }
+            "/org.dash.platform.dapi.v0.Core/subscribeToBlockHeadersWithChainLocks"
+            | "/org.dash.platform.dapi.v0.Core/subscribeToTransactionsWithProofs"
+            | "/org.dash.platform.dapi.v0.Core/subscribeToMasternodeList" => {
+                self.core_stream_timeout
+            }
+            _ => self.unary_timeout,
+        };
 
-        // Check if this is a known streaming method
-        if STREAMING_METHODS.contains(&path) {
-            tracing::trace!(
-                path,
-                "Detected streaming gRPC method, applying streaming timeout"
-            );
-            self.streaming_timeout
-        } else {
-            self.unary_timeout
-        }
+        tracing::trace!(
+            path,
+            timeout = timeout.as_secs_f32(),
+            "Applying timeout for gRPC method"
+        );
+
+        timeout
     }
 }
 
@@ -168,7 +178,7 @@ where
             .min(default_timeout);
 
         if timeout_from_header.is_some() {
-            trace!(
+            tracing::trace!(
                 path,
                 header_timeout = timeout_from_header.unwrap_or_default().as_secs_f32(),
                 timeout = effective_timeout.as_secs_f32(),
@@ -251,7 +261,12 @@ mod tests {
 
     #[tokio::test]
     async fn timeout_service_returns_deadline_exceeded_status() {
-        let timeout_layer = TimeoutLayer::new(Duration::from_millis(5), Duration::from_secs(1));
+        let timeout_layer = TimeoutLayer::new(
+            Duration::from_millis(5),
+            Duration::from_secs(1),
+            Duration::from_secs(2),
+            Duration::from_secs(3),
+        );
         let mut service = timeout_layer.layer(SlowService);
 
         let request = Request::builder().uri("/test").body(()).unwrap();
