@@ -527,13 +527,14 @@ void PlatformSubscriptionResponse_ClearVersionOneOfCase(PlatformSubscriptionResp
 #pragma mark - PlatformSubscriptionResponse_PlatformSubscriptionResponseV0
 
 typedef GPB_ENUM(PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber) {
-  PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_ClientSubscriptionId = 1,
+  PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_SubscriptionId = 1,
   PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_Event = 2,
 };
 
 GPB_FINAL @interface PlatformSubscriptionResponse_PlatformSubscriptionResponseV0 : GPBMessage
 
-@property(nonatomic, readwrite, copy, null_resettable) NSString *clientSubscriptionId;
+/** Server-generated ID for this subscription; not guaranteed to be unique */
+@property(nonatomic, readwrite) uint64_t subscriptionId;
 
 /** Event details; can be nil/None, eg. during handshake */
 @property(nonatomic, readwrite, strong, null_resettable) PlatformEventV0 *event;
@@ -592,7 +593,7 @@ GPB_FINAL @interface PlatformFilterV0_AllEvents : GPBMessage
 #pragma mark - PlatformFilterV0_BlockCommitted
 
 /**
- * Notify about every Platform (Tenderdash) block that get committed (mined)
+ * Notify about every Platform (Tenderdash) block that gets committed (mined)
  **/
 GPB_FINAL @interface PlatformFilterV0_BlockCommitted : GPBMessage
 

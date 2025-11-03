@@ -7634,7 +7634,7 @@ proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptio
  */
 proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.toObject = function(includeInstance, msg) {
   var f, obj = {
-    clientSubscriptionId: jspb.Message.getFieldWithDefault(msg, 1, ""),
+    subscriptionId: jspb.Message.getFieldWithDefault(msg, 1, 0),
     event: (f = msg.getEvent()) && proto.org.dash.platform.dapi.v0.PlatformEventV0.toObject(includeInstance, f)
   };
 
@@ -7673,8 +7673,8 @@ proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptio
     var field = reader.getFieldNumber();
     switch (field) {
     case 1:
-      var value = /** @type {string} */ (reader.readString());
-      msg.setClientSubscriptionId(value);
+      var value = /** @type {number} */ (reader.readUint64());
+      msg.setSubscriptionId(value);
       break;
     case 2:
       var value = new proto.org.dash.platform.dapi.v0.PlatformEventV0;
@@ -7710,9 +7710,9 @@ proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptio
  */
 proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.serializeBinaryToWriter = function(message, writer) {
   var f = undefined;
-  f = message.getClientSubscriptionId();
-  if (f.length > 0) {
-    writer.writeString(
+  f = message.getSubscriptionId();
+  if (f !== 0) {
+    writer.writeUint64(
       1,
       f
     );
@@ -7729,20 +7729,20 @@ proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptio
 
 
 /**
- * optional string client_subscription_id = 1;
- * @return {string}
+ * optional uint64 subscription_id = 1;
+ * @return {number}
  */
-proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.prototype.getClientSubscriptionId = function() {
-  return /** @type {string} */ (jspb.Message.getFieldWithDefault(this, 1, ""));
+proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.prototype.getSubscriptionId = function() {
+  return /** @type {number} */ (jspb.Message.getFieldWithDefault(this, 1, 0));
 };
 
 
 /**
- * @param {string} value
+ * @param {number} value
  * @return {!proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0} returns this
  */
-proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.prototype.setClientSubscriptionId = function(value) {
-  return jspb.Message.setProto3StringField(this, 1, value);
+proto.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.prototype.setSubscriptionId = function(value) {
+  return jspb.Message.setProto3IntField(this, 1, value);
 };
 
 

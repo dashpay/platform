@@ -1404,14 +1404,6 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
 
-            if (!options.platform?.dapi) {
-              return;
-            }
-
-            if (!options.platform.dapi.rsDapi) {
-              options.platform.dapi.rsDapi = {};
-            }
-
             // Normalize rsDapi timeout structure and remove redundant legacy fields
             const existingTimeouts = options.platform.dapi.rsDapi.timeouts
               ?? options.platform.dapi.api?.timeouts;

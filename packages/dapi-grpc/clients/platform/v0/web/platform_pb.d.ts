@@ -83,8 +83,8 @@ export namespace PlatformSubscriptionResponse {
   }
 
   export class PlatformSubscriptionResponseV0 extends jspb.Message {
-    getClientSubscriptionId(): string;
-    setClientSubscriptionId(value: string): void;
+    getSubscriptionId(): number;
+    setSubscriptionId(value: number): void;
 
     hasEvent(): boolean;
     clearEvent(): void;
@@ -103,7 +103,7 @@ export namespace PlatformSubscriptionResponse {
 
   export namespace PlatformSubscriptionResponseV0 {
     export type AsObject = {
-      clientSubscriptionId: string,
+      subscriptionId: number,
       event?: PlatformEventV0.AsObject,
     }
   }

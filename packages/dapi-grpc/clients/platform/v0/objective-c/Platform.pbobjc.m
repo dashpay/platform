@@ -581,13 +581,13 @@ void PlatformSubscriptionResponse_ClearVersionOneOfCase(PlatformSubscriptionResp
 
 @implementation PlatformSubscriptionResponse_PlatformSubscriptionResponseV0
 
-@dynamic clientSubscriptionId;
+@dynamic subscriptionId;
 @dynamic hasEvent, event;
 
 typedef struct PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__storage_ {
   uint32_t _has_storage_[1];
-  NSString *clientSubscriptionId;
   PlatformEventV0 *event;
+  uint64_t subscriptionId;
 } PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__storage_;
 
 // This method is threadsafe because it is initially called
@@ -597,13 +597,13 @@ typedef struct PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__stor
   if (!descriptor) {
     static GPBMessageFieldDescription fields[] = {
       {
-        .name = "clientSubscriptionId",
+        .name = "subscriptionId",
         .dataTypeSpecific.clazz = Nil,
-        .number = PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_ClientSubscriptionId,
+        .number = PlatformSubscriptionResponse_PlatformSubscriptionResponseV0_FieldNumber_SubscriptionId,
         .hasIndex = 0,
-        .offset = (uint32_t)offsetof(PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__storage_, clientSubscriptionId),
+        .offset = (uint32_t)offsetof(PlatformSubscriptionResponse_PlatformSubscriptionResponseV0__storage_, subscriptionId),
         .flags = (GPBFieldFlags)(GPBFieldOptional | GPBFieldClearHasIvarOnZero),
-        .dataType = GPBDataTypeString,
+        .dataType = GPBDataTypeUInt64,
       },
       {
         .name = "event",

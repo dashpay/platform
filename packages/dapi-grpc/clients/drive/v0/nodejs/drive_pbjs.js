@@ -1202,7 +1202,7 @@ $root.org = (function() {
                              * Properties of a PlatformSubscriptionResponseV0.
                              * @memberof org.dash.platform.dapi.v0.PlatformSubscriptionResponse
                              * @interface IPlatformSubscriptionResponseV0
-                             * @property {string|null} [clientSubscriptionId] PlatformSubscriptionResponseV0 clientSubscriptionId
+                             * @property {number|Long|null} [subscriptionId] PlatformSubscriptionResponseV0 subscriptionId
                              * @property {org.dash.platform.dapi.v0.IPlatformEventV0|null} [event] PlatformSubscriptionResponseV0 event
                              */
 
@@ -1222,12 +1222,12 @@ $root.org = (function() {
                             }
 
                             /**
-                             * PlatformSubscriptionResponseV0 clientSubscriptionId.
-                             * @member {string} clientSubscriptionId
+                             * PlatformSubscriptionResponseV0 subscriptionId.
+                             * @member {number|Long} subscriptionId
                              * @memberof org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0
                              * @instance
                              */
-                            PlatformSubscriptionResponseV0.prototype.clientSubscriptionId = "";
+                            PlatformSubscriptionResponseV0.prototype.subscriptionId = $util.Long ? $util.Long.fromBits(0,0,true) : 0;
 
                             /**
                              * PlatformSubscriptionResponseV0 event.
@@ -1261,8 +1261,8 @@ $root.org = (function() {
                             PlatformSubscriptionResponseV0.encode = function encode(message, writer) {
                                 if (!writer)
                                     writer = $Writer.create();
-                                if (message.clientSubscriptionId != null && Object.hasOwnProperty.call(message, "clientSubscriptionId"))
-                                    writer.uint32(/* id 1, wireType 2 =*/10).string(message.clientSubscriptionId);
+                                if (message.subscriptionId != null && Object.hasOwnProperty.call(message, "subscriptionId"))
+                                    writer.uint32(/* id 1, wireType 0 =*/8).uint64(message.subscriptionId);
                                 if (message.event != null && Object.hasOwnProperty.call(message, "event"))
                                     $root.org.dash.platform.dapi.v0.PlatformEventV0.encode(message.event, writer.uint32(/* id 2, wireType 2 =*/18).fork()).ldelim();
                                 return writer;
@@ -1300,7 +1300,7 @@ $root.org = (function() {
                                     var tag = reader.uint32();
                                     switch (tag >>> 3) {
                                     case 1:
-                                        message.clientSubscriptionId = reader.string();
+                                        message.subscriptionId = reader.uint64();
                                         break;
                                     case 2:
                                         message.event = $root.org.dash.platform.dapi.v0.PlatformEventV0.decode(reader, reader.uint32());
@@ -1340,9 +1340,9 @@ $root.org = (function() {
                             PlatformSubscriptionResponseV0.verify = function verify(message) {
                                 if (typeof message !== "object" || message === null)
                                     return "object expected";
-                                if (message.clientSubscriptionId != null && message.hasOwnProperty("clientSubscriptionId"))
-                                    if (!$util.isString(message.clientSubscriptionId))
-                                        return "clientSubscriptionId: string expected";
+                                if (message.subscriptionId != null && message.hasOwnProperty("subscriptionId"))
+                                    if (!$util.isInteger(message.subscriptionId) && !(message.subscriptionId && $util.isInteger(message.subscriptionId.low) && $util.isInteger(message.subscriptionId.high)))
+                                        return "subscriptionId: integer|Long expected";
                                 if (message.event != null && message.hasOwnProperty("event")) {
                                     var error = $root.org.dash.platform.dapi.v0.PlatformEventV0.verify(message.event);
                                     if (error)
@@ -1363,8 +1363,15 @@ $root.org = (function() {
                                 if (object instanceof $root.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0)
                                     return object;
                                 var message = new $root.org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0();
-                                if (object.clientSubscriptionId != null)
-                                    message.clientSubscriptionId = String(object.clientSubscriptionId);
+                                if (object.subscriptionId != null)
+                                    if ($util.Long)
+                                        (message.subscriptionId = $util.Long.fromValue(object.subscriptionId)).unsigned = true;
+                                    else if (typeof object.subscriptionId === "string")
+                                        message.subscriptionId = parseInt(object.subscriptionId, 10);
+                                    else if (typeof object.subscriptionId === "number")
+                                        message.subscriptionId = object.subscriptionId;
+                                    else if (typeof object.subscriptionId === "object")
+                                        message.subscriptionId = new $util.LongBits(object.subscriptionId.low >>> 0, object.subscriptionId.high >>> 0).toNumber(true);
                                 if (object.event != null) {
                                     if (typeof object.event !== "object")
                                         throw TypeError(".org.dash.platform.dapi.v0.PlatformSubscriptionResponse.PlatformSubscriptionResponseV0.event: object expected");
@@ -1387,11 +1394,18 @@ $root.org = (function() {
                                     options = {};
                                 var object = {};
                                 if (options.defaults) {
-                                    object.clientSubscriptionId = "";
+                                    if ($util.Long) {
+                                        var long = new $util.Long(0, 0, true);
+                                        object.subscriptionId = options.longs === String ? long.toString() : options.longs === Number ? long.toNumber() : long;
+                                    } else
+                                        object.subscriptionId = options.longs === String ? "0" : 0;
                                     object.event = null;
                                 }
-                                if (message.clientSubscriptionId != null && message.hasOwnProperty("clientSubscriptionId"))
-                                    object.clientSubscriptionId = message.clientSubscriptionId;
+                                if (message.subscriptionId != null && message.hasOwnProperty("subscriptionId"))
+                                    if (typeof message.subscriptionId === "number")
+                                        object.subscriptionId = options.longs === String ? String(message.subscriptionId) : message.subscriptionId;
+                                    else
+                                        object.subscriptionId = options.longs === String ? $util.Long.prototype.toString.call(message.subscriptionId) : options.longs === Number ? new $util.LongBits(message.subscriptionId.low >>> 0, message.subscriptionId.high >>> 0).toNumber(true) : message.subscriptionId;
                                 if (message.event != null && message.hasOwnProperty("event"))
                                     object.event = $root.org.dash.platform.dapi.v0.PlatformEventV0.toObject(message.event, options);
                                 return object;
