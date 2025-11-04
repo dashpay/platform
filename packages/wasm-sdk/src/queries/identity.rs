@@ -658,7 +658,7 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract: JsValue,
+        contract_id: JsValue,
     ) -> Result<IdentityNonceWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
@@ -666,7 +666,7 @@ impl WasmSdk {
         let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
             .into();
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract)
+        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
             .into();
 
@@ -686,7 +686,7 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract: JsValue,
+        contract_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::IdentityContractNonceFetcher;
@@ -694,7 +694,7 @@ impl WasmSdk {
         let identity_id: Identifier = IdentifierWasm::try_from(&identity_id)
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
             .into();
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract)
+        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
             .into();
 
@@ -914,7 +914,7 @@ impl WasmSdk {
         &self,
         public_key_hash: &str,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
-        start_after: JsValue,
+        start_after_id: JsValue,
     ) -> Result<Array, WasmSdkError> {
         // Parse the hex-encoded public key hash
         let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
@@ -931,11 +931,11 @@ impl WasmSdk {
         hash_array.copy_from_slice(&hash_bytes);
 
         // Convert start_after if provided
-        let start_id = if start_after.is_undefined() || start_after.is_null() {
+        let start_id = if start_after_id.is_undefined() || start_after_id.is_null() {
             None
         } else {
             Some(
-                IdentifierWasm::try_from(&start_after)
+                IdentifierWasm::try_from(&start_after_id)
                     .map(Identifier::from)
                     .map_err(|err| {
                         WasmSdkError::invalid_argument(format!(
@@ -1303,7 +1303,7 @@ impl WasmSdk {
         &self,
         public_key_hash: &str,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
-        start_after: JsValue,
+        start_after_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         // Parse the hex-encoded public key hash
         let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
@@ -1320,11 +1320,11 @@ impl WasmSdk {
         hash_array.copy_from_slice(&hash_bytes);
 
         // Convert start_after if provided
-        let start_id = if start_after.is_undefined() || start_after.is_null() {
+        let start_id = if start_after_id.is_undefined() || start_after_id.is_null() {
             None
         } else {
             Some(
-                IdentifierWasm::try_from(&start_after)
+                IdentifierWasm::try_from(&start_after_id)
                     .map(Identifier::from)
                     .map_err(|err| {
                         WasmSdkError::invalid_argument(format!(

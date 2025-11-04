@@ -415,7 +415,7 @@ impl WasmSdk {
     ///
     /// * `data_contract_id` - The ID of the data contract containing the token
     /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_to_freeze` - The identity ID whose tokens to freeze
+    /// * `identity_to_freeze_id` - The identity ID whose tokens to freeze
     /// * `freezer_id` - The identity ID of the freezer (must have permission)
     /// * `private_key_wif` - The private key in WIF format for signing
     /// * `public_note` - Optional public note for the freeze operation
@@ -430,7 +430,7 @@ impl WasmSdk {
         data_contract_id: JsValue,
         token_position: u16,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_to_freeze: JsValue,
+        identity_to_freeze_id: JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         freezer_id: JsValue,
         private_key_wif: String,
@@ -449,7 +449,8 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to freeze
-        let frozen_identity_id = identifier_from_js(&identity_to_freeze, "identity to freeze")?;
+        let frozen_identity_id =
+            identifier_from_js(&identity_to_freeze_id, "identity to freeze")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;
@@ -507,7 +508,7 @@ impl WasmSdk {
     ///
     /// * `data_contract_id` - The ID of the data contract containing the token
     /// * `token_position` - The position of the token in the contract (0-indexed)
-    /// * `identity_to_unfreeze` - The identity ID whose tokens to unfreeze
+    /// * `identity_to_unfreeze_id` - The identity ID whose tokens to unfreeze
     /// * `unfreezer_id` - The identity ID of the unfreezer (must have permission)
     /// * `private_key_wif` - The private key in WIF format for signing
     /// * `public_note` - Optional public note for the unfreeze operation
@@ -522,7 +523,7 @@ impl WasmSdk {
         data_contract_id: JsValue,
         token_position: u16,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_to_unfreeze: JsValue,
+        identity_to_unfreeze_id: JsValue,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         unfreezer_id: JsValue,
         private_key_wif: String,
@@ -541,7 +542,8 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to unfreeze
-        let frozen_identity_id = identifier_from_js(&identity_to_unfreeze, "identity to unfreeze")?;
+        let frozen_identity_id =
+            identifier_from_js(&identity_to_unfreeze_id, "identity to unfreeze")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;

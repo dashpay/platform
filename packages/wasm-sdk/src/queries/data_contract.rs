@@ -129,9 +129,9 @@ impl WasmSdk {
     pub async fn get_data_contract(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract: JsValue,
+        contract_id: JsValue,
     ) -> Result<Option<DataContractWasm>, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&contract)
+        let id: Identifier = IdentifierWasm::try_from(&contract_id)
             .map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
             })?
@@ -148,9 +148,9 @@ impl WasmSdk {
     pub async fn get_data_contract_with_proof_info(
         &self,
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract: JsValue,
+        contract_id: JsValue,
     ) -> Result<DataContractProofResponseWasm, WasmSdkError> {
-        let id: Identifier = IdentifierWasm::try_from(&contract)
+        let id: Identifier = IdentifierWasm::try_from(&contract_id)
             .map_err(|err| {
                 WasmSdkError::invalid_argument(format!("Invalid data contract ID: {}", err))
             })?
