@@ -326,7 +326,7 @@ pub(super) fn map_tenderdash_message(message: &str) -> Option<DapiError> {
     }
 
     if msg.starts_with("tx too large.") {
-        let message = msg.replace("Tx too large. ", "");
+        let message = msg.replace("tx too large.", "").trim().to_string();
         return Some(DapiError::InvalidArgument(
             "state transition is too large. ".to_string() + &message,
         ));
