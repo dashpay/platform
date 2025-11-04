@@ -399,7 +399,7 @@ impl Sdk {
             }
         };
 
-        if should_query_platform {
+        let nonce = if should_query_platform {
             let platform_nonce = IdentityNonceFetcher::fetch_with_settings(
                 self,
                 identity_id,
@@ -451,7 +451,16 @@ impl Sdk {
                     }
                 }
             }
-        }
+        };
+
+        tracing::trace!(
+            identity_id = %identity_id,
+            bump_first,
+            nonce = ?nonce,
+            "Fetched identity nonce"
+        );
+
+        nonce
     }
 
     // TODO: Move to a separate struct

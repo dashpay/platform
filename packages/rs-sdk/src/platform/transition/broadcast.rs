@@ -135,7 +135,7 @@ impl BroadcastStateTransition for StateTransition {
             };
 
             if let Some(e) = state_transition_broadcast_error {
-                warn!("wait: state transition broadcast error detected");
+                warn!(error=?e, "wait: state transition broadcast error detected");
                 let state_transition_broadcast_error: StateTransitionBroadcastError =
                     StateTransitionBroadcastError::try_from(e.clone())
                         .wrap_to_execution_result(&response)?
