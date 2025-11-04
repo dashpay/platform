@@ -69,15 +69,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         }
 
         if let Some(string) = value.as_string() {
-            if string.len() == 64 && string.chars().all(|c| c.is_ascii_hexdigit()) {
-                let bytes = decode(string.as_str(), Hex)
-                    .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
-                return IdentifierWasm::try_from(bytes.as_slice());
-            }
-
-            return Identifier::from_string(string.as_str(), Base58)
-                .map(Into::into)
-                .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
+            return IdentifierWasm::try_from_str(&string);
         }
 
         if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
@@ -115,9 +107,7 @@ impl<'de> Visitor<'de> for IdentifierWasmVisitor {
     where
         E: de::Error,
     {
-        Identifier::from_string(value, Base58)
-            .map(IdentifierWasm)
-            .map_err(|err| E::custom(err.to_string()))
+        IdentifierWasm::try_from_str(value).map_err(|err| E::custom(err.to_string()))
     }
 
     fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
@@ -171,6 +161,18 @@ impl<'de> Deserialize<'de> for IdentifierWasm {
 
 #[wasm_bindgen(js_class = Identifier)]
 impl IdentifierWasm {
+    fn try_from_str(value: &str) -> Result<Self, WasmDppError> {
+        if value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()) {
+            let bytes = decode(value, Hex)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            return IdentifierWasm::try_from(bytes.as_slice());
+        }
+
+        Identifier::from_string(value, Base58)
+            .map(Into::into)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+    }
+
     #[wasm_bindgen(getter = __type)]
     pub fn type_name(&self) -> String {
         "Identifier".to_string()
