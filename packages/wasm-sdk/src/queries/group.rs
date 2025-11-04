@@ -576,7 +576,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id.clone()).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
                 // Fetch all groups for this contract
                 let query = GroupInfosQuery {
                     contract_id,
@@ -867,7 +867,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id.clone()).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
                 // Fetch all groups for this contract with proof
                 let query = GroupInfosQuery {
                     contract_id,
@@ -1068,7 +1068,7 @@ fn collect_group_members_map(
             }
         }
     } else {
-        let start_identifier = start_at.clone();
+        let start_identifier = *start_at;
 
         let mut added = 0usize;
         for (identifier, power) in group.members().iter() {

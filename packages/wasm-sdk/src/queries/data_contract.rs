@@ -117,7 +117,7 @@ fn parse_data_contract_history_query(
 
 fn build_limit_query(params: &DataContractHistoryQueryParsed) -> LimitQuery<(Identifier, u64)> {
     LimitQuery {
-        query: (params.contract_id.clone(), params.start_at_ms.unwrap_or(0)),
+        query: (params.contract_id, params.start_at_ms.unwrap_or(0)),
         start_info: None,
         limit: params.limit,
     }

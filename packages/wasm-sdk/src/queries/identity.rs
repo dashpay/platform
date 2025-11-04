@@ -472,7 +472,7 @@ impl WasmSdk {
 
         let keys_result: IdentityPublicKeys = match request {
             IdentityKeysRequestInput::All => {
-                IdentityPublicKey::fetch_many(self.as_ref(), identity_id.clone()).await?
+                IdentityPublicKey::fetch_many(self.as_ref(), identity_id).await?
             }
             IdentityKeysRequestInput::Specific { specific_key_ids } => {
                 if specific_key_ids.is_empty() {
@@ -481,7 +481,7 @@ impl WasmSdk {
                     ));
                 }
 
-                let query = IdentityKeysQuery::new(identity_id.clone(), specific_key_ids)
+                let query = IdentityKeysQuery::new(identity_id, specific_key_ids)
                     .with_limit(limit.unwrap_or(100))
                     .with_offset(offset.unwrap_or(0));
 
@@ -1009,7 +1009,7 @@ impl WasmSdk {
             IdentityKeysRequestInput::All => {
                 IdentityPublicKey::fetch_many_with_metadata_and_proof(
                     self.as_ref(),
-                    identity_id.clone(),
+                    identity_id,
                     None,
                 )
                 .await?
@@ -1023,7 +1023,7 @@ impl WasmSdk {
                     ));
                 }
 
-                let query = IdentityKeysQuery::new(identity_id.clone(), specific_key_ids)
+                let query = IdentityKeysQuery::new(identity_id, specific_key_ids)
                     .with_limit(limit.unwrap_or(100))
                     .with_offset(offset.unwrap_or(0));
 

@@ -344,7 +344,7 @@ impl WasmSdk {
         use drive_proof_verifier::types::Documents;
 
         let query = parse_documents_query(self, query).await?;
-        let contract_id = query.data_contract.id().clone();
+        let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
         let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
@@ -376,7 +376,7 @@ impl WasmSdk {
         query: DocumentsQueryJs,
     ) -> Result<DocumentsProofResponseWasm, WasmSdkError> {
         let query = parse_documents_query(self, query).await?;
-        let contract_id = query.data_contract.id().clone();
+        let contract_id = query.data_contract.id();
         let document_type_name = query.document_type_name.clone();
 
         let (documents_result, metadata, proof) =
