@@ -82,7 +82,10 @@ impl BroadcastStateTransition for StateTransition {
 
         match &result {
             Ok(_) => trace!("broadcast: completed successfully"),
-            Err(e) => warn!(error = ?e, "broadcast: failed after retries"),
+            Err(e) => {
+                warn!(error = ?e, "broadcast: failed after retries");
+                sdk.refresh_identity_nonce(&self.owner_id()).await;
+            }
         }
         result
     }

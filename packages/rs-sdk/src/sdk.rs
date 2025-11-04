@@ -553,6 +553,24 @@ impl Sdk {
         }
     }
 
+    /// Forces reload of the identity nonce from Platform on the next call to `get_identity_nonce`.
+    pub async fn refresh_identity_nonce(&self, identity_id: &Identifier) {
+        {
+            let mut identity_nonce_counter =
+                self.internal_cache.identity_nonce_counter.lock().await;
+            identity_nonce_counter.remove(identity_id);
+        }
+        {
+            let mut identity_contract_nonce_counter = self
+                .internal_cache
+                .identity_contract_nonce_counter
+                .lock()
+                .await;
+            identity_contract_nonce_counter
+                .retain(|(cached_identity_id, _), _| cached_identity_id != identity_id);
+        }
+    }
+
     /// Return [Dash Platform version](PlatformVersion) information used by this SDK.
     ///
     ///
