@@ -142,7 +142,8 @@ describe('GroupFacade', () => {
     };
     await client.group.contestedResourceVotersForIdentityWithProof(votersProofQuery);
     expect(wasmSdk.getContestedResources).to.be.calledOnceWithExactly(contestedQuery);
-    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be.calledOnceWithExactly(contestedProofQuery);
+    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be
+      .calledOnceWithExactly(contestedProofQuery);
     expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnceWithExactly(votersQuery);
     expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo)
       .to.be.calledOnceWithExactly(votersProofQuery);

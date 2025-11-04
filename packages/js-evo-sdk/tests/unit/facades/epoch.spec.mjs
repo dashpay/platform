@@ -49,7 +49,9 @@ describe('EpochFacade', () => {
   it('evonodesProposedBlocks* forward with args', async () => {
     await client.epoch.evonodesProposedBlocksByIds(10, ['a', 'b']);
     await client.epoch.evonodesProposedBlocksByIdsWithProof(11, ['x']);
-    const rangeQuery = { epoch: 12, limit: 2, startAfter: 's', orderAscending: false };
+    const rangeQuery = {
+      epoch: 12, limit: 2, startAfter: 's', orderAscending: false,
+    };
     await client.epoch.evonodesProposedBlocksByRange(rangeQuery);
     const rangeProofQuery = { epoch: 13 };
     await client.epoch.evonodesProposedBlocksByRangeWithProof(rangeProofQuery);
