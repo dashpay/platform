@@ -3,11 +3,11 @@ use crate::utils::IntoWasm;
 use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
+use js_sys::Uint8Array;
 use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
 use serde::{Deserialize, Deserializer};
 use serde_json::Value as JsonValue;
 use std::fmt;
-use js_sys::Uint8Array;
 use wasm_bindgen::prelude::*;
 
 #[derive(Copy, Clone)]
