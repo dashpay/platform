@@ -188,7 +188,13 @@ fn parse_group_actions_query(
 
     let contract_id: Identifier = data_contract_id.into();
 
-    let group_contract_position = group_contract_position as GroupContractPosition;
+    let group_contract_position: GroupContractPosition = group_contract_position
+        .try_into()
+        .map_err(|_| WasmSdkError::invalid_argument(format!(
+            "groupContractPosition {} exceeds maximum of {}",
+            group_contract_position,
+            u16::MAX,
+        )))?;
 
     let status = parse_group_action_status(&status)?;
 
