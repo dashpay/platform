@@ -1,6 +1,4 @@
-use dash_sdk::dpp::platform_value::{
-    Identifier, Value as PlatformValue,
-};
+use dash_sdk::dpp::platform_value::{Identifier, Value as PlatformValue};
 use serde::de::DeserializeOwned;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
