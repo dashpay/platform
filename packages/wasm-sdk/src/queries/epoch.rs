@@ -145,14 +145,14 @@ extern "C" {
 struct FinalizedEpochsQueryInput {
     start_epoch: Option<u16>,
     #[serde(default)]
-    count: Option<u32>,
+    count: Option<u16>,
     #[serde(default)]
     ascending: Option<bool>,
 }
 
 struct FinalizedEpochsQueryParsed {
     start_epoch: u16,
-    count: u32,
+    count: u16,
     ascending: bool,
 }
 
@@ -309,10 +309,11 @@ impl WasmSdk {
         } = parse_finalized_epochs_query(query)?;
 
         // Calculate end epoch based on direction and count
+        let span = count.saturating_sub(1);
         let end_epoch = if ascending {
-            start_epoch.saturating_add((count - 1) as u16)
+            start_epoch.saturating_add(span)
         } else {
-            start_epoch.saturating_sub((count - 1) as u16)
+            start_epoch.saturating_sub(span)
         };
 
         let query = if ascending {
@@ -492,10 +493,11 @@ impl WasmSdk {
             ascending,
         } = parse_finalized_epochs_query(query)?;
 
+        let span = count.saturating_sub(1);
         let end_epoch = if ascending {
-            start_epoch.saturating_add((count - 1) as u16)
+            start_epoch.saturating_add(span)
         } else {
-            start_epoch.saturating_sub((count - 1) as u16)
+            start_epoch.saturating_sub(span)
         };
 
         let query = if ascending {
