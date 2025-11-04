@@ -18,7 +18,6 @@ use wasm_dpp2::{ContenderWithSerializedDocumentWasm, ContestedDocumentVotePollWi
 
 use crate::queries::utils::{
     convert_json_values_to_platform_values, convert_optional_limit, deserialize_required_query,
-    identifier_from_base58,
 };
 use crate::sdk::WasmSdk;
 use crate::{ProofMetadataResponseWasm, WasmSdkError};
@@ -30,9 +29,9 @@ const CONTESTED_RESOURCE_VOTE_STATE_QUERY_TS: &'static str = r#"
  */
 export interface ContestedResourceVoteStateQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Contested document type name.
@@ -66,7 +65,7 @@ export interface ContestedResourceVoteStateQuery {
    * Contender identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtContenderId?: string;
+  startAtContenderId?: Identifier | Uint8Array | string;
 
   /**
    * Include the start contender when true.
@@ -203,7 +202,7 @@ impl ContestedResourceVoteStateWasm {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ContestedResourceVoteStateQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     document_type_name: String,
     index_name: String,
     #[serde(default)]
@@ -213,7 +212,7 @@ struct ContestedResourceVoteStateQueryInput {
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
-    start_at_contender_id: Option<String>,
+    start_at_contender_id: Option<IdentifierWasm>,
     #[serde(default)]
     start_at_included: Option<bool>,
     #[serde(default)]
@@ -260,14 +259,14 @@ fn create_contested_resource_vote_state_query(
 
     let index_values = convert_json_values_to_platform_values(index_values, "indexValues")?;
 
-    let contract_id = identifier_from_base58(&data_contract_id, "contract ID")?;
+    let contract_id: Identifier = data_contract_id.into();
 
     let result_type = parse_vote_state_result_type(result_type)?;
     let limit = convert_optional_limit(limit, "limit")?;
 
     let start_at = match start_at_contender_id {
         Some(contender_id) => {
-            let identifier = identifier_from_base58(&contender_id, "contender ID")?;
+            let identifier: Identifier = contender_id.into();
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }

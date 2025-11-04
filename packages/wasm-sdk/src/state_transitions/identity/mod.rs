@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore::PrivateKey;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -438,15 +439,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityTopUp)]
     pub async fn identity_top_up(
         &self,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         asset_lock_proof: String,
         asset_lock_proof_private_key: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Parse asset lock proof - try hex first, then JSON
         let asset_lock_proof: AssetLockProof = if asset_lock_proof
@@ -527,7 +529,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -568,8 +570,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityCreditTransfer)]
     pub async fn identity_credit_transfer(
         &self,
-        sender_id: String,
-        recipient_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        sender_id: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        recipient_id: JsValue,
         amount: u64,
         private_key_wif: String,
         key_id: Option<u32>,
@@ -577,11 +581,12 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let sender_identifier = Identifier::from_string(&sender_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid sender ID: {}", e)))?;
+        let sender_identifier = identifier_from_js(&sender_id, "sender ID")?;
 
-        let recipient_identifier = Identifier::from_string(&recipient_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid recipient ID: {}", e)))?;
+        let recipient_identifier = identifier_from_js(&recipient_id, "recipient ID")?;
+
+        let sender_base58 = sender_identifier.to_string(Encoding::Base58);
+        let recipient_base58 = recipient_identifier.to_string(Encoding::Base58);
 
         // Validate not sending to self
         if sender_identifier == recipient_identifier {
@@ -705,13 +710,13 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("senderId"),
-            &JsValue::from_str(&sender_id),
+            &JsValue::from_str(&sender_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set senderId: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("recipientId"),
-            &JsValue::from_str(&recipient_id),
+            &JsValue::from_str(&recipient_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set recipientId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -747,7 +752,8 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityCreditWithdrawal)]
     pub async fn identity_credit_withdrawal(
         &self,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         to_address: String,
         amount: u64,
         core_fee_per_byte: Option<u32>,
@@ -757,8 +763,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Parse the Dash address
         use dash_sdk::dpp::dashcore::Address;
@@ -878,7 +884,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -924,7 +930,8 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = identityUpdate)]
     pub async fn identity_update(
         &self,
-        identity_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         add_public_keys: Option<String>,
         disable_public_keys: Option<Vec<u32>>,
         private_key_wif: String,
@@ -932,8 +939,8 @@ impl WasmSdk {
         let sdk = self.inner_clone();
 
         // Parse identity identifier
-        let identifier = Identifier::from_string(&identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_base58 = identifier.to_string(Encoding::Base58);
 
         // Fetch the identity
         let identity = dash_sdk::platform::Identity::fetch(&sdk, identifier)
@@ -1171,7 +1178,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("identityId"),
-            &JsValue::from_str(&identity_id),
+            &JsValue::from_str(&identity_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set identityId: {:?}", e)))?;
         js_sys::Reflect::set(
@@ -1221,8 +1228,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = masternodeVote)]
     pub async fn masternode_vote(
         &self,
-        masternode_pro_tx_hash: String,
-        contract_id: String,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        masternode_pro_tx_hash: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
         document_type_name: String,
         index_name: String,
         index_values: String,
@@ -1231,26 +1240,13 @@ impl WasmSdk {
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
-        // Parse ProTxHash (try hex first, then base58)
-        let pro_tx_hash = if masternode_pro_tx_hash.len() == 64
-            && masternode_pro_tx_hash
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
-        {
-            // Looks like hex
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Hex).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (hex): {}", e))
-            })?
-        } else {
-            // Try base58
-            Identifier::from_string(&masternode_pro_tx_hash, Encoding::Base58).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid ProTxHash (base58): {}", e))
-            })?
-        };
+        // Parse ProTxHash
+        let pro_tx_hash = identifier_from_js(&masternode_pro_tx_hash, "ProTxHash")?;
+        let pro_tx_hash_base58 = pro_tx_hash.to_string(Encoding::Base58);
 
         // Parse contract ID
-        let data_contract_id = Identifier::from_string(&contract_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let data_contract_id = identifier_from_js(&contract_id, "contract ID")?;
+        let contract_id_base58 = data_contract_id.to_string(Encoding::Base58);
 
         // Parse index values from JSON
         let index_values_json: serde_json::Value =
@@ -1412,13 +1408,13 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("proTxHash"),
-            &JsValue::from_str(&masternode_pro_tx_hash),
+            &JsValue::from_str(&pro_tx_hash_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set proTxHash: {:?}", e)))?;
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("contractId"),
-            &JsValue::from_str(&contract_id),
+            &JsValue::from_str(&contract_id_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set contractId: {:?}", e)))?;
         js_sys::Reflect::set(

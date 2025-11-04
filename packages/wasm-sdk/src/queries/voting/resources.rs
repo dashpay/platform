@@ -1,11 +1,11 @@
 use crate::queries::utils::{
     convert_json_values_to_platform_values, convert_optional_limit, deserialize_required_query,
-    identifier_from_base58,
 };
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::utils::js_value_to_platform_value;
 use crate::WasmSdkError;
+use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::platform::FetchMany;
 use drive::query::vote_polls_by_document_type_query::VotePollsByDocumentTypeQuery;
 use drive_proof_verifier::types::{ContestedResource, ContestedResources};
@@ -13,6 +13,7 @@ use js_sys::{Array, Reflect};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::{prelude::wasm_bindgen, JsValue};
+use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const VOTE_POLLS_BY_DOCUMENT_TYPE_QUERY_TS: &'static str = r#"
@@ -21,9 +22,9 @@ const VOTE_POLLS_BY_DOCUMENT_TYPE_QUERY_TS: &'static str = r#"
  */
 export interface VotePollsByDocumentTypeQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Document type to query.
@@ -83,7 +84,7 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct VotePollsByDocumentTypeQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     document_type_name: String,
     index_name: String,
     #[serde(default)]
@@ -131,7 +132,7 @@ fn create_vote_polls_by_document_type_query(
 
     let limit = convert_optional_limit(limit, "limit")?;
 
-    let contract_id = identifier_from_base58(&data_contract_id, "contract ID")?;
+    let contract_id: Identifier = data_contract_id.into();
 
     Ok(VotePollsByDocumentTypeQuery {
         contract_id,

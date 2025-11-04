@@ -39,37 +39,64 @@ describe('GroupFacade', () => {
   });
 
   it('infos() forwards optional args with null defaults', async () => {
-    await client.group.infos('contract', 'cursor', 5);
-    await client.group.infosWithProof('contract');
-    expect(wasmSdk.getGroupInfos).to.be.calledOnceWithExactly('contract', 'cursor', 5);
-    expect(wasmSdk.getGroupInfosWithProofInfo).to.be.calledOnceWithExactly('contract', null, null);
+    const query = { dataContractId: 'contract', startAt: { position: 10, included: true }, limit: 5 };
+    await client.group.infos(query);
+    const proofQuery = { dataContractId: 'contract' };
+    await client.group.infosWithProof(proofQuery);
+    expect(wasmSdk.getGroupInfos).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getGroupInfosWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('members() forwards list and optional filters', async () => {
-    await client.group.members('contract', 1, { memberIds: ['a'], startAt: 's', limit: 2 });
-    await client.group.membersWithProof('contract', 1);
-    expect(wasmSdk.getGroupMembers).to.be.calledOnceWithExactly('contract', 1, ['a'], 's', 2);
-    expect(wasmSdk.getGroupMembersWithProofInfo).to.be.calledOnceWithExactly('contract', 1, null, null, null);
+    const query = {
+      dataContractId: 'contract',
+      groupContractPosition: 1,
+      memberIds: ['a'],
+      startAtMemberId: 's',
+      limit: 2,
+    };
+    await client.group.members(query);
+    const proofQuery = { dataContractId: 'contract', groupContractPosition: 1 };
+    await client.group.membersWithProof(proofQuery);
+    expect(wasmSdk.getGroupMembers).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getGroupMembersWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('identityGroups() forwards optional contract filters', async () => {
-    await client.group.identityGroups('identity', {
-      memberDataContracts: ['m'], ownerDataContracts: ['o'], moderatorDataContracts: ['d'],
-    });
-    await client.group.identityGroupsWithProof('identity');
-    expect(wasmSdk.getIdentityGroups).to.be.calledOnceWithExactly('identity', ['m'], ['o'], ['d']);
-    expect(wasmSdk.getIdentityGroupsWithProofInfo).to.be.calledOnceWithExactly('identity', null, null, null);
+    const query = {
+      identityId: 'identity',
+      memberDataContracts: ['m'],
+      ownerDataContracts: ['o'],
+      moderatorDataContracts: ['d'],
+    };
+    await client.group.identityGroups(query);
+    const proofQuery = { identityId: 'identity' };
+    await client.group.identityGroupsWithProof(proofQuery);
+    expect(wasmSdk.getIdentityGroups).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getIdentityGroupsWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('group actions helpers forward to wasm', async () => {
-    await client.group.actions('contract', 1, 'pending', { startAtInfo: 'cursor', count: 3 });
-    await client.group.actionsWithProof('contract', 1, 'completed');
-    await client.group.actionSigners('contract', 1, 'pending', 'action');
-    await client.group.actionSignersWithProof('contract', 1, 'pending', 'action');
-    expect(wasmSdk.getGroupActions).to.be.calledOnceWithExactly('contract', 1, 'pending', 'cursor', 3);
-    expect(wasmSdk.getGroupActionsWithProofInfo).to.be.calledOnceWithExactly('contract', 1, 'completed', null, null);
-    expect(wasmSdk.getGroupActionSigners).to.be.calledOnceWithExactly('contract', 1, 'pending', 'action');
-    expect(wasmSdk.getGroupActionSignersWithProofInfo).to.be.calledOnceWithExactly('contract', 1, 'pending', 'action');
+    const query = {
+      dataContractId: 'contract',
+      groupContractPosition: 1,
+      status: 'ACTIVE',
+      startAt: { actionId: 'cursor', included: true },
+      limit: 3,
+    };
+    await client.group.actions(query);
+    const proofQuery = {
+      dataContractId: 'contract',
+      groupContractPosition: 1,
+      status: 'CLOSED',
+    };
+    await client.group.actionsWithProof(proofQuery);
+    await client.group.actionSigners('contract', 1, 'ACTIVE', 'action');
+    await client.group.actionSignersWithProof('contract', 1, 'ACTIVE', 'action');
+    expect(wasmSdk.getGroupActions).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getGroupActionsWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
+    expect(wasmSdk.getGroupActionSigners).to.be.calledOnceWithExactly('contract', 1, 'ACTIVE', 'action');
+    expect(wasmSdk.getGroupActionSignersWithProofInfo).to.be.calledOnceWithExactly('contract', 1, 'ACTIVE', 'action');
   });
 
   it('groupsDataContracts() forwards', async () => {
@@ -80,30 +107,22 @@ describe('GroupFacade', () => {
   });
 
   it('forwards contestedResources and voters queries', async () => {
-    await client.group.contestedResources({
-      documentTypeName: 'dt', contractId: 'c', indexName: 'i', startAtValue: new Uint8Array([1]), limit: 2, orderAscending: false,
-    });
-    await client.group.contestedResourcesWithProof({ documentTypeName: 'dt', contractId: 'c', indexName: 'i' });
-    await client.group.contestedResourceVotersForIdentity({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v1'], contestantId: 'id', startAtVoterInfo: 's', limit: 3, orderAscending: true,
-    });
-    await client.group.contestedResourceVotersForIdentityWithProof({
-      contractId: 'c', documentTypeName: 'dt', indexName: 'i', indexValues: ['v2'], contestantId: 'id',
-    });
-    expect(wasmSdk.getContestedResources).to.be.calledOnceWithExactly({
+    const contestedQuery = {
       dataContractId: 'c',
       documentTypeName: 'dt',
       indexName: 'i',
       startAtValue: new Uint8Array([1]),
       limit: 2,
       orderAscending: false,
-    });
-    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be.calledOnceWithExactly({
+    };
+    await client.group.contestedResources(contestedQuery);
+    const contestedProofQuery = {
       dataContractId: 'c',
       documentTypeName: 'dt',
       indexName: 'i',
-    });
-    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnceWithExactly({
+    };
+    await client.group.contestedResourcesWithProof(contestedProofQuery);
+    const votersQuery = {
       dataContractId: 'c',
       documentTypeName: 'dt',
       indexName: 'i',
@@ -112,13 +131,21 @@ describe('GroupFacade', () => {
       startAtVoterId: 's',
       limit: 3,
       orderAscending: true,
-    });
-    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo).to.be.calledOnceWithExactly({
+    };
+    await client.group.contestedResourceVotersForIdentity(votersQuery);
+    const votersProofQuery = {
       dataContractId: 'c',
       documentTypeName: 'dt',
       indexName: 'i',
       indexValues: ['v2'],
       contestantId: 'id',
-    });
+    };
+    await client.group.contestedResourceVotersForIdentityWithProof(votersProofQuery);
+    expect(wasmSdk.getContestedResources).to.be.calledOnceWithExactly(contestedQuery);
+    expect(wasmSdk.getContestedResourcesWithProofInfo).to.be
+      .calledOnceWithExactly(contestedProofQuery);
+    expect(wasmSdk.getContestedResourceVotersForIdentity).to.be.calledOnceWithExactly(votersQuery);
+    expect(wasmSdk.getContestedResourceVotersForIdentityWithProofInfo)
+      .to.be.calledOnceWithExactly(votersProofQuery);
   });
 });

@@ -1,6 +1,7 @@
 import * as wasm from '../wasm.js';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
+import type { DataContractHistoryQuery } from '../wasm.js';
 
 export class ContractsFacade {
   private sdk: EvoSDK;
@@ -19,16 +20,14 @@ export class ContractsFacade {
     return w.getDataContractWithProofInfo(contractId);
   }
 
-  async getHistory(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
-    const { contractId, limit, startAtMs } = args;
+  async getHistory(query: DataContractHistoryQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistory(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
+    return w.getDataContractHistory(query);
   }
 
-  async getHistoryWithProof(args: { contractId: string; limit?: number; startAtMs?: number | bigint }): Promise<any> {
-    const { contractId, limit, startAtMs } = args;
+  async getHistoryWithProof(query: DataContractHistoryQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDataContractHistoryWithProofInfo(contractId, limit ?? null, startAtMs != null ? BigInt(startAtMs) : null);
+    return w.getDataContractHistoryWithProofInfo(query);
   }
 
   async getMany(contractIds: string[]): Promise<any> {

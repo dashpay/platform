@@ -37,7 +37,7 @@ impl ActionTakerWasm {
 
     #[wasm_bindgen(constructor)]
     pub fn new(value: &JsValue) -> WasmDppResult<ActionTakerWasm> {
-        if let Ok(identifier) = IdentifierWasm::try_from(value) {
+        if let Ok(identifier) = IdentifierWasm::try_from(value.clone()) {
             return Ok(ActionTakerWasm(ActionTaker::SingleIdentity(
                 identifier.into(),
             )));
@@ -50,11 +50,11 @@ impl ActionTakerWasm {
         }
 
         let array = Array::from(value);
-        let mut identifiers: BTreeSet<Identifier> = BTreeSet::new();
+        let mut identifiers = BTreeSet::new();
 
         for js_value in array.to_vec() {
-            let identifier = IdentifierWasm::try_from(js_value)?.into();
-            identifiers.insert(identifier);
+            let identifier = IdentifierWasm::try_from(js_value)?;
+            identifiers.insert(Identifier::from(identifier));
         }
 
         if identifiers.is_empty() {

@@ -4,6 +4,10 @@ use dpp::platform_value::string_encoding::Encoding::{Base58, Base64, Hex};
 use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
 use js_sys::Uint8Array;
+use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+use serde_json::Value as JsonValue;
+use std::fmt;
 use wasm_bindgen::prelude::*;
 
 #[derive(Copy, Clone)]
@@ -65,15 +69,7 @@ impl TryFrom<JsValue> for IdentifierWasm {
         }
 
         if let Some(string) = value.as_string() {
-            if string.len() == 64 && string.chars().all(|c| c.is_ascii_hexdigit()) {
-                let bytes = decode(string.as_str(), Hex)
-                    .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
-                return IdentifierWasm::try_from(bytes.as_slice());
-            }
-
-            return Identifier::from_string(string.as_str(), Base58)
-                .map(Into::into)
-                .map_err(|err| WasmDppError::invalid_argument(err.to_string()));
+            return IdentifierWasm::try_from(string.as_str());
         }
 
         if value.is_instance_of::<js_sys::Uint8Array>() || value.is_array() || value.is_object() {
@@ -95,6 +91,87 @@ impl TryFrom<&JsValue> for IdentifierWasm {
     type Error = WasmDppError;
     fn try_from(value: &JsValue) -> Result<Self, Self::Error> {
         IdentifierWasm::try_from(value.clone())
+    }
+}
+
+impl TryFrom<&str> for IdentifierWasm {
+    type Error = WasmDppError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        if value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()) {
+            let bytes = decode(value, Hex)
+                .map_err(|err| WasmDppError::invalid_argument(err.to_string()))?;
+            return IdentifierWasm::try_from(bytes.as_slice());
+        }
+
+        Identifier::from_string(value, Base58)
+            .map(Into::into)
+            .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
+    }
+}
+
+struct IdentifierWasmVisitor;
+
+impl<'de> Visitor<'de> for IdentifierWasmVisitor {
+    type Value = IdentifierWasm;
+
+    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter.write_str("Identifier or compatible representation")
+    }
+
+    fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        IdentifierWasm::try_from(value).map_err(|err| E::custom(err.to_string()))
+    }
+
+    fn visit_string<E>(self, value: String) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        self.visit_str(&value)
+    }
+
+    fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+    where
+        A: SeqAccess<'de>,
+    {
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(byte) = seq.next_element::<u8>()? {
+            bytes.push(byte);
+        }
+        Identifier::from_vec(bytes)
+            .map(IdentifierWasm)
+            .map_err(|err| A::Error::custom(err.to_string()))
+    }
+
+    fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+    where
+        E: de::Error,
+    {
+        Identifier::from_vec(value.to_vec())
+            .map(IdentifierWasm)
+            .map_err(|err| E::custom(err.to_string()))
+    }
+
+    fn visit_map<M>(self, map: M) -> Result<Self::Value, M::Error>
+    where
+        M: MapAccess<'de>,
+    {
+        let value = JsonValue::deserialize(de::value::MapAccessDeserializer::new(map))
+            .map_err(M::Error::custom)?;
+        let js_value = serde_wasm_bindgen::to_value(&value).map_err(M::Error::custom)?;
+        IdentifierWasm::try_from(&js_value).map_err(|err| M::Error::custom(err.to_string()))
+    }
+}
+
+impl<'de> Deserialize<'de> for IdentifierWasm {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_any(IdentifierWasmVisitor)
     }
 }
 

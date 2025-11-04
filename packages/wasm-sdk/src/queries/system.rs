@@ -1,7 +1,9 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use js_sys::{Array, BigInt};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -755,17 +757,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
-        use dash_sdk::platform::{Fetch, Identifier};
+        use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        // Parse identity ID
-        let identity_identifier = Identifier::from_string(
-            identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
 
         // Fetch prefunded specialized balance
         let balance_result = PrefundedBalance::fetch(self.as_ref(), identity_identifier).await?;
@@ -773,7 +772,7 @@ impl WasmSdk {
         let balance_value = balance_result.map(|b| b.0).unwrap_or(0);
 
         Ok(PrefundedSpecializedBalanceWasm::new(
-            identity_id.to_string(),
+            identity_id_base58,
             balance_value,
         ))
     }
@@ -930,17 +929,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use dash_sdk::platform::{Fetch, Identifier};
+        use dash_sdk::platform::Fetch;
         use drive_proof_verifier::types::PrefundedSpecializedBalance as PrefundedBalance;
 
-        // Parse identity ID
-        let identity_identifier = Identifier::from_string(
-            identity_id,
-            dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58,
-        )
-        .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+        let identity_id_base58 = identity_identifier.to_string(Encoding::Base58);
 
         // Fetch prefunded specialized balance with proof
         let (balance_result, metadata, proof) = PrefundedBalance::fetch_with_metadata_and_proof(
@@ -953,7 +949,7 @@ impl WasmSdk {
         let data = balance_result
             .map(|balance| {
                 JsValue::from(PrefundedSpecializedBalanceWasm::new(
-                    identity_id.to_string(),
+                    identity_id_base58.clone(),
                     balance.0,
                 ))
             })

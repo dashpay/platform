@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
@@ -77,13 +78,13 @@ impl WasmSdk {
     pub async fn dpns_register_name(
         &self,
         label: &str,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         public_key_id: u32,
         private_key_wif: &str,
         preorder_callback: Option<js_sys::Function>,
     ) -> Result<JsValue, WasmSdkError> {
-        let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
 
         let identity = Identity::fetch(self.as_ref(), identity_id_parsed)
             .await?
@@ -306,14 +307,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsernames")]
     pub async fn get_dpns_usernames(
         &self,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         limit: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
 
-        let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
 
         let contract_id =
             Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
@@ -358,8 +359,14 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getDpnsUsername")]
-    pub async fn get_dpns_username(&self, identity_id: &str) -> Result<JsValue, WasmSdkError> {
-        let result = self.get_dpns_usernames(identity_id, Some(1)).await?;
+    pub async fn get_dpns_username(
+        &self,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
+    ) -> Result<JsValue, WasmSdkError> {
+        let result = self
+            .get_dpns_usernames(identity_id.clone(), Some(1))
+            .await?;
         let array = Array::from(&result);
 
         if array.length() > 0 {
@@ -372,14 +379,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsernamesWithProofInfo")]
     pub async fn get_dpns_usernames_with_proof_info(
         &self,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
         limit: Option<u32>,
     ) -> Result<DpnsUsernamesProofResponseWasm, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
 
-        let identity_id_parsed = Identifier::from_string(identity_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", e)))?;
+        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
 
         let contract_id =
             Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
@@ -431,14 +438,15 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
     pub async fn get_dpns_username_with_proof_info(
         &self,
-        identity_id: &str,
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        identity_id: JsValue,
     ) -> Result<DpnsUsernameProofResponseWasm, WasmSdkError> {
         let DpnsUsernamesProofResponseWasm {
             usernames,
             metadata,
             proof,
         } = self
-            .get_dpns_usernames_with_proof_info(identity_id, Some(1))
+            .get_dpns_usernames_with_proof_info(identity_id.clone(), Some(1))
             .await?;
 
         let username = if usernames.length() > 0 {

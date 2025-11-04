@@ -1,6 +1,5 @@
 use crate::queries::utils::{
     convert_json_values_to_platform_values, convert_optional_limit, deserialize_required_query,
-    identifier_from_base58,
 };
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -10,7 +9,7 @@ use dash_sdk::platform::FetchMany;
 use drive::query::vote_poll_contestant_votes_query::ContestedDocumentVotePollVotesDriveQuery;
 use drive_proof_verifier::types::Voter;
 use js_sys::Array;
-use platform_value::string_encoding::Encoding;
+use platform_value::{string_encoding::Encoding, Identifier};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::wasm_bindgen;
@@ -24,9 +23,9 @@ const CONTESTED_RESOURCE_VOTERS_QUERY_TS: &'static str = r#"
  */
 export interface ContestedResourceVotersForIdentityQuery {
   /**
-   * Data contract identifier (base58 string).
+   * Data contract identifier.
    */
-  dataContractId: string;
+  dataContractId: Identifier | Uint8Array | string;
 
   /**
    * Contested document type name.
@@ -45,9 +44,9 @@ export interface ContestedResourceVotersForIdentityQuery {
   indexValues?: unknown[];
 
   /**
-   * Contested identity identifier (base58 string).
+   * Contested identity identifier.
    */
-  contestantId: string;
+  contestantId: Identifier | Uint8Array | string;
 
   /**
    * Maximum number of voters to return.
@@ -59,7 +58,7 @@ export interface ContestedResourceVotersForIdentityQuery {
    * Voter identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtVoterId?: string;
+  startAtVoterId?: Identifier | Uint8Array | string;
 
   /**
    * Include the `startAtVoterId` when true.
@@ -84,16 +83,16 @@ extern "C" {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ContestedResourceVotersQueryInput {
-    data_contract_id: String,
+    data_contract_id: IdentifierWasm,
     document_type_name: String,
     index_name: String,
-    contestant_id: String,
+    contestant_id: IdentifierWasm,
     #[serde(default)]
     index_values: Option<Vec<JsonValue>>,
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
-    start_at_voter_id: Option<String>,
+    start_at_voter_id: Option<IdentifierWasm>,
     #[serde(default)]
     start_at_included: Option<bool>,
     #[serde(default)]
@@ -115,15 +114,15 @@ fn build_contested_resource_voters_query(
         order_ascending,
     } = query;
 
-    let contract_id = identifier_from_base58(&data_contract_id, "contract ID")?;
+    let contract_id: Identifier = data_contract_id.into();
 
-    let contestant_id = identifier_from_base58(&contestant_id, "contestant ID")?;
+    let contestant_id: Identifier = contestant_id.into();
 
     let index_values = convert_json_values_to_platform_values(index_values, "indexValues")?;
 
     let start_at = match start_at_voter_id {
         Some(voter_id) => {
-            let identifier = identifier_from_base58(&voter_id, "voter ID")?;
+            let identifier: Identifier = voter_id.into();
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }

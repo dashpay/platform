@@ -1,5 +1,6 @@
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
+import type { DocumentsQuery } from '../wasm.js';
 
 export class DocumentsFacade {
   private sdk: EvoSDK;
@@ -9,52 +10,14 @@ export class DocumentsFacade {
   }
 
   // Query many documents
-  async query(params: {
-    contractId: string;
-    type: string;
-    where?: unknown;
-    orderBy?: unknown;
-    limit?: number;
-    startAfter?: string;
-    startAt?: string;
-  }): Promise<any> {
-    const { contractId, type, where, orderBy, limit, startAfter, startAt } = params;
-    const whereJson = asJsonString(where);
-    const orderJson = asJsonString(orderBy);
+  async query(query: DocumentsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDocuments(
-      contractId,
-      type,
-      whereJson ?? null,
-      orderJson ?? null,
-      limit ?? null,
-      startAfter ?? null,
-      startAt ?? null,
-    );
+    return w.getDocuments(query);
   }
 
-  async queryWithProof(params: {
-    contractId: string;
-    type: string;
-    where?: unknown;
-    orderBy?: unknown;
-    limit?: number;
-    startAfter?: string;
-    startAt?: string;
-  }): Promise<any> {
-    const { contractId, type, where, orderBy, limit, startAfter, startAt } = params;
-    const whereJson = asJsonString(where);
-    const orderJson = asJsonString(orderBy);
+  async queryWithProof(query: DocumentsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDocumentsWithProofInfo(
-      contractId,
-      type,
-      whereJson ?? null,
-      orderJson ?? null,
-      limit ?? null,
-      startAfter ?? null,
-      startAt ?? null,
-    );
+    return w.getDocumentsWithProofInfo(query);
   }
 
   async get(contractId: string, type: string, documentId: string): Promise<any> {

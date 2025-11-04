@@ -259,15 +259,3 @@ pub fn generate_document_id_v0(
     Identifier::from_bytes(&hash_double_to_vec(&buf))
         .map_err(|err| WasmDppError::invalid_argument(err.to_string()))
 }
-
-// TODO: Refactor, code bellow
-
-// if let Ok(obj) = input.dyn_into::<MyClass>() {
-// // received wasm object
-// web_sys::console::log_1(&format!("MyClass: {}", obj.value()).into());
-// } else if let Some(s) = input.as_string() {
-// // received string
-// web_sys::console::log_1(&format!("String: {}", s).into());
-// } else {
-// web_sys::console::error_1(&"Expected string | MyClass".into());
-// }

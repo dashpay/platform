@@ -1,9 +1,8 @@
-use crate::queries::utils::{
-    convert_optional_limit, deserialize_required_query, identifier_from_base58,
-};
+use crate::queries::utils::{convert_optional_limit, deserialize_required_query};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use crate::WasmSdkError;
+use dash_sdk::dpp::platform_value::Identifier;
 use dash_sdk::dpp::voting::vote_choices::resource_vote_choice::ResourceVoteChoice;
 use dash_sdk::dpp::voting::vote_polls::VotePoll;
 use dash_sdk::dpp::voting::votes::resource_vote::v0::ResourceVoteV0;
@@ -15,6 +14,7 @@ use js_sys::Array;
 use platform_value::string_encoding::Encoding;
 use serde::Deserialize;
 use wasm_bindgen::prelude::wasm_bindgen;
+use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(typescript_custom_section)]
 const CONTESTED_RESOURCE_IDENTITY_VOTES_QUERY_TS: &'static str = r#"
@@ -23,9 +23,9 @@ const CONTESTED_RESOURCE_IDENTITY_VOTES_QUERY_TS: &'static str = r#"
  */
 export interface ContestedResourceIdentityVotesQuery {
   /**
-   * Identity identifier (base58 string).
+   * Identity identifier.
    */
-  identityId: string;
+  identityId: Identifier | Uint8Array | string;
 
   /**
    * Maximum number of votes to return.
@@ -37,7 +37,7 @@ export interface ContestedResourceIdentityVotesQuery {
    * Vote identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtVoteId?: string;
+  startAtVoteId?: Identifier | Uint8Array | string;
 
   /**
    * Include the `startAtVoteId` when true.
@@ -65,7 +65,7 @@ struct ContestedResourceIdentityVotesQueryFields {
     #[serde(default)]
     limit: Option<u32>,
     #[serde(default)]
-    start_at_vote_id: Option<String>,
+    start_at_vote_id: Option<IdentifierWasm>,
     #[serde(default)]
     start_at_included: Option<bool>,
     #[serde(default)]
@@ -75,7 +75,7 @@ struct ContestedResourceIdentityVotesQueryFields {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct ContestedResourceIdentityVotesQueryInput {
-    identity_id: String,
+    identity_id: IdentifierWasm,
     #[serde(flatten)]
     fields: ContestedResourceIdentityVotesQueryFields,
 }
@@ -94,13 +94,13 @@ fn build_contested_resource_identity_votes_query(
             },
     } = input;
 
-    let identity_id = identifier_from_base58(&identity_id, "identity ID")?;
+    let identity_id: Identifier = identity_id.into();
 
     let limit = convert_optional_limit(limit, "limit")?;
 
     let start_at = match start_at_vote_id {
         Some(vote_id) => {
-            let identifier = identifier_from_base58(&vote_id, "vote ID")?;
+            let identifier: Identifier = vote_id.into();
 
             Some((identifier.to_buffer(), start_at_included.unwrap_or(true)))
         }
