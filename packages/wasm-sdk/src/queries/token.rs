@@ -342,9 +342,11 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getTokenStatuses")]
-    pub async fn get_token_statuses(&self,
+    pub async fn get_token_statuses(
+        &self,
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        token_ids: Vec<JsValue>) -> Result<Map, WasmSdkError> {
+        token_ids: Vec<JsValue>,
+    ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
 
         // Parse token IDs

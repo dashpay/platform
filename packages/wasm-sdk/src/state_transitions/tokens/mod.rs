@@ -449,8 +449,7 @@ impl WasmSdk {
             .await?;
 
         // Parse identity to freeze
-        let frozen_identity_id =
-            identifier_from_js(&identity_to_freeze_id, "identity to freeze")?;
+        let frozen_identity_id = identifier_from_js(&identity_to_freeze_id, "identity to freeze")?;
 
         // Fetch and cache the data contract
         let _data_contract = self.fetch_and_cache_token_contract(contract_id).await?;

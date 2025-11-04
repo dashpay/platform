@@ -574,7 +574,9 @@ impl WasmSdk {
         let array = Array::new();
         for (key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(key_id, &key)));
+                array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(
+                    key_id, &key,
+                )));
             }
         }
 
@@ -1025,12 +1027,8 @@ impl WasmSdk {
                     .with_limit(limit.unwrap_or(100))
                     .with_offset(offset.unwrap_or(0));
 
-                IdentityPublicKey::fetch_many_with_metadata_and_proof(
-                    self.as_ref(),
-                    query,
-                    None,
-                )
-                .await?
+                IdentityPublicKey::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
+                    .await?
             }
             IdentityKeysRequestInput::Search { .. } => {
                 return Err(WasmSdkError::invalid_argument(
@@ -1042,7 +1040,9 @@ impl WasmSdk {
         let keys_array = Array::new();
         for (key_id, key_opt) in keys_result {
             if let Some(key) = key_opt {
-                keys_array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(key_id, &key)));
+                keys_array.push(&JsValue::from(IdentityKeyInfoWasm::from_entry(
+                    key_id, &key,
+                )));
             }
         }
 

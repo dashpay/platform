@@ -1,6 +1,6 @@
 use crate::error::WasmSdkError;
-use crate::queries::ProofMetadataResponseWasm;
 use crate::queries::utils::identifier_from_js;
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
