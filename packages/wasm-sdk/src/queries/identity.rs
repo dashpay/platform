@@ -481,10 +481,9 @@ impl WasmSdk {
                     ));
                 }
 
-                let request_limit = limit.unwrap_or(100);
-
                 let query = IdentityKeysQuery::new(identity_id.clone(), specific_key_ids)
-                    .with_limit(request_limit);
+                    .with_limit(limit.unwrap_or(100))
+                    .with_offset(offset.unwrap_or(0));
 
                 IdentityPublicKey::fetch_many(self.as_ref(), query).await?
             }
