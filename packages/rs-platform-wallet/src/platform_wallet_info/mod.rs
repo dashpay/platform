@@ -7,6 +7,7 @@ use std::fmt;
 mod accessors;
 mod contact_requests;
 mod managed_account_operations;
+mod matured_transactions;
 mod wallet_info_interface;
 mod wallet_transaction_checker;
 

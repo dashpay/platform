@@ -4,11 +4,13 @@
 //! according to DIP-15 specification.
 
 mod contact_request;
+mod contact_request_queries;
 
 pub use contact_request::{
     ContactRequestInput, ContactRequestResult, EcdhProvider, RecipientIdentity,
     SendContactRequestInput, SendContactRequestResult,
 };
+pub use contact_request_queries::ContactRequestDocuments;
 
 use crate::platform::Fetch;
 use crate::{Error, Sdk};

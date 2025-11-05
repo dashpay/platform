@@ -20,11 +20,11 @@ use key_wallet::Network;
 use key_wallet::Wallet;
 
 #[cfg(feature = "sdk")]
+use dpp::document::DocumentV0Getters;
+#[cfg(feature = "sdk")]
 use dpp::identity::signer::Signer;
 #[cfg(feature = "sdk")]
 use dpp::identity::IdentityPublicKey;
-#[cfg(feature = "sdk")]
-use dpp::document::DocumentV0Getters;
 
 impl PlatformWalletInfo {
     /// Add a sent contact request for a specific identity on a specific network
@@ -398,7 +398,9 @@ impl PlatformWalletInfo {
         // Prepare the contact request input
         let contact_request_input = dash_sdk::platform::dashpay::ContactRequestInput {
             sender_identity: sender_identity.clone(),
-            recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(recipient_identity.clone()),
+            recipient: dash_sdk::platform::dashpay::RecipientIdentity::Identity(
+                recipient_identity.clone(),
+            ),
             sender_key_index,
             recipient_key_index,
             account_reference: account_index,
@@ -439,11 +441,9 @@ impl PlatformWalletInfo {
 
         // Call SDK's send_contact_request
         let result = sdk
-            .send_contact_request(
-                send_input,
-                ecdh_provider,
-                |_account_ref: u32| async move { Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes.clone()) },
-            )
+            .send_contact_request(send_input, ecdh_provider, |_account_ref: u32| async move {
+                Ok::<Vec<u8>, dash_sdk::Error>(xpub_bytes.clone())
+            })
             .await
             .map_err(|e| {
                 PlatformWalletError::InvalidIdentityData(format!(
@@ -459,7 +459,7 @@ impl PlatformWalletInfo {
             recipient_key_index,
             result.account_reference,
             vec![0u8; 96], // The encrypted xpub - already on platform
-            100000, // core_height_created_at - we don't have this info
+            100000,        // core_height_created_at - we don't have this info
             result.document.created_at().unwrap_or(0),
         );
 
