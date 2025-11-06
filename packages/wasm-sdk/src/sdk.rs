@@ -2,123 +2,96 @@ use crate::context_provider::WasmContext;
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::{Sdk, SdkBuilder};
+use once_cell::sync::Lazy;
 use rs_dapi_client::RequestSettings;
 use std::ops::{Deref, DerefMut};
+use std::sync::Mutex;
 use std::time::Duration;
 use wasm_bindgen::prelude::wasm_bindgen;
-
-// Store shared trusted contexts
-use once_cell::sync::Lazy;
-use std::sync::Mutex;
-
 pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
     Mutex<Option<crate::context_provider::WasmTrustedContext>>,
 > = Lazy::new(|| Mutex::new(None));
 pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
     Mutex<Option<crate::context_provider::WasmTrustedContext>>,
 > = Lazy::new(|| Mutex::new(None));
-
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
-// Dereference JsSdk to Sdk so that we can use &JsSdk everywhere where &sdk is needed
 impl std::ops::Deref for WasmSdk {
     type Target = Sdk;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-
 impl AsRef<Sdk> for WasmSdk {
     fn as_ref(&self) -> &Sdk {
         &self.0
     }
 }
-
 impl From<Sdk> for WasmSdk {
     fn from(sdk: Sdk) -> Self {
         WasmSdk(sdk)
     }
 }
-
 #[wasm_bindgen]
 impl WasmSdk {
     pub fn version(&self) -> u32 {
         self.0.version().protocol_version
     }
-
     /// Get reference to the inner SDK for direct gRPC calls
     pub(crate) fn inner_sdk(&self) -> &Sdk {
         &self.0
     }
-
     /// Get the network this SDK is configured for
     pub(crate) fn network(&self) -> dash_sdk::dpp::dashcore::Network {
         self.0.network
     }
 }
-
 impl WasmSdk {
     /// Clone the inner Sdk (not exposed to WASM)
     pub(crate) fn inner_clone(&self) -> Sdk {
         self.0.clone()
     }
 }
-
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsMainnet")]
     pub async fn prefetch_trusted_quorums_mainnet() -> Result<(), WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
-
         let trusted_context = WasmTrustedContext::new_mainnet()
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
         trusted_context
             .prefetch_quorums()
             .await
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        // Store the context for later use
         *MAINNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
         Ok(())
     }
-
     #[wasm_bindgen(js_name = "prefetchTrustedQuorumsTestnet")]
     pub async fn prefetch_trusted_quorums_testnet() -> Result<(), WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
-
         let trusted_context = WasmTrustedContext::new_testnet()
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
         trusted_context
             .prefetch_quorums()
             .await
             .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
-
-        // Store the context for later use
         *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
-
         Ok(())
     }
 }
-
 #[wasm_bindgen]
 pub struct WasmSdkBuilder(SdkBuilder);
-
 impl Deref for WasmSdkBuilder {
     type Target = SdkBuilder;
     fn deref(&self) -> &Self::Target {
         &self.0
     }
 }
-
 impl DerefMut for WasmSdkBuilder {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.0
     }
 }
-
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     /// Get the latest platform version number
@@ -126,7 +99,6 @@ impl WasmSdkBuilder {
     pub fn get_latest_version_number() -> u32 {
         PlatformVersion::latest().protocol_version
     }
-
     /// Create a new SdkBuilder with specific addresses and network.
     ///
     /// # Arguments
@@ -147,8 +119,6 @@ impl WasmSdkBuilder {
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;
         use rs_dapi_client::Address;
-
-        // Parse and validate addresses
         if addresses.is_empty() {
             return Err(WasmSdkError::invalid_argument(
                 "Addresses must be a non-empty array",
@@ -164,10 +134,7 @@ impl WasmSdkBuilder {
                     })
             })
             .collect();
-
         let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
-
-        // Parse network - only mainnet and testnet are supported
         let network = match network.to_lowercase().as_str() {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
@@ -175,11 +142,9 @@ impl WasmSdkBuilder {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid network '{}'. Expected: mainnet or testnet",
                     network
-                )))
+                )));
             }
         };
-
-        // Use the cached trusted context if available for the network, otherwise create a new one
         let trusted_context = match network {
             Network::Dash => {
                 let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
@@ -199,21 +164,16 @@ impl WasmSdkBuilder {
                 WasmTrustedContext::new_testnet()
                     .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
             })?,
-            // Network was already validated above
             _ => unreachable!("Network already validated to mainnet or testnet"),
         };
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(parsed_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(network)
             .with_context_provider(trusted_context);
-
         Ok(Self(sdk_builder))
     }
-
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
-        // Mainnet addresses from mnowatch.org
         let mainnet_addresses = vec![
             "https://149.28.241.190:443".parse().unwrap(),
             "https://198.7.115.48:443".parse().unwrap(),
@@ -426,20 +386,15 @@ impl WasmSdkBuilder {
             "https://213.199.35.15:443".parse().unwrap(),
             "https://114.132.172.215:443".parse().unwrap(),
         ];
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
             .with_context_provider(WasmContext {});
-
         Self(sdk_builder)
     }
-
     #[wasm_bindgen(js_name = "mainnetTrusted")]
     pub fn new_mainnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
-
-        // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
@@ -449,8 +404,6 @@ impl WasmSdkBuilder {
             WasmTrustedContext::new_mainnet()
                 .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
-
-        // Mainnet addresses from mnowatch.org
         let mainnet_addresses = vec![
             "https://149.28.241.190:443".parse().unwrap(),
             "https://198.7.115.48:443".parse().unwrap(),
@@ -663,43 +616,33 @@ impl WasmSdkBuilder {
             "https://213.199.35.15:443".parse().unwrap(),
             "https://114.132.172.215:443".parse().unwrap(),
         ];
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
             .with_context_provider(trusted_context);
-
         Ok(Self(sdk_builder))
     }
-
     #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
-        // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
-        // Using HTTPS endpoints for ENABLED nodes with successful version checks
         let testnet_addresses = vec![
-            "https://52.12.176.90:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.82.197.197:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.12.176.90:1443".parse().unwrap(),
+            "https://35.82.197.197:1443".parse().unwrap(),
+            "https://44.240.98.102:1443".parse().unwrap(),
+            "https://52.34.144.50:1443".parse().unwrap(),
+            "https://44.239.39.153:1443".parse().unwrap(),
+            "https://34.214.48.68:1443".parse().unwrap(),
+            "https://54.149.33.167:1443".parse().unwrap(),
+            "https://52.24.124.162:1443".parse().unwrap(),
         ];
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
             .with_context_provider(WasmContext {});
-
         Self(sdk_builder)
     }
-
     #[wasm_bindgen(js_name = "testnetTrusted")]
     pub fn new_testnet_trusted() -> Result<Self, WasmSdkError> {
         use crate::context_provider::WasmTrustedContext;
-
-        // Use the cached context if available, otherwise create a new one
         let trusted_context = {
             let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
             guard.clone()
@@ -709,37 +652,32 @@ impl WasmSdkBuilder {
             WasmTrustedContext::new_testnet()
                 .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
         })?;
-
-        // Testnet addresses from https://quorums.testnet.networks.dash.org/masternodes
-        // Using HTTPS endpoints for ENABLED nodes with successful version checks
         let testnet_addresses = vec![
-            "https://52.12.176.90:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://35.82.197.197:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.240.98.102:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.34.144.50:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://44.239.39.153:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://34.214.48.68:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://54.149.33.167:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
-            "https://52.24.124.162:1443".parse().unwrap(), // ENABLED, dapiVersion: 2.0.0-rc.17
+            "https://52.12.176.90:1443".parse().unwrap(),
+            "https://35.82.197.197:1443".parse().unwrap(),
+            "https://44.240.98.102:1443".parse().unwrap(),
+            "https://52.34.144.50:1443".parse().unwrap(),
+            "https://44.239.39.153:1443".parse().unwrap(),
+            "https://34.214.48.68:1443".parse().unwrap(),
+            "https://54.149.33.167:1443".parse().unwrap(),
+            "https://52.24.124.162:1443".parse().unwrap(),
         ];
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Testnet)
             .with_context_provider(trusted_context);
-
         Ok(Self(sdk_builder))
     }
-
     pub fn build(self) -> Result<WasmSdk, WasmSdkError> {
         self.0.build().map(WasmSdk).map_err(WasmSdkError::from)
     }
-
     #[wasm_bindgen(js_name = "withContextProvider")]
-    pub fn with_context_provider(self, context_provider: WasmContext) -> Self {
+    pub fn with_context_provider(
+        self,
+        #[wasm_bindgen(js_name = "contextProvider")] context_provider: WasmContext,
+    ) -> Self {
         WasmSdkBuilder(self.0.with_context_provider(context_provider))
     }
-
     /// Configure platform version to use.
     ///
     /// Available versions:
@@ -749,17 +687,18 @@ impl WasmSdkBuilder {
     ///
     /// Defaults to latest version if not specified.
     #[wasm_bindgen(js_name = "withVersion")]
-    pub fn with_version(self, version_number: u32) -> Result<Self, WasmSdkError> {
+    pub fn with_version(
+        self,
+        #[wasm_bindgen(js_name = "versionNumber")] version_number: u32,
+    ) -> Result<Self, WasmSdkError> {
         let version = PlatformVersion::get(version_number).map_err(|e| {
             WasmSdkError::invalid_argument(format!(
                 "Invalid platform version {}: {}",
                 version_number, e
             ))
         })?;
-
         Ok(WasmSdkBuilder(self.0.with_version(version)))
     }
-
     /// Configure request settings for the SDK.
     ///
     /// Settings include:
@@ -770,38 +709,34 @@ impl WasmSdkBuilder {
     #[wasm_bindgen(js_name = "withSettings")]
     pub fn with_settings(
         self,
-        connect_timeout_ms: Option<u32>,
-        timeout_ms: Option<u32>,
+        #[wasm_bindgen(js_name = "connectTimeoutMs")] connect_timeout_ms: Option<u32>,
+        #[wasm_bindgen(js_name = "timeoutMs")] timeout_ms: Option<u32>,
         retries: Option<u32>,
-        ban_failed_address: Option<bool>,
+        #[wasm_bindgen(js_name = "banFailedAddress")] ban_failed_address: Option<bool>,
     ) -> Self {
         let mut settings = RequestSettings::default();
-
         if let Some(connect_timeout) = connect_timeout_ms {
             settings.connect_timeout = Some(Duration::from_millis(connect_timeout as u64));
         }
-
         if let Some(timeout) = timeout_ms {
             settings.timeout = Some(Duration::from_millis(timeout as u64));
         }
-
         if let Some(retries) = retries {
             settings.retries = Some(retries as usize);
         }
-
         if let Some(ban) = ban_failed_address {
             settings.ban_failed_address = Some(ban);
         }
-
         WasmSdkBuilder(self.0.with_settings(settings))
     }
-
     #[wasm_bindgen(js_name = "withProofs")]
-    pub fn with_proofs(self, enable_proofs: bool) -> Self {
+    pub fn with_proofs(
+        self,
+        #[wasm_bindgen(js_name = "enableProofs")] enable_proofs: bool,
+    ) -> Self {
         WasmSdkBuilder(self.0.with_proofs(enable_proofs))
     }
 }
-
 #[wasm_bindgen]
 impl WasmSdk {
     /// Configure tracing/logging level or filter (static, global)
@@ -809,17 +744,21 @@ impl WasmSdk {
     /// Accepts simple levels: "off", "error", "warn", "info", "debug", "trace"
     /// or a full EnvFilter string like: "wasm_sdk=debug,rs_dapi_client=warn"
     #[wasm_bindgen(js_name = "setLogLevel")]
-    pub fn set_log_level(level_or_filter: &str) -> Result<(), WasmSdkError> {
+    pub fn set_log_level(
+        #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
+    ) -> Result<(), WasmSdkError> {
         crate::logging::set_log_level(level_or_filter)
     }
 }
-
 #[wasm_bindgen]
 impl WasmSdkBuilder {
     /// Configure tracing/logging via the builder
     /// Returns a new builder with logging configured
     #[wasm_bindgen(js_name = "withLogs")]
-    pub fn with_logs(self, level_or_filter: &str) -> Result<Self, WasmSdkError> {
+    pub fn with_logs(
+        self,
+        #[wasm_bindgen(js_name = "levelOrFilter")] level_or_filter: &str,
+    ) -> Result<Self, WasmSdkError> {
         crate::logging::set_log_level(level_or_filter)?;
         Ok(self)
     }

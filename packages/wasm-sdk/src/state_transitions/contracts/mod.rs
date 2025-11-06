@@ -18,7 +18,6 @@ use simple_signer::SingleKeySigner;
 use std::collections::BTreeMap;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
-
 #[wasm_bindgen]
 impl WasmSdk {
     /// Create a new data contract on Dash Platform.
@@ -36,34 +35,26 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractCreate)]
     pub async fn contract_create(
         &self,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        contract_definition: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "contractDefinition")] contract_definition: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
-
-        // Parse owner identifier
         let owner_identifier = identifier_from_js(&owner_id, "owner ID")?;
-
-        // Parse contract definition JSON
         let contract_json: serde_json::Value =
             serde_json::from_str(&contract_definition).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid contract definition JSON: {}", e))
             })?;
-
-        // Fetch owner identity
         let owner_identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Owner identity not found"))?;
-
-        // Parse private key and find matching public key
         let private_key_bytes = dash_sdk::dpp::dashcore::PrivateKey::from_wif(&private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?
             .inner
             .secret_bytes();
-
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
             &private_key_bytes,
@@ -72,18 +63,13 @@ impl WasmSdk {
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
-
-        // Create public key hash using hash160
         let public_key_hash160 = {
             use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
             hash160::Hash::hash(&public_key_bytes[..])
                 .to_byte_array()
                 .to_vec()
         };
-
-        // Find matching key - prioritize key_id if provided, otherwise find any authentication key
         let matching_key = if let Some(requested_key_id) = key_id {
-            // Find specific key by ID
             owner_identity
                 .public_keys()
                 .get(&requested_key_id)
@@ -100,7 +86,6 @@ impl WasmSdk {
                 })?
                 .clone()
         } else {
-            // Find any matching authentication key
             owner_identity
                 .public_keys()
                 .iter()
@@ -116,40 +101,25 @@ impl WasmSdk {
                     )
                 })?
         };
-
-        // Create the data contract from JSON definition
-        let data_contract = DataContract::from_json(
-            contract_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create data contract from JSON: {}",
-                e
-            ))
-        })?;
-
-        // Create signer
+        let data_contract =
+            DataContract::from_json(contract_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create data contract from JSON: {}",
+                    e
+                ))
+            })?;
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(WasmSdkError::invalid_argument)?;
-
-        // Create and broadcast the contract
         let created_contract = data_contract
             .put_to_platform_and_wait_for_response(&sdk, matching_key, &signer, None)
             .await?;
-
-        // Create JavaScript result object
         let result_obj = js_sys::Object::new();
-
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("status"),
             &JsValue::from_str("success"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set status: {:?}", e)))?;
-
-        // Convert contract ID to base58
         let contract_id_base58 = created_contract.id().to_string(Encoding::Base58);
         js_sys::Reflect::set(
             &result_obj,
@@ -157,22 +127,18 @@ impl WasmSdk {
             &JsValue::from_str(&contract_id_base58),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set contractId: {:?}", e)))?;
-
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("ownerId"),
             &JsValue::from_str(&owner_identifier.to_string(Encoding::Base58)),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set ownerId: {:?}", e)))?;
-
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("version"),
             &JsValue::from_f64(created_contract.version() as f64),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set version: {:?}", e)))?;
-
-        // Add document type names
         let schema = created_contract.document_types();
         let doc_types_array = js_sys::Array::new();
         for (doc_type_name, _) in schema.iter() {
@@ -184,17 +150,14 @@ impl WasmSdk {
             &doc_types_array,
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set documentTypes: {:?}", e)))?;
-
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("message"),
             &JsValue::from_str("Data contract created successfully"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set message: {:?}", e)))?;
-
         Ok(result_obj.into())
     }
-
     /// Update an existing data contract on Dash Platform.
     ///
     /// # Arguments
@@ -211,50 +174,38 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractUpdate)]
     pub async fn contract_update(
         &self,
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        contract_updates: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "contractUpdates")] contract_updates: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
-
-        // Parse identifiers
         let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
-
         let owner_identifier = identifier_from_js(&owner_id, "owner ID")?;
-
-        // Parse contract updates JSON
         let updates_json: serde_json::Value =
             serde_json::from_str(&contract_updates).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid contract updates JSON: {}", e))
             })?;
-
-        // Fetch the existing contract
         let existing_contract = DataContract::fetch(&sdk, contract_identifier)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Contract not found"))?;
-
-        // Verify ownership
         if existing_contract.owner_id() != owner_identifier {
             return Err(WasmSdkError::invalid_argument(
                 "Identity does not own this contract",
             ));
         }
-
-        // Fetch owner identity
         let owner_identity = dash_sdk::platform::Identity::fetch(&sdk, owner_identifier)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Owner identity not found"))?;
-
-        // Parse private key and find matching public key
         let private_key_bytes = dash_sdk::dpp::dashcore::PrivateKey::from_wif(&private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid private key: {}", e)))?
             .inner
             .secret_bytes();
-
         let secp = dash_sdk::dpp::dashcore::secp256k1::Secp256k1::new();
         let secret_key = dash_sdk::dpp::dashcore::secp256k1::SecretKey::from_slice(
             &private_key_bytes,
@@ -263,18 +214,13 @@ impl WasmSdk {
         let public_key =
             dash_sdk::dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
         let public_key_bytes = public_key.serialize();
-
-        // Create public key hash using hash160
         let public_key_hash160 = {
             use dash_sdk::dpp::dashcore::hashes::{hash160, Hash};
             hash160::Hash::hash(&public_key_bytes[..])
                 .to_byte_array()
                 .to_vec()
         };
-
-        // Find matching key - prioritize key_id if provided, otherwise find any authentication key
         let matching_key = if let Some(requested_key_id) = key_id {
-            // Find specific key by ID
             owner_identity
                 .public_keys()
                 .get(&requested_key_id)
@@ -291,7 +237,6 @@ impl WasmSdk {
                 })?
                 .clone()
         } else {
-            // Find any matching authentication key
             owner_identity
                 .public_keys()
                 .iter()
@@ -307,22 +252,13 @@ impl WasmSdk {
                     )
                 })?
         };
-
-        // Create updated contract from JSON definition
-        // Note: The updates should be a complete contract definition with incremented version
-        let updated_contract = DataContract::from_json(
-            updates_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create updated contract from JSON: {}",
-                e
-            ))
-        })?;
-
-        // Verify the version was incremented
+        let updated_contract =
+            DataContract::from_json(updates_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create updated contract from JSON: {}",
+                    e
+                ))
+            })?;
         if updated_contract.version() <= existing_contract.version() {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Contract version must be incremented. Current: {}, Provided: {}",
@@ -330,13 +266,9 @@ impl WasmSdk {
                 updated_contract.version()
             )));
         }
-
-        // Get identity contract nonce (contract updates use per-contract nonces)
         let identity_contract_nonce = sdk
             .get_identity_contract_nonce(owner_identifier, contract_identifier, true, None)
             .await?;
-
-        // Create partial identity for signing
         let partial_identity = dash_sdk::dpp::identity::PartialIdentity {
             id: owner_identifier,
             loaded_public_keys: BTreeMap::from([(matching_key.id(), matching_key.clone())]),
@@ -344,12 +276,8 @@ impl WasmSdk {
             revision: None,
             not_found_public_keys: Default::default(),
         };
-
-        // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
             .map_err(WasmSdkError::invalid_argument)?;
-
-        // Create the update transition
         let state_transition = DataContractUpdateTransition::new_from_data_contract(
             updated_contract.clone(),
             &partial_identity,
@@ -361,22 +289,15 @@ impl WasmSdk {
             None,
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to create update transition: {}", e)))?;
-
-        // Broadcast the transition
         use dash_sdk::dpp::state_transition::proof_result::StateTransitionProofResult;
         let result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
             .await?;
-
-        // Extract updated contract from result
         let updated_version = match result {
             StateTransitionProofResult::VerifiedDataContract(contract) => contract.version(),
             _ => updated_contract.version(),
         };
-
-        // Create JavaScript result object
         let result_obj = js_sys::Object::new();
-
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("status"),
@@ -401,7 +322,6 @@ impl WasmSdk {
             &JsValue::from_str("Data contract updated successfully"),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set message: {:?}", e)))?;
-
         Ok(result_obj.into())
     }
 }
