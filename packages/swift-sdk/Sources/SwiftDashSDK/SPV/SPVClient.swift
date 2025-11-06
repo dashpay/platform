@@ -28,6 +28,63 @@ extension SPVClient {
 // MARK: - C Callback Functions
 // Use top-level C-compatible functions to avoid actor-isolation init issues
 
+// Throttle progress notifications to avoid flooding the main thread.
+// Keep the latest progress update instead of dropping them, and dispatch at a controlled rate.
+actor SPVProgressDispatcher {
+    static let shared = SPVProgressDispatcher()
+    private var lastDispatchAt: TimeInterval = 0
+    private let interval: TimeInterval = 1.0 // seconds - increased further to reduce computation frequency
+    private var pendingUpdate: (userDataPtr: UInt, snapshot: FFIDetailedSyncProgress)?
+    private var dispatchTask: Task<Void, Never>?
+
+    func enqueue(userDataPtr: UInt, snapshot: FFIDetailedSyncProgress) {
+        // Always keep the latest update
+        pendingUpdate = (userDataPtr, snapshot)
+        
+        // Start dispatch task if not already running
+        if dispatchTask == nil {
+            dispatchTask = Task { await self.dispatchLoop() }
+        }
+    }
+    
+    private func dispatchLoop() async {
+        while true {
+            let now = Date().timeIntervalSince1970
+            let timeSinceLastDispatch = now - lastDispatchAt
+            
+            // Process update if enough time has passed and we have one
+            if timeSinceLastDispatch >= interval, let update = pendingUpdate {
+                // Dispatch the latest update
+                lastDispatchAt = now
+                // Clear pending before dispatching to allow new updates to queue
+                pendingUpdate = nil
+                
+                Task { @MainActor in
+                    guard let userData = UnsafeMutableRawPointer(bitPattern: update.userDataPtr) else { return }
+                    let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
+                    context.handleProgressUpdate(update.snapshot)
+                }
+            }
+            
+            // Check if we should continue
+            guard let _ = pendingUpdate else {
+                // No pending update - check one more time after a short delay
+                // to catch any updates that came in during the check
+                try? await Task.sleep(nanoseconds: 50_000_000) // 50ms
+                if pendingUpdate == nil {
+                    dispatchTask = nil
+                    break
+                }
+                continue
+            }
+            
+            // Sleep for remaining time or short interval
+            let sleepDuration = max(0.05, interval - timeSinceLastDispatch)
+            try? await Task.sleep(nanoseconds: UInt64(sleepDuration * 1_000_000_000))
+        }
+    }
+}
+
 private func spvProgressCallback(
     progressPtr: UnsafePointer<FFIDetailedSyncProgress>?,
     userData: UnsafeMutableRawPointer?
@@ -36,11 +93,7 @@ private func spvProgressCallback(
           let userData = userData else { return }
     let snapshot = progressPtr.pointee
     let ptrVal = UInt(bitPattern: userData)
-    DispatchQueue.main.async {
-        guard let userData = UnsafeMutableRawPointer(bitPattern: ptrVal) else { return }
-        let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
-        context.handleProgressUpdate(snapshot)
-    }
+    Task { await SPVProgressDispatcher.shared.enqueue(userDataPtr: ptrVal, snapshot: snapshot) }
 }
 
 private func spvCompletionCallback(
@@ -119,7 +172,8 @@ private func onTransactionCallbackC(
             confirmed: confirmed,
             amount: amount,
             addresses: addresses,
-            blockHeight: blockHeight > 0 ? blockHeight : nil
+            blockHeight: blockHeight > 0 ? blockHeight : nil,
+            walletId: nil
         )
     }
 }
@@ -194,6 +248,7 @@ public struct SPVTransactionEvent {
     public let amount: Int64
     public let addresses: [String]
     public let blockHeight: UInt32?
+    public let walletId: String?
 }
 
 // MARK: - SPV Client Delegate
@@ -247,7 +302,7 @@ public class SPVClient: ObservableObject {
     internal var syncCancelled = false
     fileprivate var currentSyncStartTimestamp: Int64 = 0
     fileprivate var lastProgressUIUpdate: TimeInterval = 0
-    fileprivate let progressUICoalesceInterval: TimeInterval = 0.2
+    fileprivate let progressUICoalesceInterval: TimeInterval = 0.5 // Increased further to reduce UI update frequency
     fileprivate let swiftLoggingEnabled: Bool = {
         if let env = ProcessInfo.processInfo.environment["SPV_SWIFT_LOG"], env.lowercased() == "1" || env.lowercased() == "true" {
             return true
@@ -484,6 +539,7 @@ public class SPVClient: ObservableObject {
         self.isSyncing = false
         self.syncProgress = nil
         self.lastError = nil
+        self.blocksHit = 0
     }
 
     /// Clear only the persisted sync-state snapshot while keeping headers/filters.
@@ -689,7 +745,8 @@ public class SPVClient: ObservableObject {
                     confirmed: false,
                     amount: amount,
                     addresses: addresses,
-                    blockHeight: nil
+                    blockHeight: nil,
+                    walletId: nil
                 )
             }
         }
@@ -712,7 +769,8 @@ public class SPVClient: ObservableObject {
                     confirmed: true,
                     amount: 0,
                     addresses: [],
-                    blockHeight: blockHeight
+                    blockHeight: blockHeight,
+                    walletId: nil
                 )
             }
         }
@@ -723,7 +781,7 @@ public class SPVClient: ObservableObject {
         }
 
         // Wallet-specific transaction callback (fires for our wallet, including mempool)
-        callbacks.on_wallet_transaction = { _walletId, _accountIndex, txidPtr, confirmed, amount, addressesPtr, blockHeight, _isOurs, userData in
+        callbacks.on_wallet_transaction = { walletIdPtr, _accountIndex, txidPtr, confirmed, amount, addressesPtr, blockHeight, _isOurs, userData in
             guard let userData = userData else { return }
             let context = Unmanaged<CallbackContext>.fromOpaque(userData).takeUnretainedValue()
 
@@ -738,6 +796,11 @@ public class SPVClient: ObservableObject {
                 addresses = addressesStr.components(separatedBy: ",")
             }
 
+            var walletId: String? = nil
+            if let walletIdPtr = walletIdPtr {
+                walletId = String(cString: walletIdPtr)
+            }
+
             let clientRef = context.client
             Task { @MainActor [weak clientRef] in
                 clientRef?.handleTransactionEvent(
@@ -745,7 +808,8 @@ public class SPVClient: ObservableObject {
                     confirmed: confirmed,
                     amount: amount,
                     addresses: addresses,
-                    blockHeight: blockHeight > 0 ? blockHeight : nil
+                    blockHeight: blockHeight > 0 ? blockHeight : nil,
+                    walletId: walletId
                 )
             }
         }
@@ -840,13 +904,14 @@ public class SPVClient: ObservableObject {
         }
     }
     
-    fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?) {
+    fileprivate func handleTransactionEvent(txid: Data, confirmed: Bool, amount: Int64, addresses: [String], blockHeight: UInt32?, walletId: String?) {
         let transaction = SPVTransactionEvent(
             txid: txid,
             confirmed: confirmed,
             amount: amount,
             addresses: addresses,
-            blockHeight: blockHeight
+            blockHeight: blockHeight,
+            walletId: walletId
         )
 
         delegate?.spvClient(self, didReceiveTransaction: transaction)
@@ -1022,160 +1087,175 @@ private class CallbackContext {
     func handleProgressUpdate(_ ffiProgress: FFIDetailedSyncProgress) {
         guard let client = self.client else { return }
 
+        // Extract data we need from MainActor-isolated properties
         let overview = ffiProgress.overview
-        client.peerCount = Int(overview.peer_count)
+        let startFromHeight = client.startFromHeight
+        let currentSyncStartTimestamp = client.currentSyncStartTimestamp
+        let swiftLoggingEnabled = client.swiftLoggingEnabled
+        
+        // Extract previous progress values (Sendable types only)
+        let previousProgress: SPVSyncProgress? = client.syncProgress
+        let previousStage = previousProgress?.stage
+        let previousHeaderProgress = previousProgress?.headerProgress ?? 0.0
+        let previousMasternodeProgress = previousProgress?.masternodeProgress ?? 0.0
+        let previousTransactionProgress = previousProgress?.transactionProgress ?? 0.0
+        
+        // Do all heavy computation off MainActor
+        Task.detached(priority: .userInitiated) {
+            var stage = SPVSyncStage(ffiStage: ffiProgress.stage)
+            let estimatedTime: TimeInterval? = (ffiProgress.estimated_seconds_remaining > 0)
+                ? TimeInterval(ffiProgress.estimated_seconds_remaining)
+                : nil
 
-        var stage = SPVSyncStage(ffiStage: ffiProgress.stage)
-        let estimatedTime: TimeInterval? = (ffiProgress.estimated_seconds_remaining > 0)
-            ? TimeInterval(ffiProgress.estimated_seconds_remaining)
-            : nil
-
-        let syncStartTimestamp = ffiProgress.sync_start_timestamp
-        var previous = client.syncProgress
-        if syncStartTimestamp > 0 {
-            if syncStartTimestamp != client.currentSyncStartTimestamp {
-                client.currentSyncStartTimestamp = syncStartTimestamp
-                previous = nil
-            } else {
-                client.currentSyncStartTimestamp = syncStartTimestamp
+            let syncStartTimestamp = ffiProgress.sync_start_timestamp
+            
+            if swiftLoggingEnabled {
+                let pct = max(0.0, min(ffiProgress.percentage, 100.0))
+                let cur = overview.header_height
+                let tot = ffiProgress.total_height
+                let rate = ffiProgress.headers_per_second
+                let eta = ffiProgress.estimated_seconds_remaining
+                let filterHeaders = overview.filter_header_height
+                let filters = overview.last_synced_filter_height
+                print("[SPV][Progress] stage=\(stage.rawValue) header=\(cur)/\(tot) filterHeaders=\(filterHeaders) filters=\(filters) pct=\(pct) rate=\(rate) eta=\(eta)")
             }
-        } else if client.currentSyncStartTimestamp != 0 {
-            // Keep previous timestamp when FFI does not expose it
-        }
 
-        if client.swiftLoggingEnabled {
-            let pct = max(0.0, min(ffiProgress.percentage, 100.0))
-            let cur = overview.header_height
-            let tot = ffiProgress.total_height
-            let rate = ffiProgress.headers_per_second
-            let eta = ffiProgress.estimated_seconds_remaining
-            let filterHeaders = overview.filter_header_height
-            let filters = overview.last_synced_filter_height
-            print("[SPV][Progress] stage=\(stage.rawValue) header=\(cur)/\(tot) filterHeaders=\(filterHeaders) filters=\(filters) pct=\(pct) rate=\(rate) eta=\(eta)")
-        }
+            let safeBase: UInt32 = (startFromHeight > ffiProgress.total_height) ? 0 : startFromHeight
 
-        let safeBase: UInt32 = (client.startFromHeight > ffiProgress.total_height) ? 0 : client.startFromHeight
+            let reportedHeader = overview.header_height
+            let reportedTarget = max(ffiProgress.total_height, reportedHeader)
+            let usesAbsolute = reportedHeader >= safeBase && reportedTarget >= safeBase
 
-        let reportedHeader = overview.header_height
-        let reportedTarget = max(ffiProgress.total_height, reportedHeader)
-        let usesAbsolute = reportedHeader >= safeBase && reportedTarget >= safeBase
+            let absoluteHeader: UInt32 = usesAbsolute ? max(reportedHeader, safeBase) : safeBase &+ reportedHeader
+            let absoluteTarget: UInt32 = usesAbsolute ? max(reportedTarget, safeBase) : safeBase &+ reportedTarget
 
-        let absoluteHeader: UInt32 = usesAbsolute ? max(reportedHeader, safeBase) : safeBase &+ reportedHeader
-        let absoluteTarget: UInt32 = usesAbsolute ? max(reportedTarget, safeBase) : safeBase &+ reportedTarget
+            let reportedFilterHeader = overview.filter_header_height
+            var absoluteFilterHeader: UInt32 = usesAbsolute ? max(reportedFilterHeader, safeBase) : safeBase &+ reportedFilterHeader
 
-        let reportedFilterHeader = overview.filter_header_height
-        var absoluteFilterHeader: UInt32 = usesAbsolute ? max(reportedFilterHeader, safeBase) : safeBase &+ reportedFilterHeader
+            let reportedFilter = overview.last_synced_filter_height
+            var absoluteFilter: UInt32 = usesAbsolute ? max(reportedFilter, safeBase) : safeBase &+ reportedFilter
 
-        let reportedFilter = overview.last_synced_filter_height
-        var absoluteFilter: UInt32 = usesAbsolute ? max(reportedFilter, safeBase) : safeBase &+ reportedFilter
+            let range = max(1.0, Double(absoluteTarget) - Double(safeBase))
+            var headerProgress = min(1.0, max(0.0, (Double(absoluteHeader) - Double(safeBase)) / range))
+            let rawFilterHeaderProgress = min(1.0, max(0.0, (Double(absoluteFilterHeader) - Double(safeBase)) / range))
+            let rawFilterProgress = min(1.0, max(0.0, (Double(absoluteFilter) - Double(safeBase)) / range))
 
-        let range = max(1.0, Double(absoluteTarget) - Double(safeBase))
-        var headerProgress = min(1.0, max(0.0, (Double(absoluteHeader) - Double(safeBase)) / range))
-        let rawFilterHeaderProgress = min(1.0, max(0.0, (Double(absoluteFilterHeader) - Double(safeBase)) / range))
-        let rawFilterProgress = min(1.0, max(0.0, (Double(absoluteFilter) - Double(safeBase)) / range))
-
-        let filtersHeightAbsolute = absoluteFilter
-        let nearTarget: (UInt32, UInt32) -> Bool = { current, target in
-            guard target > 0 else { return false }
-            if current >= target { return true }
-            let remaining = target &- current
-            return remaining <= 1
-        }
-
-        let headerDone = nearTarget(absoluteHeader, absoluteTarget)
-        let filterHeadersDone = nearTarget(absoluteFilterHeader, absoluteTarget)
-        let filtersStarted = (filtersHeightAbsolute > safeBase) || (overview.filters_downloaded > 0)
-        let filtersDone = filtersStarted && nearTarget(filtersHeightAbsolute, absoluteTarget)
-
-        if stage != .complete {
-            if headerDone && filterHeadersDone && filtersDone {
-                stage = .complete
-            } else if headerDone && filterHeadersDone {
-                stage = .transactions
-            } else if headerDone {
-                stage = .masternodes
-            } else {
-                stage = .headers
+            let filtersHeightAbsolute = absoluteFilter
+            let nearTarget: (UInt32, UInt32) -> Bool = { current, target in
+                guard target > 0 else { return false }
+                if current >= target { return true }
+                let remaining = target &- current
+                return remaining <= 1
             }
-        }
 
-        if let prev = previous {
-            headerProgress = max(prev.headerProgress, headerProgress)
-        }
-        if stage != .headers {
-            headerProgress = 1.0
-        }
+            let headerDone = nearTarget(absoluteHeader, absoluteTarget)
+            let filterHeadersDone = nearTarget(absoluteFilterHeader, absoluteTarget)
+            let filtersStarted = (filtersHeightAbsolute > safeBase) || (overview.filters_downloaded > 0)
+            let filtersDone = filtersStarted && nearTarget(filtersHeightAbsolute, absoluteTarget)
 
-        var filterHeaderProgress = rawFilterHeaderProgress
-        var filterProgress = rawFilterProgress
-
-        switch stage {
-        case .headers:
-            absoluteFilterHeader = safeBase
-            absoluteFilter = safeBase
-            filterHeaderProgress = 0.0
-            filterProgress = 0.0
-        case .masternodes:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+            if stage != .complete {
+                if headerDone && filterHeadersDone && filtersDone {
+                    stage = .complete
+                } else if headerDone && filterHeadersDone {
+                    stage = .transactions
+                } else if headerDone {
+                    stage = .masternodes
+                } else {
+                    stage = .headers
+                }
             }
-            absoluteFilter = safeBase
-            filterProgress = 0.0
-        case .transactions:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+
+            // Apply previous progress constraints
+            headerProgress = max(previousHeaderProgress, headerProgress)
+            if stage != .headers {
+                headerProgress = 1.0
             }
-            if !filtersStarted {
+
+            var filterHeaderProgress = rawFilterHeaderProgress
+            var filterProgress = rawFilterProgress
+
+            switch stage {
+            case .headers:
+                absoluteFilterHeader = safeBase
+                absoluteFilter = safeBase
+                filterHeaderProgress = 0.0
+                filterProgress = 0.0
+            case .masternodes:
+                if filterHeadersDone {
+                    filterHeaderProgress = 1.0
+                    absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+                }
                 absoluteFilter = safeBase
                 filterProgress = 0.0
+            case .transactions:
+                if filterHeadersDone {
+                    filterHeaderProgress = 1.0
+                    absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+                }
+                if !filtersStarted {
+                    absoluteFilter = safeBase
+                    filterProgress = 0.0
+                }
+            case .complete:
+                if filterHeadersDone {
+                    filterHeaderProgress = 1.0
+                    absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+                }
+                if filtersDone {
+                    filterProgress = 1.0
+                    absoluteFilter = max(absoluteFilter, absoluteTarget)
+                }
+            case .idle:
+                absoluteFilterHeader = safeBase
+                absoluteFilter = safeBase
+                filterHeaderProgress = 0.0
+                filterProgress = 0.0
             }
-        case .complete:
-            if filterHeadersDone {
-                filterHeaderProgress = 1.0
-                absoluteFilterHeader = max(absoluteFilterHeader, absoluteTarget)
+
+            // Apply previous progress constraints based on stage
+            let previousStageValue = previousStage ?? .idle
+            let previousMasternode = (previousStageValue == .masternodes || previousStageValue == .transactions || previousStageValue == .complete) ? previousMasternodeProgress : 0.0
+            let previousTransaction = (previousStageValue == .transactions || previousStageValue == .complete) ? previousTransactionProgress : 0.0
+
+            let masternodeProgress = max(previousMasternode, filterHeaderProgress)
+            let transactionProgress = max(previousTransaction, filterProgress)
+
+            let progress = SPVSyncProgress(
+                stage: stage,
+                headerProgress: headerProgress,
+                masternodeProgress: masternodeProgress,
+                transactionProgress: transactionProgress,
+                currentHeight: absoluteHeader,
+                targetHeight: absoluteTarget,
+                filterHeaderHeight: min(absoluteFilterHeader, absoluteTarget),
+                filterHeight: min(absoluteFilter, absoluteTarget),
+                syncStartedAt: TimeInterval(syncStartTimestamp > 0 ? syncStartTimestamp : currentSyncStartTimestamp),
+                startHeight: safeBase,
+                rate: ffiProgress.headers_per_second,
+                estimatedTimeRemaining: estimatedTime
+            )
+
+            // Update MainActor properties asynchronously
+            await MainActor.run { [weak client] in
+                guard let client = client else { return }
+                
+                // Update lightweight properties immediately
+                client.peerCount = Int(overview.peer_count)
+                if syncStartTimestamp > 0 {
+                    client.currentSyncStartTimestamp = syncStartTimestamp
+                }
+                client.syncProgress = progress
+                
+                // Throttle delegate calls (more expensive)
+                let now = Date().timeIntervalSince1970
+                if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
+                    client.lastProgressUIUpdate = now
+                    // Delegate call can be expensive, dispatch asynchronously to avoid blocking
+                    Task { @MainActor in
+                        client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
+                    }
+                }
             }
-            if filtersDone {
-                filterProgress = 1.0
-                absoluteFilter = max(absoluteFilter, absoluteTarget)
-            }
-        case .idle:
-            absoluteFilterHeader = safeBase
-            absoluteFilter = safeBase
-            filterHeaderProgress = 0.0
-            filterProgress = 0.0
-        }
-
-        let previousStage = previous?.stage ?? .idle
-        let previousMasternode = (previousStage == .masternodes || previousStage == .transactions || previousStage == .complete) ? previous?.masternodeProgress ?? 0.0 : 0.0
-        let previousTransaction = (previousStage == .transactions || previousStage == .complete) ? previous?.transactionProgress ?? 0.0 : 0.0
-
-        let masternodeProgress = max(previousMasternode, filterHeaderProgress)
-        let transactionProgress = max(previousTransaction, filterProgress)
-
-        let progress = SPVSyncProgress(
-            stage: stage,
-            headerProgress: headerProgress,
-            masternodeProgress: masternodeProgress,
-            transactionProgress: transactionProgress,
-            currentHeight: absoluteHeader,
-            targetHeight: absoluteTarget,
-            filterHeaderHeight: min(absoluteFilterHeader, absoluteTarget),
-            filterHeight: min(absoluteFilter, absoluteTarget),
-            syncStartedAt: TimeInterval(syncStartTimestamp > 0 ? syncStartTimestamp : client.currentSyncStartTimestamp),
-            startHeight: safeBase,
-            rate: ffiProgress.headers_per_second,
-            estimatedTimeRemaining: estimatedTime
-        )
-
-        let now = Date().timeIntervalSince1970
-        if now - client.lastProgressUIUpdate >= client.progressUICoalesceInterval {
-            client.lastProgressUIUpdate = now
-            client.syncProgress = progress
-            client.delegate?.spvClient(client, didUpdateSyncProgress: progress)
-        } else {
-            client.syncProgress = progress
         }
     }
     func handleSyncCompletion(success: Bool, error: String?) {

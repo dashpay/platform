@@ -131,6 +131,9 @@ public class WalletService: ObservableObject {
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
 
+    // Debounced wallet sync scheduler (created when WalletManager is ready)
+    private var walletSyncScheduler: WalletSyncScheduler?
+
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
     // Latest sync stats (for UI)
@@ -257,6 +260,35 @@ public class WalletService: ObservableObject {
                         let sdkWalletManager = try clientLocal.makeSharedWalletManager()
                         let wrapper = try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
                         WalletService.shared.walletManager = wrapper
+                        // Initialize debounced wallet sync scheduler
+                        WalletService.shared.walletSyncScheduler = WalletSyncScheduler(debounce: 0.5) { walletIds in
+                            // Map walletIds (hex strings) to HDWallets and sync on MainActor
+                            await MainActor.run {
+                                guard let wm = WalletService.shared.walletManager else { return }
+                                let walletsToSync: [HDWallet] = wm.wallets.filter { w in
+                                    if let id = w.walletId?.hexString {
+                                        return walletIds.contains(id)
+                                    }
+                                    return false
+                                }
+                                for wallet in walletsToSync {
+                                    Task { @MainActor in
+                                        await wm.syncWalletStateFromRust(for: wallet)
+                                    }
+                                }
+                                // Lightweight UI updates after batch
+                                if let current = WalletService.shared.currentWallet,
+                                   let currentId = current.walletId?.hexString,
+                                   walletIds.contains(currentId) {
+                                    Task { @MainActor in
+                                        await WalletService.shared.loadTransactions()
+                                        WalletService.shared.updateBalance()
+                                    }
+                                } else {
+                                    WalletService.shared.updateBalance()
+                                }
+                            }
+                        }
                         WalletService.shared.walletManager?.transactionService = TransactionService(
                             walletManager: wrapper,
                             modelContainer: mc,
@@ -616,25 +648,64 @@ public class WalletService: ObservableObject {
         guard let wallet = currentWallet else {
             throw WalletError.notImplemented("No active wallet")
         }
-        
+
         guard wallet.confirmedBalance >= amount else {
             throw WalletError.notImplemented("Insufficient funds")
         }
-        
-        // Mock transaction creation
-        let txid = UUID().uuidString
+
+        guard let walletManager = self.walletManager else {
+            throw WalletError.notImplemented("WalletManager not available")
+        }
+
+        // Get the FFI wallet and managed wallet from WalletManager
+        guard let ffiWallet = try? await walletManager.getFFIWallet(for: wallet),
+              let managedWallet = try? await walletManager.getManagedWallet(for: wallet) else {
+            throw WalletError.notImplemented("Unable to access wallet for transaction signing")
+        }
+
+        // Get current blockchain height (default to 0 if not available)
+        let currentHeight = UInt32(wallet.lastSyncedHeight)
+
+        // Build transaction outputs
+        let outputs = [SwiftDashSDK.Transaction.Output(address: address, amount: amount)]
+
+        // Build and sign transaction using the FFI
+        let signedTxData = try SwiftDashSDK.Transaction.buildAndSign(
+            managedWallet: managedWallet,
+            wallet: ffiWallet,
+            accountIndex: 0,
+            outputs: outputs,
+            feePerKB: 1000, // TODO: Make this configurable or use fee estimation
+            currentHeight: currentHeight
+        )
+
+        // Extract TXID from the signed transaction
+        let txid = try SwiftDashSDK.Transaction.getTxid(from: signedTxData)
+
+        // TODO: Broadcast transaction via SPV client
+        // For now, we'll just save it locally
+        // if let spvClient = spvClient {
+        //     try await spvClient.broadcast(signedTxData)
+        // }
+
+        // Create transaction record
         let transaction = HDTransaction(txHash: txid, timestamp: Date())
         transaction.amount = -Int64(amount)
-        transaction.fee = 1000
+        transaction.fee = 1000 // TODO: Extract actual fee from transaction
         transaction.type = "sent"
+        transaction.rawTransaction = signedTxData
         transaction.wallet = wallet
-        
+        transaction.isPending = true // Mark as pending until broadcast confirms
+
         modelContainer?.mainContext.insert(transaction)
         try? modelContainer?.mainContext.save()
-        
+
         // Update balance
         updateBalance()
-        
+
+        print("Transaction built and signed: \(txid)")
+        print("Note: Broadcasting not yet implemented - transaction not sent to network")
+
         return txid
     }
     
@@ -753,101 +824,97 @@ extension WalletService: SPVClientDelegate {
         let reportedFilterHeight = progress.filterHeight
         let syncStart = progress.syncStartedAt
 
-        Task { @MainActor in
+        // Do heavy computation off MainActor, then update UI on MainActor
+        Task.detached(priority: .userInitiated) {
+            // Compute all the values off the main thread
             let baseHeight = Int(startHeight)
-            if syncStart > 0 && syncStart != self.activeSyncStartTimestamp {
-                self.activeSyncStartTimestamp = syncStart
-                self.latestFilterHeaderHeight = baseHeight
-                self.latestFilterHeight = baseHeight
-                self.filterHeaderProgress = 0
-                self.transactionProgress = 0
-            }
             let absHeader = max(Int(currentHeight), baseHeight)
             var absTarget = max(Int(targetHeight), baseHeight)
-
-            let headerNumeratorRaw = max(0.0, Double(absHeader - baseHeight))
-            let headerDenominatorRaw = max(1.0, Double(absTarget - baseHeight))
-            var headerPct = min(1.0, max(0.0, headerNumeratorRaw / headerDenominatorRaw))
-
-
+            
             let absFilterHeaderRaw = max(Int(reportedFilterHeaderHeight), baseHeight)
             var absFilterHeader = min(absFilterHeaderRaw, absTarget)
-
             let absFilterRaw = max(Int(reportedFilterHeight), baseHeight)
             var absFilter = min(absFilterRaw, absTarget)
-
+            
             if mappedStage == .headers {
-                // While headers are still syncing, clamp downstream stages to the base height.
                 absFilterHeader = baseHeight
                 absFilter = baseHeight
             } else if mappedStage == .filterHeaders {
-                // Do not surface compact filter progress until that stage is active.
                 absFilter = baseHeight
             }
-
-            let displayBaseline = max(baseHeight, WalletService.shared.currentDisplayBaseline())
-            let normalizedCandidate = WalletService.shared.normalizedChainTip(absTarget, baseline: displayBaseline)
-            let storedHeaderHeight = WalletService.shared.latestHeaderHeight
-
+            
+            // Normalize target - need to access MainActor properties
+            let displayBaseline = await MainActor.run { max(baseHeight, WalletService.shared.currentDisplayBaseline()) }
+            let normalizedCandidate = await MainActor.run { WalletService.shared.normalizedChainTip(absTarget, baseline: displayBaseline) }
+            let storedHeaderHeight = await MainActor.run { WalletService.shared.latestHeaderHeight }
+            
             let adjustedTarget = max(absHeader, normalizedCandidate)
             absTarget = adjustedTarget
-            WalletService.shared.headerTargetHeight = adjustedTarget
-
+            
             var headerHeightForDisplay: Int
             if mappedStage == .headers {
                 headerHeightForDisplay = max(storedHeaderHeight, absHeader)
             } else {
                 headerHeightForDisplay = max(storedHeaderHeight, adjustedTarget)
             }
-
-            WalletService.shared.latestHeaderHeight = headerHeightForDisplay
-            WalletService.shared.headerCurrentHeight = headerHeightForDisplay
-
+            
             absFilterHeader = min(absFilterHeader, adjustedTarget)
             absFilter = min(absFilter, adjustedTarget)
-
+            
             let headerDenominatorFinal = max(1.0, Double(adjustedTarget - baseHeight))
             let headerNumeratorFinal = max(0.0, Double(headerHeightForDisplay - baseHeight))
+            var headerPct = min(1.0, max(0.0, headerNumeratorFinal / headerDenominatorFinal))
             if adjustedTarget <= headerHeightForDisplay {
                 headerPct = 1.0
-            } else {
-                headerPct = min(1.0, headerNumeratorFinal / headerDenominatorFinal)
             }
             if mappedStage != .headers {
                 headerPct = 1.0
             }
-
+            
             let headerSpan = max(1.0, Double(max(headerHeightForDisplay, adjustedTarget) - baseHeight))
             let filterHeaderNumerator = max(0.0, Double(absFilterHeader - baseHeight))
             let filterNumerator = max(0.0, Double(absFilter - baseHeight))
-
             let filterHeaderPct = min(1.0, filterHeaderNumerator / headerSpan)
             let filterPct = min(1.0, filterNumerator / headerSpan)
+            
+            // Now update UI on MainActor (only the lightweight property updates)
+            await MainActor.run {
+                if syncStart > 0 && syncStart != self.activeSyncStartTimestamp {
+                    self.activeSyncStartTimestamp = syncStart
+                    self.latestFilterHeaderHeight = baseHeight
+                    self.latestFilterHeight = baseHeight
+                    self.filterHeaderProgress = 0
+                    self.transactionProgress = 0
+                }
+                
+                WalletService.shared.headerTargetHeight = adjustedTarget
+                WalletService.shared.latestHeaderHeight = headerHeightForDisplay
+                WalletService.shared.headerCurrentHeight = headerHeightForDisplay
+                WalletService.shared.syncProgress = headerPct
+                WalletService.shared.headerProgress = headerPct
 
-            WalletService.shared.syncProgress = headerPct
-            WalletService.shared.headerProgress = headerPct
+                if mappedStage == .headers {
+                    WalletService.shared.filterHeaderProgress = 0
+                    WalletService.shared.transactionProgress = max(0, WalletService.shared.transactionProgress)
+                    WalletService.shared.latestFilterHeaderHeight = baseHeight
+                    WalletService.shared.latestFilterHeight = baseHeight
+                } else {
+                    WalletService.shared.latestFilterHeaderHeight = max(WalletService.shared.latestFilterHeaderHeight, absFilterHeader)
+                    WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, absFilter)
+                    WalletService.shared.filterHeaderProgress = filterHeaderPct
+                    WalletService.shared.transactionProgress = max(WalletService.shared.transactionProgress, filterPct)
+                }
 
-            if mappedStage == .headers {
-                WalletService.shared.filterHeaderProgress = 0
-                WalletService.shared.transactionProgress = max(0, WalletService.shared.transactionProgress)
-                WalletService.shared.latestFilterHeaderHeight = baseHeight
-                WalletService.shared.latestFilterHeight = baseHeight
-            } else {
-                WalletService.shared.latestFilterHeaderHeight = max(WalletService.shared.latestFilterHeaderHeight, absFilterHeader)
-                WalletService.shared.latestFilterHeight = max(WalletService.shared.latestFilterHeight, absFilter)
-                WalletService.shared.filterHeaderProgress = filterHeaderPct
-                WalletService.shared.transactionProgress = max(WalletService.shared.transactionProgress, filterPct)
+                WalletService.shared.detailedSyncProgress = SyncProgress(
+                    current: UInt64(absHeader),
+                    total: UInt64(adjustedTarget),
+                    rate: rate,
+                    progress: headerPct,
+                    stage: mappedStage
+                )
+
+                SDKLogger.log("📊 Sync progress: \(stageRawValue) - \(Int(overall * 100))%", minimumLevel: .high)
             }
-
-            WalletService.shared.detailedSyncProgress = SyncProgress(
-                current: UInt64(absHeader),
-                total: UInt64(adjustedTarget),
-                rate: rate,
-                progress: headerPct,
-                stage: mappedStage
-            )
-
-            SDKLogger.log("📊 Sync progress: \(stageRawValue) - \(Int(overall * 100))%", minimumLevel: .high)
         }
 
         // Use event-driven transaction progress from SPVClient (no polling fallback)
@@ -855,50 +922,36 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
         SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
-
-        // Sync wallet state after processing a block (which may contain relevant transactions)
-        Task { @MainActor in
-            if let wm = walletManager {
-                for wallet in wm.wallets {
-                    await wm.syncWalletStateFromRust(for: wallet)
-                }
-            }
-            updateBalance()
-        }
+        // No per-block full wallet sync; transactions will trigger targeted sync via scheduler
     }
     
     public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        // Sync wallet state from Rust to SwiftData, then update UI
-        Task { @MainActor in
-            // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
-            if let wm = walletManager {
-                for wallet in wm.wallets {
-                    await wm.syncWalletStateFromRust(for: wallet)
+        // Targeted, debounced sync by walletId (if provided)
+        if let wid = transaction.walletId, !wid.isEmpty {
+            Task { [weak self] in
+                await self?.walletSyncScheduler?.enqueue(walletId: wid)
+            }
+        } else {
+            // Fallback: schedule current wallet if available
+            if let id = currentWallet?.walletId?.hexString {
+                Task { [weak self] in
+                    await self?.walletSyncScheduler?.enqueue(walletId: id)
                 }
             }
-
-            // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
-            if currentWallet != nil {
-                await loadTransactions()
-                updateBalance()
-            }
         }
+        // UI updates remain lightweight; detailed list reloads are handled elsewhere or on user view
     }
     
     public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
         blocksHit = count
 
-        // Sync wallet state periodically during sync (every 50 blocks processed)
+        // Instead of syncing all wallets on every N blocks, coalesce via scheduler
         if count > 0 && count % 50 == 0 {
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                // Sync ALL wallets
-                if let wm = self.walletManager {
-                    for wallet in wm.wallets {
-                        await wm.syncWalletStateFromRust(for: wallet)
-                    }
+            if let wm = walletManager {
+                let ids = wm.wallets.compactMap { $0.walletId?.hexString }
+                Task { [weak self] in
+                    await self?.walletSyncScheduler?.enqueueMany(walletIds: ids)
                 }
-                self.updateBalance()
             }
         }
 
@@ -973,7 +1026,7 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
         SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
-    }
+    } 
     
     nonisolated private static func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
         switch stage {
