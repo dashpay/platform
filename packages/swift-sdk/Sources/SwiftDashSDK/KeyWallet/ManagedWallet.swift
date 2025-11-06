@@ -419,9 +419,9 @@ public class ManagedWallet {
         return utxos
     }
     
-    // MARK: - Private Helpers
-    
-    private func getInfoHandle() -> UnsafeMutablePointer<FFIManagedWalletInfo>? {
+    // MARK: - Internal Helpers
+
+    internal func getInfoHandle() -> UnsafeMutablePointer<FFIManagedWalletInfo>? {
         // The handle is an FFIManagedWalletInfo* (opaque C handle)
         return handle
     }
