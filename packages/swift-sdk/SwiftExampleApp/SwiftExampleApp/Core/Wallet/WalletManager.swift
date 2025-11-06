@@ -763,11 +763,43 @@ class WalletManager: ObservableObject {
     }
 
     // MARK: - Public Utility Methods
-    
+
     func reloadWallets() async {
         await loadWallets()
     }
-    
+
+    /// Get the FFI wallet object for transaction operations
+    /// - Parameter wallet: The HDWallet to get the FFI wallet for
+    /// - Returns: The SwiftDashSDK.Wallet instance
+    func getFFIWallet(for wallet: HDWallet) async throws -> SwiftDashSDK.Wallet {
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
+
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        guard let ffiWallet = try? sdkWalletManager.getWallet(id: walletId, network: network) else {
+            throw WalletError.walletError("Unable to retrieve FFI wallet from SDK")
+        }
+
+        return ffiWallet
+    }
+
+    /// Get the managed wallet for transaction building
+    /// - Parameter wallet: The HDWallet to get the managed wallet for
+    /// - Returns: The ManagedWallet instance with UTXO information
+    func getManagedWallet(for wallet: HDWallet) async throws -> SwiftDashSDK.ManagedWallet {
+        // Get the FFI wallet first
+        let ffiWallet = try await getFFIWallet(for: wallet)
+
+        // Create a managed wallet from it
+        // Note: This creates a new instance each time. In a production app,
+        // you might want to cache these and keep them in sync with UTXO updates
+        let managedWallet = try SwiftDashSDK.ManagedWallet(wallet: ffiWallet)
+
+        return managedWallet
+    }
+
     // MARK: - Private Methods
     
     private func loadWallets() async {
