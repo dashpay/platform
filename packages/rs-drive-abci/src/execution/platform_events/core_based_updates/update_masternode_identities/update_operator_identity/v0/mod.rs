@@ -1032,7 +1032,7 @@ mod tests {
     #[test]
     fn test_update_operator_identity_new_node_id_when_going_back_to_previous_operator_identity() {
         // Confirmed issue on version 2.1.2 and before, this test verifies the fix. To view the error
-        // replace
+        // search for "Error on version 2.1.2 and earlier would be here" and do the replacement.
         let platform_version = PlatformVersion::latest();
         let platform = TestPlatformBuilder::new()
             .build_with_mock_rpc()
