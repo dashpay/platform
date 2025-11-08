@@ -180,10 +180,40 @@ pub extern "C" fn managed_identity_is_contact_established(
 mod tests {
     use super::*;
     use dpp::prelude::Identifier;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::v0::IdentityV0;
+    use std::collections::BTreeMap;
+
+    fn create_test_identity() -> Identity {
+        let id = Identifier::from([1u8; 32]);
+        let mut public_keys = BTreeMap::new();
+
+        public_keys.insert(
+            0,
+            IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 0,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+                disabled_at: None,
+                contract_bounds: None,
+            }),
+        );
+
+        let identity_v0 = IdentityV0 {
+            id,
+            public_keys,
+            balance: 1000,
+            revision: 1,
+        };
+        Identity::V0(identity_v0)
+    }
 
     #[test]
     fn test_get_sent_contact_request_ids() {
-        let identity = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -204,7 +234,7 @@ mod tests {
 
     #[test]
     fn test_get_incoming_contact_request_ids() {
-        let identity = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -226,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_get_established_contact_ids() {
-        let identity = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -247,7 +277,7 @@ mod tests {
 
     #[test]
     fn test_is_contact_established() {
-        let identity = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 

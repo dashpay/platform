@@ -4,7 +4,9 @@
 #![allow(non_camel_case_types)]
 
 pub mod contact;
+pub mod contact_request;
 pub mod error;
+pub mod established_contact;
 pub mod handle;
 pub mod identity_manager;
 pub mod managed_identity;
@@ -14,7 +16,9 @@ pub mod utils;
 
 // Re-exports
 pub use contact::*;
+pub use contact_request::*;
 pub use error::*;
+pub use established_contact::*;
 pub use handle::*;
 pub use identity_manager::*;
 pub use managed_identity::*;

@@ -3,6 +3,7 @@ use crate::handle::*;
 use crate::types::*;
 use platform_wallet::managed_identity::ManagedIdentity;
 use std::os::raw::c_char;
+use dpp::identity::accessors::IdentityGettersV0;
 
 /// Create a new ManagedIdentity from a DPP Identity
 #[no_mangle]
@@ -26,25 +27,16 @@ pub extern "C" fn managed_identity_create_from_identity_bytes(
 
     let bytes = unsafe { std::slice::from_raw_parts(identity_bytes, identity_len) };
 
-    match dpp::prelude::Identity::from_buffer(bytes) {
-        Ok(identity) => {
-            let managed = ManagedIdentity::new(identity);
-            let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
-            unsafe { *out_handle = handle };
-            PlatformWalletFFIResult::Success
-        }
-        Err(e) => {
-            if !out_error.is_null() {
-                unsafe {
-                    *out_error = PlatformWalletFFIError::new(
-                        PlatformWalletFFIResult::ErrorDeserialization,
-                        format!("Failed to deserialize identity: {}", e),
-                    );
-                }
-            }
-            PlatformWalletFFIResult::ErrorDeserialization
+    // TODO: Implement proper identity deserialization
+    if !out_error.is_null() {
+        unsafe {
+            *out_error = PlatformWalletFFIError::new(
+                PlatformWalletFFIResult::ErrorDeserialization,
+                "Identity deserialization not yet implemented",
+            );
         }
     }
+    PlatformWalletFFIResult::ErrorDeserialization
 }
 
 /// Get the identity ID
@@ -355,10 +347,41 @@ pub extern "C" fn managed_identity_destroy(identity_handle: Handle) -> PlatformW
 #[cfg(test)]
 mod tests {
     use super::*;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::identity::v0::IdentityV0;
+    use dpp::prelude::Identifier;
+    use std::collections::BTreeMap;
+
+    fn create_test_identity() -> Identity {
+        let id = Identifier::from([1u8; 32]);
+        let mut public_keys = BTreeMap::new();
+
+        public_keys.insert(
+            0,
+            IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 0,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+                disabled_at: None,
+                contract_bounds: None,
+            }),
+        );
+
+        let identity_v0 = IdentityV0 {
+            id,
+            public_keys,
+            balance: 1000,
+            revision: 1,
+        };
+        Identity::V0(identity_v0)
+    }
 
     #[test]
     fn test_get_and_set_label() {
-        let managed = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -383,7 +406,7 @@ mod tests {
 
     #[test]
     fn test_get_balance() {
-        let managed = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 
@@ -399,7 +422,7 @@ mod tests {
 
     #[test]
     fn test_block_time_operations() {
-        let managed = dpp::tests::fixtures::get_identity_fixture(None);
+        let identity = create_test_identity();
         let managed = platform_wallet::managed_identity::ManagedIdentity::new(identity);
         let handle = MANAGED_IDENTITY_STORAGE.insert(managed);
 

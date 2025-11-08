@@ -171,7 +171,7 @@ pub extern "C" fn platform_wallet_identifier_to_hex(
         }
     };
 
-    let hex = identifier.to_string(dpp::serialization::Encoding::Base58);
+    let hex = identifier.to_string(dpp::platform_value::string_encoding::Encoding::Base58);
     match std::ffi::CString::new(hex) {
         Ok(c_str) => {
             unsafe { *out_hex = c_str.into_raw() };
@@ -225,7 +225,7 @@ pub extern "C" fn platform_wallet_identifier_from_hex(
         }
     };
 
-    match dpp::prelude::Identifier::from_string(hex_str, dpp::serialization::Encoding::Base58) {
+    match dpp::prelude::Identifier::from_string(hex_str, dpp::platform_value::string_encoding::Encoding::Base58) {
         Ok(identifier) => {
             unsafe { *out_id = identifier.into() };
             PlatformWalletFFIResult::Success

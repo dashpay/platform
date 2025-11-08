@@ -4579,6 +4579,7 @@ version = "2.1.1"
 dependencies = [
  "dashcore 0.40.0",
  "dpp",
+ "lazy_static",
  "once_cell",
  "parking_lot",
  "platform-wallet",
