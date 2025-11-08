@@ -14,7 +14,6 @@ fn test_library_init_and_version() {
 }
 
 #[test]
-#[ignore] // Stubbed - requires PlatformWalletInfo
 fn test_wallet_creation_and_destruction() {
     let seed = [0u8; 64];
     let mut handle: Handle = NULL_HANDLE;
@@ -35,7 +34,6 @@ fn test_wallet_creation_and_destruction() {
 }
 
 #[test]
-#[ignore] // Stubbed - requires PlatformWalletInfo
 fn test_wallet_from_mnemonic() {
     let mnemonic = CString::new(
         "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

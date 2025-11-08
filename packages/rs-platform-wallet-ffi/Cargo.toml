@@ -24,6 +24,7 @@ serde_json = "1.0"
 
 # Core dependencies (for Network type)
 dashcore = { path = "../../../rust-dashcore/dash" }
+key-wallet = { path = "../../../rust-dashcore/key-wallet" }
 
 # Error handling
 thiserror = "1.0"

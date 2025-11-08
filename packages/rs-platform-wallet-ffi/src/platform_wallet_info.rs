@@ -2,6 +2,7 @@ use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
 use platform_wallet::platform_wallet_info::PlatformWalletInfo;
+use key_wallet::wallet::initialization::WalletAccountCreationOptions;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes
@@ -24,18 +25,59 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
         return PlatformWalletFFIResult::ErrorNullPointer;
     }
 
-    let seed = unsafe { std::slice::from_raw_parts(seed_bytes, seed_len) };
-
-    // TODO: Implement proper wallet creation from seed
-    if !out_error.is_null() {
-        unsafe {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorWalletOperation,
-                "Not yet implemented",
-            );
+    // Validate seed length (should be 64 bytes for BIP39)
+    if seed_len != 64 {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorInvalidParameter,
+                    format!("Invalid seed length: expected 64 bytes, got {}", seed_len),
+                );
+            }
         }
+        return PlatformWalletFFIResult::ErrorInvalidParameter;
     }
-    PlatformWalletFFIResult::ErrorWalletOperation
+
+    let seed_slice = unsafe { std::slice::from_raw_parts(seed_bytes, seed_len) };
+
+    // Convert to fixed-size array
+    let mut seed_array = [0u8; 64];
+    seed_array.copy_from_slice(seed_slice);
+
+    // Create wallet from seed - use empty network list, accounts can be added later
+    let wallet = match key_wallet::Wallet::from_seed_bytes(
+        seed_array,
+        &[],  // No networks initially
+        WalletAccountCreationOptions::None,  // No accounts initially
+    ) {
+        Ok(w) => w,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorWalletOperation,
+                        format!("Failed to create wallet from seed: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorWalletOperation;
+        }
+    };
+
+    // Create ManagedWalletInfo from the wallet
+    let wallet_info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet);
+
+    // Create PlatformWalletInfo wrapping the ManagedWalletInfo
+    let platform_wallet = PlatformWalletInfo {
+        wallet_info,
+        identity_managers: std::collections::BTreeMap::new(),
+    };
+
+    // Store in handle storage
+    let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
+    unsafe { *out_handle = handle };
+
+    PlatformWalletFFIResult::Success
 }
 
 /// Create a new PlatformWalletInfo from mnemonic
@@ -92,16 +134,78 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
         }
     };
 
-    // TODO: Implement proper wallet creation from mnemonic
-    if !out_error.is_null() {
-        unsafe {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorWalletOperation,
-                "Not yet implemented",
-            );
+    // Parse mnemonic string
+    let mnemonic_obj = match mnemonic_str.parse::<key_wallet::Mnemonic>() {
+        Ok(m) => m,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidParameter,
+                        format!("Failed to parse mnemonic: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidParameter;
         }
-    }
-    PlatformWalletFFIResult::ErrorWalletOperation
+    };
+
+    // Create wallet from mnemonic with or without passphrase
+    let wallet = if let Some(pass) = passphrase_str {
+        match key_wallet::Wallet::from_mnemonic_with_passphrase(
+            mnemonic_obj,
+            pass.to_string(),
+            &[],  // No networks initially
+            WalletAccountCreationOptions::None,  // No accounts initially
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                if !out_error.is_null() {
+                    unsafe {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("Failed to create wallet from mnemonic with passphrase: {}", e),
+                        );
+                    }
+                }
+                return PlatformWalletFFIResult::ErrorWalletOperation;
+            }
+        }
+    } else {
+        match key_wallet::Wallet::from_mnemonic(
+            mnemonic_obj,
+            &[],  // No networks initially
+            WalletAccountCreationOptions::None,  // No accounts initially
+        ) {
+            Ok(w) => w,
+            Err(e) => {
+                if !out_error.is_null() {
+                    unsafe {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorWalletOperation,
+                            format!("Failed to create wallet from mnemonic: {}", e),
+                        );
+                    }
+                }
+                return PlatformWalletFFIResult::ErrorWalletOperation;
+            }
+        }
+    };
+
+    // Create ManagedWalletInfo from the wallet
+    let wallet_info = key_wallet::wallet::ManagedWalletInfo::from_wallet(&wallet);
+
+    // Create PlatformWalletInfo wrapping the ManagedWalletInfo
+    let platform_wallet = PlatformWalletInfo {
+        wallet_info,
+        identity_managers: std::collections::BTreeMap::new(),
+    };
+
+    // Store in handle storage
+    let handle = WALLET_INFO_STORAGE.insert(platform_wallet);
+    unsafe { *out_handle = handle };
+
+    PlatformWalletFFIResult::Success
 }
 
 /// Get the identity manager for a specific network
@@ -249,7 +353,6 @@ mod tests {
     use super::*;
 
     #[test]
-    #[ignore] // Stubbed - requires proper PlatformWalletInfo implementation
     fn test_create_from_seed() {
         let seed = [0u8; 64];
         let mut handle: Handle = NULL_HANDLE;
@@ -270,7 +373,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Stubbed - requires proper PlatformWalletInfo implementation
     fn test_create_from_mnemonic() {
         let mnemonic = std::ffi::CString::new(
             "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about"

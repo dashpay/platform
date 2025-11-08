@@ -27,7 +27,7 @@ impl ManagedIdentity {
     }
 
     /// Remove a sent contact request
-    pub(crate) fn remove_sent_contact_request(
+    pub fn remove_sent_contact_request(
         &mut self,
         recipient_id: &Identifier,
     ) -> Option<ContactRequest> {
@@ -51,7 +51,7 @@ impl ManagedIdentity {
     }
 
     /// Remove an incoming contact request
-    pub(crate) fn remove_incoming_contact_request(
+    pub fn remove_incoming_contact_request(
         &mut self,
         sender_id: &Identifier,
     ) -> Option<ContactRequest> {

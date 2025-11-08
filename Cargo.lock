@@ -4579,6 +4579,7 @@ version = "2.1.1"
 dependencies = [
  "dashcore 0.40.0",
  "dpp",
+ "key-wallet 0.40.0",
  "lazy_static",
  "once_cell",
  "parking_lot",
@@ -5459,6 +5460,7 @@ dependencies = [
  "libc",
  "log",
  "once_cell",
+ "platform-wallet-ffi",
  "reqwest",
  "rs-sdk-trusted-context-provider",
  "serde",

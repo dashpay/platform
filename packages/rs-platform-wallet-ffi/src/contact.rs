@@ -1,6 +1,7 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
+use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use std::os::raw::c_char;
 
 /// Get all sent contact request IDs
@@ -162,6 +163,146 @@ pub extern "C" fn managed_identity_is_contact_established(
         .with_item(identity_handle, |identity| {
             unsafe { *out_is_established = identity.established_contacts.contains_key(&id) };
             PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Send a contact request from this identity to another
+/// The request will be added to sent_contact_requests
+/// If there's already an incoming request from the recipient, the contact will be automatically established
+#[no_mangle]
+pub extern "C" fn managed_identity_send_contact_request(
+    identity_handle: Handle,
+    request_handle: Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
+
+    let request = match request_result {
+        Some(r) => r,
+        None => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid contact request handle",
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidHandle;
+        }
+    };
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item_mut(identity_handle, |identity| {
+            identity.add_sent_contact_request(request);
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Accept an incoming contact request
+/// This will add the request to incoming_contact_requests
+/// If there's already a sent request to the sender, the contact will be automatically established
+#[no_mangle]
+pub extern "C" fn managed_identity_accept_contact_request(
+    identity_handle: Handle,
+    request_handle: Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    let request_result = CONTACT_REQUEST_STORAGE.with_item(request_handle, |req| req.clone());
+
+    let request = match request_result {
+        Some(r) => r,
+        None => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid contact request handle",
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidHandle;
+        }
+    };
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item_mut(identity_handle, |identity| {
+            identity.add_incoming_contact_request(request);
+            PlatformWalletFFIResult::Success
+        })
+        .unwrap_or_else(|| {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidHandle,
+                        "Invalid identity handle",
+                    );
+                }
+            }
+            PlatformWalletFFIResult::ErrorInvalidHandle
+        })
+}
+
+/// Reject an incoming contact request
+/// This will remove the request from incoming_contact_requests
+#[no_mangle]
+pub extern "C" fn managed_identity_reject_contact_request(
+    identity_handle: Handle,
+    sender_id: IdentifierBytes,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    let id = match sender_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid identifier: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    MANAGED_IDENTITY_STORAGE
+        .with_item_mut(identity_handle, |identity| {
+            if identity.remove_incoming_contact_request(&id).is_some() {
+                PlatformWalletFFIResult::Success
+            } else {
+                if !out_error.is_null() {
+                    unsafe {
+                        *out_error = PlatformWalletFFIError::new(
+                            PlatformWalletFFIResult::ErrorContactNotFound,
+                            "Contact request not found",
+                        );
+                    }
+                }
+                PlatformWalletFFIResult::ErrorContactNotFound
+            }
         })
         .unwrap_or_else(|| {
             if !out_error.is_null() {

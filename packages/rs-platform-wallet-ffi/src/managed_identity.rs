@@ -4,8 +4,9 @@ use crate::types::*;
 use platform_wallet::managed_identity::ManagedIdentity;
 use std::os::raw::c_char;
 use dpp::identity::accessors::IdentityGettersV0;
+use dpp::serialization::PlatformDeserializable;
 
-/// Create a new ManagedIdentity from a DPP Identity
+/// Create a new ManagedIdentity from a DPP Identity serialized bytes
 #[no_mangle]
 pub extern "C" fn managed_identity_create_from_identity_bytes(
     identity_bytes: *const std::os::raw::c_uchar,
@@ -27,16 +28,30 @@ pub extern "C" fn managed_identity_create_from_identity_bytes(
 
     let bytes = unsafe { std::slice::from_raw_parts(identity_bytes, identity_len) };
 
-    // TODO: Implement proper identity deserialization
-    if !out_error.is_null() {
-        unsafe {
-            *out_error = PlatformWalletFFIError::new(
-                PlatformWalletFFIResult::ErrorDeserialization,
-                "Identity deserialization not yet implemented",
-            );
+    // Deserialize Identity from bytes
+    let identity = match dpp::identity::Identity::deserialize_from_bytes_no_limit(bytes) {
+        Ok(id) => id,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorDeserialization,
+                        format!("Failed to deserialize identity: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorDeserialization;
         }
-    }
-    PlatformWalletFFIResult::ErrorDeserialization
+    };
+
+    // Create ManagedIdentity from the deserialized Identity
+    let managed_identity = ManagedIdentity::new(identity);
+
+    // Store in handle storage
+    let handle = MANAGED_IDENTITY_STORAGE.insert(managed_identity);
+    unsafe { *out_handle = handle };
+
+    PlatformWalletFFIResult::Success
 }
 
 /// Get the identity ID

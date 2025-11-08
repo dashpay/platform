@@ -13,6 +13,84 @@ lazy_static::lazy_static! {
     pub static ref CONTACT_REQUEST_STORAGE: HandleStorage<ContactRequest> = HandleStorage::new();
 }
 
+/// Create a new contact request
+#[no_mangle]
+pub extern "C" fn contact_request_create(
+    sender_id: IdentifierBytes,
+    recipient_id: IdentifierBytes,
+    sender_key_index: u32,
+    recipient_key_index: u32,
+    account_reference: u32,
+    encrypted_public_key_bytes: *const std::os::raw::c_uchar,
+    encrypted_public_key_len: usize,
+    core_height_created_at: u32,
+    created_at: u64,
+    out_handle: *mut Handle,
+    out_error: *mut PlatformWalletFFIError,
+) -> PlatformWalletFFIResult {
+    if encrypted_public_key_bytes.is_null() || out_handle.is_null() {
+        if !out_error.is_null() {
+            unsafe {
+                *out_error = PlatformWalletFFIError::new(
+                    PlatformWalletFFIResult::ErrorNullPointer,
+                    "Null pointer provided",
+                );
+            }
+        }
+        return PlatformWalletFFIResult::ErrorNullPointer;
+    }
+
+    let sender = match sender_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid sender identifier: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    let recipient = match recipient_id.to_identifier() {
+        Ok(i) => i,
+        Err(e) => {
+            if !out_error.is_null() {
+                unsafe {
+                    *out_error = PlatformWalletFFIError::new(
+                        PlatformWalletFFIResult::ErrorInvalidIdentifier,
+                        format!("Invalid recipient identifier: {}", e),
+                    );
+                }
+            }
+            return PlatformWalletFFIResult::ErrorInvalidIdentifier;
+        }
+    };
+
+    let encrypted_key =
+        unsafe { std::slice::from_raw_parts(encrypted_public_key_bytes, encrypted_public_key_len) }
+            .to_vec();
+
+    let contact_request = ContactRequest::new(
+        sender,
+        recipient,
+        sender_key_index,
+        recipient_key_index,
+        account_reference,
+        encrypted_key,
+        core_height_created_at,
+        created_at,
+    );
+
+    let handle = CONTACT_REQUEST_STORAGE.insert(contact_request);
+    unsafe { *out_handle = handle };
+
+    PlatformWalletFFIResult::Success
+}
+
 /// Create a contact request handle from a managed identity's sent request
 #[no_mangle]
 pub extern "C" fn managed_identity_get_sent_contact_request(

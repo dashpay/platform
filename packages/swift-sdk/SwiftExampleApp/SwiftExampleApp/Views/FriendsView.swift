@@ -1,12 +1,18 @@
 import SwiftUI
 import SwiftData
+import SwiftDashSDK
 
 struct FriendsView: View {
     @EnvironmentObject var appState: UnifiedAppState
+    @StateObject private var dashPayService = DashPayService()
     @State private var selectedIdentityId: String = ""
-    @State private var friends: [Friend] = []
+    @State private var contacts: [DashPayContact] = []
+    @State private var incomingRequests: [DashPayContactRequest] = []
+    @State private var sentRequests: [DashPayContactRequest] = []
     @State private var isLoading = false
     @State private var showAddFriend = false
+    @State private var showIncomingRequests = false
+    @State private var errorMessage: String?
     
     var availableIdentities: [IdentityModel] {
         appState.platformState.identities
@@ -93,43 +99,60 @@ struct FriendsView: View {
                         .background(Color(UIColor.secondarySystemBackground))
                     }
                     
+                    // Incoming requests section
+                    if !incomingRequests.isEmpty {
+                        Section {
+                            ForEach(incomingRequests) { request in
+                                ContactRequestRow(request: request, isIncoming: true) {
+                                    acceptRequest(request)
+                                } onReject: {
+                                    rejectRequest(request)
+                                }
+                            }
+                        } header: {
+                            Text("Incoming Requests (\(incomingRequests.count))")
+                        }
+                    }
+
                     // Friends list
-                    if friends.isEmpty && !isLoading {
+                    if contacts.isEmpty && !isLoading && incomingRequests.isEmpty {
                         VStack(spacing: 20) {
                             Spacer()
-                            
+
                             Image(systemName: "person.2.slash")
                                 .font(.system(size: 50))
                                 .foregroundColor(.gray)
-                            
+
                             Text("No Friends Yet")
                                 .font(.title3)
                                 .fontWeight(.medium)
-                            
+
                             Text("Add friends to send messages\nand share documents")
                                 .multilineTextAlignment(.center)
                                 .font(.caption)
                                 .foregroundColor(.secondary)
-                            
+
                             Button {
                                 showAddFriend = true
                             } label: {
                                 Label("Add Friend", systemImage: "person.badge.plus")
                             }
                             .buttonStyle(.borderedProminent)
-                            
+
                             Spacer()
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if isLoading {
                         VStack {
                             Spacer()
-                            ProgressView("Loading friends...")
+                            ProgressView("Loading contacts...")
                             Spacer()
                         }
                     } else {
-                        List(friends) { friend in
-                            FriendRowView(friend: friend)
+                        List {
+                            ForEach(contacts.filter { !$0.isHidden }) { contact in
+                                ContactRowView(contact: contact)
+                            }
                         }
                     }
                 }
@@ -161,14 +184,47 @@ struct FriendsView: View {
     }
     
     private func loadFriends() {
-        // TODO: Load friends for the selected identity
-        // This would query the platform for contacts/friends associated with this identity
+        guard selectedIdentity != nil else { return }
+
         isLoading = true
-        
-        // Simulate loading
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isLoading = false
-            // friends = [] // Load actual friends here
+
+        Task {
+            // Load the managed identity for this identity
+            // In a real implementation, you would serialize the identity to bytes
+            // For now, we'll skip this and show the pattern
+
+            // If we had a ManagedIdentity:
+            // let establishedContacts = try dashPayService.getEstablishedContacts(identity: managedIdentity)
+            // let incoming = try dashPayService.getIncomingContactRequests(identity: managedIdentity)
+            // let sent = try dashPayService.getSentContactRequests(identity: managedIdentity)
+
+            // For now, show empty state
+            await MainActor.run {
+                contacts = []
+                incomingRequests = []
+                sentRequests = []
+                isLoading = false
+            }
+        }
+    }
+
+    private func acceptRequest(_ request: DashPayContactRequest) {
+        guard selectedIdentity != nil else { return }
+
+        Task {
+            // In real implementation:
+            // try await dashPayService.acceptContactRequest(identity: managedIdentity, from: request.senderId)
+            loadFriends()
+        }
+    }
+
+    private func rejectRequest(_ request: DashPayContactRequest) {
+        guard selectedIdentity != nil else { return }
+
+        Task {
+            // In real implementation:
+            // try await dashPayService.rejectContactRequest(identity: managedIdentity, from: request.senderId)
+            loadFriends()
         }
     }
     
@@ -194,19 +250,11 @@ struct FriendsView: View {
     }
 }
 
-// Friend model
-struct Friend: Identifiable {
-    let id = UUID()
-    let identityId: String
-    let displayName: String
-    let dpnsName: String?
-    let isOnline: Bool
-    let lastSeen: Date?
-}
+// MARK: - Contact Row View
 
-struct FriendRowView: View {
-    let friend: Friend
-    
+struct ContactRowView: View {
+    let contact: DashPayContact
+
     var body: some View {
         HStack {
             // Avatar
@@ -214,40 +262,82 @@ struct FriendRowView: View {
                 .fill(Color.blue.opacity(0.2))
                 .frame(width: 40, height: 40)
                 .overlay(
-                    Text(friend.displayName.prefix(1).uppercased())
+                    Text(contact.displayName.prefix(1).uppercased())
                         .font(.headline)
                         .foregroundColor(.blue)
                 )
-            
+
             VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(friend.displayName)
-                        .font(.headline)
-                    
-                    if friend.isOnline {
-                        Circle()
-                            .fill(Color.green)
-                            .frame(width: 8, height: 8)
-                    }
-                }
-                
-                if let dpnsName = friend.dpnsName {
+                Text(contact.displayName)
+                    .font(.headline)
+
+                if let dpnsName = contact.dpnsName {
                     Text(dpnsName)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 } else {
-                    Text(friend.identityId.prefix(12) + "...")
+                    Text(contact.id.hexString.prefix(12) + "...")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
+
+                if let note = contact.note {
+                    Text(note)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
-            
+
             Spacer()
-            
-            if let lastSeen = friend.lastSeen, !friend.isOnline {
-                Text(lastSeen, style: .relative)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+// MARK: - Contact Request Row View
+
+struct ContactRequestRow: View {
+    let request: DashPayContactRequest
+    let isIncoming: Bool
+    let onAccept: () -> Void
+    let onReject: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                VStack(alignment: .leading) {
+                    Text(isIncoming ? "From" : "To")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Text((isIncoming ? request.senderId : request.recipientId).hexString.prefix(12) + "...")
+                        .font(.subheadline)
+                        .fontWeight(.medium)
+                }
+
+                Spacer()
+
+                Text(request.createdAt, style: .relative)
                     .font(.caption2)
                     .foregroundColor(.secondary)
+            }
+
+            if isIncoming {
+                HStack(spacing: 12) {
+                    Button("Accept") {
+                        onAccept()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+
+                    Button("Reject") {
+                        onReject()
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .tint(.red)
+                }
             }
         }
         .padding(.vertical, 4)
