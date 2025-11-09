@@ -225,7 +225,10 @@ pub extern "C" fn platform_wallet_identifier_from_hex(
         }
     };
 
-    match dpp::prelude::Identifier::from_string(hex_str, dpp::platform_value::string_encoding::Encoding::Base58) {
+    match dpp::prelude::Identifier::from_string(
+        hex_str,
+        dpp::platform_value::string_encoding::Encoding::Base58,
+    ) {
         Ok(identifier) => {
             unsafe { *out_id = identifier.into() };
             PlatformWalletFFIResult::Success

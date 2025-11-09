@@ -46,19 +46,22 @@ fn test_contact_request_field_access() {
 
     // Verify sender key index
     let mut sender_key_idx = 999u32;
-    let result = contact_request_get_sender_key_index(request_handle, &mut sender_key_idx, &mut error);
+    let result =
+        contact_request_get_sender_key_index(request_handle, &mut sender_key_idx, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_eq!(sender_key_idx, 0);
 
     // Verify recipient key index
     let mut recipient_key_idx = 999u32;
-    let result = contact_request_get_recipient_key_index(request_handle, &mut recipient_key_idx, &mut error);
+    let result =
+        contact_request_get_recipient_key_index(request_handle, &mut recipient_key_idx, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_eq!(recipient_key_idx, 1);
 
     // Verify account reference
     let mut account_ref = 999u32;
-    let result = contact_request_get_account_reference(request_handle, &mut account_ref, &mut error);
+    let result =
+        contact_request_get_account_reference(request_handle, &mut account_ref, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_eq!(account_ref, 0);
 
@@ -138,7 +141,8 @@ fn test_multiple_contact_requests() {
         items: std::ptr::null_mut(),
         count: 0,
     };
-    let result = managed_identity_get_sent_contact_request_ids(alice_handle, &mut array, &mut error);
+    let result =
+        managed_identity_get_sent_contact_request_ids(alice_handle, &mut array, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_eq!(array.count, 3);
 
@@ -238,7 +242,11 @@ fn test_mixed_contact_scenario() {
         items: std::ptr::null_mut(),
         count: 0,
     };
-    managed_identity_get_incoming_contact_request_ids(alice_handle, &mut incoming_array, &mut error);
+    managed_identity_get_incoming_contact_request_ids(
+        alice_handle,
+        &mut incoming_array,
+        &mut error,
+    );
     assert_eq!(incoming_array.count, 2); // Dave and Eve
 
     // Cleanup
@@ -293,8 +301,7 @@ fn test_identity_manager_with_multiple_identities() {
 
     // Set Alice as primary
     let alice_id_bytes: IdentifierBytes = alice_id.into();
-    let result =
-        identity_manager_set_primary_identity(manager_handle, alice_id_bytes, &mut error);
+    let result = identity_manager_set_primary_identity(manager_handle, alice_id_bytes, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
 
     // Get primary
@@ -626,7 +633,7 @@ fn test_concurrent_identity_operations() {
 #[test]
 fn test_get_established_contact_and_fields() {
     use dpp::identity::accessors::IdentityGettersV0;
-    
+
     // Create Alice with established contacts
     let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
     let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
@@ -662,7 +669,7 @@ fn test_get_established_contact_and_fields() {
 #[test]
 fn test_established_contact_outgoing_and_incoming_requests() {
     use dpp::identity::accessors::IdentityGettersV0;
-    
+
     let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
     let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
@@ -681,21 +688,15 @@ fn test_established_contact_outgoing_and_incoming_requests() {
 
     // Get outgoing request
     let mut outgoing_handle: Handle = NULL_HANDLE;
-    let result = established_contact_get_outgoing_request(
-        contact_handle,
-        &mut outgoing_handle,
-        &mut error,
-    );
+    let result =
+        established_contact_get_outgoing_request(contact_handle, &mut outgoing_handle, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_ne!(outgoing_handle, NULL_HANDLE);
 
     // Get incoming request
     let mut incoming_handle: Handle = NULL_HANDLE;
-    let result = established_contact_get_incoming_request(
-        contact_handle,
-        &mut incoming_handle,
-        &mut error,
-    );
+    let result =
+        established_contact_get_incoming_request(contact_handle, &mut incoming_handle, &mut error);
     assert_eq!(result, PlatformWalletFFIResult::Success);
     assert_ne!(incoming_handle, NULL_HANDLE);
 
@@ -726,7 +727,7 @@ fn test_established_contact_outgoing_and_incoming_requests() {
 #[test]
 fn test_established_contact_request_fields() {
     use dpp::identity::accessors::IdentityGettersV0;
-    
+
     let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
     let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
@@ -816,7 +817,7 @@ fn test_established_contact_destroy_invalid_handle() {
 #[test]
 fn test_multiple_established_contacts() {
     use dpp::identity::accessors::IdentityGettersV0;
-    
+
     let (alice, _contacts) = test_data::scenarios::alice_with_established_contacts();
     let alice_handle = MANAGED_IDENTITY_STORAGE.insert(alice.clone());
 
@@ -853,7 +854,10 @@ fn test_multiple_established_contacts() {
     // Verify Carol's contact ID
     let mut retrieved_carol_id = IdentifierBytes { bytes: [0u8; 32] };
     established_contact_get_contact_id(carol_contact_handle, &mut retrieved_carol_id, &mut error);
-    assert_eq!(retrieved_carol_id.bytes, IdentifierBytes::from(carol_id).bytes);
+    assert_eq!(
+        retrieved_carol_id.bytes,
+        IdentifierBytes::from(carol_id).bytes
+    );
 
     // Cleanup
     established_contact_destroy(bob_contact_handle);

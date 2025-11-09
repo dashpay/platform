@@ -1,7 +1,7 @@
+use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use crate::contact_request::CONTACT_REQUEST_STORAGE;
 use std::os::raw::c_char;
 
 /// Get all sent contact request IDs
@@ -320,9 +320,9 @@ pub extern "C" fn managed_identity_reject_contact_request(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::prelude::Identifier;
-    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
+    use dpp::prelude::Identifier;
     use std::collections::BTreeMap;
 
     fn create_test_identity() -> Identity {
@@ -331,16 +331,18 @@ mod tests {
 
         public_keys.insert(
             0,
-            IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-                id: 0,
-                key_type: KeyType::ECDSA_SECP256K1,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::MASTER,
-                read_only: false,
-                data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
-                disabled_at: None,
-                contract_bounds: None,
-            }),
+            IdentityPublicKey::V0(
+                dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                    id: 0,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    read_only: false,
+                    data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+                    disabled_at: None,
+                    contract_bounds: None,
+                },
+            ),
         );
 
         let identity_v0 = IdentityV0 {

@@ -564,12 +564,8 @@ mod tests {
         // Test encrypted public key
         let mut bytes_ptr: *mut u8 = std::ptr::null_mut();
         let mut len: usize = 0;
-        let result = contact_request_get_encrypted_public_key(
-            handle,
-            &mut bytes_ptr,
-            &mut len,
-            &mut error,
-        );
+        let result =
+            contact_request_get_encrypted_public_key(handle, &mut bytes_ptr, &mut len, &mut error);
         assert_eq!(result, PlatformWalletFFIResult::Success);
         assert_eq!(len, 96);
         assert!(!bytes_ptr.is_null());

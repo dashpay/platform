@@ -1,6 +1,6 @@
+use dpp::identity::accessors::IdentityGettersV0;
 use platform_wallet_ffi::*;
 use std::ffi::CString;
-use dpp::identity::accessors::IdentityGettersV0;
 
 #[test]
 fn test_library_init_and_version() {

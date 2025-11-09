@@ -1,10 +1,10 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use platform_wallet::managed_identity::ManagedIdentity;
-use std::os::raw::c_char;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::serialization::PlatformDeserializable;
+use platform_wallet::managed_identity::ManagedIdentity;
+use std::os::raw::c_char;
 
 /// Create a new ManagedIdentity from a DPP Identity serialized bytes
 #[no_mangle]
@@ -362,8 +362,8 @@ pub extern "C" fn managed_identity_destroy(identity_handle: Handle) -> PlatformW
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::identity::v0::IdentityV0;
+    use dpp::identity::{Identity, IdentityPublicKey, KeyType, Purpose, SecurityLevel};
     use dpp::prelude::Identifier;
     use std::collections::BTreeMap;
 
@@ -373,16 +373,18 @@ mod tests {
 
         public_keys.insert(
             0,
-            IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-                id: 0,
-                key_type: KeyType::ECDSA_SECP256K1,
-                purpose: Purpose::AUTHENTICATION,
-                security_level: SecurityLevel::MASTER,
-                read_only: false,
-                data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
-                disabled_at: None,
-                contract_bounds: None,
-            }),
+            IdentityPublicKey::V0(
+                dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                    id: 0,
+                    key_type: KeyType::ECDSA_SECP256K1,
+                    purpose: Purpose::AUTHENTICATION,
+                    security_level: SecurityLevel::MASTER,
+                    read_only: false,
+                    data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+                    disabled_at: None,
+                    contract_bounds: None,
+                },
+            ),
         );
 
         let identity_v0 = IdentityV0 {

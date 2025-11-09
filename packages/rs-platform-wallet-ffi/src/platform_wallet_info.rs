@@ -1,8 +1,8 @@
 use crate::error::*;
 use crate::handle::*;
 use crate::types::*;
-use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 use key_wallet::wallet::initialization::WalletAccountCreationOptions;
+use platform_wallet::platform_wallet_info::PlatformWalletInfo;
 use std::os::raw::{c_char, c_uchar};
 
 /// Create a new PlatformWalletInfo from seed bytes
@@ -47,8 +47,8 @@ pub extern "C" fn platform_wallet_info_create_from_seed(
     // Create wallet from seed - use empty network list, accounts can be added later
     let wallet = match key_wallet::Wallet::from_seed_bytes(
         seed_array,
-        &[],  // No networks initially
-        WalletAccountCreationOptions::None,  // No accounts initially
+        &[],                                // No networks initially
+        WalletAccountCreationOptions::None, // No accounts initially
     ) {
         Ok(w) => w,
         Err(e) => {
@@ -155,8 +155,8 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
         match key_wallet::Wallet::from_mnemonic_with_passphrase(
             mnemonic_obj,
             pass.to_string(),
-            &[],  // No networks initially
-            WalletAccountCreationOptions::None,  // No accounts initially
+            &[],                                // No networks initially
+            WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
             Err(e) => {
@@ -164,7 +164,10 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
                     unsafe {
                         *out_error = PlatformWalletFFIError::new(
                             PlatformWalletFFIResult::ErrorWalletOperation,
-                            format!("Failed to create wallet from mnemonic with passphrase: {}", e),
+                            format!(
+                                "Failed to create wallet from mnemonic with passphrase: {}",
+                                e
+                            ),
                         );
                     }
                 }
@@ -174,8 +177,8 @@ pub extern "C" fn platform_wallet_info_create_from_mnemonic(
     } else {
         match key_wallet::Wallet::from_mnemonic(
             mnemonic_obj,
-            &[],  // No networks initially
-            WalletAccountCreationOptions::None,  // No accounts initially
+            &[],                                // No networks initially
+            WalletAccountCreationOptions::None, // No accounts initially
         ) {
             Ok(w) => w,
             Err(e) => {

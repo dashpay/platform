@@ -20,46 +20,52 @@ pub fn create_test_identity(id_bytes: [u8; 32], balance: u64) -> Identity {
     // Master key (key ID 0)
     public_keys.insert(
         0,
-        IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-            id: 0,
-            key_type: KeyType::ECDSA_SECP256K1,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::MASTER,
-            read_only: false,
-            data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
-            disabled_at: None,
-            contract_bounds: None,
-        }),
+        IdentityPublicKey::V0(
+            dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 0,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::MASTER,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![2u8; 33]),
+                disabled_at: None,
+                contract_bounds: None,
+            },
+        ),
     );
 
     // High security key (key ID 1)
     public_keys.insert(
         1,
-        IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-            id: 1,
-            key_type: KeyType::ECDSA_SECP256K1,
-            purpose: Purpose::AUTHENTICATION,
-            security_level: SecurityLevel::HIGH,
-            read_only: false,
-            data: dpp::platform_value::BinaryData::new(vec![3u8; 33]),
-            disabled_at: None,
-            contract_bounds: None,
-        }),
+        IdentityPublicKey::V0(
+            dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 1,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::AUTHENTICATION,
+                security_level: SecurityLevel::HIGH,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![3u8; 33]),
+                disabled_at: None,
+                contract_bounds: None,
+            },
+        ),
     );
 
     // Encryption key (key ID 2)
     public_keys.insert(
         2,
-        IdentityPublicKey::V0(dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
-            id: 2,
-            key_type: KeyType::ECDSA_SECP256K1,
-            purpose: Purpose::ENCRYPTION,
-            security_level: SecurityLevel::MEDIUM,
-            read_only: false,
-            data: dpp::platform_value::BinaryData::new(vec![4u8; 33]),
-            disabled_at: None,
-            contract_bounds: None,
-        }),
+        IdentityPublicKey::V0(
+            dpp::identity::identity_public_key::v0::IdentityPublicKeyV0 {
+                id: 2,
+                key_type: KeyType::ECDSA_SECP256K1,
+                purpose: Purpose::ENCRYPTION,
+                security_level: SecurityLevel::MEDIUM,
+                read_only: false,
+                data: dpp::platform_value::BinaryData::new(vec![4u8; 33]),
+                disabled_at: None,
+                contract_bounds: None,
+            },
+        ),
     );
 
     let identity_v0 = IdentityV0 {
@@ -93,7 +99,8 @@ pub fn create_contact_request(
     let mut encrypted_public_key = Vec::with_capacity(96);
     // Simulate encrypted data with some pattern
     for i in 0..96 {
-        let val = (sender_id.as_bytes()[i % 32].wrapping_add(recipient_id.as_bytes()[i % 32])) as u8;
+        let val =
+            (sender_id.as_bytes()[i % 32].wrapping_add(recipient_id.as_bytes()[i % 32])) as u8;
         encrypted_public_key.push(val);
     }
 
@@ -252,7 +259,9 @@ pub mod scenarios {
         let contact2 = create_established_contact(carol_id, alice_id, 1_700_000_200, 1_700_000_300);
 
         alice.established_contacts.insert(bob_id, contact1.clone());
-        alice.established_contacts.insert(carol_id, contact2.clone());
+        alice
+            .established_contacts
+            .insert(carol_id, contact2.clone());
 
         (alice, vec![contact1, contact2])
     }
@@ -268,7 +277,8 @@ pub mod scenarios {
         let alice_id = alice.identity.id();
 
         // Established contact with Bob
-        let bob_contact = create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
+        let bob_contact =
+            create_established_contact(bob_id, alice_id, 1_700_000_000, 1_700_000_100);
         alice.established_contacts.insert(bob_id, bob_contact);
 
         // Pending sent request to Carol (not reciprocated yet)
@@ -348,7 +358,9 @@ mod tests {
 
         // Verify requests are in the managed identity
         for request in &requests {
-            assert!(alice.sent_contact_requests.contains_key(&request.recipient_id));
+            assert!(alice
+                .sent_contact_requests
+                .contains_key(&request.recipient_id));
         }
     }
 
