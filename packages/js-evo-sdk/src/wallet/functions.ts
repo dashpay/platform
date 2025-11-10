@@ -16,32 +16,24 @@ export namespace wallet {
     return wasm.WasmSdk.mnemonicToSeed(mnemonic, passphrase ?? null);
   }
 
-  export async function deriveKeyFromSeedPhrase(mnemonic: string, passphrase: string | null | undefined, network: string): Promise<any> {
+  export async function deriveKeyFromSeedPhrase(opts: wasm.DeriveKeyFromSeedPhraseOptions): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedPhrase(mnemonic, passphrase ?? null, network);
+    return wasm.WasmSdk.deriveKeyFromSeedPhrase(opts);
   }
 
-  export async function deriveKeyFromSeedWithPath(mnemonic: string, passphrase: string | null | undefined, path: string, network: string): Promise<any> {
+  export async function deriveKeyFromSeedWithPath(opts: wasm.DeriveKeyFromSeedWithPathOptions): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedWithPath(mnemonic, passphrase ?? null, path, network);
+    return wasm.WasmSdk.deriveKeyFromSeedWithPath(opts);
   }
 
-  export async function deriveKeyFromSeedWithExtendedPath(mnemonic: string, passphrase: string | null | undefined, path: string, network: string): Promise<any> {
+  export async function deriveKeyFromSeedWithExtendedPath(opts: wasm.DeriveKeyFromSeedWithExtendedPathOptions): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedWithExtendedPath(mnemonic, passphrase ?? null, path, network);
+    return wasm.WasmSdk.deriveKeyFromSeedWithExtendedPath(opts);
   }
 
-  export async function deriveDashpayContactKey(mnemonic: string, passphrase: string | null | undefined, senderIdentityId: string, receiverIdentityId: string, account: number, addressIndex: number, network: string): Promise<any> {
+  export async function deriveDashpayContactKey(opts: wasm.DeriveDashpayContactKeyOptions): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveDashpayContactKey(
-      mnemonic,
-      passphrase ?? null,
-      senderIdentityId,
-      receiverIdentityId,
-      account,
-      addressIndex,
-      network,
-    );
+    return wasm.WasmSdk.deriveDashpayContactKey(opts);
   }
 
   export async function derivationPathBip44Mainnet(account: number, change: number, index: number): Promise<any> {

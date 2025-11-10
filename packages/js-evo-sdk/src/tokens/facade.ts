@@ -60,7 +60,7 @@ export class TokensFacade {
     return w.getIdentityTokenBalancesWithProofInfo(identityId, tokenIds);
   }
 
-  async identityTokenInfos(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[], _opts: { limit?: number; offset?: number } = {}): Promise<any> {
+  async identityTokenInfos(identityId: wasm.IdentifierLike, tokenIds: wasm.IdentifierLike[]): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityTokenInfos(identityId, tokenIds);
   }

@@ -1,6 +1,7 @@
 use crate::error::WasmSdkError;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::dashcore::hashes::{sha256d, Hash as _};
 use js_sys::Map;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -113,21 +114,39 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatus")]
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: &str,
+        #[wasm_bindgen(js_name = "startProTxHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        start_pro_tx_hash: JsValue,
         count: u32,
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::dpp::dashcore::ProTxHash;
         use dash_sdk::platform::types::version_votes::MasternodeProtocolVoteEx;
         use drive_proof_verifier::types::MasternodeProtocolVote;
         use std::str::FromStr;
-        let start_hash =
-            if start_pro_tx_hash.is_empty() {
+        let start_hash = if let Some(s) = start_pro_tx_hash.as_string() {
+            if s.is_empty() {
                 None
             } else {
-                Some(ProTxHash::from_str(start_pro_tx_hash).map_err(|e| {
+                Some(ProTxHash::from_str(&s).map_err(|e| {
                     WasmSdkError::invalid_argument(format!("Invalid ProTxHash: {}", e))
                 })?)
-            };
+            }
+        } else {
+            let bytes = js_sys::Uint8Array::new(&start_pro_tx_hash).to_vec();
+            if bytes.is_empty() {
+                None
+            } else {
+                if bytes.len() != 32 {
+                    return Err(WasmSdkError::invalid_argument(
+                        "ProTxHash must be 32 bytes or an empty value",
+                    ));
+                }
+                let mut arr = [0u8; 32];
+                arr.copy_from_slice(&bytes);
+                let raw = sha256d::Hash::from_byte_array(arr);
+                Some(ProTxHash::from_raw_hash(raw))
+            }
+        };
         let votes_result =
             MasternodeProtocolVote::fetch_votes(self.as_ref(), start_hash, Some(count)).await?;
         let votes_map = Map::new();
@@ -183,7 +202,9 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatusWithProofInfo")]
     pub async fn get_protocol_version_upgrade_vote_status_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "startProTxHash")] start_pro_tx_hash: &str,
+        #[wasm_bindgen(js_name = "startProTxHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        start_pro_tx_hash: JsValue,
         count: u32,
     ) -> Result<JsValue, WasmSdkError> {
         let _ = (self, start_pro_tx_hash, count);

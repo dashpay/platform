@@ -2,6 +2,7 @@
 //!
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 use crate::error::WasmSdkError;
+use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
@@ -14,6 +15,56 @@ use rand::{thread_rng, RngCore};
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
 use wasm_bindgen::prelude::*;
+
+// TypeScript option bags (module scope) for wallet derivation helpers
+#[wasm_bindgen(typescript_custom_section)]
+const DERIVE_FROM_SEED_PHRASE_OPTS_TS: &'static str = r#"
+export interface DeriveKeyFromSeedPhraseOptions {
+  mnemonic: string;
+  passphrase?: string | null;
+  network: string;
+}
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedPhraseOptions")]
+    pub type DeriveKeyFromSeedPhraseOptionsJs;
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DERIVE_FROM_SEED_WITH_PATH_OPTS_TS: &'static str = r#"
+export interface DeriveKeyFromSeedWithPathOptions {
+  mnemonic: string;
+  passphrase?: string | null;
+  path: string;
+  network: string;
+}
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedWithPathOptions")]
+    pub type DeriveKeyFromSeedWithPathOptionsJs;
+}
+
+// Inputs parsed from options (module scope)
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeriveFromSeedPhraseInput {
+    mnemonic: String,
+    #[serde(default)]
+    passphrase: Option<String>,
+    network: String,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DeriveFromSeedWithPathInput {
+    mnemonic: String,
+    #[serde(default)]
+    passphrase: Option<String>,
+    path: String,
+    network: String,
+}
 /// Dash coin type for BIP44 (mainnet)
 pub const DASH_COIN_TYPE: u32 = 5;
 /// Testnet coin type for BIP44
@@ -212,21 +263,29 @@ impl WasmSdk {
         let seed = mnemonic.to_seed(passphrase.as_deref().unwrap_or(""));
         Ok(seed.to_vec())
     }
+    // Types decoded in parse step are defined at module scope
     /// Derive a key from mnemonic phrase using BIP39/BIP44
     #[wasm_bindgen(js_name = "deriveKeyFromSeedPhrase")]
     pub fn derive_key_from_seed_phrase(
-        mnemonic: &str,
-        passphrase: Option<String>,
-        network: &str,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedPhraseOptions")] opts: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
+        let DeriveFromSeedPhraseInput {
+            mnemonic,
+            passphrase,
+            network,
+        } = deserialize_required_query(
+            opts,
+            "Options object is required",
+            "deriveKeyFromSeedPhrase options",
+        )?;
         use crate::wallet::key_generation::KeyPair;
-        let seed = Self::mnemonic_to_seed(mnemonic, passphrase)?;
+        let seed = Self::mnemonic_to_seed(&mnemonic, passphrase)?;
         let key_bytes = if seed.len() >= 32 {
             &seed[0..32]
         } else {
             return Err(WasmSdkError::generic("Seed too short"));
         };
-        let net = match network {
+        let net = match network.as_str() {
             "mainnet" => dashcore::Network::Dash,
             "testnet" => dashcore::Network::Testnet,
             _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
@@ -246,7 +305,7 @@ impl WasmSdk {
             private_key_hex: hex::encode(key_bytes),
             public_key: hex::encode(public_key_bytes),
             address: address.to_string(),
-            network: network.to_string(),
+            network,
         };
         serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
             WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
@@ -255,19 +314,27 @@ impl WasmSdk {
     /// Derive a key from seed phrase with arbitrary path
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithPath")]
     pub fn derive_key_from_seed_with_path(
-        mnemonic: &str,
-        passphrase: Option<String>,
-        path: &str,
-        network: &str,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithPathOptions")] opts: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
-        let seed = Self::mnemonic_to_seed(mnemonic, passphrase)?;
-        let net = match network {
+        // Types decoded in parse step are defined at module scope
+        let DeriveFromSeedWithPathInput {
+            mnemonic,
+            passphrase,
+            path,
+            network,
+        } = deserialize_required_query(
+            opts,
+            "Options object is required",
+            "deriveKeyFromSeedWithPath options",
+        )?;
+        let seed = Self::mnemonic_to_seed(&mnemonic, passphrase)?;
+        let net = match network.as_str() {
             "mainnet" => dashcore::Network::Dash,
             "testnet" => dashcore::Network::Testnet,
             _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
         };
-        let derivation_path = DerivationPath::from_str(path).map_err(|e| {
+        let derivation_path = DerivationPath::from_str(&path).map_err(|e| {
             WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e))
         })?;
         let master_key = ExtendedPrivKey::new_master(net, &seed)
@@ -280,7 +347,7 @@ impl WasmSdk {
         let public_key = private_key.public_key(&secp);
         let address = dashcore::Address::p2pkh(&public_key, net);
         let obj = js_sys::Object::new();
-        js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(path))
+        js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(&path))
             .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
         js_sys::Reflect::set(
             &obj,
@@ -309,7 +376,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &obj,
             &JsValue::from_str("network"),
-            &JsValue::from_str(network),
+            &JsValue::from_str(&network),
         )
         .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
         Ok(obj.into())
