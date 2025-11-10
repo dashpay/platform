@@ -55,14 +55,14 @@ export class GroupFacade {
     return w.getGroupActionsWithProofInfo(query);
   }
 
-  async actionSigners(contractId: wasm.IdentifierLike, groupContractPosition: number, status: string, actionId: wasm.IdentifierLike): Promise<any> {
+  async actionSigners(query: wasm.GroupActionSignersQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionSigners(contractId, groupContractPosition, status, actionId);
+    return w.getGroupActionSigners(query);
   }
 
-  async actionSignersWithProof(contractId: wasm.IdentifierLike, groupContractPosition: number, status: string, actionId: wasm.IdentifierLike): Promise<any> {
+  async actionSignersWithProof(query: wasm.GroupActionSignersQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getGroupActionSignersWithProofInfo(contractId, groupContractPosition, status, actionId);
+    return w.getGroupActionSignersWithProofInfo(query);
   }
 
   async groupsDataContracts(dataContractIds: wasm.IdentifierLike[]): Promise<any> {

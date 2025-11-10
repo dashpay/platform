@@ -122,6 +122,39 @@ extern "C" {
     #[wasm_bindgen(typescript_type = "GroupActionsQuery")]
     pub type GroupActionsQueryJs;
 }
+
+#[wasm_bindgen(typescript_custom_section)]
+const GROUP_ACTION_SIGNERS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving signers of a group action.
+ */
+export interface GroupActionSignersQuery {
+  /**
+   * Data contract identifier.
+   */
+  dataContractId: IdentifierLike
+
+  /**
+   * Position of the group within the contract.
+   */
+  groupContractPosition: number;
+
+  /**
+   * Action status filter.
+   */
+  status: GroupActionStatusFilter;
+
+  /**
+   * Group action identifier.
+   */
+  actionId: IdentifierLike
+}
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GroupActionSignersQuery")]
+    pub type GroupActionSignersQueryJs;
+}
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GroupActionsQueryInput {
@@ -193,6 +226,55 @@ fn parse_group_actions_query(
         status,
         start_at,
         limit,
+    })
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GroupActionSignersQueryInput {
+    data_contract_id: IdentifierWasm,
+    group_contract_position: u32,
+    status: String,
+    action_id: IdentifierWasm,
+}
+
+struct GroupActionSignersQueryParsed {
+    contract_id: Identifier,
+    group_contract_position: GroupContractPosition,
+    status: GroupActionStatus,
+    action_id: Identifier,
+}
+
+fn parse_group_action_signers_query(
+    query: GroupActionSignersQueryJs,
+) -> Result<GroupActionSignersQueryParsed, WasmSdkError> {
+    let input: GroupActionSignersQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "group action signers query",
+    )?;
+    let GroupActionSignersQueryInput {
+        data_contract_id,
+        group_contract_position,
+        status,
+        action_id,
+    } = input;
+    let contract_id: Identifier = data_contract_id.into();
+    let group_contract_position: GroupContractPosition =
+        group_contract_position.try_into().map_err(|_| {
+            WasmSdkError::invalid_argument(format!(
+                "groupContractPosition {} exceeds maximum of {}",
+                group_contract_position,
+                u16::MAX,
+            ))
+        })?;
+    let status = parse_group_action_status(&status)?;
+    let action_id: Identifier = action_id.into();
+    Ok(GroupActionSignersQueryParsed {
+        contract_id,
+        group_contract_position,
+        status,
+        action_id,
     })
 }
 #[wasm_bindgen(typescript_custom_section)]
@@ -573,27 +655,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupActionSigners")]
     pub async fn get_group_action_signers(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
-        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
-        status: &str,
-        #[wasm_bindgen(js_name = "actionId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        action_id: JsValue,
+        query: GroupActionSignersQueryJs,
     ) -> Result<Map, WasmSdkError> {
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
-        let action_id: Identifier = IdentifierWasm::try_from(&action_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", err)))?
-            .into();
-        let status = parse_group_action_status(status)?;
+        let params = parse_group_action_signers_query(query)?;
         let query = GroupActionSignersQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            action_id,
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            action_id: params.action_id,
         };
         let signers_result = GroupMemberPower::fetch_many(self.as_ref(), query).await?;
         let signers_map = Map::new();
@@ -792,27 +861,14 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
-        #[wasm_bindgen(js_name = "groupContractPosition")] group_contract_position: u32,
-        status: &str,
-        #[wasm_bindgen(js_name = "actionId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        action_id: JsValue,
+        query: GroupActionSignersQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let contract_id: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
-        let action_id: Identifier = IdentifierWasm::try_from(&action_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid action ID: {}", err)))?
-            .into();
-        let status = parse_group_action_status(status)?;
+        let params = parse_group_action_signers_query(query)?;
         let query = GroupActionSignersQuery {
-            contract_id,
-            group_contract_position: group_contract_position as GroupContractPosition,
-            status,
-            action_id,
+            contract_id: params.contract_id,
+            group_contract_position: params.group_contract_position,
+            status: params.status,
+            action_id: params.action_id,
         };
         let (signers_result, metadata, proof) =
             GroupMemberPower::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
