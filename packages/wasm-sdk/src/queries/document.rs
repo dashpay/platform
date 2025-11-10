@@ -76,7 +76,7 @@ export interface DocumentsQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Document type name.
@@ -105,13 +105,13 @@ export interface DocumentsQuery {
    * Exclusive document ID to resume from.
    * @default undefined
    */
-  startAfter?: Identifier | Uint8Array | string;
+  startAfter?: IdentifierLike
 
   /**
    * Inclusive document ID to start from.
    * @default undefined
    */
-  startAt?: Identifier | Uint8Array | string;
+  startAt?: IdentifierLike
 }
 "#;
 #[wasm_bindgen]

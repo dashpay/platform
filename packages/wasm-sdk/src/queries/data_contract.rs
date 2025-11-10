@@ -50,7 +50,7 @@ export interface DataContractHistoryQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Maximum number of entries to return.

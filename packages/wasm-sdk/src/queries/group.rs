@@ -76,7 +76,7 @@ export interface GroupActionsStartAt {
   /**
    * Group action identifier.
    */
-  actionId: Identifier | Uint8Array | string;
+  actionId: IdentifierLike
 
   /**
    * Include the `actionId` entry in the result set.
@@ -92,7 +92,7 @@ export interface GroupActionsQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Position of the group within the contract.
@@ -220,7 +220,7 @@ export interface GroupInfosQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Cursor describing where to resume from.
@@ -295,7 +295,7 @@ export interface GroupMembersQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Group position inside the contract.
@@ -312,7 +312,7 @@ export interface GroupMembersQuery {
    * Member identifier to resume from.
    * @default undefined
    */
-  startAtMemberId?: Identifier | Uint8Array | string;
+  startAtMemberId?: IdentifierLike
 
   /**
    * Maximum number of members to return when not requesting specific IDs.
@@ -335,7 +335,7 @@ export interface IdentityGroupsQuery {
   /**
    * Identity identifier.
    */
-  identityId: Identifier | Uint8Array | string;
+  identityId: IdentifierLike
 
   /**
    * Data contracts where the identity participates as a member.

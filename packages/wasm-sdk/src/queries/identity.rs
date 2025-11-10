@@ -244,7 +244,7 @@ export interface IdentityKeysQuery {
   /**
    * Identity identifier.
    */
-  identityId: Identifier | Uint8Array | string;
+  identityId: IdentifierLike
 
   /**
    * Requested key selection strategy.

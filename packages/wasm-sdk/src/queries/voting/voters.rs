@@ -25,7 +25,7 @@ export interface ContestedResourceVotersForIdentityQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Contested document type name.
@@ -46,7 +46,7 @@ export interface ContestedResourceVotersForIdentityQuery {
   /**
    * Contested identity identifier.
    */
-  contestantId: Identifier | Uint8Array | string;
+  contestantId: IdentifierLike
 
   /**
    * Maximum number of voters to return.
@@ -58,7 +58,7 @@ export interface ContestedResourceVotersForIdentityQuery {
    * Voter identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtVoterId?: Identifier | Uint8Array | string;
+  startAtVoterId?: IdentifierLike
 
   /**
    * Include the `startAtVoterId` when true.
