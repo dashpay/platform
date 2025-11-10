@@ -6,7 +6,7 @@ use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicK
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
-use js_sys::{Array, BigInt, Map};
+use js_sys::{Array, BigInt, Map, Uint8Array};
 use rs_dapi_client::IntoInner;
 use serde::Deserialize;
 use std::collections::{BTreeMap, HashMap};
@@ -187,6 +187,63 @@ pub struct IdentityKeysProofResponseWasm {
     pub metadata: ResponseMetadataWasm,
     #[wasm_bindgen(getter_with_clone)]
     pub proof: ProofInfoWasm,
+}
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for fetching identities' public keys for a contract.
+ */
+export interface IdentitiesContractKeysQuery {
+  /**
+   * Identity identifiers to fetch keys for.
+   */
+  identityIds: Array<IdentifierLike>;
+
+  /**
+   * Data contract identifier (reserved for future filtering).
+   */
+  contractId: IdentifierLike;
+
+  /**
+   * Optional list of purposes to include.
+   * @default undefined
+   */
+  purposes?: number[];
+}
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "IdentitiesContractKeysQuery")]
+    pub type IdentitiesContractKeysQueryJs;
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IdentitiesContractKeysQueryInput {
+    #[serde(rename = "identityIds")]
+    identity_ids: Vec<IdentifierWasm>,
+    #[serde(rename = "contractId")]
+    contract_id: IdentifierWasm,
+    #[serde(default)]
+    purposes: Option<Vec<u32>>,
+}
+struct IdentitiesContractKeysQueryParsed {
+    identity_ids: Vec<Identifier>,
+    contract_id: Identifier,
+    purposes: Option<Vec<u32>>,
+}
+fn parse_identities_contract_keys_query(
+    query: IdentitiesContractKeysQueryJs,
+) -> Result<IdentitiesContractKeysQueryParsed, WasmSdkError> {
+    let input: IdentitiesContractKeysQueryInput = deserialize_required_query(
+        query,
+        "Query object is required",
+        "identities contract keys query",
+    )?;
+    Ok(IdentitiesContractKeysQueryParsed {
+        identity_ids: input.identity_ids.into_iter().map(Identifier::from).collect(),
+        contract_id: input.contract_id.into(),
+        purposes: input.purposes,
+    })
 }
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_KEYS_QUERY_TS: &'static str = r#"
@@ -705,12 +762,20 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityByPublicKeyHash")]
     pub async fn get_identity_by_public_key_hash(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: &str,
+        #[wasm_bindgen(js_name = "publicKeyHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        public_key_hash: JsValue,
     ) -> Result<IdentityWasm, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
-        let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-        })?;
+        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
+            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
+            hex::decode(&s).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
+            })?
+        } else {
+            let arr = Uint8Array::new(&public_key_hash);
+            arr.to_vec()
+        };
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -726,29 +791,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesContractKeys")]
     pub async fn get_identities_contract_keys(
         &self,
-        #[wasm_bindgen(js_name = "identitiesIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identities_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
-        purposes: Option<Vec<u32>>,
+        query: IdentitiesContractKeysQueryJs,
     ) -> Result<Array, WasmSdkError> {
         use dash_sdk::dpp::identity::Purpose;
-        let identity_identifiers: Vec<Identifier> = identities_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let _contract_identifier: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
-        let purposes_opt = purposes.map(|p| {
+        let params = parse_identities_contract_keys_query(query)?;
+        let identity_identifiers = params.identity_ids;
+        let _contract_identifier = params.contract_id;
+        let purposes_opt = params.purposes.map(|p| {
             p.into_iter()
                 .filter_map(|purpose_int| match purpose_int {
                     0 => Some(Purpose::AUTHENTICATION as u32),
@@ -793,14 +842,22 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHash")]
     pub async fn get_identity_by_non_unique_public_key_hash(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: &str,
+        #[wasm_bindgen(js_name = "publicKeyHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        public_key_hash: JsValue,
         #[wasm_bindgen(js_name = "startAfterId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
         start_after_id: JsValue,
     ) -> Result<Array, WasmSdkError> {
-        let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-        })?;
+        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
+            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
+            hex::decode(&s).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
+            })?
+        } else {
+            let arr = Uint8Array::new(&public_key_hash);
+            arr.to_vec()
+        };
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -1024,12 +1081,20 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityByPublicKeyHashWithProofInfo")]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: &str,
+        #[wasm_bindgen(js_name = "publicKeyHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        public_key_hash: JsValue,
     ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
-        let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-        })?;
+        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
+            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
+            hex::decode(&s).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
+            })?
+        } else {
+            let arr = Uint8Array::new(&public_key_hash);
+            arr.to_vec()
+        };
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -1054,14 +1119,22 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHashWithProofInfo")]
     pub async fn get_identity_by_non_unique_public_key_hash_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "publicKeyHash")] public_key_hash: &str,
+        #[wasm_bindgen(js_name = "publicKeyHash")]
+        #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
+        public_key_hash: JsValue,
         #[wasm_bindgen(js_name = "startAfterId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
         start_after_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        let hash_bytes = hex::decode(public_key_hash).map_err(|e| {
-            WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
-        })?;
+        let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
+            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
+            hex::decode(&s).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
+            })?
+        } else {
+            let arr = Uint8Array::new(&public_key_hash);
+            arr.to_vec()
+        };
         if hash_bytes.len() != 20 {
             return Err(WasmSdkError::invalid_argument(
                 "Public key hash must be 20 bytes (40 hex characters)",
@@ -1103,29 +1176,13 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesContractKeysWithProofInfo")]
     pub async fn get_identities_contract_keys_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identitiesIds")]
-        #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
-        identities_ids: Vec<JsValue>,
-        #[wasm_bindgen(js_name = "contractId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        contract_id: JsValue,
-        purposes: Option<Vec<u32>>,
+        query: IdentitiesContractKeysQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::identity::Purpose;
-        let identity_ids: Vec<Identifier> = identities_ids
-            .into_iter()
-            .map(|value| {
-                IdentifierWasm::try_from(&value)
-                    .map(Identifier::from)
-                    .map_err(|err| {
-                        WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err))
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        let _contract_identifier: Identifier = IdentifierWasm::try_from(&contract_id)
-            .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", err)))?
-            .into();
-        let purposes_opt = purposes.map(|p| {
+        let params = parse_identities_contract_keys_query(query)?;
+        let identity_ids = params.identity_ids;
+        let _contract_identifier = params.contract_id;
+        let purposes_opt = params.purposes.map(|p| {
             p.into_iter()
                 .filter_map(|purpose_int| match purpose_int {
                     0 => Some(Purpose::AUTHENTICATION as u32),
