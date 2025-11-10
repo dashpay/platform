@@ -1,5 +1,5 @@
 use crate::error::WasmSdkError;
-use crate::queries::utils::identifier_from_js;
+use crate::queries::utils::{deserialize_required_query, identifier_from_js};
 use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
@@ -18,6 +18,7 @@ use serde::{Deserialize, Serialize};
 use simple_signer::SingleKeySigner;
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::identifier::IdentifierWasm;
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RegisterDpnsNameResult {
@@ -25,6 +26,7 @@ pub struct RegisterDpnsNameResult {
     pub domain_document_id: String,
     pub full_domain_name: String,
 }
+
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
 struct DpnsUsernameInfo {
@@ -32,6 +34,83 @@ struct DpnsUsernameInfo {
     identity_id: String,
     document_id: String,
 }
+
+const DEFAULT_DPNS_USERNAMES_LIMIT: u32 = 10;
+
+fn resolve_dpns_usernames_limit(limit: Option<u32>) -> u32 {
+    match limit {
+        Some(0) | None => DEFAULT_DPNS_USERNAMES_LIMIT,
+        Some(value) => value,
+    }
+}
+
+fn usernames_from_documents(documents_result: Documents) -> Array {
+    let usernames_array = Array::new();
+    for (_, doc_opt) in documents_result {
+        if let Some(doc) = doc_opt {
+            let properties = doc.properties();
+            if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
+                properties.get("label"),
+                properties.get("normalizedParentDomainName"),
+            ) {
+                let username = format!("{}.{}", label, parent_domain);
+                usernames_array.push(&JsValue::from(username));
+            }
+        }
+    }
+    usernames_array
+}
+
+#[wasm_bindgen(typescript_custom_section)]
+const DPNS_USERNAMES_QUERY_TS: &'static str = r#"
+/**
+ * Query parameters for retrieving DPNS usernames.
+ */
+export interface DpnsUsernamesQuery {
+  /**
+   * Identity to fetch usernames for.
+   */
+  identityId: IdentifierLike;
+
+  /**
+   * Maximum number of usernames to return. Use 0 for default.
+   * @default 10
+   */
+  limit?: number;
+}
+"#;
+
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "DpnsUsernamesQuery")]
+    pub type DpnsUsernamesQueryJs;
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DpnsUsernamesQueryInput {
+    identity_id: IdentifierWasm,
+    #[serde(default)]
+    limit: Option<u32>,
+}
+
+struct DpnsUsernamesQueryParsed {
+    identity_id: Identifier,
+    limit: Option<u32>,
+}
+
+fn parse_dpns_usernames_query(
+    query: DpnsUsernamesQueryJs,
+) -> Result<DpnsUsernamesQueryParsed, WasmSdkError> {
+    let input: DpnsUsernamesQueryInput =
+        deserialize_required_query(query, "Query object is required", "DPNS usernames query")?;
+
+    Ok(DpnsUsernamesQueryParsed {
+        identity_id: input.identity_id.into(),
+        limit: input.limit,
+    })
+}
+
 #[wasm_bindgen(js_name = "DpnsUsernamesProofResponse")]
 #[derive(Clone)]
 pub struct DpnsUsernamesProofResponseWasm {
@@ -52,6 +131,71 @@ pub struct DpnsUsernameProofResponseWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub proof: ProofInfoWasm,
 }
+impl WasmSdk {
+    async fn prepare_dpns_usernames_query(
+        &self,
+        identity_id: Identifier,
+        limit: Option<u32>,
+    ) -> Result<DocumentQuery, WasmSdkError> {
+        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
+        const DPNS_DOCUMENT_TYPE: &str = "domain";
+
+        let contract_id =
+            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
+                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
+            })?;
+
+        let mut query = DocumentQuery::new_with_data_contract_id(
+            self.as_ref(),
+            contract_id,
+            DPNS_DOCUMENT_TYPE,
+        )
+        .await?;
+
+        let where_clause = WhereClause {
+            field: "records.identity".to_string(),
+            operator: WhereOperator::Equal,
+            value: Value::Identifier(identity_id.to_buffer()),
+        };
+
+        query = query.with_where(where_clause);
+        query.limit = resolve_dpns_usernames_limit(limit);
+
+        Ok(query)
+    }
+
+    async fn fetch_dpns_usernames(
+        &self,
+        identity_id: Identifier,
+        limit: Option<u32>,
+    ) -> Result<Array, WasmSdkError> {
+        let query = self
+            .prepare_dpns_usernames_query(identity_id, limit)
+            .await?;
+        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
+        Ok(usernames_from_documents(documents_result))
+    }
+
+    async fn fetch_dpns_usernames_with_proof(
+        &self,
+        identity_id: Identifier,
+        limit: Option<u32>,
+    ) -> Result<DpnsUsernamesProofResponseWasm, WasmSdkError> {
+        let query = self
+            .prepare_dpns_usernames_query(identity_id, limit)
+            .await?;
+        let (documents_result, metadata, proof) =
+            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+        let usernames_array = usernames_from_documents(documents_result);
+
+        Ok(DpnsUsernamesProofResponseWasm {
+            usernames: usernames_array,
+            metadata: metadata.into(),
+            proof: proof.into(),
+        })
+    }
+}
+
 #[wasm_bindgen]
 impl WasmSdk {
     #[wasm_bindgen(js_name = "dpnsConvertToHomographSafe")]
@@ -71,7 +215,7 @@ impl WasmSdk {
         &self,
         label: &str,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
         #[wasm_bindgen(js_name = "publicKeyId")] public_key_id: u32,
         #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: &str,
@@ -265,58 +409,25 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsernames")]
     pub async fn get_dpns_usernames(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        limit: Option<u32>,
+        query: DpnsUsernamesQueryJs,
     ) -> Result<JsValue, WasmSdkError> {
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        const DPNS_DOCUMENT_TYPE: &str = "domain";
-        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
-        let contract_id =
-            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
-            })?;
-        let mut query = DocumentQuery::new_with_data_contract_id(
-            self.as_ref(),
-            contract_id,
-            DPNS_DOCUMENT_TYPE,
-        )
-        .await?;
-        let where_clause = WhereClause {
-            field: "records.identity".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(identity_id_parsed.to_buffer()),
-        };
-        query = query.with_where(where_clause);
-        query.limit = limit.unwrap_or(10);
-        let documents_result: Documents = Document::fetch_many(self.as_ref(), query).await?;
-        let usernames_array = Array::new();
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                let properties = doc.properties();
-                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                    properties.get("label"),
-                    properties.get("normalizedParentDomainName"),
-                ) {
-                    let username = format!("{}.{}", label, parent_domain);
-                    usernames_array.push(&JsValue::from(username));
-                }
-            }
-        }
-        Ok(usernames_array.into())
+        let params = parse_dpns_usernames_query(query)?;
+        let usernames = self
+            .fetch_dpns_usernames(params.identity_id, params.limit)
+            .await?;
+        Ok(usernames.into())
     }
     #[wasm_bindgen(js_name = "getDpnsUsername")]
     pub async fn get_dpns_username(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
-        let result = self
-            .get_dpns_usernames(identity_id.clone(), Some(1))
+        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+        let array = self
+            .fetch_dpns_usernames(identity_id_parsed, Some(1))
             .await?;
-        let array = Array::from(&result);
         if array.length() > 0 {
             Ok(array.get(0))
         } else {
@@ -326,65 +437,26 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDpnsUsernamesWithProofInfo")]
     pub async fn get_dpns_usernames_with_proof_info(
         &self,
-        #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
-        identity_id: JsValue,
-        limit: Option<u32>,
+        query: DpnsUsernamesQueryJs,
     ) -> Result<DpnsUsernamesProofResponseWasm, WasmSdkError> {
-        const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
-        const DPNS_DOCUMENT_TYPE: &str = "domain";
-        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
-        let contract_id =
-            Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
-            })?;
-        let mut query = DocumentQuery::new_with_data_contract_id(
-            self.as_ref(),
-            contract_id,
-            DPNS_DOCUMENT_TYPE,
-        )
-        .await?;
-        let where_clause = WhereClause {
-            field: "records.identity".to_string(),
-            operator: WhereOperator::Equal,
-            value: Value::Identifier(identity_id_parsed.to_buffer()),
-        };
-        query = query.with_where(where_clause);
-        query.limit = limit.unwrap_or(10);
-        let (documents_result, metadata, proof) =
-            Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
-        let usernames_array = Array::new();
-        for (_, doc_opt) in documents_result {
-            if let Some(doc) = doc_opt {
-                let properties = doc.properties();
-                if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                    properties.get("label"),
-                    properties.get("normalizedParentDomainName"),
-                ) {
-                    let username = format!("{}.{}", label, parent_domain);
-                    usernames_array.push(&JsValue::from(username));
-                }
-            }
-        }
-        Ok(DpnsUsernamesProofResponseWasm {
-            usernames: usernames_array,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        let params = parse_dpns_usernames_query(query)?;
+        self.fetch_dpns_usernames_with_proof(params.identity_id, params.limit)
+            .await
     }
     #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
     pub async fn get_dpns_username_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
-        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
     ) -> Result<DpnsUsernameProofResponseWasm, WasmSdkError> {
+        let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
         let DpnsUsernamesProofResponseWasm {
             usernames,
             metadata,
             proof,
         } = self
-            .get_dpns_usernames_with_proof_info(identity_id.clone(), Some(1))
+            .fetch_dpns_usernames_with_proof(identity_id_parsed, Some(1))
             .await?;
         let username = if usernames.length() > 0 {
             usernames.get(0)
