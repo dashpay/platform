@@ -37,9 +37,9 @@ describe('DPNSFacade', () => {
     await client.dpns.registerName({
       label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w',
     });
-    await client.dpns.usernames('i', { limit: 2 });
+    await client.dpns.usernames({ identityId: 'i', limit: 2 });
     await client.dpns.username('i');
-    await client.dpns.usernamesWithProof('i', { limit: 3 });
+    await client.dpns.usernamesWithProof({ identityId: 'i', limit: 3 });
     await client.dpns.usernameWithProof('i');
     await client.dpns.getUsernameByName('u');
     await client.dpns.getUsernameByNameWithProof('u');
