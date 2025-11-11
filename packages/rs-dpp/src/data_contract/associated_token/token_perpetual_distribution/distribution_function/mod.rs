@@ -159,7 +159,10 @@ pub enum DistributionFunction {
     ///
     /// # Example
     /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
-    Stepwise(BTreeMap<u64, TokenAmount>),
+    Stepwise(
+        #[serde(deserialize_with = "deserialize_u64_token_amount_map")]
+        BTreeMap<u64, TokenAmount>,
+    ),
 
     /// Emits tokens following a linear function that can increase or decrease over time
     /// with fractional precision.
@@ -556,6 +559,45 @@ pub enum DistributionFunction {
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
+}
+
+// Custom deserializer helper that accepts both key shapes for JSON and other serde formats:
+// - BTreeMap<u64, TokenAmount>                // numeric timestamp/step keys
+// - BTreeMap<String, TokenAmount>             // numeric-looking strings as keys
+// The function normalizes both into `BTreeMap<u64, TokenAmount>`. If a string key
+// cannot be parsed as `u64`, deserialization fails with a serde error.
+use serde::de::Deserializer;
+fn deserialize_u64_token_amount_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<u64, TokenAmount>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Untagged enum tries variants in order: attempt numeric keys first,
+    // then fallback to string keys.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U64OrStrMap<V> {
+        // JSON: { 0: 100, 10: 50 }
+        U64(BTreeMap<u64, V>),
+        // JSON: { "0": 100, "10": 50 }
+        Str(BTreeMap<String, V>),
+    }
+
+    let helper: U64OrStrMap<TokenAmount> = U64OrStrMap::deserialize(deserializer)?;
+    match helper {
+        // Already numeric keys; return as-is
+        U64OrStrMap::U64(m) => Ok(m),
+        // Parse numeric-looking string keys into u64, preserving values
+        U64OrStrMap::Str(sm) => sm
+            .into_iter()
+            .map(|(k, v)| {
+                k.parse::<u64>()
+                    .map_err(serde::de::Error::custom)
+                    .map(|kk| (kk, v))
+            })
+            .collect(),
+    }
 }
 
 impl fmt::Display for DistributionFunction {
