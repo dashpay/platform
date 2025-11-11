@@ -13,6 +13,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::identifier::IdentifierWasm;
 use wasm_dpp2::tokens::{IdentityTokenInfoWasm, TokenContractInfoWasm, TokenStatusWasm};
+
 #[wasm_bindgen(js_name = "TokenPriceInfo")]
 #[derive(Clone)]
 pub struct TokenPriceInfoWasm {
@@ -20,6 +21,7 @@ pub struct TokenPriceInfoWasm {
     current_price: String,
     base_price: String,
 }
+
 impl TokenPriceInfoWasm {
     fn new(token_id: IdentifierWasm, current_price: String, base_price: String) -> Self {
         Self {
@@ -29,27 +31,32 @@ impl TokenPriceInfoWasm {
         }
     }
 }
+
 #[wasm_bindgen(js_class = TokenPriceInfo)]
 impl TokenPriceInfoWasm {
     #[wasm_bindgen(getter = "tokenId")]
     pub fn token_id(&self) -> IdentifierWasm {
         self.token_id
     }
+
     #[wasm_bindgen(getter = "currentPrice")]
     pub fn current_price(&self) -> String {
         self.current_price.clone()
     }
+
     #[wasm_bindgen(getter = "basePrice")]
     pub fn base_price(&self) -> String {
         self.base_price.clone()
     }
 }
+
 #[wasm_bindgen(js_name = "TokenLastClaim")]
 #[derive(Clone)]
 pub struct TokenLastClaimWasm {
     last_claim_timestamp_ms: u64,
     last_claim_block_height: u64,
 }
+
 impl TokenLastClaimWasm {
     fn new(last_claim_timestamp_ms: u64, last_claim_block_height: u64) -> Self {
         Self {
@@ -58,27 +65,32 @@ impl TokenLastClaimWasm {
         }
     }
 }
+
 #[wasm_bindgen(js_class = TokenLastClaim)]
 impl TokenLastClaimWasm {
     #[wasm_bindgen(getter = "lastClaimTimestampMs")]
     pub fn last_claim_timestamp_ms(&self) -> u64 {
         self.last_claim_timestamp_ms
     }
+
     #[wasm_bindgen(getter = "lastClaimBlockHeight")]
     pub fn last_claim_block_height(&self) -> u64 {
         self.last_claim_block_height
     }
 }
+
 #[wasm_bindgen(js_name = "TokenTotalSupply")]
 #[derive(Clone)]
 pub struct TokenTotalSupplyWasm {
     total_supply: u64,
 }
+
 impl TokenTotalSupplyWasm {
     fn new(total_supply: u64) -> Self {
         Self { total_supply }
     }
 }
+
 #[wasm_bindgen(js_class = TokenTotalSupply)]
 impl TokenTotalSupplyWasm {
     #[wasm_bindgen(getter = "totalSupply")]
@@ -86,6 +98,7 @@ impl TokenTotalSupplyWasm {
         BigInt::from(self.total_supply)
     }
 }
+
 #[wasm_bindgen]
 impl WasmSdk {
     /// Calculate token ID from contract ID and token position
@@ -111,13 +124,19 @@ impl WasmSdk {
         contract_id: JsValue,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<String, WasmSdkError> {
+        // Parse contract ID
         let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
+
+        // Calculate token ID
         let token_id = Identifier::from(calculate_token_id(
             contract_identifier.as_bytes(),
             token_position,
         ));
+
+        // Return as base58 string
         Ok(token_id.to_string(dash_sdk::dpp::platform_value::string_encoding::Encoding::Base58))
     }
+
     /// Get the current price of a token by contract ID and position
     ///
     /// This is a convenience function that calculates the token ID from the contract ID
@@ -151,14 +170,21 @@ impl WasmSdk {
         contract_id: JsValue,
         #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<TokenPriceInfoWasm, WasmSdkError> {
+        // Parse contract ID
         let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
+
+        // Calculate token ID
         let token_identifier = Identifier::from(calculate_token_id(
             contract_identifier.as_bytes(),
             token_position,
         ));
         let token_identifier_wasm = IdentifierWasm::from(token_identifier);
+
+        // Fetch token prices
         let prices_result: drive_proof_verifier::types::TokenDirectPurchasePrices =
             TokenPricingSchedule::fetch_many(self.as_ref(), &[token_identifier][..]).await?;
+
+        // Extract price information
         if let Some(price_opt) = prices_result.get(&token_identifier) {
             if let Some(schedule) = price_opt.as_ref() {
                 let (base_price, current_price) = match &schedule {
@@ -168,6 +194,7 @@ impl WasmSdk {
                     dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(
                         prices,
                     ) => {
+                        // Use first price as base, last as current
                         let base = prices
                             .first_key_value()
                             .map(|(_, p)| p.to_string())
@@ -179,6 +206,7 @@ impl WasmSdk {
                         (base, current)
                     }
                 };
+
                 Ok(TokenPriceInfoWasm::new(
                     token_identifier_wasm,
                     current_price,
@@ -199,6 +227,7 @@ impl WasmSdk {
             )))
         }
     }
+
     #[wasm_bindgen(js_name = "getIdentitiesTokenBalances")]
     pub async fn get_identities_token_balances(
         &self,
@@ -211,14 +240,23 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
         use drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Parse identity IDs
         let identities = identifiers_from_js(identity_ids, "identity ID")?;
+
+        // Create query
         let query = IdentitiesTokenBalancesQuery {
             identity_ids: identities.clone(),
             token_id: token_identifier,
         };
+
+        // Fetch balances
         let balances_result: IdentitiesTokenBalances =
             TokenAmount::fetch_many(self.as_ref(), query).await?;
+
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
@@ -227,8 +265,10 @@ impl WasmSdk {
                 balances_map.set(&key, &value);
             }
         }
+
         Ok(balances_map)
     }
+
     #[wasm_bindgen(js_name = "getIdentityTokenInfos")]
     pub async fn get_identity_token_infos(
         &self,
@@ -241,14 +281,23 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
+
+        // Parse identity ID
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Create query
         let query = IdentityTokenInfosQuery {
             identity_id: identity_identifier,
             token_ids: tokens.clone(),
         };
+
+        // Fetch token infos
         let infos_result: IdentityTokenInfos =
             IdentityTokenInfo::fetch_many(self.as_ref(), query).await?;
+
         let infos_map = Map::new();
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
@@ -258,8 +307,10 @@ impl WasmSdk {
                 infos_map.set(&key, &value);
             }
         }
+
         Ok(infos_map)
     }
+
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfos")]
     pub async fn get_identities_token_infos(
         &self,
@@ -272,14 +323,23 @@ impl WasmSdk {
     ) -> Result<Map, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Parse identity IDs
         let identities = identifiers_from_js(identity_ids, "identity ID")?;
+
+        // Create query
         let query = IdentitiesTokenInfosQuery {
             identity_ids: identities.clone(),
             token_id: token_identifier,
         };
+
+        // Fetch token infos
         let infos_result: IdentitiesTokenInfos =
             IdentityTokenInfo::fetch_many(self.as_ref(), query).await?;
+
         let infos_map = Map::new();
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
@@ -289,8 +349,10 @@ impl WasmSdk {
                 infos_map.set(&key, &value);
             }
         }
+
         Ok(infos_map)
     }
+
     #[wasm_bindgen(js_name = "getTokenStatuses")]
     pub async fn get_token_statuses(
         &self,
@@ -299,9 +361,14 @@ impl WasmSdk {
         token_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::token_status::TokenStatuses;
+
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Fetch token statuses
         let statuses_result: TokenStatuses =
             TokenStatus::fetch_many(self.as_ref(), tokens.clone()).await?;
+
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
@@ -310,8 +377,10 @@ impl WasmSdk {
                 statuses_map.set(&key, &value);
             }
         }
+
         Ok(statuses_map)
     }
+
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePrices")]
     pub async fn get_token_direct_purchase_prices(
         &self,
@@ -320,9 +389,15 @@ impl WasmSdk {
         token_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
+
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Fetch token prices - use slice reference
         let prices_result: TokenDirectPurchasePrices =
             TokenPricingSchedule::fetch_many(self.as_ref(), &tokens[..]).await?;
+
+        // Convert to response format
         let prices_map = Map::new();
         for token in tokens {
             if let Some(Some(schedule)) = prices_result.get(&token) {
@@ -345,14 +420,18 @@ impl WasmSdk {
                         (base, current)
                     }
                 };
+
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
+
                 let key = JsValue::from(token_id_wasm);
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }
         }
+
         Ok(prices_map)
     }
+
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
@@ -362,10 +441,16 @@ impl WasmSdk {
     ) -> Result<Option<TokenContractInfoWasm>, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
+
+        // Parse contract ID
         let contract_id = identifier_from_js(&data_contract_id, "contract ID")?;
+
+        // Fetch token contract info
         let info_result = TokenContractInfo::fetch(self.as_ref(), contract_id).await?;
+
         Ok(info_result.map(TokenContractInfoWasm::from))
     }
+
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaim")]
     pub async fn get_token_perpetual_distribution_last_claim(
         &self,
@@ -376,8 +461,11 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<Option<TokenLastClaimWasm>, WasmSdkError> {
+        // Parse IDs
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Use direct gRPC request instead of high-level SDK fetch to avoid proof verification issues
         use dapi_grpc::platform::v0::{
             get_token_perpetual_distribution_last_claim_request::{
                 GetTokenPerpetualDistributionLastClaimRequestV0, Version,
@@ -385,16 +473,20 @@ impl WasmSdk {
             GetTokenPerpetualDistributionLastClaimRequest,
         };
         use rs_dapi_client::DapiRequestExecutor;
+
+        // Create direct gRPC Request without proofs to avoid context provider issues
         let request = GetTokenPerpetualDistributionLastClaimRequest {
             version: Some(Version::V0(
                 GetTokenPerpetualDistributionLastClaimRequestV0 {
                     token_id: token_identifier.to_vec(),
                     identity_id: identity_identifier.to_vec(),
-                    contract_info: None,
-                    prove: false,
+                    contract_info: None, // Not needed for this query
+                    prove: false, // Use prove: false to avoid proof verification and context provider dependency
                 },
             )),
         };
+
+        // Execute the gRPC request
         let response = self
             .inner_sdk()
             .execute(request, rs_dapi_client::RequestSettings::default())
@@ -405,6 +497,8 @@ impl WasmSdk {
                     e
                 ))
             })?;
+
+        // Extract result from response and convert to our expected format
         let claim_result = match response.inner.version {
             Some(
                 dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(
@@ -438,6 +532,14 @@ impl WasmSdk {
                                     bytes,
                                 ),
                             ) => {
+                                // Raw bytes format specification (confirmed via server trace logs):
+                                // - Total length: 8 bytes (big-endian encoding)
+                                // - Bytes 0-3: Timestamp as u32 (seconds since Unix epoch, 0 = no timestamp recorded)
+                                // - Bytes 4-7: Block height as u32 (Dash blockchain block number)
+                                //
+                                // Validation ranges:
+                                // - Timestamp: 0 (unset) or >= 1609459200 (Jan 1, 2021 00:00:00 UTC, before Dash Platform mainnet)
+                                // - Block height: 0 (invalid) or >= 1 (valid blockchain height)
                                 if bytes.len() >= 8 {
                                     let timestamp = u32::from_be_bytes([
                                         bytes[0],
@@ -451,6 +553,8 @@ impl WasmSdk {
                                         bytes[6],
                                         bytes[7],
                                     ]) as u64;
+
+                                    // Validate timestamp: must be 0 (unset) or a reasonable Unix timestamp
                                     let validated_timestamp = if timestamp != 0
                                         && timestamp < 1609459200
                                     {
@@ -458,36 +562,43 @@ impl WasmSdk {
                                             target = "wasm_sdk", timestamp,
                                             "Invalid timestamp in raw bytes (too early)"
                                         );
-                                        0
+                                        0 // Use 0 for invalid timestamps
                                     } else {
                                         timestamp
                                     };
+
+                                    // Validate block height: must be a positive value
                                     let validated_block_height = if block_height == 0 {
                                         tracing::warn!(
                                             target = "wasm_sdk",
                                             "Invalid block height in raw bytes: 0 (genesis block not expected)"
                                         );
-                                        1
+                                        1 // Use minimum valid block height
                                     } else {
                                         block_height
                                     };
+
                                     Some((validated_timestamp * 1000, validated_block_height))
                                 } else if bytes.len() >= 4 {
+                                    // Fallback: decode only the last 4 bytes as block height
                                     let block_height = u32::from_be_bytes([
                                         bytes[bytes.len() - 4],
                                         bytes[bytes.len() - 3],
                                         bytes[bytes.len() - 2],
                                         bytes[bytes.len() - 1],
                                     ]) as u64;
+
+                                    // Validate block height
                                     let validated_block_height = if block_height == 0 {
                                         tracing::warn!(
                                             target = "wasm_sdk",
                                             "Invalid block height in fallback parsing: 0"
                                         );
-                                        1
+                                        1 // Use minimum valid block height
                                     } else {
                                         block_height
                                     };
+
                                     Some((0, validated_block_height))
                                 } else {
                                     tracing::warn!(
@@ -497,7 +608,7 @@ impl WasmSdk {
                                     Some((0, 0))
                                 }
                             }
-                            None => None,
+                            None => None, // No paid_at info
                         }
                     }
                     Some(
@@ -511,15 +622,17 @@ impl WasmSdk {
                             ),
                         );
                     }
-                    None => None,
+                    None => None, // No claim found
                 }
             }
             None => return Err(WasmSdkError::generic("Invalid response version")),
         };
+
         Ok(claim_result.map(|(timestamp_ms, block_height)| {
             TokenLastClaimWasm::new(timestamp_ms, block_height)
         }))
     }
+
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
     pub async fn get_token_total_supply(
         &self,
@@ -529,10 +642,18 @@ impl WasmSdk {
     ) -> Result<Option<TokenTotalSupplyWasm>, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Fetch total supply
         let supply_result = TotalSingleTokenBalance::fetch(self.as_ref(), token_identifier).await?;
+
         Ok(supply_result.map(|supply| TokenTotalSupplyWasm::new(supply.token_supply as u64)))
     }
+
+    // Proof versions for token queries
+
     #[wasm_bindgen(js_name = "getIdentitiesTokenBalancesWithProofInfo")]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
@@ -544,17 +665,26 @@ impl WasmSdk {
         token_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::identity_token_balances::IdentitiesTokenBalancesQuery;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Parse identity IDs
         let identities = identifiers_from_js(identity_ids, "identity ID")?;
+
+        // Create query
         let query = IdentitiesTokenBalancesQuery {
             identity_ids: identities.clone(),
             token_id: token_identifier,
         };
+
+        // Fetch balances with proof
         let (balances_result, metadata, proof): (
             drive_proof_verifier::types::identity_token_balance::IdentitiesTokenBalances,
             _,
             _,
         ) = TokenAmount::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+
         let balances_map = Map::new();
         for identifier in &identities {
             if let Some(Some(balance)) = balances_result.get(identifier) {
@@ -563,12 +693,14 @@ impl WasmSdk {
                 balances_map.set(&key, &value);
             }
         }
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             balances_map,
             metadata,
             proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getTokenStatusesWithProofInfo")]
     pub async fn get_token_statuses_with_proof_info(
         &self,
@@ -576,10 +708,14 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Fetch token statuses with proof
         let (statuses_result, metadata, proof) =
             TokenStatus::fetch_many_with_metadata_and_proof(self.as_ref(), tokens.clone(), None)
                 .await?;
+
         let statuses_map = Map::new();
         for token in tokens {
             if let Some(Some(status)) = statuses_result.get(&token) {
@@ -588,12 +724,14 @@ impl WasmSdk {
                 statuses_map.set(&key, &value);
             }
         }
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             statuses_map,
             metadata,
             proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getTokenTotalSupplyWithProofInfo")]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
@@ -603,7 +741,11 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::balances::total_single_token_balance::TotalSingleTokenBalance;
         use dash_sdk::platform::Fetch;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Fetch total supply with proof
         let (supply_result, metadata, proof) =
             TotalSingleTokenBalance::fetch_with_metadata_and_proof(
                 self.as_ref(),
@@ -611,13 +753,18 @@ impl WasmSdk {
                 None,
             )
             .await?;
+
         let data = supply_result
             .map(|supply| JsValue::from(TokenTotalSupplyWasm::new(supply.token_supply as u64)))
             .unwrap_or(JsValue::NULL);
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
         ))
     }
+
+    // Additional proof info versions for remaining token queries
+
     #[wasm_bindgen(js_name = "getIdentityTokenInfosWithProofInfo")]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
@@ -630,15 +777,24 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentityTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentityTokenInfos;
+
+        // Parse identity ID
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
+
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Create query
         let query = IdentityTokenInfosQuery {
             identity_id: identity_identifier,
             token_ids: tokens.clone(),
         };
+
+        // Fetch token infos with proof
         let (infos_result, metadata, proof): (IdentityTokenInfos, _, _) =
             IdentityTokenInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
+
         let infos_map = Map::new();
         for token in tokens {
             if let Some(Some(info)) = infos_result.get(&token) {
@@ -648,10 +804,12 @@ impl WasmSdk {
                 infos_map.set(&key, &value);
             }
         }
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             infos_map, metadata, proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfosWithProofInfo")]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
@@ -664,15 +822,24 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::tokens::token_info::IdentitiesTokenInfosQuery;
         use drive_proof_verifier::types::token_info::IdentitiesTokenInfos;
+
+        // Parse token ID
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Parse identity IDs
         let identities = identifiers_from_js(identity_ids, "identity ID")?;
+
+        // Create query
         let query = IdentitiesTokenInfosQuery {
             identity_ids: identities.clone(),
             token_id: token_identifier,
         };
+
+        // Fetch token infos with proof
         let (infos_result, metadata, proof): (IdentitiesTokenInfos, _, _) =
             IdentityTokenInfo::fetch_many_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
+
         let infos_map = Map::new();
         for identity in identities {
             if let Some(Some(info)) = infos_result.get(&identity) {
@@ -682,10 +849,12 @@ impl WasmSdk {
                 infos_map.set(&key, &value);
             }
         }
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             infos_map, metadata, proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePricesWithProofInfo")]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
@@ -694,7 +863,11 @@ impl WasmSdk {
         token_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use drive_proof_verifier::types::TokenDirectPurchasePrices;
+
+        // Parse token IDs
         let tokens = identifiers_from_js(token_ids, "token ID")?;
+
+        // Fetch token prices with proof - use slice reference
         let (prices_result, metadata, proof): (TokenDirectPurchasePrices, _, _) =
             TokenPricingSchedule::fetch_many_with_metadata_and_proof(
                 self.as_ref(),
@@ -702,6 +875,7 @@ impl WasmSdk {
                 None,
             )
             .await?;
+
         let prices_map = Map::new();
         for token in tokens {
             if let Some(Some(schedule)) = prices_result.get(&token) {
@@ -724,16 +898,20 @@ impl WasmSdk {
                         (base, current)
                     }
                 };
+
                 let price_info = TokenPriceInfoWasm::new(token_id_wasm, current_price, base_price);
+
                 let key = JsValue::from(token_id_wasm);
                 let value = JsValue::from(price_info);
                 prices_map.set(&key, &value);
             }
         }
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             prices_map, metadata, proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getTokenContractInfoWithProofInfo")]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
@@ -743,17 +921,24 @@ impl WasmSdk {
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::dpp::tokens::contract_info::TokenContractInfo;
         use dash_sdk::platform::Fetch;
+
+        // Parse contract ID
         let contract_id = identifier_from_js(&data_contract_id, "contract ID")?;
+
+        // Fetch token contract info with proof
         let (info_result, metadata, proof) =
             TokenContractInfo::fetch_with_metadata_and_proof(self.as_ref(), contract_id, None)
                 .await?;
+
         let data = info_result
             .map(|info| JsValue::from(TokenContractInfoWasm::from(info)))
             .unwrap_or(JsValue::UNDEFINED);
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
         ))
     }
+
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo")]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
@@ -767,27 +952,38 @@ impl WasmSdk {
         use dash_sdk::platform::query::TokenLastClaimQuery;
         use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
         use dash_sdk::platform::Fetch;
+
+        // Parse IDs
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
+
+        // Create query
         let query = TokenLastClaimQuery {
             token_id: token_identifier,
             identity_id: identity_identifier,
         };
+
+        // Fetch last claim info with proof
         let (claim_result, metadata, proof) =
             RewardDistributionMoment::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
+
         let data = if let Some(moment) = claim_result {
+            // Extract timestamp and block height based on the moment type
+            // Since we need both timestamp and block height in the response,
+            // we'll return the moment value and type
             let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
                 dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(
                     height,
-                ) => (0, height),
+                ) => (0, height), // No timestamp available for block-based
                 dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(
                     timestamp,
-                ) => (timestamp, 0),
+                ) => (timestamp, 0),  // No block height available for time-based
                 dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(
                     epoch,
-                ) => (0, epoch as u64),
+                ) => (0, epoch as u64), // Convert epoch to u64, no timestamp available
             };
+
             Some(TokenLastClaimWasm::new(
                 last_claim_timestamp_ms,
                 last_claim_block_height,
@@ -795,7 +991,9 @@ impl WasmSdk {
         } else {
             None
         };
+
         let data = data.map(JsValue::from).unwrap_or(JsValue::UNDEFINED);
+
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
         ))

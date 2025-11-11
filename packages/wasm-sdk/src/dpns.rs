@@ -61,6 +61,7 @@ fn usernames_from_documents(documents_result: Documents) -> Array {
     usernames_array
 }
 
+// TS definition for DpnsUsernamesQuery used by getDpnsUsernames*
 #[wasm_bindgen(typescript_custom_section)]
 const DPNS_USERNAMES_QUERY_TS: &'static str = r#"
 /**
@@ -121,6 +122,7 @@ pub struct DpnsUsernamesProofResponseWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub proof: ProofInfoWasm,
 }
+
 #[wasm_bindgen(js_name = "DpnsUsernameProofResponse")]
 #[derive(Clone)]
 pub struct DpnsUsernameProofResponseWasm {
@@ -202,14 +204,17 @@ impl WasmSdk {
     pub fn dpns_convert_to_homograph_safe(input: &str) -> String {
         convert_to_homograph_safe_chars(input)
     }
+
     #[wasm_bindgen(js_name = "dpnsIsValidUsername")]
     pub fn dpns_is_valid_username(label: &str) -> bool {
         is_valid_username(label)
     }
+
     #[wasm_bindgen(js_name = "dpnsIsContestedUsername")]
     pub fn dpns_is_contested_username(label: &str) -> bool {
         is_contested_username(label)
     }
+
     #[wasm_bindgen(js_name = "dpnsRegisterName")]
     pub async fn dpns_register_name(
         &self,
@@ -222,27 +227,33 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "preorderCallback")] preorder_callback: Option<js_sys::Function>,
     ) -> Result<JsValue, WasmSdkError> {
         let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+
         let identity = Identity::fetch(self.as_ref(), identity_id_parsed)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Identity not found"))?;
+
         let signer = SingleKeySigner::new(private_key_wif).map_err(|e| {
             WasmSdkError::invalid_argument(format!("Invalid private key WIF: {}", e))
         })?;
+
         let identity_public_key = identity
             .get_public_key_by_id(public_key_id)
             .ok_or_else(|| {
                 WasmSdkError::not_found(format!("Public key with ID {} not found", public_key_id))
             })?
             .clone();
+
         thread_local! {
             static PREORDER_CALLBACK : std::cell::RefCell < Option < js_sys::Function >>
             = const { std::cell::RefCell::new(None) };
         }
+
         if let Some(ref js_callback) = preorder_callback {
             PREORDER_CALLBACK.with(|cb| {
                 *cb.borrow_mut() = Some(js_callback.clone());
             });
         }
+
         let callback_box = if preorder_callback.is_some() {
             Some(Box::new(move |doc: &Document| {
                 PREORDER_CALLBACK.with(|cb| {
@@ -265,6 +276,7 @@ impl WasmSdk {
         } else {
             None
         };
+
         let input = RegisterDpnsNameInput {
             label: label.to_string(),
             identity,
@@ -272,20 +284,25 @@ impl WasmSdk {
             signer,
             preorder_callback: callback_box,
         };
+
         let result = self.as_ref().register_dpns_name(input).await?;
+
         PREORDER_CALLBACK.with(|cb| {
             *cb.borrow_mut() = None;
         });
+
         let js_result = RegisterDpnsNameResult {
             preorder_document_id: result.preorder_document.id().to_string(Encoding::Base58),
             domain_document_id: result.domain_document.id().to_string(Encoding::Base58),
             full_domain_name: result.full_domain_name,
         };
+
         let serializer = serde_wasm_bindgen::Serializer::json_compatible();
         js_result
             .serialize(&serializer)
             .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize result: {}", e)))
     }
+
     #[wasm_bindgen(js_name = "dpnsIsNameAvailable")]
     pub async fn dpns_is_name_available(&self, label: &str) -> Result<bool, WasmSdkError> {
         self.as_ref()
@@ -293,18 +310,22 @@ impl WasmSdk {
             .await
             .map_err(WasmSdkError::from)
     }
+
     #[wasm_bindgen(js_name = "dpnsResolveName")]
     pub async fn dpns_resolve_name(&self, name: &str) -> Result<JsValue, WasmSdkError> {
         let result = self.as_ref().resolve_dpns_name(name).await?;
+
         match result {
             Some(identity_id) => Ok(JsValue::from_str(&identity_id.to_string(Encoding::Base58))),
             None => Ok(JsValue::NULL),
         }
     }
+
     #[wasm_bindgen(js_name = "getDpnsUsernameByName")]
     pub async fn get_dpns_username_by_name(&self, username: &str) -> Result<JsValue, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
+
         let parts: Vec<&str> = username.split('.').collect();
         if parts.len() != 2 {
             return Err(WasmSdkError::invalid_argument(
@@ -313,33 +334,40 @@ impl WasmSdk {
         }
         let label = parts[0];
         let domain = parts[1];
+
         let contract_id =
             Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
             })?;
+
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
             contract_id,
             DPNS_DOCUMENT_TYPE,
         )
         .await?;
+
         query = query.with_where(WhereClause {
             field: "normalizedLabel".to_string(),
             operator: WhereOperator::Equal,
             value: Value::Text(label.to_lowercase()),
         });
+
         query = query.with_where(WhereClause {
             field: "normalizedParentDomainName".to_string(),
             operator: WhereOperator::Equal,
             value: Value::Text(domain.to_lowercase()),
         });
+
         let documents = Document::fetch_many(self.as_ref(), query).await?;
+
         if let Some((_, Some(document))) = documents.into_iter().next() {
             let result = DpnsUsernameInfo {
                 username: username.to_string(),
                 identity_id: document.owner_id().to_string(Encoding::Base58),
                 document_id: document.id().to_string(Encoding::Base58),
             };
+
             serde_wasm_bindgen::to_value(&result).map_err(|e| {
                 WasmSdkError::serialization(format!("Failed to serialize response: {}", e))
             })
@@ -350,6 +378,7 @@ impl WasmSdk {
             )))
         }
     }
+
     #[wasm_bindgen(js_name = "getDpnsUsernameByNameWithProofInfo")]
     pub async fn get_dpns_username_by_name_with_proof_info(
         &self,
@@ -357,6 +386,7 @@ impl WasmSdk {
     ) -> Result<JsValue, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
+
         let parts: Vec<&str> = username.split('.').collect();
         if parts.len() != 2 {
             return Err(WasmSdkError::invalid_argument(
@@ -365,39 +395,48 @@ impl WasmSdk {
         }
         let label = parts[0];
         let domain = parts[1];
+
         let contract_id =
             Identifier::from_string(DPNS_CONTRACT_ID, Encoding::Base58).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid DPNS contract ID: {}", e))
             })?;
+
         let mut query = DocumentQuery::new_with_data_contract_id(
             self.as_ref(),
             contract_id,
             DPNS_DOCUMENT_TYPE,
         )
         .await?;
+
         query = query.with_where(WhereClause {
             field: "normalizedLabel".to_string(),
             operator: WhereOperator::Equal,
             value: Value::Text(label.to_lowercase()),
         });
+
         query = query.with_where(WhereClause {
             field: "normalizedParentDomainName".to_string(),
             operator: WhereOperator::Equal,
             value: Value::Text(domain.to_lowercase()),
         });
+
         let (documents, metadata, proof) =
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
+
         if let Some((_, Some(document))) = documents.into_iter().next() {
             let result = DpnsUsernameInfo {
                 username: username.to_string(),
                 identity_id: document.owner_id().to_string(Encoding::Base58),
                 document_id: document.id().to_string(Encoding::Base58),
             };
+
             let data = serde_wasm_bindgen::to_value(&result).map_err(|e| {
                 WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
             })?;
+
             let response =
                 ProofMetadataResponseWasm::from_parts(data, metadata.into(), proof.into());
+
             Ok(JsValue::from(response))
         } else {
             Err(WasmSdkError::not_found(format!(
@@ -406,6 +445,7 @@ impl WasmSdk {
             )))
         }
     }
+
     #[wasm_bindgen(js_name = "getDpnsUsernames")]
     pub async fn get_dpns_usernames(
         &self,
@@ -417,6 +457,7 @@ impl WasmSdk {
             .await?;
         Ok(usernames.into())
     }
+
     #[wasm_bindgen(js_name = "getDpnsUsername")]
     pub async fn get_dpns_username(
         &self,
@@ -425,9 +466,11 @@ impl WasmSdk {
         identity_id: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+
         let array = self
             .fetch_dpns_usernames(identity_id_parsed, Some(1))
             .await?;
+
         if array.length() > 0 {
             Ok(array.get(0))
         } else {
@@ -443,6 +486,7 @@ impl WasmSdk {
         self.fetch_dpns_usernames_with_proof(params.identity_id, params.limit)
             .await
     }
+
     #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
     pub async fn get_dpns_username_with_proof_info(
         &self,
@@ -451,6 +495,7 @@ impl WasmSdk {
         identity_id: JsValue,
     ) -> Result<DpnsUsernameProofResponseWasm, WasmSdkError> {
         let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
+
         let DpnsUsernamesProofResponseWasm {
             usernames,
             metadata,
@@ -458,11 +503,13 @@ impl WasmSdk {
         } = self
             .fetch_dpns_usernames_with_proof(identity_id_parsed, Some(1))
             .await?;
+
         let username = if usernames.length() > 0 {
             usernames.get(0)
         } else {
             JsValue::NULL
         };
+
         Ok(DpnsUsernameProofResponseWasm {
             username,
             metadata,
