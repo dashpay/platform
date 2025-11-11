@@ -20,7 +20,7 @@ use wasm_bindgen::prelude::*;
 // TypeScript option bags (module scope) for wallet derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
 const DERIVE_FROM_SEED_PHRASE_OPTS_TS: &'static str = r#"
-export interface DeriveKeyFromSeedPhraseOptions {
+export interface DeriveKeyFromSeedPhraseParams {
   mnemonic: string;
   passphrase?: string | null;
   network: string;
@@ -28,13 +28,13 @@ export interface DeriveKeyFromSeedPhraseOptions {
 "#;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedPhraseOptions")]
-    pub type DeriveKeyFromSeedPhraseOptionsJs;
+    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedPhraseParams")]
+    pub type DeriveKeyFromSeedPhraseParamsJs;
 }
 
 #[wasm_bindgen(typescript_custom_section)]
 const DERIVE_FROM_SEED_WITH_PATH_OPTS_TS: &'static str = r#"
-export interface DeriveKeyFromSeedWithPathOptions {
+export interface DeriveKeyFromSeedWithPathParams {
   mnemonic: string;
   passphrase?: string | null;
   path: string;
@@ -43,8 +43,8 @@ export interface DeriveKeyFromSeedWithPathOptions {
 "#;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedWithPathOptions")]
-    pub type DeriveKeyFromSeedWithPathOptionsJs;
+    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedWithPathParams")]
+    pub type DeriveKeyFromSeedWithPathParamsJs;
 }
 
 // Inputs parsed from options (module scope)
@@ -295,14 +295,14 @@ impl WasmSdk {
     /// Derive a key from mnemonic phrase using BIP39/BIP44
     #[wasm_bindgen(js_name = "deriveKeyFromSeedPhrase")]
     pub fn derive_key_from_seed_phrase(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedPhraseOptions")] opts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedPhraseParams")] params: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         let DeriveFromSeedPhraseInput {
             mnemonic,
             passphrase,
             network,
         } = deserialize_required_query(
-            opts,
+            params,
             "Options object is required",
             "deriveKeyFromSeedPhrase options",
         )?;
@@ -359,7 +359,7 @@ impl WasmSdk {
     /// Derive a key from seed phrase with arbitrary path
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithPath")]
     pub fn derive_key_from_seed_with_path(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithPathOptions")] opts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithPathParams")] params: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
 
@@ -370,7 +370,7 @@ impl WasmSdk {
             path,
             network,
         } = deserialize_required_query(
-            opts,
+            params,
             "Options object is required",
             "deriveKeyFromSeedWithPath options",
         )?;

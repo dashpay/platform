@@ -15,7 +15,7 @@ use wasm_bindgen::prelude::*;
 // TypeScript option bags (module scope) for extended derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
 const DERIVE_FROM_EXTENDED_PATH_OPTS_TS: &'static str = r#"
-export interface DeriveKeyFromSeedWithExtendedPathOptions {
+export interface DeriveKeyFromSeedWithExtendedPathParams {
   mnemonic: string;
   passphrase?: string | null;
   path: string;
@@ -24,8 +24,8 @@ export interface DeriveKeyFromSeedWithExtendedPathOptions {
 "#;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedWithExtendedPathOptions")]
-    pub type DeriveKeyFromSeedWithExtendedPathOptionsJs;
+    #[wasm_bindgen(typescript_type = "DeriveKeyFromSeedWithExtendedPathParams")]
+    pub type DeriveKeyFromSeedWithExtendedPathParamsJs;
 }
 
 // Inputs parsed from options (module scope)
@@ -57,7 +57,7 @@ struct DeriveDashpayContactKeyInput {
 
 #[wasm_bindgen(typescript_custom_section)]
 const DERIVE_DASHPAY_CONTACT_KEY_OPTS_TS: &'static str = r#"
-export interface DeriveDashpayContactKeyOptions {
+export interface DeriveDashpayContactKeyParams {
   mnemonic: string;
   passphrase?: string | null;
   senderIdentityId: string;
@@ -69,8 +69,8 @@ export interface DeriveDashpayContactKeyOptions {
 "#;
 #[wasm_bindgen]
 extern "C" {
-    #[wasm_bindgen(typescript_type = "DeriveDashpayContactKeyOptions")]
-    pub type DeriveDashpayContactKeyOptionsJs;
+    #[wasm_bindgen(typescript_type = "DeriveDashpayContactKeyParams")]
+    pub type DeriveDashpayContactKeyParamsJs;
 }
 #[wasm_bindgen]
 impl WasmSdk {
@@ -78,8 +78,8 @@ impl WasmSdk {
     /// This supports DIP14/DIP15 paths with identity IDs
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithExtendedPath")]
     pub fn derive_key_from_seed_with_extended_path(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithExtendedPathOptions")]
-        opts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithExtendedPathParams")]
+        params: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         let DeriveFromExtendedPathInput {
             mnemonic,
@@ -87,7 +87,7 @@ impl WasmSdk {
             path,
             network,
         } = deserialize_required_query(
-            opts,
+            params,
             "Options object is required",
             "deriveKeyFromSeedWithExtendedPath options",
         )?;
@@ -192,7 +192,7 @@ impl WasmSdk {
     /// Derive a DashPay contact key using DIP15 with full identity IDs
     #[wasm_bindgen(js_name = "deriveDashpayContactKey")]
     pub fn derive_dashpay_contact_key(
-        #[wasm_bindgen(unchecked_param_type = "DeriveDashpayContactKeyOptions")] opts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DeriveDashpayContactKeyParams")] params: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
         let DeriveDashpayContactKeyInput {
             mnemonic,
@@ -203,7 +203,7 @@ impl WasmSdk {
             address_index,
             network,
         } = deserialize_required_query(
-            opts,
+            params,
             "Options object is required",
             "deriveDashpayContactKey options",
         )?;
@@ -247,19 +247,19 @@ impl WasmSdk {
         );
         debug!(target : "wasm_sdk", path = % path, "DashPay contact path");
         // Use the extended derivation function
-        let opts = serde_json::json!({
+        let params_obj = serde_json::json!({
             "mnemonic": mnemonic,
             "passphrase": passphrase,
             "path": path,
             "network": network,
         });
 
-        let js_opts = serde_wasm_bindgen::to_value(&opts).map_err(|e| {
+        let js_params = serde_wasm_bindgen::to_value(&params_obj).map_err(|e| {
             WasmSdkError::serialization(format!("Failed to serialize options: {}", e))
         })?;
 
         // Use the extended derivation function
-        let result = Self::derive_key_from_seed_with_extended_path(js_opts)?;
+        let result = Self::derive_key_from_seed_with_extended_path(js_params)?;
 
         // Add DIP15-specific metadata
         let obj = result
