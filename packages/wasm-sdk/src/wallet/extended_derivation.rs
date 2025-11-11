@@ -3,6 +3,7 @@
 //! Implements 256-bit derivation paths for DashPay contact keys
 
 use crate::error::WasmSdkError;
+use crate::queries::utils::deserialize_required_query;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::dashcore;
 use dash_sdk::dpp::dashcore::secp256k1::Secp256k1;
@@ -10,7 +11,6 @@ use dash_sdk::dpp::key_wallet::{bip32, DerivationPath, ExtendedPrivKey};
 use std::str::FromStr;
 use tracing::debug;
 use wasm_bindgen::prelude::*;
-use crate::queries::utils::deserialize_required_query;
 
 // TypeScript option bags (module scope) for extended derivation helpers
 #[wasm_bindgen(typescript_custom_section)]
@@ -78,9 +78,15 @@ impl WasmSdk {
     /// This supports DIP14/DIP15 paths with identity IDs
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithExtendedPath")]
     pub fn derive_key_from_seed_with_extended_path(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithExtendedPathOptions")] opts: JsValue,
+        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithExtendedPathOptions")]
+        opts: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
-        let DeriveFromExtendedPathInput { mnemonic, passphrase, path, network } = deserialize_required_query(
+        let DeriveFromExtendedPathInput {
+            mnemonic,
+            passphrase,
+            path,
+            network,
+        } = deserialize_required_query(
             opts,
             "Options object is required",
             "deriveKeyFromSeedWithExtendedPath options",
@@ -188,7 +194,15 @@ impl WasmSdk {
     pub fn derive_dashpay_contact_key(
         #[wasm_bindgen(unchecked_param_type = "DeriveDashpayContactKeyOptions")] opts: JsValue,
     ) -> Result<JsValue, WasmSdkError> {
-        let DeriveDashpayContactKeyInput { mnemonic, passphrase, sender_identity_id, receiver_identity_id, account, address_index, network } = deserialize_required_query(
+        let DeriveDashpayContactKeyInput {
+            mnemonic,
+            passphrase,
+            sender_identity_id,
+            receiver_identity_id,
+            account,
+            address_index,
+            network,
+        } = deserialize_required_query(
             opts,
             "Options object is required",
             "deriveDashpayContactKey options",
@@ -210,9 +224,11 @@ impl WasmSdk {
             receiver_identity_id.to_string()
         } else {
             // Decode base58 to bytes, then convert to hex
-            let bytes = bs58::decode(&receiver_identity_id).into_vec().map_err(|e| {
-                WasmSdkError::invalid_argument(format!("Invalid receiver identity ID: {}", e))
-            })?;
+            let bytes = bs58::decode(&receiver_identity_id)
+                .into_vec()
+                .map_err(|e| {
+                    WasmSdkError::invalid_argument(format!("Invalid receiver identity ID: {}", e))
+                })?;
             format!("0x{}", hex::encode(bytes))
         };
 
@@ -238,8 +254,9 @@ impl WasmSdk {
             "network": network,
         });
 
-        let js_opts = serde_wasm_bindgen::to_value(&opts)
-            .map_err(|e| WasmSdkError::serialization(format!("Failed to serialize options: {}", e)))?;
+        let js_opts = serde_wasm_bindgen::to_value(&opts).map_err(|e| {
+            WasmSdkError::serialization(format!("Failed to serialize options: {}", e))
+        })?;
 
         // Use the extended derivation function
         let result = Self::derive_key_from_seed_with_extended_path(js_opts)?;

@@ -1296,7 +1296,6 @@ impl WasmSdk {
                     ("message", JsValue::from_str("Document purchase processed")),
                 ],
             ), // Purchase was processed but document not returned
-
         }
     }
 

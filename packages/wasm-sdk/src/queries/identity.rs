@@ -268,7 +268,11 @@ fn parse_identities_contract_keys_query(
         "identities contract keys query",
     )?;
     Ok(IdentitiesContractKeysQueryParsed {
-        identity_ids: input.identity_ids.into_iter().map(Identifier::from).collect(),
+        identity_ids: input
+            .identity_ids
+            .into_iter()
+            .map(Identifier::from)
+            .collect(),
         contract_id: input.contract_id.into(),
         purposes: input.purposes,
     })
@@ -898,7 +902,6 @@ impl WasmSdk {
         let params = parse_identities_contract_keys_query(query)?;
         let identity_identifiers = params.identity_ids;
         let _contract_identifier = params.contract_id;
-
 
         // Convert purposes if provided
         let purposes_opt = params.purposes.map(|p| {
