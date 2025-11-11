@@ -36,7 +36,9 @@ describe('WasmSdkError shape (unit)', () => {
     const seed = 'abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about';
     const path = "m/44'/5'/0'/0/0";
     try {
-      sdk.WasmSdk.deriveKeyFromSeedWithPath(seed, undefined, path, 'bogus');
+      sdk.WasmSdk.deriveKeyFromSeedWithPath({
+        mnemonic: seed, passphrase: null, path, network: 'bogus',
+      });
       expect.fail('expected to throw');
     } catch (e) {
       expect(e).to.be.instanceOf(sdk.WasmSdkError);

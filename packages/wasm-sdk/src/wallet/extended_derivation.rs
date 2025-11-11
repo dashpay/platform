@@ -190,6 +190,7 @@ impl WasmSdk {
     }
 
     /// Derive a DashPay contact key using DIP15 with full identity IDs
+    // TODO: Implement typed response object
     #[wasm_bindgen(js_name = "deriveDashpayContactKey")]
     pub fn derive_dashpay_contact_key(
         #[wasm_bindgen(unchecked_param_type = "DeriveDashpayContactKeyParams")] params: JsValue,
@@ -246,25 +247,78 @@ impl WasmSdk {
             coin_type, 15, account, sender_id_formatted, receiver_id_formatted, address_index
         );
         debug!(target : "wasm_sdk", path = % path, "DashPay contact path");
-        // Use the extended derivation function
-        let params_obj = serde_json::json!({
-            "mnemonic": mnemonic,
-            "passphrase": passphrase,
-            "path": path,
-            "network": network,
-        });
 
-        let js_params = serde_wasm_bindgen::to_value(&params_obj).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize options: {}", e))
+        // Perform extended derivation directly to avoid re-deserialization
+        let seed = Self::mnemonic_to_seed(&mnemonic, passphrase)?;
+
+        let net = match network.as_str() {
+            "mainnet" => dashcore::Network::Dash,
+            "testnet" => dashcore::Network::Testnet,
+            _ => return Err(WasmSdkError::invalid_argument("Invalid network")),
+        };
+
+        let master_key = ExtendedPrivKey::new_master(net, &seed)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to create master key: {}", e)))?;
+
+        let derivation_path = DerivationPath::from_str(&path).map_err(|e| {
+            WasmSdkError::invalid_argument(format!("Invalid derivation path: {}", e))
         })?;
 
-        // Use the extended derivation function
-        let result = Self::derive_key_from_seed_with_extended_path(js_params)?;
+        let secp = Secp256k1::new();
+        let derived_key = master_key
+            .derive_priv(&secp, &derivation_path)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to derive key: {}", e)))?;
 
-        // Add DIP15-specific metadata
-        let obj = result
-            .dyn_into::<js_sys::Object>()
-            .map_err(|_| WasmSdkError::generic("Failed to cast result to object"))?;
+        let xpub = bip32::ExtendedPubKey::from_priv(&secp, &derived_key);
+        let private_key = dashcore::PrivateKey::new(derived_key.private_key, net);
+        let public_key = private_key.public_key(&secp);
+        let address = dashcore::Address::p2pkh(&public_key, net);
+
+        let obj = js_sys::Object::new();
+        js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(&path))
+            .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("private_key_wif"),
+            &JsValue::from_str(&private_key.to_wif()),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("private_key_hex"),
+            &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("public_key"),
+            &JsValue::from_str(&hex::encode(public_key.to_bytes())),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("address"),
+            &JsValue::from_str(&address.to_string()),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("network"),
+            &JsValue::from_str(&network),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("xprv"),
+            &JsValue::from_str(&derived_key.to_string()),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set xprv property"))?;
+        js_sys::Reflect::set(
+            &obj,
+            &JsValue::from_str("xpub"),
+            &JsValue::from_str(&xpub.to_string()),
+        )
+        .map_err(|_| WasmSdkError::generic("Failed to set xpub property"))?;
 
         js_sys::Reflect::set(
             &obj,

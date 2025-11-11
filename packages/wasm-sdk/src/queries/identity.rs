@@ -1343,6 +1343,7 @@ impl WasmSdk {
         ))
     }
 
+    // TODO: This method returns proof only for first identity
     #[wasm_bindgen(js_name = "getIdentitiesContractKeysWithProofInfo")]
     pub async fn get_identities_contract_keys_with_proof_info(
         &self,
