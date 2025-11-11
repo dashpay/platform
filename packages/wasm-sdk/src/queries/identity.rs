@@ -866,11 +866,9 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
         public_key_hash: JsValue,
     ) -> Result<IdentityWasm, WasmSdkError> {
-        // TODO: This is incorrect. If string we just decode from hex
         use dash_sdk::platform::types::identity::PublicKeyHash;
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
-            hex::decode(&s).map_err(|e| {
+            hex::decode(&hex_str).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
             })?
         } else {
@@ -970,10 +968,8 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
         start_after_id: JsValue,
     ) -> Result<Array, WasmSdkError> {
-        // TODO: Same here
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
-            hex::decode(&s).map_err(|e| {
+            hex::decode(&hex_str).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
             })?
         } else {
@@ -1247,11 +1243,9 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
         public_key_hash: JsValue,
     ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
-        // TODO: Incorrect
         use dash_sdk::platform::types::identity::PublicKeyHash;
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
-            hex::decode(&s).map_err(|e| {
+            hex::decode(&hex_str).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
             })?
         } else {
@@ -1293,10 +1287,8 @@ impl WasmSdk {
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
         start_after_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        // TODO: Incorrect
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
-            let s = hex_str.strip_prefix("0x").unwrap_or(&hex_str).to_string();
-            hex::decode(&s).map_err(|e| {
+            hex::decode(&hex_str).map_err(|e| {
                 WasmSdkError::invalid_argument(format!("Invalid public key hash hex: {}", e))
             })?
         } else {
