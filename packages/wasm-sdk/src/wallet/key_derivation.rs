@@ -224,10 +224,7 @@ impl WasmSdk {
         let GenerateMnemonicInput {
             word_count,
             language_code,
-        } = deserialize_query_with_default(
-            params,
-            "generateMnemonic options",
-        )?;
+        } = deserialize_query_with_default(params, "generateMnemonic options")?;
 
         let words = word_count.unwrap_or(12);
 
