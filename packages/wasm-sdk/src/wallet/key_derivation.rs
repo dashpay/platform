@@ -204,7 +204,7 @@ pub struct DerivationPathWasm {
     pub path: String,
     #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter = coin_type)]
+    #[wasm_bindgen(getter = coinType)]
     pub coin_type: u32,
     #[wasm_bindgen(getter)]
     pub account: u32,
@@ -234,12 +234,44 @@ pub struct Dip13DerivationPathWasm {
     pub path: String,
     #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter = coin_type)]
+    #[wasm_bindgen(getter = coinType)]
     pub coin_type: u32,
     #[wasm_bindgen(getter)]
     pub account: u32,
     #[wasm_bindgen(getter_with_clone)]
     pub description: String,
+}
+
+#[wasm_bindgen(js_name = "SeedPhraseKeyInfo")]
+#[derive(Clone)]
+pub struct SeedPhraseKeyInfoWasm {
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
+    pub private_key_wif: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyHex")]
+    pub private_key_hex: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "publicKey")]
+    pub public_key: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub address: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub network: String,
+}
+
+#[wasm_bindgen(js_name = "PathDerivedKeyInfo")]
+#[derive(Clone)]
+pub struct PathDerivedKeyInfoWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub path: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
+    pub private_key_wif: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyHex")]
+    pub private_key_hex: String,
+    #[wasm_bindgen(getter_with_clone, js_name = "publicKey")]
+    pub public_key: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub address: String,
+    #[wasm_bindgen(getter_with_clone)]
+    pub network: String,
 }
 
 /// HD Key information
@@ -367,7 +399,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "deriveKeyFromSeedPhrase")]
     pub fn derive_key_from_seed_phrase(
         params: DeriveKeyFromSeedPhraseParamsJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<SeedPhraseKeyInfoWasm, WasmSdkError> {
         let DeriveFromSeedPhraseInput {
             mnemonic,
             passphrase,
@@ -377,8 +409,6 @@ impl WasmSdk {
             "Options object is required",
             "deriveKeyFromSeedPhrase options",
         )?;
-        use crate::wallet::key_generation::KeyPair;
-
         // Get seed from mnemonic
         let seed = Self::mnemonic_to_seed(&mnemonic, passphrase)?;
 
@@ -414,16 +444,12 @@ impl WasmSdk {
         // Get address
         let address = dashcore::Address::p2pkh(&public_key, net);
 
-        let key_pair = KeyPair {
+        Ok(SeedPhraseKeyInfoWasm {
             private_key_wif: private_key.to_wif(),
             private_key_hex: hex::encode(key_bytes),
             public_key: hex::encode(public_key_bytes),
             address: address.to_string(),
             network,
-        };
-
-        serde_wasm_bindgen::to_value(&key_pair).map_err(|e| {
-            WasmSdkError::serialization(format!("Failed to serialize key pair: {}", e))
         })
     }
 
@@ -431,7 +457,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithPath")]
     pub fn derive_key_from_seed_with_path(
         params: DeriveKeyFromSeedWithPathParamsJs,
-    ) -> Result<JsValue, WasmSdkError> {
+    ) -> Result<PathDerivedKeyInfoWasm, WasmSdkError> {
         use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
 
         // Types decoded in parse step are defined at module scope
@@ -480,48 +506,14 @@ impl WasmSdk {
         // Get address
         let address = dashcore::Address::p2pkh(&public_key, net);
 
-        // Create a JavaScript object directly
-        let obj = js_sys::Object::new();
-
-        js_sys::Reflect::set(&obj, &JsValue::from_str("path"), &JsValue::from_str(&path))
-            .map_err(|_| WasmSdkError::generic("Failed to set path property"))?;
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("private_key_wif"),
-            &JsValue::from_str(&private_key.to_wif()),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set private_key_wif property"))?;
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("private_key_hex"),
-            &JsValue::from_str(&hex::encode(private_key.inner.secret_bytes())),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set private_key_hex property"))?;
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("public_key"),
-            &JsValue::from_str(&hex::encode(public_key.to_bytes())),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set public_key property"))?;
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("address"),
-            &JsValue::from_str(&address.to_string()),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set address property"))?;
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("network"),
-            &JsValue::from_str(&network),
-        )
-        .map_err(|_| WasmSdkError::generic("Failed to set network property"))?;
-
-        Ok(obj.into())
+        Ok(PathDerivedKeyInfoWasm {
+            path,
+            private_key_wif: private_key.to_wif(),
+            private_key_hex: hex::encode(private_key.inner.secret_bytes()),
+            public_key: hex::encode(public_key.to_bytes()),
+            address: address.to_string(),
+            network,
+        })
     }
 
     /// Create a BIP44 mainnet derivation path
