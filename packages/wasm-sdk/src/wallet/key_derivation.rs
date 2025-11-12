@@ -22,7 +22,7 @@ use wasm_bindgen::prelude::*;
 const DERIVE_FROM_SEED_PHRASE_OPTS_TS: &'static str = r#"
 export interface DeriveKeyFromSeedPhraseParams {
   mnemonic: string;
-  passphrase?: string | null;
+  passphrase?: string;
   network: string;
 }
 "#;
@@ -36,7 +36,7 @@ extern "C" {
 const DERIVE_FROM_SEED_WITH_PATH_OPTS_TS: &'static str = r#"
 export interface DeriveKeyFromSeedWithPathParams {
   mnemonic: string;
-  passphrase?: string | null;
+  passphrase?: string;
   path: string;
   network: string;
 }

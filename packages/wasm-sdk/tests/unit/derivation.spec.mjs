@@ -127,8 +127,9 @@ describe('Key derivation', () => {
 
   describe('DIP15 DashPay contact keys', () => {
     const mnemonic = 'birth kingdom trash renew flavor utility donkey gasp regular alert pave layer';
-    const sender = '0x555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a';
-    const receiver = '0xa137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
+    // Hex without 0x prefix (we don't use 0x)
+    const sender = '555d3854c910b7dee436869c4724bed2fe0784e198b8a39f02bbb49d8ebcfc3a';
+    const receiver = 'a137439f36d04a15474ff7423e4b904a14373fafb37a41db74c84f1dbb5c89b5';
 
     it('deterministic contact key for testnet', () => {
       const r1 = sdk.WasmSdk.deriveDashpayContactKey({
@@ -142,10 +143,10 @@ describe('Key derivation', () => {
       expect(r1).to.have.property('path');
       expect(r1).to.have.property('xprv');
       expect(r1).to.have.property('xpub');
-      expect(r1).to.have.property('private_key_hex');
-      expect(r1.private_key_hex).to.have.length(64);
+      expect(r1).to.have.property('privateKeyHex');
+      expect(r1.privateKeyHex).to.have.length(64);
 
-      expect(r2.private_key_hex).to.equal(r1.private_key_hex);
+      expect(r2.privateKeyHex).to.equal(r1.privateKeyHex);
       expect(r2.xprv).to.equal(r1.xprv);
       expect(r2.xpub).to.equal(r1.xpub);
 
@@ -164,7 +165,7 @@ describe('Key derivation', () => {
       const b = sdk.WasmSdk.deriveDashpayContactKey({
         mnemonic, passphrase: null, senderIdentityId: receiver, receiverIdentityId: sender, account: 0, addressIndex: 0, network: 'testnet',
       });
-      expect(a.private_key_hex).to.not.equal(b.private_key_hex);
+      expect(a.privateKeyHex).to.not.equal(b.privateKeyHex);
     });
 
     it('differs between networks (testnet vs mainnet)', () => {
@@ -176,7 +177,7 @@ describe('Key derivation', () => {
       });
       expect(m.xprv.startsWith('xprv')).to.equal(true);
       expect(m.xpub.startsWith('xpub')).to.equal(true);
-      expect(m.private_key_hex).to.not.equal(t.private_key_hex);
+      expect(m.privateKeyHex).to.not.equal(t.privateKeyHex);
     });
   });
 });
