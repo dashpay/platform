@@ -1,9 +1,9 @@
 import * as wasm from '../wasm.js';
 
 export namespace wallet {
-  export async function generateMnemonic(wordCount?: number, languageCode?: string): Promise<string> {
+  export async function generateMnemonic(params?: wasm.GenerateMnemonicParams): Promise<string> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.generateMnemonic(wordCount ?? null, languageCode ?? null);
+    return wasm.WasmSdk.generateMnemonic(params ?? null);
   }
 
   export async function validateMnemonic(mnemonic: string, languageCode?: string): Promise<boolean> {

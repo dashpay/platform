@@ -3,7 +3,7 @@
 //! Implements BIP32, BIP39, and BIP44 standards for hierarchical deterministic key derivation
 
 use crate::error::WasmSdkError;
-use crate::queries::utils::deserialize_required_query;
+use crate::queries::utils::{deserialize_query_with_default, deserialize_required_query};
 use crate::sdk::WasmSdk;
 use bip39::{Language, Mnemonic};
 use dash_sdk::dpp::dashcore;
@@ -18,6 +18,19 @@ use std::str::FromStr;
 use wasm_bindgen::prelude::*;
 
 // TypeScript option bags (module scope) for wallet derivation helpers
+#[wasm_bindgen(typescript_custom_section)]
+const GENERATE_MNEMONIC_PARAMS_TS: &'static str = r#"
+export interface GenerateMnemonicParams {
+  wordCount?: number;
+  languageCode?: string;
+}
+"#;
+#[wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen(typescript_type = "GenerateMnemonicParams")]
+    pub type GenerateMnemonicParamsJs;
+}
+
 #[wasm_bindgen(typescript_custom_section)]
 const DERIVE_FROM_SEED_PHRASE_OPTS_TS: &'static str = r#"
 export interface DeriveKeyFromSeedPhraseParams {
@@ -48,6 +61,15 @@ extern "C" {
 }
 
 // Inputs parsed from options (module scope)
+#[derive(Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct GenerateMnemonicInput {
+    #[serde(default)]
+    word_count: Option<u32>,
+    #[serde(default)]
+    language_code: Option<String>,
+}
+
 #[derive(serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DeriveFromSeedPhraseInput {
@@ -197,9 +219,16 @@ impl WasmSdk {
     /// Generate a new mnemonic phrase
     #[wasm_bindgen(js_name = "generateMnemonic")]
     pub fn generate_mnemonic(
-        #[wasm_bindgen(js_name = "wordCount")] word_count: Option<u32>,
-        #[wasm_bindgen(js_name = "languageCode")] language_code: Option<String>,
+        params: Option<GenerateMnemonicParamsJs>,
     ) -> Result<String, WasmSdkError> {
+        let GenerateMnemonicInput {
+            word_count,
+            language_code,
+        } = deserialize_query_with_default(
+            params,
+            "generateMnemonic options",
+        )?;
+
         let words = word_count.unwrap_or(12);
 
         // Validate word count and calculate entropy bytes
@@ -295,7 +324,7 @@ impl WasmSdk {
     /// Derive a key from mnemonic phrase using BIP39/BIP44
     #[wasm_bindgen(js_name = "deriveKeyFromSeedPhrase")]
     pub fn derive_key_from_seed_phrase(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedPhraseParams")] params: JsValue,
+        params: DeriveKeyFromSeedPhraseParamsJs,
     ) -> Result<JsValue, WasmSdkError> {
         let DeriveFromSeedPhraseInput {
             mnemonic,
@@ -359,7 +388,7 @@ impl WasmSdk {
     /// Derive a key from seed phrase with arbitrary path
     #[wasm_bindgen(js_name = "deriveKeyFromSeedWithPath")]
     pub fn derive_key_from_seed_with_path(
-        #[wasm_bindgen(unchecked_param_type = "DeriveKeyFromSeedWithPathParams")] params: JsValue,
+        params: DeriveKeyFromSeedWithPathParamsJs,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::key_wallet::{DerivationPath, ExtendedPrivKey};
 

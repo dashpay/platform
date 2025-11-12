@@ -274,11 +274,11 @@ impl WasmSdk {
             "Options object is required",
             "deriveDashpayContactKey options",
         )?;
-        let sender_id_formatted = {
+        let sender_id_hex = {
             let id: dash_sdk::dpp::prelude::Identifier = sender_identity_id.into();
             hex::encode(id.as_bytes())
         };
-        let receiver_id_formatted = {
+        let receiver_id_hex = {
             let id: dash_sdk::dpp::prelude::Identifier = receiver_identity_id.into();
             hex::encode(id.as_bytes())
         };
@@ -294,7 +294,7 @@ impl WasmSdk {
         // m / 9' / coin_type' / 15' / account' / sender_id / receiver_id / index
         let path = format!(
             "m/9'/{}'/{}'/{}'/0x{}/0x{}/{}",
-            coin_type, 15, account, sender_id_formatted, receiver_id_formatted, address_index
+            coin_type, 15, account, sender_id_hex, receiver_id_hex, address_index
         );
         debug!(target : "wasm_sdk", path = % path, "DashPay contact path");
 
@@ -302,8 +302,8 @@ impl WasmSdk {
         let common = derive_common_from_mnemonic(&mnemonic, passphrase, &network, &path)?;
         Ok(DashpayContactKeyInfoWasm::from_common(
             common,
-            sender_id_formatted,
-            receiver_id_formatted,
+            sender_id_hex,
+            receiver_id_hex,
             account,
             address_index,
         ))
