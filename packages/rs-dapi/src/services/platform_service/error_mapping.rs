@@ -11,9 +11,10 @@ use crate::DapiError;
 #[derive(Clone, serde::Serialize)]
 pub struct TenderdashStatus {
     pub code: i64,
-    // human-readable error message; will be put into `data` field
+    /// human-readable error message; will be put into `data` field
+    /// Access using [`TenderdashStatus::grpc_message()`].
     pub message: Option<String>,
-    // CBOR-encoded dpp ConsensusError
+    /// CBOR-encoded dpp ConsensusError
     pub consensus_error: Option<Vec<u8>>,
 }
 
@@ -149,25 +150,9 @@ impl From<TenderdashStatus> for tonic::Response<WaitForStateTransitionResultResp
 
 impl From<TenderdashStatus> for StateTransitionBroadcastError {
     fn from(err: TenderdashStatus) -> Self {
-        let message = if let Some(msg) = err.message {
-            msg
-        } else {
-            // try to extract from consensus error
-            if let Some(consensus_error_bytes) = &err.consensus_error
-                && let Ok(consensus_error) =
-                    ConsensusError::deserialize_from_bytes(consensus_error_bytes).inspect_err(|e| {
-                        tracing::debug!("Failed to deserialize consensus error: {}", e);
-                    })
-            {
-                consensus_error.to_string()
-            } else {
-                "Unknown error".to_string()
-            }
-        };
-
         StateTransitionBroadcastError {
             code: err.code.clamp(0, u32::MAX as i64) as u32,
-            message,
+            message: err.grpc_message(),
             data: err.consensus_error.clone().unwrap_or_default(),
         }
     }
