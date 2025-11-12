@@ -197,6 +197,51 @@ impl DerivationPath {
     }
 }
 
+#[wasm_bindgen(js_name = "DerivationPathInfo")]
+#[derive(Clone)]
+pub struct DerivationPathWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub path: String,
+    #[wasm_bindgen(getter)]
+    pub purpose: u32,
+    #[wasm_bindgen(getter = coin_type)]
+    pub coin_type: u32,
+    #[wasm_bindgen(getter)]
+    pub account: u32,
+    #[wasm_bindgen(getter)]
+    pub change: u32,
+    #[wasm_bindgen(getter)]
+    pub index: u32,
+}
+
+impl From<DerivationPath> for DerivationPathWasm {
+    fn from(path: DerivationPath) -> Self {
+        Self {
+            path: path.to_string(),
+            purpose: path.purpose,
+            coin_type: path.coin_type,
+            account: path.account,
+            change: path.change,
+            index: path.index,
+        }
+    }
+}
+
+#[wasm_bindgen(js_name = "Dip13DerivationPathInfo")]
+#[derive(Clone)]
+pub struct Dip13DerivationPathWasm {
+    #[wasm_bindgen(getter_with_clone)]
+    pub path: String,
+    #[wasm_bindgen(getter)]
+    pub purpose: u32,
+    #[wasm_bindgen(getter = coin_type)]
+    pub coin_type: u32,
+    #[wasm_bindgen(getter)]
+    pub account: u32,
+    #[wasm_bindgen(getter_with_clone)]
+    pub description: String,
+}
+
 /// HD Key information
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HDKeyInfo {
@@ -481,16 +526,22 @@ impl WasmSdk {
 
     /// Create a BIP44 mainnet derivation path
     #[wasm_bindgen(js_name = "derivationPathBip44Mainnet")]
-    pub fn derivation_path_bip44_mainnet(account: u32, change: u32, index: u32) -> JsValue {
-        let path = DerivationPath::new_bip44_mainnet(account, change, index);
-        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    pub fn derivation_path_bip44_mainnet(
+        account: u32,
+        change: u32,
+        index: u32,
+    ) -> DerivationPathWasm {
+        DerivationPathWasm::from(DerivationPath::new_bip44_mainnet(account, change, index))
     }
 
     /// Create a BIP44 testnet derivation path
     #[wasm_bindgen(js_name = "derivationPathBip44Testnet")]
-    pub fn derivation_path_bip44_testnet(account: u32, change: u32, index: u32) -> JsValue {
-        let path = DerivationPath::new_bip44_testnet(account, change, index);
-        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    pub fn derivation_path_bip44_testnet(
+        account: u32,
+        change: u32,
+        index: u32,
+    ) -> DerivationPathWasm {
+        DerivationPathWasm::from(DerivationPath::new_bip44_testnet(account, change, index))
     }
 
     /// Create a DIP9 mainnet derivation path
@@ -499,9 +550,8 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "featureType")] feature_type: u32,
         account: u32,
         index: u32,
-    ) -> JsValue {
-        let path = DerivationPath::new_dip9_mainnet(feature_type, account, index);
-        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    ) -> DerivationPathWasm {
+        DerivationPathWasm::from(DerivationPath::new_dip9_mainnet(feature_type, account, index))
     }
 
     /// Create a DIP9 testnet derivation path
@@ -510,101 +560,38 @@ impl WasmSdk {
         #[wasm_bindgen(js_name = "featureType")] feature_type: u32,
         account: u32,
         index: u32,
-    ) -> JsValue {
-        let path = DerivationPath::new_dip9_testnet(feature_type, account, index);
-        serde_wasm_bindgen::to_value(&path).unwrap_or(JsValue::NULL)
+    ) -> DerivationPathWasm {
+        DerivationPathWasm::from(DerivationPath::new_dip9_testnet(feature_type, account, index))
     }
 
     /// Create a DIP13 mainnet derivation path (for HD masternode keys)
     #[wasm_bindgen(js_name = "derivationPathDip13Mainnet")]
-    pub fn derivation_path_dip13_mainnet(account: u32) -> JsValue {
+    pub fn derivation_path_dip13_mainnet(account: u32) -> Dip13DerivationPathWasm {
         // DIP13 uses m/9'/5'/account' format (DIP13 uses purpose 9, not 13)
         let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, DASH_COIN_TYPE, account);
 
-        let obj = js_sys::Object::new();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("path"),
-            &JsValue::from_str(&path_str),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("purpose"),
-            &JsValue::from_f64(DIP13_PURPOSE as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("coin_type"),
-            &JsValue::from_f64(DASH_COIN_TYPE as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("account"),
-            &JsValue::from_f64(account as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("description"),
-            &JsValue::from_str("DIP13 HD identity key path"),
-        )
-        .unwrap();
-
-        obj.into()
+        Dip13DerivationPathWasm {
+            path: path_str,
+            purpose: DIP13_PURPOSE,
+            coin_type: DASH_COIN_TYPE,
+            account,
+            description: "DIP13 HD identity key path".to_string(),
+        }
     }
 
     /// Create a DIP13 testnet derivation path (for HD masternode keys)
     #[wasm_bindgen(js_name = "derivationPathDip13Testnet")]
-    pub fn derivation_path_dip13_testnet(account: u32) -> JsValue {
+    pub fn derivation_path_dip13_testnet(account: u32) -> Dip13DerivationPathWasm {
         // DIP13 uses m/9'/1'/account' format for testnet
         let path_str = format!("m/{}'/{}'/{}'", DIP13_PURPOSE, TESTNET_COIN_TYPE, account);
 
-        let obj = js_sys::Object::new();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("path"),
-            &JsValue::from_str(&path_str),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("purpose"),
-            &JsValue::from_f64(DIP13_PURPOSE as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("coin_type"),
-            &JsValue::from_f64(TESTNET_COIN_TYPE as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("account"),
-            &JsValue::from_f64(account as f64),
-        )
-        .unwrap();
-
-        js_sys::Reflect::set(
-            &obj,
-            &JsValue::from_str("description"),
-            &JsValue::from_str("DIP13 HD identity key path (testnet)"),
-        )
-        .unwrap();
-
-        obj.into()
+        Dip13DerivationPathWasm {
+            path: path_str,
+            purpose: DIP13_PURPOSE,
+            coin_type: TESTNET_COIN_TYPE,
+            account,
+            description: "DIP13 HD identity key path (testnet)".to_string(),
+        }
     }
 
     /// Get child public key from extended public key
