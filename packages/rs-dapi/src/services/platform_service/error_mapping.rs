@@ -283,18 +283,22 @@ impl From<serde_json::Value> for TenderdashStatus {
                     tracing::debug!("Tenderdash error missing 'code' field, defaulting to 0");
                     0
                 });
-            let raw_message = object.get("message").and_then(|m| m.as_str());
+            let raw_message = object
+                .get("message")
+                .and_then(|m| m.as_str())
+                .map(|m| m.trim());
             // empty message or "Internal error" is not very informative, so we try to check `data` field
-            let message =
-                if raw_message.is_none_or(|m| m.trim().eq_ignore_ascii_case("Internal error")) {
-                    object
-                        .get("data")
-                        .and_then(|d| d.as_str())
-                        .filter(|s| s.is_ascii())
-                } else {
-                    raw_message
-                }
-                .map(|s| s.to_string());
+            let message = if raw_message
+                .is_none_or(|m| m.is_empty() || m.eq_ignore_ascii_case("Internal error"))
+            {
+                object
+                    .get("data")
+                    .and_then(|d| d.as_str())
+                    .filter(|s| s.is_ascii())
+            } else {
+                raw_message
+            }
+            .map(|s| s.to_string());
 
             // info contains additional error details, possibly including consensus error
             let consensus_error = object
