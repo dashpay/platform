@@ -8,8 +8,8 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::dashcore::hashes::Hash;
 use dpp::dashcore::ProTxHash;
 
-use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::json::DMNStateDiff;
 
 use dpp::identity::accessors::IdentityGettersV0;
 

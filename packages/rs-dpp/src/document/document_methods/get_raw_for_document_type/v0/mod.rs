@@ -28,6 +28,7 @@ pub trait DocumentGetRawForDocumentTypeV0: DocumentV0Getters {
             // returns self.id or self.owner_id if key path is $id or $ownerId
             "$id" => return Ok(Some(self.id().to_vec())),
             "$ownerId" => return Ok(Some(self.owner_id().to_vec())),
+            "$creatorId" => return Ok(self.creator_id().map(|id| id.to_vec())),
             "$createdAt" => {
                 return Ok(self
                     .created_at()

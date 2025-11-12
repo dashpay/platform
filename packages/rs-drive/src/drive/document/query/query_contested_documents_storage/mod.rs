@@ -59,12 +59,12 @@ impl Drive {
     /// * `dry_run` - If true, the function will not perform any actual operation and return a default `QueryDocumentsOutcome`.
     /// * `transaction` - The `TransactionArg` holding the transaction data.
     /// * `protocol_version` - An `Option<u32>` representing the protocol version. If not provided, the function falls back
-    ///    to current or latest version.
+    ///   to current or latest version.
     ///
     /// # Returns
     ///
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
-    ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
+    ///   number of skipped items, and cost. If the operation fails, it returns an `Error`.
     pub fn query_contested_documents(
         &self,
         query: DriveContestedDocumentQuery,

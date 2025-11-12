@@ -5,6 +5,7 @@ pub mod property_names {
     pub const DATA_CONTRACT_ID: &str = "$dataContractId";
     pub const REVISION: &str = "$revision";
     pub const OWNER_ID: &str = "$ownerId";
+    pub const CREATOR_ID: &str = "$creatorId";
     pub const PRICE: &str = "$price";
     pub const CREATED_AT: &str = "$createdAt";
     pub const UPDATED_AT: &str = "$updatedAt";

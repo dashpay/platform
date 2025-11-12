@@ -46,6 +46,7 @@ impl UnpaidEpochV0Methods for UnpaidEpochV0 {
 }
 
 /// Trait that defines getter methods for `UnpaidEpochV0`
+#[allow(dead_code)]
 pub trait UnpaidEpochV0Getters {
     /// Get the index of the current epoch
     fn epoch_index(&self) -> EpochIndex;
@@ -70,6 +71,7 @@ pub trait UnpaidEpochV0Getters {
 }
 
 /// Trait that defines setter methods for `UnpaidEpochV0`
+#[allow(dead_code)]
 pub trait UnpaidEpochV0Setters {
     /// Set the index of the current epoch
     fn set_epoch_index(&mut self, epoch_index: EpochIndex);

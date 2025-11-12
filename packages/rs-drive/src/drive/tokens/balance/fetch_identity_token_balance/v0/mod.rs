@@ -59,9 +59,16 @@ impl Drive {
         ) {
             Ok(Some(SumItem(balance, _))) if balance >= 0 => Ok(Some(balance as TokenAmount)),
 
-            Ok(None) | Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))) => {
+            Ok(None) => {
                 // If we are applying (stateful), no balance means None.
                 // If we are estimating (stateless), return Some(0) to indicate no cost or minimal cost scenario.
+                if apply {
+                    Ok(None)
+                } else {
+                    Ok(Some(0))
+                }
+            }
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)) => {
                 if apply {
                     Ok(None)
                 } else {

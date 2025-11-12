@@ -1,7 +1,7 @@
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::bls_signatures::{Bls12381G2Impl, PublicKey as BlsPublicKey};
 use dpp::dashcore::hashes::{sha256d, Hash, HashEngine};
 use dpp::dashcore::QuorumHash;
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use std::collections::BTreeMap;
 
 use crate::platform_types::platform::Platform;
@@ -95,10 +95,10 @@ impl<C> Platform<C> {
 mod tests {
     use crate::platform_types::platform::Platform;
     use crate::rpc::core::MockCoreRPCLike;
-    use dashcore_rpc::dashcore_rpc_json::QuorumType;
     use dpp::bls_signatures::SecretKey;
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::QuorumHash;
+    use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
     use rand::rngs::StdRng;
     use rand::SeedableRng;
     use std::collections::BTreeMap;

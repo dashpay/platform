@@ -67,6 +67,7 @@ pub struct DriveOperationContext {
 }
 
 /// All types of Drive Operations
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug)]
 pub enum DriveOperation<'a> {
     /// A contract operation

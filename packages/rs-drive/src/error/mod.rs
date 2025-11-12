@@ -45,10 +45,10 @@ pub enum Error {
     Proof(#[from] ProofError),
     /// GroveDB error
     #[error("grovedb: {0}")]
-    GroveDB(#[from] grovedb::Error),
+    GroveDB(Box<grovedb::Error>),
     /// Protocol error
     #[error("protocol: {0}")]
-    Protocol(#[from] ProtocolError),
+    Protocol(Box<ProtocolError>),
     /// Identity error
     #[error("identity: {0}")]
     Identity(#[from] IdentityError),
@@ -69,11 +69,23 @@ pub enum Error {
     Cache(#[from] CacheError),
     /// Protocol error
     #[error("protocol: {0} ({1})")]
-    ProtocolWithInfoString(ProtocolError, String),
+    ProtocolWithInfoString(Box<ProtocolError>, String),
 }
 
 impl From<ProtocolDataContractError> for Error {
     fn from(value: ProtocolDataContractError) -> Self {
-        Self::Protocol(ProtocolError::DataContractError(value))
+        Self::Protocol(Box::new(ProtocolError::DataContractError(value)))
+    }
+}
+
+impl From<ProtocolError> for Error {
+    fn from(value: ProtocolError) -> Self {
+        Self::Protocol(Box::new(value))
+    }
+}
+
+impl From<grovedb::Error> for Error {
+    fn from(value: grovedb::Error) -> Self {
+        Self::GroveDB(Box::new(value))
     }
 }

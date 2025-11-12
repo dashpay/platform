@@ -390,6 +390,26 @@
              responseClass:[GetIdentityByPublicKeyHashResponse class]];
 }
 
+#pragma mark getIdentityByNonUniquePublicKeyHash(GetIdentityByNonUniquePublicKeyHashRequest) returns (GetIdentityByNonUniquePublicKeyHashResponse)
+
+- (void)getIdentityByNonUniquePublicKeyHashWithRequest:(GetIdentityByNonUniquePublicKeyHashRequest *)request handler:(void(^)(GetIdentityByNonUniquePublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetIdentityByNonUniquePublicKeyHashWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetIdentityByNonUniquePublicKeyHashWithRequest:(GetIdentityByNonUniquePublicKeyHashRequest *)request handler:(void(^)(GetIdentityByNonUniquePublicKeyHashResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getIdentityByNonUniquePublicKeyHash"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetIdentityByNonUniquePublicKeyHashResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getIdentityByNonUniquePublicKeyHashWithMessage:(GetIdentityByNonUniquePublicKeyHashRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getIdentityByNonUniquePublicKeyHash"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetIdentityByNonUniquePublicKeyHashResponse class]];
+}
+
 #pragma mark waitForStateTransitionResult(WaitForStateTransitionResultRequest) returns (WaitForStateTransitionResultResponse)
 
 - (void)waitForStateTransitionResultWithRequest:(WaitForStateTransitionResultRequest *)request handler:(void(^)(WaitForStateTransitionResultResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -488,6 +508,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetEpochsInfoResponse class]];
+}
+
+#pragma mark getFinalizedEpochInfos(GetFinalizedEpochInfosRequest) returns (GetFinalizedEpochInfosResponse)
+
+- (void)getFinalizedEpochInfosWithRequest:(GetFinalizedEpochInfosRequest *)request handler:(void(^)(GetFinalizedEpochInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetFinalizedEpochInfosWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetFinalizedEpochInfosWithRequest:(GetFinalizedEpochInfosRequest *)request handler:(void(^)(GetFinalizedEpochInfosResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getFinalizedEpochInfos"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetFinalizedEpochInfosResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getFinalizedEpochInfosWithMessage:(GetFinalizedEpochInfosRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getFinalizedEpochInfos"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetFinalizedEpochInfosResponse class]];
 }
 
 #pragma mark getContestedResources(GetContestedResourcesRequest) returns (GetContestedResourcesResponse)
@@ -875,6 +915,26 @@
              responseClass:[GetTokenDirectPurchasePricesResponse class]];
 }
 
+#pragma mark getTokenContractInfo(GetTokenContractInfoRequest) returns (GetTokenContractInfoResponse)
+
+- (void)getTokenContractInfoWithRequest:(GetTokenContractInfoRequest *)request handler:(void(^)(GetTokenContractInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenContractInfoWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenContractInfoWithRequest:(GetTokenContractInfoRequest *)request handler:(void(^)(GetTokenContractInfoResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenContractInfo"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenContractInfoResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenContractInfoWithMessage:(GetTokenContractInfoRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenContractInfo"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenContractInfoResponse class]];
+}
+
 #pragma mark getTokenPreProgrammedDistributions(GetTokenPreProgrammedDistributionsRequest) returns (GetTokenPreProgrammedDistributionsResponse)
 
 - (void)getTokenPreProgrammedDistributionsWithRequest:(GetTokenPreProgrammedDistributionsRequest *)request handler:(void(^)(GetTokenPreProgrammedDistributionsResponse *_Nullable response, NSError *_Nullable error))handler{
@@ -893,6 +953,26 @@
            responseHandler:handler
                callOptions:callOptions
              responseClass:[GetTokenPreProgrammedDistributionsResponse class]];
+}
+
+#pragma mark getTokenPerpetualDistributionLastClaim(GetTokenPerpetualDistributionLastClaimRequest) returns (GetTokenPerpetualDistributionLastClaimResponse)
+
+- (void)getTokenPerpetualDistributionLastClaimWithRequest:(GetTokenPerpetualDistributionLastClaimRequest *)request handler:(void(^)(GetTokenPerpetualDistributionLastClaimResponse *_Nullable response, NSError *_Nullable error))handler{
+  [[self RPCTogetTokenPerpetualDistributionLastClaimWithRequest:request handler:handler] start];
+}
+// Returns a not-yet-started RPC object.
+- (GRPCProtoCall *)RPCTogetTokenPerpetualDistributionLastClaimWithRequest:(GetTokenPerpetualDistributionLastClaimRequest *)request handler:(void(^)(GetTokenPerpetualDistributionLastClaimResponse *_Nullable response, NSError *_Nullable error))handler{
+  return [self RPCToMethod:@"getTokenPerpetualDistributionLastClaim"
+            requestsWriter:[GRXWriter writerWithValue:request]
+             responseClass:[GetTokenPerpetualDistributionLastClaimResponse class]
+        responsesWriteable:[GRXWriteable writeableWithSingleHandler:handler]];
+}
+- (GRPCUnaryProtoCall *)getTokenPerpetualDistributionLastClaimWithMessage:(GetTokenPerpetualDistributionLastClaimRequest *)message responseHandler:(id<GRPCProtoResponseHandler>)handler callOptions:(GRPCCallOptions *_Nullable)callOptions {
+  return [self RPCToMethod:@"getTokenPerpetualDistributionLastClaim"
+                   message:message
+           responseHandler:handler
+               callOptions:callOptions
+             responseClass:[GetTokenPerpetualDistributionLastClaimResponse class]];
 }
 
 #pragma mark getTokenTotalSupply(GetTokenTotalSupplyRequest) returns (GetTokenTotalSupplyResponse)

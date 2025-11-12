@@ -25,7 +25,7 @@ impl Drive {
             self.grove
                 .get_raw_optional(root_path, key, transaction, &drive_version.grove_version);
         drive_operations.push(CalculatedCostOperation(cost));
-        let maybe_element = value.map_err(Error::GroveDB)?;
+        let maybe_element = value.map_err(Error::from)?;
         let path_query = path_query_resolver(maybe_element);
 
         let CostContext { value, cost } = self.grove.get_proved_path_query(
@@ -35,6 +35,6 @@ impl Drive {
             &drive_version.grove_version,
         );
         drive_operations.push(CalculatedCostOperation(cost));
-        value.map_err(Error::GroveDB)
+        value.map_err(Error::from)
     }
 }

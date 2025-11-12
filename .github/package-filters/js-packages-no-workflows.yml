@@ -1,0 +1,92 @@
+'@dashevo/wallet-utils-contract': &wallet-utils-contract
+  - packages/wallet-utils-contract/**
+
+'@dashevo/token-history-contract': &token-history-contract
+  - packages/token-history-contract/**
+
+'@dashevo/dashpay-contract': &dashpay-contract
+  - packages/dashpay-contract/**
+
+'@dashevo/masternode-reward-shares-contract': &masternode-reward-shares-contract
+  - packages/masternode-reward-shares-contract/**
+
+'@dashevo/withdrawals-contract': &withdrawals-contract
+  - packages/withdrawals-contract/**
+
+'@dashevo/dpns-contract': &dpns-contract
+  - packages/dpns-contract/**
+
+'@dashevo/grpc-common': &grpc-common
+  - packages/js-grpc-common/**
+
+'@dashevo/wasm-dpp': &wasm-dpp
+  - packages/wasm-dpp/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - *wallet-utils-contract
+  - *token-history-contract
+  - packages/rs-platform-serialization/**
+  - packages/rs-platform-serialization-derive/**
+  - packages/rs-platform-value/**
+  - packages/rs-platform-value-convertible/**
+  - packages/rs-platform-version/**
+  - packages/rs-platform-versioning/**
+  - packages/rs-dpp/**
+
+'@dashevo/dapi-grpc': &dapi-grpc
+  - packages/dapi-grpc/**
+  - *grpc-common
+
+'@dashevo/dash-spv': &dash-spv
+  - packages/dash-spv/**
+
+'@dashevo/dapi':
+  - packages/dapi/**
+  - *wasm-dpp
+  - *dapi-grpc
+  - *dash-spv
+
+'@dashevo/dapi-client': &dapi-client
+  - packages/js-dapi-client/**
+  - *dapi-grpc
+  - *dash-spv
+  - *wasm-dpp
+
+'@dashevo/wallet-lib': &wallet-lib
+  - packages/wallet-lib/**
+  - *dapi-client
+  - *wasm-dpp
+
+dash: &dash
+  - packages/js-dash-sdk/**
+  - *dapi-client
+  - *wallet-lib
+
+dashmate:
+  - packages/dashmate/**
+  - *dashpay-contract
+  - *masternode-reward-shares-contract
+  - *dpns-contract
+  - *withdrawals-contract
+  - *token-history-contract
+  - *wallet-lib
+  - *dapi-client
+
+'@dashevo/platform-test-suite':
+  - packages/platform-test-suite/**
+  - *dash
+
+'@dashevo/wasm-sdk': &wasm-sdk
+  - packages/wasm-sdk/**
+  - packages/rs-drive-proof-verifier/**
+  - packages/rs-sdk/**
+  - packages/rs-dapi-client/**
+  - packages/rs-platform-version/**
+  - packages/rs-dapi-grpc-macros/**
+  - packages/dapi-grpc/**
+
+'@dashevo/evo-sdk': &evo-sdk
+  - packages/js-evo-sdk/**
+  - *wasm-sdk

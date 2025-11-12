@@ -1,7 +1,6 @@
 use dpp::block::epoch::Epoch;
 
 use dpp::validation::ValidationResult;
-use drive::error::Error::GroveDB;
 
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
@@ -383,7 +382,7 @@ where
             .grove
             .root_hash(Some(transaction), &platform_version.drive.grove_version)
             .unwrap()
-            .map_err(|e| Error::Drive(GroveDB(e)))?; //GroveDb errors are system errors
+            .map_err(|e| Error::Drive(drive::error::Error::from(e)))?; //GroveDb errors are system errors
 
         block_execution_context
             .block_state_info_mut()

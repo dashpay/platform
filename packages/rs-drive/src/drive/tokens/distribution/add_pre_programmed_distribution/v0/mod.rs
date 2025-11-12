@@ -234,9 +234,9 @@ impl Drive {
 
             for (recipient, amount) in distribution {
                 if *amount > i64::MAX as u64 {
-                    return Err(Error::Protocol(ProtocolError::Overflow(
+                    return Err(Error::Protocol(Box::new(ProtocolError::Overflow(
                         "distribution amount over i64::Max",
-                    )));
+                    ))));
                 }
                 // We use a sum tree to be able to ask "at this time how much was distributed"
                 self.batch_insert(

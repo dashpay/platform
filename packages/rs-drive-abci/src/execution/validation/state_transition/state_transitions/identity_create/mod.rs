@@ -263,7 +263,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -376,7 +376,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -528,7 +528,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -750,7 +750,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -972,7 +972,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -1200,7 +1200,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             Some(220000),
         );
 
@@ -1430,7 +1430,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 
@@ -1677,7 +1677,7 @@ mod tests {
             .unwrap();
 
         let asset_lock_proof = instant_asset_lock_proof_fixture(
-            Some(PrivateKey::from_slice(pk.as_slice(), Network::Testnet).unwrap()),
+            Some(PrivateKey::from_byte_array(&pk, Network::Testnet).unwrap()),
             None,
         );
 

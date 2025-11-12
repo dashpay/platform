@@ -148,9 +148,6 @@ mod tests {
             .map_err(|e| panic!("{:?}: {:?}", file_v4_path.clone(), e.to_string()))
             .unwrap();
 
-        println!("{:?}", result_verb_0);
-        println!("{:?}", result_verb_4);
-
         assert!(result_verb_0.contains(TEST_STRING_ERROR));
         assert!(result_dir_verb_0.contains(TEST_STRING_ERROR));
         assert!(result_verb_4.contains(TEST_STRING_ERROR));
@@ -203,7 +200,6 @@ mod tests {
             let entry = entry.unwrap();
             let path = entry.path();
             let path = path.to_string_lossy();
-            println!("{}", path);
             assert!(path.contains("drive-abci.log"));
             counter += 1;
         });
@@ -289,7 +285,6 @@ mod tests {
                 let path = entry.path();
                 let path_str = path.to_string_lossy();
                 let read = fs::read_to_string(&path).unwrap();
-                println!("{}: {}", path_str, read);
                 assert!(path_str.contains("drive-abci.log"));
 
                 if counter < ITERATIONS - 1 {

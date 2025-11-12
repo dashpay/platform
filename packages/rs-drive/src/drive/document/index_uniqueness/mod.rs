@@ -41,5 +41,4 @@ mod validate_document_replace_transition_action_uniqueness;
 
 mod validate_document_purchase_transition_action_uniqueness;
 mod validate_document_transfer_transition_action_uniqueness;
-mod validate_document_uniqueness;
 mod validate_document_update_price_transition_action_uniqueness;

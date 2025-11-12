@@ -5,6 +5,7 @@
 
 #![cfg_attr(docsrs, feature(doc_cfg))]
 // Coding conventions
+#![allow(clippy::result_large_err)]
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
 

@@ -280,6 +280,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -308,6 +310,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -354,6 +358,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -382,6 +388,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -428,6 +436,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -456,6 +466,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -502,6 +514,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -530,6 +544,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -576,6 +592,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -604,6 +622,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -650,6 +670,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -678,6 +700,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -724,6 +748,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -749,6 +775,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -795,6 +823,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -820,6 +850,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -866,6 +898,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -891,6 +925,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -943,6 +979,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema.clone(),
                 None,
@@ -959,6 +997,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,
@@ -1001,6 +1041,8 @@ mod tests {
 
             let old_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema.clone(),
                 None,
@@ -1026,6 +1068,8 @@ mod tests {
 
             let new_document_type = DocumentType::try_from_schema(
                 data_contract_id,
+                1,
+                config.version(),
                 document_type_name,
                 schema,
                 None,

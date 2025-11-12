@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)]
 //! This library facilitates the creation and execution of comprehensive testing strategies for Dash Platform, leveraging the `Strategy` struct as its core.
 //! It is designed to simulate a wide range of blockchain activities, offering detailed control over the generation of state transitions, contract interactions, and identity management across blocks.
 //!

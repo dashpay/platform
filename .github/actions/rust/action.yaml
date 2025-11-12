@@ -21,6 +21,12 @@ inputs:
 runs:
   using: composite
   steps:
+    - name: Resolve HOME path for caching
+      id: resolved_home
+      shell: bash
+      run: |
+        echo "home=$HOME" >> "$GITHUB_OUTPUT"
+
     - name: Extract Rust toolchain version from rust-toolchain.toml
       shell: bash
       id: rust_toolchain
@@ -41,6 +47,7 @@ runs:
         components: ${{ inputs.components }}
 
     - name: Get protoc arch
+      if: runner.os == 'Linux'
       shell: bash
       id: protoc_arch
       run: |
@@ -59,28 +66,40 @@ runs:
             ;;
         esac
 
-    - name: Check if protoc is installed
-      id: check-protoc
-      shell: bash
-      run: |
-        if command -v protoc >/dev/null 2>&1; then
-          echo "protoc is already installed."
-          echo "protoc_installed=true" >> $GITHUB_OUTPUT
-        else
-          echo "protoc is not installed."
-          echo "protoc_installed=false" >> $GITHUB_OUTPUT
-        fi
+    - name: Restore cached protoc (v32.0)
+      if: runner.os == 'Linux'
+      id: cache-protoc
+      uses: actions/cache@v4
+      with:
+        path: |
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
+        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
-    - name: Install protoc
-      if: steps.check-protoc.outputs.protoc_installed == 'false'
+    - name: Install protoc (cached v32.0)
+      if: runner.os == 'Linux'
       id: deps-protoc
       shell: bash
       run: |
-        curl -Lo /tmp/protoc.zip \
-          "https://github.com/protocolbuffers/protobuf/releases/download/v27.3/protoc-27.3-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
-        unzip -o /tmp/protoc.zip -d ${HOME}/.local
-        echo "PROTOC=${HOME}/.local/bin/protoc" >> $GITHUB_ENV
-        export PATH="${PATH}:${HOME}/.local/bin"
+        set -euxo pipefail
+        PROTOC_DIR="${HOME}/.local/protoc-32.0"
+        if [ ! -x "${PROTOC_DIR}/bin/protoc" ]; then
+          mkdir -p "${PROTOC_DIR}"
+          curl -fsSL -o /tmp/protoc.zip \
+            "https://github.com/protocolbuffers/protobuf/releases/download/v32.0/protoc-32.0-linux-${{ steps.protoc_arch.outputs.arch }}.zip"
+          unzip -o /tmp/protoc.zip -d "${PROTOC_DIR}"
+        fi
+        echo "${PROTOC_DIR}/bin" >> "$GITHUB_PATH"
+        echo "PROTOC=${PROTOC_DIR}/bin/protoc" >> "$GITHUB_ENV"
+
+    - name: Save cached protoc (v32.0)
+      if: runner.os == 'Linux' && steps.cache-protoc.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: |
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/bin
+          ${{ steps.resolved_home.outputs.home }}/.local/protoc-32.0/include
+        key: protoc/32.0/${{ runner.os }}/${{ steps.protoc_arch.outputs.arch }}
 
     - name: Set HOME variable to github context
       shell: bash
@@ -91,9 +110,9 @@ runs:
       if: inputs.cache == 'true'
       with:
         path: |
-          ${{ env.HOME }}/.cargo/registry/index
-          ${{ env.HOME }}/.cargo/registry/cache
-          ${{ env.HOME }}/.cargo/git
+          ${{ steps.resolved_home.outputs.home }}/.cargo/registry/index
+          ${{ steps.resolved_home.outputs.home }}/.cargo/registry/cache
+          ${{ steps.resolved_home.outputs.home }}/.cargo/git
         key: ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}
         restore-keys: |
           ${{ runner.os }}/cargo/registry/${{ hashFiles('**/Cargo.lock') }}

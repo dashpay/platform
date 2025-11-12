@@ -4,7 +4,7 @@ use std::{
     path::PathBuf,
 };
 
-use tonic_build::Builder;
+use tonic_prost_build::Builder;
 
 const SERDE_WITH_BYTES: &str = r#"#[cfg_attr(feature = "serde", serde(with = "serde_bytes"))]"#;
 const SERDE_WITH_BASE64: &str =
@@ -337,7 +337,7 @@ impl MappingConfig {
         let out_dir = abs_path(&out_dir.join(out_dir_suffix));
 
         let builder = typ
-            .configure(tonic_build::configure())
+            .configure(tonic_prost_build::configure())
             .out_dir(out_dir.clone())
             .protoc_arg("--experimental_allow_proto3_optional");
 

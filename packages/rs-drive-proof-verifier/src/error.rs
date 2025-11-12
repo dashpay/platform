@@ -124,7 +124,7 @@ impl<O> MapGroveDbError<O> for Result<O, drive::error::Error> {
 
             Err(drive::error::Error::GroveDB(grove_err)) => {
                 // If InvalidProof error is returned, extract the path query from it
-                let maybe_query = match &grove_err {
+                let maybe_query = match grove_err.as_ref() {
                     GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
                     _ => None,
                 };

@@ -1,3 +1,4 @@
+#![allow(clippy::result_large_err)] // Encoding helpers bubble up drive::Error with context
 //! Encoding.
 //!
 //! This module defines encoding functions.

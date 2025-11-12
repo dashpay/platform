@@ -10,11 +10,22 @@ use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 type QuorumHash = [u8; 32];
 use dpp::dashcore::Network;
 use dpp::data_contract::TokenConfiguration;
+#[cfg(any(
+    feature = "dpns-contract",
+    feature = "dashpay-contract",
+    feature = "withdrawals-contract",
+    feature = "wallet-utils-contract",
+    feature = "token-history-contract",
+    feature = "keywords-contract",
+    feature = "all-system-contracts"
+))]
+use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::version::PlatformVersion;
 
 use lru::LruCache;
 use reqwest::Client;
 use std::collections::HashMap;
+use std::error::Error as StdError;
 #[cfg(not(target_arch = "wasm32"))]
 use std::net::ToSocketAddrs;
 use std::num::NonZeroUsize;
@@ -48,7 +59,7 @@ pub struct TrustedHttpContextProvider {
     fallback_provider: Option<Box<dyn ContextProvider>>,
 
     /// Known contracts cache - contracts that are pre-loaded and can be served immediately
-    known_contracts: HashMap<Identifier, Arc<DataContract>>,
+    known_contracts: Arc<Mutex<HashMap<Identifier, Arc<DataContract>>>>,
 
     /// Whether to refetch quorums if not found in cache
     refetch_if_not_found: bool,
@@ -108,15 +119,27 @@ impl TrustedHttpContextProvider {
         base_url: String,
         cache_size: NonZeroUsize,
     ) -> Result<Self, TrustedContextProviderError> {
-        // Verify the domain resolves before proceeding (skip on WASM)
-        #[cfg(not(target_arch = "wasm32"))]
+        // Verify the domain resolves before proceeding (skip on WASM and iOS)
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
         Self::verify_domain_resolves(&base_url)?;
 
         #[cfg(target_arch = "wasm32")]
         let client = Client::builder().build()?;
 
-        #[cfg(not(target_arch = "wasm32"))]
-        let client = Client::builder().timeout(Duration::from_secs(30)).build()?;
+        #[cfg(all(not(target_arch = "wasm32"), target_os = "ios"))]
+        let client = {
+            // iOS specific configuration
+            Client::builder()
+                .timeout(Duration::from_secs(30))
+                .user_agent("DashSDK-iOS/1.0")
+                .build()?
+        };
+
+        #[cfg(all(not(target_arch = "wasm32"), not(target_os = "ios")))]
+        let client = Client::builder()
+            .timeout(Duration::from_secs(30))
+            .user_agent("DashSDK/1.0")
+            .build()?;
 
         Ok(Self {
             network,
@@ -127,7 +150,7 @@ impl TrustedHttpContextProvider {
             last_current_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             last_previous_quorums: Arc::new(ArcSwap::new(Arc::new(None))),
             fallback_provider: None,
-            known_contracts: HashMap::new(),
+            known_contracts: Arc::new(Mutex::new(HashMap::new())),
             refetch_if_not_found: true,
         })
     }
@@ -139,11 +162,13 @@ impl TrustedHttpContextProvider {
     }
 
     /// Set known contracts that will be served immediately without fallback
-    pub fn with_known_contracts(mut self, contracts: Vec<DataContract>) -> Self {
+    pub fn with_known_contracts(self, contracts: Vec<DataContract>) -> Self {
+        let mut known = self.known_contracts.lock().unwrap();
         for contract in contracts {
             let id = contract.id();
-            self.known_contracts.insert(id, Arc::new(contract));
+            known.insert(id, Arc::new(contract));
         }
+        drop(known);
         self
     }
 
@@ -151,6 +176,22 @@ impl TrustedHttpContextProvider {
     pub fn with_refetch_if_not_found(mut self, refetch: bool) -> Self {
         self.refetch_if_not_found = refetch;
         self
+    }
+
+    /// Add a data contract to the known contracts cache
+    pub fn add_known_contract(&self, contract: DataContract) {
+        let id = contract.id();
+        let mut known = self.known_contracts.lock().unwrap();
+        known.insert(id, Arc::new(contract));
+    }
+
+    /// Add multiple data contracts to the known contracts cache
+    pub fn add_known_contracts(&self, contracts: Vec<DataContract>) {
+        let mut known = self.known_contracts.lock().unwrap();
+        for contract in contracts {
+            let id = contract.id();
+            known.insert(id, Arc::new(contract));
+        }
     }
 
     /// Update the quorum caches by fetching current and previous quorums
@@ -171,6 +212,23 @@ impl TrustedHttpContextProvider {
         Ok(())
     }
 
+    /// Get the total number of quorums in both caches
+    pub fn get_cached_quorum_count(&self) -> usize {
+        let current_count = self
+            .current_quorums_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+
+        let previous_count = self
+            .previous_quorums_cache
+            .lock()
+            .map(|cache| cache.len())
+            .unwrap_or(0);
+
+        current_count + previous_count
+    }
+
     /// Fetch current quorums from the HTTP endpoint
     pub async fn fetch_current_quorums(
         &self,
@@ -178,7 +236,31 @@ impl TrustedHttpContextProvider {
         let url = format!("{}/quorums", self.base_url);
         debug!("Fetching current quorums from: {}", url);
 
-        let response = self.client.get(&url).send().await?;
+        let response = match self.client.get(&url).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                tracing::error!(error = ?e, url = %url, "HTTP request failed");
+                if let Some(source) = e.source() {
+                    tracing::error!(?source, "Error source");
+                    if let Some(inner) = source.source() {
+                        tracing::error!(?inner, "Inner error");
+                    }
+                }
+
+                // Check for specific error types (connect detection not available across all reqwest versions)
+                if e.is_timeout() {
+                    tracing::error!("Request timeout");
+                } else if e.is_request() {
+                    tracing::error!("Error building the request");
+                } else if e.is_body() {
+                    tracing::error!("Error reading response body");
+                } else if e.is_decode() {
+                    tracing::error!("Error decoding response");
+                }
+
+                return Err(e.into());
+            }
+        };
         debug!("Received response with status: {}", response.status());
 
         if !response.status().is_success() {
@@ -471,11 +553,110 @@ impl ContextProvider for TrustedHttpContextProvider {
         platform_version: &PlatformVersion,
     ) -> Result<Option<Arc<DataContract>>, ContextProviderError> {
         // First check known contracts cache
-        if let Some(contract) = self.known_contracts.get(id) {
+        let known = self.known_contracts.lock().unwrap();
+        if let Some(contract) = known.get(id) {
             return Ok(Some(contract.clone()));
         }
+        drop(known);
 
-        // If not found in known contracts, delegate to fallback provider if available
+        // Check if this is a system data contract and the corresponding feature is enabled
+        #[cfg(any(
+            feature = "dpns-contract",
+            feature = "dashpay-contract",
+            feature = "withdrawals-contract",
+            feature = "wallet-utils-contract",
+            feature = "token-history-contract",
+            feature = "keywords-contract",
+            feature = "all-system-contracts"
+        ))]
+        {
+            // Check each system contract if its feature is enabled
+            #[cfg(any(feature = "dpns-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::DPNS.id() {
+                return load_system_data_contract(SystemDataContract::DPNS, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load DPNS contract: {}",
+                            e
+                        ))
+                    });
+            }
+
+            #[cfg(any(feature = "dashpay-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::Dashpay.id() {
+                return load_system_data_contract(SystemDataContract::Dashpay, platform_version)
+                    .map(|contract| Some(Arc::new(contract)))
+                    .map_err(|e| {
+                        ContextProviderError::Generic(format!(
+                            "Failed to load Dashpay contract: {}",
+                            e
+                        ))
+                    });
+            }
+
+            #[cfg(any(feature = "withdrawals-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::Withdrawals.id() {
+                return load_system_data_contract(
+                    SystemDataContract::Withdrawals,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load Withdrawals contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(feature = "wallet-utils-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::WalletUtils.id() {
+                return load_system_data_contract(
+                    SystemDataContract::WalletUtils,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load WalletUtils contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(feature = "token-history-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::TokenHistory.id() {
+                return load_system_data_contract(
+                    SystemDataContract::TokenHistory,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load TokenHistory contract: {}",
+                        e
+                    ))
+                });
+            }
+
+            #[cfg(any(feature = "keywords-contract", feature = "all-system-contracts"))]
+            if *id == SystemDataContract::KeywordSearch.id() {
+                return load_system_data_contract(
+                    SystemDataContract::KeywordSearch,
+                    platform_version,
+                )
+                .map(|contract| Some(Arc::new(contract)))
+                .map_err(|e| {
+                    ContextProviderError::Generic(format!(
+                        "Failed to load KeywordSearch contract: {}",
+                        e
+                    ))
+                });
+            }
+        }
+
+        // If not found in known contracts or system contracts, delegate to fallback provider if available
         if let Some(ref provider) = self.fallback_provider {
             provider.get_data_contract(id, platform_version)
         } else {

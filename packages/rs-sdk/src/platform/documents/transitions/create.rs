@@ -7,6 +7,7 @@ use dpp::document::{Document, DocumentV0Getters};
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
+use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::methods::StateTransitionCreationOptions;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -15,6 +16,7 @@ use dpp::state_transition::StateTransition;
 use dpp::tokens::token_payment_info::TokenPaymentInfo;
 use dpp::version::PlatformVersion;
 use std::sync::Arc;
+use tracing::trace;
 
 /// A builder to configure and broadcast document create transitions
 pub struct DocumentCreateTransitionBuilder {
@@ -212,6 +214,11 @@ impl Sdk {
         let state_transition = create_document_transition_builder
             .sign(self, signing_key, signer, platform_version)
             .await?;
+
+        // Low-level debug logging via tracing
+        trace!("document_create: state transition created and signed");
+        trace!(hex = %hex::encode(state_transition.serialize_to_bytes()?), "document_create: transition bytes");
+        trace!(transition = ?state_transition, "document_create: transition details");
 
         let proof_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, put_settings)

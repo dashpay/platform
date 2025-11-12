@@ -9785,9 +9785,8 @@ mod tests {
 
                     assert_matches!(
                         query_validation_result,
-                        Err(Error::Drive(drive::error::Error::GroveDB(
-                            drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_)
-                        )))
+                        Err(Error::Drive(drive::error::Error::GroveDB(e)))
+                            if matches!(e.as_ref(), drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_))
                     )
                 }
 
@@ -10564,9 +10563,8 @@ mod tests {
 
                     assert_matches!(
                         query_validation_result,
-                        Err(Error::Drive(drive::error::Error::GroveDB(
-                            drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_)
-                        )))
+                        Err(Error::Drive(drive::error::Error::GroveDB(e)))
+                            if matches!(e.as_ref(), drive::grovedb::Error::CorruptedReferencePathKeyNotFound(_))
                     )
                 }
 

@@ -1,0 +1,32 @@
+[package]
+name = "platform-wallet"
+version.workspace = true
+edition = "2021"
+authors = ["Dash Core Team"]
+license = "MIT"
+description = "Platform wallet with identity management support"
+
+[dependencies]
+# Dash Platform packages
+dpp = { path = "../rs-dpp" }
+
+# Key wallet dependencies (from rust-dashcore)
+key-wallet = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0" }
+key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0", optional = true }
+
+# Core dependencies
+dashcore = { git = "https://github.com/dashpay/rust-dashcore", tag = "v0.40.0" }
+
+# Standard dependencies
+serde = { version = "1.0", features = ["derive"] }
+thiserror = "1.0"
+
+# Collections
+indexmap = "2.0"
+
+
+[features]
+default = ["bls", "eddsa", "manager"]
+bls = ["key-wallet/bls"]
+eddsa = ["key-wallet/eddsa"]
+manager = ["key-wallet-manager"]

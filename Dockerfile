@@ -10,7 +10,7 @@
 # - deps - all deps, including wasm-bindgen-cli; built on top of either deps-base or deps-sccache
 # - build-planner - image used to prepare build plan for rs-drive-abci
 # - build-* - actual build process of given image
-# - drive-abci, dashmate-helper, test-suite, dapi - final images
+# - drive-abci, dashmate-helper, test-suite, rs-dapi - final images
 #
 # The following build arguments can be provided using --build-arg:
 # - CARGO_BUILD_PROFILE - set to `release` to build final binary, without debugging information
@@ -140,9 +140,9 @@ else
 fi
 EOS
 
-# Install protoc - protobuf compiler
+# Install protoc - protobuf compiler (pin to 32.0)
 # The one shipped with Alpine does not work
-ARG PROTOC_VERSION=27.3
+ARG PROTOC_VERSION=32.0
 RUN if [[ "$TARGETARCH" == "arm64" ]] ; then export PROTOC_ARCH=aarch_64; else export PROTOC_ARCH=x86_64; fi; \
     curl -Ls https://github.com/protocolbuffers/protobuf/releases/download/v${PROTOC_VERSION}/protoc-${PROTOC_VERSION}-linux-${PROTOC_ARCH}.zip \
     -o /tmp/protoc.zip && \
@@ -292,7 +292,7 @@ ONBUILD ARG CARGO_BUILD_PROFILE=dev
 
 RUN --mount=type=secret,id=AWS <<EOS
 set -ex -o pipefail
-git clone https://github.com/facebook/rocksdb.git -b v9.9.3 --depth 1 .
+git clone https://github.com/facebook/rocksdb.git -b v10.4.2 --depth 1 .
 source /root/env
 
 make -j$(nproc) static_lib
@@ -343,7 +343,7 @@ RUN --mount=type=secret,id=AWS \
 
 RUN --mount=type=secret,id=AWS \
     source /root/env; \
-    cargo binstall wasm-bindgen-cli@0.2.100 cargo-chef@0.1.67 \
+    cargo binstall wasm-bindgen-cli@0.2.103 cargo-chef@0.1.72 \
     --locked \
     --no-discover-github-token \
     --disable-telemetry \
@@ -373,6 +373,8 @@ COPY --parents \
     packages/rs-platform-versioning \
     packages/rs-platform-value-convertible \
     packages/rs-drive-abci \
+    packages/rs-dapi \
+    packages/rs-dash-event-bus \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/masternode-reward-shares-contract \
@@ -389,12 +391,16 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
     /platform/
 
 RUN --mount=type=secret,id=AWS \
@@ -448,6 +454,8 @@ COPY --parents \
     .cargo \
     packages/dapi-grpc \
     packages/rs-dapi-grpc-macros \
+    packages/rs-dapi \
+    packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-drive \
     packages/rs-platform-value \
@@ -475,12 +483,16 @@ COPY --parents \
     packages/rs-drive-proof-verifier \
     packages/rs-context-provider \
     packages/rs-sdk-trusted-context-provider \
+    packages/rs-platform-wallet \
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/wasm-drive-verify \
     packages/rs-dapi-client \
     packages/rs-sdk \
+    packages/rs-sdk-ffi \
     packages/check-features \
     packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
     /platform/
 
 RUN mkdir /artifacts
@@ -547,6 +559,8 @@ COPY --parents \
     Cargo.toml \
     rust-toolchain.toml \
     .cargo \
+    packages/rs-dapi \
+    packages/rs-dash-event-bus \
     packages/rs-dpp \
     packages/rs-platform-value \
     packages/rs-platform-serialization \
@@ -557,6 +571,7 @@ COPY --parents \
     packages/rs-json-schema-compatibility-validator \
     # Common
     packages/wasm-dpp \
+    packages/wasm-dpp2 \
     packages/dashpay-contract \
     packages/withdrawals-contract \
     packages/wallet-utils-contract \
@@ -592,7 +607,8 @@ RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOM
     yarn install --inline-builds && \
     cp -R /platform/.yarn/unplugged /tmp/ && \
     export SKIP_GRPC_PROTO_BUILD=1 && \
-    yarn build && \
+    # Build JS Dash SDK and dependencies
+    yarn run ultra -r --filter '+dash' --build && \
     if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
     # Remove target directory and rust packages to save space
     rm -rf target packages/rs-*
@@ -728,43 +744,148 @@ EXPOSE 2500 2501 2510
 USER node
 ENTRYPOINT ["/platform/packages/platform-test-suite/bin/test.sh"]
 
-#
-# STAGE: DAPI BUILD
-#
-FROM build-js AS build-dapi
-
-COPY packages/dapi packages/dapi
-
-# Install Test Suite specific dependencies using previous
-# node_modules directory to reuse built binaries
-RUN yarn workspaces focus --production @dashevo/dapi
-
-#
-# STAGE: FINAL DAPI IMAGE
-#
-FROM node:20-alpine${ALPINE_VERSION} AS dapi
-
-LABEL maintainer="Dash Developers <dev@dash.org>"
-LABEL description="DAPI Node.JS"
-
-# Install ZMQ shared library
-RUN apk add --no-cache zeromq-dev
-
-WORKDIR /platform/packages/dapi
-
-# TODO: Do one COPY with --parents
-COPY --from=build-dapi /platform/.yarn /platform/.yarn
-COPY --from=build-dapi /platform/package.json /platform/yarn.lock /platform/.yarnrc.yml /platform/.pnp* /platform/
-# List of required dependencies. Based on:
-# yarn run ultra --info --filter '@dashevo/dapi' |  sed -E 's/.*@dashevo\/(.*)/COPY --from=build-dapi \/platform\/packages\/\1 \/platform\/packages\/\1/'
-COPY --from=build-dapi /platform/packages/dapi /platform/packages/dapi
-COPY --from=build-dapi /platform/packages/dapi-grpc /platform/packages/dapi-grpc
-COPY --from=build-dapi /platform/packages/js-grpc-common /platform/packages/js-grpc-common
-COPY --from=build-dapi /platform/packages/wasm-dpp /platform/packages/wasm-dpp
-COPY --from=build-dapi /platform/packages/token-history-contract /platform/packages/token-history-contract
-COPY --from=build-dapi /platform/packages/keyword-search-contract /platform/packages/keyword-search-contract
-
-RUN cp /platform/packages/dapi/.env.example /platform/packages/dapi/.env
-
 EXPOSE 2500 2501 2510
 USER node
+
+#
+# STAGE: BUILD RS-DAPI
+#
+FROM deps AS build-rs-dapi
+
+SHELL ["/bin/bash", "-o", "pipefail","-e", "-x", "-c"]
+
+WORKDIR /platform
+
+COPY --from=build-planner --parents /platform/recipe.json /platform/.cargo /
+
+# Build dependencies - this is the caching Docker layer!
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    fi && \
+    cargo chef cook \
+    --recipe-path recipe.json \
+    --profile "$CARGO_BUILD_PROFILE" \
+    --package rs-dapi \
+    --locked && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi
+
+COPY --parents \
+    Cargo.lock \
+    Cargo.toml \
+    rust-toolchain.toml \
+    .cargo \
+    packages/dapi-grpc \
+    packages/rs-dapi-grpc-macros \
+    packages/rs-dpp \
+    packages/rs-drive \
+    packages/rs-platform-value \
+    packages/rs-platform-serialization \
+    packages/rs-platform-serialization-derive \
+    packages/rs-platform-version \
+    packages/rs-platform-versioning \
+    packages/rs-platform-value-convertible \
+    packages/rs-drive-abci \
+    packages/rs-dapi \
+    packages/rs-dash-event-bus \
+    packages/dashpay-contract \
+    packages/wallet-utils-contract \
+    packages/token-history-contract \
+    packages/keyword-search-contract \
+    packages/withdrawals-contract \
+    packages/masternode-reward-shares-contract \
+    packages/feature-flags-contract \
+    packages/dpns-contract \
+    packages/data-contracts \
+    packages/strategy-tests \
+    # These packages are part of workspace and must be here otherwise it builds from scratch
+    packages/simple-signer \
+    packages/rs-json-schema-compatibility-validator \
+    packages/rs-drive-proof-verifier \
+    packages/rs-context-provider \
+    packages/rs-sdk-trusted-context-provider \
+    packages/wasm-dpp \
+    packages/wasm-dpp2 \
+    packages/wasm-drive-verify \
+    packages/rs-dapi-client \
+    packages/rs-sdk \
+    packages/rs-sdk-ffi \
+    packages/rs-platform-wallet \
+    packages/check-features \
+    packages/dash-platform-balance-checker \
+    packages/wasm-sdk \
+    /platform/
+
+RUN mkdir /artifacts
+
+# Build rs-dapi
+RUN --mount=type=cache,sharing=shared,id=cargo_registry_index,target=${CARGO_HOME}/registry/index \
+    --mount=type=cache,sharing=shared,id=cargo_registry_cache,target=${CARGO_HOME}/registry/cache \
+    --mount=type=cache,sharing=shared,id=cargo_git,target=${CARGO_HOME}/git/db \
+    --mount=type=secret,id=AWS \
+    set -ex; \
+    source /root/env && \
+    if  [[ "${CARGO_BUILD_PROFILE}" == "release" ]] ; then \
+    mv .cargo/config-release.toml .cargo/config.toml; \
+    export OUT_DIRECTORY=release; \
+    else \
+    export OUT_DIRECTORY=debug; \
+    fi && \
+    # Workaround: as we cache dapi-grpc, its build.rs is not rerun, so we need to touch it
+    echo "// $(date) " >> /platform/packages/dapi-grpc/build.rs && \
+    cargo build \
+    --profile "${CARGO_BUILD_PROFILE}" \
+    --package rs-dapi \
+    --locked && \
+    cp target/${OUT_DIRECTORY}/rs-dapi /artifacts/ && \
+    if [[ -x /usr/bin/sccache ]]; then sccache --show-stats; fi && \
+    # Remove /platform to reduce layer size
+    rm -rf /platform
+
+#
+# STAGE: RS-DAPI RUNTIME
+#
+FROM alpine:${ALPINE_VERSION} AS rs-dapi
+
+LABEL maintainer="Dash Developers <dev@dash.org>"
+LABEL description="Dash Platform API (DAPI) - Rust Implementation"
+
+RUN apk add --no-cache libgcc libstdc++
+
+ENV RUST_BACKTRACE=1
+ENV RUST_LOG=info
+
+COPY --from=build-rs-dapi /artifacts/rs-dapi /usr/bin/rs-dapi
+
+# Create example .env file
+RUN mkdir -p /app
+COPY packages/rs-dapi/.env.example /app/.env
+
+# Double-check that we don't have missing deps
+RUN ldd /usr/bin/rs-dapi
+
+#
+# Create new non-root user
+#
+ARG USERNAME=dapi
+ARG USER_UID=1000
+ARG USER_GID=$USER_UID
+RUN addgroup -g $USER_GID $USERNAME && \
+    adduser -D -u $USER_UID -G $USERNAME -h /app $USERNAME && \
+    mkdir -p /var/log/rs-dapi && \
+    chown -R $USER_UID:$USER_GID /app /var/log/rs-dapi
+
+USER $USERNAME
+
+WORKDIR /app
+ENTRYPOINT ["/usr/bin/rs-dapi", "start"]
+
+# Default gRPC port
+EXPOSE 3010
+# Optional HTTP/REST port (if implemented)
+EXPOSE 3000

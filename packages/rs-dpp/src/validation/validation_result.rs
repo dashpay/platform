@@ -202,6 +202,10 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
         self.errors.is_empty()
     }
 
+    pub fn is_err(&self) -> bool {
+        !self.errors.is_empty()
+    }
+
     pub fn first_error(&self) -> Option<&E> {
         self.errors.first()
     }
@@ -235,6 +239,19 @@ impl<TData: Clone, E: Debug> ValidationResult<TData, E> {
                 "trying to push validation result into data (errors are {:?})",
                 self.errors
             )))
+    }
+
+    pub fn into_data_with_error(mut self) -> Result<Result<TData, E>, ProtocolError> {
+        if let Some(error) = self.errors.pop() {
+            Ok(Err(error))
+        } else {
+            self.data
+                .map(Ok)
+                .ok_or(ProtocolError::CorruptedCodeExecution(format!(
+                    "trying to push validation result into data (errors are {:?})",
+                    self.errors
+                )))
+        }
     }
 
     pub fn into_data_and_errors(self) -> Result<(TData, Vec<E>), ProtocolError> {

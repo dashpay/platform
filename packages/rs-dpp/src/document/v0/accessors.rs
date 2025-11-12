@@ -151,6 +151,15 @@ impl DocumentV0Getters for DocumentV0 {
     fn transferred_at_core_block_height(&self) -> Option<u32> {
         self.transferred_at_core_block_height
     }
+
+    /// Returns the creator identifier of the document, if it is part
+    /// of the document. The document will have this field if it's schema has it set as required.
+    ///
+    /// # Returns
+    /// An `Option<Identifier>` representing the creator's ID, or `None` if not available.
+    fn creator_id(&self) -> Option<Identifier> {
+        self.creator_id
+    }
 }
 
 impl DocumentV0Setters for DocumentV0 {
@@ -270,5 +279,15 @@ impl DocumentV0Setters for DocumentV0 {
         transferred_at_core_block_height: Option<u32>,
     ) {
         self.transferred_at_core_block_height = transferred_at_core_block_height;
+    }
+
+    /// Sets the creator identifier of the document. This is applicable if the document's
+    /// schema requires this information.
+    ///
+    /// # Parameters
+    /// - `creator_id`: An `Option<Identifier>` to set as the document's creator ID.
+    ///   `None` indicates the creator ID is not available.
+    fn set_creator_id(&mut self, creator_id: Option<Identifier>) {
+        self.creator_id = creator_id;
     }
 }

@@ -4,7 +4,6 @@ use crate::drive::contract::paths::{contract_keeping_history_root_path, contract
 use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::verify::RootHash;
 use dpp::prelude::DataContract;
 use dpp::serialization::PlatformDeserializableWithPotentialValidationFromVersionedStructure;
@@ -68,7 +67,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
         };
-        let (root_hash, mut proved_key_values) = match result.map_err(GroveDB) {
+        let (root_hash, mut proved_key_values) = match result.map_err(Error::from) {
             Ok(ok_result) => ok_result,
             Err(e) => {
                 return if contract_known_keeps_history.is_none() {
@@ -118,12 +117,12 @@ impl Drive {
                 .map(|element| {
                     element
                         .into_item_bytes()
-                        .map_err(Error::GroveDB)
+                        .map_err(Error::from)
                         .and_then(|bytes| {
                             // we don't need to validate the contract locally because it was proved to be in platform
                             // and hence it is valid
                             DataContract::versioned_deserialize(&bytes, false, platform_version)
-                                .map_err(Error::Protocol)
+                                .map_err(Error::from)
                         })
                 })
                 .transpose();
@@ -160,8 +159,8 @@ impl Drive {
     /// - `proof`: A byte slice representing the proof to be verified.
     /// - `is_proof_subset`: A boolean indicating whether to verify a subset of a larger proof.
     /// - `contract_ids_with_keeps_history` a BTreemap with keys being the contract ids we are looking
-    ///     to search for, values being if they keep history. For this call we must know if they keep
-    ///     history.
+    ///   to search for, values being if they keep history. For this call we must know if they keep
+    ///   history.
     ///
     /// # Returns
     ///

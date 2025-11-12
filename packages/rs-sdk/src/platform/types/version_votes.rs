@@ -3,7 +3,7 @@
 use crate::platform::fetch_many::FetchMany;
 use crate::{platform::LimitQuery, Error, Sdk};
 use async_trait::async_trait;
-use dashcore_rpc::dashcore::ProTxHash;
+use dpp::dashcore_rpc::dashcore::ProTxHash;
 use drive_proof_verifier::types::{MasternodeProtocolVote, MasternodeProtocolVotes};
 
 // Trait needed here to implement functions on foreign type.

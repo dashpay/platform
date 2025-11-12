@@ -84,7 +84,7 @@ impl Drive {
                         Element::Item(item, _flags) => {
                             let contract =
                                 DataContract::versioned_deserialize(item, false, platform_version)
-                                    .map_err(Error::Protocol)?;
+                                    .map_err(Error::from)?;
                             Ok((contract_time, contract))
                         }
                         _ => Err(Error::Drive(DriveError::CorruptedContractPath(

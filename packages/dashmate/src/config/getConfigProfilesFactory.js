@@ -5,6 +5,7 @@ export default function getConfigProfilesFactory() {
   /**
    * @typedef {function} getConfigProfiles
    * @param {Config} config
+   * @param {{ includeAll?: boolean }} [options]
    * @returns {string[]}
    */
   function getConfigProfiles(config) {
@@ -16,7 +17,7 @@ export default function getConfigProfilesFactory() {
       profiles.push('platform');
     }
 
-    return profiles;
+    return Array.from(new Set(profiles));
   }
 
   return getConfigProfiles;

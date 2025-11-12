@@ -93,7 +93,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some(object, metadata))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    ///    For collections, returns Ok(None) if none of the requested objects were found.
+    ///   For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -123,7 +123,7 @@ pub trait FromProof<Req> {
     ///
     /// * `Ok(Some((object, metadata)))` when the requested object was found in the proof.
     /// * `Ok(None)` when the requested object was not found in the proof; this can be interpreted as proof of non-existence.
-    ///    For collections, returns Ok(None) if none of the requested objects were found.
+    ///   For collections, returns Ok(None) if none of the requested objects were found.
     /// * `Err(Error)` when either the provided data is invalid or proof validation failed.
     fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
         request: I,
@@ -421,7 +421,7 @@ impl FromProof<platform::GetIdentityByNonUniquePublicKeyHashRequest> for Identit
             .map_err(|e| match e {
                 drive::error::Error::GroveDB(e) => {
                     // If InvalidProof error is returned, extract the path query from it
-                    let maybe_query = match &e {
+                    let maybe_query = match e.as_ref() {
                         GroveError::InvalidProof(path_query, ..) => Some(path_query.clone()),
                         _ => None,
                     };
@@ -864,6 +864,53 @@ impl FromProof<platform::GetDataContractRequest> for DataContract {
 
         // Extract content from proof and verify Drive/GroveDB proofs
         let (root_hash, maybe_contract) = Drive::verify_contract(
+            &proof.grovedb_proof,
+            None,
+            false,
+            false,
+            id.into_buffer(),
+            platform_version,
+        )
+        .map_drive_error(proof, mtd)?;
+
+        verify_tenderdash_proof(proof, mtd, &root_hash, provider)?;
+
+        Ok((maybe_contract, mtd.clone(), proof.clone()))
+    }
+}
+
+impl FromProof<platform::GetDataContractRequest> for (DataContract, Vec<u8>) {
+    type Request = platform::GetDataContractRequest;
+    type Response = platform::GetDataContractResponse;
+
+    fn maybe_from_proof_with_metadata<'a, I: Into<Self::Request>, O: Into<Self::Response>>(
+        request: I,
+        response: O,
+        _network: Network,
+        platform_version: &PlatformVersion,
+        provider: &'a dyn ContextProvider,
+    ) -> Result<(Option<Self>, ResponseMetadata, Proof), Error>
+    where
+        DataContract: 'a,
+    {
+        let request: Self::Request = request.into();
+        let response: Self::Response = response.into();
+
+        // Parse response to read proof and metadata
+        let proof = response.proof().or(Err(Error::NoProofInResult))?;
+
+        let mtd = response.metadata().or(Err(Error::EmptyResponseMetadata))?;
+
+        let id = match request.version.ok_or(Error::EmptyVersion)? {
+            get_data_contract_request::Version::V0(v0) => {
+                Identifier::from_bytes(&v0.id).map_err(|e| Error::ProtocolError {
+                    error: e.to_string(),
+                })
+            }
+        }?;
+
+        // Extract content from proof and verify Drive/GroveDB proofs
+        let (root_hash, maybe_contract) = Drive::verify_contract_return_serialization(
             &proof.grovedb_proof,
             None,
             false,

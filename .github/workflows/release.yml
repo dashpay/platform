@@ -22,7 +22,7 @@ jobs:
   release-npm:
     name: Release NPM packages
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 60
     if: github.event_name != 'workflow_dispatch'
     steps:
       - name: Check out repo
@@ -70,7 +70,11 @@ jobs:
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install wasm-bindgen-cli
-        run: cargo binstall wasm-bindgen-cli@0.2.100
+        run: cargo binstall wasm-bindgen-cli@0.2.103
+        if: ${{ steps.check-artifact.outputs.exists != 'true' }}
+
+      - name: Install wasm-pack
+        run: cargo binstall wasm-pack
         if: ${{ steps.check-artifact.outputs.exists != 'true' }}
 
       - name: Install Binaryen
@@ -175,16 +179,16 @@ jobs:
       cargo_profile: dev
       tag: ${{ inputs.tag || github.event.release.tag_name }}-debug
 
-  release-dapi-image:
-    name: Release DAPI image
+  release-rs-dapi-image:
+    name: Release RS-DAPI image
     if: ${{ !inputs.only_drive }}
     secrets: inherit
     uses: ./.github/workflows/release-docker-image.yml
     with:
-      name: DAPI
+      name: RS-DAPI
       image_org: dashpay
-      image_name: dapi
-      target: dapi
+      image_name: rs-dapi
+      target: rs-dapi
       tag: ${{ inputs.tag || github.event.release.tag_name }}
 
   release-test-suite-image:

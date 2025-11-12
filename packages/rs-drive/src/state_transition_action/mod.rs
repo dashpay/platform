@@ -32,6 +32,7 @@ use derive_more::From;
 use dpp::prelude::UserFeeIncrease;
 
 /// ST action
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, From)]
 pub enum StateTransitionAction {
     /// data contract create

@@ -1,7 +1,6 @@
 use crate::drive::identity::key::fetch::IdentityKeysRequest;
 use crate::drive::Drive;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use grovedb::PathQuery;
 use grovedb_version::version::GroveVersion;
 
@@ -41,6 +40,6 @@ impl Drive {
             })
             .collect::<Vec<_>>();
 
-        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(GroveDB)
+        PathQuery::merge(path_queries.iter().collect(), grove_version).map_err(Error::from)
     }
 }

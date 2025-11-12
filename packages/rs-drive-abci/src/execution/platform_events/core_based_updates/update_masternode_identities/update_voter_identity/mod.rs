@@ -9,8 +9,8 @@ use crate::rpc::core::CoreRPCLike;
 
 use dpp::dashcore::ProTxHash;
 
-use dashcore_rpc::json::DMNStateDiff;
 use dpp::block::block_info::BlockInfo;
+use dpp::dashcore_rpc::json::DMNStateDiff;
 use dpp::version::PlatformVersion;
 use drive::grovedb::Transaction;
 use drive::util::batch::DriveOperation;

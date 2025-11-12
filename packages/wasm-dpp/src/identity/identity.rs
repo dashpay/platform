@@ -88,8 +88,8 @@ impl IdentityWasm {
     pub fn get_public_keys(&self) -> Vec<JsValue> {
         self.inner
             .public_keys()
-            .iter()
-            .map(|(_, k)| k.to_owned())
+            .values()
+            .cloned()
             .map(IdentityPublicKeyWasm::from)
             .map(JsValue::from)
             .collect()

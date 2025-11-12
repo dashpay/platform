@@ -1,6 +1,6 @@
 [package]
 name = "strategy-tests"
-version = "2.0.0"
+version.workspace = true
 authors = [
   "Samuel Westrich <sam@dash.org>",
   "Ivan Shumkov <ivan@shumkov.ru>",
@@ -11,7 +11,7 @@ rust-version.workspace = true
 license = "MIT"
 
 [dependencies]
-tracing = "0.1.4"
+tracing = "0.1.41"
 futures = "0.3"
 bincode = { version = "=2.0.0-rc.3", features = ["serde"] }
 drive = { path = "../rs-drive", default-features = false, features = [
@@ -35,7 +35,7 @@ dpp = { path = "../rs-dpp", default-features = false, features = [
   "data-contract-json-conversion",
   "data-contract-cbor-conversion",
 ] }
-simple-signer = { path = "../simple-signer" }
+simple-signer = { path = "../simple-signer", features = ["state-transitions"] }
 platform-version = { path = "../rs-platform-version" }
 platform-serialization = { path = "../rs-platform-serialization" }
 platform-serialization-derive = { path = "../rs-platform-serialization-derive" }

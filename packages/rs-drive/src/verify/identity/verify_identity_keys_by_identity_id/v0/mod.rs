@@ -82,7 +82,7 @@ impl Drive {
             let (path, key, maybe_element) = proved_key_value;
             if path == identity_keys_path {
                 if let Some(element) = maybe_element {
-                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    let item_bytes = element.into_item_bytes().map_err(Error::from)?;
                     let key = IdentityPublicKey::deserialize_from_bytes(&item_bytes)?;
                     loaded_public_keys.insert(key.id(), key);
                 } else {
@@ -102,12 +102,12 @@ impl Drive {
                 && key == [IdentityRootStructure::IdentityTreeRevision as u8]
             {
                 if let Some(element) = maybe_element {
-                    let item_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                    let item_bytes = element.into_item_bytes().map_err(Error::from)?;
                     revision = Some(Revision::from_be_bytes(
                         item_bytes.as_slice().try_into().map_err(|_| {
-                            Error::GroveDB(grovedb::Error::WrongElementType(
+                            Error::GroveDB(Box::new(grovedb::Error::WrongElementType(
                                 "expecting 8 bytes of data for revision",
-                            ))
+                            )))
                         })?,
                     ));
                 } else {

@@ -293,6 +293,7 @@ pub struct StateTransitionSigningOptions {
 }
 
 impl StateTransition {
+    #[allow(unused_variables)]
     pub fn deserialize_from_bytes_in_version(
         bytes: &[u8],
         platform_version: &PlatformVersion,

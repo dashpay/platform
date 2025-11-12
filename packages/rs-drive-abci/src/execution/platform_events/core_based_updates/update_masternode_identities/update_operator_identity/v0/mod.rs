@@ -395,13 +395,13 @@ where
 mod tests {
     use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
     use crate::test::helpers::setup::{TempPlatform, TestPlatformBuilder};
-    use dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
-    use dashcore_rpc::json::DMNState;
     use dpp::block::block_info::BlockInfo;
     use dpp::bls_signatures::{Bls12381G2Impl, SecretKey as BlsPrivateKey};
     use dpp::dashcore::hashes::Hash;
     use dpp::dashcore::ProTxHash;
     use dpp::dashcore::Txid;
+    use dpp::dashcore_rpc::dashcore_rpc_json::{MasternodeListItem, MasternodeType};
+    use dpp::dashcore_rpc::json::DMNState;
     use dpp::identifier::MasternodeIdentifiers;
     use dpp::identity::identity_public_key::v0::IdentityPublicKeyV0;
     use dpp::identity::{IdentityV0, KeyType, Purpose, SecurityLevel};

@@ -49,8 +49,8 @@ impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
         };
         let public_keys = identity
             .public_keys()
-            .iter()
-            .map(|(_, public_key)| public_key.clone().into())
+            .values()
+            .map(|public_key| public_key.clone().into())
             .collect();
         identity_create_transition.set_public_keys(public_keys);
 

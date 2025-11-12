@@ -148,10 +148,10 @@ impl Drive {
             identity_vote_times,
         };
         let encoded_reference = bincode::encode_to_vec(storage_form, config).map_err(|e| {
-            Error::Protocol(ProtocolError::CorruptedSerialization(format!(
+            Error::Protocol(Box::new(ProtocolError::CorruptedSerialization(format!(
                 "can not encode reference: {}",
                 e
-            )))
+            ))))
         })?;
 
         self.batch_insert::<0>(

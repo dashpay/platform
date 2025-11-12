@@ -21,7 +21,7 @@ impl Drive {
                 &platform_version.drive.grove_version,
             )
             .unwrap()
-            .map_err(Error::GroveDB)?;
+            .map_err(Error::from)?;
 
         let Element::Item(counter_bytes, _) = element else {
             return Err(Error::Drive(

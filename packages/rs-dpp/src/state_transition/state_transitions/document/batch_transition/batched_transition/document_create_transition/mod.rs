@@ -6,6 +6,7 @@ mod v0_methods;
 use crate::block::block_info::BlockInfo;
 use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
+use crate::prelude::DataContract;
 use crate::state_transition::batch_transition::document_create_transition::v0::DocumentFromCreateTransitionV0;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -51,6 +52,7 @@ pub trait DocumentFromCreateTransition {
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -74,6 +76,7 @@ pub trait DocumentFromCreateTransition {
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -86,6 +89,7 @@ impl DocumentFromCreateTransition for Document {
         document_create_transition: &DocumentCreateTransition,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -97,6 +101,7 @@ impl DocumentFromCreateTransition for Document {
                 v0,
                 owner_id,
                 block_info,
+                contract,
                 document_type,
                 platform_version,
             ),
@@ -107,6 +112,7 @@ impl DocumentFromCreateTransition for Document {
         document_create_transition: DocumentCreateTransition,
         owner_id: Identifier,
         block_info: &BlockInfo,
+        contract: &DataContract,
         document_type: &DocumentTypeRef,
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError>
@@ -118,6 +124,7 @@ impl DocumentFromCreateTransition for Document {
                 v0,
                 owner_id,
                 block_info,
+                contract,
                 document_type,
                 platform_version,
             ),

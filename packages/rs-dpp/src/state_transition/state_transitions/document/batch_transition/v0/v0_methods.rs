@@ -69,11 +69,11 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV0 {
     }
 
     /// Returns the first transition, if it exists, as a `BatchedTransitionRef`.
-    fn first_transition(&self) -> Option<BatchedTransitionRef> {
+    fn first_transition(&self) -> Option<BatchedTransitionRef<'_>> {
         self.transitions.first().map(BatchedTransitionRef::Document)
     }
 
-    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef> {
+    fn first_transition_mut(&mut self) -> Option<BatchedTransitionMutRef<'_>> {
         self.transitions
             .first_mut()
             .map(BatchedTransitionMutRef::Document)

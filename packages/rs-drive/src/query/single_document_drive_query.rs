@@ -74,7 +74,7 @@ impl SingleDocumentDriveQuery {
                     vec![&non_contested, &contested],
                     &platform_version.drive.grove_version,
                 )
-                .map_err(Error::GroveDB)
+                .map_err(Error::from)
             }
             SingleDocumentDriveQueryContestedStatus::Contested => {
                 Ok(self.construct_contested_path_query(true))

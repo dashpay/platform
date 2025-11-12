@@ -348,6 +348,7 @@ pub trait CreateRandomDocument: DocumentTypeV0Getters + DocumentTypeV0Methods {
                 created_at_core_block_height,
                 updated_at_core_block_height,
                 transferred_at_core_block_height: None,
+                creator_id: None,
             }
             .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {

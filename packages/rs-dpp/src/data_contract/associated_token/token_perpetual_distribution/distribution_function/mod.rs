@@ -119,10 +119,10 @@ pub enum DistributionFunction {
     /// - `step_count`: The number of periods between each step.
     /// - `decrease_per_interval_numerator` and `decrease_per_interval_denominator`: Define the reduction factor per step.
     /// - `start_decreasing_offset`: Optional start period offset (e.g., start block or time). If not provided, the contract creation start is used.
-    ///     If this is provided before this number we give out the distribution start amount every interval.
+    ///   If this is provided before this number we give out the distribution start amount every interval.
     /// - `max_interval_count`: The maximum amount of intervals there can be. Can be up to 1024.
-    ///     !!!Very important!!! -> This will default to 128 is default if not set.
-    ///     This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
+    ///   !!!Very important!!! -> This will default to 128 is default if not set.
+    ///   This means that after 128 cycles we will be distributing trailing_distribution_interval_amount per interval.
     /// - `distribution_start_amount`: The initial token emission.
     /// - `trailing_distribution_interval_amount`: The token emission after all decreasing intervals.
     /// - `min_value`: Optional minimum emission value.
@@ -159,7 +159,9 @@ pub enum DistributionFunction {
     ///
     /// # Example
     /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
-    Stepwise(BTreeMap<u64, TokenAmount>),
+    Stepwise(
+        #[serde(deserialize_with = "deserialize_u64_token_amount_map")] BTreeMap<u64, TokenAmount>,
+    ),
 
     /// Emits tokens following a linear function that can increase or decrease over time
     /// with fractional precision.
@@ -524,6 +526,7 @@ pub enum DistributionFunction {
     ///   f(x) = 10000 * ln(5000 / x)
     ///   ```
     /// - Values: a = 10000 n = 5000 m = 1 o = 0 b = 0 d = 0
+    /// ```text
     ///           y
     ///           ↑
     ///          10000 |*
@@ -538,6 +541,7 @@ pub enum DistributionFunction {
     ///           1000 |              *
     ///              0 +-------------------*----------→ x
     ///                  0     2000   4000   6000   8000
+    /// ```
     ///
     ///   - The emission **starts high** and **gradually decreases**, ensuring early adopters receive
     ///     more tokens while later participants still get rewards.
@@ -554,6 +558,45 @@ pub enum DistributionFunction {
         min_value: Option<u64>,
         max_value: Option<u64>,
     },
+}
+
+// Custom deserializer helper that accepts both key shapes for JSON and other serde formats:
+// - BTreeMap<u64, TokenAmount>                // numeric timestamp/step keys
+// - BTreeMap<String, TokenAmount>             // numeric-looking strings as keys
+// The function normalizes both into `BTreeMap<u64, TokenAmount>`. If a string key
+// cannot be parsed as `u64`, deserialization fails with a serde error.
+use serde::de::Deserializer;
+fn deserialize_u64_token_amount_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<u64, TokenAmount>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    // Untagged enum tries variants in order: attempt numeric keys first,
+    // then fallback to string keys.
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum U64OrStrMap<V> {
+        // JSON: { 0: 100, 10: 50 }
+        U64(BTreeMap<u64, V>),
+        // JSON: { "0": 100, "10": 50 }
+        Str(BTreeMap<String, V>),
+    }
+
+    let helper: U64OrStrMap<TokenAmount> = U64OrStrMap::deserialize(deserializer)?;
+    match helper {
+        // Already numeric keys; return as-is
+        U64OrStrMap::U64(m) => Ok(m),
+        // Parse numeric-looking string keys into u64, preserving values
+        U64OrStrMap::Str(sm) => sm
+            .into_iter()
+            .map(|(k, v)| {
+                k.parse::<u64>()
+                    .map_err(serde::de::Error::custom)
+                    .map(|kk| (kk, v))
+            })
+            .collect(),
+    }
 }
 
 impl fmt::Display for DistributionFunction {

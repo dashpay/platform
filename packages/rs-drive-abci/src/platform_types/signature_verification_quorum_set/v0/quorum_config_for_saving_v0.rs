@@ -1,6 +1,6 @@
 use crate::platform_types::signature_verification_quorum_set::QuorumConfig;
 use bincode::Encode;
-use dashcore_rpc::dashcore_rpc_json::QuorumType;
+use dpp::dashcore_rpc::dashcore_rpc_json::QuorumType;
 use dpp::platform_serialization::de::Decode;
 
 #[derive(Debug, Clone, Encode, Decode)]

@@ -78,3 +78,5 @@ pub mod mock;
 
 // Re-export tonic to ensure everyone uses the same version
 pub use tonic;
+// Ensure the prost codec crate is linked and available to generated code
+pub use tonic_prost;

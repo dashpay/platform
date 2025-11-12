@@ -14,6 +14,7 @@ pub struct BlockFeesV0 {
     pub refunds_per_epoch: CreditsPerEpoch,
 }
 
+#[allow(dead_code)]
 pub trait BlockFeesV0Methods {
     /// Create block fee result from fees
     fn from_fees(storage_fee: u64, processing_fee: u64) -> Self;
@@ -30,6 +31,7 @@ impl BlockFeesV0Methods for BlockFeesV0 {
 }
 
 /// `BlockFeesV0Getters` trait provides getter methods for `BlockFeesV0`.
+#[allow(dead_code)]
 pub trait BlockFeesV0Getters {
     /// Returns the processing fee.
     fn processing_fee(&self) -> u64;
@@ -48,6 +50,7 @@ pub trait BlockFeesV0Getters {
 }
 
 /// `BlockFeesV0Setters` trait provides setter methods for `BlockFeesV0`.
+#[allow(dead_code)]
 pub trait BlockFeesV0Setters {
     /// Sets the processing fee.
     fn set_processing_fee(&mut self, fee: u64);

@@ -27,6 +27,7 @@ use std::collections::HashMap;
 
 /// A wrapper for a document operation
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DocumentOperation<'a> {
     /// An add operation
     AddOperation {
@@ -52,6 +53,7 @@ pub struct DocumentOperationsForContractDocumentType<'a> {
 
 /// Operations on Documents
 #[derive(Clone, Debug)]
+#[allow(clippy::large_enum_variant)]
 pub enum DocumentOperationType<'a> {
     /// Adds a document to a contract matching the desired info.
     AddDocument {

@@ -74,7 +74,7 @@ impl Drive {
                         Some(element) => {
                             let identity_id = element
                                 .into_item_bytes()
-                                .map_err(Error::GroveDB)?
+                                .map_err(Error::from)?
                                 .try_into()
                                 .map_err(|_| {
                                     Error::Proof(ProofError::IncorrectValueSize(

@@ -57,6 +57,9 @@ pub struct DocumentForCbor {
     pub updated_at_core_block_height: Option<CoreBlockHeight>,
     #[serde(rename = "$transferredAtCoreBlockHeight")]
     pub transferred_at_core_block_height: Option<CoreBlockHeight>,
+
+    #[serde(rename = "$creatorId")]
+    pub creator_id: Option<Identifier>,
 }
 
 #[cfg(feature = "cbor")]
@@ -78,6 +81,7 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id,
         } = value;
         Ok(DocumentForCbor {
             id: id.to_buffer(),
@@ -94,6 +98,7 @@ impl TryFrom<DocumentV0> for DocumentForCbor {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id,
         })
     }
 }
@@ -139,6 +144,10 @@ impl DocumentV0 {
         let transferred_at_core_block_height = document_map
             .remove_optional_integer(property_names::TRANSFERRED_AT_CORE_BLOCK_HEIGHT)?;
 
+        let creator_id = document_map
+            .remove_optional_identifier(property_names::CREATOR_ID)
+            .map_err(ProtocolError::ValueError)?;
+
         // dev-note: properties is everything other than the id and owner id
         Ok(DocumentV0 {
             properties: document_map,
@@ -154,6 +163,7 @@ impl DocumentV0 {
             created_at_core_block_height,
             updated_at_core_block_height,
             transferred_at_core_block_height,
+            creator_id,
         })
     }
 }

@@ -64,15 +64,11 @@ impl TransferToIdentity for Identity {
             state_transition.broadcast_and_wait(sdk, settings).await?;
 
         let sender_balance = sender.balance.ok_or_else(|| {
-            Error::DapiClientError(
-                "expected an identity balance after transfer (sender)".to_string(),
-            )
+            Error::Generic("expected an identity balance after transfer (sender)".to_string())
         })?;
 
         let receiver_balance = receiver.balance.ok_or_else(|| {
-            Error::DapiClientError(
-                "expected an identity balance after transfer (receiver)".to_string(),
-            )
+            Error::Generic("expected an identity balance after transfer (receiver)".to_string())
         })?;
 
         Ok((sender_balance, receiver_balance))

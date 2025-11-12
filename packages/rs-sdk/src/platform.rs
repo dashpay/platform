@@ -17,6 +17,7 @@ pub mod transition;
 pub mod types;
 
 pub mod documents;
+pub mod dpns_usernames;
 pub mod group_actions;
 pub mod tokens;
 
@@ -36,5 +37,8 @@ pub use {
     fetch::Fetch,
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
-    query::{LimitQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT},
+    query::{
+        IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
+        DEFAULT_EPOCH_QUERY_LIMIT,
+    },
 };

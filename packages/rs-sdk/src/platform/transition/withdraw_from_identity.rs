@@ -67,11 +67,11 @@ impl WithdrawFromIdentity for Identity {
 
         match result {
             StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
-                identity.balance.ok_or(Error::DapiClientError(
+                identity.balance.ok_or(Error::Generic(
                     "expected an identity balance after withdrawal".to_string(),
                 ))
             }
-            _ => Err(Error::DapiClientError("proved a non identity".to_string())),
+            _ => Err(Error::Generic("proved a non identity".to_string())),
         }
     }
 }

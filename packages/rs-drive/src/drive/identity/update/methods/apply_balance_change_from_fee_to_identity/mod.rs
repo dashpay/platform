@@ -23,7 +23,7 @@ impl Drive {
     /// * `balance_change` - The balance changes to be applied to an identity.
     /// * `transaction` - The transaction information related to the operation.
     /// * `drive_version` - The drive version configuration, which determines the version of
-    ///                      the method to be used.
+    ///   the method to be used.
     ///
     /// # Returns
     ///
@@ -65,7 +65,7 @@ impl Drive {
     /// * `balance_change` - The balance changes to be applied to an identity.
     /// * `transaction` - The transaction information related to the operation.
     /// * `drive_version` - The drive version configuration, which determines the version of
-    ///                      the method to be used.
+    ///   the method to be used.
     ///
     /// # Returns
     ///

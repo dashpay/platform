@@ -75,13 +75,13 @@ impl IdentityPublicKey {
     /// * `id`: The `KeyID` for the generated key.
     /// * `rng`: A mutable reference to a random number generator of type `StdRng`.
     /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
-    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    ///   and a mutable reference to a matrix (or vector) that tracks which keys have been used.
     /// * `platform_version`: The platform version which determines the structure of the identity key.
     ///
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>`: If successful, returns an instance of `Self`.
-    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///   In case of an error, it returns a `ProtocolError`.
     ///
     /// # Errors
     ///
@@ -121,13 +121,13 @@ impl IdentityPublicKey {
     /// * `id`: The `KeyID` for the generated key.
     /// * `seed`: A seed that will create a random number generator `StdRng`.
     /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
-    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    ///   and a mutable reference to a matrix (or vector) that tracks which keys have been used.
     /// * `platform_version`: The platform version which determines the structure of the identity key.
     ///
     /// # Returns
     ///
     /// * `Result<(Self, Vec<u8>), ProtocolError>`: If successful, returns an instance of `Self` and the private key as `Vec<u8>`.
-    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///   In case of an error, it returns a `ProtocolError`.
     ///
     /// # Errors
     ///
@@ -158,13 +158,13 @@ impl IdentityPublicKey {
     /// * `id`: The `KeyID` for the generated key.
     /// * `rng`: A mutable reference to a random number generator of type `StdRng`.
     /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
-    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    ///   and a mutable reference to a matrix (or vector) that tracks which keys have been used.
     /// * `platform_version`: The platform version which determines the structure of the identity key.
     ///
     /// # Returns
     ///
     /// * `Result<(Self, Vec<u8>), ProtocolError>`: If successful, returns an instance of `Self` and the private key as `Vec<u8>`.
-    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///   In case of an error, it returns a `ProtocolError`.
     ///
     /// # Errors
     ///
@@ -205,13 +205,13 @@ impl IdentityPublicKey {
     /// * `id`: The `KeyID` for the generated key.
     /// * `rng`: A mutable reference to a random number generator of type `StdRng`.
     /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
-    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    ///   and a mutable reference to a matrix (or vector) that tracks which keys have been used.
     /// * `platform_version`: The platform version which determines the structure of the identity key.
     ///
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>`: If successful, returns an instance of `Self`.
-    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///   In case of an error, it returns a `ProtocolError`.
     ///
     /// # Errors
     ///
@@ -251,13 +251,13 @@ impl IdentityPublicKey {
     /// * `id`: The `KeyID` for the generated key.
     /// * `rng`: A mutable reference to a random number generator of type `StdRng`.
     /// * `used_key_matrix`: An optional tuple that contains the count of keys that have already been used
-    ///                      and a mutable reference to a matrix (or vector) that tracks which keys have been used.
+    ///   and a mutable reference to a matrix (or vector) that tracks which keys have been used.
     /// * `platform_version`: The platform version which determines the structure of the identity key.
     ///
     /// # Returns
     ///
     /// * `Result<Self, ProtocolError>`: If successful, returns an instance of `Self`.
-    ///                                  In case of an error, it returns a `ProtocolError`.
+    ///   In case of an error, it returns a `ProtocolError`.
     ///
     /// # Errors
     ///
@@ -311,7 +311,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_master_authentication_key_with_rng(
         id: KeyID,
@@ -377,7 +377,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_master_authentication_key(
         id: KeyID,
@@ -404,7 +404,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_critical_level_authentication_key(
         id: KeyID,
@@ -435,7 +435,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_critical_level_authentication_key_with_rng(
         id: KeyID,
@@ -622,7 +622,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_high_level_authentication_key(
         id: KeyID,
@@ -649,7 +649,7 @@ impl IdentityPublicKey {
     /// # Returns
     ///
     /// * `(Self, Vec<u8>)`: A tuple where the first element is an instance of the `IdentityPublicKey` struct,
-    ///                      and the second element is the corresponding private key.
+    ///   and the second element is the corresponding private key.
     ///
     pub fn random_ecdsa_high_level_authentication_key_with_rng(
         id: KeyID,

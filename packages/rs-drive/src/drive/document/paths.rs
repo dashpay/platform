@@ -1,7 +1,11 @@
 use crate::drive::{constants, RootTree};
+#[cfg(feature = "server")]
 use crate::util::type_constants::DEFAULT_HASH_SIZE_U8;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::methods::DocumentTypeBasicMethods;
+#[cfg(feature = "server")]
 use dpp::data_contract::document_type::DocumentTypeRef;
 #[cfg(feature = "server")]
 use grovedb::batch::key_info::KeyInfo;
@@ -36,7 +40,7 @@ pub(crate) fn contract_document_type_path_vec(
     ]
 }
 
-#[cfg(any(feature = "server", feature = "verify"))]
+#[cfg(feature = "server")]
 /// Returns the path to the primary keys of a contract document type.
 pub(crate) fn contract_documents_primary_key_path<'a>(
     contract_id: &'a [u8],

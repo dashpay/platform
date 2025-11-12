@@ -40,8 +40,8 @@ impl TopUpIdentity for Identity {
         )?;
         let identity: PartialIdentity = state_transition.broadcast_and_wait(sdk, settings).await?;
 
-        identity.balance.ok_or(Error::DapiClientError(
-            "expected an identity balance".to_string(),
-        ))
+        identity
+            .balance
+            .ok_or(Error::Generic("expected an identity balance".to_string()))
     }
 }

@@ -20,7 +20,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<bool, Error>` - Returns a boolean indicating if the value was changed,
-    ///                            or an error if an issue was encountered.
+    ///   or an error if an issue was encountered.
     ///
     /// # Errors
     ///
@@ -63,12 +63,12 @@ impl Drive {
     /// * `version` - The proposed app version to be set.
     /// * `transaction` - A transaction argument to interact with the underlying storage.
     /// * `drive_operations` - A mutable reference to a vector of low-level drive operations
-    ///                        that will be populated with the required changes.
+    ///   that will be populated with the required changes.
     ///
     /// # Returns
     ///
     /// * `Result<bool, Error>` - Returns a boolean indicating if the value was changed,
-    ///                            or an error if an issue was encountered.
+    ///   or an error if an issue was encountered.
     ///
     /// # Errors
     ///

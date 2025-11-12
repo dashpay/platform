@@ -6,7 +6,7 @@ mod tests {
     use crate::execution::{continue_chain_for_strategy, run_chain_for_strategy, GENESIS_TIME_MS};
     use crate::strategy::{ChainExecutionOutcome, ChainExecutionParameters, NetworkStrategy, StrategyRandomness};
     use dpp::dash_to_duffs;
-    use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
+    use dpp::data_contract::accessors::v0::DataContractV0Setters;
     use dpp::data_contract::accessors::v1::DataContractV1Getters;
     use dpp::data_contract::associated_token::token_configuration::accessors::v0::TokenConfigurationV0Getters;
     use dpp::data_contract::associated_token::token_distribution_rules::accessors::v0::TokenDistributionRulesV0Setters;
@@ -470,18 +470,7 @@ mod tests {
 
         let block_count = 60;
 
-        let ChainExecutionOutcome {
-            abci_app,
-            proposers,
-            validator_quorums: quorums,
-            current_validator_quorum_hash: current_quorum_hash,
-            current_proposer_versions,
-            end_time_ms,
-            identity_nonce_counter,
-            identity_contract_nonce_counter,
-            instant_lock_quorums,
-            ..
-        } = run_chain_for_strategy(
+        let ChainExecutionOutcome { abci_app, .. } = run_chain_for_strategy(
             &mut platform,
             block_count, // block count is 30
             strategy.clone(),
@@ -495,7 +484,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -791,7 +779,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1014,7 +1001,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1285,7 +1271,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1392,7 +1377,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1611,7 +1595,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1883,7 +1866,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -1990,7 +1972,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)
@@ -2209,7 +2190,6 @@ mod tests {
         let state = platform.state.load();
 
         {
-            let counter = platform.drive.cache.protocol_versions_counter.read();
             platform
                 .drive
                 .fetch_versions_with_counter(None, &platform_version.drive)

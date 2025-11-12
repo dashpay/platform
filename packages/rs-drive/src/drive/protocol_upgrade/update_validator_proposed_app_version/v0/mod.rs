@@ -5,7 +5,6 @@ use crate::drive::protocol_upgrade::{desired_version_for_validators_path, versio
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
-use crate::error::Error::GroveDB;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;
 
@@ -84,7 +83,8 @@ impl Drive {
         if value_changed {
             // if we had a different previous version we need to remove it from the version counter
             if let Some(previous_element) = previous_element {
-                let previous_version_bytes = previous_element.as_item_bytes().map_err(GroveDB)?;
+                let previous_version_bytes =
+                    previous_element.as_item_bytes().map_err(Error::from)?;
                 let previous_version = ProtocolVersion::decode_var(previous_version_bytes)
                     .ok_or(Error::Drive(DriveError::CorruptedElementType(
                         "encoded value could not be decoded",

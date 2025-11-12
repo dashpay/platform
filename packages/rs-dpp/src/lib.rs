@@ -3,10 +3,23 @@
 #![forbid(unsafe_code)]
 //#![deny(missing_docs)]
 #![allow(dead_code)]
+#![allow(clippy::result_large_err)]
 
 extern crate core;
 
 pub use dashcore;
+
+#[cfg(feature = "core_key_wallet")]
+pub use key_wallet;
+
+#[cfg(feature = "core_key_wallet_manager")]
+pub use key_wallet_manager;
+
+#[cfg(feature = "core_spv")]
+pub use dash_spv;
+
+#[cfg(feature = "core_rpc_client")]
+pub use dashcore_rpc;
 
 #[cfg(feature = "client")]
 pub use dash_platform_protocol::DashPlatformProtocol;
@@ -116,7 +129,7 @@ pub use bincode;
 pub use dashcore::blsful as bls_signatures;
 #[cfg(feature = "ed25519-dalek")]
 pub use dashcore::ed25519_dalek;
-#[cfg(feature = "system_contracts")]
+#[cfg(feature = "data-contracts")]
 pub use data_contracts;
 #[cfg(feature = "jsonschema")]
 pub use jsonschema;

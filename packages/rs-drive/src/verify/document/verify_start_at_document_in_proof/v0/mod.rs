@@ -63,13 +63,13 @@ impl DriveDocumentQuery<'_> {
                 }
                 let document = maybe_element
                     .map(|element| {
-                        let document_bytes = element.into_item_bytes().map_err(Error::GroveDB)?;
+                        let document_bytes = element.into_item_bytes().map_err(Error::from)?;
                         Document::from_bytes(
                             document_bytes.as_slice(),
                             self.document_type,
                             platform_version,
                         )
-                        .map_err(Error::Protocol)
+                        .map_err(Error::from)
                     })
                     .transpose()?;
                 Ok((root_hash, document))

@@ -65,7 +65,7 @@ impl Drive {
                     &drive_version.grove_version,
                 );
                 drive_operations.push(CalculatedCostOperation(cost));
-                let element = value.map_err(Error::GroveDB)?;
+                let element = value.map_err(Error::from)?;
                 match element {
                     Some(Element::Item(value, _)) => Ok(Some(value)),
                     None => Ok(None),

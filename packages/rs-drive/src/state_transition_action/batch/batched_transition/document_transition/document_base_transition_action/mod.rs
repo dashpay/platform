@@ -32,7 +32,7 @@ impl DocumentBaseTransitionActionAccessorsV0 for DocumentBaseTransitionAction {
         }
     }
 
-    fn document_type(&self) -> Result<DocumentTypeRef, ProtocolError> {
+    fn document_type(&self) -> Result<DocumentTypeRef<'_>, ProtocolError> {
         Ok(self
             .data_contract_fetch_info_ref()
             .contract

@@ -179,7 +179,7 @@ mod tests {
                     core_chain_locked_height: 0,
                     epoch: 0,
                     time_ms: 0,
-                    protocol_version: 9,
+                    protocol_version: 10,
                     chain_id: "chain_id".to_string()
                 }),
                 result: Some(

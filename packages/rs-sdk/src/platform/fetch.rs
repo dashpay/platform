@@ -255,6 +255,10 @@ impl Fetch for dpp::prelude::DataContract {
     type Request = platform_proto::GetDataContractRequest;
 }
 
+impl Fetch for (dpp::prelude::DataContract, Vec<u8>) {
+    type Request = platform_proto::GetDataContractRequest;
+}
+
 impl Fetch for Document {
     type Request = DocumentQuery;
 }

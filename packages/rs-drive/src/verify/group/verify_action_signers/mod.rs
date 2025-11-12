@@ -23,13 +23,13 @@ impl Drive {
     ///
     /// # Type Parameters
     /// - `T`: The output container type that implements `FromIterator`. This is used to collect the verified action signer information
-    ///        as pairs of [`Identifier`] and [`GroupMemberPower`].
+    ///   as pairs of [`Identifier`] and [`GroupMemberPower`].
     ///
     /// # Arguments
     /// - `proof`: A byte slice containing the cryptographic proof for the active_action information.
     /// - `contract_id`: The identifier of the contract whose active_action information is being verified.
     /// - `start_active_action_contract_position`: An optional starting position for the active_action query, combined with a [`StartAtIncluded`] flag
-    ///                                     to indicate whether the start position is inclusive.
+    ///   to indicate whether the start position is inclusive.
     /// - `limit`: An optional limit on the number of active_actions to verify.
     /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof (useful for optimizations).
     /// - `platform_version`: A reference to the platform version, used to determine the appropriate versioned implementation.

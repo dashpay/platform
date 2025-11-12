@@ -23,13 +23,13 @@ impl Drive {
     ///
     /// # Type Parameters
     /// - `T`: The output container type that implements `FromIterator`. This is used to collect the verified group information
-    ///        as pairs of [`GroupContractPosition`] and [`Group`].
+    ///   as pairs of [`GroupContractPosition`] and [`Group`].
     ///
     /// # Arguments
     /// - `proof`: A byte slice containing the cryptographic proof for the group information.
     /// - `contract_id`: The identifier of the contract whose group information is being verified.
     /// - `start_group_contract_position`: An optional starting position for the group query, combined with a [`StartAtIncluded`] flag
-    ///                                     to indicate whether the start position is inclusive.
+    ///   to indicate whether the start position is inclusive.
     /// - `limit`: An optional limit on the number of groups to verify.
     /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof (useful for optimizations).
     /// - `platform_version`: A reference to the platform version, used to determine the appropriate versioned implementation.

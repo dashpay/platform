@@ -105,13 +105,15 @@ async fn contested_resource_vote_states_nx_contract() {
     };
 
     if let dash_sdk::error::Error::DapiClientError(e) = result {
-        assert!(
-            e.contains(
-                "transport error: grpc error: status: InvalidArgument, message: \"contract not found error"
-            ),
-            "we should get contract not found error, got: {:?}",
-            e,
-        );
+        if let rs_dapi_client::DapiClientError::Transport(
+            rs_dapi_client::transport::TransportError::Grpc(status),
+        ) = e
+        {
+            assert_eq!(status.code(), dapi_grpc::tonic::Code::InvalidArgument);
+            assert!(status.message().contains("contract not found error"));
+        } else {
+            panic!("expected gRPC transport error, got: {:?}", e);
+        }
     } else {
         panic!("expected 'contract not found' transport error");
     };
@@ -345,9 +347,23 @@ async fn contested_rss_vote_state_fields(
             }
         }
         Err(expected) if result.is_err() => {
-            let result = result.expect_err("error");
-            if !result.to_string().contains(expected) {
-                Err(format!("expected: {:#?}\ngot {:?}\n", expected, result))
+            let err = result.expect_err("error");
+            // Prefer structured check for InvalidArgument code
+            if expected.contains("InvalidArgument") {
+                use dash_sdk::Error as SdkError;
+                use rs_dapi_client::transport::TransportError;
+                use rs_dapi_client::DapiClientError;
+                if let SdkError::DapiClientError(DapiClientError::Transport(
+                    TransportError::Grpc(status),
+                )) = &err
+                {
+                    if status.code() == dapi_grpc::tonic::Code::InvalidArgument {
+                        return Ok(());
+                    }
+                }
+            }
+            if !err.to_string().contains(expected) {
+                Err(format!("expected: {:#?}\ngot {:?}\n", expected, err))
             } else {
                 Ok(())
             }

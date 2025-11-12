@@ -1,4 +1,5 @@
 import { Listr } from 'listr2';
+import path from 'path';
 import { Observable } from 'rxjs';
 import { NETWORK_LOCAL } from '../../constants.js';
 import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
@@ -12,6 +13,8 @@ import isServiceBuildRequired from '../../util/isServiceBuildRequired.js';
  * @param {buildServicesTask} buildServicesTask
  * @param {getConnectionHost} getConnectionHost
  * @param {ensureFileMountExists} ensureFileMountExists
+ * @param {HomeDir} homeDir
+ * @param {getConfigProfiles} getConfigProfiles
  * @return {startNodeTask}
  */
 export default function startNodeTaskFactory(
@@ -22,7 +25,14 @@ export default function startNodeTaskFactory(
   buildServicesTask,
   getConnectionHost,
   ensureFileMountExists,
+  homeDir,
+  getConfigProfiles,
 ) {
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
+      .filter((profile) => profile.startsWith('platform'));
+  }
+
   /**
    * @typedef {startNodeTask}
    * @param {Config} config
@@ -62,6 +72,18 @@ export default function startNodeTaskFactory(
       if (tenderdashLogFilePath !== null) {
         ensureFileMountExists(tenderdashLogFilePath, 0o666);
       }
+
+      const configuredAccessLogPath = config.get('platform.dapi.rsDapi.logs.accessLogPath');
+      const hasConfiguredAccessLogPath = typeof configuredAccessLogPath === 'string'
+        && configuredAccessLogPath.trim() !== '';
+
+      if (hasConfiguredAccessLogPath) {
+        const hostAccessLogPath = path.isAbsolute(configuredAccessLogPath)
+          ? configuredAccessLogPath
+          : path.resolve(homeDir.getPath(), configuredAccessLogPath);
+
+        ensureFileMountExists(hostAccessLogPath, 0o666);
+      }
     }
 
     return new Listr([
@@ -69,10 +91,7 @@ export default function startNodeTaskFactory(
         title: 'Check node is not started',
         enabled: (ctx) => !ctx.isForce,
         task: async (ctx) => {
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           if (await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Running services detected. Please ensure all services are stopped for this config before starting');
@@ -94,6 +113,26 @@ export default function startNodeTaskFactory(
         task: () => buildServicesTask(config),
       },
       {
+        title: 'Remove legacy DAPI stack',
+        enabled: () => config.get('platform.enable'),
+        task: async () => {
+          const legacyServiceNames = ['dapi_api', 'dapi_core_streams'];
+
+          for (const serviceName of legacyServiceNames) {
+            try {
+              await dockerCompose.rm(config, {
+                serviceNames: [serviceName],
+                force: true,
+              });
+            } catch (e) {
+              if (!/No such service/i.test(e.message)) {
+                throw e;
+              }
+            }
+          }
+        },
+      },
+      {
         title: 'Start services',
         task: async (ctx) => {
           const isMasternode = config.get('core.masternode.enable');
@@ -102,10 +141,7 @@ export default function startNodeTaskFactory(
             config.get('core.masternode.operator.privateKey', true);
           }
 
-          const profiles = [];
-          if (ctx.platformOnly) {
-            profiles.push('platform');
-          }
+          const profiles = ctx.platformOnly ? selectPlatformProfiles(config) : [];
 
           await dockerCompose.up(config, { profiles });
         },

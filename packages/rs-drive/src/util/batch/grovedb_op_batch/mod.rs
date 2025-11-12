@@ -477,7 +477,7 @@ pub trait GroveDbOpBatchV0Methods {
     /// # Returns
     ///
     /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `GroveOp::InsertOrReplace`, `GroveOp::Replace`,
-    ///                  or `GroveOp::Patch`, it will be removed from the batch.
+    ///   or `GroveOp::Patch`, it will be removed from the batch.
     fn remove_if_insert(&mut self, path: Vec<Vec<u8>>, key: &[u8]) -> Option<GroveOp>;
 }
 
@@ -669,7 +669,7 @@ impl GroveDbOpBatchV0Methods for GroveDbOpBatch {
     /// # Returns
     ///
     /// * `Option<Op>` - Returns the found `Op` if it exists. If the `Op` is an `GroveOp::InsertOrReplace`, `GroveOp::Replace`,
-    ///                  or `GroveOp::Patch`, it will be removed from the batch.
+    ///   or `GroveOp::Patch`, it will be removed from the batch.
     fn remove_if_insert(&mut self, path: Vec<Vec<u8>>, key: &[u8]) -> Option<GroveOp> {
         let path = KeyInfoPath(
             path.into_iter()

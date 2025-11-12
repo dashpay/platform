@@ -428,6 +428,8 @@ impl PlatformDeserializableWithPotentialValidationFromVersionedStructure for Dat
                             let owner_id = contract.owner_id(); // Assuming you have a method to get the owner_id from the contract
                             DocumentType::try_from_schema(
                                 owner_id,
+                                contract.system_version_type(),
+                                contract.config().version(),
                                 name_str,
                                 schema_json,
                                 None,
@@ -617,6 +619,7 @@ pub enum OperationType {
     Token(TokenOp),
 }
 
+#[allow(clippy::large_enum_variant)]
 #[derive(Clone, Debug, Encode, Decode)]
 enum OperationTypeInSerializationFormat {
     Document(Vec<u8>),

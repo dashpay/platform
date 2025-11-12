@@ -59,7 +59,7 @@ impl Drive {
             .ok_or(Error::Drive(DriveError::CorruptedCodeExecution(
                 "genesis core height must exist",
             )))
-            .and_then(|element| element.into_item_bytes().map_err(Error::GroveDB))?;
+            .and_then(|element| element.into_item_bytes().map_err(Error::from))?;
 
         let genesis_core_height =
             u32::from_be_bytes(genesis_core_height_vec.try_into().map_err(|_| {

@@ -25,6 +25,6 @@ impl Drive {
             &drive_version.grove_version,
         );
         drive_operations.push(CalculatedCostOperation(cost));
-        value.map_err(Error::GroveDB)
+        value.map_err(Error::from)
     }
 }

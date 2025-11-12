@@ -83,6 +83,8 @@ mod tests {
 
         DocumentType::try_from_schema(
             Identifier::random(),
+            1,
+            config.version(),
             "indexed_type",
             schema,
             None,

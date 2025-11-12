@@ -230,7 +230,7 @@ mod tests {
         );
         assert_matches!(
             old_res,
-            Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_)))
+            Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_))
         );
     }
 
@@ -279,7 +279,7 @@ mod tests {
             &platform_version.drive,
         );
 
-        assert_matches!(res, Err(Error::GroveDB(grovedb::Error::PathKeyNotFound(_))));
+        assert_matches!(res, Err(Error::GroveDB(e)) if matches!(e.as_ref(), grovedb::Error::PathKeyNotFound(_)));
     }
 
     /// Moving a subtree (tree element) must fail with NotSupported.

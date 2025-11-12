@@ -174,7 +174,7 @@ impl TokenTransitionAction {
                 block_info,
                 platform_version,
             )
-            .map_err(Error::Protocol)
+            .map_err(Error::from)
     }
 
     /// Do we keep history for this action

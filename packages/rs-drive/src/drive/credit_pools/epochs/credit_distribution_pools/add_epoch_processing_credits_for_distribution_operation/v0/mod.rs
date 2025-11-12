@@ -43,9 +43,9 @@ impl Drive {
         };
 
         if amount > i64::MAX as u64 {
-            return Err(Error::Protocol(ProtocolError::Overflow(
+            return Err(Error::Protocol(Box::new(ProtocolError::Overflow(
                 "adding over i64::Max to processing fee pool",
-            )));
+            ))));
         }
 
         let updated_value = existing_value

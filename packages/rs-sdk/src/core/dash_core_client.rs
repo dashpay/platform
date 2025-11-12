@@ -12,6 +12,7 @@ use dashcore_rpc::{
     Auth, Client, RpcApi,
 };
 use dpp::dashcore::ProTxHash;
+use dpp::dashcore_rpc;
 use dpp::prelude::CoreBlockHeight;
 use std::{fmt::Debug, sync::Mutex};
 use zeroize::Zeroizing;

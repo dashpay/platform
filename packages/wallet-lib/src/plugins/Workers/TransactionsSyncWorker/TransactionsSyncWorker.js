@@ -616,7 +616,14 @@ class TransactionsSyncWorker extends Worker {
     chainStore.pruneHeadersMetadata(headerHeight);
     this.storage.scheduleStateSave();
 
-    this.logger.debug(`[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`);
+    const pendingTransactions = Array
+      .from(this.historicalTransactionsToVerify.values())
+      .map((tx) => ({ hash: tx.hash }));
+
+    this.logger.debug(
+      `[TransactionsSyncWorker#newMerkleBlockHandler] ${$transactionsFound} txs found, ${this.historicalTransactionsToVerify.size} pending to be verified.`,
+      { pendingTransactions },
+    );
   }
 
   /**

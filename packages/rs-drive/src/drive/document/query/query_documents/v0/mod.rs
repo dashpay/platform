@@ -68,7 +68,7 @@ impl Drive {
     /// # Returns
     ///
     /// * `Result<QueryDocumentsOutcome, Error>` - Returns `QueryDocumentsOutcome` on success with the list of documents,
-    ///    number of skipped items, and cost. If the operation fails, it returns an `Error`.
+    ///   number of skipped items, and cost. If the operation fails, it returns an `Error`.
     #[inline(always)]
     pub(super) fn query_documents_v0(
         &self,
@@ -94,7 +94,7 @@ impl Drive {
                 Document::from_bytes(serialized.as_slice(), query.document_type, platform_version)
                     .map_err(|e| {
                         Error::ProtocolWithInfoString(
-                            e,
+                            Box::new(e),
                             format!(
                                 "document bytes are {}, query is using contract {:?}",
                                 hex::encode(serialized),
