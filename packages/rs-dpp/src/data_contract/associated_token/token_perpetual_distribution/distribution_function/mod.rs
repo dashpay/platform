@@ -160,8 +160,7 @@ pub enum DistributionFunction {
     /// # Example
     /// - Emit 100 tokens per block for the first 1,000 blocks, then 50 tokens per block thereafter.
     Stepwise(
-        #[serde(deserialize_with = "deserialize_u64_token_amount_map")]
-        BTreeMap<u64, TokenAmount>,
+        #[serde(deserialize_with = "deserialize_u64_token_amount_map")] BTreeMap<u64, TokenAmount>,
     ),
 
     /// Emits tokens following a linear function that can increase or decrease over time
