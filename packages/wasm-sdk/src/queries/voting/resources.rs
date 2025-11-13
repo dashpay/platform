@@ -24,7 +24,7 @@ export interface VotePollsByDocumentTypeQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Document type to query.

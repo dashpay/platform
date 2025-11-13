@@ -108,10 +108,8 @@ impl WasmSdk {
 
         // Log debug information
         tracing::debug!(
-            target = "wasm_sdk",
-            pubkey = %hex::encode(&public_key_bytes),
-            hash160 = %hex::encode(&public_key_hash160),
-            "Looking for authentication key"
+            target = "wasm_sdk", pubkey = % hex::encode(& public_key_bytes), hash160 = %
+            hex::encode(& public_key_hash160), "Looking for authentication key"
         );
 
         // Find matching authentication key
@@ -135,9 +133,7 @@ impl WasmSdk {
 
                 if matches {
                     tracing::debug!(
-                        target = "wasm_sdk",
-                        id = key.id(),
-                        key_type = ?key.key_type(),
+                        target = "wasm_sdk", id = key.id(), key_type = ? key.key_type(),
                         "Found matching key"
                     );
                 }
@@ -226,14 +222,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentCreate)]
     pub async fn document_create(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        document_data: String,
+        #[wasm_bindgen(js_name = "documentData")] document_data: String,
         entropy: String,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -345,10 +343,8 @@ impl WasmSdk {
                 // Try to find the created document
                 for (doc_id, maybe_doc) in documents.iter() {
                     tracing::debug!(
-                        target = "wasm_sdk",
-                        id = %doc_id.to_string(Encoding::Base58),
-                        present = maybe_doc.is_some(),
-                        "Document entry"
+                        target = "wasm_sdk", id = % doc_id.to_string(Encoding::Base58),
+                        present = maybe_doc.is_some(), "Document entry"
                     );
                 }
 
@@ -564,16 +560,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentReplace)]
     pub async fn document_replace(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        document_data: String,
+        #[wasm_bindgen(js_name = "documentData")] document_data: String,
         revision: u64,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -880,14 +879,17 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentDelete)]
     pub async fn document_delete(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -1005,16 +1007,20 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentTransfer)]
     pub async fn document_transfer(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
+        #[wasm_bindgen(js_name = "recipientId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         recipient_id: JsValue,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -1135,15 +1141,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentPurchase)]
     pub async fn document_purchase(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
+        #[wasm_bindgen(js_name = "buyerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         buyer_id: JsValue,
         price: u64,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -1164,14 +1173,15 @@ impl WasmSdk {
 
         // Fetch the document to purchase
         let query = dash_sdk::platform::documents::document_query::DocumentQuery::new_with_data_contract_id(
-            &sdk,
-            contract_id,
-            &document_type,
-        )
-        .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create document query: {}", e)))?
-        .with_document_id(&doc_id);
-
+                &sdk,
+                contract_id,
+                &document_type,
+            )
+            .await
+            .map_err(|e| WasmSdkError::generic(
+                format!("Failed to create document query: {}", e),
+            ))?
+            .with_document_id(&doc_id);
         let document = dash_sdk::platform::Document::fetch(&sdk, query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Document not found"))?;
@@ -1278,17 +1288,14 @@ impl WasmSdk {
                     additional_fields,
                 )
             }
-            _ => {
-                // Purchase was processed but document not returned
-                Self::build_js_result_object(
-                    "DocumentPurchased",
-                    &document_id_base58,
-                    vec![
-                        ("status", JsValue::from_str("success")),
-                        ("message", JsValue::from_str("Document purchase processed")),
-                    ],
-                )
-            }
+            _ => Self::build_js_result_object(
+                "DocumentPurchased",
+                &document_id_base58,
+                vec![
+                    ("status", JsValue::from_str("success")),
+                    ("message", JsValue::from_str("Document purchase processed")),
+                ],
+            ), // Purchase was processed but document not returned
         }
     }
 
@@ -1309,15 +1316,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = documentSetPrice)]
     pub async fn document_set_price(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: String,
+        #[wasm_bindgen(js_name = "documentType")] document_type: String,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
         price: u64,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -1337,14 +1347,15 @@ impl WasmSdk {
 
         // Fetch the existing document to update its price
         let query = dash_sdk::platform::documents::document_query::DocumentQuery::new_with_data_contract_id(
-            &sdk,
-            contract_id,
-            &document_type,
-        )
-        .await
-        .map_err(|e| WasmSdkError::generic(format!("Failed to create document query: {}", e)))?
-        .with_document_id(&doc_id);
-
+                &sdk,
+                contract_id,
+                &document_type,
+            )
+            .await
+            .map_err(|e| WasmSdkError::generic(
+                format!("Failed to create document query: {}", e),
+            ))?
+            .with_document_id(&doc_id);
         let existing_doc = Document::fetch(&sdk, query)
             .await?
             .ok_or_else(|| WasmSdkError::not_found("Document not found"))?;

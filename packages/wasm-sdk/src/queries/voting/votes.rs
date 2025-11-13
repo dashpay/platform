@@ -25,7 +25,7 @@ export interface ContestedResourceIdentityVotesQuery {
   /**
    * Identity identifier.
    */
-  identityId: Identifier | Uint8Array | string;
+  identityId: IdentifierLike
 
   /**
    * Maximum number of votes to return.
@@ -37,7 +37,7 @@ export interface ContestedResourceIdentityVotesQuery {
    * Vote identifier to resume from (exclusive by default).
    * @default undefined
    */
-  startAtVoteId?: Identifier | Uint8Array | string;
+  startAtVoteId?: IdentifierLike
 
   /**
    * Include the `startAtVoteId` when true.

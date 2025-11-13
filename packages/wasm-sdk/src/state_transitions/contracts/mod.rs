@@ -36,11 +36,12 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractCreate)]
     pub async fn contract_create(
         &self,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        contract_definition: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "contractDefinition")] contract_definition: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -116,19 +117,13 @@ impl WasmSdk {
                     )
                 })?
         };
-
-        // Create the data contract from JSON definition
-        let data_contract = DataContract::from_json(
-            contract_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create data contract from JSON: {}",
-                e
-            ))
-        })?;
+        let data_contract =
+            DataContract::from_json(contract_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create data contract from JSON: {}",
+                    e
+                ))
+            })?;
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
@@ -211,13 +206,15 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractUpdate)]
     pub async fn contract_update(
         &self,
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         owner_id: JsValue,
-        contract_updates: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "contractUpdates")] contract_updates: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -310,19 +307,13 @@ impl WasmSdk {
 
         // Create updated contract from JSON definition
         // Note: The updates should be a complete contract definition with incremented version
-        let updated_contract = DataContract::from_json(
-            updates_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create updated contract from JSON: {}",
-                e
-            ))
-        })?;
-
-        // Verify the version was incremented
+        let updated_contract =
+            DataContract::from_json(updates_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create updated contract from JSON: {}",
+                    e
+                ))
+            })?;
         if updated_contract.version() <= existing_contract.version() {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Contract version must be incremented. Current: {}, Provided: {}",

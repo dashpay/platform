@@ -7,14 +7,12 @@ export class ProtocolFacade {
   async versionUpgradeState(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getProtocolVersionUpgradeState(); }
   async versionUpgradeStateWithProof(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getProtocolVersionUpgradeStateWithProofInfo(); }
 
-  async versionUpgradeVoteStatus(params: { startProTxHash: string; count: number }): Promise<any> {
-    const { startProTxHash, count } = params;
+  async versionUpgradeVoteStatus(startProTxHash: string | Uint8Array, count: number): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getProtocolVersionUpgradeVoteStatus(startProTxHash, count);
   }
 
-  async versionUpgradeVoteStatusWithProof(params: { startProTxHash: string; count: number }): Promise<any> {
-    const { startProTxHash, count } = params;
+  async versionUpgradeVoteStatusWithProof(startProTxHash: string | Uint8Array, count: number): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getProtocolVersionUpgradeVoteStatusWithProofInfo(startProTxHash, count);
   }

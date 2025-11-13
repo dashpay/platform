@@ -52,7 +52,10 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('contract keys for identity', async () => {
-    const r = await client.getIdentitiesContractKeys([TEST_IDENTITY], DPNS_CONTRACT);
+    const r = await client.getIdentitiesContractKeys({
+      identityIds: [TEST_IDENTITY],
+      contractId: DPNS_CONTRACT,
+    });
     expect(r).to.be.an('array');
   });
 

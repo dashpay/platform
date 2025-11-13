@@ -17,6 +17,7 @@ use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 use wasm_dpp2::data_contract::document::DocumentWasm;
 use wasm_dpp2::identifier::IdentifierWasm;
+
 #[wasm_bindgen(js_name = "DocumentProofResponse")]
 #[derive(Clone)]
 pub struct DocumentProofResponseWasm {
@@ -78,7 +79,7 @@ export interface DocumentsQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Document type name.
@@ -107,13 +108,13 @@ export interface DocumentsQuery {
    * Exclusive document ID to resume from.
    * @default undefined
    */
-  startAfter?: Identifier | Uint8Array | string;
+  startAfter?: IdentifierLike
 
   /**
    * Inclusive document ID to start from.
    * @default undefined
    */
-  startAt?: Identifier | Uint8Array | string;
+  startAt?: IdentifierLike
 }
 "#;
 
@@ -242,7 +243,7 @@ fn parse_where_clause(json_clause: &JsonValue) -> Result<WhereClause, WasmSdkErr
             return Err(WasmSdkError::invalid_argument(format!(
                 "Unknown operator: {}",
                 operator_str
-            )))
+            )));
         }
     };
 
@@ -283,7 +284,7 @@ fn parse_order_clause(json_clause: &JsonValue) -> Result<OrderClause, WasmSdkErr
         _ => {
             return Err(WasmSdkError::invalid_argument(
                 "order by direction must be 'asc' or 'desc'",
-            ))
+            ));
         }
     };
 
@@ -307,6 +308,7 @@ fn json_to_platform_value(json_val: &JsonValue) -> Result<Value, WasmSdkError> {
             }
         }
         JsonValue::String(s) => {
+            // TODO: Should use Identifier::try_from and return text if failed
             // Check if it's an identifier (base58 encoded)
             if s.len() == 44 && s.chars().all(|c| c.is_alphanumeric()) {
                 // Try to parse as identifier
@@ -410,9 +412,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocument")]
     pub async fn get_document(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: &str,
+        #[wasm_bindgen(js_name = "documentType")] document_type: &str,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
     ) -> Result<Option<DocumentWasm>, WasmSdkError> {
@@ -455,9 +459,11 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDocumentWithProofInfo")]
     pub async fn get_document_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        document_type: &str,
+        #[wasm_bindgen(js_name = "documentType")] document_type: &str,
+        #[wasm_bindgen(js_name = "documentId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         document_id: JsValue,
     ) -> Result<DocumentProofResponseWasm, WasmSdkError> {

@@ -14,6 +14,11 @@ use wasm_bindgen::prelude::*;
 #[wasm_bindgen(js_name = "Identifier")]
 pub struct IdentifierWasm(Identifier);
 
+#[wasm_bindgen(typescript_custom_section)]
+const IDENTIFIER_TS_HELPERS: &'static str = r#"
+export type IdentifierLike = Identifier | Uint8Array | string;
+"#;
+
 impl From<IdentifierWasm> for Identifier {
     fn from(identifier: IdentifierWasm) -> Self {
         identifier.0

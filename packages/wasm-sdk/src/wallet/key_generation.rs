@@ -37,7 +37,7 @@ impl WasmSdk {
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -98,7 +98,9 @@ impl WasmSdk {
 
     /// Create key pair from private key WIF
     #[wasm_bindgen(js_name = "keyPairFromWif")]
-    pub fn key_pair_from_wif(private_key_wif: &str) -> Result<JsValue, WasmSdkError> {
+    pub fn key_pair_from_wif(
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: &str,
+    ) -> Result<JsValue, WasmSdkError> {
         let private_key = PrivateKey::from_wif(private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 
@@ -140,7 +142,7 @@ impl WasmSdk {
     /// Create key pair from private key hex
     #[wasm_bindgen(js_name = "keyPairFromHex")]
     pub fn key_pair_from_hex(
-        private_key_hex: &str,
+        #[wasm_bindgen(js_name = "privateKeyHex")] private_key_hex: &str,
         network: &str,
     ) -> Result<JsValue, WasmSdkError> {
         if private_key_hex.len() != 64 {
@@ -155,7 +157,7 @@ impl WasmSdk {
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -173,14 +175,17 @@ impl WasmSdk {
 
     /// Get address from public key
     #[wasm_bindgen(js_name = "pubkeyToAddress")]
-    pub fn pubkey_to_address(pubkey_hex: &str, network: &str) -> Result<String, WasmSdkError> {
+    pub fn pubkey_to_address(
+        #[wasm_bindgen(js_name = "pubkeyHex")] pubkey_hex: &str,
+        network: &str,
+    ) -> Result<String, WasmSdkError> {
         let net = match network {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid network. Use 'mainnet' or 'testnet'",
-                ))
+                ));
             }
         };
 
@@ -210,7 +215,10 @@ impl WasmSdk {
 
     /// Sign a message with a private key
     #[wasm_bindgen(js_name = "signMessage")]
-    pub fn sign_message(message: &str, private_key_wif: &str) -> Result<String, WasmSdkError> {
+    pub fn sign_message(
+        message: &str,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: &str,
+    ) -> Result<String, WasmSdkError> {
         let private_key = PrivateKey::from_wif(private_key_wif)
             .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid WIF: {}", e)))?;
 

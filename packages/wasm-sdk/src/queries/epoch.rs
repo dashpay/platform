@@ -537,7 +537,7 @@ impl WasmSdk {
     pub async fn get_evonodes_proposed_epoch_blocks_by_ids_with_proof_info(
         &self,
         epoch: u16,
-        pro_tx_hashes: Vec<String>,
+        #[wasm_bindgen(js_name = "proTxHashes")] pro_tx_hashes: Vec<String>,
     ) -> Result<JsValue, WasmSdkError> {
         // TODO: Implement once SDK Query trait is implemented for ProposerBlockCountById
         // Currently not supported due to query format issues
