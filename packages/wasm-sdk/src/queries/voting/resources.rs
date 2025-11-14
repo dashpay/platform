@@ -204,7 +204,7 @@ fn parse_vote_polls_by_document_type_query(
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getContestedResources")]
+    #[wasm_bindgen(js_name = "getContestedResources", unchecked_return_type = "Array<any>")]
     pub async fn get_contested_resources(
         &self,
         query: VotePollsByDocumentTypeQueryJs,
@@ -220,7 +220,10 @@ impl WasmSdk {
     }
 
     // Proof info versions for voting queries
-    #[wasm_bindgen(js_name = "getContestedResourcesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getContestedResourcesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<any>>"
+    )]
     pub async fn get_contested_resources_with_proof_info(
         &self,
         query: VotePollsByDocumentTypeQueryJs,

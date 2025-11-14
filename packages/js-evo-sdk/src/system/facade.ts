@@ -5,13 +5,43 @@ export class SystemFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async status(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getStatus(); }
-  async currentQuorumsInfo(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getCurrentQuorumsInfo(); }
-  async totalCreditsInPlatform(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getTotalCreditsInPlatform(); }
-  async totalCreditsInPlatformWithProof(): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getTotalCreditsInPlatformWithProofInfo(); }
-  async prefundedSpecializedBalance(identityId: wasm.IdentifierLike): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getPrefundedSpecializedBalance(identityId); }
-  async prefundedSpecializedBalanceWithProof(identityId: wasm.IdentifierLike): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getPrefundedSpecializedBalanceWithProofInfo(identityId); }
-  async waitForStateTransitionResult(stateTransitionHash: string): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.waitForStateTransitionResult(stateTransitionHash); }
-  async pathElements(path: string[], keys: string[]): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getPathElements(path, keys); }
-  async pathElementsWithProof(path: string[], keys: string[]): Promise<any> { const w = await this.sdk.getWasmSdkConnected(); return w.getPathElementsWithProofInfo(path, keys); }
+  async status(): Promise<wasm.StatusResponse> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getStatus();
+  }
+
+  async currentQuorumsInfo(): Promise<wasm.CurrentQuorumsInfo> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getCurrentQuorumsInfo();
+  }
+
+  async totalCreditsInPlatform(): Promise<bigint | undefined> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getTotalCreditsInPlatform();
+  }
+  async totalCreditsInPlatformWithProof(): Promise<wasm.ProofMetadataResponseTyped<bigint | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getTotalCreditsInPlatformWithProofInfo();
+  }
+  async prefundedSpecializedBalance(identityId: wasm.IdentifierLike): Promise<wasm.PrefundedSpecializedBalance | undefined> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getPrefundedSpecializedBalance(identityId);
+  }
+  async prefundedSpecializedBalanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.PrefundedSpecializedBalance | undefined>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getPrefundedSpecializedBalanceWithProofInfo(identityId);
+  }
+  async waitForStateTransitionResult(stateTransitionHash: string): Promise<wasm.StateTransitionStatus> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.waitForStateTransitionResult(stateTransitionHash);
+  }
+
+  async pathElements(path: string[], keys: string[]): Promise<wasm.PathElement[]> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getPathElements(path, keys);
+  }
+  async pathElementsWithProof(path: string[], keys: string[]): Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
+    const w = await this.sdk.getWasmSdkConnected();
+    return w.getPathElementsWithProofInfo(path, keys);
+  }
 }
