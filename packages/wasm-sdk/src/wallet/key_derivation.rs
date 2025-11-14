@@ -204,7 +204,7 @@ pub struct DerivationPathWasm {
     pub path: String,
     #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter = coinType)]
+    #[wasm_bindgen(getter, js_name = "coinType")]
     pub coin_type: u32,
     #[wasm_bindgen(getter)]
     pub account: u32,
@@ -234,7 +234,7 @@ pub struct Dip13DerivationPathWasm {
     pub path: String,
     #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter = coinType)]
+    #[wasm_bindgen(getter, js_name = "coinType")]
     pub coin_type: u32,
     #[wasm_bindgen(getter)]
     pub account: u32,
