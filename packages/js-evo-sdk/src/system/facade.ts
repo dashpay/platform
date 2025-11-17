@@ -19,18 +19,22 @@ export class SystemFacade {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTotalCreditsInPlatform();
   }
+
   async totalCreditsInPlatformWithProof(): Promise<wasm.ProofMetadataResponseTyped<bigint | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTotalCreditsInPlatformWithProofInfo();
   }
+
   async prefundedSpecializedBalance(identityId: wasm.IdentifierLike): Promise<wasm.PrefundedSpecializedBalance | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPrefundedSpecializedBalance(identityId);
   }
+
   async prefundedSpecializedBalanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.PrefundedSpecializedBalance | undefined>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPrefundedSpecializedBalanceWithProofInfo(identityId);
   }
+
   async waitForStateTransitionResult(stateTransitionHash: string): Promise<wasm.StateTransitionStatus> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.waitForStateTransitionResult(stateTransitionHash);
@@ -40,6 +44,7 @@ export class SystemFacade {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElements(path, keys);
   }
+
   async pathElementsWithProof(path: string[], keys: string[]): Promise<wasm.ProofMetadataResponseTyped<wasm.PathElement[]>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getPathElementsWithProofInfo(path, keys);

@@ -53,7 +53,7 @@ These settings control the metrics endpoint for monitoring the Gateway:
 | `platform.gateway.metrics.port` | Port for metrics server | `9090` | `9091` |
 
 Metrics provide performance and health information about the Gateway service.
-Admin must be enabled to access the metrics endpoint.
+Dashmate automatically enables the Envoy admin endpoint whenever metrics are enabled so that the Prometheus listener can proxy `/stats/prometheus`; if admin itself is still disabled, the listener is not exposed outside of Docker.
 
 ## Admin
 
