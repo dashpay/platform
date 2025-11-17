@@ -194,7 +194,6 @@ impl IdentityNonceWasm {
         BigInt::from(self.nonce)
     }
 }
-
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
 /**
@@ -218,11 +217,13 @@ export interface IdentitiesContractKeysQuery {
   purposes?: number[];
 }
 "#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentitiesContractKeysQuery")]
     pub type IdentitiesContractKeysQueryJs;
 }
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentitiesContractKeysQueryInput {
@@ -233,54 +234,13 @@ struct IdentitiesContractKeysQueryInput {
     #[serde(default)]
     purposes: Option<Vec<u32>>,
 }
+
 struct IdentitiesContractKeysQueryParsed {
     identity_ids: Vec<Identifier>,
     contract_id: Identifier,
     purposes: Option<Vec<u32>>,
 }
-#[wasm_bindgen(typescript_custom_section)]
-const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
-/**
- * Query parameters for fetching identities' public keys for a contract.
- */
-export interface IdentitiesContractKeysQuery {
-  /**
-   * Identity identifiers to fetch keys for.
-   */
-  identityIds: Array<IdentifierLike>;
 
-  /**
-   * Data contract identifier (reserved for future filtering).
-   */
-  contractId: IdentifierLike;
-
-  /**
-   * Optional list of purposes to include.
-   * @default undefined
-   */
-  purposes?: number[];
-}
-"#;
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "IdentitiesContractKeysQuery")]
-    pub type IdentitiesContractKeysQueryJs;
-}
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct IdentitiesContractKeysQueryInput {
-    #[serde(rename = "identityIds")]
-    identity_ids: Vec<IdentifierWasm>,
-    #[serde(rename = "contractId")]
-    contract_id: IdentifierWasm,
-    #[serde(default)]
-    purposes: Option<Vec<u32>>,
-}
-struct IdentitiesContractKeysQueryParsed {
-    identity_ids: Vec<Identifier>,
-    contract_id: Identifier,
-    purposes: Option<Vec<u32>>,
-}
 fn parse_identities_contract_keys_query(
     query: IdentitiesContractKeysQueryJs,
 ) -> Result<IdentitiesContractKeysQueryParsed, WasmSdkError> {
@@ -299,6 +259,7 @@ fn parse_identities_contract_keys_query(
         purposes: input.purposes,
     })
 }
+
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_KEYS_QUERY_TS: &'static str = r#"
 /**

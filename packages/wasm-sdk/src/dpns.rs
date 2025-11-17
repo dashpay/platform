@@ -119,83 +119,6 @@ fn parse_dpns_usernames_query(
     })
 }
 
-const DEFAULT_DPNS_USERNAMES_LIMIT: u32 = 10;
-
-fn resolve_dpns_usernames_limit(limit: Option<u32>) -> u32 {
-    match limit {
-        Some(0) | None => DEFAULT_DPNS_USERNAMES_LIMIT,
-        Some(value) => value,
-    }
-}
-
-fn usernames_from_documents(documents_result: Documents) -> Array {
-    let usernames_array = Array::new();
-    for (_, doc_opt) in documents_result {
-        if let Some(doc) = doc_opt {
-            let properties = doc.properties();
-            if let (Some(Value::Text(label)), Some(Value::Text(parent_domain))) = (
-                properties.get("label"),
-                properties.get("normalizedParentDomainName"),
-            ) {
-                let username = format!("{}.{}", label, parent_domain);
-                usernames_array.push(&JsValue::from(username));
-            }
-        }
-    }
-    usernames_array
-}
-
-// TS definition for DpnsUsernamesQuery used by getDpnsUsernames*
-#[wasm_bindgen(typescript_custom_section)]
-const DPNS_USERNAMES_QUERY_TS: &'static str = r#"
-/**
- * Query parameters for retrieving DPNS usernames.
- */
-export interface DpnsUsernamesQuery {
-  /**
-   * Identity to fetch usernames for.
-   */
-  identityId: IdentifierLike;
-
-  /**
-   * Maximum number of usernames to return. Use 0 for default.
-   * @default 10
-   */
-  limit?: number;
-}
-"#;
-
-#[wasm_bindgen]
-extern "C" {
-    #[wasm_bindgen(typescript_type = "DpnsUsernamesQuery")]
-    pub type DpnsUsernamesQueryJs;
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct DpnsUsernamesQueryInput {
-    identity_id: IdentifierWasm,
-    #[serde(default)]
-    limit: Option<u32>,
-}
-
-struct DpnsUsernamesQueryParsed {
-    identity_id: Identifier,
-    limit: Option<u32>,
-}
-
-fn parse_dpns_usernames_query(
-    query: DpnsUsernamesQueryJs,
-) -> Result<DpnsUsernamesQueryParsed, WasmSdkError> {
-    let input: DpnsUsernamesQueryInput =
-        deserialize_required_query(query, "Query object is required", "DPNS usernames query")?;
-
-    Ok(DpnsUsernamesQueryParsed {
-        identity_id: input.identity_id.into(),
-        limit: input.limit,
-    })
-}
-
 #[wasm_bindgen(js_name = "DpnsUsernamesProofResponse")]
 #[derive(Clone)]
 pub struct DpnsUsernamesProofResponseWasm {
@@ -398,7 +321,10 @@ impl WasmSdk {
     }
 
     #[wasm_bindgen(js_name = "getDpnsUsernameByName")]
-    pub async fn get_dpns_username_by_name(&self, username: &str) -> Result<DpnsUsernameInfo, WasmSdkError> {
+    pub async fn get_dpns_username_by_name(
+        &self,
+        username: &str,
+    ) -> Result<DpnsUsernameInfo, WasmSdkError> {
         const DPNS_CONTRACT_ID: &str = "GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec";
         const DPNS_DOCUMENT_TYPE: &str = "domain";
 
@@ -521,10 +447,7 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen(
-        js_name = "getDpnsUsernames",
-        unchecked_return_type = "Array<string>"
-    )]
+    #[wasm_bindgen(js_name = "getDpnsUsernames", unchecked_return_type = "Array<string>")]
     pub async fn get_dpns_usernames(
         &self,
         query: DpnsUsernamesQueryJs,

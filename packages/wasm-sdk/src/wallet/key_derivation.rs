@@ -543,7 +543,11 @@ impl WasmSdk {
         account: u32,
         index: u32,
     ) -> DerivationPathWasm {
-        DerivationPathWasm::from(DerivationPath::new_dip9_mainnet(feature_type, account, index))
+        DerivationPathWasm::from(DerivationPath::new_dip9_mainnet(
+            feature_type,
+            account,
+            index,
+        ))
     }
 
     /// Create a DIP9 testnet derivation path
@@ -553,7 +557,11 @@ impl WasmSdk {
         account: u32,
         index: u32,
     ) -> DerivationPathWasm {
-        DerivationPathWasm::from(DerivationPath::new_dip9_testnet(feature_type, account, index))
+        DerivationPathWasm::from(DerivationPath::new_dip9_testnet(
+            feature_type,
+            account,
+            index,
+        ))
     }
 
     /// Create a DIP13 mainnet derivation path (for HD masternode keys)

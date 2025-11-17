@@ -486,9 +486,8 @@ impl WasmSdk {
         let (document_result, metadata, proof) =
             Document::fetch_with_metadata_and_proof(self.as_ref(), query, None).await?;
 
-        let document_js = document_result.map(|doc| {
-            DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None)
-        });
+        let document_js = document_result
+            .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
 
         Ok(ProofMetadataResponseWasm::from_parts(
             JsValue::from(document_js),

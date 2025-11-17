@@ -204,7 +204,10 @@ fn parse_vote_polls_by_document_type_query(
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getContestedResources", unchecked_return_type = "Array<any>")]
+    #[wasm_bindgen(
+        js_name = "getContestedResources",
+        unchecked_return_type = "Array<any>"
+    )]
     pub async fn get_contested_resources(
         &self,
         query: VotePollsByDocumentTypeQueryJs,
