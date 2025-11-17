@@ -20,7 +20,7 @@ export class TokensFacade {
     return w.getTokenPriceByContract(contractId, tokenPosition);
   }
 
-  async totalSupply(tokenId: wasm.IdentifierLike): Promise<wasm.TokenTotalSupply | null> {
+  async totalSupply(tokenId: wasm.IdentifierLike): Promise<wasm.TokenTotalSupply | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getTokenTotalSupply(tokenId);
   }

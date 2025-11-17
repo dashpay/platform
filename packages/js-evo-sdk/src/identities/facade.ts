@@ -54,12 +54,12 @@ export class IdentitiesFacade {
     return w.getIdentityContractNonceWithProofInfo(identityId, contractId);
   }
 
-  async balance(identityId: wasm.IdentifierLike): Promise<wasm.IdentityBalance> {
+  async balance(identityId: wasm.IdentifierLike): Promise<wasm.IdentityBalanceInfo> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalance(identityId);
   }
 
-  async balanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalance>> {
+  async balanceWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<wasm.IdentityBalanceInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getIdentityBalanceWithProofInfo(identityId);
   }
