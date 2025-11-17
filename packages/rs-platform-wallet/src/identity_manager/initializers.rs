@@ -14,7 +14,6 @@ impl IdentityManager {
     }
 
     /// Create a new identity manager with an SDK instance
-    #[cfg(feature = "sdk")]
     pub fn new_with_sdk(sdk: std::sync::Arc<dash_sdk::Sdk>) -> Self {
         Self {
             identities: indexmap::IndexMap::new(),
@@ -24,13 +23,11 @@ impl IdentityManager {
     }
 
     /// Set the SDK instance
-    #[cfg(feature = "sdk")]
     pub fn set_sdk(&mut self, sdk: std::sync::Arc<dash_sdk::Sdk>) {
         self.sdk = Some(sdk);
     }
 
     /// Get a reference to the SDK instance
-    #[cfg(feature = "sdk")]
     pub fn sdk(&self) -> Option<&std::sync::Arc<dash_sdk::Sdk>> {
         self.sdk.as_ref()
     }

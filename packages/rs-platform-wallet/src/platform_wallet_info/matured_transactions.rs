@@ -1,7 +1,7 @@
-//! Processing matured transactions for identity registration detection
+//! Processing asset lock transactions for identity registration detection
 //!
 //! This module handles the detection and fetching of identities created from
-//! matured asset lock transactions.
+//! asset lock transactions.
 
 use super::PlatformWalletInfo;
 use crate::error::PlatformWalletError;
@@ -10,16 +10,62 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::immature_transaction::ImmatureTransaction;
 use key_wallet::Network;
 
-#[cfg(feature = "sdk")]
-use crate::ContactRequest;
+#[allow(unused_imports)] use crate::ContactRequest;
 
-#[cfg(feature = "sdk")]
 use dpp::identity::accessors::IdentityGettersV0;
 
 impl PlatformWalletInfo {
-    /// Discover identities and fetch contact requests after matured asset locks
+    /// Discover identity and fetch contact requests for a single asset lock transaction
     ///
-    /// When asset lock transactions mature, identities may have been registered.
+    /// This is called automatically when an asset lock transaction is detected.
+    ///
+    /// # Arguments
+    ///
+    /// * `wallet` - The wallet to derive authentication keys from
+    /// * `network` - The network to operate on
+    /// * `tx` - The asset lock transaction
+    ///
+    /// # Returns
+    ///
+    /// Returns Ok(Some(identity_id)) if found, Ok(None) if not found
+    pub async fn fetch_identity_and_contacts_for_asset_lock(
+        &mut self,
+        wallet: &key_wallet::Wallet,
+        network: Network,
+        tx: &dashcore::Transaction,
+    ) -> Result<Option<Identifier>, PlatformWalletError> {
+        use dashcore::hashes::Hash;
+        use key_wallet::wallet::immature_transaction::AffectedAccounts;
+
+        // Create an ImmatureTransaction wrapper
+        // Note: For asset locks detected in check_transaction, we don't have full block info yet
+        // We use placeholder values for height/block_hash since we only need the transaction
+        // for identity discovery
+        let immature_tx = ImmatureTransaction {
+            transaction: tx.clone(),
+            txid: tx.txid(),
+            height: 0, // Placeholder - not used for identity discovery
+            block_hash: dashcore::BlockHash::all_zeros(),
+            timestamp: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+            maturity_confirmations: 0,
+            affected_accounts: AffectedAccounts::new(),
+            total_received: 0,
+            is_coinbase: false,
+        };
+
+        let result = self
+            .fetch_contact_requests_for_identities_after_asset_locks(wallet, network, &[immature_tx])
+            .await?;
+
+        Ok(result.first().copied())
+    }
+
+    /// Discover identities and fetch contact requests after asset locks
+    ///
+    /// When asset lock transactions are seen (added as immature), identities may have been registered.
     /// This searches for the first identity key to discover newly registered identities
     /// and fetches their DashPay contact requests.
     ///
@@ -27,17 +73,16 @@ impl PlatformWalletInfo {
     ///
     /// * `wallet` - The wallet to derive authentication keys from
     /// * `network` - The network to operate on
-    /// * `matured_transactions` - List of matured transactions from process_matured_transactions
+    /// * `asset_lock_transactions` - List of asset lock transactions from pending_asset_locks
     ///
     /// # Returns
     ///
     /// Returns a list of identity IDs for which contact requests were fetched
-    #[cfg(feature = "sdk")]
-    pub async fn fetch_contact_requests_for_identities_after_matured_asset_locks(
+    pub async fn fetch_contact_requests_for_identities_after_asset_locks(
         &mut self,
         wallet: &key_wallet::Wallet,
         network: Network,
-        matured_transactions: &[ImmatureTransaction],
+        asset_lock_transactions: &[ImmatureTransaction],
     ) -> Result<Vec<Identifier>, PlatformWalletError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         use dash_sdk::platform::Fetch;
@@ -46,14 +91,7 @@ impl PlatformWalletInfo {
         let mut identities_processed = Vec::new();
 
         // Early return if no asset lock transactions
-        let has_asset_locks = matured_transactions.iter().any(|tx| {
-            matches!(
-                &tx.transaction.special_transaction_payload,
-                Some(TransactionPayload::AssetLockPayloadType(_))
-            )
-        });
-
-        if !has_asset_locks {
+        if asset_lock_transactions.is_empty() {
             return Ok(identities_processed);
         }
 
@@ -197,7 +235,6 @@ impl PlatformWalletInfo {
 }
 
 /// Parse a contact request document into a ContactRequest struct
-#[cfg(feature = "sdk")]
 fn parse_contact_request_document(
     doc: &dpp::document::Document,
 ) -> Result<ContactRequest, PlatformWalletError> {
@@ -283,16 +320,4 @@ fn parse_contact_request_document(
         created_at_core_block_height,
         created_at,
     ))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_contact_request_document_basic() {
-        // This is a basic compilation test
-        // Full testing would require creating mock Document instances
-        assert!(true);
-    }
 }

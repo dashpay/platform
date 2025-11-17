@@ -3,7 +3,7 @@
 //! This module provides the `EstablishedContact` struct representing a bidirectional
 //! relationship (friendship) between two identities where both have sent contact requests.
 
-use crate::ContactRequest;
+#[allow(unused_imports)] use crate::ContactRequest;
 use dpp::prelude::Identifier;
 
 /// An established contact represents a bidirectional relationship between two identities

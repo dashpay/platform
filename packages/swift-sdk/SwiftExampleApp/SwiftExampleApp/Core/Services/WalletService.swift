@@ -3,6 +3,30 @@ import SwiftData
 import Combine
 @preconcurrency import SwiftDashSDK
 
+// MARK: - Timeout Helper
+
+struct TimeoutError: Error {}
+
+func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Sendable () async throws -> T) async throws -> T {
+    try await withThrowingTaskGroup(of: T.self) { group in
+        // Add the actual operation
+        group.addTask {
+            try await operation()
+        }
+
+        // Add timeout task
+        group.addTask {
+            try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            throw TimeoutError()
+        }
+
+        // Return first result (either completion or timeout)
+        let result = try await group.next()!
+        group.cancelAll()
+        return result
+    }
+}
+
 // MARK: - Logging Preferences
 
 enum LoggingPreset: String {
@@ -124,6 +148,7 @@ public class WalletService: ObservableObject {
     private var balanceUpdateTask: Task<Void, Never>?
     // Stats polling removed (progress is event-driven)
     private var isClearingStorage = false
+    @Published public var isInitializing = false
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
     private(set) var walletManager: WalletManager?
@@ -143,6 +168,11 @@ public class WalletService: ObservableObject {
 
     // Expose base sync height to UI in a safe way
     public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
+
+    // Expose SPV client for filter match queries
+    public var spvClientHandle: UnsafeMutablePointer<FFIDashSpvClient>? {
+        spvClient?.clientHandle
+    }
 
     /// Returns the expected chain tip for the current network based on wall-clock time.
     private func expectedChainTipHeight() -> Int? {
@@ -212,6 +242,10 @@ public class WalletService: ObservableObject {
         let clientBox = SendableBox(client)
         let net = currentNetwork
         let mnEnabled = shouldSyncMasternodes
+
+        // Mark as initializing
+        isInitializing = true
+
         Task.detached(priority: .userInitiated) {
             let clientLocal = clientBox.value
             do {
@@ -246,8 +280,11 @@ public class WalletService: ObservableObject {
                         WalletService.shared.latestHeaderHeight = Int(cp)
                     }
 
-                    if let processed = stats?.blocksProcessed, processed > 0 {
-                        WalletService.shared.blocksHit = Int(min(processed, UInt64(Int.max)))
+                    // Update blocks hit from persistent wallet transaction data
+                    // This uses the wallet's stored transactions, not ephemeral sync stats
+                    if let spvClient = WalletService.shared.spvClient {
+                        let persistentBlocksHit = spvClient.getBlocksWithTransactionsCount()
+                        WalletService.shared.blocksHit = Int(min(persistentBlocksHit, UInt64(Int.max)))
                     }
                 }
 
@@ -267,9 +304,18 @@ public class WalletService: ObservableObject {
                 } catch {
                     SDKLogger.error("❌ Failed to initialize WalletManager wrapper:\nError: \(error)")
                 }
+
+                // Mark initialization as complete
+                await MainActor.run {
+                    WalletService.shared.isInitializing = false
+                    SDKLogger.log("✅ SPV Client initialization complete", minimumLevel: .medium)
+                }
             } catch {
                 SDKLogger.error("❌ Failed to initialize SPV Client: \(error)")
-                await MainActor.run { WalletService.shared.lastSyncError = error }
+                await MainActor.run {
+                    WalletService.shared.lastSyncError = error
+                    WalletService.shared.isInitializing = false
+                }
             }
         }
         
@@ -419,7 +465,14 @@ public class WalletService: ObservableObject {
             print("❌ SPV Client not initialized")
             return
         }
-        
+
+        // Load persistent blocks hit count from wallet on startup
+        let persistentBlocksHit = spvClient.getBlocksWithTransactionsCount()
+        if persistentBlocksHit > 0 {
+            blocksHit = Int(min(persistentBlocksHit, UInt64(Int.max)))
+            print("[SPV][Wallet] Restored \(blocksHit) blocks with transactions from persistent storage")
+        }
+
         // Compute baseline from all wallets on the active network and apply before starting
         let baseline: UInt32 = computeNetworkBaselineSyncFromHeight(for: currentNetwork)
         do {
@@ -525,15 +578,27 @@ public class WalletService: ObservableObject {
             let client = clientBox.value
             let service = serviceBox.value
 
+            print("[SPV][Clear] Starting storage clear operation...")
+
             do {
-                if fullReset {
-                    try await client.clearStorage()
-                } else {
-                    try await client.clearSyncState()
+                // Add timeout protection
+                try await withTimeout(seconds: 30) {
+                    if fullReset {
+                        try await client.clearStorage()
+                    } else {
+                        try await client.clearSyncState()
+                    }
                 }
+
+                print("[SPV][Clear] Storage cleared successfully")
 
                 await MainActor.run {
                     service.resetAfterClearingStorage(fullReset: fullReset)
+                }
+            } catch is TimeoutError {
+                print("❌ [SPV][Clear] Timeout waiting for storage clear - client may be busy")
+                await MainActor.run {
+                    service.lastSyncError = SPVError.storageOperationFailed("Clear operation timed out. Try stopping sync first.")
                 }
             } catch {
                 await MainActor.run {

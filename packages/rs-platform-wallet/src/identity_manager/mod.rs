@@ -7,7 +7,6 @@ use crate::managed_identity::ManagedIdentity;
 use dpp::prelude::Identifier;
 use indexmap::IndexMap;
 
-#[cfg(feature = "sdk")]
 use std::sync::Arc;
 
 // Import implementation modules
@@ -24,7 +23,6 @@ pub struct IdentityManager {
     pub primary_identity_id: Option<Identifier>,
 
     /// SDK instance for platform operations (optional, available with 'sdk' feature)
-    #[cfg(feature = "sdk")]
     pub sdk: Option<Arc<dash_sdk::Sdk>>,
 }
 
@@ -33,7 +31,6 @@ impl Default for IdentityManager {
         Self {
             identities: IndexMap::new(),
             primary_identity_id: None,
-            #[cfg(feature = "sdk")]
             sdk: None,
         }
     }

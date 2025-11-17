@@ -19,11 +19,8 @@ use key_wallet::wallet::managed_wallet_info::ManagedAccountOperations;
 use key_wallet::Network;
 use key_wallet::Wallet;
 
-#[cfg(feature = "sdk")]
 use dpp::document::DocumentV0Getters;
-#[cfg(feature = "sdk")]
 use dpp::identity::signer::Signer;
-#[cfg(feature = "sdk")]
 use dpp::identity::IdentityPublicKey;
 
 impl PlatformWalletInfo {
@@ -323,7 +320,6 @@ impl PlatformWalletInfo {
     /// # Returns
     ///
     /// Returns the document ID and recipient ID on success
-    #[cfg(feature = "sdk")]
     pub async fn send_contact_request<S, F, Fut, G, Gut>(
         &mut self,
         wallet: &mut Wallet,

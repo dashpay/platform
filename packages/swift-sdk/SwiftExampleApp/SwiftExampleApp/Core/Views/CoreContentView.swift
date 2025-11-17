@@ -122,11 +122,13 @@ var body: some View {
                             }
                             .padding(.horizontal, 16)
                             .padding(.vertical, 8)
-                            .background(Color.red)
+                            .background((walletService.isSyncing || walletService.isInitializing) ? Color.gray : Color.red)
                             .foregroundColor(.white)
                             .cornerRadius(8)
                         }
                         .buttonStyle(.plain)
+                        .disabled(walletService.isSyncing || walletService.isInitializing)
+                        .opacity((walletService.isSyncing || walletService.isInitializing) ? 0.5 : 1.0)
                     }
                     
                     // Headers sync progress
@@ -169,7 +171,12 @@ var body: some View {
                         detail: "Compact Filters: \(Int(safeTransactionProgress * 100))%",
                         icon: "arrow.left.arrow.right",
                         trailingValue: filterHeightsDisplay,
-                        onRestart: restartTransactionSync
+                        onRestart: restartTransactionSync,
+                        navigationDestination: AnyView(
+                            FilterMatchesView(walletService: walletService)
+                                .environmentObject(walletService)
+                                .environmentObject(unifiedAppState)
+                        )
                     )
                     // Blocks hit counter
                     Text("Blocks hit: \(walletService.blocksHit)")
@@ -296,6 +303,12 @@ var body: some View {
     }
 
     private func clearSyncData() {
+        // Button is disabled during sync and initialization
+        guard !walletService.isSyncing && !walletService.isInitializing else {
+            print("⚠️ Clear button should be disabled during sync/initialization")
+            return
+        }
+
         walletService.clearSpvStorage(fullReset: true)
     }
 }
@@ -309,27 +322,43 @@ struct SyncProgressRow: View {
     let icon: String
     let trailingValue: String?
     let onRestart: () -> Void
-    
+    var navigationDestination: AnyView? = nil
+
     // Ensure progress is always between 0 and 1
     private var safeProgress: Double {
         min(max(progress, 0.0), 1.0)
     }
-    
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label(title, systemImage: icon)
-                    .font(.subheadline)
-                    .foregroundColor(.primary)
-                
+                // Make only the label tappable if there's a navigation destination
+                if let destination = navigationDestination {
+                    NavigationLink(destination: destination) {
+                        HStack(spacing: 6) {
+                            Image(systemName: icon)
+                                .font(.subheadline)
+                            Text(title)
+                                .font(.subheadline)
+                                .fontWeight(.semibold)
+                        }
+                        .foregroundColor(.blue)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                } else {
+                    Label(title, systemImage: icon)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+
                 Spacer()
-                
+
                 if let trailingValue = trailingValue {
                     Text(trailingValue)
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-                
+
                 Button(action: onRestart) {
                     Image(systemName: "arrow.clockwise")
                         .font(.caption)
@@ -337,12 +366,12 @@ struct SyncProgressRow: View {
                 }
                 .buttonStyle(BorderlessButtonStyle())
             }
-            
+
             VStack(alignment: .leading, spacing: 4) {
                 ProgressView(value: safeProgress)
                     .progressViewStyle(LinearProgressViewStyle())
                     .tint(progressColor(for: safeProgress))
-                
+
                 Text(detail)
                     .font(.caption2)
                     .foregroundColor(.secondary)
