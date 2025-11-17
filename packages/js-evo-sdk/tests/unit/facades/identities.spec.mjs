@@ -119,15 +119,13 @@ describe('IdentitiesFacade', () => {
     expect(wasmSdk.getIdentityByNonUniquePublicKeyHashWithProofInfo).to.be.calledOnceWithExactly('hash', undefined);
   });
 
-  it('contractKeys helpers convert purposes to Uint32Array and forward', async () => {
-    await client.identities.contractKeys({ identityIds: ['a'], contractId: 'c', purposes: [1, 2] });
-    await client.identities.contractKeysWithProof({ identityIds: ['b'], contractId: 'c' });
-    const arrayCall = wasmSdk.getIdentitiesContractKeys.firstCall.args;
-    expect(arrayCall[0]).to.deep.equal(['a']);
-    expect(arrayCall[1]).to.equal('c');
-    expect(arrayCall[2]).to.be.instanceOf(Uint32Array);
-    expect(Array.from(arrayCall[2])).to.deep.equal([1, 2]);
-    expect(wasmSdk.getIdentitiesContractKeysWithProofInfo).to.be.calledOnceWithExactly(['b'], 'c', null);
+  it('contractKeys helpers forward query object', async () => {
+    const query = { identityIds: ['a'], contractId: 'c', purposes: [1, 2] };
+    await client.identities.contractKeys(query);
+    const proofQuery = { identityIds: ['b'], contractId: 'c' };
+    await client.identities.contractKeysWithProof(proofQuery);
+    expect(wasmSdk.getIdentitiesContractKeys).to.be.calledOnceWithExactly(query);
+    expect(wasmSdk.getIdentitiesContractKeysWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
   });
 
   it('tokenBalances helpers forward to wasm', async () => {

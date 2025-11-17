@@ -1,6 +1,6 @@
+import * as wasm from '../wasm.js';
 import { asJsonString } from '../util.js';
 import type { EvoSDK } from '../sdk.js';
-import type { DocumentsQuery } from '../wasm.js';
 
 export class DocumentsFacade {
   private sdk: EvoSDK;
@@ -10,30 +10,30 @@ export class DocumentsFacade {
   }
 
   // Query many documents
-  async query(query: DocumentsQuery): Promise<any> {
+  async query(query: wasm.DocumentsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocuments(query);
   }
 
-  async queryWithProof(query: DocumentsQuery): Promise<any> {
+  async queryWithProof(query: wasm.DocumentsQuery): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentsWithProofInfo(query);
   }
 
-  async get(contractId: string, type: string, documentId: string): Promise<any> {
+  async get(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocument(contractId, type, documentId);
   }
 
-  async getWithProof(contractId: string, type: string, documentId: string): Promise<any> {
+  async getWithProof(contractId: wasm.IdentifierLike, type: string, documentId: wasm.IdentifierLike): Promise<any> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDocumentWithProofInfo(contractId, type, documentId);
   }
 
   async create(args: {
-    contractId: string;
+    contractId: wasm.IdentifierLike;
     type: string;
-    ownerId: string;
+    ownerId: wasm.IdentifierLike;
     data: unknown;
     entropyHex: string;
     privateKeyWif: string;
@@ -51,10 +51,10 @@ export class DocumentsFacade {
   }
 
   async replace(args: {
-    contractId: string;
+    contractId: wasm.IdentifierLike;
     type: string;
-    documentId: string;
-    ownerId: string;
+    documentId: wasm.IdentifierLike;
+    ownerId: wasm.IdentifierLike;
     data: unknown;
     revision: number | bigint;
     privateKeyWif: string;
@@ -72,25 +72,25 @@ export class DocumentsFacade {
     );
   }
 
-  async delete(args: { contractId: string; type: string; documentId: string; ownerId: string; privateKeyWif: string }): Promise<any> {
+  async delete(args: { contractId: wasm.IdentifierLike; type: string; documentId: wasm.IdentifierLike; ownerId: wasm.IdentifierLike; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, privateKeyWif } = args;
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentDelete(contractId, type, documentId, ownerId, privateKeyWif);
   }
 
-  async transfer(args: { contractId: string; type: string; documentId: string; ownerId: string; recipientId: string; privateKeyWif: string }): Promise<any> {
+  async transfer(args: { contractId: wasm.IdentifierLike; type: string; documentId: wasm.IdentifierLike; ownerId: wasm.IdentifierLike; recipientId: wasm.IdentifierLike; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, recipientId, privateKeyWif } = args;
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentTransfer(contractId, type, documentId, ownerId, recipientId, privateKeyWif);
   }
 
-  async purchase(args: { contractId: string; type: string; documentId: string; buyerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
+  async purchase(args: { contractId: wasm.IdentifierLike; type: string; documentId: wasm.IdentifierLike; buyerId: wasm.IdentifierLike; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, buyerId, price, privateKeyWif } = args;
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentPurchase(contractId, type, documentId, buyerId, BigInt(price), privateKeyWif);
   }
 
-  async setPrice(args: { contractId: string; type: string; documentId: string; ownerId: string; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
+  async setPrice(args: { contractId: wasm.IdentifierLike; type: string; documentId: wasm.IdentifierLike; ownerId: wasm.IdentifierLike; price: number | bigint | string; privateKeyWif: string }): Promise<any> {
     const { contractId, type, documentId, ownerId, price, privateKeyWif } = args;
     const w = await this.sdk.getWasmSdkConnected();
     return w.documentSetPrice(contractId, type, documentId, ownerId, BigInt(price), privateKeyWif);

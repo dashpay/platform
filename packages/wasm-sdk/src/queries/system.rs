@@ -757,6 +757,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalance")]
     pub async fn get_prefunded_specialized_balance(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
     ) -> Result<PrefundedSpecializedBalanceWasm, WasmSdkError> {
@@ -780,7 +781,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "waitForStateTransitionResult")]
     pub async fn wait_for_state_transition_result(
         &self,
-        state_transition_hash: &str,
+        #[wasm_bindgen(js_name = "stateTransitionHash")] state_transition_hash: &str,
     ) -> Result<StateTransitionResultWasm, WasmSdkError> {
         use dapi_grpc::platform::v0::wait_for_state_transition_result_request::{
             Version, WaitForStateTransitionResultRequestV0,
@@ -929,6 +930,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getPrefundedSpecializedBalanceWithProofInfo")]
     pub async fn get_prefunded_specialized_balance_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {

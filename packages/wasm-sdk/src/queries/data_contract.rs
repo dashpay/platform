@@ -54,7 +54,7 @@ export interface DataContractHistoryQuery {
   /**
    * Data contract identifier.
    */
-  dataContractId: Identifier | Uint8Array | string;
+  dataContractId: IdentifierLike
 
   /**
    * Maximum number of entries to return.
@@ -128,6 +128,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContract")]
     pub async fn get_data_contract(
         &self,
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
     ) -> Result<Option<DataContractWasm>, WasmSdkError> {
@@ -147,6 +148,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getDataContractWithProofInfo")]
     pub async fn get_data_contract_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
     ) -> Result<DataContractProofResponseWasm, WasmSdkError> {

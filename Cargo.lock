@@ -7578,7 +7578,6 @@ version = "2.2.0-dev.1"
 dependencies = [
  "base64 0.22.1",
  "bip39",
- "bs58",
  "console_error_panic_hook",
  "dapi-grpc",
  "dash-sdk",

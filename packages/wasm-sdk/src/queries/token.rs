@@ -119,9 +119,10 @@ impl WasmSdk {
     /// ```
     #[wasm_bindgen(js_name = "calculateTokenIdFromContract")]
     pub fn calculate_token_id_from_contract(
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<String, WasmSdkError> {
         // Parse contract ID
         let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
@@ -164,9 +165,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPriceByContract")]
     pub async fn get_token_price_by_contract(
         &self,
+        #[wasm_bindgen(js_name = "contractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
     ) -> Result<TokenPriceInfoWasm, WasmSdkError> {
         // Parse contract ID
         let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
@@ -186,19 +188,23 @@ impl WasmSdk {
         if let Some(price_opt) = prices_result.get(&token_identifier) {
             if let Some(schedule) = price_opt.as_ref() {
                 let (base_price, current_price) = match &schedule {
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
-                        (price.to_string(), price.to_string())
-                    },
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(prices) => {
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(
+                        price,
+                    ) => (price.to_string(), price.to_string()),
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(
+                        prices,
+                    ) => {
                         // Use first price as base, last as current
-                        let base = prices.first_key_value()
+                        let base = prices
+                            .first_key_value()
                             .map(|(_, p)| p.to_string())
                             .unwrap_or_else(|| "0".to_string());
-                        let current = prices.last_key_value()
+                        let current = prices
+                            .last_key_value()
                             .map(|(_, p)| p.to_string())
                             .unwrap_or_else(|| "0".to_string());
                         (base, current)
-                    },
+                    }
                 };
 
                 Ok(TokenPriceInfoWasm::new(
@@ -225,8 +231,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesTokenBalances")]
     pub async fn get_identities_token_balances(
         &self,
+        #[wasm_bindgen(js_name = "identityIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         identity_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<Map, WasmSdkError> {
@@ -264,8 +272,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityTokenInfos")]
     pub async fn get_identity_token_infos(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
@@ -304,8 +314,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfos")]
     pub async fn get_identities_token_infos(
         &self,
+        #[wasm_bindgen(js_name = "identityIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         identity_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<Map, WasmSdkError> {
@@ -344,6 +356,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenStatuses")]
     pub async fn get_token_statuses(
         &self,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
@@ -371,6 +384,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePrices")]
     pub async fn get_token_direct_purchase_prices(
         &self,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<Map, WasmSdkError> {
@@ -389,10 +403,12 @@ impl WasmSdk {
             if let Some(Some(schedule)) = prices_result.get(&token) {
                 let token_id_wasm = IdentifierWasm::from(token);
                 let (base_price, current_price) = match schedule {
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
-                        (price.to_string(), price.to_string())
-                    }
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(prices) => {
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(
+                        price,
+                    ) => (price.to_string(), price.to_string()),
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(
+                        prices,
+                    ) => {
                         let base = prices
                             .first_key_value()
                             .map(|(_, p)| p.to_string())
@@ -419,6 +435,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenContractInfo")]
     pub async fn get_token_contract_info(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
     ) -> Result<Option<TokenContractInfoWasm>, WasmSdkError> {
@@ -437,8 +454,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaim")]
     pub async fn get_token_perpetual_distribution_last_claim(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<Option<TokenLastClaimWasm>, WasmSdkError> {
@@ -481,21 +500,38 @@ impl WasmSdk {
 
         // Extract result from response and convert to our expected format
         let claim_result = match response.inner.version {
-            Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(v0)) => {
+            Some(
+                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(
+                    v0,
+                ),
+            ) => {
                 match v0.result {
-                    Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(claim)) => {
-                        // Convert gRPC response to RewardDistributionMoment equivalent
+                    Some(
+                        dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
+                            claim,
+                        ),
+                    ) => {
                         match claim.paid_at {
-                            Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::TimestampMs(timestamp)) => {
-                                Some((timestamp, 0)) // (timestamp_ms, block_height)
-                            },
-                            Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::BlockHeight(height)) => {
-                                Some((0, height)) // (timestamp_ms, block_height)
-                            },
-                            Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::Epoch(epoch)) => {
-                                Some((0, epoch as u64)) // (timestamp_ms, block_height)
-                            },
-                            Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(bytes)) => {
+                            Some(
+                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::TimestampMs(
+                                    timestamp,
+                                ),
+                            ) => Some((timestamp, 0)),
+                            Some(
+                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::BlockHeight(
+                                    height,
+                                ),
+                            ) => Some((0, height)),
+                            Some(
+                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::Epoch(
+                                    epoch,
+                                ),
+                            ) => Some((0, epoch as u64)),
+                            Some(
+                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(
+                                    bytes,
+                                ),
+                            ) => {
                                 // Raw bytes format specification (confirmed via server trace logs):
                                 // - Total length: 8 bytes (big-endian encoding)
                                 // - Bytes 0-3: Timestamp as u32 (seconds since Unix epoch, 0 = no timestamp recorded)
@@ -505,12 +541,27 @@ impl WasmSdk {
                                 // - Timestamp: 0 (unset) or >= 1609459200 (Jan 1, 2021 00:00:00 UTC, before Dash Platform mainnet)
                                 // - Block height: 0 (invalid) or >= 1 (valid blockchain height)
                                 if bytes.len() >= 8 {
-                                    let timestamp = u32::from_be_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]) as u64;
-                                    let block_height = u32::from_be_bytes([bytes[4], bytes[5], bytes[6], bytes[7]]) as u64;
+                                    let timestamp = u32::from_be_bytes([
+                                        bytes[0],
+                                        bytes[1],
+                                        bytes[2],
+                                        bytes[3],
+                                    ]) as u64;
+                                    let block_height = u32::from_be_bytes([
+                                        bytes[4],
+                                        bytes[5],
+                                        bytes[6],
+                                        bytes[7],
+                                    ]) as u64;
 
                                     // Validate timestamp: must be 0 (unset) or a reasonable Unix timestamp
-                                    let validated_timestamp = if timestamp != 0 && timestamp < 1609459200 {
-                                    tracing::warn!(target = "wasm_sdk", timestamp, "Invalid timestamp in raw bytes (too early)");
+                                    let validated_timestamp = if timestamp != 0
+                                        && timestamp < 1609459200
+                                    {
+                                        tracing::warn!(
+                                            target = "wasm_sdk", timestamp,
+                                            "Invalid timestamp in raw bytes (too early)"
+                                        );
                                         0 // Use 0 for invalid timestamps
                                     } else {
                                         timestamp
@@ -518,23 +569,31 @@ impl WasmSdk {
 
                                     // Validate block height: must be a positive value
                                     let validated_block_height = if block_height == 0 {
-                                    tracing::warn!(target = "wasm_sdk", "Invalid block height in raw bytes: 0 (genesis block not expected)");
+                                        tracing::warn!(
+                                            target = "wasm_sdk",
+                                            "Invalid block height in raw bytes: 0 (genesis block not expected)"
+                                        );
                                         1 // Use minimum valid block height
                                     } else {
                                         block_height
                                     };
 
-                                    Some((validated_timestamp * 1000, validated_block_height)) // Convert timestamp to milliseconds
+                                    Some((validated_timestamp * 1000, validated_block_height))
                                 } else if bytes.len() >= 4 {
                                     // Fallback: decode only the last 4 bytes as block height
                                     let block_height = u32::from_be_bytes([
-                                        bytes[bytes.len() - 4], bytes[bytes.len() - 3],
-                                        bytes[bytes.len() - 2], bytes[bytes.len() - 1]
+                                        bytes[bytes.len() - 4],
+                                        bytes[bytes.len() - 3],
+                                        bytes[bytes.len() - 2],
+                                        bytes[bytes.len() - 1],
                                     ]) as u64;
 
                                     // Validate block height
                                     let validated_block_height = if block_height == 0 {
-                                    tracing::warn!(target = "wasm_sdk", "Invalid block height in fallback parsing: 0");
+                                        tracing::warn!(
+                                            target = "wasm_sdk",
+                                            "Invalid block height in fallback parsing: 0"
+                                        );
                                         1 // Use minimum valid block height
                                     } else {
                                         block_height
@@ -542,24 +601,31 @@ impl WasmSdk {
 
                                     Some((0, validated_block_height))
                                 } else {
-                                    tracing::warn!(target = "wasm_sdk", len = bytes.len(), "Insufficient raw bytes length (expected 8 or 4)");
+                                    tracing::warn!(
+                                        target = "wasm_sdk", len = bytes.len(),
+                                        "Insufficient raw bytes length (expected 8 or 4)"
+                                    );
                                     Some((0, 0))
                                 }
-                            },
-                            None => {
-                                None // No paid_at info
                             }
+                            None => None, // No paid_at info
                         }
-                    },
-                    Some(dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(_)) => {
-                        return Err(WasmSdkError::generic("Received proof instead of data - this should not happen with prove: false"))
-                    },
+                    }
+                    Some(
+                        dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(
+                            _,
+                        ),
+                    ) => {
+                        return Err(
+                            WasmSdkError::generic(
+                                "Received proof instead of data - this should not happen with prove: false",
+                            ),
+                        );
+                    }
                     None => None, // No claim found
                 }
-            },
-            None => {
-                return Err(WasmSdkError::generic("Invalid response version"))
             }
+            None => return Err(WasmSdkError::generic("Invalid response version")),
         };
 
         Ok(claim_result.map(|(timestamp_ms, block_height)| {
@@ -570,6 +636,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
     pub async fn get_token_total_supply(
         &self,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<Option<TokenTotalSupplyWasm>, WasmSdkError> {
@@ -590,8 +657,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesTokenBalancesWithProofInfo")]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         identity_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -635,6 +704,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenStatusesWithProofInfo")]
     pub async fn get_token_statuses_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -665,6 +735,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenTotalSupplyWithProofInfo")]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -697,8 +768,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentityTokenInfosWithProofInfo")]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -740,8 +813,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getIdentitiesTokenInfosWithProofInfo")]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         identity_ids: Vec<JsValue>,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -783,6 +858,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenDirectPurchasePricesWithProofInfo")]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "tokenIds")]
         #[wasm_bindgen(unchecked_param_type = "Array<Identifier | Uint8Array | string>")]
         token_ids: Vec<JsValue>,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -805,10 +881,12 @@ impl WasmSdk {
             if let Some(Some(schedule)) = prices_result.get(&token) {
                 let token_id_wasm = IdentifierWasm::from(token);
                 let (base_price, current_price) = match schedule {
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(price) => {
-                        (price.to_string(), price.to_string())
-                    }
-                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(prices) => {
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SinglePrice(
+                        price,
+                    ) => (price.to_string(), price.to_string()),
+                    dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule::SetPrices(
+                        prices,
+                    ) => {
                         let base = prices
                             .first_key_value()
                             .map(|(_, p)| p.to_string())
@@ -837,6 +915,7 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenContractInfoWithProofInfo")]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -863,8 +942,10 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo")]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
+        #[wasm_bindgen(js_name = "tokenId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         token_id: JsValue,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
@@ -892,15 +973,15 @@ impl WasmSdk {
             // Since we need both timestamp and block height in the response,
             // we'll return the moment value and type
             let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(height) => {
-                    (0, height) // No timestamp available for block-based
-                },
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(timestamp) => {
-                    (timestamp, 0) // No block height available for time-based
-                },
-                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(epoch) => {
-                    (0, epoch as u64) // Convert epoch to u64, no timestamp available
-                },
+                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::BlockBasedMoment(
+                    height,
+                ) => (0, height), // No timestamp available for block-based
+                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::TimeBasedMoment(
+                    timestamp,
+                ) => (timestamp, 0),  // No block height available for time-based
+                dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment::EpochBasedMoment(
+                    epoch,
+                ) => (0, epoch as u64), // Convert epoch to u64, no timestamp available
             };
 
             Some(TokenLastClaimWasm::new(

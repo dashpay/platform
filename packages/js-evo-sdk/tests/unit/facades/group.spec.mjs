@@ -91,12 +91,18 @@ describe('GroupFacade', () => {
       status: 'CLOSED',
     };
     await client.group.actionsWithProof(proofQuery);
-    await client.group.actionSigners('contract', 1, 'ACTIVE', 'action');
-    await client.group.actionSignersWithProof('contract', 1, 'ACTIVE', 'action');
+    const signersQuery = {
+      dataContractId: 'contract',
+      groupContractPosition: 1,
+      status: 'ACTIVE',
+      actionId: 'action',
+    };
+    await client.group.actionSigners(signersQuery);
+    await client.group.actionSignersWithProof(signersQuery);
     expect(wasmSdk.getGroupActions).to.be.calledOnceWithExactly(query);
     expect(wasmSdk.getGroupActionsWithProofInfo).to.be.calledOnceWithExactly(proofQuery);
-    expect(wasmSdk.getGroupActionSigners).to.be.calledOnceWithExactly('contract', 1, 'ACTIVE', 'action');
-    expect(wasmSdk.getGroupActionSignersWithProofInfo).to.be.calledOnceWithExactly('contract', 1, 'ACTIVE', 'action');
+    expect(wasmSdk.getGroupActionSigners).to.be.calledOnceWithExactly(signersQuery);
+    expect(wasmSdk.getGroupActionSignersWithProofInfo).to.be.calledOnceWithExactly(signersQuery);
   });
 
   it('groupsDataContracts() forwards', async () => {

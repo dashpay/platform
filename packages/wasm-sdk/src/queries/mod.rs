@@ -32,11 +32,11 @@ impl ResponseMetadataWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
         height: u64,
-        core_chain_locked_height: u32,
+        #[wasm_bindgen(js_name = "coreChainLockedHeight")] core_chain_locked_height: u32,
         epoch: u32,
-        time_ms: u64,
-        protocol_version: u32,
-        chain_id: Uint8Array,
+        #[wasm_bindgen(js_name = "timeMs")] time_ms: u64,
+        #[wasm_bindgen(js_name = "protocolVersion")] protocol_version: u32,
+        #[wasm_bindgen(js_name = "chainId")] chain_id: Uint8Array,
     ) -> Self {
         ResponseMetadataWasm {
             height,
@@ -79,7 +79,7 @@ impl ResponseMetadataWasm {
     }
 
     #[wasm_bindgen(js_name = "setChainId")]
-    pub fn set_chain_id(&mut self, chain_id: Uint8Array) {
+    pub fn set_chain_id(&mut self, #[wasm_bindgen(js_name = "chainId")] chain_id: Uint8Array) {
         self.chain_id = chain_id.to_vec();
     }
 }
@@ -113,12 +113,12 @@ pub struct ProofInfoWasm {
 impl ProofInfoWasm {
     #[wasm_bindgen(constructor)]
     pub fn new(
-        grovedb_proof: Uint8Array,
-        quorum_hash: Uint8Array,
+        #[wasm_bindgen(js_name = "grovedbProof")] grovedb_proof: Uint8Array,
+        #[wasm_bindgen(js_name = "quorumHash")] quorum_hash: Uint8Array,
         signature: Uint8Array,
         round: u32,
-        block_id_hash: Uint8Array,
-        quorum_type: u32,
+        #[wasm_bindgen(js_name = "blockIdHash")] block_id_hash: Uint8Array,
+        #[wasm_bindgen(js_name = "quorumType")] quorum_type: u32,
     ) -> Self {
         ProofInfoWasm {
             grovedb_proof: grovedb_proof.to_vec(),
@@ -161,12 +161,18 @@ impl ProofInfoWasm {
     }
 
     #[wasm_bindgen(js_name = "setGrovedbProof")]
-    pub fn set_grovedb_proof(&mut self, grovedb_proof: Uint8Array) {
+    pub fn set_grovedb_proof(
+        &mut self,
+        #[wasm_bindgen(js_name = "grovedbProof")] grovedb_proof: Uint8Array,
+    ) {
         self.grovedb_proof = grovedb_proof.to_vec();
     }
 
     #[wasm_bindgen(js_name = "setQuorumHash")]
-    pub fn set_quorum_hash(&mut self, quorum_hash: Uint8Array) {
+    pub fn set_quorum_hash(
+        &mut self,
+        #[wasm_bindgen(js_name = "quorumHash")] quorum_hash: Uint8Array,
+    ) {
         self.quorum_hash = quorum_hash.to_vec();
     }
 
@@ -176,7 +182,10 @@ impl ProofInfoWasm {
     }
 
     #[wasm_bindgen(js_name = "setBlockIdHash")]
-    pub fn set_block_id_hash(&mut self, block_id_hash: Uint8Array) {
+    pub fn set_block_id_hash(
+        &mut self,
+        #[wasm_bindgen(js_name = "blockIdHash")] block_id_hash: Uint8Array,
+    ) {
         self.block_id_hash = block_id_hash.to_vec();
     }
 }

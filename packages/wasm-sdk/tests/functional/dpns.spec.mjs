@@ -77,7 +77,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('fetches usernames for a known identity and verifies fields', async () => {
     const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
-    const list = await client.getDpnsUsernames(TEST_IDENTITY, 10);
+    const list = await client.getDpnsUsernames({ identityId: TEST_IDENTITY, limit: 10 });
     expect(list).to.be.an('array');
   });
 });

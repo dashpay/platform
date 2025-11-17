@@ -157,16 +157,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenMint)]
     pub async fn token_mint(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
         amount: String,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "recipientId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string | undefined")]
         recipient_id: JsValue,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -249,14 +252,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenBurn)]
     pub async fn token_burn(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
         amount: String,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -334,16 +339,19 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenTransfer)]
     pub async fn token_transfer(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
         amount: String,
+        #[wasm_bindgen(js_name = "senderId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         sender_id: JsValue,
+        #[wasm_bindgen(js_name = "recipientId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         recipient_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -426,15 +434,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenFreeze)]
     pub async fn token_freeze(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "identityToFreezeId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_to_freeze_id: JsValue,
+        #[wasm_bindgen(js_name = "freezerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         freezer_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -518,15 +529,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenUnfreeze)]
     pub async fn token_unfreeze(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "identityToUnfreezeId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_to_unfreeze_id: JsValue,
+        #[wasm_bindgen(js_name = "unfreezerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         unfreezer_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -613,15 +627,18 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenDestroyFrozen)]
     pub async fn token_destroy_frozen(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
+        #[wasm_bindgen(js_name = "destroyerId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         destroyer_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
@@ -711,15 +728,17 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenSetPriceForDirectPurchase)]
     pub async fn token_set_price_for_direct_purchase(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        price_type: String,
-        price_data: String,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "priceType")] price_type: String,
+        #[wasm_bindgen(js_name = "priceData")] price_data: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::fee::Credits;
         use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
@@ -786,7 +805,7 @@ impl WasmSdk {
                 _ => {
                     return Err(WasmSdkError::invalid_argument(
                         "Invalid price type. Use 'single' or 'tiered'",
-                    ))
+                    ));
                 }
             }
         };
@@ -910,14 +929,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenDirectPurchase)]
     pub async fn token_direct_purchase(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
         amount: String,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        total_agreed_price: Option<String>,
-        private_key_wif: String,
+        #[wasm_bindgen(js_name = "totalAgreedPrice")] total_agreed_price: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::fee::Credits;
 
@@ -1053,14 +1074,16 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenClaim)]
     pub async fn token_claim(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
-        distribution_type: String,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "distributionType")] distribution_type: String,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 
@@ -1088,7 +1111,7 @@ impl WasmSdk {
             _ => {
                 return Err(WasmSdkError::invalid_argument(
                     "Invalid distribution type. Use 'perpetual' or 'preprogrammed'",
-                ))
+                ));
             }
         };
 
@@ -1158,15 +1181,17 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = tokenConfigUpdate)]
     pub async fn token_config_update(
         &self,
+        #[wasm_bindgen(js_name = "dataContractId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         data_contract_id: JsValue,
-        token_position: u16,
-        config_item_type: String,
-        config_value: String,
+        #[wasm_bindgen(js_name = "tokenPosition")] token_position: u16,
+        #[wasm_bindgen(js_name = "configItemType")] config_item_type: String,
+        #[wasm_bindgen(js_name = "configValue")] config_value: String,
+        #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-        private_key_wif: String,
-        public_note: Option<String>,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "publicNote")] public_note: Option<String>,
     ) -> Result<JsValue, WasmSdkError> {
         use dash_sdk::dpp::data_contract::associated_token::token_configuration_convention::TokenConfigurationConvention;
         use dash_sdk::dpp::data_contract::associated_token::token_configuration_item::TokenConfigurationChangeItem;
@@ -1322,7 +1347,7 @@ impl WasmSdk {
                 return Err(WasmSdkError::invalid_argument(format!(
                     "Invalid config item type: {}",
                     config_item_type
-                )))
+                )));
             }
         };
 
