@@ -10,7 +10,8 @@ use dpp::prelude::Identifier;
 use key_wallet::wallet::immature_transaction::ImmatureTransaction;
 use key_wallet::Network;
 
-#[allow(unused_imports)] use crate::ContactRequest;
+#[allow(unused_imports)]
+use crate::ContactRequest;
 
 use dpp::identity::accessors::IdentityGettersV0;
 
@@ -57,7 +58,11 @@ impl PlatformWalletInfo {
         };
 
         let result = self
-            .fetch_contact_requests_for_identities_after_asset_locks(wallet, network, &[immature_tx])
+            .fetch_contact_requests_for_identities_after_asset_locks(
+                wallet,
+                network,
+                &[immature_tx],
+            )
             .await?;
 
         Ok(result.first().copied())

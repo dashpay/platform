@@ -150,6 +150,7 @@ impl WalletInfoInterface for PlatformWalletInfo {
 
     fn update_chain_height(&mut self, network: Network, current_height: u32) {
         // Delegate to the underlying wallet_info
-        self.wallet_info.update_chain_height(network, current_height)
+        self.wallet_info
+            .update_chain_height(network, current_height)
     }
 }
