@@ -1,14 +1,22 @@
 use clap::{Parser, ValueEnum};
+use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use drive_abci::abci::app::FullAbciApplication;
 use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::platform_types::platform::Platform;
+use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::DefaultCoreRPC;
 use hex::ToHex;
 use serde::de::DeserializeOwned;
 use std::error::Error;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tenderdash_abci::proto::abci::{request, Request, RequestPrepareProposal};
+use tenderdash_abci::proto::abci::{
+    request,
+    response_process_proposal,
+    Request,
+    RequestPrepareProposal,
+    RequestProcessProposal,
+};
 use tenderdash_abci::Application;
 use tracing_subscriber::EnvFilter;
 
@@ -20,9 +28,10 @@ struct Cli {
     #[arg(long, value_hint = clap::ValueHint::DirPath)]
     db_path: PathBuf,
 
-    /// File that contains serialized Request or RequestPrepareProposal payload.
-    #[arg(long, value_hint = clap::ValueHint::FilePath)]
-    request: PathBuf,
+    /// Files that contain serialized Request*, RequestPrepareProposal, or RequestProcessProposal payloads.
+    /// They will be executed sequentially.
+    #[arg(long, value_hint = clap::ValueHint::FilePath, required = true)]
+    requests: Vec<PathBuf>,
 
     /// Optional .env file path. Defaults to walking up the filesystem like drive-abci.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath)]
@@ -31,7 +40,6 @@ struct Cli {
     /// Format of the serialized request payload.
     #[arg(long, value_enum, default_value_t = RequestFormat::Ron)]
     request_format: RequestFormat,
-
 }
 
 #[derive(Debug, Copy, Clone, Eq, PartialEq, ValueEnum)]
@@ -59,7 +67,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
 
     config.db_path = cli.db_path.clone();
 
-    let request = load_prepare_proposal(&cli.request, cli.request_format)?;
+    let mut requests = Vec::new();
+    for path in &cli.requests {
+        let loaded = load_request(path, cli.request_format)?;
+        println!(
+            "loaded {} request from {}: {:#?}",
+            loaded.kind(),
+            path.display(),
+            loaded
+        );
+        requests.push((path.clone(), loaded));
+    }
+
+    if requests.is_empty() {
+        return Err("no request files provided".into());
+    }
 
     let core_rpc = DefaultCoreRPC::open(
         config.core.consensus_rpc.url().as_str(),
@@ -67,41 +89,107 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         config.core.consensus_rpc.password.clone(),
     )?;
 
-    let platform: Platform<DefaultCoreRPC> = Platform::open_with_client(
-        &config.db_path,
-        Some(config.clone()),
-        core_rpc,
-        None,
-    )?;
+    let platform: Platform<DefaultCoreRPC> =
+        Platform::open_with_client(&config.db_path, Some(config.clone()), core_rpc, None)?;
+    log_last_committed_block(&platform);
 
     let app = FullAbciApplication::new(&platform);
 
-    let response = app
-        .prepare_proposal(request)
-        .map_err(|err| format!("prepare_proposal failed: {:?}", err))?;
-
-    println!("app_hash: 0x{}", response.app_hash.encode_hex::<String>());
+    for (path, request) in requests {
+        match request {
+            LoadedRequest::Prepare(request) => {
+                println!("executing prepare_proposal from {}", path.display());
+                let response = app
+                    .prepare_proposal(request)
+                    .map_err(|err| {
+                        format!("prepare_proposal failed for {}: {:?}", path.display(), err)
+                    })?;
+                println!(
+                    "prepare_proposal result ({}): app_hash=0x{}, tx_results={}, tx_records={}",
+                    path.display(),
+                    response.app_hash.encode_hex::<String>(),
+                    response.tx_results.len(),
+                    response.tx_records.len()
+                );
+            }
+            LoadedRequest::Process(request) => {
+                println!("executing process_proposal from {}", path.display());
+                let response = app
+                    .process_proposal(request)
+                    .map_err(|err| {
+                        format!("process_proposal failed for {}: {:?}", path.display(), err)
+                    })?;
+                let status = response_process_proposal::ProposalStatus::from_i32(response.status)
+                    .unwrap_or(response_process_proposal::ProposalStatus::Unknown);
+                println!(
+                    "process_proposal result ({}): status={:?}, app_hash=0x{}, tx_results={}, events={}",
+                    path.display(),
+                    status,
+                    hex::encode(response.app_hash),
+                    response.tx_results.len(),
+                    response.events.len()
+                );
+            }
+        }
+    }
 
     Ok(())
 }
 
-fn load_prepare_proposal(
-    path: &Path,
-    format: RequestFormat,
-) -> Result<RequestPrepareProposal, Box<dyn Error>> {
+#[derive(Debug)]
+enum LoadedRequest {
+    Prepare(RequestPrepareProposal),
+    Process(RequestProcessProposal),
+}
+
+impl LoadedRequest {
+    fn kind(&self) -> &'static str {
+        match self {
+            LoadedRequest::Prepare(_) => "prepare_proposal",
+            LoadedRequest::Process(_) => "process_proposal",
+        }
+    }
+}
+
+fn load_request(path: &Path, format: RequestFormat) -> Result<LoadedRequest, Box<dyn Error>> {
     let raw = fs::read_to_string(path)?;
 
-    match parse_with::<Request>(&raw, format) {
-        Ok(request) => match request.value {
-            Some(request::Value::PrepareProposal(value)) => Ok(value),
+    if let Ok(request) = parse_with::<Request>(&raw, format) {
+        return match request.value {
+            Some(request::Value::PrepareProposal(value)) => Ok(LoadedRequest::Prepare(value)),
+            Some(request::Value::ProcessProposal(value)) => Ok(LoadedRequest::Process(value)),
             Some(other) => Err(format!(
-                "expected Request::PrepareProposal but file contains {}",
+                "expected Request::PrepareProposal or Request::ProcessProposal but file contains {}",
                 other.variant_name()
             )
             .into()),
             None => Err("request payload does not contain a value".into()),
-        },
-        Err(_) => parse_with::<RequestPrepareProposal>(&raw, format),
+        };
+    }
+
+    parse_with::<RequestPrepareProposal>(&raw, format)
+        .map(LoadedRequest::Prepare)
+        .or_else(|_| {
+            parse_with::<RequestProcessProposal>(&raw, format).map(LoadedRequest::Process)
+        })
+}
+
+fn log_last_committed_block<C>(platform: &Platform<C>)
+where
+    C: drive_abci::rpc::core::CoreRPCLike,
+{
+    let platform_state = platform.state.load();
+    if let Some(info) = platform_state.last_committed_block_info() {
+        let basic_info = info.basic_info();
+        println!(
+            "last_committed_block: height={}, round={}, core_height={}, block_id_hash=0x{}",
+            basic_info.height,
+            info.round(),
+            basic_info.core_height,
+            hex::encode(info.block_id_hash())
+        );
+    } else {
+        println!("last_committed_block: None");
     }
 }
 
@@ -132,10 +220,11 @@ where
 }
 
 fn init_logging() {
-    let env_filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
 
-    let _ = tracing_subscriber::fmt().with_env_filter(env_filter).try_init();
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
+        .try_init();
 }
 trait RequestVariantName {
     fn variant_name(&self) -> &'static str;
