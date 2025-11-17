@@ -197,20 +197,15 @@ impl DerivationPath {
     }
 }
 
-#[wasm_bindgen(js_name = "DerivationPathInfo")]
+#[wasm_bindgen(js_name = "DerivationPathInfo", getter_with_clone)]
 #[derive(Clone)]
 pub struct DerivationPathWasm {
-    #[wasm_bindgen(getter_with_clone)]
     pub path: String,
-    #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter, js_name = "coinType")]
+    #[wasm_bindgen(js_name = "coinType")]
     pub coin_type: u32,
-    #[wasm_bindgen(getter)]
     pub account: u32,
-    #[wasm_bindgen(getter)]
     pub change: u32,
-    #[wasm_bindgen(getter)]
     pub index: u32,
 }
 
