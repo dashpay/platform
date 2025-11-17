@@ -597,6 +597,9 @@ name = "bitflags"
 version = "2.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2261d10cca569e4643e526d8dc2e62e433cc8aba21ab764233731f8d369bf394"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "bitvec"
@@ -2046,6 +2049,7 @@ dependencies = [
  "regex",
  "reopen",
  "rocksdb 0.23.0",
+ "ron",
  "rust_decimal",
  "rust_decimal_macros",
  "serde",
@@ -5350,6 +5354,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "ron"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b91f7eff05f748767f183df4320a63d6936e9c6107d97c9e6bdd9784f4289c94"
+dependencies = [
+ "base64 0.21.7",
+ "bitflags 2.9.4",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
 name = "rpassword"
 version = "7.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6443,6 +6459,7 @@ dependencies = [
  "hex",
  "lhash",
  "semver",
+ "serde_json",
  "tenderdash-proto",
  "thiserror 2.0.16",
  "tokio",
