@@ -15,9 +15,12 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionHasNonceValidationV0};
+use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionHasNonceValidationV0, StateTransitionStateValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
+/// Changes the state transition to the execution event.
+/// As this is for check tx it normally does not need to be versioned.
+/// We keep the version here just in case for a future radical change.
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     state_transition: StateTransition,
@@ -181,6 +184,29 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
             }
+
+            let action = if state_transition.validates_full_state_on_check_tx() {
+                // Validating structure
+                let result = state_transition.validate_state(
+                    action,
+                    platform,
+                    ValidationMode::CheckTx,
+                    platform.state.last_block_info(),
+                    &mut state_transition_execution_context,
+                    None,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+                result.data
+            } else {
+                None
+            };
 
             let action = if let Some(action) = action {
                 action
