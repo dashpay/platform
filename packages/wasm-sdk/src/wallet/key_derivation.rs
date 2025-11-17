@@ -222,50 +222,41 @@ impl From<DerivationPath> for DerivationPathWasm {
     }
 }
 
-#[wasm_bindgen(js_name = "Dip13DerivationPathInfo")]
+#[wasm_bindgen(getter_with_clone, js_name = "Dip13DerivationPathInfo")]
 #[derive(Clone)]
 pub struct Dip13DerivationPathWasm {
-    #[wasm_bindgen(getter_with_clone)]
     pub path: String,
-    #[wasm_bindgen(getter)]
     pub purpose: u32,
-    #[wasm_bindgen(getter, js_name = "coinType")]
+    #[wasm_bindgen(js_name = "coinType")]
     pub coin_type: u32,
-    #[wasm_bindgen(getter)]
     pub account: u32,
-    #[wasm_bindgen(getter_with_clone)]
     pub description: String,
 }
 
-#[wasm_bindgen(js_name = "SeedPhraseKeyInfo")]
+#[wasm_bindgen(getter_with_clone, js_name = "SeedPhraseKeyInfo")]
 #[derive(Clone)]
 pub struct SeedPhraseKeyInfoWasm {
-    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
+    #[wasm_bindgen(js_name = "privateKeyWif")]
     pub private_key_wif: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyHex")]
+    #[wasm_bindgen(js_name = "privateKeyHex")]
     pub private_key_hex: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "publicKey")]
+    #[wasm_bindgen(js_name = "publicKey")]
     pub public_key: String,
-    #[wasm_bindgen(getter_with_clone)]
     pub address: String,
-    #[wasm_bindgen(getter_with_clone)]
     pub network: String,
 }
 
-#[wasm_bindgen(js_name = "PathDerivedKeyInfo")]
+#[wasm_bindgen(getter_with_clone, js_name = "PathDerivedKeyInfo")]
 #[derive(Clone)]
 pub struct PathDerivedKeyInfoWasm {
-    #[wasm_bindgen(getter_with_clone)]
     pub path: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyWif")]
+    #[wasm_bindgen(js_name = "privateKeyWif")]
     pub private_key_wif: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "privateKeyHex")]
+    #[wasm_bindgen(js_name = "privateKeyHex")]
     pub private_key_hex: String,
-    #[wasm_bindgen(getter_with_clone, js_name = "publicKey")]
+    #[wasm_bindgen(js_name = "publicKey")]
     pub public_key: String,
-    #[wasm_bindgen(getter_with_clone)]
     pub address: String,
-    #[wasm_bindgen(getter_with_clone)]
     pub network: String,
 }
 
