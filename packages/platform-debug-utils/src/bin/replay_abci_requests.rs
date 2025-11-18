@@ -37,7 +37,7 @@ const TRACE_WRAP_WIDTH: usize = 120;
 sequentially into the Drive ABCI application to recompute app hashes, inspect tx outcomes, and debug \
 state mismatches. Request files accept both the outer Request wrapper or the specific request type, \
 and configuration mirrors drive-abci's .env loading so you can point at the same RPC credentials. \
-\n\nExample:\n  replay_abci_requests --db-path /path/to/grovedb --requests dump.ron \
+\n\nExample:\n  RUST_LOG=trace replay_abci_requests --db-path /path/to/grovedb --requests dump.ron \
 --config /path/to/.env --request-format ron\n\nUse multiple --requests flags to replay several inputs \
 in chronological order."
 )]
