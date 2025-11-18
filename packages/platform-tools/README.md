@@ -1,25 +1,25 @@
-# drive-abci
+# platform-tools
 
-This crate contains the Drive ABCI application together with a couple of helpers.
+Utility binaries useful when debugging or inspecting the Dash Platform stack.
 
-## `prepare_proposal_apphash` example
+## `prepare_proposal_apphash`
 
-The `prepare_proposal_apphash` example replays a `RequestPrepareProposal` against an existing
+Replays one or more `RequestPrepareProposal`/`RequestProcessProposal` payloads against an existing
 GroveDB database and prints the resulting app hash. It loads the same `.env` configuration format
 as the full server, so you can point it at the same credential and RPC settings that were used
 when the faulty block was produced.
 
 ```bash
-cargo run -p drive-abci --example prepare_proposal_apphash -- \
+cargo run -p platform-tools --bin prepare_proposal_apphash -- \
   --db-path /path/to/grovedb \
-  --request /tmp/request.ron \
+  --requests /tmp/request.ron \
   --config /path/to/.env \
   --request-format ron
 ```
 
 Notes:
 
-- `--request` supports both JSON and RON (default) files. When using RON you can either paste the
+- `--requests` supports both JSON and RON (default) files. When using RON you can either paste the
   full `Request` dump from logging (`Request { value: Some(PrepareProposal(...)) }`) or only the
   `RequestPrepareProposal { ... }` portion.
 - JSON payloads should be plain `RequestPrepareProposal` objects that follow the proto field names

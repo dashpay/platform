@@ -53,7 +53,6 @@ tracing-subscriber = { version = "0.3.16", default-features = false, features = 
 ], optional = false }
 tenderdash-abci = { git = "https://github.com/dashpay/rs-tenderdash-abci", tag = "v1.5.0-dev.2", features = [
   "grpc",
-  "serde",
 ] }
 
 lazy_static = "1.4.0"
@@ -103,7 +102,6 @@ assert_matches = "1.5.0"
 drive-abci = { path = ".", features = ["testing-config", "mocks"] }
 bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "0842b17583888e8f46c252a4ee84cdfd58e0546f" }
 mockall = { version = "0.13" }
-ron = "0.8"
 
 # For tests of grovedb verify
 rocksdb = { version = "0.23.0" }
