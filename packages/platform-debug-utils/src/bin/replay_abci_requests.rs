@@ -12,34 +12,51 @@ use std::error::Error;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
-use tenderdash_abci::proto::abci::{
-    request, response_process_proposal, Request, RequestPrepareProposal, RequestProcessProposal,
-};
 use tenderdash_abci::Application;
+use tenderdash_abci::proto::abci::{
+    Request, RequestPrepareProposal, RequestProcessProposal, request, response_process_proposal,
+};
 use textwrap::Options;
 use tracing::field::{Field, Visit};
 use tracing::{Event, Subscriber};
-use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
-use tracing_subscriber::fmt::FmtContext;
-use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::EnvFilter;
+use tracing_subscriber::fmt::FmtContext;
+use tracing_subscriber::fmt::format::{FormatEvent, FormatFields, Writer};
+use tracing_subscriber::registry::LookupSpan;
 
 const TRACE_WRAP_WIDTH: usize = 120;
 
 /// Replay helper for RequestPrepareProposal dumps.
 #[derive(Debug, Parser)]
-#[command(author, version, about)]
+#[command(
+    name = "replay_abci_requests",
+    author,
+    version,
+    about = "Replay serialized ABCI requests against an existing GroveDB database.",
+    long_about = "Feed captured RequestPrepareProposal or RequestProcessProposal payloads (RON or JSON) \
+sequentially into the Drive ABCI application to recompute app hashes, inspect tx outcomes, and debug \
+state mismatches. Request files accept both the outer Request wrapper or the specific request type, \
+and configuration mirrors drive-abci's .env loading so you can point at the same RPC credentials. \
+\n\nExample:\n  replay_abci_requests --db-path /path/to/grovedb --requests dump.ron \
+--config /path/to/.env --request-format ron\n\nUse multiple --requests flags to replay several inputs \
+in chronological order."
+)]
 struct Cli {
     /// Path to the GroveDB database that should be used for execution.
+    /// You can use a command like `./state_backup.sh export --component abci abci.tar.gz testnet`
+    /// to dump the GroveDB database from existing Platform node.
     #[arg(long, value_hint = clap::ValueHint::DirPath)]
     db_path: PathBuf,
 
     /// Files that contain serialized Request*, RequestPrepareProposal, or RequestProcessProposal payloads.
     /// They will be executed sequentially.
+    ///
+    /// See vectors/ directory for example request payloads.
     #[arg(long, value_hint = clap::ValueHint::FilePath, required = true)]
     requests: Vec<PathBuf>,
 
     /// Optional .env file path. Defaults to walking up the filesystem like drive-abci.
+    /// .env file format is the same as used by drive-abci.
     #[arg(short, long, value_hint = clap::ValueHint::FilePath)]
     config: Option<PathBuf>,
 

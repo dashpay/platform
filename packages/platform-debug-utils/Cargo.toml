@@ -1,8 +1,10 @@
 [package]
-name = "platform-tools"
 version = "0.1.0"
-edition = "2021"
-default-run = "rocksdb-dump"
+rust-version.workspace = true
+name = "platform-debug-utils"
+edition = "2024"
+
+default-run = "replay_abci_requests"
 
 [dependencies]
 clap = { version = "4.5.26", features = ["derive"] }
@@ -35,5 +37,5 @@ name = "rocksdb-dump"
 path = "src/bin/rocksdb_dump.rs"
 
 [[bin]]
-name = "prepare_proposal_apphash"
-path = "src/bin/prepare_proposal_apphash.rs"
+name = "replay_abci_requests"
+path = "src/bin/replay_abci_requests.rs"
