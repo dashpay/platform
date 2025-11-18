@@ -9,7 +9,6 @@ use crate::utils::{IntoWasm, get_class_type};
 use dpp::platform_value::Value;
 use dpp::prelude::AssetLockProof;
 use serde::Serialize;
-use serde_json::Value as JsonValue;
 use serde_wasm_bindgen::from_value;
 use std::convert::TryFrom;
 use wasm_bindgen::JsValue;
@@ -148,15 +147,14 @@ impl AssetLockProofWasm {
         let json_value = self.0.to_raw_object()?;
 
         json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .serialize(&serde_wasm_bindgen::Serializer::default())
             .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
-        let json_value: JsonValue =
+        let value: Value =
             from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        let value = Value::from(json_value);
         let proof = AssetLockProof::try_from(value).map_err(WasmDppError::from)?;
         Ok(AssetLockProofWasm(proof))
     }

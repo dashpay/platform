@@ -78,7 +78,7 @@ impl InstantAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+        let serializer = serde_wasm_bindgen::Serializer::default();
 
         self.0
             .to_object()?
