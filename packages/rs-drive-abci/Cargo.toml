@@ -104,7 +104,7 @@ bls-signatures = { git = "https://github.com/dashpay/bls-signatures", rev = "084
 mockall = { version = "0.13" }
 
 # For tests of grovedb verify
-rocksdb = { version = "0.23.0" }
+rocksdb = { version = "0.24.0" }
 integer-encoding = { version = "4.0.0" }
 
 [features]
