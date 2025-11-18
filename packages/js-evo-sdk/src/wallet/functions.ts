@@ -1,9 +1,9 @@
 import * as wasm from '../wasm.js';
 
 export namespace wallet {
-  export async function generateMnemonic(wordCount?: number, languageCode?: string): Promise<string> {
+  export async function generateMnemonic(params?: wasm.GenerateMnemonicParams): Promise<string> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.generateMnemonic(wordCount ?? null, languageCode ?? null);
+    return wasm.WasmSdk.generateMnemonic(params ?? null);
   }
 
   export async function validateMnemonic(mnemonic: string, languageCode?: string): Promise<boolean> {
@@ -16,32 +16,24 @@ export namespace wallet {
     return wasm.WasmSdk.mnemonicToSeed(mnemonic, passphrase ?? null);
   }
 
-  export async function deriveKeyFromSeedPhrase(mnemonic: string, passphrase: string | null | undefined, network: string): Promise<any> {
+  export async function deriveKeyFromSeedPhrase(params: wasm.DeriveKeyFromSeedPhraseParams): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedPhrase(mnemonic, passphrase ?? null, network);
+    return wasm.WasmSdk.deriveKeyFromSeedPhrase(params);
   }
 
-  export async function deriveKeyFromSeedWithPath(mnemonic: string, passphrase: string | null | undefined, path: string, network: string): Promise<any> {
+  export async function deriveKeyFromSeedWithPath(params: wasm.DeriveKeyFromSeedWithPathParams): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedWithPath(mnemonic, passphrase ?? null, path, network);
+    return wasm.WasmSdk.deriveKeyFromSeedWithPath(params);
   }
 
-  export async function deriveKeyFromSeedWithExtendedPath(mnemonic: string, passphrase: string | null | undefined, path: string, network: string): Promise<any> {
+  export async function deriveKeyFromSeedWithExtendedPath(params: wasm.DeriveKeyFromSeedWithExtendedPathParams): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveKeyFromSeedWithExtendedPath(mnemonic, passphrase ?? null, path, network);
+    return wasm.WasmSdk.deriveKeyFromSeedWithExtendedPath(params);
   }
 
-  export async function deriveDashpayContactKey(mnemonic: string, passphrase: string | null | undefined, senderIdentityId: string, receiverIdentityId: string, account: number, addressIndex: number, network: string): Promise<any> {
+  export async function deriveDashpayContactKey(params: wasm.DeriveDashpayContactKeyParams): Promise<any> {
     await wasm.ensureInitialized();
-    return wasm.WasmSdk.deriveDashpayContactKey(
-      mnemonic,
-      passphrase ?? null,
-      senderIdentityId,
-      receiverIdentityId,
-      account,
-      addressIndex,
-      network,
-    );
+    return wasm.WasmSdk.deriveDashpayContactKey(params);
   }
 
   export async function derivationPathBip44Mainnet(account: number, change: number, index: number): Promise<any> {

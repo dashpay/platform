@@ -309,7 +309,8 @@ public class WalletService: ObservableObject {
                 network: dashNetwork,
                 mnemonic: mnemonic,
                 pin: pin,
-                networks: networks
+                networks: networks,
+                isImport: isImport
             )
             
             print("Wallet created by WalletManager, ID: \(wallet.id)")

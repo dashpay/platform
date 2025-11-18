@@ -31,6 +31,24 @@ async fn test_evonode_status() {
                     status.chain.latest_block_height > 0,
                     "latest block height must be positive"
                 );
+                let drive_protocol = status
+                    .version
+                    .protocol
+                    .as_ref()
+                    .and_then(|protocol| protocol.drive.as_ref())
+                    .expect("drive protocol info must be present");
+                assert!(
+                    drive_protocol.current > 0,
+                    "drive current protocol version must be set"
+                );
+                assert!(
+                    drive_protocol.latest > 0,
+                    "drive latest supported protocol version must be set"
+                );
+                assert!(
+                    drive_protocol.next_epoch > 0,
+                    "drive next epoch protocol version must be set"
+                );
                 assert_eq!(
                     status.node.pro_tx_hash.unwrap_or_default().len(),
                     ProTxHash::LEN,

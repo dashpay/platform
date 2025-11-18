@@ -24,7 +24,10 @@ describe('Data Contracts', function dataContractsSuite() {
   // TODO: fix dash drive: proof: corrupted error: we did not get back an element
   //  for the correct path for the historical contract
   it.skip('getHistory() returns history for contract', async () => {
-    const res = await sdk.contracts.getHistory({ contractId: TEST_IDS.tokenContractId, limit: 1 });
+    const res = await sdk.contracts.getHistory({
+      dataContractId: TEST_IDS.tokenContractId,
+      limit: 1,
+    });
     expect(res).to.exist();
   });
 

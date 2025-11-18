@@ -41,10 +41,6 @@ export default function generateEnvsFactory(configFile, homeDir, getConfigProfil
         dockerComposeFiles.push('docker-compose.build.drive_abci.yml');
       }
 
-      if (config.get('platform.dapi.api.docker.build.enabled')) {
-        dockerComposeFiles.push('docker-compose.build.dapi_api.yml');
-        dockerComposeFiles.push('docker-compose.build.dapi_core_streams.yml');
-      }
       if (config.get('platform.dapi.rsDapi.docker.build.enabled')) {
         dockerComposeFiles.push('docker-compose.build.rs-dapi.yml');
       }

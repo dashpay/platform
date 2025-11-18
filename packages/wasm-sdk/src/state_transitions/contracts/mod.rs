@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::queries::utils::identifier_from_js;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dash_sdk::dpp::data_contract::conversion::json::DataContractJsonConversionMethodsV0;
@@ -6,7 +7,7 @@ use dash_sdk::dpp::data_contract::DataContract;
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::{KeyType, Purpose};
-use dash_sdk::dpp::platform_value::{string_encoding::Encoding, Identifier};
+use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::methods::DataContractUpdateTransitionMethodsV0;
 use dash_sdk::dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use dash_sdk::platform::transition::broadcast::BroadcastStateTransition;
@@ -35,16 +36,17 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractCreate)]
     pub async fn contract_create(
         &self,
-        owner_id: String,
-        contract_definition: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "ownerId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        owner_id: JsValue,
+        #[wasm_bindgen(js_name = "contractDefinition")] contract_definition: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse owner identifier
-        let owner_identifier = Identifier::from_string(&owner_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid owner ID: {}", e)))?;
+        let owner_identifier = identifier_from_js(&owner_id, "owner ID")?;
 
         // Parse contract definition JSON
         let contract_json: serde_json::Value =
@@ -115,19 +117,13 @@ impl WasmSdk {
                     )
                 })?
         };
-
-        // Create the data contract from JSON definition
-        let data_contract = DataContract::from_json(
-            contract_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create data contract from JSON: {}",
-                e
-            ))
-        })?;
+        let data_contract =
+            DataContract::from_json(contract_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create data contract from JSON: {}",
+                    e
+                ))
+            })?;
 
         // Create signer
         let signer = SingleKeySigner::from_string(&private_key_wif, self.network())
@@ -160,7 +156,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("ownerId"),
-            &JsValue::from_str(&owner_id),
+            &JsValue::from_str(&owner_identifier.to_string(Encoding::Base58)),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set ownerId: {:?}", e)))?;
 
@@ -210,20 +206,22 @@ impl WasmSdk {
     #[wasm_bindgen(js_name = contractUpdate)]
     pub async fn contract_update(
         &self,
-        contract_id: String,
-        owner_id: String,
-        contract_updates: String,
-        private_key_wif: String,
-        key_id: Option<u32>,
+        #[wasm_bindgen(js_name = "contractId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        contract_id: JsValue,
+        #[wasm_bindgen(js_name = "ownerId")]
+        #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
+        owner_id: JsValue,
+        #[wasm_bindgen(js_name = "contractUpdates")] contract_updates: String,
+        #[wasm_bindgen(js_name = "privateKeyWif")] private_key_wif: String,
+        #[wasm_bindgen(js_name = "keyId")] key_id: Option<u32>,
     ) -> Result<JsValue, WasmSdkError> {
         let sdk = self.inner_clone();
 
         // Parse identifiers
-        let contract_identifier = Identifier::from_string(&contract_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid contract ID: {}", e)))?;
+        let contract_identifier = identifier_from_js(&contract_id, "contract ID")?;
 
-        let owner_identifier = Identifier::from_string(&owner_id, Encoding::Base58)
-            .map_err(|e| WasmSdkError::invalid_argument(format!("Invalid owner ID: {}", e)))?;
+        let owner_identifier = identifier_from_js(&owner_id, "owner ID")?;
 
         // Parse contract updates JSON
         let updates_json: serde_json::Value =
@@ -309,19 +307,13 @@ impl WasmSdk {
 
         // Create updated contract from JSON definition
         // Note: The updates should be a complete contract definition with incremented version
-        let updated_contract = DataContract::from_json(
-            updates_json,
-            true, // validate
-            sdk.version(),
-        )
-        .map_err(|e| {
-            WasmSdkError::invalid_argument(format!(
-                "Failed to create updated contract from JSON: {}",
-                e
-            ))
-        })?;
-
-        // Verify the version was incremented
+        let updated_contract =
+            DataContract::from_json(updates_json, true, sdk.version()).map_err(|e| {
+                WasmSdkError::invalid_argument(format!(
+                    "Failed to create updated contract from JSON: {}",
+                    e
+                ))
+            })?;
         if updated_contract.version() <= existing_contract.version() {
             return Err(WasmSdkError::invalid_argument(format!(
                 "Contract version must be incremented. Current: {}, Provided: {}",
@@ -385,7 +377,7 @@ impl WasmSdk {
         js_sys::Reflect::set(
             &result_obj,
             &JsValue::from_str("contractId"),
-            &JsValue::from_str(&contract_id),
+            &JsValue::from_str(&contract_identifier.to_string(Encoding::Base58)),
         )
         .map_err(|e| WasmSdkError::generic(format!("Failed to set contractId: {:?}", e)))?;
         js_sys::Reflect::set(
