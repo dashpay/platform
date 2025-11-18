@@ -40,7 +40,7 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
-    pub inputs: Vec<KeyOfType>,
+    pub inputs: Vec<KeyOfTypeWithNonce>,
     pub outputs: BTreeMap<KeyOfType, Credits>,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
@@ -58,7 +58,7 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
 struct IdentityCreateFromAddressesTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
-    inputs: Vec<KeyOfType>,
+    inputs: Vec<KeyOfTypeWithNonce>,
     outputs: BTreeMap<KeyOfType, Credits>,
     // Generic identity ST fields
     user_fee_increase: UserFeeIncrease,

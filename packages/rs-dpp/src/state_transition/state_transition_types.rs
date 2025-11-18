@@ -31,6 +31,8 @@ pub enum StateTransitionType {
     MasternodeVote = 8,
     IdentityCreditTransferToAddress = 9,
     IdentityCreateFromAddresses = 10,
+    IdentityTopUpFromAddresses = 11,
+    UTXOTransfer = 12,
 }
 
 impl std::fmt::Display for StateTransitionType {

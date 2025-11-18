@@ -15,6 +15,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bls-signatures")]
 use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
 use crate::fee::Credits;
+use crate::prelude::{IdentityNonce, KeyOfTypeNonce};
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -78,6 +79,31 @@ pub enum KeyType {
 pub struct KeyOfType {
     pub key_type: KeyType,
     pub key: Vec<u8>,
+}
+
+#[derive(
+    Debug,
+    PartialEq,
+    Eq,
+    Clone,
+    Hash,
+    Ord,
+    PartialOrd,
+    Encode,
+    Decode,
+    PlatformSerialize,
+    PlatformDeserialize,
+    Default,
+)]
+#[cfg_attr(
+    feature = "state-transition-serde-conversion",
+    derive(Serialize, Deserialize),
+    serde(rename_all = "camelCase")
+)]
+#[platform_serialize(unversioned)]
+pub struct KeyOfTypeWithNonce {
+    pub key_of_type: KeyOfType,
+    pub nonce: KeyOfTypeNonce,
 }
 
 lazy_static! {

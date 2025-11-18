@@ -110,6 +110,8 @@ pub mod prelude {
     pub type Revision = u64;
     pub type IdentityNonce = u64;
 
+    pub type KeyOfTypeNonce = u64;
+
     pub type SenderKeyIndex = u32;
     pub type RecipientKeyIndex = u32;
 
