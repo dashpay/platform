@@ -432,6 +432,24 @@ impl TrustedHttpContextProvider {
 }
 
 impl ContextProvider for TrustedHttpContextProvider {
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: QuorumHash,
+        core_chain_locked_height: CoreBlockHeight,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<[u8; 48], ContextProviderError>>
+                + Send
+                + 'static,
+        >,
+    > {
+        // For now, wrap the sync version in an async block
+        // This could be made truly async in the future
+        let result = self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height);
+        Box::pin(async move { result })
+    }
+
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
