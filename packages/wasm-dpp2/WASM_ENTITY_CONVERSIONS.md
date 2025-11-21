@@ -18,11 +18,13 @@ This catalog helps track which entities already expose these conversions and whi
 Implementation plan:
 We should go one by one and report current status and what we have in rs-dpp for this structure. then tell me what you planning to do. get conformation and proceed with implementation. when it's ready and I reviewed, you implement tests and I review and make sure they are good. when it's finished add a checkmark here that we finished with it. then we go to the next one.
 
+BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no signature args) and exposes object/JSON converters alongside bytes/base64/hex helpers.
+
 | Entity | Source file | `to*` methods | `from*` methods |
 | --- | --- | --- | --- |
 | ✅ `AssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/proof.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
-| `AuthorizedActionTakersWasm` | `packages/wasm-dpp2/src/tokens/configuration/authorized_action_takers.rs` | — | — |
-| `BatchTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batch_transition.rs` | toBase64, toBytes, toHex, toStateTransition | fromBase64, fromBytes, fromHex, fromStateTransition, fromV0Transitions, fromV1BatchedTransitions |
+| 🔸 `AuthorizedActionTakersWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/authorized_action_takers.rs` | — | — |
+| `BatchTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batch_transition.rs` | toBase64, toBytes, toHex, toObject, toJSON, toStateTransition | fromBase64, fromBatchedTransitions, fromBytes, fromHex, fromJSON, fromObject, fromStateTransition |
 | `BatchedTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batched_transition.rs` | toTransition | — |
 | `BlockBasedDistributionWasm` | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
 | `BlockInfoWasm` | `packages/wasm-dpp2/src/block.rs` | — | — |

@@ -13,6 +13,7 @@ bincode = "=2.0.0-rc.3"
 wasm-bindgen = { version = "=0.2.103", default-features = false, features = ["serde-serialize"] }
 dpp = { path = "../rs-dpp", default-features = false, features = [
     "state-transition-signing",
+    "state-transition-value-conversion",
     "document-json-conversion",
     "identity-serialization",
     "identity-value-conversion",
