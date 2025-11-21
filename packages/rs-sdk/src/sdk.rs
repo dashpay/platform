@@ -334,7 +334,9 @@ impl Sdk {
             }
         }?;
 
+        // TODO: We should verify freshness (light check) before we validate proofs (heavy check)
         self.verify_response_metadata(&metadata)?;
+
         Ok((object, metadata, proof))
     }
 
