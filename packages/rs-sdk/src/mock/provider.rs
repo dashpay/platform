@@ -193,11 +193,19 @@ impl ContextProvider for GrpcContextProvider {
         quorum_hash: [u8; 32],
         core_chain_locked_height: u32,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>,
+        Box<
+            dyn std::future::Future<Output = Result<[u8; 48], ContextProviderError>>
+                + Send
+                + 'static,
+        >,
     > {
         // For now, we just wrap the synchronous version in an async block
         // In the future, this can be made truly async if the core client supports it
-        let result = self.get_quorum_public_key_sync_impl(quorum_type, quorum_hash, core_chain_locked_height);
+        let result = self.get_quorum_public_key_sync_impl(
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+        );
         Box::pin(async move { result })
     }
 
