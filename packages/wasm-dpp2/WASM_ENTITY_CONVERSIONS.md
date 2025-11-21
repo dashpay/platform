@@ -11,14 +11,16 @@ We want a uniform interface across all wasm-dpp2 entities (each `*Wasm` wrapper 
 - `toJSON` returns a `JsValue` representing the JSON form, using string encodings for binary fields; `fromJSON` reverses it.
 - `toBytes`/`fromBytes` are mandatory alongside the object/JSON helpers so callers can move raw binary data without extra conversions.
 - `toBase64`, `toHex`, `toBase58` (and similar conversions) remain optional and can be added per-entity when useful.
-- Prefer reusing the underlying `rs-dpp` serialization helpers (e.g., `to_object`, `from_object`, serde Platform serialization). Platform Value already round-trips to/from JSON, so lean on those helpers rather than reimplementing logic in wasm.
+- Prefer reusing the underlying `rs-dpp` serialization helpers (e.g., `to_object`, `to_raw_object`,  `from_object`, TryFrom<Value>, serde Platform serialization). Platform Value already round-trips to/from JSON, so lean on those helpers rather than reimplementing logic in wasm.
 
 This catalog helps track which entities already expose these conversions and which still need work.
 
+Implementation plan:
+We should go one by one and report current status and what we have in rs-dpp for this structure. then tell me what you planning to do. get conformation and proceed with implementation. when it's ready and I reviewed, you implement tests and I review and make sure they are good. when it's finished add a checkmark here that we finished with it. then we go to the next one.
+
 | Entity | Source file | `to*` methods | `from*` methods |
 | --- | --- | --- | --- |
-| `ActionTakerWasm` | `packages/wasm-dpp2/src/tokens/configuration/action_taker.rs` | — | — |
-| `AssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/proof.rs` | toHex, toObject | fromHex, fromJSON, fromObject |
+| ✅ `AssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/proof.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
 | `AuthorizedActionTakersWasm` | `packages/wasm-dpp2/src/tokens/configuration/authorized_action_takers.rs` | — | — |
 | `BatchTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batch_transition.rs` | toBase64, toBytes, toHex, toStateTransition | fromBase64, fromBytes, fromHex, fromStateTransition, fromV0Transitions, fromV1BatchedTransitions |
 | `BatchedTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batched_transition.rs` | toTransition | — |

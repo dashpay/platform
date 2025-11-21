@@ -59,6 +59,37 @@ describe('AssetLockProof', () => {
       expect(newInstantLockProof.toObject()).to.deep.equal(instantLockProof.toObject());
     });
 
+    it('should allow to serialize and deserialize asset lock in hex for chain proofs', () => {
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
+
+      const newChainLockProof = wasm.AssetLockProof.fromHex(chainLockProof.toHex());
+
+      expect(chainLockProof.constructor.name).to.equal('AssetLockProof');
+      expect(newChainLockProof.constructor.name).to.equal('AssetLockProof');
+
+      expect(newChainLockProof.toObject()).to.deep.equal(chainLockProof.toObject());
+    });
+
+    it('should round-trip asset lock via bytes for instant proofs', () => {
+      const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+
+      const bytes = instantLockProof.toBytes();
+      const restored = wasm.AssetLockProof.fromBytes(bytes);
+
+      expect(restored.toObject()).to.deep.equal(instantLockProof.toObject());
+    });
+
+    it('should round-trip asset lock via bytes for chain proofs', () => {
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
+
+      const bytes = chainLockProof.toBytes();
+      const restored = wasm.AssetLockProof.fromBytes(bytes);
+
+      expect(restored.toObject()).to.deep.equal(chainLockProof.toObject());
+    });
+
     it('should recreate asset lock proof from object', () => {
       const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
       const objectRepresentation = instantLockProof.toObject();
@@ -70,11 +101,37 @@ describe('AssetLockProof', () => {
 
     it('should recreate asset lock proof from JSON', () => {
       const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
-      const jsonRepresentation = instantLockProof.toObject(); // same as JSON structure
+      const jsonRepresentation = instantLockProof.toJSON();
+
+      expect(jsonRepresentation.instantLock).to.be.a('string');
+      expect(jsonRepresentation.transaction).to.be.a('string');
+      expect(Buffer.from(jsonRepresentation.instantLock, 'base64')).to.deep.equal(Buffer.from(instantLockBytes));
+      expect(Buffer.from(jsonRepresentation.transaction, 'base64')).to.deep.equal(Buffer.from(transactionBytes));
 
       const restoredProof = wasm.AssetLockProof.fromJSON(jsonRepresentation);
 
-      expect(restoredProof.toObject()).to.deep.equal(jsonRepresentation);
+      expect(restoredProof.toObject()).to.deep.equal(instantLockProof.toObject());
+    });
+
+    it('should recreate chain asset lock proof from JSON', () => {
+      const outpoint = new wasm.OutPoint('e8b43025641eea4fd21190f01bd870ef90f1a8b199d8fc3376c5b62c0b1a179d', 1);
+      const chainLockProof = wasm.AssetLockProof.createChainAssetLockProof(1, outpoint);
+      const jsonRepresentation = chainLockProof.toJSON();
+
+      const restoredProof = wasm.AssetLockProof.fromJSON(jsonRepresentation);
+
+      expect(restoredProof.toObject()).to.deep.equal(chainLockProof.toObject());
+    });
+
+    it('should export binary fields as Uint8Array in object form', () => {
+      const instantLockProof = wasm.AssetLockProof.createInstantAssetLockProof(instantLockBytes, transactionBytes, 0);
+
+      const objectRepresentation = instantLockProof.toObject();
+
+      expect(objectRepresentation.instantLock).to.be.instanceOf(Uint8Array);
+      expect(objectRepresentation.transaction).to.be.instanceOf(Uint8Array);
+      expect(Array.from(objectRepresentation.instantLock)).to.deep.equal(instantLockBytes);
+      expect(Array.from(objectRepresentation.transaction)).to.deep.equal(transactionBytes);
     });
   });
 

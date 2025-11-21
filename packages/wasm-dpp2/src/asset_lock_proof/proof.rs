@@ -159,32 +159,47 @@ impl AssetLockProofWasm {
         Ok(AssetLockProofWasm(proof))
     }
 
+    #[wasm_bindgen(js_name = "toJSON")]
+    pub fn to_json(&self) -> WasmDppResult<JsValue> {
+        let json_value = self.0.to_raw_object()?;
+        json_value
+            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
     #[wasm_bindgen(js_name = "fromJSON")]
     pub fn from_json(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
         AssetLockProofWasm::from_object(js_value)
     }
 
     #[wasm_bindgen(js_name = "toHex")]
-    pub fn to_string(&self) -> WasmDppResult<String> {
-        let json = serde_json::to_string(&self.0)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        Ok(hex::encode(json))
+    pub fn to_hex(&self) -> WasmDppResult<String> {
+        let bytes = bincode::encode_to_vec(&self.0, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        Ok(hex::encode(bytes))
     }
 
     #[wasm_bindgen(js_name = "fromHex")]
     pub fn from_hex(asset_lock_proof: String) -> WasmDppResult<AssetLockProofWasm> {
-        let asset_lock_proof_bytes = hex::decode(&asset_lock_proof).map_err(|e| {
-            WasmDppError::serialization(format!("Invalid asset lock proof hex: {}", e))
-        })?;
+        let bytes = hex::decode(asset_lock_proof)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .0;
+        Ok(AssetLockProofWasm(proof))
+    }
 
-        let json_str = String::from_utf8(asset_lock_proof_bytes).map_err(|e| {
-            WasmDppError::serialization(format!("Invalid UTF-8 in asset lock proof: {}", e))
-        })?;
+    #[wasm_bindgen(js_name = "toBytes")]
+    pub fn to_bytes(&self) -> WasmDppResult<Vec<u8>> {
+        bincode::encode_to_vec(&self.0, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
 
-        let asset_lock_proof: AssetLockProof = serde_json::from_str(&json_str).map_err(|e| {
-            WasmDppError::serialization(format!("Failed to parse asset lock proof JSON: {}", e))
-        })?;
-
-        Ok(AssetLockProofWasm(asset_lock_proof))
+    #[wasm_bindgen(js_name = "fromBytes")]
+    pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<AssetLockProofWasm> {
+        let proof: AssetLockProof = bincode::decode_from_slice(&bytes, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .0;
+        Ok(AssetLockProofWasm(proof))
     }
 }

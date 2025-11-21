@@ -4,8 +4,7 @@ use crate::identity::IdentityPublicKey;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use serde_json::Value as JsonValue;
-use v0::IdentityPublicKeyJsonConversionMethodsV0;
-pub use v0::*;
+pub use v0::IdentityPublicKeyJsonConversionMethodsV0;
 
 impl IdentityPublicKeyJsonConversionMethodsV0 for IdentityPublicKey {
     fn to_json(&self) -> Result<JsonValue, ProtocolError> {
