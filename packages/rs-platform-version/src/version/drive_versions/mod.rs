@@ -11,6 +11,7 @@ use drive_token_method_versions::DriveTokenMethodVersions;
 use drive_verify_method_versions::DriveVerifyMethodVersions;
 use drive_vote_method_versions::DriveVoteMethodVersions;
 use grovedb_version::version::GroveVersion;
+use crate::version::drive_versions::drive_group_method_versions::DriveAddressFundsMethodVersions;
 
 pub mod drive_contract_method_versions;
 pub mod drive_credit_pool_method_versions;
@@ -61,6 +62,7 @@ pub struct DriveMethodVersions {
     pub state_transitions: DriveStateTransitionMethodVersions,
     pub platform_state: DrivePlatformStateMethodVersions,
     pub group: DriveGroupMethodVersions,
+    pub address_funds: DriveAddressFundsMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]

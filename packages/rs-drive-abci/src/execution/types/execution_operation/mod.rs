@@ -76,6 +76,7 @@ pub enum ValidationOperation {
     RetrieveIdentityTokenBalance,
     RetrieveIdentity(RetrieveIdentityInfo),
     RetrievePrefundedSpecializedBalance,
+    RetrieveKeyOfTypeNonceAndBalance(KeyCount),
     PerformNetworkThresholdSigning,
     SingleSha256(HashBlockCount),
     DoubleSha256(HashBlockCount),
@@ -239,6 +240,19 @@ impl ValidationOperation {
                         .fee_version
                         .processing
                         .fetch_identity_token_balance_processing_cost;
+
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(operation_cost)
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::RetrieveKeyOfTypeNonceAndBalance(key_count) => {
+                    let operation_cost = platform_version
+                        .fee_version
+                        .processing
+                        .fetch_key_with_type_nonce_and_balance_cost * *key_count as u64;
 
                     fee_result.processing_fee = fee_result
                         .processing_fee

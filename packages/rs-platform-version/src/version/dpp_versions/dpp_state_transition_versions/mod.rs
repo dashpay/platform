@@ -7,6 +7,8 @@ pub mod v2;
 pub struct DPPStateTransitionVersions {
     pub documents: DocumentTransitionVersions,
     pub identities: IdentityTransitionVersions,
+    pub contract: ContractTransitionVersions,
+    pub address_funds: AddressFundsTransitionVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -14,6 +16,17 @@ pub struct IdentityTransitionVersions {
     pub max_public_keys_in_creation: u16,
     pub asset_locks: IdentityTransitionAssetLockVersions,
     pub credit_withdrawal: IdentityCreditWithdrawalTransitionVersions,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct ContractTransitionVersions {
+    pub contract_create_transition_default_version: FeatureVersion,
+    pub contract_update_transition_default_version: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct AddressFundsTransitionVersions {
+    pub address_funds_transition_default_version: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

@@ -1,5 +1,6 @@
 /// A module for validating asset locks
 pub mod asset_lock;
+pub mod validate_addresses_for_balances_and_nonces;
 pub mod validate_identity_exists;
 pub mod validate_identity_public_key_contract_bounds;
 pub mod validate_identity_public_key_ids_dont_exist_in_state;

@@ -81,6 +81,45 @@ pub struct KeyOfType {
     pub key: Vec<u8>,
 }
 
+impl KeyOfType {
+    /// Converts the KeyOfType to bytes.
+    /// Format: [key_type (1 byte)] + [key data (variable length)]
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut bytes = Vec::with_capacity(1 + self.key.len());
+        bytes.push(self.key_type as u8);
+        bytes.extend_from_slice(&self.key);
+        bytes
+    }
+
+    /// Creates a KeyOfType from bytes.
+    /// Format: [key_type (1 byte)] + [key data (variable length)]
+    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        if bytes.is_empty() {
+            return Err(ProtocolError::DecodingError(
+                "cannot decode KeyOfType from empty bytes".to_string(),
+            ));
+        }
+
+        let key_type = KeyType::try_from(bytes[0])
+            .map_err(|e| ProtocolError::DecodingError(format!("invalid key type: {}", e)))?;
+
+        let key = bytes[1..].to_vec();
+
+        Ok(KeyOfType { key_type, key })
+    }
+}
+
+impl std::fmt::Display for KeyOfType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "KeyOfType({:?}, {})",
+            self.key_type,
+            hex::encode(&self.key)
+        )
+    }
+}
+
 #[derive(
     Debug,
     PartialEq,

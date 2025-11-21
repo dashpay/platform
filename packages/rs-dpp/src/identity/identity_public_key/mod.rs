@@ -10,6 +10,7 @@ mod key_type;
 mod purpose;
 mod security_level;
 pub use key_type::KeyOfType;
+pub use key_type::KeyOfTypeWithNonce;
 pub use key_type::KeyType;
 pub use purpose::Purpose;
 pub use security_level::SecurityLevel;

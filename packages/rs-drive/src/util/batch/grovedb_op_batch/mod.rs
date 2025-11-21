@@ -91,7 +91,7 @@ impl From<RootTree> for KnownPath {
             RootTree::Versions => KnownPath::VersionsRoot,
             RootTree::Votes => KnownPath::VotesRoot,
             RootTree::GroupActions => KnownPath::GroupActionsRoot,
-            RootTree::SingleUseKeyBalances => KnownPath::SingleUseKeyBalancesRoot,
+            RootTree::AddressBalances => KnownPath::SingleUseKeyBalancesRoot,
         }
     }
 }

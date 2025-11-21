@@ -144,6 +144,10 @@ pub mod grove_get_big_sum_tree_total_value;
 pub mod grove_get_optional_sum_tree_total_value;
 /// Fetch raw grove data if it exists, None otherwise
 pub mod grove_get_raw_optional_item;
+/// Batch inserts item with sum item if not already existing
+pub mod batch_insert_item_with_sum_item_if_not_exists;
+/// Batch merges the nonce and the sum item, the sum item is added to
+pub mod batch_merge_nonce_and_sum_item;
 
 use grovedb_costs::CostContext;
 

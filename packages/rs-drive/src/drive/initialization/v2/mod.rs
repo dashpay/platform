@@ -40,7 +40,7 @@ impl Drive {
         //This is new in v2
         self.grove_insert_empty_sum_tree(
             SubtreePath::empty(),
-            &[RootTree::SingleUseKeyBalances as u8],
+            &[RootTree::AddressBalances as u8],
             transaction,
             None,
             &mut vec![],

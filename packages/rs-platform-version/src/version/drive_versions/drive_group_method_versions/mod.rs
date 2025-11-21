@@ -11,6 +11,15 @@ pub struct DriveGroupMethodVersions {
 }
 
 #[derive(Clone, Debug, Default)]
+pub struct DriveAddressFundsMethodVersions {
+    pub set_balance_to_address: FeatureVersion,
+    pub fetch_balance_and_nonce: FeatureVersion,
+    pub fetch_balances_with_nonces: FeatureVersion,
+    pub prove_balance_and_nonce: FeatureVersion,
+    pub prove_balances_with_nonces: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct DriveGroupFetchMethodVersions {
     pub fetch_action_id_signers_power: FeatureVersion,
     pub fetch_active_action_info: FeatureVersion,

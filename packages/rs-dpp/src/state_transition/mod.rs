@@ -104,9 +104,7 @@ use crate::state_transition::identity_create_from_addresses_transition::{
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
-use crate::state_transition::identity_credit_transfer_to_addresses_transition::{
-    IdentityCreditTransferToAddressTransition, IdentityCreditTransferToAddressTransitionSignable,
-};
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use crate::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionSignable,
 };
@@ -125,6 +123,8 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
+use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -302,8 +302,10 @@ pub enum StateTransition {
     IdentityUpdate(IdentityUpdateTransition),
     IdentityCreditTransfer(IdentityCreditTransferTransition),
     MasternodeVote(MasternodeVoteTransition),
-    IdentityCreditTransferToSingleUseKey(IdentityCreditTransferToAddressTransition),
+    IdentityCreditTransferToAddresses(IdentityCreditTransferToAddressesTransition),
     IdentityCreateFromAddresses(IdentityCreateFromAddressesTransition),
+    IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition),
+    AddressFundsTransfer(AddressFundsTransferTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -376,8 +378,10 @@ impl StateTransition {
             | StateTransition::IdentityUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
             | StateTransition::MasternodeVote(_) => ALL_VERSIONS,
-            StateTransition::IdentityCreditTransferToSingleUseKey(_)
-            | StateTransition::IdentityCreateFromAddresses(_) => 11..=LATEST_VERSION,
+            StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_) => 11..=LATEST_VERSION,
         }
     }
 
@@ -482,10 +486,12 @@ impl StateTransition {
             Self::IdentityUpdate(_) => "IdentityUpdate".to_string(),
             Self::IdentityCreditTransfer(_) => "IdentityCreditTransfer".to_string(),
             Self::MasternodeVote(_) => "MasternodeVote".to_string(),
-            Self::IdentityCreditTransferToSingleUseKey(_) => {
-                "IdentityCreditTransferToSingleUseKey".to_string()
+            Self::IdentityCreditTransferToAddresses(_) => {
+                "IdentityCreditTransferToAddresses".to_string()
             }
             Self::IdentityCreateFromAddresses(_) => "IdentityCreateFromAddresses".to_string(),
+            Self::IdentityTopUpFromAddresses(_) => "IdentityTopUpFromAddresses".to_string(),
+            Self::AddressFundsTransfer(_) => "AddressFundsTransfer".to_string(),
         }
     }
 
@@ -501,8 +507,10 @@ impl StateTransition {
             StateTransition::IdentityUpdate(st) => Some(st.signature()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.signature()),
             StateTransition::MasternodeVote(st) => Some(st.signature()),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.signature()),
+            StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.signature()),
             StateTransition::IdentityCreateFromAddresses(_) => None,
+            StateTransition::IdentityTopUpFromAddresses(_) => None,
+            StateTransition::AddressFundsTransfer(_) => None,
         }
     }
 
@@ -590,11 +598,13 @@ impl StateTransition {
                 st.set_signature(signature);
                 true
             }
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => {
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
                 st.set_signature(signature);
                 true
             }
-            StateTransition::IdentityCreateFromAddresses(_) => false,
+            StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_) => false,
         }
     }
 
@@ -712,13 +722,25 @@ impl StateTransition {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => {
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
                 st.verify_public_key_level_and_purpose(identity_public_key, options)?;
                 st.verify_public_key_is_enabled(identity_public_key)?;
             }
             StateTransition::IdentityCreateFromAddresses(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "identity create from addresses can not be called for identity signing"
+                        .to_string(),
+                ))
+            }
+            StateTransition::IdentityTopUpFromAddresses(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "identity top up from addresses can not be called for identity signing"
+                        .to_string(),
+                ))
+            }
+            StateTransition::AddressFundsTransfer(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "address funds transfer transition can not be called for identity signing"
                         .to_string(),
                 ))
             }
