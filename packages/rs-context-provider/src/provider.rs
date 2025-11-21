@@ -190,8 +190,10 @@ where
         core_chain_locked_height: u32,
     ) -> Pin<Box<dyn Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>>
     {
-        let lock = self.lock().expect("lock poisoned");
-        lock.get_quorum_public_key_async(quorum_type, quorum_hash, core_chain_locked_height)
+        // Compute synchronously under the lock, then return a ready future.
+        // This avoids holding the MutexGuard across await points which would be unsound.
+        let result = self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height);
+        Box::pin(async move { result })
     }
 
     fn get_quorum_public_key(
