@@ -63,7 +63,7 @@ use crate::fee::Credits;
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
 #[cfg(any(
@@ -619,7 +619,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external<S: Signer>(
+    pub fn sign_external<S: IdentitySigner>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -636,7 +636,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external_with_options<S: Signer>(
+    pub fn sign_external_with_options<S: IdentitySigner>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,

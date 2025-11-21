@@ -4,7 +4,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::Document;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 use crate::identity::SecurityLevel;
@@ -30,7 +30,7 @@ use crate::tokens::token_payment_info::TokenPaymentInfo;
 pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_creation_transition_from_document<S: Signer>(
+    fn new_document_creation_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
@@ -45,7 +45,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_replacement_transition_from_document<S: Signer>(
+    fn new_document_replacement_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -59,7 +59,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_deletion_transition_from_document<S: Signer>(
+    fn new_document_deletion_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -73,7 +73,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_transfer_transition_from_document<S: Signer>(
+    fn new_document_transfer_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         recipient_owner_id: Identifier,
@@ -88,7 +88,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_update_price_transition_from_document<S: Signer>(
+    fn new_document_update_price_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
@@ -103,7 +103,7 @@ pub trait DocumentsBatchTransitionMethodsV0: DocumentsBatchTransitionAccessorsV0
 
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_document_purchase_transition_from_document<S: Signer>(
+    fn new_document_purchase_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         new_owner_id: Identifier,

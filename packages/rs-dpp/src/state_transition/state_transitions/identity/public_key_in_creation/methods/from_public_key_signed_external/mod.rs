@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 use crate::identity::IdentityPublicKey;
 
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -8,7 +8,7 @@ use crate::ProtocolError;
 use platform_version::version::PlatformVersion;
 
 impl IdentityPublicKeyInCreation {
-    pub fn from_public_key_signed_external<S: Signer>(
+    pub fn from_public_key_signed_external<S: IdentitySigner>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,

@@ -8,7 +8,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
@@ -46,7 +46,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_destroy_frozen_funds<S: Signer>(
+    pub async fn token_destroy_frozen_funds<S: IdentitySigner>(
         &self,
         destroy_frozen_funds_transition_builder: TokenDestroyFrozenFundsTransitionBuilder,
         signing_key: &IdentityPublicKey,

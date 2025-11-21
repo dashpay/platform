@@ -4,7 +4,7 @@ pub use v0::*;
 use crate::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{signer::Signer, Identity, IdentityPublicKey},
+    identity::{signer::IdentitySigner, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
         identity_credit_transfer_transition::v0::IdentityCreditTransferTransitionV0,
@@ -19,7 +19,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer>(
+    fn try_from_identity<S: IdentitySigner>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,
         amount: u64,

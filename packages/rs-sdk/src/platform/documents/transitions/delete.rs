@@ -5,7 +5,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, INITIAL_REVISION};
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -160,7 +160,7 @@ impl DocumentDeleteTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl IdentitySigner,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -242,7 +242,7 @@ impl Sdk {
     /// - The proof verification returns an unexpected result type
     /// - Document not found or already deleted
     /// - Insufficient permissions to delete the document
-    pub async fn document_delete<S: Signer>(
+    pub async fn document_delete<S: IdentitySigner>(
         &self,
         delete_document_transition_builder: DocumentDeleteTransitionBuilder,
         signing_key: &IdentityPublicKey,

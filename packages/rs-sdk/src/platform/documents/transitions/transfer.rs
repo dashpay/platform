@@ -5,7 +5,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -177,7 +177,7 @@ impl DocumentTransferTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl IdentitySigner,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -243,7 +243,7 @@ impl Sdk {
     /// - Document not found
     /// - Insufficient permissions to transfer the document
     /// - Invalid recipient identity
-    pub async fn document_transfer<S: Signer>(
+    pub async fn document_transfer<S: IdentitySigner>(
         &self,
         transfer_document_transition_builder: DocumentTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,

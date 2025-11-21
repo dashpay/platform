@@ -7,7 +7,7 @@ use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(feature = "state-transition-signing")]
@@ -34,7 +34,7 @@ use crate::version::PlatformVersion;
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer>(
+    fn try_from_identity_with_signer<S: IdentitySigner>(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],

@@ -4,7 +4,7 @@ use crate::data_contract::document_type::DocumentTypeRef;
 use crate::document::{Document, DocumentV0Getters};
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityPublicKey;
@@ -99,7 +99,7 @@ impl DocumentsBatchTransitionAccessorsV0 for BatchTransitionV1 {
 
 impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_creation_transition_from_document<S: Signer>(
+    fn new_document_creation_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         entropy: [u8; 32],
@@ -143,7 +143,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_replacement_transition_from_document<S: Signer>(
+    fn new_document_replacement_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -185,7 +185,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_deletion_transition_from_document<S: Signer>(
+    fn new_document_deletion_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         identity_public_key: &IdentityPublicKey,
@@ -227,7 +227,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_transfer_transition_from_document<S: Signer>(
+    fn new_document_transfer_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         recipient_owner_id: Identifier,
@@ -271,7 +271,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_update_price_transition_from_document<S: Signer>(
+    fn new_document_update_price_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         price: Credits,
@@ -315,7 +315,7 @@ impl DocumentsBatchTransitionMethodsV0 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_document_purchase_transition_from_document<S: Signer>(
+    fn new_document_purchase_transition_from_document<S: IdentitySigner>(
         document: Document,
         document_type: DocumentTypeRef,
         new_owner_id: Identifier,

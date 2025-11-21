@@ -7,7 +7,7 @@ use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::state_transition::AssetLockProved;
 #[cfg(feature = "state-transition-signing")]
@@ -34,7 +34,7 @@ use crate::version::PlatformVersion;
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer>(
+    fn try_from_inputs_with_signer<S: IdentitySigner>(
         identity: &Identity,
         inputs: Vec<crate::identity::KeyOfType>,
         outputs: std::collections::BTreeMap<crate::identity::KeyOfType, crate::fee::Credits>,

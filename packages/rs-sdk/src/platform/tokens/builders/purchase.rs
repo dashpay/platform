@@ -5,7 +5,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::{DataContract, TokenContractPosition};
 use dpp::fee::Credits;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
@@ -121,7 +121,7 @@ impl TokenDirectPurchaseTransitionBuilder {
         self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl IdentitySigner,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(

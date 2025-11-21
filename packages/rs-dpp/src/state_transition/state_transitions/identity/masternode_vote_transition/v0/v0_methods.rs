@@ -3,7 +3,7 @@ use crate::identifier::MasternodeIdentifiers;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::hash::IdentityPublicKeyHashMethodsV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{IdentityPublicKey, SecurityLevel};
 #[cfg(feature = "state-transition-signing")]
@@ -23,7 +23,7 @@ use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTrans
 
 impl MasternodeVoteTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    pub fn try_from_vote_with_signer<S: Signer>(
+    pub fn try_from_vote_with_signer<S: IdentitySigner>(
         vote: Vote,
         signer: &S,
         pro_tx_hash: Identifier,

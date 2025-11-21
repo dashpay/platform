@@ -32,7 +32,7 @@ pub enum StateTransitionType {
     IdentityCreditTransferToAddress = 9,
     IdentityCreateFromAddresses = 10,
     IdentityTopUpFromAddresses = 11,
-    UTXOTransfer = 12,
+    AddressFundsTransfer = 12,
 }
 
 impl std::fmt::Display for StateTransitionType {

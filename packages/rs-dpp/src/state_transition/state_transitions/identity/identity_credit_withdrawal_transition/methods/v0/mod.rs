@@ -1,6 +1,6 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{core_script::CoreScript, signer::Signer, Identity, IdentityPublicKey},
+    identity::{core_script::CoreScript, signer::IdentitySigner, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
     withdrawal::Pooling,
@@ -29,7 +29,7 @@ pub enum PreferredKeyPurposeForSigningWithdrawal {
 pub trait IdentityCreditWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_identity<S: Signer>(
+    fn try_from_identity<S: IdentitySigner>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,

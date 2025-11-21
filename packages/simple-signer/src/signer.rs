@@ -5,7 +5,7 @@ use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::dashcore::signer;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::{IdentityPublicKey, KeyType};
 use dpp::platform_value::BinaryData;
 use dpp::state_transition::errors::InvalidIdentityPublicKeyTypeError;
@@ -62,7 +62,7 @@ impl SimpleSigner {
     }
 }
 
-impl Signer for SimpleSigner {
+impl IdentitySigner for SimpleSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,

@@ -1,16 +1,10 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{
-        accessors::IdentityGettersV0,
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
-        IdentityPublicKey, KeyType, Purpose, SecurityLevel,
-    },
-    prelude::{IdentityNonce, UserFeeIncrease},
+    identity::signer::IdentitySigner,
+    prelude::{KeyOfTypeNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
 };
-#[cfg(feature = "state-transition-signing")]
-use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
@@ -18,101 +12,57 @@ use std::collections::BTreeMap;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
-use crate::state_transition::address_funds_transfer_transition::methods::UTXOTransferTransitionMethodsV0;
+use crate::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::GetDataContractSecurityLevelRequirementFn;
+use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
-use platform_version::version::{FeatureVersion, PlatformVersion};
+use platform_value::BinaryData;
+use crate::identity::signer::Signer;
 
-impl UTXOTransferTransitionMethodsV0 for AddressFundsTransferTransitionV0 {
+impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer>(
-        identity: &Identity,
-        to_recipient_keys: BTreeMap<KeyOfType, Credits>,
+    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
+        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        outputs: BTreeMap<KeyOfType, Credits>,
+        signer: &S,
         user_fee_increase: UserFeeIncrease,
-        signer: S,
-        signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
-        nonce: IdentityNonce,
         _platform_version: &PlatformVersion,
-        _version: Option<FeatureVersion>,
     ) -> Result<StateTransition, ProtocolError> {
-        tracing::debug!("try_from_identity: Started");
-        tracing::debug!(identity_id = %identity.id(), "try_from_identity");
-        tracing::debug!(recipient_key = %to_recipient_keys, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
+        tracing::debug!("try_from_inputs_with_signer: Started");
+        tracing::debug!(input_count = inputs.len(), output_count = outputs.len(), "try_from_inputs_with_signer");
 
-        let mut transition: StateTransition = AddressFundsTransferTransitionV0 {
-            identity_id: identity.id(),
-            recipient_keys: to_recipient_keys,
-            nonce,
+        // Create the unsigned transition
+        let transition = AddressFundsTransferTransitionV0 {
+            inputs: inputs.clone(),
+            outputs,
             user_fee_increase,
-            signature_public_key_id: 0,
-            signature: Default::default(),
-        }
-        .into();
-
-        let identity_public_key = match signing_withdrawal_key_to_use {
-            Some(key) => {
-                if signer.can_sign_with(key) {
-                    key
-                } else {
-                    tracing::error!(
-                        key_id = key.id(),
-                        "try_from_identity: specified transfer key cannot be used for signing"
-                    );
-                    return Err(
-                        ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
-                            "specified transfer public key cannot be used for signing".to_string(),
-                        ),
-                    );
-                }
-            }
-            None => {
-                tracing::debug!("try_from_identity: No signing key specified, searching for TRANSFER key (full_range, all_key_types, allow_disabled=true)");
-
-                let key_result = identity.get_first_public_key_matching(
-                    Purpose::TRANSFER,
-                    SecurityLevel::full_range().into(),
-                    KeyType::all_key_types().into(),
-                    true,
-                );
-
-                tracing::debug!(
-                    found = key_result.is_some(),
-                    "try_from_identity: get_first_public_key_matching result"
-                );
-
-                key_result.ok_or_else(|| {
-                    tracing::error!(total_keys = identity.public_keys().len(), "try_from_identity: No transfer public key found in identity");
-                    for (key_id, key) in identity.public_keys() {
-                        tracing::debug!(key_id, key_purpose = ?key.purpose(), "try_from_identity: identity key");
-                    }
-                    ProtocolError::DesiredKeyWithTypePurposeSecurityLevelMissing(
-                        "no transfer public key".to_string(),
-                    )
-                })?
-            }
+            input_witnesses: Vec::new(),
         };
 
-        tracing::debug!(
-            key_id = identity_public_key.id(),
-            "try_from_identity: Found identity public key"
-        );
-        tracing::debug!("try_from_identity: Calling transition.sign_external");
+        // TODO: Sign each input with the corresponding private key
+        // For now, create empty witnesses as placeholder
+        let mut input_witnesses = Vec::new();
+        for (key_of_type, _) in &inputs {
+            // Get the private key for this input
+            let _private_key = input_private_keys.get(key_of_type).ok_or_else(|| {
+                ProtocolError::Generic(format!(
+                    "Missing private key for input: {}",
+                    key_of_type
+                ))
+            })?;
 
-        match transition.sign_external(
-            identity_public_key,
-            &signer,
-            None::<GetDataContractSecurityLevelRequirementFn>,
-        ) {
-            Ok(_) => tracing::debug!("try_from_identity: sign_external succeeded"),
-            Err(e) => {
-                tracing::error!(error = ?e, "try_from_identity: sign_external failed");
-                return Err(e);
-            }
+            // TODO: Create signature for this input using the private key
+            // For now, use empty signature
+            input_witnesses.push(BinaryData::default());
         }
 
-        tracing::debug!("try_from_identity: Successfully created and signed transition");
-        Ok(transition)
+        let signed_transition = AddressFundsTransferTransitionV0 {
+            input_witnesses,
+            ..transition
+        };
+
+        tracing::debug!("try_from_inputs_with_signer: Successfully created transition");
+        Ok(signed_transition.into())
     }
 }

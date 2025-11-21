@@ -3,7 +3,7 @@ mod v0;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
@@ -23,7 +23,7 @@ use crate::{BlsModule, ProtocolError};
 
 impl IdentityCreateTransitionMethodsV0 for IdentityCreateTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer>(
+    fn try_from_identity_with_signer<S: IdentitySigner>(
         identity: &Identity,
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],

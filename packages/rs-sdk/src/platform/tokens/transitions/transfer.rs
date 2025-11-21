@@ -9,7 +9,7 @@ use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -53,7 +53,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_transfer<S: Signer>(
+    pub async fn token_transfer<S: IdentitySigner>(
         &self,
         transfer_tokens_transition_builder: TokenTransferTransitionBuilder,
         signing_key: &IdentityPublicKey,

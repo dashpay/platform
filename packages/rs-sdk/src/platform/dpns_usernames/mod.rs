@@ -14,7 +14,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{DocumentV0, DocumentV0Getters};
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::platform_value::{Bytes32, Value};
 use dpp::prelude::Identifier;
@@ -126,7 +126,7 @@ fn hash_double(data: Vec<u8>) -> [u8; 32] {
 pub type PreorderCallback = Box<dyn FnOnce(&Document) + Send>;
 
 /// Input for registering a DPNS name
-pub struct RegisterDpnsNameInput<S: Signer> {
+pub struct RegisterDpnsNameInput<S: IdentitySigner> {
     /// The label for the domain (e.g., "alice" for "alice.dash")
     pub label: String,
     /// The identity that will own the domain
@@ -213,7 +213,7 @@ impl Sdk {
     /// - The DPNS contract cannot be fetched
     /// - Document types are not found in the contract
     /// - Document creation or submission fails
-    pub async fn register_dpns_name<S: Signer>(
+    pub async fn register_dpns_name<S: IdentitySigner>(
         &self,
         input: RegisterDpnsNameInput<S>,
     ) -> Result<RegisterDpnsNameResult, Error> {

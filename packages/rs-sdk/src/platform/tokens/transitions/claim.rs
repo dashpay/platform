@@ -8,7 +8,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 
@@ -47,7 +47,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - A group action result is missing the expected document
-    pub async fn token_claim<S: Signer>(
+    pub async fn token_claim<S: IdentitySigner>(
         &self,
         claim_tokens_transition_builder: TokenClaimTransitionBuilder,
         signing_key: &IdentityPublicKey,

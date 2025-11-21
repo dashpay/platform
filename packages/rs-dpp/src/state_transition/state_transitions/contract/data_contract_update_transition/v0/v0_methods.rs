@@ -1,5 +1,5 @@
 use crate::data_contract::DataContract;
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 use crate::identity::{KeyID, PartialIdentity};
 use crate::serialization::Signable;
 
@@ -15,7 +15,7 @@ use platform_version::version::PlatformVersion;
 use platform_version::TryIntoPlatformVersioned;
 
 impl DataContractUpdateTransitionMethodsV0 for DataContractUpdateTransitionV0 {
-    fn new_from_data_contract<S: Signer>(
+    fn new_from_data_contract<S: IdentitySigner>(
         data_contract: DataContract,
         identity: &PartialIdentity,
         key_id: KeyID,

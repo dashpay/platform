@@ -1,7 +1,7 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::IdentityNonce;
 #[cfg(feature = "state-transition-signing")]
@@ -79,7 +79,7 @@ use crate::tokens::token_pricing_schedule::TokenPricingSchedule;
 
 impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_mint_transition<S: Signer>(
+    fn new_token_mint_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -156,7 +156,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_burn_transition<S: Signer>(
+    fn new_token_burn_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -233,7 +233,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
         Ok(state_transition)
     }
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_transfer_transition<S: Signer>(
+    fn new_token_transfer_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -297,7 +297,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_freeze_transition<S: Signer>(
+    fn new_token_freeze_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -374,7 +374,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_unfreeze_transition<S: Signer>(
+    fn new_token_unfreeze_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -451,7 +451,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_destroy_frozen_funds_transition<S: Signer>(
+    fn new_token_destroy_frozen_funds_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -530,7 +530,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_emergency_action_transition<S: Signer>(
+    fn new_token_emergency_action_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -607,7 +607,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_config_update_transition<S: Signer>(
+    fn new_token_config_update_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -684,7 +684,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_claim_transition<S: Signer>(
+    fn new_token_claim_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -737,7 +737,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_change_direct_purchase_price_transition<S: Signer>(
+    fn new_token_change_direct_purchase_price_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -819,7 +819,7 @@ impl DocumentsBatchTransitionMethodsV1 for BatchTransitionV1 {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    fn new_token_direct_purchase_transition<S: Signer>(
+    fn new_token_direct_purchase_transition<S: IdentitySigner>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,

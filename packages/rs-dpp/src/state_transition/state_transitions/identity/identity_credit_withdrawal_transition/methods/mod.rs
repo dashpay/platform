@@ -6,7 +6,7 @@ use platform_version::version::FeatureVersion;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 
@@ -29,7 +29,7 @@ use crate::ProtocolError;
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: Signer>(
+    fn try_from_identity<S: IdentitySigner>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,

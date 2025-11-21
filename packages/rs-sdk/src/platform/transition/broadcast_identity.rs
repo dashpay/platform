@@ -9,7 +9,7 @@ use std::fmt::Debug;
 
 use dapi_grpc::platform::v0::{self as proto, BroadcastStateTransitionRequest};
 use dpp::dashcore::PrivateKey;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::native_bls::NativeBlsModule;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
@@ -63,7 +63,7 @@ use crate::error::Error;
 ///
 /// As [BroadcastRequestForNewIdentity] is a trait, it can be implemented for any type that represents
 /// a new identity creation operation, allowing for flexibility in how new identities are broadcasted.
-pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer>:
+pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: IdentitySigner>:
     Send + Debug + Clone
 {
     /// Converts the current instance into an instance of the `TransportRequest` type, ready for broadcasting.
@@ -94,7 +94,7 @@ pub(crate) trait BroadcastRequestForNewIdentity<T: TransportRequest, S: Signer>:
     ) -> Result<(StateTransition, BroadcastStateTransitionRequest), Error>;
 }
 
-impl<S: Signer> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S>
+impl<S: IdentitySigner> BroadcastRequestForNewIdentity<proto::BroadcastStateTransitionRequest, S>
     for Identity
 {
     fn broadcast_request_for_new_identity(

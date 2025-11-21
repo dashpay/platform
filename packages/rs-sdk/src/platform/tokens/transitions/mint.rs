@@ -10,7 +10,7 @@ use dpp::balances::credits::TokenAmount;
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::group::group_action_status::GroupActionStatus;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -55,7 +55,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_mint<S: Signer>(
+    pub async fn token_mint<S: IdentitySigner>(
         &self,
         mint_tokens_transition_builder: TokenMintTransitionBuilder,
         signing_key: &IdentityPublicKey,

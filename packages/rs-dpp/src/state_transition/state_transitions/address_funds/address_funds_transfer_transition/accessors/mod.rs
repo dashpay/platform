@@ -2,50 +2,66 @@ mod v0;
 
 use crate::fee::Credits;
 use crate::identity::KeyOfType;
-use crate::prelude::IdentityNonce;
+use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use platform_value::Identifier;
+use platform_value::BinaryData;
 use std::collections::BTreeMap;
 pub use v0::*;
 
-impl UTXOTransferTransitionAccessorsV0 for AddressFundsTransferTransition {
-    fn identity_id(&self) -> Identifier {
+impl AddressFundsTransferTransitionAccessorsV0 for AddressFundsTransferTransition {
+    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
-            AddressFundsTransferTransition::V0(transition) => transition.identity_id,
+            AddressFundsTransferTransition::V0(transition) => &transition.inputs,
         }
     }
 
-    fn set_identity_id(&mut self, identity_id: Identifier) {
+    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
         match self {
             AddressFundsTransferTransition::V0(transition) => {
-                transition.identity_id = identity_id;
+                transition.inputs = inputs;
             }
         }
     }
 
-    fn recipient_keys(&self) -> &BTreeMap<KeyOfType, Credits> {
+    fn outputs(&self) -> &BTreeMap<KeyOfType, Credits> {
         match self {
-            AddressFundsTransferTransition::V0(transition) => &transition.recipient_keys,
+            AddressFundsTransferTransition::V0(transition) => &transition.outputs,
         }
     }
 
-    fn set_recipient_keys(&mut self, recipient_keys: BTreeMap<KeyOfType, Credits>) {
+    fn set_outputs(&mut self, outputs: BTreeMap<KeyOfType, Credits>) {
         match self {
             AddressFundsTransferTransition::V0(transition) => {
-                transition.recipient_keys = recipient_keys;
+                transition.outputs = outputs;
             }
         }
     }
 
-    fn set_nonce(&mut self, nonce: IdentityNonce) {
+    fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            AddressFundsTransferTransition::V0(transition) => transition.nonce = nonce,
+            AddressFundsTransferTransition::V0(transition) => transition.user_fee_increase,
         }
     }
 
-    fn nonce(&self) -> IdentityNonce {
+    fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
-            AddressFundsTransferTransition::V0(transition) => transition.nonce,
+            AddressFundsTransferTransition::V0(transition) => {
+                transition.user_fee_increase = user_fee_increase;
+            }
+        }
+    }
+
+    fn input_witnesses(&self) -> &Vec<BinaryData> {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => &transition.input_witnesses,
+        }
+    }
+
+    fn set_input_witnesses(&mut self, input_witnesses: Vec<BinaryData>) {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => {
+                transition.input_witnesses = input_witnesses;
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::Document;
 use dpp::fee::Credits;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -16,7 +16,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for purchasing a document on Platform
-pub trait PurchaseDocument<S: Signer>: Waitable {
+pub trait PurchaseDocument<S: IdentitySigner>: Waitable {
     /// Tries to purchase a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -48,7 +48,7 @@ pub trait PurchaseDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> PurchaseDocument<S> for Document {
+impl<S: IdentitySigner> PurchaseDocument<S> for Document {
     async fn purchase_document(
         &self,
         price: Credits,

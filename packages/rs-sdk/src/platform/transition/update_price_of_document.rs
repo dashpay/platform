@@ -7,7 +7,7 @@ use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
 use dpp::fee::Credits;
-use dpp::identity::signer::Signer;
+use dpp::identity::signer::IdentitySigner;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -16,7 +16,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for updating the price of a document on Platform
-pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
+pub trait UpdatePriceOfDocument<S: IdentitySigner>: Waitable {
     /// Updates the price of a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +46,7 @@ pub trait UpdatePriceOfDocument<S: Signer>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: Signer> UpdatePriceOfDocument<S> for Document {
+impl<S: IdentitySigner> UpdatePriceOfDocument<S> for Document {
     async fn update_price_of_document(
         &self,
         price: Credits,

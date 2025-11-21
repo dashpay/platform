@@ -1,12 +1,12 @@
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use crate::identity::signer::Signer;
+use crate::identity::signer::IdentitySigner;
 use crate::identity::{IdentityPublicKey, KeyType};
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::ProtocolError;
 
 impl IdentityPublicKeyInCreation {
-    pub(super) fn from_public_key_signed_external_v0<S: Signer>(
+    pub(super) fn from_public_key_signed_external_v0<S: IdentitySigner>(
         public_key: IdentityPublicKey,
         state_transition_bytes: &[u8],
         signer: &S,
