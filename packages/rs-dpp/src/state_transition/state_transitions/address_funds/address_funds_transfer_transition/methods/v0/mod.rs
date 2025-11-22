@@ -1,18 +1,19 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::{KeyOfTypeNonce, UserFeeIncrease}, state_transition::StateTransition,
+    prelude::{KeyOfTypeNonce, UserFeeIncrease},
+    state_transition::StateTransition,
     ProtocolError,
 };
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
-use crate::identity::signer::Signer;
 
 pub trait AddressFundsTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

@@ -1,6 +1,5 @@
 pub mod accessors;
 pub mod fields;
-mod identity_signed;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
@@ -9,17 +8,14 @@ pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
 mod version;
-
-use crate::state_transition::address_funds_transfer_transition::fields::property_names::RECIPIENT_ID;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
-use crate::state_transition::address_funds_transfer_transition::v0::UTXOTransferTransitionV0Signable;
+use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0Signable;
 use crate::state_transition::StateTransitionFieldTypes;
 
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use derive_more::From;
-use fields::*;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize, PlatformSignable};
 use platform_version::version::PlatformVersion;
 use platform_versioning::PlatformVersioned;
@@ -58,7 +54,9 @@ impl AddressFundsTransferTransition {
     pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         match platform_version
             .dpp
-            .state_transitions.address_funds.address_funds_transition_default_version
+            .state_transitions
+            .address_funds
+            .address_funds_transition_default_version
         {
             0 => Ok(AddressFundsTransferTransition::V0(
                 AddressFundsTransferTransitionV0::default(),
@@ -76,11 +74,11 @@ impl OptionallyAssetLockProved for AddressFundsTransferTransition {}
 
 impl StateTransitionFieldTypes for AddressFundsTransferTransition {
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE]
+        vec![]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![IDENTITY_ID, RECIPIENT_ID]
+        vec![]
     }
 
     fn binary_property_paths() -> Vec<&'static str> {

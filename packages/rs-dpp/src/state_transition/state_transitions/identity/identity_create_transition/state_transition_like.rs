@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -41,12 +41,6 @@ impl StateTransitionLike for IdentityCreateTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreateTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             IdentityCreateTransition::V0(transition) => transition.unique_identifiers(),
@@ -71,6 +65,14 @@ impl StateTransitionSingleSigned for IdentityCreateTransition {
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             IdentityCreateTransition::V0(transition) => transition.set_signature_bytes(signature),
+        }
+    }
+}
+
+impl StateTransitionOwned for IdentityCreateTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            IdentityCreateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

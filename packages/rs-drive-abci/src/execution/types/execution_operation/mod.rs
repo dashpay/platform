@@ -252,7 +252,8 @@ impl ValidationOperation {
                     let operation_cost = platform_version
                         .fee_version
                         .processing
-                        .fetch_key_with_type_nonce_and_balance_cost * *key_count as u64;
+                        .fetch_key_with_type_nonce_and_balance_cost
+                        * *key_count as u64;
 
                     fee_result.processing_fee = fee_result
                         .processing_fee

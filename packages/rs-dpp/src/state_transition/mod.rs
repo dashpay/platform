@@ -63,7 +63,7 @@ use crate::fee::Credits;
 ))]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
+use crate::identity::signer::Signer;
 use crate::identity::state_transition::OptionallyAssetLockProved;
 use crate::identity::Purpose;
 #[cfg(any(
@@ -74,6 +74,9 @@ use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::address_funds_transfer_transition::{
+    AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
+};
 use crate::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use crate::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 #[cfg(feature = "state-transition-signing")]
@@ -104,12 +107,18 @@ use crate::state_transition::identity_create_from_addresses_transition::{
 use crate::state_transition::identity_create_transition::{
     IdentityCreateTransition, IdentityCreateTransitionSignable,
 };
-use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
+use crate::state_transition::identity_credit_transfer_to_addresses_transition::{
+    IdentityCreditTransferToAddressesTransition,
+    IdentityCreditTransferToAddressesTransitionSignable,
+};
 use crate::state_transition::identity_credit_transfer_transition::{
     IdentityCreditTransferTransition, IdentityCreditTransferTransitionSignable,
 };
 use crate::state_transition::identity_credit_withdrawal_transition::{
     IdentityCreditWithdrawalTransition, IdentityCreditWithdrawalTransitionSignable,
+};
+use crate::state_transition::identity_topup_from_addresses_transition::{
+    IdentityTopUpFromAddressesTransition, IdentityTopUpFromAddressesTransitionSignable,
 };
 use crate::state_transition::identity_topup_transition::{
     IdentityTopUpTransition, IdentityTopUpTransitionSignable,
@@ -123,8 +132,6 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
-use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -141,8 +148,10 @@ macro_rules! call_method {
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($args),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
             StateTransition::IdentityCreateFromAddresses(st) => st.$method($args),
+            StateTransition::IdentityTopUpFromAddresses(st) => st.$method($args),
+            StateTransition::AddressFundsTransfer(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -156,8 +165,10 @@ macro_rules! call_method {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
             StateTransition::IdentityCreateFromAddresses(st) => st.$method(),
+            StateTransition::IdentityTopUpFromAddresses(st) => st.$method(),
+            StateTransition::AddressFundsTransfer(st) => st.$method(),
         }
     };
 }
@@ -174,8 +185,10 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityUpdate(st) => Some(st.$method($args)),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method($args)),
             StateTransition::MasternodeVote(st) => Some(st.$method($args)),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method($args)),
+            StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method($args)),
             StateTransition::IdentityCreateFromAddresses(_) => None,
+            StateTransition::IdentityTopUpFromAddresses(_) => None,
+            StateTransition::AddressFundsTransfer(_) => None,
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -189,8 +202,10 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityUpdate(st) => Some(st.$method()),
             StateTransition::IdentityCreditTransfer(st) => Some(st.$method()),
             StateTransition::MasternodeVote(st) => Some(st.$method()),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => Some(st.$method()),
+            StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.$method()),
             StateTransition::IdentityCreateFromAddresses(_) => None,
+            StateTransition::IdentityTopUpFromAddresses(_) => None,
+            StateTransition::AddressFundsTransfer(_) => None,
         }
     };
 }
@@ -207,8 +222,10 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method($args),
             StateTransition::IdentityCreditTransfer(st) => st.$method($args),
             StateTransition::MasternodeVote(st) => st.$method($args),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($args),
-            StateTransition::IdentityCreateFromAddresses(st) => {}
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($args),
+            StateTransition::IdentityCreateFromAddresses(_) => {}
+            StateTransition::IdentityTopUpFromAddresses(_) => {}
+            StateTransition::AddressFundsTransfer(_) => {}
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -222,8 +239,10 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
-            StateTransition::IdentityCreateFromAddresses(st) => {}
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
+            StateTransition::IdentityCreateFromAddresses(_) => {}
+            StateTransition::IdentityTopUpFromAddresses(_) => {}
+            StateTransition::AddressFundsTransfer(_) => {}
         }
     };
 }
@@ -245,9 +264,15 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
             StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method($( $arg ),*),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreateFromAddresses(st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create from addresses can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityTopUpFromAddresses(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up from addresses can not be called for identity signing".to_string(),
+            )),
+            StateTransition::AddressFundsTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "address funds transfer can not be called for identity signing".to_string(),
             )),
         }
     };
@@ -266,9 +291,15 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityUpdate(st) => st.$method(),
             StateTransition::IdentityCreditTransfer(st) => st.$method(),
             StateTransition::MasternodeVote(st) => st.$method(),
-            StateTransition::IdentityCreditTransferToSingleUseKey(st) => st.$method(),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.$method(),
             StateTransition::IdentityCreateFromAddresses(st) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create from addresses can not be called for identity signing".to_string(),
+            )),
+            StateTransition::IdentityTopUpFromAddresses(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "identity top up from addresses can not be called for identity signing".to_string(),
+            )),
+            StateTransition::AddressFundsTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "address funds transfer can not be called for identity signing".to_string(),
             )),
         }
     };
@@ -310,7 +341,11 @@ pub enum StateTransition {
 
 impl OptionallyAssetLockProved for StateTransition {
     fn optional_asset_lock_proof(&self) -> Option<&AssetLockProof> {
-        call_method!(self, optional_asset_lock_proof)
+        match self {
+            StateTransition::IdentityCreate(st) => st.optional_asset_lock_proof(),
+            StateTransition::IdentityTopUp(st) => st.optional_asset_lock_proof(),
+            _ => None,
+        }
     }
 }
 
@@ -550,8 +585,22 @@ impl StateTransition {
     }
 
     /// returns the signature as a byte-array
-    pub fn owner_id(&self) -> Identifier {
-        call_method!(self, owner_id)
+    pub fn owner_id(&self) -> Option<Identifier> {
+        match self {
+            StateTransition::DataContractCreate(st) => Some(st.owner_id()),
+            StateTransition::DataContractUpdate(st) => Some(st.owner_id()),
+            StateTransition::Batch(st) => Some(st.owner_id()),
+            StateTransition::IdentityCreate(st) => Some(st.owner_id()),
+            StateTransition::IdentityTopUp(st) => Some(st.owner_id()),
+            StateTransition::IdentityCreditWithdrawal(st) => Some(st.owner_id()),
+            StateTransition::IdentityUpdate(st) => Some(st.owner_id()),
+            StateTransition::IdentityCreditTransfer(st) => Some(st.owner_id()),
+            StateTransition::MasternodeVote(st) => Some(st.owner_id()),
+            StateTransition::IdentityCreditTransferToAddresses(st) => Some(st.owner_id()),
+            StateTransition::IdentityCreateFromAddresses(_) => None,
+            StateTransition::IdentityTopUpFromAddresses(_) => None,
+            StateTransition::AddressFundsTransfer(_) => None,
+        }
     }
 
     /// returns the unique identifiers for the state transition
@@ -619,7 +668,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external<S: IdentitySigner>(
+    pub fn sign_external<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -636,7 +685,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-signing")]
-    pub fn sign_external_with_options<S: IdentitySigner>(
+    pub fn sign_external_with_options<S: Signer<IdentityPublicKey>>(
         &mut self,
         identity_public_key: &IdentityPublicKey,
         signer: &S,
@@ -905,7 +954,7 @@ impl StateTransition {
     }
 
     #[cfg(feature = "state-transition-validation")]
-    pub fn verify_signature(
+    pub fn verify_identity_signed_signature(
         &self,
         public_key: &IdentityPublicKey,
         bls: &impl BlsModule,
@@ -917,7 +966,9 @@ impl StateTransition {
             ));
         }
 
-        let signature = self.signature();
+        let Some(signature) = self.signature() else {
+            return Err(ProtocolError::CorruptedCodeExecution("verifying identity signature for a state transition that doesn't use identity signatures".to_string()));
+        };
         if signature.is_empty() {
             return Err(ProtocolError::StateTransitionIsNotSignedError(
                 StateTransitionIsNotSignedError::new(self.clone()),

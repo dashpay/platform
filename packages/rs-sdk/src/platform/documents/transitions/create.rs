@@ -4,7 +4,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::serialization::PlatformSerializable;
@@ -137,7 +137,7 @@ impl DocumentCreateTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl IdentitySigner,
+        signer: &impl Signer,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -201,7 +201,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - Document validation fails
-    pub async fn document_create<S: IdentitySigner>(
+    pub async fn document_create<S: Signer<IdentityPublicKey>>(
         &self,
         create_document_transition_builder: DocumentCreateTransitionBuilder,
         signing_key: &IdentityPublicKey,

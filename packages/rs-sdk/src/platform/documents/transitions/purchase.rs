@@ -6,7 +6,7 @@ use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::document::Document;
 use dpp::fee::Credits;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
@@ -190,7 +190,7 @@ impl DocumentPurchaseTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl IdentitySigner,
+        signer: &impl Signer,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk
@@ -259,7 +259,7 @@ impl Sdk {
     /// - Insufficient funds to complete the purchase
     /// - Price mismatch (document price changed)
     /// - Invalid purchaser identity
-    pub async fn document_purchase<S: IdentitySigner>(
+    pub async fn document_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         purchase_document_transition_builder: DocumentPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,

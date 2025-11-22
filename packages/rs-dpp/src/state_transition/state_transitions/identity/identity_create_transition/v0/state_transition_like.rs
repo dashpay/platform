@@ -6,7 +6,7 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_transition::IdentityCreateTransition;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::identity_create_transition::v0::IdentityCreateTransitionV0;
@@ -37,11 +37,6 @@ impl StateTransitionLike for IdentityCreateTransitionV0 {
         vec![self.identity_id]
     }
 
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
-
     /// this is based on the asset lock
     fn unique_identifiers(&self) -> Vec<String> {
         vec![BASE64_STANDARD.encode(self.identity_id)]
@@ -68,5 +63,12 @@ impl StateTransitionSingleSigned for IdentityCreateTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for IdentityCreateTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

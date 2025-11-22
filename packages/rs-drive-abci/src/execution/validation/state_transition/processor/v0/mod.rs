@@ -914,7 +914,8 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreditTransfer(_)
-            | StateTransition::Batch(_) => {
+            | StateTransition::Batch(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => {
                 //Basic signature verification
                 Ok(self.validate_state_transition_identity_signed(
                     drive,
@@ -976,6 +977,9 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
             }
             StateTransition::IdentityCreate(_) => Ok(ConsensusValidationResult::new()),
             StateTransition::IdentityTopUp(_) => Ok(ConsensusValidationResult::new()),
+            StateTransition::IdentityCreateFromAddresses(_) => Ok(ConsensusValidationResult::new()),
+            StateTransition::IdentityTopUpFromAddresses(_) => Ok(ConsensusValidationResult::new()),
+            StateTransition::AddressFundsTransfer(_) => Ok(ConsensusValidationResult::new()),
         }
     }
 
@@ -993,20 +997,35 @@ impl StateTransitionIdentityBasedSignatureValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             )?),
+            StateTransition::IdentityTopUpFromAddresses(st) => Ok(st.retrieve_topped_up_identity(
+                drive,
+                tx,
+                execution_context,
+                platform_version,
+            )?),
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
 
     /// Is the state transition supposed to have an identity in the state to succeed
     fn uses_identity_in_state(&self) -> bool {
-        !matches!(self, StateTransition::IdentityCreate(_))
+        !matches!(
+            self,
+            StateTransition::IdentityCreate(_)
+                | StateTransition::IdentityCreateFromAddresses(_)
+                | StateTransition::AddressFundsTransfer(_)
+        )
     }
 
     /// Do we validate the signature based on identity info?
     fn validates_signature_based_on_identity_info(&self) -> bool {
         !matches!(
             self,
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_)
+            StateTransition::IdentityCreate(_)
+                | StateTransition::IdentityTopUp(_)
+                | StateTransition::IdentityCreateFromAddresses(_)
+                | StateTransition::IdentityTopUpFromAddresses(_)
+                | StateTransition::AddressFundsTransfer(_)
         )
     }
 }

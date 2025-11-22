@@ -1,16 +1,12 @@
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
-use platform_value::BinaryData;
-
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 use crate::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use crate::state_transition::{StateTransition, StateTransitionWitnessSigned};
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
-
-use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-use crate::state_transition::{StateTransition, StateTransitionMultiSigned};
 
 use crate::state_transition::StateTransitionType::IdentityCreateFromAddresses;
 use crate::version::FeatureVersion;
@@ -36,14 +32,12 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransitionV0 {
         vec![self.identity_id]
     }
 
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
-
-    /// this is based on the asset lock
+    /// each input must be unique in the mempool
     fn unique_identifiers(&self) -> Vec<String> {
-        vec![BASE64_STANDARD.encode(self.identity_id)]
+        self.inputs
+            .iter()
+            .map(|(key, (nonce, _))| key.base64_string_with_nonce(*nonce))
+            .collect()
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
@@ -55,12 +49,19 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransitionV0 {
     }
 }
 
-impl StateTransitionMultiSigned for IdentityCreateFromAddressesTransitionV0 {
-    fn signatures(&self) -> &Vec<BinaryData> {
-        &self.input_signatures
+impl StateTransitionWitnessSigned for IdentityCreateFromAddressesTransitionV0 {
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        &self.input_witnesses
     }
 
-    fn set_signatures(&mut self, signatures: Vec<BinaryData>) {
-        self.input_signatures = signatures;
+    fn set_witnesses(&mut self, input_witnesses: Vec<AddressWitness>) {
+        self.input_witnesses = input_witnesses;
+    }
+}
+
+impl StateTransitionOwned for IdentityCreateFromAddressesTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

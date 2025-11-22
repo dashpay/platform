@@ -1,21 +1,14 @@
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
-use platform_value::BinaryData;
-
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
 
-use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
-use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-
-use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
-use crate::state_transition::StateTransitionType::{IdentityCreditTransfer, UTXOTransfer};
-use crate::state_transition::{
-    StateTransition, StateTransitionMultiSigned, StateTransitionSingleSigned,
-};
+use crate::state_transition::StateTransitionType::AddressFundsTransfer;
+use crate::state_transition::{StateTransition, StateTransitionWitnessSigned};
 use crate::version::FeatureVersion;
 
 impl From<AddressFundsTransferTransitionV0> for StateTransition {
@@ -32,7 +25,7 @@ impl StateTransitionLike for AddressFundsTransferTransitionV0 {
 
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
-        UTXOTransfer
+        AddressFundsTransfer
     }
 
     /// Returns ID of the created contract
@@ -40,18 +33,12 @@ impl StateTransitionLike for AddressFundsTransferTransitionV0 {
         vec![]
     }
 
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
-
-    /// We want things to be unique based on the nonce, so we don't add the transition type
+    /// State transitions with the same inputs should not be allowed to overlap
     fn unique_identifiers(&self) -> Vec<String> {
-        vec![format!(
-            "{}-{:x}",
-            BASE64_STANDARD.encode(self.identity_id),
-            self.nonce
-        )]
+        self.inputs
+            .iter()
+            .map(|(key, (nonce, _))| key.base64_string_with_nonce(*nonce))
+            .collect()
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
@@ -63,12 +50,12 @@ impl StateTransitionLike for AddressFundsTransferTransitionV0 {
     }
 }
 
-impl StateTransitionMultiSigned for AddressFundsTransferTransitionV0 {
-    fn signatures(&self) -> &Vec<BinaryData> {
-        &self.input_signatures
+impl StateTransitionWitnessSigned for AddressFundsTransferTransitionV0 {
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        &self.input_witnesses
     }
 
-    fn set_signatures(&mut self, signatures: Vec<BinaryData>) {
-        self.input_signatures = signatures;
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
+        self.input_witnesses = witnesses;
     }
 }

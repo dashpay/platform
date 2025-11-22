@@ -1,8 +1,8 @@
 use crate::version::dpp_versions::dpp_state_transition_versions::{
-    DPPStateTransitionVersions, DocumentTransitionVersions,
-    DocumentsBatchTransitionValidationVersions, DocumentsBatchTransitionVersions,
-    IdentityCreditWithdrawalTransitionVersions, IdentityTransitionAssetLockVersions,
-    IdentityTransitionVersions,
+    AddressFundsTransitionVersions, ContractTransitionVersions, DPPStateTransitionVersions,
+    DocumentTransitionVersions, DocumentsBatchTransitionValidationVersions,
+    DocumentsBatchTransitionVersions, IdentityCreditWithdrawalTransitionVersions,
+    IdentityTransitionAssetLockVersions, IdentityTransitionVersions,
 };
 
 pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTransitionVersions {
@@ -25,5 +25,12 @@ pub const STATE_TRANSITION_VERSIONS_V1: DPPStateTransitionVersions = DPPStateTra
         credit_withdrawal: IdentityCreditWithdrawalTransitionVersions {
             default_constructor: 0,
         },
+    },
+    contract: ContractTransitionVersions {
+        contract_create_transition_default_version: 0,
+        contract_update_transition_default_version: 0,
+    },
+    address_funds: AddressFundsTransitionVersions {
+        address_funds_transition_default_version: 0,
     },
 };

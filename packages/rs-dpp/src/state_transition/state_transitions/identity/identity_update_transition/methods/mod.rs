@@ -2,7 +2,7 @@ mod v0;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey, KeyID};
 
@@ -24,7 +24,7 @@ use platform_version::version::PlatformVersion;
 
 impl IdentityUpdateTransitionMethodsV0 for IdentityUpdateTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: IdentitySigner>(
+    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,

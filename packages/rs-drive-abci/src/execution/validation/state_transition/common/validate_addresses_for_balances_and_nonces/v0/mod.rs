@@ -1,6 +1,8 @@
 use crate::error::Error;
-use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
 use crate::execution::types::execution_operation::ValidationOperation;
+use crate::execution::types::state_transition_execution_context::{
+    StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
+};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressTooLittleFundsError};
 use dpp::fee::Credits;
 use dpp::identity::{KeyCount, KeyOfType};
@@ -23,14 +25,13 @@ pub(super) fn validate_addresses_for_balances_and_nonces_v0(
         return Ok(ConsensusValidationResult::new());
     }
 
-    execution_context.add_operation(ValidationOperation::RetrieveKeyOfTypeNonceAndBalance(minimum_balances.len() as KeyCount));
+    execution_context.add_operation(ValidationOperation::RetrieveKeyOfTypeNonceAndBalance(
+        minimum_balances.len() as KeyCount,
+    ));
 
     // Fetch the actual balances and nonces from the state
-    let actual_balances = drive.fetch_balances_with_nonces(
-        minimum_balances.keys(),
-        transaction,
-        platform_version,
-    )?;
+    let actual_balances =
+        drive.fetch_balances_with_nonces(minimum_balances.keys(), transaction, platform_version)?;
 
     // Check that each address has at least the minimum required balance
     for (key_of_type, minimum_balance) in minimum_balances {

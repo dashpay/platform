@@ -15,7 +15,7 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bls-signatures")]
 use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
 use crate::fee::Credits;
-use crate::prelude::{IdentityNonce, KeyOfTypeNonce};
+use crate::prelude::KeyOfTypeNonce;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
@@ -89,6 +89,21 @@ impl KeyOfType {
         bytes.push(self.key_type as u8);
         bytes.extend_from_slice(&self.key);
         bytes
+    }
+
+    /// Gets a base64 string of the KeyOfType concatenated with the nonce.
+    pub fn base64_string_with_nonce(&self, nonce: KeyOfTypeNonce) -> String {
+        use base64::engine::general_purpose::STANDARD;
+        use base64::Engine;
+
+        // Gather the base bytes of the key
+        let mut bytes = self.to_bytes();
+
+        // Append nonce bytes (assuming it has a `to_bytes()` method)
+        bytes.extend_from_slice(&nonce.to_be_bytes());
+
+        // Encode full buffer
+        STANDARD.encode(bytes)
     }
 
     /// Creates a KeyOfType from bytes.

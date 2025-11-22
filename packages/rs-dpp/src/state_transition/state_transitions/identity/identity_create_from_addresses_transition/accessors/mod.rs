@@ -7,6 +7,7 @@ use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation
 
 use crate::fee::Credits;
 use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 use platform_value::Identifier;
 pub use v0::*;
 
@@ -45,19 +46,19 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
         }
     }
 
-    fn inputs(&self) -> &[KeyOfType] {
+    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => transition.inputs(),
         }
     }
 
-    fn inputs_mut(&mut self) -> &mut Vec<KeyOfType> {
+    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => transition.inputs_mut(),
         }
     }
 
-    fn set_inputs(&mut self, inputs: Vec<KeyOfType>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => transition.set_inputs(inputs),
         }

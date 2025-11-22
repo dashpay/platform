@@ -1,6 +1,6 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{signer::IdentitySigner, Identity, IdentityPublicKey},
+    identity::{signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
@@ -15,7 +15,7 @@ use crate::state_transition::StateTransitionType;
 pub trait IdentityCreditTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,
         amount: u64,

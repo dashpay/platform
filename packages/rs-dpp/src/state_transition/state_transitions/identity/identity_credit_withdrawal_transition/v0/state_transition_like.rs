@@ -5,7 +5,7 @@ use platform_value::BinaryData;
 use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::identity_credit_withdrawal_transition::v0::IdentityCreditWithdrawalTransitionV0;
@@ -37,11 +37,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransitionV0 {
         vec![self.identity_id]
     }
 
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
-
     /// We want things to be unique based on the nonce, so we don't add the transition type
     fn unique_identifiers(&self) -> Vec<String> {
         vec![format!(
@@ -71,5 +66,12 @@ impl StateTransitionSingleSigned for IdentityCreditWithdrawalTransitionV0 {
     }
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for IdentityCreditWithdrawalTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

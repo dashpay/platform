@@ -8,7 +8,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -55,7 +55,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_freeze<S: IdentitySigner>(
+    pub async fn token_freeze<S: Signer<IdentityPublicKey>>(
         &self,
         freeze_tokens_transition_builder: TokenFreezeTransitionBuilder,
         signing_key: &IdentityPublicKey,

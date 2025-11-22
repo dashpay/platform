@@ -13,16 +13,15 @@ use std::convert::TryFrom;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
+use crate::address_funds::AddressWitness;
 use crate::fee::Credits;
 use crate::identity::KeyOfType;
-use crate::prelude::{Identifier, UserFeeIncrease};
-use platform_value::BinaryData;
-#[cfg(feature = "state-transition-serde-conversion")]
-use serde::{Deserialize, Serialize};
-
+use crate::prelude::{Identifier, KeyOfTypeNonce, UserFeeIncrease};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::ProtocolError;
+#[cfg(feature = "state-transition-serde-conversion")]
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
@@ -33,18 +32,18 @@ use crate::ProtocolError;
 )]
 // There is a problem deriving bincode for a borrowed vector
 // Hence we set to do it somewhat manually inside the PlatformSignable proc macro
-// Instead of inside of bincode_derive
+// Instead of inside "bincode_derive"
 #[platform_signable(derive_bincode_with_borrowed_vec)]
 #[derive(Default)]
 pub struct IdentityCreateFromAddressesTransitionV0 {
     // When signing, we don't sign the signatures for keys
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
-    pub inputs: Vec<KeyOfTypeWithNonce>,
+    pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     pub outputs: BTreeMap<KeyOfType, Credits>,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
-    pub input_signatures: Vec<BinaryData>,
+    pub input_witnesses: Vec<AddressWitness>,
     #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
     #[platform_signable(exclude_from_sig_hash)]
     pub identity_id: Identifier,
@@ -58,11 +57,11 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
 struct IdentityCreateFromAddressesTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
-    inputs: Vec<KeyOfTypeWithNonce>,
+    inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     outputs: BTreeMap<KeyOfType, Credits>,
     // Generic identity ST fields
     user_fee_increase: UserFeeIncrease,
-    input_signatures: Vec<BinaryData>,
+    input_witnesses: Vec<AddressWitness>,
 }
 
 impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
@@ -76,7 +75,7 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
             inputs,
             outputs,
             user_fee_increase,
-            input_signatures,
+            input_witnesses,
         } = value;
 
         // Generate identity_id from the hash of all inputs
@@ -100,7 +99,7 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
             inputs,
             outputs,
             user_fee_increase,
-            input_signatures,
+            input_witnesses,
             identity_id,
         })
     }

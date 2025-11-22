@@ -57,10 +57,10 @@ pub mod group;
 #[cfg(feature = "server")]
 mod shared;
 
+mod address_funds;
 /// Token module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod tokens;
-mod address_funds;
 
 #[cfg(feature = "server")]
 use crate::cache::DriveCache;

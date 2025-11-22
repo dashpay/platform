@@ -5,7 +5,7 @@ use platform_value::BinaryData;
 use crate::prelude::UserFeeIncrease;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::masternode_vote_transition::v0::MasternodeVoteTransitionV0;
@@ -45,11 +45,6 @@ impl StateTransitionLike for MasternodeVoteTransitionV0 {
         vec![self.voter_identity_id]
     }
 
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.voter_identity_id
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         vec![format!(
             "{}-{:x}",
@@ -71,5 +66,12 @@ impl StateTransitionSingleSigned for MasternodeVoteTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for MasternodeVoteTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.voter_identity_id
     }
 }

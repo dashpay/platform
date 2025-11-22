@@ -43,5 +43,6 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_claim_transition: 0,
                 token_direct_purchase_transition: 0,
                 token_set_price_for_direct_purchase_transition: 0,
+                identity_credit_transfer_to_addresses_transition: 0,
             },
     };

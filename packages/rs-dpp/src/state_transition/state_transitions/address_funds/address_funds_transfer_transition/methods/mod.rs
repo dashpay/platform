@@ -6,18 +6,20 @@ pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     prelude::{KeyOfTypeNonce, UserFeeIncrease},
-    state_transition::{address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0, StateTransition},
+    state_transition::{
+        address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0, StateTransition,
+    },
     ProtocolError,
 };
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-use crate::identity::signer::Signer;
 
 impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransition {
     #[cfg(feature = "state-transition-signing")]
@@ -33,13 +35,15 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransition 
             .state_transition_conversion_versions
             .address_funds_to_address_funds_transfer_transition
         {
-            0 => Ok(AddressFundsTransferTransitionV0::try_from_inputs_with_signer::<S>(
-                inputs,
-                outputs,
-                signer,
-                user_fee_increase,
-                platform_version,
-            )?),
+            0 => Ok(
+                AddressFundsTransferTransitionV0::try_from_inputs_with_signer::<S>(
+                    inputs,
+                    outputs,
+                    signer,
+                    user_fee_increase,
+                    platform_version,
+                )?,
+            ),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "AddressFundsTransferTransition::try_from_inputs_with_signer".to_string(),
                 known_versions: vec![0],

@@ -1,21 +1,14 @@
-use crate::{prelude::Identifier, state_transition::StateTransitionType};
-#[cfg(feature = "state-transition-signing")]
-use crate::{BlsModule, ProtocolError};
-
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::state_transition::AssetLockProved;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -24,7 +17,15 @@ use crate::state_transition::identity_create_from_addresses_transition::accessor
 use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::{prelude::Identifier, state_transition::StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::{BlsModule, ProtocolError};
+use std::collections::BTreeMap;
 
+#[cfg(feature = "state-transition-signing")]
+use crate::identity::IdentityPublicKey;
+use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
@@ -34,10 +35,10 @@ use crate::version::PlatformVersion;
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: IdentitySigner>(
+    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: Vec<crate::identity::KeyOfType>,
-        outputs: std::collections::BTreeMap<crate::identity::KeyOfType, crate::fee::Credits>,
+        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        outputs: BTreeMap<KeyOfType, Credits>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,
@@ -121,17 +122,17 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     }
 
     /// Get inputs
-    fn inputs(&self) -> &[crate::identity::KeyOfType] {
+    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         &self.inputs
     }
 
-    /// Get inputs as a mutable vec
-    fn inputs_mut(&mut self) -> &mut Vec<crate::identity::KeyOfType> {
+    /// Get inputs as a mutable map
+    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         &mut self.inputs
     }
 
     /// Set inputs
-    fn set_inputs(&mut self, inputs: Vec<crate::identity::KeyOfType>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
         self.inputs = inputs;
     }
 

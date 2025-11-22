@@ -5,7 +5,7 @@ use crate::identity::KeyOfType;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{signer::IdentitySigner, Identity, IdentityPublicKey},
+    identity::{signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
@@ -18,7 +18,7 @@ use std::collections::BTreeMap;
 pub trait IdentityCreditTransferToAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_keys: BTreeMap<KeyOfType, Credits>,
         user_fee_increase: UserFeeIncrease,

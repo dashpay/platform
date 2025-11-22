@@ -6,7 +6,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters};
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -16,7 +16,7 @@ use rs_dapi_client::{DapiRequest, IntoInner};
 
 #[async_trait::async_trait]
 /// A trait for transferring a document on Platform
-pub trait TransferDocument<S: IdentitySigner>: Waitable {
+pub trait TransferDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Transfers a document on platform
     /// Setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +46,7 @@ pub trait TransferDocument<S: IdentitySigner>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: IdentitySigner> TransferDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> TransferDocument<S> for Document {
     async fn transfer_document_to_identity(
         &self,
         recipient_id: Identifier,

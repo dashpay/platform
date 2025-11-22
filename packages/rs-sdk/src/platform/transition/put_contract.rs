@@ -6,7 +6,7 @@ use crate::platform::transition::put_settings::PutSettings;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::DataContract;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::data_contract_create_transition::methods::DataContractCreateTransitionMethodsV0;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -17,7 +17,7 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a contract to platform
-pub trait PutContract<S: IdentitySigner>: Waitable {
+pub trait PutContract<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     async fn put_to_platform(
@@ -39,7 +39,7 @@ pub trait PutContract<S: IdentitySigner>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: IdentitySigner> PutContract<S> for DataContract {
+impl<S: Signer<IdentityPublicKey>> PutContract<S> for DataContract {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

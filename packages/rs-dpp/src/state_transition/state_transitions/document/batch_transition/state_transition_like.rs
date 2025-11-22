@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::batch_transition::BatchTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -44,13 +44,6 @@ impl StateTransitionLike for BatchTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            BatchTransition::V0(transition) => transition.owner_id(),
-            BatchTransition::V1(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             BatchTransition::V0(transition) => transition.unique_identifiers(),
@@ -79,6 +72,15 @@ impl StateTransitionSingleSigned for BatchTransition {
         match self {
             BatchTransition::V0(transition) => transition.set_signature_bytes(signature),
             BatchTransition::V1(transition) => transition.set_signature_bytes(signature),
+        }
+    }
+}
+
+impl StateTransitionOwned for BatchTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            BatchTransition::V0(transition) => transition.owner_id(),
+            BatchTransition::V1(transition) => transition.owner_id(),
         }
     }
 }

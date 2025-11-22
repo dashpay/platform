@@ -198,7 +198,8 @@ impl ValidateStateTransitionIdentitySignatureV0<'_> for StateTransition {
         let operation = SignatureVerificationOperation::new(public_key.key_type());
         execution_context.add_operation(ValidationOperation::SignatureVerification(operation));
 
-        let signature_is_valid = self.verify_signature(public_key, &NativeBlsModule);
+        let signature_is_valid =
+            self.verify_identity_signed_signature(public_key, &NativeBlsModule);
 
         if let Err(err) = signature_is_valid {
             let consensus_error = convert_to_consensus_signature_error(err)?;

@@ -5,7 +5,7 @@ use crate::state_transition::batch_transition::{
     BatchTransition, BatchTransitionV0,
 };
 use crate::state_transition::StateTransitionType::Batch;
-use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned, StateTransitionType};
+use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType};
 use crate::version::FeatureVersion;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
@@ -30,11 +30,6 @@ impl StateTransitionLike for BatchTransitionV0 {
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         Batch
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.owner_id
     }
 
     /// We create a list of unique identifiers for the batch
@@ -73,5 +68,12 @@ impl StateTransitionSingleSigned for BatchTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for BatchTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.owner_id
     }
 }

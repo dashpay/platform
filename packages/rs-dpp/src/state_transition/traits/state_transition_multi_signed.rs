@@ -1,8 +1,8 @@
-use platform_value::BinaryData;
+use crate::address_funds::AddressWitness;
 
-pub trait StateTransitionMultiSigned: Sized {
+pub trait StateTransitionWitnessSigned: Sized {
     /// returns the signatures as an array of byte-arrays
-    fn signatures(&self) -> &Vec<BinaryData>;
+    fn witnesses(&self) -> &Vec<AddressWitness>;
     /// set a new signature
-    fn set_signatures(&mut self, signatures: Vec<BinaryData>);
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>);
 }

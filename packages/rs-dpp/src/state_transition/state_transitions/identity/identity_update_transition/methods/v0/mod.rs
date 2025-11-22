@@ -1,5 +1,5 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::{Identity, IdentityPublicKey};
 #[cfg(feature = "state-transition-signing")]
@@ -17,7 +17,7 @@ use platform_version::version::PlatformVersion;
 pub trait IdentityUpdateTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn try_from_identity_with_signer<S: IdentitySigner>(
+    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         master_public_key_id: &KeyID,
         add_public_keys: Vec<IdentityPublicKey>,

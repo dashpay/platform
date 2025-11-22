@@ -5,7 +5,7 @@ use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dpp::identifier::MasternodeIdentifiers;
 use dpp::identity::hash::IdentityPublicKeyHashMethodsV0;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::Identifier;
 use dpp::state_transition::masternode_vote_transition::methods::MasternodeVoteTransitionMethodsV0;
@@ -18,7 +18,7 @@ use super::waitable::Waitable;
 
 #[async_trait::async_trait]
 /// A trait for putting a vote on platform
-pub trait PutVote<S: IdentitySigner>: Waitable {
+pub trait PutVote<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts an identity on platform
     async fn put_to_platform(
         &self,
@@ -40,7 +40,7 @@ pub trait PutVote<S: IdentitySigner>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: IdentitySigner> PutVote<S> for Vote {
+impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
     async fn put_to_platform(
         &self,
         voter_pro_tx_hash: Identifier,

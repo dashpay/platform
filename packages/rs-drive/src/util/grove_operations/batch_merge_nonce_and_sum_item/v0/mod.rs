@@ -10,11 +10,11 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
 use crate::util::object_size_info::PathKeyElementInfo;
+use dpp::prelude::KeyOfTypeNonce;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::ProtocolError;
-use grovedb::{Element, GroveDb, TransactionArg};
 use grovedb::element::SumValue;
-use dpp::prelude::KeyOfTypeNonce;
+use grovedb::{Element, GroveDb, TransactionArg};
 
 impl Drive {
     /// Version 0 implementation of the "insert sum item or add to it if the item already exists" operation.
@@ -51,7 +51,9 @@ impl Drive {
             drive_version,
         )?;
 
-        if let Some(Element::ItemWithSumItem(existing_nonce_vec, existing_value, _)) = existing_element {
+        if let Some(Element::ItemWithSumItem(existing_nonce_vec, existing_value, _)) =
+            existing_element
+        {
             let existing_nonce_bytes: [u8; 8] =
                 match existing_nonce_vec.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
@@ -68,26 +70,22 @@ impl Drive {
             let updated_value = existing_value
                 .checked_add(add_value)
                 .ok_or(ProtocolError::Overflow("overflow when adding to sum item"))?;
-            drive_operations.push(
-                LowLevelDriveOperation::insert_for_known_path_key_element(
-                    path.into_iter().map(|p| p.to_vec()).collect(),
-                    key.to_vec(),
-                    Element::new_item_with_sum_item(existing_nonce, updated_value),
-                ),
-            );
+            drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
+                path.into_iter().map(|p| p.to_vec()).collect(),
+                key.to_vec(),
+                Element::new_item_with_sum_item(existing_nonce, updated_value),
+            ));
         } else if existing_element.is_some() {
             return Err(Error::Drive(DriveError::CorruptedElementType(
                 "expected item with sum item element type",
             )));
         } else {
             // Insert as a new sum item
-            drive_operations.push(
-                LowLevelDriveOperation::insert_for_known_path_key_element(
-                    path.into_iter().map(|p| p.to_vec()).collect(),
-                    key.to_vec(),
-                    Element::new_item_with_sum_item(nonce.to_be_bytes().to_vec(), add_value),
-                ),
-            );
+            drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
+                path.into_iter().map(|p| p.to_vec()).collect(),
+                key.to_vec(),
+                Element::new_item_with_sum_item(nonce.to_be_bytes().to_vec(), add_value),
+            ));
         }
     }
 }

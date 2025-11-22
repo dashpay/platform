@@ -1,10 +1,11 @@
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionMultiSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionType, StateTransitionWitnessSigned,
 };
 use crate::version::FeatureVersion;
-use platform_value::{BinaryData, Identifier};
+use platform_value::Identifier;
 
 impl StateTransitionLike for IdentityCreateFromAddressesTransition {
     /// Returns ID of the created contract
@@ -43,12 +44,6 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => {
@@ -58,18 +53,26 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransition {
     }
 }
 
-impl StateTransitionMultiSigned for IdentityCreateFromAddressesTransition {
-    fn signatures(&self) -> &Vec<BinaryData> {
+impl StateTransitionWitnessSigned for IdentityCreateFromAddressesTransition {
+    fn witnesses(&self) -> &Vec<AddressWitness> {
         match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.signatures(),
+            IdentityCreateFromAddressesTransition::V0(transition) => transition.witnesses(),
         }
     }
 
-    fn set_signatures(&mut self, signatures: Vec<BinaryData>) {
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => {
-                transition.set_signatures(signatures)
+                transition.set_witnesses(witnesses)
             }
+        }
+    }
+}
+
+impl StateTransitionOwned for IdentityCreateFromAddressesTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            IdentityCreateFromAddressesTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

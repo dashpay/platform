@@ -131,7 +131,7 @@ mod tests {
     use dpp::identity::accessors::IdentityGettersV0;
     use dpp::identity::contract_bounds::ContractBounds;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::signer::IdentitySigner;
+    use dpp::identity::signer::Signer;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::identity::{KeyType, Purpose, SecurityLevel};
     use dpp::serialization::{PlatformSerializable, Signable};

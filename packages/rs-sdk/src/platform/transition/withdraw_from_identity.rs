@@ -2,7 +2,7 @@ use dpp::dashcore::Address;
 use dpp::identity::accessors::IdentityGettersV0;
 
 use dpp::identity::core_script::CoreScript;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
 
 use crate::platform::transition::broadcast::BroadcastStateTransition;
@@ -21,7 +21,7 @@ pub trait WithdrawFromIdentity {
     /// If signing_withdrawal_key_to_use is not set, we will try to use one in the signer that is
     /// available for withdrawal
     #[allow(clippy::too_many_arguments)]
-    async fn withdraw<S: IdentitySigner + Send>(
+    async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
         address: Option<Address>,
@@ -35,7 +35,7 @@ pub trait WithdrawFromIdentity {
 
 #[async_trait::async_trait]
 impl WithdrawFromIdentity for Identity {
-    async fn withdraw<S: IdentitySigner + Send>(
+    async fn withdraw<S: Signer + Send>(
         &self,
         sdk: &Sdk,
         address: Option<Address>,

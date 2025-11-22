@@ -4,6 +4,7 @@ mod state_transition_identity_signed;
 mod state_transition_json_convert;
 mod state_transition_like;
 mod state_transition_multi_signed;
+mod state_transition_owned;
 mod state_transition_single_signed;
 #[cfg(feature = "state-transition-value-conversion")]
 mod state_transition_value_convert;
@@ -15,6 +16,7 @@ pub use state_transition_identity_signed::*;
 pub use state_transition_json_convert::*;
 pub use state_transition_like::*;
 pub use state_transition_multi_signed::*;
+pub use state_transition_owned::*;
 pub use state_transition_single_signed::*;
 #[cfg(feature = "state-transition-value-conversion")]
 pub use state_transition_value_convert::*;

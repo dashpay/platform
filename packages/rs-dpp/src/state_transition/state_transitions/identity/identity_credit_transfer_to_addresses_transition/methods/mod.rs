@@ -11,7 +11,7 @@ use crate::identity::KeyOfType;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    identity::{signer::IdentitySigner, Identity, IdentityPublicKey},
+    identity::{signer::Signer, Identity, IdentityPublicKey},
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::{
         identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0,
@@ -26,7 +26,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     for IdentityCreditTransferToAddressesTransition
 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_keys: BTreeMap<KeyOfType, Credits>,
         user_fee_increase: UserFeeIncrease,

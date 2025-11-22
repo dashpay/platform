@@ -2,15 +2,13 @@
 use crate::{
     identity::{
         accessors::IdentityGettersV0,
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::IdentitySigner, Identity,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
         IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
 };
-#[cfg(feature = "state-transition-signing")]
-use platform_value::Identifier;
 #[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
@@ -29,7 +27,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     for IdentityCreditTransferToAddressesTransitionV0
 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_recipient_keys: BTreeMap<KeyOfType, Credits>,
         user_fee_increase: UserFeeIncrease,
@@ -41,7 +39,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_identity: Started");
         tracing::debug!(identity_id = %identity.id(), "try_from_identity");
-        tracing::debug!(recipient_key = %to_recipient_keys, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
+        tracing::debug!(recipient_key = ?to_recipient_keys, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
 
         let mut transition: StateTransition = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: identity.id(),

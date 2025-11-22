@@ -1,7 +1,6 @@
 use crate::state_transition::state_transitions;
 
 pub use state_transitions::common_fields::property_names::STATE_TRANSITION_PROTOCOL_VERSION;
-pub use state_transitions::identity::common_fields::property_names::PUBLIC_KEYS;
 pub use state_transitions::identity::common_fields::property_names::{
     IDENTITY_ID, PUBLIC_KEYS_DATA, PUBLIC_KEYS_SIGNATURE,
 };

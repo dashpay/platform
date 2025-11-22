@@ -1,14 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use crate::state_transition::{StateTransition, StateTransitionLike, StateTransitionSingleSigned, StateTransitionType};
+use crate::state_transition::{StateTransitionLike, StateTransitionType};
 use crate::version::FeatureVersion;
-use platform_value::{BinaryData, Identifier};
-
-impl Into<StateTransition> for AddressFundsTransferTransition {
-    fn into(self) -> StateTransition {
-        todo!()
-    }
-}
+use platform_value::Identifier;
 
 impl StateTransitionLike for AddressFundsTransferTransition {
     /// Returns ID of the credit_transferred contract
@@ -45,36 +39,9 @@ impl StateTransitionLike for AddressFundsTransferTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             AddressFundsTransferTransition::V0(transition) => transition.unique_identifiers(),
-        }
-    }
-}
-
-impl StateTransitionSingleSigned for AddressFundsTransferTransition {
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => transition.set_signature(signature),
-        }
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => transition.set_signature_bytes(signature),
         }
     }
 }

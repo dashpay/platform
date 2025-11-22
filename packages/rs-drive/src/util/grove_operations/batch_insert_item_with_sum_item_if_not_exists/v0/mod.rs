@@ -128,9 +128,7 @@ impl Drive {
                         // Insert as a new sum item
                         drive_operations.push(
                             LowLevelDriveOperation::insert_for_known_path_key_element(
-                                path,
-                                key,
-                                element,
+                                path, key, element,
                             ),
                         );
                     }

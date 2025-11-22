@@ -1,5 +1,5 @@
-use crate::state_transition::state_transitions::address_funds_transfer_transition::fields::*;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+use crate::state_transition::state_transitions::address_funds_transfer_transition::fields::*;
 use crate::state_transition::{
     JsonStateTransitionSerializationOptions, StateTransitionJsonConvert,
 };

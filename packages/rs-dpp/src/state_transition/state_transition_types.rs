@@ -29,7 +29,7 @@ pub enum StateTransitionType {
     IdentityCreditWithdrawal = 6,
     IdentityCreditTransfer = 7,
     MasternodeVote = 8,
-    IdentityCreditTransferToAddress = 9,
+    IdentityCreditTransferToAddresses = 9,
     IdentityCreateFromAddresses = 10,
     IdentityTopUpFromAddresses = 11,
     AddressFundsTransfer = 12,

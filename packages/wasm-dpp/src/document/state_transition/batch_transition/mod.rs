@@ -339,7 +339,7 @@ impl BatchTransitionWasm {
         let bls_adapter = BlsAdapter(bls);
 
         let verification_result = StateTransition::Batch(self.0.clone())
-            .verify_signature(&identity_public_key.to_owned().into(), &bls_adapter);
+            .verify_identity_signed_signature(&identity_public_key.to_owned().into(), &bls_adapter);
 
         match verification_result {
             Ok(()) => Ok(true),

@@ -9,7 +9,7 @@ use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::group::GroupStateTransitionInfoStatus;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
@@ -61,7 +61,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that much contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_mint_transition<S: IdentitySigner>(
+    fn new_token_mint_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -94,7 +94,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_burn_transition<S: IdentitySigner>(
+    fn new_token_burn_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -128,7 +128,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_transfer_transition<S: IdentitySigner>(
+    fn new_token_transfer_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -164,7 +164,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_freeze_transition<S: IdentitySigner>(
+    fn new_token_freeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -196,7 +196,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_unfreeze_transition<S: IdentitySigner>(
+    fn new_token_unfreeze_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -228,7 +228,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_destroy_frozen_funds_transition<S: IdentitySigner>(
+    fn new_token_destroy_frozen_funds_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -263,7 +263,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_emergency_action_transition<S: IdentitySigner>(
+    fn new_token_emergency_action_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -298,7 +298,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_config_update_transition<S: IdentitySigner>(
+    fn new_token_config_update_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -332,7 +332,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_claim_transition<S: IdentitySigner>(
+    fn new_token_claim_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -366,7 +366,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_change_direct_purchase_price_transition<S: IdentitySigner>(
+    fn new_token_change_direct_purchase_price_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,
@@ -401,7 +401,7 @@ pub trait DocumentsBatchTransitionMethodsV1: DocumentsBatchTransitionAccessorsV0
     /// - `signer`: Object implementing the signer trait that must contain the private key for the identity public key.
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
-    fn new_token_direct_purchase_transition<S: IdentitySigner>(
+    fn new_token_direct_purchase_transition<S: Signer<IdentityPublicKey>>(
         token_id: Identifier,
         owner_id: Identifier,
         data_contract_id: Identifier,

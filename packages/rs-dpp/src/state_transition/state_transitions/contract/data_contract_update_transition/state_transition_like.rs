@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::data_contract_update_transition::DataContractUpdateTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -23,12 +23,6 @@ impl StateTransitionLike for DataContractUpdateTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             DataContractUpdateTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-
-    fn owner_id(&self) -> Identifier {
-        match self {
-            DataContractUpdateTransition::V0(transition) => transition.owner_id(),
         }
     }
 
@@ -73,6 +67,14 @@ impl StateTransitionSingleSigned for DataContractUpdateTransition {
             DataContractUpdateTransition::V0(transition) => {
                 transition.set_signature_bytes(signature)
             }
+        }
+    }
+}
+
+impl StateTransitionOwned for DataContractUpdateTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            DataContractUpdateTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

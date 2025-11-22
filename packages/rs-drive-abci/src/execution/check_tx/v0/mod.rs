@@ -270,7 +270,7 @@ mod tests {
     use dpp::group::{GroupStateTransitionInfo, GroupStateTransitionInfoStatus};
     use dpp::identity::contract_bounds::ContractBounds::SingleContractDocumentType;
     use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-    use dpp::identity::signer::IdentitySigner;
+    use dpp::identity::signer::Signer;
     use dpp::platform_value::Bytes32;
     use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
     use dpp::state_transition::data_contract_update_transition::DataContractUpdateTransition;

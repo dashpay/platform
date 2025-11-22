@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_credit_withdrawal_transition::IdentityCreditWithdrawalTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -52,13 +52,6 @@ impl StateTransitionLike for IdentityCreditWithdrawalTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
-            IdentityCreditWithdrawalTransition::V1(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             IdentityCreditWithdrawalTransition::V0(transition) => transition.unique_identifiers(),
@@ -94,6 +87,15 @@ impl StateTransitionSingleSigned for IdentityCreditWithdrawalTransition {
             IdentityCreditWithdrawalTransition::V1(transition) => {
                 transition.set_signature_bytes(signature)
             }
+        }
+    }
+}
+
+impl StateTransitionOwned for IdentityCreditWithdrawalTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            IdentityCreditWithdrawalTransition::V0(transition) => transition.owner_id(),
+            IdentityCreditWithdrawalTransition::V1(transition) => transition.owner_id(),
         }
     }
 }

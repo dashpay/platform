@@ -2,7 +2,7 @@
 use crate::{
     identity::{
         accessors::IdentityGettersV0,
-        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::IdentitySigner, Identity,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
         IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
@@ -21,7 +21,7 @@ use platform_version::version::{FeatureVersion, PlatformVersion};
 
 impl IdentityCreditTransferTransitionMethodsV0 for IdentityCreditTransferTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         to_identity_with_identifier: Identifier,
         amount: u64,

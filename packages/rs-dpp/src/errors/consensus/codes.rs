@@ -311,6 +311,10 @@ impl ErrorWithCode for StateError {
             // Data trigger errors: 40500-40699
             Self::DataTriggerError(ref e) => e.code(),
 
+            // Address errors
+            Self::AddressDoesNotExistError(_) => 40600,
+            Self::AddressTooLittleFundsError(_) => 40601,
+
             // Token errors: 40700-40799
             Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40700,
             Self::UnauthorizedTokenActionError(_) => 40701,

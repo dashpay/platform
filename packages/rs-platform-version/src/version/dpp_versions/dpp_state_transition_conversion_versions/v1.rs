@@ -8,4 +8,6 @@ pub const STATE_TRANSITION_CONVERSION_VERSIONS_V1: DPPStateTransitionConversionV
         identity_to_identity_withdrawal_transition: 0,
         identity_to_identity_create_transition_with_signer: 0,
         inputs_to_identity_create_from_addresses_transition_with_signer: 0,
+        address_funds_to_address_funds_transfer_transition: 0,
+        identity_to_identity_top_up_from_addresses_transition: 0,
     };

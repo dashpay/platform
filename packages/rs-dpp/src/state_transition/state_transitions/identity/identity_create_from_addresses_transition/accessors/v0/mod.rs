@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::fee::Credits;
 use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use platform_value::Identifier;
 
@@ -20,11 +21,11 @@ pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
     fn identity_id(&self) -> Identifier;
 
     /// Get inputs
-    fn inputs(&self) -> &[KeyOfType];
-    /// Get inputs as a mutable vec
-    fn inputs_mut(&mut self) -> &mut Vec<KeyOfType>;
+    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
+    /// Get inputs as a mutable map
+    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
     /// Set inputs
-    fn set_inputs(&mut self, inputs: Vec<KeyOfType>);
+    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>);
 
     /// Get outputs
     fn outputs(&self) -> &BTreeMap<KeyOfType, Credits>;

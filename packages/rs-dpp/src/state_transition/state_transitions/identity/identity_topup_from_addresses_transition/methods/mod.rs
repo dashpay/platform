@@ -1,11 +1,12 @@
 mod v0;
 
+use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::{AssetLockProof, UserFeeIncrease};
+use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
@@ -16,15 +17,20 @@ use crate::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
 
+use crate::fee::Credits;
+use crate::identity::signer::Signer;
+use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddressesTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity(
+    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
         identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-        asset_lock_proof_private_key: &[u8],
+        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        outputs: BTreeMap<KeyOfType, Credits>,
+        signer: &S,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
         version: Option<FeatureVersion>,
@@ -35,14 +41,17 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 .state_transition_conversion_versions
                 .identity_to_identity_top_up_from_addresses_transition,
         ) {
-            0 => Ok(IdentityTopUpFromAddressesTransitionV0::try_from_identity(
-                identity,
-                asset_lock_proof,
-                asset_lock_proof_private_key,
-                user_fee_increase,
-                platform_version,
-                version,
-            )?),
+            0 => Ok(
+                IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
+                    identity,
+                    inputs,
+                    outputs,
+                    signer,
+                    user_fee_increase,
+                    platform_version,
+                    version,
+                )?,
+            ),
             v => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown IdentityTopUpFromAddressesTransition version for try_from_identity {v}"
             ))),

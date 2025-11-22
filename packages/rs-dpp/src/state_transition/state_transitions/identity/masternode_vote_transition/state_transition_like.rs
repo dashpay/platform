@@ -1,7 +1,7 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::masternode_vote_transition::MasternodeVoteTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -23,12 +23,6 @@ impl StateTransitionLike for MasternodeVoteTransition {
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.state_transition_type(),
-        }
-    }
-
-    fn owner_id(&self) -> Identifier {
-        match self {
-            MasternodeVoteTransition::V0(transition) => transition.owner_id(),
         }
     }
 
@@ -70,6 +64,14 @@ impl StateTransitionSingleSigned for MasternodeVoteTransition {
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
             MasternodeVoteTransition::V0(transition) => transition.set_signature_bytes(signature),
+        }
+    }
+}
+
+impl StateTransitionOwned for MasternodeVoteTransition {
+    fn owner_id(&self) -> Identifier {
+        match self {
+            MasternodeVoteTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

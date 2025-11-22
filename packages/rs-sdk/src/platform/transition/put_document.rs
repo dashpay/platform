@@ -7,7 +7,7 @@ use dpp::dashcore::secp256k1::rand::{Rng, SeedableRng};
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::data_contract::document_type::DocumentType;
 use dpp::document::{Document, DocumentV0Getters, DocumentV0Setters, INITIAL_REVISION};
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
@@ -16,7 +16,7 @@ use dpp::tokens::token_payment_info::TokenPaymentInfo;
 
 #[async_trait::async_trait]
 /// A trait for putting a document to platform
-pub trait PutDocument<S: IdentitySigner>: Waitable {
+pub trait PutDocument<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts a document on platform
     /// setting settings to `None` sets default connection behavior
     #[allow(clippy::too_many_arguments)]
@@ -46,7 +46,7 @@ pub trait PutDocument<S: IdentitySigner>: Waitable {
 }
 
 #[async_trait::async_trait]
-impl<S: IdentitySigner> PutDocument<S> for Document {
+impl<S: Signer<IdentityPublicKey>> PutDocument<S> for Document {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

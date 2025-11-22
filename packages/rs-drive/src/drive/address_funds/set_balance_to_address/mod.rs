@@ -32,7 +32,8 @@ impl Drive {
         storage_flags: StorageFlags,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        match platform_version.drive
+        match platform_version
+            .drive
             .methods
             .address_funds
             .set_balance_to_address

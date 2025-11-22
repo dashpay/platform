@@ -5,13 +5,13 @@ use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::waitable::Waitable;
 use dpp::dashcore::PrivateKey;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::StateTransition;
 
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
-pub trait PutIdentity<S: IdentitySigner>: Waitable {
+pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
     /// Puts an identity on platform.
     ///
     /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
@@ -35,7 +35,7 @@ pub trait PutIdentity<S: IdentitySigner>: Waitable {
     ) -> Result<Self, Error>;
 }
 #[async_trait::async_trait]
-impl<S: IdentitySigner> PutIdentity<S> for Identity {
+impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
     async fn put_to_platform(
         &self,
         sdk: &Sdk,

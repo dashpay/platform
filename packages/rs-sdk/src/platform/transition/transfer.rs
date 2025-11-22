@@ -4,7 +4,7 @@ use dpp::identity::accessors::IdentityGettersV0;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
@@ -24,7 +24,7 @@ pub trait TransferToIdentity: Waitable {
     /// ## Returns
     ///
     /// Final balance of the identity after the transfer.
-    async fn transfer_credits<S: IdentitySigner + Send>(
+    async fn transfer_credits<S: Signer + Send>(
         &self,
         sdk: &Sdk,
         to_identity_id: Identifier,
@@ -37,7 +37,7 @@ pub trait TransferToIdentity: Waitable {
 
 #[async_trait::async_trait]
 impl TransferToIdentity for Identity {
-    async fn transfer_credits<S: IdentitySigner + Send>(
+    async fn transfer_credits<S: Signer + Send>(
         &self,
         sdk: &Sdk,
         to_identity_id: Identifier,

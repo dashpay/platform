@@ -1,10 +1,8 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
-use crate::state_transition::{
-    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
-};
+use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
 use crate::version::FeatureVersion;
-use platform_value::{BinaryData, Identifier};
+use platform_value::Identifier;
 
 impl StateTransitionLike for IdentityTopUpFromAddressesTransition {
     /// Returns ID of the topupd contract
@@ -43,12 +41,6 @@ impl StateTransitionLike for IdentityTopUpFromAddressesTransition {
         }
     }
 
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityTopUpFromAddressesTransition::V0(transition) => transition.owner_id(),
-        }
-    }
-
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             IdentityTopUpFromAddressesTransition::V0(transition) => transition.unique_identifiers(),
@@ -56,27 +48,10 @@ impl StateTransitionLike for IdentityTopUpFromAddressesTransition {
     }
 }
 
-impl StateTransitionSingleSigned for IdentityTopUpFromAddressesTransition {
-    /// returns the signature as a byte-array
-    fn signature(&self) -> &BinaryData {
+impl StateTransitionOwned for IdentityTopUpFromAddressesTransition {
+    fn owner_id(&self) -> Identifier {
         match self {
-            IdentityTopUpFromAddressesTransition::V0(transition) => transition.signature(),
-        }
-    }
-    /// set a new signature
-    fn set_signature(&mut self, signature: BinaryData) {
-        match self {
-            IdentityTopUpFromAddressesTransition::V0(transition) => {
-                transition.set_signature(signature)
-            }
-        }
-    }
-
-    fn set_signature_bytes(&mut self, signature: Vec<u8>) {
-        match self {
-            IdentityTopUpFromAddressesTransition::V0(transition) => {
-                transition.set_signature_bytes(signature)
-            }
+            IdentityTopUpFromAddressesTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

@@ -4,7 +4,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::associated_token::token_distribution_key::TokenDistributionType;
 use dpp::data_contract::{DataContract, TokenContractPosition};
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::batch_transition::methods::v1::DocumentsBatchTransitionMethodsV1;
@@ -133,7 +133,7 @@ impl TokenClaimTransitionBuilder {
         self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl IdentitySigner,
+        signer: &impl Signer,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let token_id = Identifier::from(calculate_token_id(

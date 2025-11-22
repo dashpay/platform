@@ -9,5 +9,5 @@ pub use state_transitions::identity::common_fields::property_names::{
 };
 
 pub const IDENTIFIER_FIELDS: [&str; 1] = [IDENTITY_ID];
-pub const BINARY_FIELDS: [&str; 1] = [SIGNATURE];
+pub const BINARY_FIELDS: [&str; 0] = [];
 pub const U32_FIELDS: [&str; 1] = [STATE_TRANSITION_PROTOCOL_VERSION];

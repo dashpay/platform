@@ -1,11 +1,14 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::IdentitySigner;
+use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::IdentityPublicKey;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -20,9 +23,9 @@ use std::collections::BTreeMap;
 
 pub trait IdentityCreateFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: IdentitySigner>(
+    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: Vec<KeyOfType>,
+        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
         outputs: BTreeMap<KeyOfType, Credits>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,

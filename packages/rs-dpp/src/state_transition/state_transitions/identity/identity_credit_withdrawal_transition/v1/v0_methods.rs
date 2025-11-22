@@ -1,7 +1,7 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
-        accessors::IdentityGettersV0, core_script::CoreScript, signer::IdentitySigner, Identity,
+        accessors::IdentityGettersV0, core_script::CoreScript, signer::Signer, Identity,
         IdentityPublicKey, KeyType, Purpose, SecurityLevel,
     },
     prelude::{IdentityNonce, UserFeeIncrease},
@@ -21,7 +21,7 @@ use crate::state_transition::identity_credit_withdrawal_transition::v1::Identity
 
 impl IdentityCreditWithdrawalTransitionMethodsV0 for IdentityCreditWithdrawalTransitionV1 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity<S: IdentitySigner>(
+    fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         output_script: Option<CoreScript>,
         amount: u64,

@@ -4,9 +4,9 @@ use platform_value::Value;
 
 use crate::ProtocolError;
 
-use crate::state_transition::state_transitions::address_funds_transfer_transition::fields::*;
 use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
+use crate::state_transition::state_transitions::address_funds_transfer_transition::fields::*;
 use crate::state_transition::StateTransitionValueConvert;
 
 use crate::serialization::ValueConvertible;
@@ -72,7 +72,9 @@ impl StateTransitionValueConvert<'_> for AddressFundsTransferTransition {
             });
 
         match version {
-            0 => Ok(AddressFundsTransferTransitionV0::from_object(raw_object, platform_version)?.into()),
+            0 => Ok(
+                AddressFundsTransferTransitionV0::from_object(raw_object, platform_version)?.into(),
+            ),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown UTXOTransferTransition version {n}"
             ))),
@@ -95,9 +97,11 @@ impl StateTransitionValueConvert<'_> for AddressFundsTransferTransition {
             });
 
         match version {
-            0 => Ok(
-                AddressFundsTransferTransitionV0::from_value_map(raw_value_map, platform_version)?.into(),
-            ),
+            0 => Ok(AddressFundsTransferTransitionV0::from_value_map(
+                raw_value_map,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown UTXOTransferTransition version {n}"
             ))),

@@ -6,7 +6,7 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_transition::IdentityTopUpTransition;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
 };
 
 use crate::state_transition::identity_topup_transition::v0::IdentityTopUpTransitionV0;
@@ -35,11 +35,6 @@ impl StateTransitionLike for IdentityTopUpTransitionV0 {
     /// Returns ID of the topUpd contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
         vec![self.identity_id]
-    }
-
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 
     /// We want transactions to be unique based on the asset lock proof, here there is a
@@ -78,5 +73,12 @@ impl StateTransitionSingleSigned for IdentityTopUpTransitionV0 {
     }
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionOwned for IdentityTopUpTransitionV0 {
+    /// Get owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }

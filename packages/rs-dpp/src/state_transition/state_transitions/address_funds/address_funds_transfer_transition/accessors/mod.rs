@@ -4,7 +4,6 @@ use crate::fee::Credits;
 use crate::identity::KeyOfType;
 use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use platform_value::BinaryData;
 use std::collections::BTreeMap;
 pub use v0::*;
 
@@ -47,20 +46,6 @@ impl AddressFundsTransferTransitionAccessorsV0 for AddressFundsTransferTransitio
         match self {
             AddressFundsTransferTransition::V0(transition) => {
                 transition.user_fee_increase = user_fee_increase;
-            }
-        }
-    }
-
-    fn input_witnesses(&self) -> &Vec<BinaryData> {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => &transition.input_witnesses,
-        }
-    }
-
-    fn set_input_witnesses(&mut self, input_witnesses: Vec<BinaryData>) {
-        match self {
-            AddressFundsTransferTransition::V0(transition) => {
-                transition.input_witnesses = input_witnesses;
             }
         }
     }

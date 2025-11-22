@@ -30,6 +30,11 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
+        identity_top_up_from_addresses_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
+        },
         identity_credit_withdrawal_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
@@ -40,7 +45,7 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
             max_version: 0,
             default_current_version: 0,
         },
-        identity_credit_transfer_to_address_state_transition: FeatureVersionBounds {
+        identity_credit_transfer_to_addresses_state_transition: FeatureVersionBounds {
             min_version: 0,
             max_version: 0,
             default_current_version: 0,
@@ -111,5 +116,10 @@ pub const STATE_TRANSITION_SERIALIZATION_VERSIONS_V2: DPPStateTransitionSerializ
                 max_version: 0,
                 default_current_version: 0,
             },
+        },
+        address_funds_transfer_state_transition: FeatureVersionBounds {
+            min_version: 0,
+            max_version: 0,
+            default_current_version: 0,
         },
     };

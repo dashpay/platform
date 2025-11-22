@@ -9,7 +9,7 @@ use crate::{Error, Sdk};
 use dpp::data_contract::group::GroupSumPower;
 use dpp::document::Document;
 use dpp::group::group_action_status::GroupActionStatus;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -60,7 +60,7 @@ impl Sdk {
     /// - The transition signing fails
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
-    pub async fn token_set_price_for_direct_purchase<S: IdentitySigner>(
+    pub async fn token_set_price_for_direct_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         set_price_transition_builder: TokenChangeDirectPurchasePriceTransitionBuilder,
         signing_key: &IdentityPublicKey,

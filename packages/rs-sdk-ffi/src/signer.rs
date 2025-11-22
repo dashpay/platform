@@ -1,7 +1,7 @@
 //! Signer interface for iOS FFI
 
 use crate::types::SignerHandle;
-use dash_sdk::dpp::identity::signer::IdentitySigner;
+use dash_sdk::dpp::identity::signer::Signer;
 use dash_sdk::dpp::platform_value::BinaryData;
 use dash_sdk::dpp::prelude::{IdentityPublicKey, ProtocolError};
 use simple_signer::SingleKeySigner;
@@ -59,7 +59,7 @@ impl std::fmt::Debug for VTableSigner {
     }
 }
 
-impl IdentitySigner for VTableSigner {
+impl Signer for VTableSigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,

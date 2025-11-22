@@ -7,7 +7,7 @@ use crate::platform::tokens::builders::purchase::TokenDirectPurchaseTransitionBu
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::balances::credits::TokenAmount;
-use dpp::identity::signer::IdentitySigner;
+use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::platform_value::Identifier;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
@@ -55,7 +55,7 @@ impl Sdk {
     /// - Broadcasting the transition fails
     /// - The proof verification returns an unexpected result type
     /// - Insufficient credits for the purchase
-    pub async fn token_purchase<S: IdentitySigner>(
+    pub async fn token_purchase<S: Signer<IdentityPublicKey>>(
         &self,
         purchase_tokens_transition_builder: TokenDirectPurchaseTransitionBuilder,
         signing_key: &IdentityPublicKey,

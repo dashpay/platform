@@ -54,16 +54,15 @@ impl Drive {
                     Some(Element::ItemWithSumItem(nonce_bytes, balance, _)) => {
                         // Validate balance is non-negative
                         if balance < 0 {
-                            return Err(Error::Drive(DriveError::CorruptedSerialization(
-                                format!("balance cannot be negative: {}", balance),
-                            )));
+                            return Err(Error::Drive(DriveError::CorruptedSerialization(format!(
+                                "balance cannot be negative: {}",
+                                balance
+                            ))));
                         }
 
                         // Parse the nonce from big-endian bytes
-                        let nonce_array: [u8; 8] = nonce_bytes
-                            .as_slice()
-                            .try_into()
-                            .map_err(|_| {
+                        let nonce_array: [u8; 8] =
+                            nonce_bytes.as_slice().try_into().map_err(|_| {
                                 Error::Drive(DriveError::CorruptedSerialization(
                                     "nonce must be 8 bytes for a u64".to_string(),
                                 ))

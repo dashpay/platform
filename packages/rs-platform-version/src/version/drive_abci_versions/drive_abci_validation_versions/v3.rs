@@ -23,6 +23,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 validate_simple_pre_check_balance: 0,
                 validate_non_masternode_identity_exists: 0,
                 validate_identity_exists: 0,
+                validate_addresses_for_balances_and_nonces: 0,
             },
             max_asset_lock_usage_attempts: 16,
             identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
