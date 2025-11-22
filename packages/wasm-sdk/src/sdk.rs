@@ -128,7 +128,7 @@ impl WasmSdkBuilder {
     ///
     /// # Arguments
     /// * `addresses` - Array of HTTPS URLs (e.g., ["https://127.0.0.1:1443"])
-    /// * `network` - Network identifier: "mainnet" or "testnet"
+    /// * `network` - Network identifier: "mainnet", "testnet" or "local"
     ///
     /// # Example
     /// ```javascript
@@ -140,7 +140,7 @@ impl WasmSdkBuilder {
         addresses: Vec<String>,
         network: String,
     ) -> Result<Self, WasmSdkError> {
-        use crate::context_provider::WasmTrustedContext;
+        use crate::context_provider::{WasmContext, WasmTrustedContext};
         use dash_sdk::dpp::dashcore::Network;
         use dash_sdk::sdk::Uri;
         use rs_dapi_client::Address;
@@ -164,46 +164,65 @@ impl WasmSdkBuilder {
 
         let parsed_addresses = parsed_addresses.map_err(WasmSdkError::invalid_argument)?;
 
-        // Parse network - only mainnet and testnet are supported
+        // Parse network - mainnet, testnet and local are supported
         let network = match network.to_lowercase().as_str() {
             "mainnet" => Network::Dash,
             "testnet" => Network::Testnet,
+            "local" => Network::Regtest,
             _ => {
                 return Err(WasmSdkError::invalid_argument(format!(
-                    "Invalid network '{}'. Expected: mainnet or testnet",
+                    "Invalid network '{}'. Expected: mainnet, testnet or local",
                     network
                 )));
             }
         };
 
-        // Use the cached trusted context if available for the network, otherwise create a new one
-        let trusted_context = match network {
-            Network::Dash => {
-                let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.clone()
-            }
-            .map(Ok)
-            .unwrap_or_else(|| {
-                WasmTrustedContext::new_mainnet()
-                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-            })?,
-            Network::Testnet => {
-                let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
-                guard.clone()
-            }
-            .map(Ok)
-            .unwrap_or_else(|| {
-                WasmTrustedContext::new_testnet()
-                    .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
-            })?,
-            // Network was already validated above
-            _ => unreachable!("Network already validated to mainnet or testnet"),
-        };
-
         let address_list = dash_sdk::sdk::AddressList::from_iter(parsed_addresses);
-        let sdk_builder = SdkBuilder::new(address_list)
-            .with_network(network)
-            .with_context_provider(trusted_context);
+        let sdk_builder = match network {
+            Network::Dash => {
+                let address_list = address_list.clone();
+
+                // Use the cached trusted context if available for mainnet
+                let context = {
+                    let guard = MAINNET_TRUSTED_CONTEXT.lock().unwrap();
+                    guard.clone()
+                }
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    WasmTrustedContext::new_mainnet()
+                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+                })?;
+
+                SdkBuilder::new(address_list)
+                    .with_network(network)
+                    .with_context_provider(context)
+            }
+            Network::Testnet => {
+                let address_list = address_list.clone();
+
+                // Use the cached trusted context if available for testnet
+                let context = {
+                    let guard = TESTNET_TRUSTED_CONTEXT.lock().unwrap();
+                    guard.clone()
+                }
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    WasmTrustedContext::new_testnet()
+                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+                })?;
+
+                SdkBuilder::new(address_list)
+                    .with_network(network)
+                    .with_context_provider(context)
+            }
+            Network::Regtest => {
+                // No trusted quorum source for local; use non-trusted context
+                SdkBuilder::new(address_list)
+                    .with_network(network)
+                    .with_context_provider(WasmContext {})
+            }
+            _ => unreachable!("Network already validated to mainnet, testnet or local"),
+        };
 
         Ok(Self(sdk_builder))
     }
@@ -427,6 +446,20 @@ impl WasmSdkBuilder {
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Dash)
+            .with_context_provider(WasmContext {});
+
+        Self(sdk_builder)
+    }
+
+    /// Create a new SdkBuilder preconfigured for a local network using default dashmate gateway.
+    #[wasm_bindgen(js_name = "local")]
+    pub fn new_local() -> Self {
+        // Dashmate local gateway defaults to 2443
+        let local_addresses = vec!["https://127.0.0.1:2443".parse().unwrap()];
+
+        let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
             .with_context_provider(WasmContext {});
 
         Self(sdk_builder)
