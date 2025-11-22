@@ -63,24 +63,4 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
             IdentityCreateFromAddressesTransition::V0(transition) => transition.set_inputs(inputs),
         }
     }
-
-    fn outputs(&self) -> &BTreeMap<KeyOfType, Credits> {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.outputs(),
-        }
-    }
-
-    fn outputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, Credits> {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.outputs_mut(),
-        }
-    }
-
-    fn set_outputs(&mut self, outputs: BTreeMap<KeyOfType, Credits>) {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => {
-                transition.set_outputs(outputs)
-            }
-        }
-    }
 }

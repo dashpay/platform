@@ -1,12 +1,11 @@
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
 use dpp::prelude::KeyOfTypeNonce;
 use dpp::version::PlatformVersion;
-use grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, TransactionArg};
+use grovedb::{Element, TransactionArg};
 use std::collections::BTreeMap;
 
 impl Drive {

@@ -1,20 +1,13 @@
-use crate::util::grove_operations::BatchInsertApplyType;
-use crate::util::object_size_info::PathKeyElementInfo::{
-    PathFixedSizeKeyRefElement, PathKeyElement, PathKeyElementSize, PathKeyRefElement,
-    PathKeyUnknownElementSize,
-};
-
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use crate::fees::op::LowLevelDriveOperation::CalculatedCostOperation;
-use crate::util::object_size_info::PathKeyElementInfo;
+use crate::util::grove_operations::BatchInsertApplyType;
 use dpp::prelude::KeyOfTypeNonce;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::ProtocolError;
 use grovedb::element::SumValue;
-use grovedb::{Element, GroveDb, TransactionArg};
+use grovedb::{Element, TransactionArg};
 
 impl Drive {
     /// Version 0 implementation of the "insert sum item or add to it if the item already exists" operation.

@@ -265,7 +265,7 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::IdentityCreditTransfer(st) => st.$method($( $arg ),*),
             StateTransition::MasternodeVote(st) => st.$method($( $arg ),*),
             StateTransition::IdentityCreditTransferToAddresses(st) => st.$method($( $arg ),*),
-            StateTransition::IdentityCreateFromAddresses(st) => Err(ProtocolError::CorruptedCodeExecution(
+            StateTransition::IdentityCreateFromAddresses(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "identity create from addresses can not be called for identity signing".to_string(),
             )),
             StateTransition::IdentityTopUpFromAddresses(_) => Err(ProtocolError::CorruptedCodeExecution(

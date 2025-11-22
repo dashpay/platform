@@ -26,7 +26,6 @@ pub trait IdentityCreateFromAddressesTransitionMethodsV0 {
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,

@@ -33,7 +33,6 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,
@@ -48,7 +47,6 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             0 => Ok(IdentityCreateFromAddressesTransitionV0::try_from_inputs_with_signer(
                 identity,
                 inputs,
-                outputs,
                 input_private_keys,
                 signer,
                 bls,

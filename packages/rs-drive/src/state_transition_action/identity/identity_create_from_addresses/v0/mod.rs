@@ -2,30 +2,26 @@
 pub mod transformer;
 
 use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, IdentityV0, PartialIdentity};
+use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
+use std::collections::BTreeMap;
 
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
+use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
-use dpp::platform_value::Bytes36;
 use dpp::prelude::UserFeeIncrease;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityCreateFromAddressesTransitionActionV0 {
-    /// The state transition signable bytes hash
-    pub signable_bytes_hasher: SignableBytesHasher,
+    /// inputs
+    pub inputs: BTreeMap<KeyOfType, Credits>,
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
-    /// the initial balance amount is equal to the remaining asset lock value
-    pub inputs: AssetLockValue,
     /// identity id
     pub identity_id: Identifier,
-    /// asset lock outpoint
-    pub asset_lock_outpoint: Bytes36,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
@@ -33,14 +29,14 @@ pub struct IdentityCreateFromAddressesTransitionActionV0 {
 impl From<IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
     fn from(value: IdentityCreateFromAddressesTransitionActionV0) -> Self {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            asset_lock_value_to_be_consumed,
+            inputs,
             identity_id,
             ..
         } = value;
         PartialIdentity {
             id: identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(asset_lock_value_to_be_consumed.remaining_credit_value()),
+            balance: Some(inputs.values().sum()),
             revision: None,
 
             not_found_public_keys: Default::default(),
@@ -51,14 +47,14 @@ impl From<IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
 impl From<&IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
     fn from(value: &IdentityCreateFromAddressesTransitionActionV0) -> Self {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            asset_lock_value_to_be_consumed,
+            inputs,
             identity_id,
             ..
         } = value;
         PartialIdentity {
             id: *identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(asset_lock_value_to_be_consumed.remaining_credit_value()),
+            balance: Some(inputs.values().sum()),
             revision: None,
 
             not_found_public_keys: Default::default(),
@@ -88,9 +84,9 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
     fn try_from_identity_create_from_addresses_transition_action_returning_asset_lock_value_v0(
         value: IdentityCreateFromAddressesTransitionActionV0,
         platform_version: &PlatformVersion,
-    ) -> Result<(Self, AssetLockValue), ProtocolError> {
+    ) -> Result<Self, ProtocolError> {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            asset_lock_value_to_be_consumed,
+            inputs,
             identity_id,
             public_keys,
             ..
@@ -100,16 +96,13 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
             .identity_versions
             .identity_structure_version
         {
-            0 => Ok((
-                IdentityV0 {
-                    id: identity_id,
-                    public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
-                    balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
-                    revision: 0,
-                }
-                .into(),
-                asset_lock_value_to_be_consumed,
-            )),
+            0 => Ok(IdentityV0 {
+                id: identity_id,
+                public_keys: public_keys.into_iter().map(|key| (key.id(), key)).collect(),
+                balance: inputs.values().sum(),
+                revision: 0,
+            }
+            .into()),
             version => Err(ProtocolError::UnknownVersionMismatch {
                 method: "Identity::try_from_identity_create_from_addresses_transition_action_v0"
                     .to_string(),
@@ -123,7 +116,7 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            asset_lock_value_to_be_consumed,
+            inputs,
             identity_id,
             public_keys,
             ..
@@ -139,7 +132,7 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
                     .iter()
                     .map(|key| (key.id(), key.clone()))
                     .collect(),
-                balance: asset_lock_value_to_be_consumed.remaining_credit_value(),
+                balance: inputs.values().sum(),
                 revision: 0,
             }
             .into()),

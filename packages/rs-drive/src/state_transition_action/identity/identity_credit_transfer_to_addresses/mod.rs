@@ -35,6 +35,15 @@ impl IdentityCreditTransferToAddressesTransitionAction {
         }
     }
 
+    /// Recipient keys
+    pub fn recipient_keys_owned(self) -> BTreeMap<KeyOfType, Credits> {
+        match self {
+            IdentityCreditTransferToAddressesTransitionAction::V0(transition) => {
+                transition.recipient_keys
+            }
+        }
+    }
+
     /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {

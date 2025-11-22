@@ -11,29 +11,22 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
     /// try from
     pub fn try_from(
         value: IdentityCreateFromAddressesTransitionV0,
-        signable_bytes_hasher: SignableBytesHasher,
-        asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateFromAddressesTransitionV0 {
+            inputs,
             public_keys,
             identity_id,
-            inputs,
             user_fee_increase,
             ..
         } = value;
 
-        let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
-            IdentityAssetLockTransactionOutputNotFoundError::new(
-                asset_lock_proof.output_index() as usize
-            )
-        })?;
-
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            signable_bytes_hasher,
+            inputs: inputs
+                .into_iter()
+                .map(|(key, (_, amount))| (key, amount))
+                .collect(),
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
-            asset_lock_value_to_be_consumed,
             identity_id,
-            asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             user_fee_increase,
         })
     }
@@ -41,30 +34,22 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
     /// try from borrowed
     pub fn try_from_borrowed(
         value: &IdentityCreateFromAddressesTransitionV0,
-        signable_bytes_hasher: SignableBytesHasher,
-        asset_lock_value_to_be_consumed: AssetLockValue,
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateFromAddressesTransitionV0 {
+            inputs,
             public_keys,
             identity_id,
-            asset_lock_proof,
             user_fee_increase,
             ..
         } = value;
 
-        // This should already be checked in validate basic
-        let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
-            IdentityAssetLockTransactionOutputNotFoundError::new(
-                asset_lock_proof.output_index() as usize
-            )
-        })?;
-
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            signable_bytes_hasher,
+            inputs: inputs
+                .into_iter()
+                .map(|(key, (_, amount))| (key, amount))
+                .collect(),
             public_keys: public_keys.iter().map(|key| key.into()).collect(),
-            asset_lock_value_to_be_consumed,
             identity_id: *identity_id,
-            asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             user_fee_increase: *user_fee_increase,
         })
     }

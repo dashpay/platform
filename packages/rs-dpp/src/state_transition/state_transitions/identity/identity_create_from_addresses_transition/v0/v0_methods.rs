@@ -38,7 +38,6 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,
@@ -48,7 +47,6 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
         let mut identity_create_from_addresses_transition =
             IdentityCreateFromAddressesTransitionV0 {
                 inputs,
-                outputs,
                 user_fee_increase,
                 ..Default::default()
             };
@@ -134,27 +132,5 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     /// Set inputs
     fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
         self.inputs = inputs;
-    }
-
-    /// Get outputs
-    fn outputs(
-        &self,
-    ) -> &std::collections::BTreeMap<crate::identity::KeyOfType, crate::fee::Credits> {
-        &self.outputs
-    }
-
-    /// Get outputs as a mutable map
-    fn outputs_mut(
-        &mut self,
-    ) -> &mut std::collections::BTreeMap<crate::identity::KeyOfType, crate::fee::Credits> {
-        &mut self.outputs
-    }
-
-    /// Set outputs
-    fn set_outputs(
-        &mut self,
-        outputs: std::collections::BTreeMap<crate::identity::KeyOfType, crate::fee::Credits>,
-    ) {
-        self.outputs = outputs;
     }
 }

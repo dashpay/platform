@@ -40,7 +40,6 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-    pub outputs: BTreeMap<KeyOfType, Credits>,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
@@ -58,8 +57,6 @@ struct IdentityCreateFromAddressesTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
     inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-    outputs: BTreeMap<KeyOfType, Credits>,
-    // Generic identity ST fields
     user_fee_increase: UserFeeIncrease,
     input_witnesses: Vec<AddressWitness>,
 }
@@ -73,7 +70,6 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
         let IdentityCreateFromAddressesTransitionV0Inner {
             public_keys,
             inputs,
-            outputs,
             user_fee_increase,
             input_witnesses,
         } = value;
@@ -97,7 +93,6 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
         Ok(Self {
             public_keys,
             inputs,
-            outputs,
             user_fee_increase,
             input_witnesses,
             identity_id,

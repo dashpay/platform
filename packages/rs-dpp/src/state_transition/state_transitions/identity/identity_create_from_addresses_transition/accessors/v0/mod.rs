@@ -26,11 +26,4 @@ pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
     fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
     /// Set inputs
     fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>);
-
-    /// Get outputs
-    fn outputs(&self) -> &BTreeMap<KeyOfType, Credits>;
-    /// Get outputs as a mutable map
-    fn outputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, Credits>;
-    /// Set outputs
-    fn set_outputs(&mut self, outputs: BTreeMap<KeyOfType, Credits>);
 }

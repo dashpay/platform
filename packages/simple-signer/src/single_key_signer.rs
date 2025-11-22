@@ -1,7 +1,9 @@
+use dpp::address_funds::{AddressWitness, WitnessType};
 use dpp::dashcore;
 use dpp::dashcore::signer;
 use dpp::dashcore::Network;
 use dpp::dashcore::PrivateKey;
+use dpp::dashcore::PublicKey as ECDSAPublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
@@ -77,7 +79,7 @@ impl SingleKeySigner {
     }
 }
 
-impl Signer for SingleKeySigner {
+impl Signer<IdentityPublicKey> for SingleKeySigner {
     fn sign(
         &self,
         identity_public_key: &IdentityPublicKey,
@@ -99,6 +101,40 @@ impl Signer for SingleKeySigner {
                 )))
             }
         }
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        // First, sign the data to get the signature
+        let signature = self.sign(key, data)?;
+
+        // Then create the appropriate WitnessType based on the key type
+        // SingleKeySigner only supports ECDSA keys
+        let witness_type = match key.key_type() {
+            KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
+                // Get the public key from the identity public key
+                let pubkey_data = key.data();
+                let ecdsa_pubkey =
+                    ECDSAPublicKey::from_slice(pubkey_data.as_slice()).map_err(|e| {
+                        ProtocolError::Generic(format!("Invalid ECDSA public key: {}", e))
+                    })?;
+                WitnessType::ECDSAPublicKey(ecdsa_pubkey)
+            }
+            _ => {
+                return Err(ProtocolError::Generic(format!(
+                    "SingleKeySigner only supports ECDSA keys, got {:?}",
+                    key.key_type()
+                )));
+            }
+        };
+
+        Ok(AddressWitness {
+            witness_type,
+            signature,
+        })
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {

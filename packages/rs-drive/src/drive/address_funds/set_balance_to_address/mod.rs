@@ -29,7 +29,6 @@ impl Drive {
         key_of_type_with_nonce: KeyOfTypeWithNonce,
         balance: Credits,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        storage_flags: StorageFlags,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
         match platform_version
@@ -38,12 +37,7 @@ impl Drive {
             .address_funds
             .set_balance_to_address
         {
-            0 => self.set_balance_to_address_v0(
-                key_of_type_with_nonce,
-                balance,
-                drive_operations,
-                storage_flags,
-            ),
+            0 => self.set_balance_to_address_v0(key_of_type_with_nonce, balance, drive_operations),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "set_balance_to_address".to_string(),
                 known_versions: vec![0],

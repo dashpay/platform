@@ -16,7 +16,6 @@ impl Drive {
     /// * `key_of_type_with_nonce`: The key (containing key type and key data) with its associated nonce
     /// * `balance`: The balance value to set
     /// * `drive_operations`: The list of drive operations to append to.
-    /// * `storage_flags`: Storage flags to apply to the element
     ///
     /// # Returns
     /// * `Ok(())` if the operation was successful.
@@ -26,7 +25,6 @@ impl Drive {
         key_of_type_with_nonce: KeyOfTypeWithNonce,
         balance: Credits,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
-        storage_flags: StorageFlags,
     ) -> Result<(), Error> {
         let KeyOfTypeWithNonce { key_of_type, nonce } = key_of_type_with_nonce;
 
@@ -41,7 +39,7 @@ impl Drive {
             Element::new_item_with_sum_item_with_flags(
                 nonce.to_be_bytes().to_vec(),
                 balance as SumValue,
-                storage_flags.to_some_element_flags(),
+                None,
             ),
         ));
 
