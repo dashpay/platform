@@ -92,3 +92,4 @@ runs:
       run: yarn start
       env:
         DEBUG: 1
+        SDK_TEST_DATA: "true"

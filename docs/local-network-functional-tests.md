@@ -35,6 +35,8 @@ Context and gaps to close before we can point the wasm-sdk and js-evo-sdk functi
      - DPNS names, known documents.
      - Token/group contracts and balances needed by assertions.
    - Emit a generated fixture file (e.g., `fixtures/local.mjs`) consumed by both wasm-sdk and js-evo-sdk tests.
+   - Use the existing `SDK_TEST_DATA=true yarn start` mechanism to have dashmate seed test data automatically during network startup, then extract the IDs into the local fixtures for wasm/js-evo functional suites.
+   - For wasm-sdk specifically, required IDs/contracts are summarized in `packages/wasm-sdk/tests/functional/fixtures/requiredTestData.mjs`; ensure the seeding path populates equivalents on local. The `SDK_TEST_DATA=true` hook seeds sample identities/contracts used by SDK tests—align local fixtures to those outputs.
 
 4) **Make tests local-first**
    - Replace hardcoded `testnet` builders with a local/regtest option and env-driven address selection; functional suites should target the local dashmate network when run from this repo.

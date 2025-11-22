@@ -1,10 +1,12 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Protocol versions', function describeProtocolVersions() {
   this.timeout(60000);
 
   let client;
   let builder;
+  const { evonodeProTxHash } = wasmFunctionalTestRequirements();
 
   before(async () => {
     await init();
@@ -23,7 +25,10 @@ describe('Protocol versions', function describeProtocolVersions() {
   });
 
   it('lists protocol upgrade vote statuses', async () => {
-    const START_PROTX = '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113';
+    if (!evonodeProTxHash) {
+      this.skip();
+    }
+    const START_PROTX = evonodeProTxHash;
     const res = await client.getProtocolVersionUpgradeVoteStatus(START_PROTX, 50);
     expect(res).to.be.instanceOf(Map);
   });

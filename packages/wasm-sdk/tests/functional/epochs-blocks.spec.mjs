@@ -1,10 +1,12 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Epochs and evonode blocks', function describeEpochs() {
   this.timeout(60000);
 
   let client;
   let builder;
+  const { sampleEpoch, evonodeProTxHash } = wasmFunctionalTestRequirements();
 
   before(async () => {
     await init();
@@ -18,8 +20,11 @@ describe('Epochs and evonode blocks', function describeEpochs() {
   });
 
   it('gets epochs info and finalized epochs', async () => {
+    if (!sampleEpoch) {
+      this.skip();
+    }
     const current = await client.getCurrentEpoch().catch(() => null);
-    const currentIndex = current ? Number(current.index) : 1000;
+    const currentIndex = current ? Number(current.index) : Number(sampleEpoch);
     const start = Math.max(0, currentIndex - 5);
 
     const infos = await client.getEpochsInfo({
@@ -37,10 +42,13 @@ describe('Epochs and evonode blocks', function describeEpochs() {
   });
 
   it('queries evonode proposed blocks by id/range', async () => {
-    const EVONODE_ID = '143dcd6a6b7684fde01e88a10e5d65de9a29244c5ecd586d14a342657025f113';
+    if (!evonodeProTxHash) {
+      this.skip();
+    }
+    const EVONODE_ID = evonodeProTxHash;
     await client.getEvonodesProposedEpochBlocksByIds(8635, [EVONODE_ID]);
     await client.getEvonodesProposedEpochBlocksByRange({
-      epoch: 8635,
+      epoch: sampleEpoch,
       startAfter: EVONODE_ID,
       limit: 50,
     });

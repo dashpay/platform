@@ -1,9 +1,10 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Document queries', function describeDocumentQueries() {
   this.timeout(60000);
 
-  const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+  const { dpnsContractId, identityId } = wasmFunctionalTestRequirements();
 
   let client;
   let builder;
@@ -21,7 +22,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('lists DPNS documents (no filters)', async () => {
     const docs = await client.getDocuments({
-      dataContractId: DPNS_CONTRACT,
+      dataContractId: dpnsContractId,
       documentTypeName: 'domain',
       limit: 5,
     });
@@ -30,7 +31,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('queries with where clause', async () => {
     const docs = await client.getDocuments({
-      dataContractId: DPNS_CONTRACT,
+      dataContractId: dpnsContractId,
       documentTypeName: 'domain',
       where: [
         ['normalizedParentDomainName', '==', 'dash'],
@@ -42,7 +43,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('queries with orderBy', async () => {
     const docs = await client.getDocuments({
-      dataContractId: DPNS_CONTRACT,
+      dataContractId: dpnsContractId,
       documentTypeName: 'domain',
       orderBy: [
         ['normalizedParentDomainName', 'asc'],
@@ -54,7 +55,7 @@ describe('Document queries', function describeDocumentQueries() {
 
   it('complex where + orderBy', async () => {
     const docs = await client.getDocuments({
-      dataContractId: DPNS_CONTRACT,
+      dataContractId: dpnsContractId,
       documentTypeName: 'domain',
       where: [
         ['normalizedLabel', 'startsWith', 'test'],
@@ -76,8 +77,7 @@ describe('Document queries', function describeDocumentQueries() {
   });
 
   it('fetches usernames for a known identity and verifies fields', async () => {
-    const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
-    const list = await client.getDpnsUsernames({ identityId: TEST_IDENTITY, limit: 10 });
+    const list = await client.getDpnsUsernames({ identityId, limit: 10 });
     expect(list).to.be.an('array');
   });
 });

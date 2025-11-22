@@ -1,10 +1,14 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
+import { wasmFunctionalTestRequirements } from './fixtures/requiredTestData.mjs';
 
 describe('Identity queries', function describeBlock() {
   this.timeout(90000);
 
-  const TEST_IDENTITY = '5DbLwAxGBzUzo81VewMUwn4b5P4bpv9FNFybi25XB5Bk';
-  const DPNS_CONTRACT = 'GWRSAVFMjXx8HpQFaNJMqBV7MBgMK4br5UESsB4S31Ec';
+  const {
+    identityId: TEST_IDENTITY,
+    dpnsContractId: DPNS_CONTRACT,
+    tokenContracts,
+  } = wasmFunctionalTestRequirements();
 
   let client;
   let builder;
@@ -60,12 +64,12 @@ describe('Identity queries', function describeBlock() {
   });
 
   it('token balances/infos for identity and batches', async () => {
-    const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
+    const TOKEN_CONTRACT = tokenContracts[0].contractId;
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 1);
 
     await client.getIdentityTokenBalances(TEST_IDENTITY, [tokenId]);
     await client.getIdentitiesTokenBalances([TEST_IDENTITY], tokenId);
     await client.getIdentityTokenInfos(TEST_IDENTITY, [tokenId]);
-    await client.getIdentitiesTokenInfos([TEST_IDENTITY], 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy');
+    await client.getIdentitiesTokenInfos([TEST_IDENTITY], tokenContracts[0].contractId);
   });
 });
