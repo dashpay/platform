@@ -1,6 +1,7 @@
 use crate::version::drive_versions::drive_verify_method_versions::{
-    DriveVerifyContractMethodVersions, DriveVerifyDocumentMethodVersions,
-    DriveVerifyGroupMethodVersions, DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
+    DriveVerifyAddressFundsMethodVersions, DriveVerifyContractMethodVersions,
+    DriveVerifyDocumentMethodVersions, DriveVerifyGroupMethodVersions,
+    DriveVerifyIdentityMethodVersions, DriveVerifyMethodVersions,
     DriveVerifySingleDocumentMethodVersions, DriveVerifyStateTransitionMethodVersions,
     DriveVerifySystemMethodVersions, DriveVerifyTokenMethodVersions, DriveVerifyVoteMethodVersions,
 };
@@ -76,6 +77,10 @@ pub const DRIVE_VERIFY_METHOD_VERSIONS_V1: DriveVerifyMethodVersions = DriveVeri
         verify_contests_proof: 0,
         verify_vote_polls_by_end_date_proof: 0,
         verify_specialized_balance: 0,
+    },
+    address_funds: DriveVerifyAddressFundsMethodVersions {
+        verify_address_info: 0,
+        verify_addresses_infos: 0,
     },
     state_transition: DriveVerifyStateTransitionMethodVersions {
         verify_state_transition_was_executed_with_proof: 0,

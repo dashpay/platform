@@ -31,37 +31,10 @@ impl IdentityCreateFromAddressesTransitionAction {
         }
     }
 
-    /// Asset lock value to be consumed
-    /// The initial balance is equal to the remaining credit value in the asset lock value
-    pub fn asset_lock_value_to_be_consumed(&self) -> &AssetLockValue {
-        match self {
-            IdentityCreateFromAddressesTransitionAction::V0(transition) => {
-                &transition.asset_lock_value_to_be_consumed
-            }
-        }
-    }
-
-    /// Asset lock value to be consumed
-    /// The initial balance is equal to the remaining credit value in the asset lock value
-    pub fn asset_lock_value_to_be_consumed_owned(self) -> AssetLockValue {
-        match self {
-            IdentityCreateFromAddressesTransitionAction::V0(transition) => {
-                transition.asset_lock_value_to_be_consumed
-            }
-        }
-    }
-
     /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityCreateFromAddressesTransitionAction::V0(transition) => transition.identity_id,
-        }
-    }
-
-    /// Asset Lock Outpoint
-    pub fn asset_lock_outpoint(&self) -> Bytes36 {
-        match self {
-            IdentityCreateFromAddressesTransitionAction::V0(action) => action.asset_lock_outpoint,
         }
     }
 
@@ -93,13 +66,6 @@ impl From<&IdentityCreateFromAddressesTransitionAction> for PartialIdentity {
 
 /// action
 pub trait IdentityFromIdentityCreateFromAddressesTransitionAction {
-    /// try from
-    fn try_from_identity_create_from_addresses_transition_action_returning_asset_lock_value(
-        value: IdentityCreateFromAddressesTransitionAction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(Self, AssetLockValue), ProtocolError>
-    where
-        Self: Sized;
     /// try from borrowed
     fn try_from_borrowed_identity_create_from_addresses_transition_action(
         value: &IdentityCreateFromAddressesTransitionAction,
@@ -110,20 +76,6 @@ pub trait IdentityFromIdentityCreateFromAddressesTransitionAction {
 }
 
 impl IdentityFromIdentityCreateFromAddressesTransitionAction for Identity {
-    fn try_from_identity_create_from_addresses_transition_action_returning_asset_lock_value(
-        value: IdentityCreateFromAddressesTransitionAction,
-        platform_version: &PlatformVersion,
-    ) -> Result<(Self, AssetLockValue), ProtocolError> {
-        match value {
-            IdentityCreateFromAddressesTransitionAction::V0(v0) => {
-                Identity::try_from_identity_create_from_addresses_transition_action_returning_asset_lock_value_v0(
-                    v0,
-                    platform_version,
-                )
-            }
-        }
-    }
-
     fn try_from_borrowed_identity_create_from_addresses_transition_action(
         value: &IdentityCreateFromAddressesTransitionAction,
         platform_version: &PlatformVersion,

@@ -8,7 +8,7 @@ use crate::{
 #[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
-use crate::address_funds::AddressWitness;
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
@@ -24,6 +24,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
     fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
         outputs: BTreeMap<KeyOfType, Credits>,
+        fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
@@ -39,6 +40,7 @@ impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransitionV
         let mut address_funds_transition = AddressFundsTransferTransitionV0 {
             inputs: inputs.clone(),
             outputs,
+            fee_strategy,
             user_fee_increase,
             input_witnesses: Vec::new(),
         };

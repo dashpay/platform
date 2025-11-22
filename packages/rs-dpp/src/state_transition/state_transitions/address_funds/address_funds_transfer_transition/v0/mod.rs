@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 
 use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 
-use crate::address_funds::AddressWitness;
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness};
 use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -40,6 +40,7 @@ use serde::{Deserialize, Serialize};
 pub struct AddressFundsTransferTransitionV0 {
     pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     pub outputs: BTreeMap<KeyOfType, Credits>,
+    pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,

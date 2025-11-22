@@ -1,10 +1,5 @@
 use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
-use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
 use dpp::consensus::ConsensusError;
-use dpp::platform_value::Bytes36;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-
 use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 
 impl IdentityCreateFromAddressesTransitionActionV0 {
@@ -21,10 +16,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         } = value;
 
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            inputs: inputs
-                .into_iter()
-                .map(|(key, (_, amount))| (key, amount))
-                .collect(),
+            inputs,
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
             identity_id,
             user_fee_increase,
@@ -44,10 +36,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         } = value;
 
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            inputs: inputs
-                .into_iter()
-                .map(|(key, (_, amount))| (key, amount))
-                .collect(),
+            inputs: inputs.clone(),
             public_keys: public_keys.iter().map(|key| key.into()).collect(),
             identity_id: *identity_id,
             user_fee_increase: *user_fee_increase,

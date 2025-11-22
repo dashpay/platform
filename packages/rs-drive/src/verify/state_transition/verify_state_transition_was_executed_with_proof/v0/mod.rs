@@ -26,7 +26,7 @@ use dpp::state_transition::identity_credit_transfer_transition::accessors::Ident
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::state_transition::batch_transition::document_base_transition::document_base_transition_trait::DocumentBaseTransitionAccessors;
 use dpp::state_transition::batch_transition::document_create_transition::DocumentFromCreateTransition;
 use dpp::state_transition::batch_transition::document_replace_transition::DocumentFromReplaceTransition;

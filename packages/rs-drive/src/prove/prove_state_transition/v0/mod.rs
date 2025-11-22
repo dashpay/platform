@@ -23,7 +23,7 @@ use dpp::state_transition::identity_credit_withdrawal_transition::accessors::Ide
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
-use dpp::state_transition::{StateTransition, StateTransitionLike};
+use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
 use grovedb::{PathQuery, TransactionArg};
@@ -199,6 +199,10 @@ impl Drive {
                     }
                 }
             }
+            StateTransition::IdentityCreditTransferToAddresses(_) => {}
+            StateTransition::IdentityCreateFromAddresses(_) => {}
+            StateTransition::IdentityTopUpFromAddresses(_) => {}
+            StateTransition::AddressFundsTransfer(_) => {}
         };
 
         let proof = self.grove_get_proved_path_query(

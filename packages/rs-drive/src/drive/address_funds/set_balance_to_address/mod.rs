@@ -6,7 +6,6 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfTypeWithNonce;
-use grovedb_epoch_based_storage_flags::StorageFlags;
 use platform_version::version::PlatformVersion;
 
 impl Drive {

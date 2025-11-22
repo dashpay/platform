@@ -6,7 +6,6 @@ use dpp::fee::Credits;
 use dpp::identity::KeyOfTypeWithNonce;
 use grovedb::element::SumValue;
 use grovedb::Element;
-use grovedb_epoch_based_storage_flags::StorageFlags;
 
 impl Drive {
     /// Version 0 implementation of setting a balance for an address.

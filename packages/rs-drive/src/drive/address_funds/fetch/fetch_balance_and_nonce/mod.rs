@@ -35,7 +35,7 @@ impl Drive {
             .address_funds
             .fetch_balance_and_nonce
         {
-            0 => self.fetch_balance_and_nonce_v0(key_of_type, transaction),
+            0 => self.fetch_balance_and_nonce_v0(key_of_type, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_balance_and_nonce".to_string(),
                 known_versions: vec![0],

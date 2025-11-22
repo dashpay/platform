@@ -1,4 +1,6 @@
 #[cfg(feature = "state-transition-signing")]
+use crate::address_funds::AddressFundsFeeStrategy;
+#[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
@@ -20,6 +22,7 @@ pub trait AddressFundsTransferTransitionMethodsV0 {
     fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
         outputs: BTreeMap<KeyOfType, Credits>,
+        fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
