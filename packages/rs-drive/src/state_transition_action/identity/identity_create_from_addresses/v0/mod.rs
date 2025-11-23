@@ -5,7 +5,6 @@ use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
 use std::collections::BTreeMap;
 
-use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;

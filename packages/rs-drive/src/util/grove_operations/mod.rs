@@ -139,8 +139,8 @@ pub mod batch_move_items_in_path_query;
 
 /// Batch inserts item with sum item if not already existing
 pub mod batch_insert_item_with_sum_item_if_not_exists;
-/// Batch merges the nonce and the sum item, the sum item is added to
-pub mod batch_merge_nonce_and_sum_item;
+/// Keeps the item, but inserts or adds to the sum item if it already exists
+pub mod batch_keep_item_insert_sum_item_or_add_to_if_already_exists;
 mod batch_move;
 /// Get the total value from a big sum tree
 pub mod grove_get_big_sum_tree_total_value;

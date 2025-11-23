@@ -28,9 +28,7 @@ use crate::ProtocolError;
 )]
 #[derive(Default)]
 pub struct IdentityTopUpFromAddressesTransitionV0 {
-    // Own ST fields
     pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-    pub outputs: BTreeMap<KeyOfType, Credits>,
     pub identity_id: Identifier,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

@@ -80,7 +80,6 @@ impl Drive {
             .drive
             .methods
             .address_funds
-            .prove
             .prove_balances_with_nonces
         {
             0 => self.prove_balances_with_nonces_operations_v0(

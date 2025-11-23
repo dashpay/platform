@@ -8,9 +8,8 @@ use crate::state_transition_action::identity::identity_create_from_addresses::v0
     IdentityFromIdentityCreateFromAddressesTransitionActionV0,
 };
 use derive_more::From;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
-use dpp::platform_value::{Bytes36, Identifier};
+use dpp::platform_value::Identifier;
 use dpp::prelude::UserFeeIncrease;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;

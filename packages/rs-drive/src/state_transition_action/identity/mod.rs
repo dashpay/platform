@@ -16,3 +16,6 @@ pub mod identity_credit_transfer_to_addresses;
 
 /// identity create from addresses
 pub mod identity_create_from_addresses;
+
+/// identity top up from addresses
+pub mod identity_topup_from_addresses;

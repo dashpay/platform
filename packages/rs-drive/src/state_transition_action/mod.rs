@@ -7,16 +7,21 @@ pub mod identity;
 pub mod system;
 // TODO: Must crate only but we need to remove of use it first
 pub mod action_convert_to_operations;
+mod address_funds;
 /// documents_batch
 pub mod batch;
 
+use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
 use crate::state_transition_action::batch::BatchTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
 use crate::state_transition_action::contract::data_contract_update::DataContractUpdateTransitionAction;
 use crate::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
+use crate::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_credit_transfer::IdentityCreditTransferTransitionAction;
+use crate::state_transition_action::identity::identity_credit_transfer_to_addresses::IdentityCreditTransferToAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_credit_withdrawal::IdentityCreditWithdrawalTransitionAction;
 use crate::state_transition_action::identity::identity_topup::IdentityTopUpTransitionAction;
+use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{
@@ -43,14 +48,22 @@ pub enum StateTransitionAction {
     BatchAction(BatchTransitionAction),
     /// identity create
     IdentityCreateAction(IdentityCreateTransitionAction),
+    /// identity create from addresses
+    IdentityCreateFromAddressesAction(IdentityCreateFromAddressesTransitionAction),
     /// identity topup
     IdentityTopUpAction(IdentityTopUpTransitionAction),
+    /// identity topup from addresses
+    IdentityTopUpFromAddressesAction(IdentityTopUpFromAddressesTransitionAction),
     /// identity credit withdrawal
     IdentityCreditWithdrawalAction(IdentityCreditWithdrawalTransitionAction),
     /// identity update
     IdentityUpdateAction(IdentityUpdateTransitionAction),
     /// identity credit transfer
     IdentityCreditTransferAction(IdentityCreditTransferTransitionAction),
+    /// identity credit transfer to addresses
+    IdentityCreditTransferToAddressesAction(IdentityCreditTransferToAddressesTransitionAction),
+    /// address funds transfer
+    AddressFundsTransfer(AddressFundsTransferTransitionAction),
     /// masternode vote action
     MasternodeVoteAction(MasternodeVoteTransitionAction),
     /// bump identity nonce action
@@ -92,6 +105,16 @@ impl StateTransitionAction {
             StateTransitionAction::MasternodeVoteAction(_) => {
                 UserFeeIncrease::default() // 0 (or none)
             }
+            StateTransitionAction::IdentityCreateFromAddressesAction(action) => {
+                action.user_fee_increase()
+            }
+            StateTransitionAction::IdentityTopUpFromAddressesAction(action) => {
+                action.user_fee_increase()
+            }
+            StateTransitionAction::IdentityCreditTransferToAddressesAction(action) => {
+                action.user_fee_increase()
+            }
+            StateTransitionAction::AddressFundsTransfer(action) => action.user_fee_increase(),
         }
     }
 }

@@ -31,7 +31,6 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
     fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
         identity: &Identity,
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
@@ -40,7 +39,6 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         let mut identity_top_up_from_addresses_transition =
             IdentityTopUpFromAddressesTransitionV0 {
                 inputs: inputs.clone(),
-                outputs,
                 identity_id: identity.id(),
                 user_fee_increase,
                 input_witnesses: vec![],

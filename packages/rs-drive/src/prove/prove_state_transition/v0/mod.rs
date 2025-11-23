@@ -9,6 +9,7 @@ use crate::verify::state_transition::state_transition_execution_path_queries::Tr
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::identifier::Identifier;
+use dpp::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::document_transition::{
     DocumentTransition, DocumentTransitionV0Methods,
@@ -17,9 +18,12 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
+use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
+use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_withdrawal_transition::accessors::IdentityCreditWithdrawalTransitionAccessorsV0;
+use dpp::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
@@ -199,10 +203,23 @@ impl Drive {
                     }
                 }
             }
-            StateTransition::IdentityCreditTransferToAddresses(_) => {}
-            StateTransition::IdentityCreateFromAddresses(_) => {}
-            StateTransition::IdentityTopUpFromAddresses(_) => {}
-            StateTransition::AddressFundsTransfer(_) => {}
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
+                Drive::balances_for_addresses_query(st.recipient_keys().keys())
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => Drive::full_identity_query(
+                &st.identity_id().into_buffer(),
+                &platform_version.drive.grove_version,
+            )?,
+            StateTransition::IdentityTopUpFromAddresses(st) => {
+                // we expect to get a new balance and revision
+                Drive::revision_and_balance_path_query(
+                    st.identity_id().to_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
+            StateTransition::AddressFundsTransfer(st) => {
+                Drive::balances_for_addresses_query(st.inputs().keys().chain(st.outputs().keys()))
+            }
         };
 
         let proof = self.grove_get_proved_path_query(

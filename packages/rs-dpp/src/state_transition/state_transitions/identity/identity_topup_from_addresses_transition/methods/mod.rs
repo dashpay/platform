@@ -29,7 +29,6 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
     fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
         identity: &Identity,
         inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
@@ -45,7 +44,6 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
                     identity,
                     inputs,
-                    outputs,
                     signer,
                     user_fee_increase,
                     platform_version,

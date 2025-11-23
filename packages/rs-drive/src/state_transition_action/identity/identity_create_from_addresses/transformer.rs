@@ -1,9 +1,7 @@
 use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
 use crate::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
-use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::consensus::ConsensusError;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
-use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 
 impl IdentityCreateFromAddressesTransitionAction {
     /// try from

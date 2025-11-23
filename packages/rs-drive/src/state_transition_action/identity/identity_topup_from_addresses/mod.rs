@@ -1,0 +1,51 @@
+/// transformer
+pub mod transformer;
+/// v0
+pub mod v0;
+
+use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
+use derive_more::From;
+use dpp::fee::Credits;
+use dpp::identity::KeyOfType;
+use dpp::platform_value::Identifier;
+use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use std::collections::BTreeMap;
+
+/// action
+#[derive(Debug, Clone, From)]
+pub enum IdentityTopUpFromAddressesTransitionAction {
+    /// v0
+    V0(IdentityTopUpFromAddressesTransitionActionV0),
+}
+
+impl IdentityTopUpFromAddressesTransitionAction {
+    /// The inputs used in the action
+    pub fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => &transition.inputs,
+        }
+    }
+
+    /// The inputs used in the action as owned
+    pub fn inputs_consume(self) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.inputs,
+        }
+    }
+
+    /// Identity Id
+    pub fn identity_id(&self) -> Identifier {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.identity_id,
+        }
+    }
+
+    /// fee multiplier
+    pub fn user_fee_increase(&self) -> UserFeeIncrease {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
+                transition.user_fee_increase
+            }
+        }
+    }
+}

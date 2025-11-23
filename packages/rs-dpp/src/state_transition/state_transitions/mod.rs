@@ -1,4 +1,4 @@
-mod address_funds;
+pub mod address_funds;
 mod common_fields;
 mod contract;
 pub(crate) mod document;

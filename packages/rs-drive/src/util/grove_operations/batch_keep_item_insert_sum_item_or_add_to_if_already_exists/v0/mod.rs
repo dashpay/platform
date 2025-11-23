@@ -3,11 +3,11 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::BatchInsertApplyType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::ProtocolError;
-use grovedb::element::SumValue;
 use grovedb::{Element, TransactionArg};
+use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Version 0 implementation of the "insert sum item or add to it if the item already exists" operation.
@@ -23,12 +23,14 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
-    pub(crate) fn batch_merge_nonce_and_sum_item_v0<const N: usize>(
+    pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0<
+        B: AsRef<[u8]>,
+        P: Into<SubtreePath<'_, B>>,
+    >(
         &self,
-        path: [&[u8]; N],
+        path: &Vec<Vec<u8>>,
         key: &[u8],
-        nonce: KeyOfTypeNonce,
-        add_value: SumValue,
+        amount_to_add: Credits,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
@@ -36,7 +38,7 @@ impl Drive {
     ) -> Result<(), Error> {
         // Check if the sum item already exists
         let existing_element = self.grove_get_raw_optional(
-            path.as_slice().into(),
+            path.into(),
             key,
             apply_type.to_direct_query_type(),
             transaction,
@@ -44,29 +46,19 @@ impl Drive {
             drive_version,
         )?;
 
-        if let Some(Element::ItemWithSumItem(existing_nonce_vec, existing_value, _)) =
-            existing_element
-        {
-            let existing_nonce_bytes: [u8; 8] =
-                match existing_nonce_vec.as_slice().try_into().map_err(|_| {
-                    Error::Drive(DriveError::CorruptedSerialization(
-                        "existing nonce must be 8 bytes for a u64".to_string(),
-                    ))
-                }) {
-                    Ok(value) => value,
-                    Err(e) => return Err(e),
-                };
-
-            let existing_nonce = KeyOfTypeNonce::from_be_bytes(existing_nonce_bytes);
+        if let Some(Element::ItemWithSumItem(nonce, existing_value, flags)) = existing_element {
+            if amount_to_add > i64::MAX as u64 {
+                return Err(ProtocolError::Overflow("amount to add over i64").into());
+            }
 
             // Add to the existing sum item
             let updated_value = existing_value
-                .checked_add(add_value)
+                .checked_add(amount_to_add as i64)
                 .ok_or(ProtocolError::Overflow("overflow when adding to sum item"))?;
-            drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
-                path.into_iter().map(|p| p.to_vec()).collect(),
+            drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+                path.clone(),
                 key.to_vec(),
-                Element::new_item_with_sum_item(existing_nonce, updated_value),
+                Element::new_item_with_sum_item_with_flags(nonce, updated_value, flags),
             ));
         } else if existing_element.is_some() {
             return Err(Error::Drive(DriveError::CorruptedElementType(
@@ -75,9 +67,9 @@ impl Drive {
         } else {
             // Insert as a new sum item
             drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
-                path.into_iter().map(|p| p.to_vec()).collect(),
+                path.clone(),
                 key.to_vec(),
-                Element::new_item_with_sum_item(nonce.to_be_bytes().to_vec(), add_value),
+                Element::new_item_with_sum_item(0.to_be_bytes(), amount_to_add),
             ));
         }
     }

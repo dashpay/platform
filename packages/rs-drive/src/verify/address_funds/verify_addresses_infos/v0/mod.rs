@@ -37,7 +37,7 @@ impl Drive {
 
         let values = proved_key_values
             .into_iter()
-            .map(|(path, key, element)| {
+            .map(|(_path, key, element)| {
                 // Reconstruct KeyOfType from the key bytes
                 let key_of_type = KeyOfType::from_bytes(&key).map_err(|e| {
                     Error::Proof(ProofError::CorruptedProof(format!(
