@@ -8,11 +8,13 @@ use crate::state_transition_action::identity::identity_create_from_addresses::v0
     IdentityFromIdentityCreateFromAddressesTransitionActionV0,
 };
 use derive_more::From;
-use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
+use dpp::fee::Credits;
+use dpp::identity::{Identity, IdentityPublicKey, KeyOfType, PartialIdentity};
 use dpp::platform_value::Identifier;
-use dpp::prelude::UserFeeIncrease;
+use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use std::collections::BTreeMap;
 
 /// action
 #[derive(Debug, Clone, From)]
@@ -23,6 +25,24 @@ pub enum IdentityCreateFromAddressesTransitionAction {
 
 /// action
 impl IdentityCreateFromAddressesTransitionAction {
+    /// Get inputs
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        match self {
+            IdentityCreateFromAddressesTransitionAction::V0(transition) => {
+                &transition.inputs_with_remaining_balance
+            }
+        }
+    }
+    /// Get inputs
+    pub fn inputs_with_remaining_balance_owned(
+        self,
+    ) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        match self {
+            IdentityCreateFromAddressesTransitionAction::V0(transition) => {
+                transition.inputs_with_remaining_balance
+            }
+        }
+    }
     /// Public Keys
     pub fn public_keys(&self) -> &Vec<IdentityPublicKey> {
         match self {

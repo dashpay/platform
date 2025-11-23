@@ -9,6 +9,7 @@ pub struct DPPStateTransitionVersions {
     pub identities: IdentityTransitionVersions,
     pub contract: ContractTransitionVersions,
     pub address_funds: AddressFundsTransitionVersions,
+    pub max_inputs: u16,
 }
 
 #[derive(Clone, Debug, Default)]

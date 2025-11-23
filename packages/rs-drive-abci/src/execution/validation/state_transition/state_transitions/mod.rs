@@ -25,6 +25,9 @@ pub mod data_contract_update;
 /// Module for voting from a masternode.
 pub mod masternode_vote;
 
+/// Identity create from addresses
+pub mod identity_create_from_addresses;
+
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationMode {

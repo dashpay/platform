@@ -27,9 +27,11 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_transfer_transition: 0,
                 documents_batch_transition: 0,
                 identity_create_transition: 0,
+                identity_create_from_addresses_transition: 0,
                 identity_credit_transfer_transition: 0,
                 identity_credit_withdrawal_transition: 0,
                 identity_top_up_transition: 0,
+                identity_top_up_from_addresses_transition: 0,
                 identity_update_transition: 0,
                 masternode_vote_transition: 0,
                 bump_identity_data_contract_nonce: 0,
@@ -44,5 +46,6 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_direct_purchase_transition: 0,
                 token_set_price_for_direct_purchase_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
+                address_funds_transfer_transition: 0,
             },
     };

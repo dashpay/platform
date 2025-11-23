@@ -16,7 +16,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         } = value;
 
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            inputs,
+            inputs_with_remaining_balance,
             public_keys: public_keys.into_iter().map(|a| a.into()).collect(),
             identity_id,
             user_fee_increase,
@@ -36,7 +36,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         } = value;
 
         Ok(IdentityCreateFromAddressesTransitionActionV0 {
-            inputs: inputs.clone(),
+            inputs_with_remaining_balance: inputs.clone(),
             public_keys: public_keys.iter().map(|key| key.into()).collect(),
             identity_id: *identity_id,
             user_fee_increase: *user_fee_increase,

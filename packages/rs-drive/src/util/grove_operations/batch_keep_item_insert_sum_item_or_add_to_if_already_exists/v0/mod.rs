@@ -7,7 +7,6 @@ use dpp::fee::Credits;
 use dpp::version::drive_versions::DriveVersion;
 use dpp::ProtocolError;
 use grovedb::{Element, TransactionArg};
-use grovedb_path::SubtreePath;
 
 impl Drive {
     /// Version 0 implementation of the "insert sum item or add to it if the item already exists" operation.
@@ -23,12 +22,9 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
-    pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0<
-        B: AsRef<[u8]>,
-        P: Into<SubtreePath<'_, B>>,
-    >(
+    pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0(
         &self,
-        path: &Vec<Vec<u8>>,
+        path: &[Vec<u8>],
         key: &[u8],
         amount_to_add: Credits,
         apply_type: BatchInsertApplyType,
@@ -56,7 +52,7 @@ impl Drive {
                 .checked_add(amount_to_add as i64)
                 .ok_or(ProtocolError::Overflow("overflow when adding to sum item"))?;
             drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
-                path.clone(),
+                path.to_vec(),
                 key.to_vec(),
                 Element::new_item_with_sum_item_with_flags(nonce, updated_value, flags),
             ));
@@ -65,12 +61,16 @@ impl Drive {
                 "expected item with sum item element type",
             )));
         } else {
+            if amount_to_add > i64::MAX as u64 {
+                return Err(ProtocolError::Overflow("amount to add over i64").into());
+            }
             // Insert as a new sum item
             drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
-                path.clone(),
+                path.to_vec(),
                 key.to_vec(),
-                Element::new_item_with_sum_item(0.to_be_bytes(), amount_to_add),
+                Element::new_item_with_sum_item(0_u64.to_be_bytes().to_vec(), amount_to_add as i64),
             ));
         }
+        Ok(())
     }
 }

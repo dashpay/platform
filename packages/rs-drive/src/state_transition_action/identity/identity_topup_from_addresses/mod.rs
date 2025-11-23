@@ -19,17 +19,22 @@ pub enum IdentityTopUpFromAddressesTransitionAction {
 }
 
 impl IdentityTopUpFromAddressesTransitionAction {
-    /// The inputs used in the action
-    pub fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    /// Get inputs
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
-            IdentityTopUpFromAddressesTransitionAction::V0(transition) => &transition.inputs,
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
+                &transition.inputs_with_remaining_balance
+            }
         }
     }
-
-    /// The inputs used in the action as owned
-    pub fn inputs_consume(self) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    /// Get inputs
+    pub fn inputs_with_remaining_balance_owned(
+        self,
+    ) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
-            IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.inputs,
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
+                transition.inputs_with_remaining_balance
+            }
         }
     }
 

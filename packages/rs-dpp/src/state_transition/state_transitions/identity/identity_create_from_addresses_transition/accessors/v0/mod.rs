@@ -17,13 +17,4 @@ pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
     fn set_public_keys(&mut self, public_keys: Vec<IdentityPublicKeyInCreation>);
     /// Adds public keys to the existing public keys array
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>);
-    /// Returns identity id
-    fn identity_id(&self) -> Identifier;
-
-    /// Get inputs
-    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
-    /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
-    /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>);
 }

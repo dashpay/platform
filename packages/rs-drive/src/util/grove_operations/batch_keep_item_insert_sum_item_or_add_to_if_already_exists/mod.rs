@@ -53,9 +53,9 @@ impl Drive {
     ///   compatible with a sum item update (indicating corrupted state).
     /// - `Err(DriveError::CorruptedCodeExecution)` if the method is not
     ///   implemented for the selected version (should not occur in production).
-    pub fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists<const N: usize>(
+    pub fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists(
         &self,
-        path: &Vec<Vec<u8>>,
+        path: &[Vec<u8>],
         key: &[u8],
         amount_to_add: Credits,
         apply_type: BatchInsertApplyType,

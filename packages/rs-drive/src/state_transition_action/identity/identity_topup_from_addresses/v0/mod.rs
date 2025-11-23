@@ -11,7 +11,7 @@ use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 #[derive(Debug, Clone)]
 pub struct IdentityTopUpFromAddressesTransitionActionV0 {
     /// inputs
-    pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     /// identity id
     pub identity_id: Identifier,
     /// fee multiplier

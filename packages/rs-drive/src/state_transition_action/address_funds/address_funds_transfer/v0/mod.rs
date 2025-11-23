@@ -12,6 +12,6 @@ pub struct AddressFundsTransferTransitionActionV0 {
     pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     /// outputs
     pub outputs: BTreeMap<KeyOfType, Credits>,
-    /// fee multiplier
+    /// fee multiplier, this is already taken into account in the action
     pub user_fee_increase: UserFeeIncrease,
 }

@@ -39,7 +39,7 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         _block_info: &BlockInfo,
-        _transaction: TransactionArg,
+        transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
@@ -58,13 +58,14 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
             }
             AddressFundsOperationType::AddBalanceToAddress {
                 key_of_type,
-                balance,
+                balance_to_add,
             } => {
                 let mut drive_operations = vec![];
                 drive.add_balance_to_address(
                     key_of_type,
-                    balance,
+                    balance_to_add,
                     &mut drive_operations,
+                    transaction,
                     platform_version,
                 )?;
                 Ok(drive_operations)

@@ -109,9 +109,12 @@ pub mod prelude {
 
     pub type TimestampIncluded = bool;
     pub type Revision = u64;
+
+    /// Identity nonces are split 24 bits are for the recent documents, 40 bits are for the identity.
     pub type IdentityNonce = u64;
 
-    pub type KeyOfTypeNonce = u64;
+    /// The Key of type none is only 32 bits, which means an address can be used up to 4 billion times.
+    pub type KeyOfTypeNonce = u32;
 
     pub type SenderKeyIndex = u32;
     pub type RecipientKeyIndex = u32;

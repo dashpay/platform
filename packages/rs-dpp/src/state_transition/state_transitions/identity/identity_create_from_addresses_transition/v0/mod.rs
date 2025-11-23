@@ -43,9 +43,6 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
-    #[cfg_attr(feature = "state-transition-serde-conversion", serde(skip))]
-    #[platform_signable(exclude_from_sig_hash)]
-    pub identity_id: Identifier,
 }
 
 #[cfg_attr(
@@ -74,28 +71,11 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
             input_witnesses,
         } = value;
 
-        // Generate identity_id from the hash of all inputs
-        // This creates a deterministic identifier based on all inputs
-        let identity_id = if !inputs.is_empty() {
-            use crate::util::hash::hash_double;
-            let input_bytes = bincode::encode_to_vec(&inputs, bincode::config::standard())
-                .map_err(|e| {
-                    ProtocolError::EncodingError(format!("Failed to encode inputs: {}", e))
-                })?;
-            let hash = hash_double(input_bytes);
-            Identifier::new(hash)
-        } else {
-            return Err(ProtocolError::ParsingError(
-                "Identity creation requires at least one input".to_string(),
-            ));
-        };
-
         Ok(Self {
             public_keys,
             inputs,
             user_fee_increase,
             input_witnesses,
-            identity_id,
         })
     }
 }

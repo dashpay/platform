@@ -30,6 +30,7 @@ use crate::state_transition::identity_create_from_addresses_transition::v0::Iden
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+use crate::state_transition::{StateTransitionAddressInputs, StateTransitionIdentityIdFromInputs};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
 
@@ -113,12 +114,9 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
         self.public_keys.append(public_keys);
     }
+}
 
-    /// Returns identity id
-    fn identity_id(&self) -> Identifier {
-        self.identity_id
-    }
-
+impl StateTransitionAddressInputs for IdentityCreateFromAddressesTransitionV0 {
     /// Get inputs
     fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         &self.inputs
@@ -134,3 +132,5 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
         self.inputs = inputs;
     }
 }
+
+impl StateTransitionIdentityIdFromInputs for IdentityCreateFromAddressesTransitionV0 {}

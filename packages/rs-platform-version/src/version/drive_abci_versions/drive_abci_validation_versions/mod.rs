@@ -48,6 +48,8 @@ pub struct DriveAbciStateTransitionValidationVersions {
     pub contract_create_state_transition: DriveAbciStateTransitionValidationVersion,
     pub contract_update_state_transition: DriveAbciStateTransitionValidationVersion,
     pub batch_state_transition: DriveAbciDocumentsStateTransitionValidationVersions,
+    pub identity_create_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
+    pub identity_top_up_from_addresses_state_transition: DriveAbciStateTransitionValidationVersion,
 }
 
 #[derive(Clone, Debug, Default)]

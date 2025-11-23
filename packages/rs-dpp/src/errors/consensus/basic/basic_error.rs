@@ -592,6 +592,12 @@ pub enum BasicError {
 
     #[error(transparent)]
     InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
+
+    #[error(transparent)]
+    TransitionOverMaxInputsError(TransitionOverMaxInputsError),
+
+    #[error(transparent)]
+    TransitionOverMaxOutputsError(TransitionOverMaxInputsError),
 }
 
 impl From<BasicError> for ConsensusError {
