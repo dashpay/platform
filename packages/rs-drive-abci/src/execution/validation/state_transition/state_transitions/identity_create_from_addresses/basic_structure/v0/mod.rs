@@ -2,12 +2,12 @@ use dpp::consensus::basic::BasicError;
 use crate::error::Error;
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::state::state_error::StateError;
-use dpp::identity::state_transition::AssetLockProved;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::ProtocolError;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
+use dpp::state_transition::StateTransitionAddressInputs;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -30,14 +30,12 @@ impl IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         if self.inputs().len() > platform_version.dpp.state_transitions.max_inputs as usize {
-            Ok(SimpleConsensusValidationResult::new_with_error(
+            return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::TransitionOverMaxInputsError(TransitionOverMaxInputsError::new(
                     platform_version.dpp.state_transitions.max_inputs as usize,
                 ))
                 .into(),
-            ))
-        } else {
-            Ok(SimpleConsensusValidationResult::new())
+            ));
         }
 
         if self.inputs().len() != self.input_witnesses().len() {}
@@ -72,30 +70,6 @@ impl IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0
                 platform_version,
             )
             .map_err(Error::Protocol)?;
-
-        if !validation_result.is_valid() {
-            let penalty = platform_version
-                .drive_abci
-                .validation_and_processing
-                .penalties
-                .validation_of_added_keys_structure_failure;
-
-            let used_credits = penalty
-                .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
-                .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
-
-            let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
-                PartiallyUseAssetLockAction::from_borrowed_identity_create_from_addresses_transition_action(
-                    action,
-                    used_credits,
-                ),
-            );
-
-            return Ok(ConsensusValidationResult::new_with_data_and_errors(
-                bump_action,
-                validation_result.errors,
-            ));
-        }
 
         // Now we should validate proof of possession
         let validation_result = self

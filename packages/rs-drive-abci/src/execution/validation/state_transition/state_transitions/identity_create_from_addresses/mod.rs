@@ -1,3 +1,4 @@
+mod advanced_structure;
 mod basic_structure;
 pub(crate) mod identity_and_signatures;
 mod state;

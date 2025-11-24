@@ -77,6 +77,9 @@ pub enum StateTransitionAction {
     /// partially use the asset lock for funding invalid asset lock transactions like
     /// identity top up and identity create
     PartiallyUseAssetLockAction(PartiallyUseAssetLockAction),
+    /// partially use the asset lock for funding invalid asset lock transactions like
+    /// identity top up and identity create
+    BumpAddressInputNoncesAction(BumpAddressInputNoncesAction),
 }
 
 impl StateTransitionAction {
