@@ -140,6 +140,7 @@ public final class HDAccount: HDWalletModels {
     @Relationship(deleteRule: .cascade) public var identityFundingAddresses: [HDAddress] = []
     
     // Indexes
+  
     public var externalAddressIndex: UInt32
     public var internalAddressIndex: UInt32
     public var coinJoinExternalIndex: UInt32

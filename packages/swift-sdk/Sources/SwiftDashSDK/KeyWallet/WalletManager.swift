@@ -25,13 +25,14 @@ public class WalletManager {
     
     /// Create a wallet manager from an SPV client
     /// - Parameter spvClient: The FFI SPV client handle to get the wallet manager from
+    /// - Note: The SPV client owns the wallet manager handle, this wrapper just borrows it
     public init(fromSPVClient spvClient: UnsafeMutablePointer<FFIDashSpvClient>) throws {
         guard let managerHandle = dash_spv_ffi_client_get_wallet_manager(spvClient) else {
             throw KeyWalletError.walletError("Failed to get wallet manager from SPV client")
         }
-        
+
         self.handle = managerHandle
-        self.ownsHandle = true
+        self.ownsHandle = false // SPV client owns this handle, we're just borrowing it
     }
     
     /// Create a wallet manager wrapper from an existing handle (does not own the handle)
@@ -203,7 +204,7 @@ public class WalletManager {
         }
         var error = FFIError()
         let walletPtr = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
         }
         defer {
@@ -261,7 +262,7 @@ public class WalletManager {
         
         // First get the managed wallet info
         guard let managedInfo = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_managed_wallet_info(handle, idPtr, &error)
         }) else {
             defer {
@@ -278,7 +279,7 @@ public class WalletManager {
         
         // Get the wallet
         guard let wallet = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
         }) else {
             defer {
@@ -325,7 +326,7 @@ public class WalletManager {
         
         // First get the managed wallet info
         guard let managedInfo = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_managed_wallet_info(handle, idPtr, &error)
         }) else {
             defer {
@@ -342,7 +343,7 @@ public class WalletManager {
         
         // Get the wallet
         guard let wallet = walletId.withUnsafeBytes({ idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_wallet(handle, idPtr, &error)
         }) else {
             defer {
@@ -389,7 +390,7 @@ public class WalletManager {
         var unconfirmed: UInt64 = 0
         
         let success = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return wallet_manager_get_wallet_balance(
                 handle, idPtr, &confirmed, &unconfirmed, &error)
         }
@@ -505,7 +506,7 @@ public class WalletManager {
         }
         
         var result = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return managed_wallet_get_account(handle, idPtr, network.ffiValue, 
                                              accountIndex, accountType.ffiValue)
         }
@@ -537,7 +538,7 @@ public class WalletManager {
         }
         
         var result = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return managed_wallet_get_top_up_account_with_registration_index(
                 handle, idPtr, network.ffiValue, registrationIndex)
         }
@@ -565,27 +566,60 @@ public class WalletManager {
         guard walletId.count == 32 else {
             throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
         }
-        
+
         var error = FFIError()
-        
+
         let collectionHandle = walletId.withUnsafeBytes { idBytes in
-            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            let idPtr = idBytes.baseAddress
             return managed_wallet_get_account_collection(handle, idPtr, network.ffiValue, &error)
         }
-        
+
         defer {
             if error.message != nil {
                 error_message_free(error.message)
             }
         }
-        
+
         guard let collection = collectionHandle else {
             throw KeyWalletError(ffiError: error)
         }
-        
+
         return ManagedAccountCollection(handle: collection, manager: self)
     }
-    
+
+    /// Get managed wallet with current UTXO state from wallet manager
+    /// This returns a ManagedWallet that wraps the existing managed wallet info from the wallet manager,
+    /// which has been updated with UTXOs as SPV finds transactions.
+    /// - Parameters:
+    ///   - walletId: The wallet ID
+    ///   - network: The network type
+    /// - Returns: ManagedWallet with current UTXO state
+    public func getManagedWalletWithCurrentState(walletId: Data, network: KeyWalletNetwork = .mainnet) throws -> ManagedWallet {
+        guard walletId.count == 32 else {
+            throw KeyWalletError.invalidInput("Wallet ID must be exactly 32 bytes")
+        }
+
+        var error = FFIError()
+
+        // Get the existing managed wallet info from the wallet manager
+        // This is the instance that has been updated by SPV with current UTXO state
+        guard let managedInfo = walletId.withUnsafeBytes({ idBytes in
+            let idPtr = idBytes.bindMemory(to: UInt8.self).baseAddress
+            return wallet_manager_get_managed_wallet_info(handle, idPtr, &error)
+        }) else {
+            defer {
+                if error.message != nil {
+                    error_message_free(error.message)
+                }
+            }
+            throw KeyWalletError(ffiError: error)
+        }
+
+        // Wrap the existing managed wallet info in a ManagedWallet
+        // Note: This uses the internal initializer that takes the pointer directly
+        return ManagedWallet(managedWalletInfo: managedInfo, network: network)
+    }
+
     internal var ffiHandle: UnsafeMutablePointer<FFIWalletManager> { handle }
     
     // MARK: - Serialization

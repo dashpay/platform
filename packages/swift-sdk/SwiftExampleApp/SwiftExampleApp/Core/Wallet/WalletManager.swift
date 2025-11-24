@@ -787,15 +787,21 @@ class WalletManager: ObservableObject {
 
     /// Get the managed wallet for transaction building
     /// - Parameter wallet: The HDWallet to get the managed wallet for
-    /// - Returns: The ManagedWallet instance with UTXO information
+    /// - Returns: The ManagedWallet instance with current UTXO information from SPV
     func getManagedWallet(for wallet: HDWallet) async throws -> SwiftDashSDK.ManagedWallet {
-        // Get the FFI wallet first
-        let ffiWallet = try await getFFIWallet(for: wallet)
+        guard let walletId = wallet.walletId else {
+            throw WalletError.walletError("Wallet ID not available")
+        }
 
-        // Create a managed wallet from it
-        // Note: This creates a new instance each time. In a production app,
-        // you might want to cache these and keep them in sync with UTXO updates
-        let managedWallet = try SwiftDashSDK.ManagedWallet(wallet: ffiWallet)
+        let network = wallet.dashNetwork.toKeyWalletNetwork()
+
+        // Get the managed wallet with current state from the wallet manager
+        // This returns the existing managed wallet info that has been updated by SPV with current UTXOs
+        // instead of creating a new managed wallet info that would be empty
+        let managedWallet = try sdkWalletManager.getManagedWalletWithCurrentState(
+            walletId: walletId,
+            network: network
+        )
 
         return managedWallet
     }

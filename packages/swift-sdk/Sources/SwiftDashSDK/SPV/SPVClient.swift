@@ -950,7 +950,59 @@ public class SPVClient: ObservableObject {
         guard let client = client else { throw SPVError.notInitialized }
         return try WalletManager(fromSPVClient: client)
     }
-    
+
+    // MARK: - Transaction Broadcasting
+
+    /// Broadcast a signed transaction to the network.
+    /// - Parameter transactionHex: The serialized transaction as a hex string
+    /// - Returns: The transaction hex (same as input on success)
+    /// - Throws: SPVError.broadcastFailed if broadcast fails
+    public func broadcastTransaction(_ transactionHex: String) throws -> String {
+        guard let client = client else {
+            throw SPVError.notInitialized
+        }
+
+        var txHexCString = transactionHex
+        let result = txHexCString.withCString { cstr in
+            dash_spv_ffi_client_broadcast_transaction(client, cstr)
+        }
+
+        if result != 0 {
+            if let errorMsg = dash_spv_ffi_get_last_error() {
+                let error = String(cString: errorMsg)
+                throw SPVError.broadcastFailed(error)
+            }
+            throw SPVError.broadcastFailed("Broadcast failed with code \(result)")
+        }
+
+        return transactionHex
+    }
+
+    /// Asynchronously broadcast a signed transaction without blocking the main actor.
+    /// - Parameter transactionHex: The serialized transaction as a hex string.
+    /// - Throws: SPVError.broadcastFailed if broadcast fails.
+    public func broadcastTransactionAsync(_ transactionHex: String) async throws {
+        guard let client = client else {
+            throw SPVError.notInitialized
+        }
+
+        let txHexCopy = transactionHex
+        try await Task.detached {
+            var txHexCString = txHexCopy
+            let result = txHexCString.withCString { cstr in
+                dash_spv_ffi_client_broadcast_transaction(client, cstr)
+            }
+
+            if result != 0 {
+                if let errorMsg = dash_spv_ffi_get_last_error() {
+                    let error = String(cString: errorMsg)
+                    throw SPVError.broadcastFailed(error)
+                }
+                throw SPVError.broadcastFailed("Broadcast failed with code \(result)")
+            }
+        }.value
+    }
+
     // MARK: - Statistics
     
     public func getStats() -> SPVStats? {
@@ -1336,7 +1388,8 @@ public enum SPVError: LocalizedError {
     case alreadySyncing
     case syncFailed(String)
     case storageOperationFailed(String)
-    
+    case broadcastFailed(String)
+
     public var errorDescription: String? {
         switch self {
         case .notInitialized:
@@ -1355,6 +1408,8 @@ public enum SPVError: LocalizedError {
             return "Sync failed: \(reason)"
         case .storageOperationFailed(let reason):
             return reason
+        case .broadcastFailed(let reason):
+            return "Transaction broadcast failed: \(reason)"
         }
     }
 }

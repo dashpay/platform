@@ -46,23 +46,24 @@ class TransactionService: ObservableObject {
     }
     
     // MARK: - Transaction Broadcasting
-    
+
     func broadcastTransaction(_ transaction: BuiltTransaction) async throws {
-        guard let _ = spvClient else {
+        guard let spvClient = spvClient else {
             throw TransactionError.invalidState
         }
-        
+
         isBroadcasting = true
         defer { isBroadcasting = false }
-        
+
         do {
-            // Broadcast through SPV
-            // TODO: Implement broadcast with new SPV client
-            // try await spvClient.broadcastTransaction(transaction.rawTransaction)
-            throw TransactionError.broadcastFailed("SPV broadcast not yet implemented")
+            // Convert transaction bytes to hex string
+            let txHex = transaction.rawTransaction.map { String(format: "%02x", $0) }.joined()
+
+            // Broadcast through SPV client
+            try await spvClient.broadcastTransaction(txHex)
         } catch {
             lastError = error
-            throw TransactionError.broadcastFailed(error.localizedDescription)
+            throw error
         }
     }
     

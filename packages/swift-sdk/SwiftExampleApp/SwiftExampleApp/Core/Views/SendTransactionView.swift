@@ -94,7 +94,7 @@ struct SendTransactionView: View {
             .disabled(isSending)
             .overlay {
                 if isSending {
-                    ProgressView("Sending transaction...")
+                    ProgressView("Building and broadcasting transaction...")
                         .padding()
                         .background(Color.gray.opacity(0.9))
                         .cornerRadius(10)
@@ -114,8 +114,8 @@ struct SendTransactionView: View {
                     dismiss()
                 }
             } message: {
-                if successTxid != nil {
-                    Text("Transaction sent successfully!")
+                if let txid = successTxid {
+                    Text("Transaction broadcast successfully!\n\nTXID: \(txid.prefix(16))...")
                 }
             }
         }
@@ -136,6 +136,7 @@ struct SendTransactionView: View {
                 
                 await MainActor.run {
                     successTxid = txid
+                    isSending = false
                 }
             } catch {
                 await MainActor.run {

@@ -10,7 +10,7 @@ public class ManagedWallet {
     /// - Parameter wallet: The wallet to manage
     public init(wallet: Wallet) throws {
         self.network = wallet.network
-        
+
         var error = FFIError()
         guard let managedPointer = wallet_create_managed_wallet(wallet.ffiHandle, &error) else {
             defer {
@@ -20,10 +20,21 @@ public class ManagedWallet {
             }
             throw KeyWalletError(ffiError: error)
         }
-        
+
         self.handle = managedPointer
     }
-    
+
+    /// Create a managed wallet wrapper from an existing managed wallet info pointer
+    /// This is used to wrap the wallet manager's existing managed wallet info (which has current UTXO state)
+    /// - Parameters:
+    ///   - managedWalletInfo: Pointer to existing managed wallet info from wallet manager
+    ///   - network: The network this wallet is for
+    /// - Note: The caller is responsible for ensuring the pointer remains valid
+    internal init(managedWalletInfo: UnsafeMutablePointer<FFIManagedWalletInfo>, network: KeyWalletNetwork) {
+        self.handle = managedWalletInfo
+        self.network = network
+    }
+
     deinit {
         ffi_managed_wallet_free(handle)
     }

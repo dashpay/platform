@@ -131,9 +131,6 @@ public class WalletService: ObservableObject {
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
 
-    // Debounced wallet sync scheduler (created when WalletManager is ready)
-    private var walletSyncScheduler: WalletSyncScheduler?
-
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
     // Latest sync stats (for UI)
@@ -260,35 +257,6 @@ public class WalletService: ObservableObject {
                         let sdkWalletManager = try clientLocal.makeSharedWalletManager()
                         let wrapper = try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
                         WalletService.shared.walletManager = wrapper
-                        // Initialize debounced wallet sync scheduler
-                        WalletService.shared.walletSyncScheduler = WalletSyncScheduler(debounce: 0.5) { walletIds in
-                            // Map walletIds (hex strings) to HDWallets and sync on MainActor
-                            await MainActor.run {
-                                guard let wm = WalletService.shared.walletManager else { return }
-                                let walletsToSync: [HDWallet] = wm.wallets.filter { w in
-                                    if let id = w.walletId?.hexString {
-                                        return walletIds.contains(id)
-                                    }
-                                    return false
-                                }
-                                for wallet in walletsToSync {
-                                    Task { @MainActor in
-                                        await wm.syncWalletStateFromRust(for: wallet)
-                                    }
-                                }
-                                // Lightweight UI updates after batch
-                                if let current = WalletService.shared.currentWallet,
-                                   let currentId = current.walletId?.hexString,
-                                   walletIds.contains(currentId) {
-                                    Task { @MainActor in
-                                        await WalletService.shared.loadTransactions()
-                                        WalletService.shared.updateBalance()
-                                    }
-                                } else {
-                                    WalletService.shared.updateBalance()
-                                }
-                            }
-                        }
                         WalletService.shared.walletManager?.transactionService = TransactionService(
                             walletManager: wrapper,
                             modelContainer: mc,
@@ -657,14 +625,13 @@ public class WalletService: ObservableObject {
             throw WalletError.notImplemented("WalletManager not available")
         }
 
-        // Get the FFI wallet and managed wallet from WalletManager
         guard let ffiWallet = try? await walletManager.getFFIWallet(for: wallet),
               let managedWallet = try? await walletManager.getManagedWallet(for: wallet) else {
             throw WalletError.notImplemented("Unable to access wallet for transaction signing")
         }
 
-        // Get current blockchain height (default to 0 if not available)
-        let currentHeight = UInt32(wallet.lastSyncedHeight)
+        let bestHeight = max(headerCurrentHeight, wallet.lastSyncedHeight)
+        let currentHeight = bestHeight > 0 ? UInt32(bestHeight) : 0
 
         // Build transaction outputs
         let outputs = [SwiftDashSDK.Transaction.Output(address: address, amount: amount)]
@@ -682,16 +649,10 @@ public class WalletService: ObservableObject {
         // Extract TXID from the signed transaction
         let txid = try SwiftDashSDK.Transaction.getTxid(from: signedTxData)
 
-        // TODO: Broadcast transaction via SPV client
-        // For now, we'll just save it locally
-        // if let spvClient = spvClient {
-        //     try await spvClient.broadcast(signedTxData)
-        // }
-
-        // Create transaction record
+        // Create transaction record first (before broadcast so we don't lose it on broadcast failure)
         let transaction = HDTransaction(txHash: txid, timestamp: Date())
         transaction.amount = -Int64(amount)
-        transaction.fee = 1000 // TODO: Extract actual fee from transaction
+        transaction.fee = 1000 // Fixed fee at 1 duff/byte
         transaction.type = "sent"
         transaction.rawTransaction = signedTxData
         transaction.wallet = wallet
@@ -700,11 +661,30 @@ public class WalletService: ObservableObject {
         modelContainer?.mainContext.insert(transaction)
         try? modelContainer?.mainContext.save()
 
+        // Broadcast transaction via SPV client
+        do {
+            guard let spvClient = spvClient else {
+                throw WalletError.notImplemented("SPV client not initialized")
+            }
+
+            // Convert transaction bytes to hex string
+            let txHex = signedTxData.map { String(format: "%02x", $0) }.joined()
+
+            // Broadcast to network using async wrapper to avoid blocking the main actor
+            try await spvClient.broadcastTransactionAsync(txHex)
+
+            print("Transaction broadcast to network: \(txid)")
+        } catch {
+            // On broadcast failure, remove the transaction record
+            modelContainer?.mainContext.delete(transaction)
+            try? modelContainer?.mainContext.save()
+
+            // Re-throw the error so caller can handle it
+            throw error
+        }
+
         // Update balance
         updateBalance()
-
-        print("Transaction built and signed: \(txid)")
-        print("Note: Broadcasting not yet implemented - transaction not sent to network")
 
         return txid
     }
@@ -712,9 +692,18 @@ public class WalletService: ObservableObject {
     private func loadTransactions() async {
         guard let wallet = currentWallet else { return }
         
-        // Convert HDTransaction to CoreTransaction  
+        let tipHeight = headerCurrentHeight
+        
         transactions = wallet.transactions.map { hdTx in
-            CoreTransaction(
+            if let blockHeight = hdTx.blockHeight, blockHeight > 0, tipHeight > 0 {
+                let confirmations = max(0, tipHeight - blockHeight + 1)
+                if confirmations != hdTx.confirmations {
+                    hdTx.confirmations = confirmations
+                    hdTx.isPending = confirmations == 0
+                }
+            }
+            
+            return CoreTransaction(
                 id: hdTx.txHash,
                 amount: hdTx.amount,
                 fee: hdTx.fee,
@@ -922,36 +911,50 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didReceiveBlock block: SPVBlockEvent) {
         SDKLogger.log("📦 New block: height=\(block.height)", minimumLevel: .high)
-        // No per-block full wallet sync; transactions will trigger targeted sync via scheduler
+
+        // Sync wallet state after processing a block (which may contain relevant transactions)
+        Task { @MainActor in
+            if let wm = walletManager {
+                for wallet in wm.wallets {
+                    await wm.syncWalletStateFromRust(for: wallet)
+                }
+            }
+            updateBalance()
+        }
     }
     
     public func spvClient(_ client: SPVClient, didReceiveTransaction transaction: SPVTransactionEvent) {
-        // Targeted, debounced sync by walletId (if provided)
-        if let wid = transaction.walletId, !wid.isEmpty {
-            Task { [weak self] in
-                await self?.walletSyncScheduler?.enqueue(walletId: wid)
-            }
-        } else {
-            // Fallback: schedule current wallet if available
-            if let id = currentWallet?.walletId?.hexString {
-                Task { [weak self] in
-                    await self?.walletSyncScheduler?.enqueue(walletId: id)
+        // Sync wallet state from Rust to SwiftData, then update UI
+        Task { @MainActor in
+            // Sync ALL wallets from Rust to SwiftData (transaction could belong to any wallet)
+            if let wm = walletManager {
+                for wallet in wm.wallets {
+                    await wm.syncWalletStateFromRust(for: wallet)
                 }
             }
+
+            // Then update UI from the now-synchronized SwiftData (if viewing a wallet)
+            if currentWallet != nil {
+                await loadTransactions()
+                updateBalance()
+            }
         }
-        // UI updates remain lightweight; detailed list reloads are handled elsewhere or on user view
     }
     
     public func spvClient(_ client: SPVClient, didUpdateBlocksHit count: Int) {
         blocksHit = count
 
-        // Instead of syncing all wallets on every N blocks, coalesce via scheduler
+        // Sync wallet state periodically during sync (every 50 blocks processed)
         if count > 0 && count % 50 == 0 {
-            if let wm = walletManager {
-                let ids = wm.wallets.compactMap { $0.walletId?.hexString }
-                Task { [weak self] in
-                    await self?.walletSyncScheduler?.enqueueMany(walletIds: ids)
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                // Sync ALL wallets
+                if let wm = self.walletManager {
+                    for wallet in wm.wallets {
+                        await wm.syncWalletStateFromRust(for: wallet)
+                    }
                 }
+                self.updateBalance()
             }
         }
 
@@ -1026,7 +1029,7 @@ extension WalletService: SPVClientDelegate {
     
     public func spvClient(_ client: SPVClient, didChangeConnectionStatus connected: Bool, peers: Int) {
         SDKLogger.log("🌐 Connection status: \(connected ? "Connected" : "Disconnected") - \(peers) peers", minimumLevel: .high)
-    } 
+    }
     
     nonisolated private static func mapSyncStage(_ stage: SPVSyncStage) -> SyncStage {
         switch stage {
