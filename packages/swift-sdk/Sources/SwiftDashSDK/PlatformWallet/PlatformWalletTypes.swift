@@ -168,7 +168,7 @@ public func generateRandomIdentifier() throws -> Identifier {
 }
 
 extension Data {
-    init?(hexString: String) {
+    public init?(hexString: String) {
         let len = hexString.count / 2
         var data = Data(capacity: len)
         var index = hexString.startIndex

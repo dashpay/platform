@@ -1,5 +1,4 @@
 import Foundation
-import SwiftDashSDK
 import DashSDKFFI
 
 // MARK: - OpaquePointer -> typed FFI helpers

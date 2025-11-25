@@ -1,7 +1,11 @@
 import Foundation
 import SwiftDashSDK
+import Combine
 
-/// Service for managing DashPay contacts and identities
+// Re-export core types
+public typealias DashPayError = SwiftDashSDK.DashPayError
+
+/// UI-friendly wrapper around SDK's DashPayService with ObservableObject support
 @MainActor
 class DashPayService: ObservableObject {
     @Published var platformWallet: PlatformWallet?
@@ -10,6 +14,7 @@ class DashPayService: ObservableObject {
     @Published var isLoading = false
     @Published var error: String?
 
+    private let sdkService = SwiftDashSDK.DashPayService()
     private var network: PlatformNetwork = .testnet
 
     /// Initialize Platform Wallet from mnemonic
@@ -18,22 +23,18 @@ class DashPayService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // Create platform wallet from mnemonic
-            let wallet = try PlatformWallet.fromMnemonic(mnemonic)
+            try sdkService.initializeWallet(mnemonic: mnemonic, network: network)
 
-            // Get identity manager for the specified network
+            // Create platform wallet from mnemonic for local reference
+            let wallet = try PlatformWallet.fromMnemonic(mnemonic)
             let manager = try wallet.getIdentityManager(for: network)
 
-            await MainActor.run {
-                self.platformWallet = wallet
-                self.identityManager = manager
-                self.network = network
-                self.error = nil
-            }
+            self.platformWallet = wallet
+            self.identityManager = manager
+            self.network = network
+            self.error = nil
         } catch {
-            await MainActor.run {
-                self.error = "Failed to initialize Platform Wallet: \(error.localizedDescription)"
-            }
+            self.error = "Failed to initialize Platform Wallet: \(error.localizedDescription)"
             throw error
         }
     }
@@ -44,23 +45,19 @@ class DashPayService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            let managedIdentity = try ManagedIdentity.fromIdentityBytes(identityBytes)
+            let managedIdentity = try sdkService.loadIdentity(identityBytes: identityBytes)
 
             // Add to identity manager if available
             if let manager = identityManager {
                 try manager.addIdentity(managedIdentity)
             }
 
-            await MainActor.run {
-                self.currentIdentity = managedIdentity
-                self.error = nil
-            }
+            self.currentIdentity = managedIdentity
+            self.error = nil
 
             return managedIdentity
         } catch {
-            await MainActor.run {
-                self.error = "Failed to load identity: \(error.localizedDescription)"
-            }
+            self.error = "Failed to load identity: \(error.localizedDescription)"
             throw error
         }
     }
@@ -108,26 +105,15 @@ class DashPayService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            // In a real implementation, you would:
-            // 1. Derive the appropriate keys
-            // 2. Encrypt your public key with recipient's key
-            // 3. Create and broadcast the contact request
-
-            try identity.sendContactRequest(
-                recipientId: recipientId,
-                senderKeyIndex: 0,  // Should be derived from identity keys
-                recipientKeyIndex: 0,  // Should be looked up from recipient
-                accountReference: 0,
+            try sdkService.sendContactRequest(
+                from: identity,
+                to: recipientId,
                 encryptedPublicKey: encryptedPublicKey
             )
 
-            await MainActor.run {
-                self.error = nil
-            }
+            self.error = nil
         } catch {
-            await MainActor.run {
-                self.error = "Failed to send contact request: \(error.localizedDescription)"
-            }
+            self.error = "Failed to send contact request: \(error.localizedDescription)"
             throw error
         }
     }
@@ -138,15 +124,11 @@ class DashPayService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            try identity.acceptContactRequest(senderId: senderId)
+            try sdkService.acceptContactRequest(identity: identity, from: senderId)
 
-            await MainActor.run {
-                self.error = nil
-            }
+            self.error = nil
         } catch {
-            await MainActor.run {
-                self.error = "Failed to accept contact request: \(error.localizedDescription)"
-            }
+            self.error = "Failed to accept contact request: \(error.localizedDescription)"
             throw error
         }
     }
@@ -157,96 +139,55 @@ class DashPayService: ObservableObject {
         defer { isLoading = false }
 
         do {
-            try identity.rejectContactRequest(senderId: senderId)
+            try sdkService.rejectContactRequest(identity: identity, from: senderId)
 
-            await MainActor.run {
-                self.error = nil
-            }
+            self.error = nil
         } catch {
-            await MainActor.run {
-                self.error = "Failed to reject contact request: \(error.localizedDescription)"
-            }
+            self.error = "Failed to reject contact request: \(error.localizedDescription)"
             throw error
         }
     }
 
     /// Get all sent contact requests for an identity
     func getSentContactRequests(identity: ManagedIdentity) throws -> [ContactRequest] {
-        let requestIds = try identity.getSentContactRequestIds()
-
-        return try requestIds.compactMap { recipientId in
-            try identity.getSentContactRequest(recipientId: recipientId)
-        }
+        return try sdkService.getSentContactRequests(identity: identity)
     }
 
     /// Get all incoming contact requests for an identity
     func getIncomingContactRequests(identity: ManagedIdentity) throws -> [ContactRequest] {
-        let requestIds = try identity.getIncomingContactRequestIds()
-
-        return try requestIds.compactMap { senderId in
-            try identity.getIncomingContactRequest(senderId: senderId)
-        }
+        return try sdkService.getIncomingContactRequests(identity: identity)
     }
 
     // MARK: - Established Contacts
 
     /// Get all established contacts for an identity
     func getEstablishedContacts(identity: ManagedIdentity) throws -> [EstablishedContact] {
-        let contactIds = try identity.getEstablishedContactIds()
-
-        return try contactIds.compactMap { contactId in
-            try identity.getEstablishedContact(contactId: contactId)
-        }
+        return try sdkService.getEstablishedContacts(identity: identity)
     }
 
     /// Check if a contact is established
     func isContactEstablished(identity: ManagedIdentity, contactId: Identifier) throws -> Bool {
-        return try identity.isContactEstablished(contactId: contactId)
+        return try sdkService.isContactEstablished(identity: identity, contactId: contactId)
     }
 
     /// Set alias for a contact
     func setContactAlias(contact: EstablishedContact, alias: String) throws {
-        try contact.setAlias(alias)
+        try sdkService.setContactAlias(contact: contact, alias: alias)
     }
 
     /// Set note for a contact
     func setContactNote(contact: EstablishedContact, note: String) throws {
-        try contact.setNote(note)
+        try sdkService.setContactNote(contact: contact, note: note)
     }
 
     /// Hide a contact
     func hideContact(_ contact: EstablishedContact) throws {
-        try contact.hide()
+        try sdkService.hideContact(contact)
     }
 
     /// Unhide a contact
     func unhideContact(_ contact: EstablishedContact) throws {
-        try contact.unhide()
-    }
-}
-
-// MARK: - Errors
-
-enum DashPayError: Error, LocalizedError {
-    case noWallet
-    case noIdentityManager
-    case noCurrentIdentity
-    case invalidIdentityBytes
-    case contactNotFound
-
-    var errorDescription: String? {
-        switch self {
-        case .noWallet:
-            return "Platform wallet not initialized"
-        case .noIdentityManager:
-            return "Identity manager not available"
-        case .noCurrentIdentity:
-            return "No identity selected"
-        case .invalidIdentityBytes:
-            return "Invalid identity data"
-        case .contactNotFound:
-            return "Contact not found"
-        }
+        try sdkService.unhideContact(contact)
     }
 }
 

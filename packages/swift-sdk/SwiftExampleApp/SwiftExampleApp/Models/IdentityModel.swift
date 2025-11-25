@@ -1,11 +1,8 @@
 import Foundation
 import SwiftDashSDK
 
-enum IdentityType: String, CaseIterable {
-    case user = "User"
-    case masternode = "Masternode"
-    case evonode = "Evonode"
-}
+// Re-export SDK type for backward compatibility
+public typealias IdentityType = SwiftDashSDK.IdentityType
 
 struct IdentityModel: Identifiable, Equatable, Hashable {
     static func == (lhs: IdentityModel, rhs: IdentityModel) -> Bool {

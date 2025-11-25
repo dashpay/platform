@@ -4,7 +4,7 @@ import DashSDKFFI
 // MARK: - Data Extensions
 extension Data {
     /// Convert Data to Base58 string
-    func toBase58() -> String {
+    public func toBase58() -> String {
         let alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
         var bytes = Array(self)
         var encoded = ""
@@ -47,7 +47,7 @@ extension Data {
     }
     
     /// Convert to hex string
-    func toHexString() -> String {
+    public func toHexString() -> String {
         return self.map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -55,7 +55,10 @@ extension Data {
 /// Swift wrapper for the Dash Platform SDK
 public final class SDK: @unchecked Sendable {
     public private(set) var handle: UnsafeMutablePointer<SDKHandle>?
-    
+
+    /// The network this SDK instance is connected to
+    public private(set) var network: Network = DashSDKNetwork(rawValue: 1) // Default to testnet
+
     /// Identities operations
     public lazy var identities = Identities(sdk: self)
     
@@ -146,8 +149,9 @@ public final class SDK: @unchecked Sendable {
             throw SDKError.internalError("No SDK handle returned")
         }
         
-        // Store the handle
+        // Store the handle and network
         handle = result.data?.assumingMemoryBound(to: SDKHandle.self)
+        self.network = network
     }
     
     /// Load known contracts into the trusted context provider
