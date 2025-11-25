@@ -133,7 +133,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeVoteStatus")]
+    #[wasm_bindgen(
+        js_name = "getProtocolVersionUpgradeVoteStatus",
+        unchecked_return_type = "Map<string, ProtocolVersionUpgradeVoteStatus>"
+    )]
     pub async fn get_protocol_version_upgrade_vote_status(
         &self,
         #[wasm_bindgen(js_name = "startProTxHash")]
@@ -192,7 +195,10 @@ impl WasmSdk {
 
     // Proof versions for protocol queries
 
-    #[wasm_bindgen(js_name = "getProtocolVersionUpgradeStateWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getProtocolVersionUpgradeStateWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ProtocolVersionUpgradeState>"
+    )]
     pub async fn get_protocol_version_upgrade_state_with_proof_info(
         &self,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {

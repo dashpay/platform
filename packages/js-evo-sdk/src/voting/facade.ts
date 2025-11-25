@@ -6,33 +6,33 @@ export class VotingFacade {
   private sdk: EvoSDK;
   constructor(sdk: EvoSDK) { this.sdk = sdk; }
 
-  async contestedResourceVoteState(query: wasm.ContestedResourceVoteStateQuery): Promise<any> {
+  async contestedResourceVoteState(query: wasm.ContestedResourceVoteStateQuery): Promise<wasm.ContestedResourceVoteState> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVoteState(query);
   }
 
-  async contestedResourceVoteStateWithProof(query: wasm.ContestedResourceVoteStateQuery): Promise<any> {
+  async contestedResourceVoteStateWithProof(query: wasm.ContestedResourceVoteStateQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.ContestedResourceVoteState>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceVoteStateWithProofInfo(query);
   }
 
-  async contestedResourceIdentityVotes(query: wasm.ContestedResourceIdentityVotesQuery): Promise<any> {
+  async contestedResourceIdentityVotes(query: wasm.ContestedResourceIdentityVotesQuery): Promise<any[]> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotes(query);
   }
 
-  async contestedResourceIdentityVotesWithProof(query: wasm.ContestedResourceIdentityVotesQuery): Promise<any> {
+  async contestedResourceIdentityVotesWithProof(query: wasm.ContestedResourceIdentityVotesQuery): Promise<wasm.ProofMetadataResponseTyped<{ votes: Array<any> }>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getContestedResourceIdentityVotesWithProofInfo(query);
   }
 
-  async votePollsByEndDate(query?: wasm.VotePollsByEndDateQuery): Promise<any> {
+  async votePollsByEndDate(query?: wasm.VotePollsByEndDateQuery): Promise<wasm.VotePollsByEndDateEntry[]> {
     const w = await this.sdk.getWasmSdkConnected();
 
     return w.getVotePollsByEndDate(query ?? null);
   }
 
-  async votePollsByEndDateWithProof(query?: wasm.VotePollsByEndDateQuery): Promise<any> {
+  async votePollsByEndDateWithProof(query?: wasm.VotePollsByEndDateQuery): Promise<wasm.ProofMetadataResponseTyped<wasm.VotePollsByEndDateEntry[]>> {
     const w = await this.sdk.getWasmSdkConnected();
 
     return w.getVotePollsByEndDateWithProofInfo(query ?? null);

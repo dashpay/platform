@@ -185,7 +185,10 @@ where
 
 impl CanRetry for Error {
     fn can_retry(&self) -> bool {
-        matches!(self, Error::StaleNode(..) | Error::TimeoutReached(_, _))
+        matches!(
+            self,
+            Error::StaleNode(..) | Error::TimeoutReached(_, _) | Error::Proof(_)
+        )
     }
 }
 

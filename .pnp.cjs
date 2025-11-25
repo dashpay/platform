@@ -190,7 +190,7 @@ const RAW_RUNTIME_STATE =
           ["@apidevtools/json-schema-ref-parser", "npm:8.0.0"],\
           ["@jsdevtools/ono", "npm:7.1.3"],\
           ["call-me-maybe", "npm:1.0.1"],\
-          ["js-yaml", "npm:3.14.1"]\
+          ["js-yaml", "npm:4.1.1"]\
         ],\
         "linkType": "HARD"\
       }]\
@@ -3295,7 +3295,7 @@ const RAW_RUNTIME_STATE =
           ["globals", "npm:13.23.0"],\
           ["ignore", "npm:5.2.0"],\
           ["import-fresh", "npm:3.3.0"],\
-          ["js-yaml", "npm:4.1.0"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["minimatch", "npm:3.1.2"],\
           ["strip-json-comments", "npm:3.1.1"]\
         ],\
@@ -3487,7 +3487,7 @@ const RAW_RUNTIME_STATE =
           ["camelcase", "npm:5.3.1"],\
           ["find-up", "npm:4.1.0"],\
           ["get-package-type", "npm:0.1.0"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["resolve-from", "npm:5.0.0"]\
         ],\
         "linkType": "HARD"\
@@ -3950,7 +3950,7 @@ const RAW_RUNTIME_STATE =
           ["hyperlinker", "npm:1.0.0"],\
           ["indent-string", "npm:4.0.0"],\
           ["is-wsl", "npm:2.2.0"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["natural-orderby", "npm:2.0.3"],\
           ["object-treeify", "npm:1.1.33"],\
           ["password-prompt", "npm:1.1.2"],\
@@ -3984,7 +3984,7 @@ const RAW_RUNTIME_STATE =
           ["hyperlinker", "npm:1.0.0"],\
           ["indent-string", "npm:4.0.0"],\
           ["is-wsl", "npm:2.2.0"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["natural-orderby", "npm:2.0.3"],\
           ["object-treeify", "npm:1.1.33"],\
           ["password-prompt", "npm:1.1.2"],\
@@ -4019,7 +4019,7 @@ const RAW_RUNTIME_STATE =
           ["hyperlinker", "npm:1.0.0"],\
           ["indent-string", "npm:4.0.0"],\
           ["is-wsl", "npm:2.2.0"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["minimatch", "npm:9.0.5"],\
           ["natural-orderby", "npm:2.0.3"],\
           ["object-treeify", "npm:1.1.33"],\
@@ -5909,7 +5909,7 @@ const RAW_RUNTIME_STATE =
         "packageLocation": "./.yarn/cache/@yarnpkg-parsers-npm-3.0.0-rc.42-ee17ab0275-3488f9dba1.zip/node_modules/@yarnpkg/parsers/",\
         "packageDependencies": [\
           ["@yarnpkg/parsers", "npm:3.0.0-rc.42"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["tslib", "npm:2.6.2"]\
         ],\
         "linkType": "HARD"\
@@ -8943,7 +8943,7 @@ const RAW_RUNTIME_STATE =
           ["hasbin", "npm:1.2.3"],\
           ["is-wsl", "npm:2.2.0"],\
           ["jayson", "npm:4.1.0"],\
-          ["js-yaml", "npm:4.1.0"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["listr2", "virtual:880cda903c2a2be387819a3f857d21494004437a03c92969b9853f7bdeebdfed08d417e68364ee9e158338603a6d78d690c457a55ab11e56398bc10f0ad232fc#npm:5.0.7"],\
           ["lodash", "npm:4.17.21"],\
           ["memory-streams", "npm:0.1.3"],\
@@ -10161,7 +10161,7 @@ const RAW_RUNTIME_STATE =
           ["imurmurhash", "npm:0.1.4"],\
           ["is-glob", "npm:4.0.3"],\
           ["is-path-inside", "npm:3.0.3"],\
-          ["js-yaml", "npm:4.1.0"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["json-stable-stringify-without-jsonify", "npm:1.0.1"],\
           ["levn", "npm:0.4.1"],\
           ["lodash.merge", "npm:4.6.2"],\
@@ -13127,28 +13127,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["js-yaml", [\
-      ["npm:3.13.1", {\
-        "packageLocation": "./.yarn/cache/js-yaml-npm-3.13.1-3a28ff3b75-cec89175b0.zip/node_modules/js-yaml/",\
+      ["npm:4.1.1", {\
+        "packageLocation": "./.yarn/cache/js-yaml-npm-4.1.1-86ec786790-a52d0519f0.zip/node_modules/js-yaml/",\
         "packageDependencies": [\
-          ["js-yaml", "npm:3.13.1"],\
-          ["argparse", "npm:1.0.10"],\
-          ["esprima", "npm:4.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:3.14.1", {\
-        "packageLocation": "./.yarn/cache/js-yaml-npm-3.14.1-b968c6095e-9e22d80b4d.zip/node_modules/js-yaml/",\
-        "packageDependencies": [\
-          ["js-yaml", "npm:3.14.1"],\
-          ["argparse", "npm:1.0.10"],\
-          ["esprima", "npm:4.0.1"]\
-        ],\
-        "linkType": "HARD"\
-      }],\
-      ["npm:4.1.0", {\
-        "packageLocation": "./.yarn/cache/js-yaml-npm-4.1.0-3606f32312-c138a34a3f.zip/node_modules/js-yaml/",\
-        "packageDependencies": [\
-          ["js-yaml", "npm:4.1.0"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["argparse", "npm:2.0.1"]\
         ],\
         "linkType": "HARD"\
@@ -13263,7 +13245,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["json-schema-ref-parser", "npm:7.1.4"],\
           ["call-me-maybe", "npm:1.0.1"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["ono", "npm:6.0.1"]\
         ],\
         "linkType": "HARD"\
@@ -13818,7 +13800,7 @@ const RAW_RUNTIME_STATE =
         "packageDependencies": [\
           ["load-yaml-file", "npm:0.2.0"],\
           ["graceful-fs", "npm:4.2.10"],\
-          ["js-yaml", "npm:3.14.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["pify", "npm:4.0.1"],\
           ["strip-bom", "npm:3.0.0"]\
         ],\
@@ -14841,7 +14823,7 @@ const RAW_RUNTIME_STATE =
           ["find-up", "npm:5.0.0"],\
           ["glob", "npm:10.4.5"],\
           ["he", "npm:1.2.0"],\
-          ["js-yaml", "npm:4.1.0"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["log-symbols", "npm:4.1.0"],\
           ["minimatch", "npm:5.1.6"],\
           ["ms", "npm:2.1.3"],\
@@ -18717,7 +18699,7 @@ const RAW_RUNTIME_STATE =
           ["commander", "npm:4.0.1"],\
           ["doctrine", "npm:3.0.0"],\
           ["glob", "npm:7.1.6"],\
-          ["js-yaml", "npm:3.13.1"],\
+          ["js-yaml", "npm:4.1.1"],\
           ["swagger-parser", "npm:8.0.4"]\
         ],\
         "linkType": "HARD"\

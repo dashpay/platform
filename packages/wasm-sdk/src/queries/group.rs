@@ -614,7 +614,10 @@ impl WasmSdk {
         Ok(group.map(Into::into))
     }
 
-    #[wasm_bindgen(js_name = "getGroupMembers")]
+    #[wasm_bindgen(
+        js_name = "getGroupMembers",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_group_members(&self, query: GroupMembersQueryJs) -> Result<Map, WasmSdkError> {
         let params = parse_group_members_query(query)?;
 
@@ -643,7 +646,10 @@ impl WasmSdk {
         Ok(Map::new())
     }
 
-    #[wasm_bindgen(js_name = "getIdentityGroups")]
+    #[wasm_bindgen(
+        js_name = "getIdentityGroups",
+        unchecked_return_type = "Array<IdentityGroupInfo>"
+    )]
     pub async fn get_identity_groups(
         &self,
         query: IdentityGroupsQueryJs,
@@ -699,7 +705,10 @@ impl WasmSdk {
         Ok(groups_array)
     }
 
-    #[wasm_bindgen(js_name = "getGroupInfos")]
+    #[wasm_bindgen(
+        js_name = "getGroupInfos",
+        unchecked_return_type = "Map<number, Group | undefined>"
+    )]
     pub async fn get_group_infos(&self, query: GroupInfosQueryJs) -> Result<Map, WasmSdkError> {
         let params = parse_group_infos_query(query)?;
 
@@ -724,7 +733,10 @@ impl WasmSdk {
         Ok(infos_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActions")]
+    #[wasm_bindgen(
+        js_name = "getGroupActions",
+        unchecked_return_type = "Map<Identifier, GroupAction | undefined>"
+    )]
     pub async fn get_group_actions(&self, query: GroupActionsQueryJs) -> Result<Map, WasmSdkError> {
         let params = parse_group_actions_query(query)?;
 
@@ -750,7 +762,10 @@ impl WasmSdk {
         Ok(actions_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionSigners")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionSigners",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_group_action_signers(
         &self,
         query: GroupActionSignersQueryJs,
@@ -780,7 +795,10 @@ impl WasmSdk {
         Ok(signers_map)
     }
 
-    #[wasm_bindgen(js_name = "getGroupsDataContracts")]
+    #[wasm_bindgen(
+        js_name = "getGroupsDataContracts",
+        unchecked_return_type = "Map<Identifier, Map<number, Group | undefined>>"
+    )]
     pub async fn get_groups_data_contracts(
         &self,
         #[wasm_bindgen(js_name = "dataContractIds")]
@@ -823,7 +841,10 @@ impl WasmSdk {
 
     // Proof versions for group queries
 
-    #[wasm_bindgen(js_name = "getGroupInfoWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupInfoWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Group | undefined>"
+    )]
     pub async fn get_group_info_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractId")]
@@ -855,7 +876,10 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupInfosWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupInfosWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<number, Group | undefined>>"
+    )]
     pub async fn get_group_infos_with_proof_info(
         &self,
         query: GroupInfosQueryJs,
@@ -887,7 +911,10 @@ impl WasmSdk {
 
     // Additional proof info versions for remaining group queries
 
-    #[wasm_bindgen(js_name = "getGroupMembersWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupMembersWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_group_members_with_proof_info(
         &self,
         query: GroupMembersQueryJs,
@@ -923,7 +950,10 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityGroupsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityGroupsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityGroupInfo>>"
+    )]
     pub async fn get_identity_groups_with_proof_info(
         &self,
         query: IdentityGroupsQueryJs,
@@ -992,7 +1022,10 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, GroupAction | undefined>>"
+    )]
     pub async fn get_group_actions_with_proof_info(
         &self,
         query: GroupActionsQueryJs,
@@ -1024,7 +1057,10 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupActionSignersWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupActionSignersWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_group_action_signers_with_proof_info(
         &self,
         query: GroupActionSignersQueryJs,
@@ -1056,7 +1092,10 @@ impl WasmSdk {
         Ok(response)
     }
 
-    #[wasm_bindgen(js_name = "getGroupsDataContractsWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getGroupsDataContractsWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, Map<number, Group | undefined>>>"
+    )]
     pub async fn get_groups_data_contracts_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractIds")]

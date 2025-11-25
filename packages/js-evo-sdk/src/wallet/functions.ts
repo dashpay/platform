@@ -16,52 +16,52 @@ export namespace wallet {
     return wasm.WasmSdk.mnemonicToSeed(mnemonic, passphrase ?? null);
   }
 
-  export async function deriveKeyFromSeedPhrase(params: wasm.DeriveKeyFromSeedPhraseParams): Promise<any> {
+  export async function deriveKeyFromSeedPhrase(params: wasm.DeriveKeyFromSeedPhraseParams): Promise<wasm.SeedPhraseKeyInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.deriveKeyFromSeedPhrase(params);
   }
 
-  export async function deriveKeyFromSeedWithPath(params: wasm.DeriveKeyFromSeedWithPathParams): Promise<any> {
+  export async function deriveKeyFromSeedWithPath(params: wasm.DeriveKeyFromSeedWithPathParams): Promise<wasm.PathDerivedKeyInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.deriveKeyFromSeedWithPath(params);
   }
 
-  export async function deriveKeyFromSeedWithExtendedPath(params: wasm.DeriveKeyFromSeedWithExtendedPathParams): Promise<any> {
+  export async function deriveKeyFromSeedWithExtendedPath(params: wasm.DeriveKeyFromSeedWithExtendedPathParams): Promise<wasm.DerivedKeyInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.deriveKeyFromSeedWithExtendedPath(params);
   }
 
-  export async function deriveDashpayContactKey(params: wasm.DeriveDashpayContactKeyParams): Promise<any> {
+  export async function deriveDashpayContactKey(params: wasm.DeriveDashpayContactKeyParams): Promise<wasm.DashpayContactKeyInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.deriveDashpayContactKey(params);
   }
 
-  export async function derivationPathBip44Mainnet(account: number, change: number, index: number): Promise<any> {
+  export async function derivationPathBip44Mainnet(account: number, change: number, index: number): Promise<wasm.DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathBip44Mainnet(account, change, index);
   }
 
-  export async function derivationPathBip44Testnet(account: number, change: number, index: number): Promise<any> {
+  export async function derivationPathBip44Testnet(account: number, change: number, index: number): Promise<wasm.DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathBip44Testnet(account, change, index);
   }
 
-  export async function derivationPathDip9Mainnet(featureType: number, account: number, index: number): Promise<any> {
+  export async function derivationPathDip9Mainnet(featureType: number, account: number, index: number): Promise<wasm.DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathDip9Mainnet(featureType, account, index);
   }
 
-  export async function derivationPathDip9Testnet(featureType: number, account: number, index: number): Promise<any> {
+  export async function derivationPathDip9Testnet(featureType: number, account: number, index: number): Promise<wasm.DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathDip9Testnet(featureType, account, index);
   }
 
-  export async function derivationPathDip13Mainnet(account: number): Promise<any> {
+  export async function derivationPathDip13Mainnet(account: number): Promise<wasm.Dip13DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathDip13Mainnet(account);
   }
 
-  export async function derivationPathDip13Testnet(account: number): Promise<any> {
+  export async function derivationPathDip13Testnet(account: number): Promise<wasm.Dip13DerivationPathInfo> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.derivationPathDip13Testnet(account);
   }
@@ -76,22 +76,22 @@ export namespace wallet {
     return wasm.WasmSdk.xprvToXpub(xprv);
   }
 
-  export async function generateKeyPair(network: string): Promise<any> {
+  export async function generateKeyPair(network: string): Promise<wasm.KeyPair> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.generateKeyPair(network);
   }
 
-  export async function generateKeyPairs(network: string, count: number): Promise<any[]> {
+  export async function generateKeyPairs(network: string, count: number): Promise<wasm.KeyPair[]> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.generateKeyPairs(network, count);
   }
 
-  export async function keyPairFromWif(privateKeyWif: string): Promise<any> {
+  export async function keyPairFromWif(privateKeyWif: string): Promise<wasm.KeyPair> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.keyPairFromWif(privateKeyWif);
   }
 
-  export async function keyPairFromHex(privateKeyHex: string, network: string): Promise<any> {
+  export async function keyPairFromHex(privateKeyHex: string, network: string): Promise<wasm.KeyPair> {
     await wasm.ensureInitialized();
     return wasm.WasmSdk.keyPairFromHex(privateKeyHex, network);
   }

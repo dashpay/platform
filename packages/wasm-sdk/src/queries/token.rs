@@ -228,7 +228,10 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesTokenBalances")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesTokenBalances",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_identities_token_balances(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -269,7 +272,10 @@ impl WasmSdk {
         Ok(balances_map)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityTokenInfos")]
+    #[wasm_bindgen(
+        js_name = "getIdentityTokenInfos",
+        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+    )]
     pub async fn get_identity_token_infos(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -311,7 +317,10 @@ impl WasmSdk {
         Ok(infos_map)
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesTokenInfos")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesTokenInfos",
+        unchecked_return_type = "Map<Identifier, IdentityTokenInfo>"
+    )]
     pub async fn get_identities_token_infos(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -353,7 +362,10 @@ impl WasmSdk {
         Ok(infos_map)
     }
 
-    #[wasm_bindgen(js_name = "getTokenStatuses")]
+    #[wasm_bindgen(
+        js_name = "getTokenStatuses",
+        unchecked_return_type = "Map<Identifier, TokenStatus>"
+    )]
     pub async fn get_token_statuses(
         &self,
         #[wasm_bindgen(js_name = "tokenIds")]
@@ -381,7 +393,10 @@ impl WasmSdk {
         Ok(statuses_map)
     }
 
-    #[wasm_bindgen(js_name = "getTokenDirectPurchasePrices")]
+    #[wasm_bindgen(
+        js_name = "getTokenDirectPurchasePrices",
+        unchecked_return_type = "Map<Identifier, TokenPriceInfo>"
+    )]
     pub async fn get_token_direct_purchase_prices(
         &self,
         #[wasm_bindgen(js_name = "tokenIds")]
@@ -654,7 +669,10 @@ impl WasmSdk {
 
     // Proof versions for token queries
 
-    #[wasm_bindgen(js_name = "getIdentitiesTokenBalancesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesTokenBalancesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_identities_token_balances_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -701,7 +719,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getTokenStatusesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTokenStatusesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenStatus>>"
+    )]
     pub async fn get_token_statuses_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "tokenIds")]
@@ -732,7 +753,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getTokenTotalSupplyWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTokenTotalSupplyWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<TokenTotalSupply | null>"
+    )]
     pub async fn get_token_total_supply_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "tokenId")]
@@ -765,7 +789,10 @@ impl WasmSdk {
 
     // Additional proof info versions for remaining token queries
 
-    #[wasm_bindgen(js_name = "getIdentityTokenInfosWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityTokenInfosWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+    )]
     pub async fn get_identity_token_infos_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -810,7 +837,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesTokenInfosWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesTokenInfosWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, IdentityTokenInfo>>"
+    )]
     pub async fn get_identities_token_infos_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -855,7 +885,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getTokenDirectPurchasePricesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTokenDirectPurchasePricesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, TokenPriceInfo>>"
+    )]
     pub async fn get_token_direct_purchase_prices_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "tokenIds")]
@@ -912,7 +945,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getTokenContractInfoWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTokenContractInfoWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<TokenContractInfo | undefined>"
+    )]
     pub async fn get_token_contract_info_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "dataContractId")]
@@ -939,7 +975,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getTokenPerpetualDistributionLastClaimWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<TokenLastClaim | undefined>"
+    )]
     pub async fn get_token_perpetual_distribution_last_claim_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
