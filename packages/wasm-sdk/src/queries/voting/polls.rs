@@ -213,7 +213,10 @@ fn vote_polls_grouped_to_entries(grouped: VotePollsGroupedByTimestamp) -> Array 
 
 #[wasm_bindgen]
 impl WasmSdk {
-    #[wasm_bindgen(js_name = "getVotePollsByEndDate")]
+    #[wasm_bindgen(
+        js_name = "getVotePollsByEndDate",
+        unchecked_return_type = "Array<VotePollsByEndDateEntry>"
+    )]
     pub async fn get_vote_polls_by_end_date(
         &self,
         query: Option<VotePollsByEndDateQueryJs>,
@@ -223,7 +226,10 @@ impl WasmSdk {
         Ok(vote_polls_grouped_to_entries(polls))
     }
 
-    #[wasm_bindgen(js_name = "getVotePollsByEndDateWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getVotePollsByEndDateWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<VotePollsByEndDateEntry>>"
+    )]
     pub async fn get_vote_polls_by_end_date_with_proof_info(
         &self,
         query: Option<VotePollsByEndDateQueryJs>,
