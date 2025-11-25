@@ -207,6 +207,10 @@ impl ErrorWithCode for BasicError {
             Self::InvalidStateTransitionTypeError { .. } => 10600,
             Self::MissingStateTransitionTypeError { .. } => 10601,
             Self::StateTransitionMaxSizeExceededError { .. } => 10602,
+            Self::StateTransitionNotActiveError(_) => 10603,
+            Self::TransitionOverMaxInputsError(_) => 10604,
+            Self::TransitionOverMaxOutputsError(_) => 10605,
+            Self::InputWitnessCountMismatchError(_) => 10606,
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,

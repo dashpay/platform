@@ -10,7 +10,7 @@ use std::collections::BTreeMap;
 /// Version 0 of the bump address input nonce action
 /// This action is performed when we want to pay for validation of the state transition
 /// but not execute it
-pub struct BumpAddressInputNonceActionV0 {
+pub struct BumpAddressInputNoncesActionV0 {
     /// inputs
     pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
     /// fee multiplier

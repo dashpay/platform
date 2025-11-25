@@ -1,28 +1,21 @@
 use crate::error::Error;
-use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::identity_create_from_addresses::identity_and_signatures::v0::IdentityCreateFromAddressesStateTransitionIdentityAndSignaturesValidationV0;
-use dpp::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::ConsensusError;
-use dpp::identity::state_transition::AssetLockProved;
+use crate::execution::validation::state_transition::identity_create_from_addresses::public_key_signatures::v0::IdentityCreateFromAddressesStateTransitionSignaturesValidationV0;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
-use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
-use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 use drive::state_transition_action::StateTransitionAction;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses) trait IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
 {
-    fn validate_advanced_structure_from_state_v0(
+    fn validate_advanced_structure_v0(
         &self,
-        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -32,9 +25,8 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 impl IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
     for IdentityCreateFromAddressesTransition
 {
-    fn validate_advanced_structure_from_state_v0(
+    fn validate_advanced_structure_v0(
         &self,
-        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -58,9 +50,9 @@ impl IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
                 .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
                 .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
-            let bump_action = StateTransitionAction::PartiallyUseAssetLockAction(
-                PartiallyUseAssetLockAction::from_borrowed_identity_create_from_addresses_transition_action(
-                    action,
+            let bump_action = StateTransitionAction::BumpAddressInputNoncesAction(
+                BumpAddressInputNoncesAction::from_borrowed_identity_create_from_addresses_transition(
+                    self,
                     used_credits,
                 ),
             );
@@ -89,9 +81,9 @@ impl IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0
                 .checked_add(execution_context.fee_cost(platform_version)?.processing_fee)
                 .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
-            let bump_action = StateTransitionAction::BumpIdentityNonceAction(
-                PartiallyUseAssetLockAction::from_borrowed_identity_create_from_addresses_transition_action(
-                    action,
+            let bump_action = StateTransitionAction::BumpAddressInputNoncesAction(
+                BumpAddressInputNoncesAction::from_borrowed_identity_create_from_addresses_transition(
+                    self,
                     used_credits,
                 ),
             );

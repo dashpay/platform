@@ -8,12 +8,15 @@ use crate::state_transition::{StateTransition, StateTransitionFieldTypes};
 
 pub const DOCUMENT_TRANSITION_TYPES: [StateTransitionType; 1] = [StateTransitionType::Batch];
 
-pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 5] = [
+pub const IDENTITY_TRANSITION_TYPE: [StateTransitionType; 8] = [
     StateTransitionType::IdentityCreate,
     StateTransitionType::IdentityTopUp,
     StateTransitionType::IdentityUpdate,
     StateTransitionType::IdentityCreditTransfer,
     StateTransitionType::IdentityCreditWithdrawal,
+    StateTransitionType::IdentityTopUpFromAddresses,
+    StateTransitionType::IdentityCreateFromAddresses,
+    StateTransitionType::IdentityCreditTransferToAddresses,
 ];
 
 pub const VOTING_TRANSITION_TYPE: [StateTransitionType; 1] = [StateTransitionType::MasternodeVote];

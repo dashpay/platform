@@ -32,6 +32,7 @@ use crate::execution::types::state_transition_execution_context::{
 };
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockAction;
 
 use crate::execution::validation::state_transition::common::asset_lock::transaction::fetch_asset_lock_transaction_output_sync::fetch_asset_lock_transaction_output_sync;
@@ -114,7 +115,7 @@ impl IdentityCreateFromAddressesStateTransitionStateValidationV0
                 .ok_or(ProtocolError::Overflow("processing fee overflow error"))?;
 
             let bump_action =
-                PartiallyUseAssetLockAction::from_identity_create_from_addresses_transition_action(
+                BumpAddressInputNoncesAction::from_identity_create_from_addresses_transition_action(
                     action,
                     used_credits,
                 );

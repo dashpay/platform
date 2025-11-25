@@ -4,7 +4,7 @@ pub mod transformer;
 use dpp::identifier::Identifier;
 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
 use std::collections::BTreeMap;
-
+use dpp::balances::credits::RemainingCredits;
 use dpp::fee::Credits;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
@@ -16,11 +16,13 @@ use dpp::ProtocolError;
 #[derive(Debug, Clone)]
 pub struct IdentityCreateFromAddressesTransitionActionV0 {
     /// inputs
-    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, RemainingCredits)>,
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
     /// identity id
     pub identity_id: Identifier,
+    /// the amount that the identity will receive
+    pub fund_identity_amount: Credits,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
@@ -28,19 +30,14 @@ pub struct IdentityCreateFromAddressesTransitionActionV0 {
 impl From<IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
     fn from(value: IdentityCreateFromAddressesTransitionActionV0) -> Self {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance,
+            fund_identity_amount,
             identity_id,
             ..
         } = value;
         PartialIdentity {
             id: identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(
-                inputs_with_remaining_balance
-                    .values()
-                    .map(|(_, balance)| balance)
-                    .sum(),
-            ),
+            balance: Some(fund_identity_amount),
             revision: None,
 
             not_found_public_keys: Default::default(),
@@ -51,7 +48,7 @@ impl From<IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
 impl From<&IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
     fn from(value: &IdentityCreateFromAddressesTransitionActionV0) -> Self {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance,
+            fund_identity_amount,
             identity_id,
             ..
         } = value;
@@ -59,10 +56,7 @@ impl From<&IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
             id: *identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
             balance: Some(
-                inputs_with_remaining_balance
-                    .values()
-                    .map(|(_, balance)| balance)
-                    .sum(),
+                *fund_identity_amount
             ),
             revision: None,
 
@@ -88,7 +82,7 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
         platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
         let IdentityCreateFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance,
+            fund_identity_amount,
             identity_id,
             public_keys,
             ..
@@ -104,7 +98,7 @@ impl IdentityFromIdentityCreateFromAddressesTransitionActionV0 for Identity {
                     .iter()
                     .map(|key| (key.id(), key.clone()))
                     .collect(),
-                balance: inputs_with_remaining_balance.values().map(|(_, balance)| balance).sum(),
+                balance: *fund_identity_amount,
                 revision: 0,
             }
             .into()),

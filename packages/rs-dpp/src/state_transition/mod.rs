@@ -603,6 +603,11 @@ impl StateTransition {
         }
     }
 
+    /// returns the state transition type
+    pub fn state_transition_type(&self) -> StateTransitionType {
+        call_method!(self, state_transition_type)
+    }
+
     /// returns the unique identifiers for the state transition
     pub fn unique_identifiers(&self) -> Vec<String> {
         call_method!(self, unique_identifiers)

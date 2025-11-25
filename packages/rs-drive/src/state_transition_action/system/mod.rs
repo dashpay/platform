@@ -8,4 +8,4 @@ pub mod bump_identity_nonce_action;
 pub mod partially_use_asset_lock_action;
 
 /// bump address input nonce action
-pub mod bump_address_input_nonce_action;
+pub mod bump_address_input_nonces_action;

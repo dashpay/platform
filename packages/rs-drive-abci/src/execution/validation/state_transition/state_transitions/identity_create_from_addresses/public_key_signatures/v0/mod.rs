@@ -9,7 +9,7 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Getters;
 use dpp::validation::SimpleConsensusValidationResult;
 
-pub(crate) trait IdentityCreateFromAddressesStateTransitionIdentityAndSignaturesValidationV0 {
+pub(crate) trait IdentityCreateFromAddressesStateTransitionSignaturesValidationV0 {
     fn validate_identity_create_from_addresses_state_transition_signatures_v0(
         &self,
         signable_bytes: Vec<u8>,
@@ -17,7 +17,7 @@ pub(crate) trait IdentityCreateFromAddressesStateTransitionIdentityAndSignatures
     ) -> SimpleConsensusValidationResult;
 }
 
-impl IdentityCreateFromAddressesStateTransitionIdentityAndSignaturesValidationV0
+impl IdentityCreateFromAddressesStateTransitionSignaturesValidationV0
     for IdentityCreateFromAddressesTransition
 {
     fn validate_identity_create_from_addresses_state_transition_signatures_v0(

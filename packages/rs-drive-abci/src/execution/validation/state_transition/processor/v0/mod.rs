@@ -20,7 +20,8 @@ use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
-
+use dpp::consensus::basic::state_transition::StateTransitionNotActiveError;
+use platform_version::version::feature_initial_protocol_versions::ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_simple_pre_check_balance::ValidateSimplePreCheckBalance;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
@@ -40,7 +41,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     let mut state_transition_execution_context =
         StateTransitionExecutionContext::default_for_platform_version(platform_version)?;
 
-    if state_transition.has_is_allowed_validation(platform_version)? {
+    if state_transition.has_is_allowed_validation()? {
         let result = state_transition.validate_is_allowed(platform, platform_version)?;
 
         if !result.is_valid() {
@@ -129,7 +130,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     // processing amount and the transfer amount.
     // For other state transitions we only check a min balance for an amount set per version.
     // This is not done for identity create and identity top up who don't have this check here
-    if state_transition.has_balance_pre_check_validation() {
+    if state_transition.has_identity_minimum_balance_pre_check_validation() {
         // Validating that we have sufficient balance for a transfer or withdrawal,
         // this must happen after validating the signature
 
@@ -265,7 +266,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionIsAllowedValidationV0 {
     /// This means we should validate is state transition is allowed
-    fn has_is_allowed_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error>;
+    fn has_is_allowed_validation(&self) -> Result<bool, Error>;
     /// Preliminary validation for a state transition
     fn validate_is_allowed<C: CoreRPCLike>(
         &self,
@@ -446,7 +447,7 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// True if the state transition has a balance validation.
     /// This balance validation is not for the operations of the state transition, but more as a
     /// quick early verification that the user has the balance they want to transfer or withdraw.
-    fn has_balance_pre_check_validation(&self) -> bool {
+    fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {
         true
     }
 }
@@ -569,6 +570,18 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                     Ok(SimpleConsensusValidationResult::new())
                 }
             }
+            StateTransition::IdentityCreditTransferToAddresses(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::IdentityTopUpFromAddresses(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
+            StateTransition::AddressFundsTransfer(st) => {
+                st.validate_basic_structure(network_type, platform_version)
+            }
         }
     }
     fn has_basic_structure_validation(&self, platform_version: &PlatformVersion) -> bool {
@@ -598,7 +611,11 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::IdentityTopUp(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::IdentityUpdate(_)
-            | StateTransition::IdentityCreditTransfer(_) => true,
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_) => true,
             StateTransition::MasternodeVote(_) => false,
         }
     }
@@ -663,10 +680,6 @@ impl StateTransitionNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
-
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
-                Ok(SimpleConsensusValidationResult::new())
-            }
             StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_nonces(
                 platform,
                 block_info,
@@ -695,6 +708,9 @@ impl StateTransitionNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
+                Ok(SimpleConsensusValidationResult::new())
+            }
         }
     }
 }
@@ -729,7 +745,11 @@ impl StateTransitionHasNonceValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::IdentityCreditWithdrawal(_)
-                    | StateTransition::MasternodeVote(_) => true,
+                    | StateTransition::MasternodeVote(_)
+                    | StateTransition::IdentityCreditTransferToAddresses(_)
+                    | StateTransition::IdentityCreateFromAddresses(_)
+                    | StateTransition::IdentityTopUpFromAddresses(_)
+                    | StateTransition::AddressFundsTransfer(_) => true,
                     StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => false,
                 };
 
@@ -767,11 +787,15 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             }
             StateTransition::MasternodeVote(_)
             | StateTransition::IdentityCreate(_)
-            | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 
-    fn has_balance_pre_check_validation(&self) -> bool {
+    fn has_identity_minimum_balance_pre_check_validation(&self) -> bool {
         matches!(
             self,
             StateTransition::IdentityCreditTransfer(_)
@@ -1163,14 +1187,50 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreateFromAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityTopUpFromAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::AddressFundsTransfer(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
         }
     }
 }
 
 impl StateTransitionIsAllowedValidationV0 for StateTransition {
-    fn has_is_allowed_validation(&self, platform_version: &PlatformVersion) -> Result<bool, Error> {
+    fn has_is_allowed_validation(&self) -> Result<bool, Error> {
         match self {
-            StateTransition::Batch(st) => st.has_is_allowed_validation(platform_version),
+            StateTransition::Batch(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => Ok(true),
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)
             | StateTransition::IdentityCreate(_)
@@ -1189,6 +1249,23 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
     ) -> Result<ConsensusValidationResult<()>, Error> {
         match self {
             StateTransition::Batch(st) => st.validate_is_allowed(platform, platform_version),
+            StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => {
+                if platform_version.protocol_version >= ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION {
+                    Ok(ConsensusValidationResult::new())
+                } else {
+                    Ok(ConsensusValidationResult::new_with_errors(vec![
+                        StateTransitionNotActiveError::new(
+                            self.state_transition_type(),
+                            platform_version.protocol_version,
+                            ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
+                        )
+                            .into(),
+                    ]))
+                }
+            },
             _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "validate_is_allowed is not implemented for this state transition",
             ))),

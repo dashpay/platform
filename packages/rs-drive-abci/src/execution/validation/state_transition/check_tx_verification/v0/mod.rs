@@ -32,7 +32,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
     #[allow(unreachable_patterns)]
     match check_tx_level {
         CheckTxLevel::FirstTimeCheck => {
-            if state_transition.has_is_allowed_validation(platform_version)? {
+            if state_transition.has_is_allowed_validation()? {
                 let result = state_transition.validate_is_allowed(platform, platform_version)?;
 
                 if !result.is_valid() {
@@ -160,7 +160,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             // processing amount and the transfer amount.
             // For other state transitions we only check a min balance for an amount set per version.
             // This is not done for identity create and identity top up who don't have this check here
-            if state_transition.has_balance_pre_check_validation() {
+            if state_transition.has_identity_minimum_balance_pre_check_validation() {
                 // Validating that we have sufficient balance for a transfer or withdrawal,
                 // this must happen after validating the signature
                 let identity =

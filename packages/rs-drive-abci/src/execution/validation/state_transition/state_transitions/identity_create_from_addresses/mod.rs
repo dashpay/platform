@@ -1,6 +1,6 @@
 mod advanced_structure;
 mod basic_structure;
-pub(crate) mod identity_and_signatures;
+pub(crate) mod public_key_signatures;
 mod state;
 
 use crate::error::Error;

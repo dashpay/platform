@@ -72,8 +72,9 @@ use crate::consensus::basic::identity::{
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
-    InvalidStateTransitionTypeError, MissingStateTransitionTypeError,
-    StateTransitionMaxSizeExceededError,
+    InputWitnessCountMismatchError, InvalidStateTransitionTypeError,
+    MissingStateTransitionTypeError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -594,10 +595,16 @@ pub enum BasicError {
     InvalidKeyPurposeForContractBoundsError(InvalidKeyPurposeForContractBoundsError),
 
     #[error(transparent)]
+    StateTransitionNotActiveError(StateTransitionNotActiveError),
+
+    #[error(transparent)]
     TransitionOverMaxInputsError(TransitionOverMaxInputsError),
 
     #[error(transparent)]
-    TransitionOverMaxOutputsError(TransitionOverMaxInputsError),
+    TransitionOverMaxOutputsError(TransitionOverMaxOutputsError),
+
+    #[error(transparent)]
+    InputWitnessCountMismatchError(InputWitnessCountMismatchError),
 }
 
 impl From<BasicError> for ConsensusError {

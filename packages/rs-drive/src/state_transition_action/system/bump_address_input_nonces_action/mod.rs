@@ -9,26 +9,22 @@ use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 pub mod transformer;
 mod v0;
 
-use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
 pub use v0::*;
 
 /// bump address_input nonce action
 #[derive(Debug, Clone, From)]
-pub enum BumpAddressInputNonceAction {
+pub enum BumpAddressInputNoncesAction {
     /// v0
-    V0(BumpAddressInputNonceActionV0),
+    V0(BumpAddressInputNoncesActionV0),
 }
 
-impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNonceAction {
-    /// Get inputs
+impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNoncesAction {
     fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
         match self {
-            AddressFundsTransferTransitionAction::V0(transition) => {
-                &transition.inputs_with_remaining_balance
-            }
+            BumpAddressInputNoncesAction::V0(v0) => &v0.inputs_with_remaining_balance,
         }
     }
-    /// Returns owned copies of inputs and outputs.
+
     fn inputs_with_remaining_balance_and_outputs_owned(
         self,
     ) -> (
@@ -36,15 +32,15 @@ impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNonceAction {
         BTreeMap<KeyOfType, Credits>,
     ) {
         match self {
-            AddressFundsTransferTransitionAction::V0(transition) => {
-                (transition.inputs_with_remaining_balance, transition.outputs)
+            BumpAddressInputNoncesAction::V0(v0) => {
+                (v0.inputs_with_remaining_balance, BTreeMap::new())
             }
         }
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
-            BumpAddressInputNonceAction::V0(transition) => transition.user_fee_increase,
+            BumpAddressInputNoncesAction::V0(v0) => v0.user_fee_increase,
         }
     }
 }

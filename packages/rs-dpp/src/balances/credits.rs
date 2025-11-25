@@ -18,6 +18,9 @@ pub type Duffs = u64;
 /// Credits type
 pub type Credits = u64;
 
+/// RemainingCredits type
+pub type RemainingCredits = Credits;
+
 /// Token Amount type
 pub type TokenAmount = u64;
 
