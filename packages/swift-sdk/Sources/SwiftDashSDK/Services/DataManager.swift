@@ -1,14 +1,14 @@
 import Foundation
 import SwiftData
-import SwiftDashSDK
+
 
 /// Service to manage SwiftData operations for the app
 @MainActor
-final class DataManager: ObservableObject {
+public final class DataManager: ObservableObject {
     private let modelContext: ModelContext
-    var currentNetwork: Network
-    
-    init(modelContext: ModelContext, currentNetwork: Network = .testnet) {
+    public var currentNetwork: AppNetwork
+
+    public init(modelContext: ModelContext, currentNetwork: AppNetwork = .testnet) {
         self.modelContext = modelContext
         self.currentNetwork = currentNetwork
     }
@@ -16,7 +16,7 @@ final class DataManager: ObservableObject {
     // MARK: - Identity Operations
     
     /// Save or update an identity
-    func saveIdentity(_ identity: IdentityModel) throws {
+    public func saveIdentity(_ identity: IdentityModel) throws {
         // Check if identity already exists
         let predicate = PersistentIdentity.predicate(identityId: identity.id)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
@@ -67,7 +67,7 @@ final class DataManager: ObservableObject {
             existingIdentity.lastUpdated = Date()
         } else {
             // Create new identity
-            let persistentIdentity = PersistentIdentity.from(identity, network: currentNetwork.rawValue)
+            let persistentIdentity = PersistentIdentity.from(identity, network: currentNetwork)
             modelContext.insert(persistentIdentity)
         }
         
@@ -75,7 +75,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch all identities for current network
-    func fetchIdentities() throws -> [IdentityModel] {
+    public func fetchIdentities() throws -> [IdentityModel] {
         let descriptor = FetchDescriptor<PersistentIdentity>(
             predicate: PersistentIdentity.predicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -85,7 +85,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch local identities only
-    func fetchLocalIdentities() throws -> [IdentityModel] {
+    public func fetchLocalIdentities() throws -> [IdentityModel] {
         let descriptor = FetchDescriptor<PersistentIdentity>(
             predicate: PersistentIdentity.localIdentitiesPredicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -95,7 +95,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Delete an identity
-    func deleteIdentity(withId identityId: Data) throws {
+    public func deleteIdentity(withId identityId: Data) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
         
@@ -108,7 +108,7 @@ final class DataManager: ObservableObject {
     // MARK: - Document Operations
     
     /// Save or update a document
-    func saveDocument(_ document: DocumentModel) throws {
+    public func saveDocument(_ document: DocumentModel) throws {
         let predicate = PersistentDocument.predicate(documentId: document.id)
         let descriptor = FetchDescriptor<PersistentDocument>(predicate: predicate)
         
@@ -130,7 +130,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch documents for a contract
-    func fetchDocuments(contractId: String) throws -> [DocumentModel] {
+    public func fetchDocuments(contractId: String) throws -> [DocumentModel] {
         let predicate = PersistentDocument.predicate(contractId: contractId, network: currentNetwork.rawValue)
         let descriptor = FetchDescriptor<PersistentDocument>(
             predicate: predicate,
@@ -141,7 +141,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch documents owned by an identity
-    func fetchDocuments(ownerId: Data) throws -> [DocumentModel] {
+    public func fetchDocuments(ownerId: Data) throws -> [DocumentModel] {
         let predicate = PersistentDocument.predicate(ownerId: ownerId)
         let descriptor = FetchDescriptor<PersistentDocument>(
             predicate: predicate,
@@ -152,7 +152,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Delete a document
-    func deleteDocument(withId documentId: String) throws {
+    public func deleteDocument(withId documentId: String) throws {
         let predicate = PersistentDocument.predicate(documentId: documentId)
         let descriptor = FetchDescriptor<PersistentDocument>(predicate: predicate)
         
@@ -165,7 +165,7 @@ final class DataManager: ObservableObject {
     // MARK: - Contract Operations
     
     /// Save or update a contract
-    func saveContract(_ contract: ContractModel) throws {
+    public func saveContract(_ contract: ContractModel) throws {
         let predicate = PersistentDataContract.predicate(contractId: contract.id)
         let descriptor = FetchDescriptor<PersistentDataContract>(predicate: predicate)
         
@@ -190,7 +190,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch all contracts for current network
-    func fetchContracts() throws -> [ContractModel] {
+    public func fetchContracts() throws -> [ContractModel] {
         let descriptor = FetchDescriptor<PersistentDataContract>(
             predicate: PersistentDataContract.predicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -200,7 +200,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch contracts with tokens
-    func fetchContractsWithTokens() throws -> [ContractModel] {
+    public func fetchContractsWithTokens() throws -> [ContractModel] {
         let descriptor = FetchDescriptor<PersistentDataContract>(
             predicate: PersistentDataContract.contractsWithTokensPredicate(network: currentNetwork.rawValue),
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
@@ -212,7 +212,7 @@ final class DataManager: ObservableObject {
     // MARK: - Token Balance Operations
     
     /// Save or update a token balance
-    func saveTokenBalance(tokenId: String, identityId: Data, balance: UInt64, frozen: Bool = false, tokenInfo: (name: String, symbol: String, decimals: Int32)? = nil) throws {
+    public func saveTokenBalance(tokenId: String, identityId: Data, balance: UInt64, frozen: Bool = false, tokenInfo: (name: String, symbol: String, decimals: Int32)? = nil) throws {
         let predicate = PersistentTokenBalance.predicate(tokenId: tokenId, identityId: identityId)
         let descriptor = FetchDescriptor<PersistentTokenBalance>(predicate: predicate)
         
@@ -247,7 +247,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Fetch token balances for an identity
-    func fetchTokenBalances(identityId: Data) throws -> [(tokenId: String, balance: UInt64, frozen: Bool)] {
+    public func fetchTokenBalances(identityId: Data) throws -> [(tokenId: String, balance: UInt64, frozen: Bool)] {
         let predicate = PersistentTokenBalance.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentTokenBalance>(
             predicate: predicate,
@@ -271,7 +271,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Get identities that need syncing
-    func fetchIdentitiesNeedingSync(olderThan hours: Int = 1) throws -> [IdentityModel] {
+    public func fetchIdentitiesNeedingSync(olderThan hours: Int = 1) throws -> [IdentityModel] {
         let date = Date().addingTimeInterval(-Double(hours) * 3600)
         let predicate = PersistentIdentity.needsSyncPredicate(olderThan: date)
         let descriptor = FetchDescriptor<PersistentIdentity>(
@@ -305,7 +305,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Get statistics about stored data
-    func getDataStatistics() throws -> (identities: Int, documents: Int, contracts: Int, tokenBalances: Int) {
+    public func getDataStatistics() throws -> (identities: Int, documents: Int, contracts: Int, tokenBalances: Int) {
         let identityCount = try modelContext.fetchCount(FetchDescriptor<PersistentIdentity>())
         let documentCount = try modelContext.fetchCount(FetchDescriptor<PersistentDocument>())
         let contractCount = try modelContext.fetchCount(FetchDescriptor<PersistentDataContract>())
@@ -315,7 +315,7 @@ final class DataManager: ObservableObject {
     }
     
     /// Remove private key reference from a public key
-    func removePrivateKeyReference(identityId: Data, keyId: Int32) throws {
+    public func removePrivateKeyReference(identityId: Data, keyId: Int32) throws {
         let predicate = PersistentIdentity.predicate(identityId: identityId)
         let descriptor = FetchDescriptor<PersistentIdentity>(predicate: predicate)
         

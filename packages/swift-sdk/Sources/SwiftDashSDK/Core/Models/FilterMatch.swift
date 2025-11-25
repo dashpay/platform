@@ -1,6 +1,6 @@
 //
 //  FilterMatch.swift
-//  SwiftExampleApp
+//  SwiftDashSDK
 //
 //  Models for compact filters from SPV client
 //
@@ -9,22 +9,22 @@ import Foundation
 import DashSDKFFI
 
 /// A single compact filter with its height and data
-struct CompactFilter: Identifiable {
-    var id: UInt32 { height }
+public struct CompactFilter: Identifiable {
+    public var id: UInt32 { height }
 
     /// Block height for this filter
-    let height: UInt32
+    public let height: UInt32
 
     /// Filter data bytes
-    let data: Data
+    public let data: Data
 
-    init(height: UInt32, data: Data) {
+    public init(height: UInt32, data: Data) {
         self.height = height
         self.data = data
     }
 
     /// Initialize from FFI struct
-    init(from ffiFilter: FFICompactFilter) {
+    public init(from ffiFilter: FFICompactFilter) {
         self.height = ffiFilter.height
 
         if let dataPtr = ffiFilter.data, ffiFilter.data_len > 0 {
@@ -35,21 +35,21 @@ struct CompactFilter: Identifiable {
     }
 
     /// Get filter size in bytes
-    var sizeInBytes: Int {
+    public var sizeInBytes: Int {
         data.count
     }
 }
 
 /// Collection of compact filters
-struct CompactFilters {
-    let filters: [CompactFilter]
+public struct CompactFilters {
+    public let filters: [CompactFilter]
 
-    init(filters: [CompactFilter]) {
+    public init(filters: [CompactFilter]) {
         self.filters = filters
     }
 
     /// Initialize from FFI struct
-    init(from ffiFilters: FFICompactFilters) {
+    public init(from ffiFilters: FFICompactFilters) {
         var filters: [CompactFilter] = []
 
         if let filtersPtr = ffiFilters.filters {
@@ -63,33 +63,33 @@ struct CompactFilters {
     }
 
     /// Check if empty
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         filters.isEmpty
     }
 
     /// Get total number of filters
-    var count: Int {
+    public var count: Int {
         filters.count
     }
 }
 
 /// A single filter match entry with height and wallet IDs
-struct FilterMatchEntry: Identifiable {
-    var id: UInt32 { height }
+public struct FilterMatchEntry: Identifiable {
+    public var id: UInt32 { height }
 
     /// Block height where filter matched
-    let height: UInt32
+    public let height: UInt32
 
     /// Array of wallet IDs (32 bytes each) that matched at this height
-    let walletIds: [Data]
+    public let walletIds: [Data]
 
-    init(height: UInt32, walletIds: [Data]) {
+    public init(height: UInt32, walletIds: [Data]) {
         self.height = height
         self.walletIds = walletIds
     }
 
     /// Initialize from FFI struct
-    init(from ffiEntry: FFIFilterMatchEntry) {
+    public init(from ffiEntry: FFIFilterMatchEntry) {
         self.height = ffiEntry.height
 
         var walletIds: [Data] = []
@@ -108,15 +108,15 @@ struct FilterMatchEntry: Identifiable {
 }
 
 /// Collection of filter match entries
-struct FilterMatches {
-    let entries: [FilterMatchEntry]
+public struct FilterMatches {
+    public let entries: [FilterMatchEntry]
 
-    init(entries: [FilterMatchEntry]) {
+    public init(entries: [FilterMatchEntry]) {
         self.entries = entries
     }
 
     /// Initialize from FFI struct
-    init(from ffiMatches: FFIFilterMatches) {
+    public init(from ffiMatches: FFIFilterMatches) {
         var entries: [FilterMatchEntry] = []
 
         if let entriesPtr = ffiMatches.entries {
@@ -130,25 +130,25 @@ struct FilterMatches {
     }
 
     /// Check if empty
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         entries.isEmpty
     }
 
     /// Get total number of heights with matches
-    var count: Int {
+    public var count: Int {
         entries.count
     }
 }
 
 /// Error types for filter operations
-enum FilterMatchError: Error, LocalizedError {
+public enum FilterMatchError: Error, LocalizedError {
     case clientNotAvailable
     case invalidRange(String)
     case ffiError(String)
     case clientBusy
     case unknown
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .clientNotAvailable:
             return "SPV client not initialized. Please start sync from the Wallets screen first."

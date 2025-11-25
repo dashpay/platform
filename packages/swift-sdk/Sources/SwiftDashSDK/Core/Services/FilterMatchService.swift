@@ -10,23 +10,23 @@ import DashSDKFFI
 
 /// Service for managing compact filter queries with batch loading and caching
 @MainActor
-class FilterMatchService: ObservableObject {
+public class FilterMatchService: ObservableObject {
     // MARK: - Published Properties
 
     /// All loaded compact filters (sorted by height descending)
-    @Published private(set) var filters: [CompactFilter] = []
+    @Published public private(set) var filters: [CompactFilter] = []
 
     /// Matched filter heights (filters that matched wallet addresses)
-    @Published private(set) var matchedHeights: Set<UInt32> = []
+    @Published public private(set) var matchedHeights: Set<UInt32> = []
 
     /// Loading state
-    @Published private(set) var isLoading = false
+    @Published public private(set) var isLoading = false
 
     /// Error state
-    @Published private(set) var error: FilterMatchError?
+    @Published public private(set) var error: FilterMatchError?
 
     /// Total height range available
-    @Published private(set) var heightRange: ClosedRange<UInt32>?
+    @Published public private(set) var heightRange: ClosedRange<UInt32>?
 
     // MARK: - Private Properties
 
@@ -44,26 +44,26 @@ class FilterMatchService: ObservableObject {
 
     // MARK: - Initialization
 
-    init(walletService: WalletService) {
+    public init(walletService: WalletService) {
         self.walletService = walletService
     }
 
     // MARK: - Computed Properties
 
     /// Filters that matched wallet addresses
-    var matchedFilters: [CompactFilter] {
+    public var matchedFilters: [CompactFilter] {
         filters.filter { matchedHeights.contains($0.height) }
     }
 
     /// Check if a specific height has a matched filter
-    func isFilterMatched(_ height: UInt32) -> Bool {
+    public func isFilterMatched(_ height: UInt32) -> Bool {
         matchedHeights.contains(height)
     }
 
     // MARK: - Public Methods
 
     /// Initialize the service and load the initial batch
-    func initialize(endHeight: UInt32) async {
+    public func initialize(endHeight: UInt32) async {
         print("🔍 FilterMatchService: Initializing with endHeight=\(endHeight)")
         self.heightRange = 0...endHeight
         await loadMatchedHeights()
@@ -71,12 +71,12 @@ class FilterMatchService: ObservableObject {
     }
 
     /// Update the height range (when sync progresses)
-    func updateHeightRange(endHeight: UInt32) {
+    public func updateHeightRange(endHeight: UInt32) {
         self.heightRange = 0...endHeight
     }
 
     /// Jump to a specific height and load surrounding data
-    func jumpTo(height: UInt32) async {
+    public func jumpTo(height: UInt32) async {
         guard let range = heightRange,
               range.contains(height) else {
             error = .invalidRange("Height \(height) is outside valid range")
@@ -98,7 +98,7 @@ class FilterMatchService: ObservableObject {
     }
 
     /// Check if we need to prefetch more data based on scroll position
-    func checkPrefetch(displayedIndex: Int) async {
+    public func checkPrefetch(displayedIndex: Int) async {
         guard !isLoading,
               let range = heightRange else {
             return
@@ -131,7 +131,7 @@ class FilterMatchService: ObservableObject {
     }
 
     /// Reload all data (useful after sync completes)
-    func reload() async {
+    public func reload() async {
         filters = []
         loadedRanges = []
         await loadInitialBatch()
@@ -286,11 +286,11 @@ class FilterMatchService: ObservableObject {
 // MARK: - CompactFilter Hashable Conformance
 
 extension CompactFilter: Hashable {
-    static func == (lhs: CompactFilter, rhs: CompactFilter) -> Bool {
+    public static func == (lhs: CompactFilter, rhs: CompactFilter) -> Bool {
         lhs.height == rhs.height
     }
 
-    func hash(into hasher: inout Hasher) {
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(height)
     }
 }
@@ -299,7 +299,7 @@ extension CompactFilter: Hashable {
 
 extension Data {
     /// Convert Data to hex string for display
-    func hexEncodedString() -> String {
+    public func hexEncodedString() -> String {
         return map { String(format: "%02hhx", $0) }.joined()
     }
 }

@@ -2,8 +2,8 @@ import Foundation
 
 // MARK: - Transition Definitions
 
-struct TransitionDefinitions {
-    static let all: [String: TransitionDefinition] = [
+public struct TransitionDefinitions {
+    public static let all: [String: TransitionDefinition] = [
         // Identity Transitions
         "identityCreate": TransitionDefinition(
             key: "identityCreate",

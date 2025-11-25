@@ -1,32 +1,32 @@
 import Foundation
 
-struct ContractModel: Identifiable, Hashable {
+public struct ContractModel: Identifiable, Hashable {
     /// Get the owner ID as a hex string
-    var ownerIdString: String {
+    public var ownerIdString: String {
         ownerId.toHexString()
     }
-    
-    static func == (lhs: ContractModel, rhs: ContractModel) -> Bool {
+
+    public static func == (lhs: ContractModel, rhs: ContractModel) -> Bool {
         lhs.id == rhs.id
     }
-    
-    func hash(into hasher: inout Hasher) {
+
+    public func hash(into hasher: inout Hasher) {
         hasher.combine(id)
     }
-    let id: String
-    let name: String
-    let version: Int
-    let ownerId: Data
-    let documentTypes: [String]
-    let schema: [String: Any]
-    
+    public let id: String
+    public let name: String
+    public let version: Int
+    public let ownerId: Data
+    public let documentTypes: [String]
+    public let schema: [String: Any]
+
     // DPP-related properties
-    let dppDataContract: DPPDataContract?
-    let tokens: [TokenConfiguration]
-    let keywords: [String]
-    let description: String?
-    
-    init(id: String, name: String, version: Int, ownerId: Data, documentTypes: [String], schema: [String: Any], dppDataContract: DPPDataContract? = nil, tokens: [TokenConfiguration] = [], keywords: [String] = [], description: String? = nil) {
+    public let dppDataContract: DPPDataContract?
+    public let tokens: [DPPTokenConfiguration]
+    public let keywords: [String]
+    public let description: String?
+
+    public init(id: String, name: String, version: Int, ownerId: Data, documentTypes: [String], schema: [String: Any], dppDataContract: DPPDataContract? = nil, tokens: [DPPTokenConfiguration] = [], keywords: [String] = [], description: String? = nil) {
         self.id = id
         self.name = name
         self.version = version
@@ -40,7 +40,7 @@ struct ContractModel: Identifiable, Hashable {
     }
     
     /// Create from DPP Data Contract
-    init(from dppContract: DPPDataContract, name: String) {
+    public init(from dppContract: DPPDataContract, name: String) {
         self.id = dppContract.idString
         self.name = name
         self.version = Int(dppContract.version)
@@ -65,7 +65,7 @@ struct ContractModel: Identifiable, Hashable {
         self.description = dppContract.description
     }
     
-    var formattedSchema: String {
+    public var formattedSchema: String {
         guard let jsonData = try? JSONSerialization.data(withJSONObject: schema, options: .prettyPrinted),
               let jsonString = String(data: jsonData, encoding: .utf8) else {
             return "Invalid schema"

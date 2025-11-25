@@ -164,3 +164,56 @@ extension PersistentIdentity {
         }
     }
 }
+
+// MARK: - Conversion Methods
+
+extension PersistentIdentity {
+    /// Create a PersistentIdentity from an IdentityModel
+    public static func from(_ identity: IdentityModel, network: AppNetwork) -> PersistentIdentity {
+        let persistent = PersistentIdentity(
+            identityId: identity.id,
+            balance: Int64(identity.balance),
+            revision: 0,
+            isLocal: identity.isLocal,
+            alias: identity.alias,
+            dpnsName: identity.dpnsName,
+            mainDpnsName: identity.mainDpnsName,
+            identityType: identity.type,
+            network: network.rawValue,
+            walletId: identity.walletId
+        )
+
+        // Add public keys
+        for publicKey in identity.publicKeys {
+            if let persistentKey = PersistentPublicKey.from(publicKey, identityId: identity.idString) {
+                persistent.addPublicKey(persistentKey)
+            }
+        }
+
+        return persistent
+    }
+
+    /// Convert to an IdentityModel
+    /// Note: This method does not load private keys from keychain. Use separate async methods to load keys if needed.
+    public func toIdentityModel() -> IdentityModel {
+        // Convert public keys
+        let publicKeyModels = publicKeys.compactMap { $0.toIdentityPublicKey() }
+
+        return IdentityModel(
+            id: identityId,
+            balance: UInt64(balance),
+            isLocal: isLocal,
+            alias: alias,
+            type: identityTypeEnum,
+            privateKeys: [],  // Keys are loaded separately via KeychainManager
+            votingPrivateKey: nil,
+            ownerPrivateKey: nil,
+            payoutPrivateKey: nil,
+            dpnsName: dpnsName,
+            mainDpnsName: mainDpnsName,
+            publicKeys: publicKeyModels,
+            walletId: walletId,
+            network: network
+        )
+    }
+}

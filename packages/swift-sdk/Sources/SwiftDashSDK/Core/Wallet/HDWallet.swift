@@ -42,7 +42,7 @@ public final class HDWallet: HDWalletModels {
     public var syncFromTestnet: Int = 0
     public var syncFromDevnet: Int = 0
     
-    init(label: String, network: Network, isWatchOnly: Bool = false, isImported: Bool = false) {
+    init(label: String, network: AppNetwork, isWatchOnly: Bool = false, isImported: Bool = false) {
         self.id = UUID()
         self.label = label
         self.network = network.rawValue
@@ -69,8 +69,8 @@ public final class HDWallet: HDWalletModels {
         self.syncFromDevnet = 0
     }
     
-    var dashNetwork: Network {
-        return Network(rawValue: network) ?? .testnet
+    public var dashNetwork: AppNetwork {
+        return AppNetwork(rawValue: network) ?? .testnet
     }
     
     // Total balance across all accounts

@@ -1,6 +1,6 @@
 import Foundation
 import SwiftData
-import SwiftDashSDK
+
 
 // MARK: - Transaction Service
 
@@ -11,14 +11,14 @@ class TransactionService: ObservableObject {
     @Published public private(set) var isBroadcasting = false
     @Published public private(set) var lastError: Error?
     
-    private let walletManager: WalletManager
+    private let walletManager: CoreWalletManager
     private let modelContainer: ModelContainer
-    private let spvClient: SwiftDashSDK.SPVClient?
-    
+    private let spvClient: SPVClient?
+
     init(
-        walletManager: WalletManager,
+        walletManager: CoreWalletManager,
         modelContainer: ModelContainer,
-        spvClient: SwiftDashSDK.SPVClient? = nil
+        spvClient: SPVClient? = nil
     ) {
         self.walletManager = walletManager
         self.modelContainer = modelContainer

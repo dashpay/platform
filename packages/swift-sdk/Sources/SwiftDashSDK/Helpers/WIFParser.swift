@@ -1,12 +1,12 @@
 import Foundation
 
 /// Helper for parsing WIF (Wallet Import Format) private keys
-enum WIFParser {
-    
+public enum WIFParser {
+
     /// Parse a WIF-encoded private key
     /// - Parameter wif: The WIF string
     /// - Returns: The raw private key data (32 bytes) if valid, nil otherwise
-    static func parseWIF(_ wif: String) -> Data? {
+    public static func parseWIF(_ wif: String) -> Data? {
         // WIF format:
         // - Mainnet: starts with '7' (uncompressed) or 'X' (compressed)
         // - Testnet: starts with 'c' (uncompressed) or 'c' (compressed)
@@ -50,7 +50,7 @@ enum WIFParser {
     ///   - privateKey: The raw private key data (32 bytes)
     ///   - isTestnet: Whether to encode for testnet (default true)
     /// - Returns: The WIF-encoded string if successful, nil otherwise
-    static func encodeToWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
+    public static func encodeToWIF(_ privateKey: Data, isTestnet: Bool = true) -> String? {
         guard privateKey.count == 32 else { return nil }
         
         // Version byte: 0xef for testnet, 0x80 for mainnet

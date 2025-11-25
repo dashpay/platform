@@ -1,24 +1,19 @@
 import Foundation
 import SwiftUI
 
-// Type aliases for Platform types
-public typealias Identity = DPPIdentity
-public typealias Document = DPPDocument
-public typealias IdentityID = Identifier
-
 @MainActor
 public class UnifiedStateManager: ObservableObject {
     @Published public var isInitialized = false
     @Published public var isCoreSynced = false
     @Published public var isPlatformSynced = false
-    
+
     // Core wallet state
     @Published public var coreBalance = Balance()
-    @Published public var coreTransactions: [Transaction] = []
-    
+    @Published public var coreTransactions: [CoreTransaction] = []
+
     // Platform state
-    @Published public var platformIdentities: [Identity] = []
-    @Published public var platformDocuments: [Document] = []
+    @Published public var platformIdentities: [DPPIdentity] = []
+    @Published public var platformDocuments: [DPPDocument] = []
     
     // Cross-layer state
     @Published public var assetLocks: [AssetLock] = []
@@ -60,11 +55,11 @@ public class UnifiedStateManager: ObservableObject {
     
     // MARK: - Platform Operations
     
-    public func createIdentity(withCredits credits: UInt64) async throws -> Identity {
+    public func createIdentity(withCredits credits: UInt64) async throws -> DPPIdentity {
         // Mock implementation
         let idData = Data(UUID().uuidString.utf8).prefix(32)
         let paddedData = idData + Data(repeating: 0, count: max(0, 32 - idData.count))
-        let identity = Identity(
+        let identity = DPPIdentity(
             id: paddedData,
             publicKeys: [:],
             balance: credits,
@@ -74,15 +69,15 @@ public class UnifiedStateManager: ObservableObject {
         return identity
     }
     
-    public func createDocument(type: String, data: [String: Any]) async throws -> Document {
+    public func createDocument(type: String, data: [String: Any]) async throws -> DPPDocument {
         // Mock implementation
         let idData = Data(UUID().uuidString.utf8).prefix(32)
         let paddedIdData = idData + Data(repeating: 0, count: max(0, 32 - idData.count))
-        
+
         let ownerData = Data(UUID().uuidString.utf8).prefix(32)
         let paddedOwnerData = ownerData + Data(repeating: 0, count: max(0, 32 - ownerData.count))
-        
-        let document = Document(
+
+        let document = DPPDocument(
             id: paddedIdData,
             ownerId: paddedOwnerData,
             properties: [:],

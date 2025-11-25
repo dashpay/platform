@@ -178,3 +178,47 @@ public final class PersistentDocument {
         }
     }
 }
+
+// MARK: - Conversion Methods
+
+extension PersistentDocument {
+    /// Create a PersistentDocument from a DocumentModel
+    public static func from(_ document: DocumentModel) -> PersistentDocument {
+        let dataToStore = (try? JSONSerialization.data(withJSONObject: document.data, options: [])) ?? Data()
+
+        let persistent = PersistentDocument(
+            documentId: document.id,
+            documentType: document.documentType,
+            revision: Int32(document.revision),
+            data: dataToStore,
+            contractId: document.contractId,
+            ownerId: document.ownerId.toBase58String()
+        )
+
+        if let createdAt = document.createdAt {
+            persistent.createdAt = createdAt
+        }
+        if let updatedAt = document.updatedAt {
+            persistent.updatedAt = updatedAt
+        }
+
+        return persistent
+    }
+
+    /// Convert to a DocumentModel
+    public func toDocumentModel() -> DocumentModel {
+        let dataDict: [String: Any] = properties ?? [:]
+
+        return DocumentModel(
+            id: documentId,
+            contractId: contractId,
+            documentType: documentType,
+            ownerId: ownerIdData,
+            data: dataDict,
+            createdAt: createdAt,
+            updatedAt: updatedAt,
+            dppDocument: nil,
+            revision: Revision(revision)
+        )
+    }
+}

@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftDashSDK
 
 struct SelectMainNameView: View {
     let identity: IdentityModel

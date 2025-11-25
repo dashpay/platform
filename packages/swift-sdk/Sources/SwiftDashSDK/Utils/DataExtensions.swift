@@ -3,11 +3,6 @@ import Foundation
 // MARK: - Data Extensions for Base58 and Hex
 
 extension Data {
-    /// Initialize Data from a hex string (alias for hexString:)
-    public init?(hex: String) {
-        self.init(hexString: hex)
-    }
-
     /// Create an Identifier from a base58 string
     public static func identifier(fromBase58 base58String: String) -> Data? {
         let alphabet = Array("123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz")

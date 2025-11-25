@@ -1,7 +1,7 @@
 import Foundation
 
-enum TokenAction: String, CaseIterable, Identifiable {
-    var id: String { self.rawValue }
+public enum TokenAction: String, CaseIterable, Identifiable, Sendable {
+    public var id: String { self.rawValue }
     case transfer = "Transfer"
     case mint = "Mint"
     case burn = "Burn"
@@ -10,8 +10,8 @@ enum TokenAction: String, CaseIterable, Identifiable {
     case unfreeze = "Unfreeze"
     case destroyFrozenFunds = "Destroy Frozen Funds"
     case directPurchase = "Direct Purchase"
-    
-    var systemImage: String {
+
+    public var systemImage: String {
         switch self {
         case .transfer: return "arrow.left.arrow.right"
         case .mint: return "plus.circle"
@@ -23,13 +23,13 @@ enum TokenAction: String, CaseIterable, Identifiable {
         case .directPurchase: return "cart"
         }
     }
-    
-    var isEnabled: Bool {
+
+    public var isEnabled: Bool {
         // All actions are now enabled
         return true
     }
-    
-    var description: String {
+
+    public var description: String {
         switch self {
         case .transfer:
             return "Transfer tokens to another identity"

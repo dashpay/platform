@@ -1,7 +1,6 @@
 import Foundation
 import SwiftData
 import Combine
-@preconcurrency import SwiftDashSDK
 
 // MARK: - Timeout Helper
 
@@ -29,12 +28,12 @@ func withTimeout<T: Sendable>(seconds: TimeInterval, operation: @escaping @Senda
 
 // MARK: - Logging Preferences
 
-enum LoggingPreset: String {
+public enum LoggingPreset: String {
     case low
     case medium
     case high
 
-    fileprivate var priority: Int {
+    var priority: Int {
         switch self {
         case .low: return 0
         case .medium: return 1
@@ -42,7 +41,7 @@ enum LoggingPreset: String {
         }
     }
 
-    fileprivate func allows(_ threshold: LoggingPreset) -> Bool {
+    func allows(_ threshold: LoggingPreset) -> Bool {
         priority >= threshold.priority
     }
 }
@@ -93,13 +92,13 @@ enum LoggingPreferences {
     }
 }
 
-enum SDKLogger {
-    static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {
+public enum SDKLogger {
+    public static func log(_ message: String, minimumLevel level: LoggingPreset = .medium) {
         guard LoggingPreferences.allows(level) else { return }
         Swift.print(message)
     }
 
-    static func error(_ message: String) {
+    public static func error(_ message: String) {
         Swift.print(message)
     }
 }
@@ -140,7 +139,7 @@ public class WalletService: ObservableObject {
 
     private var activeSyncStartTimestamp: TimeInterval = 0
     @Published public var transactions: [CoreTransaction] = [] // Use HDTransaction from wallet
-    @Published var currentNetwork: Network = .testnet
+    @Published var currentNetwork: AppNetwork = .testnet
     
     // Internal properties
     private var modelContainer: ModelContainer?
@@ -151,7 +150,7 @@ public class WalletService: ObservableObject {
     @Published public var isInitializing = false
     
     // Exposed for WalletViewModel - read-only access to the properly initialized WalletManager
-    private(set) var walletManager: WalletManager?
+    public private(set) var walletManager: CoreWalletManager?
     
     // SPV Client - new wrapper with proper sync support
     private var spvClient: SPVClient?
@@ -159,12 +158,12 @@ public class WalletService: ObservableObject {
     // Mock SDK for now - will be replaced with real SDK
     private var sdk: Any?
     // Latest sync stats (for UI)
-    @Published var latestHeaderHeight: Int = 0
-    @Published var latestFilterHeaderHeight: Int = 0
-    @Published var latestFilterHeight: Int = 0
-    @Published var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
+    @Published public var latestHeaderHeight: Int = 0
+    @Published public var latestFilterHeaderHeight: Int = 0
+    @Published public var latestFilterHeight: Int = 0
+    @Published public var latestMasternodeListHeight: Int = 0 // TODO: fill when FFI exposes
     // Control whether to sync masternode list (default false; enable only in non-trusted mode)
-    @Published var shouldSyncMasternodes: Bool = false
+    @Published public var shouldSyncMasternodes: Bool = false
 
     // Expose base sync height to UI in a safe way
     public var baseSyncHeightUI: UInt32 { spvClient?.baseSyncHeight ?? 0 }
@@ -224,7 +223,7 @@ public class WalletService: ObservableObject {
         }
     }
     
-    func configure(modelContainer: ModelContainer, network: Network = .testnet) {
+    public func configure(modelContainer: ModelContainer, network: AppNetwork = .testnet) {
         LoggingPreferences.configure()
         SDKLogger.log("=== WalletService.configure START ===", minimumLevel: .medium)
         self.modelContainer = modelContainer
@@ -292,7 +291,7 @@ public class WalletService: ObservableObject {
                 do {
                     try await MainActor.run {
                         let sdkWalletManager = try clientLocal.makeSharedWalletManager()
-                        let wrapper = try WalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
+                        let wrapper = try CoreWalletManager(sdkWalletManager: sdkWalletManager, modelContainer: mc)
                         WalletService.shared.walletManager = wrapper
                         WalletService.shared.walletManager?.transactionService = TransactionService(
                             walletManager: wrapper,
@@ -331,8 +330,8 @@ public class WalletService: ObservableObject {
     
     
     // MARK: - Wallet Management
-    
-    func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: Network? = nil, networks: [Network]? = nil, isImport: Bool = false) async throws -> HDWallet {
+
+    public func createWallet(label: String, mnemonic: String? = nil, pin: String = "1234", network: AppNetwork? = nil, networks: [AppNetwork]? = nil, isImport: Bool = false) async throws -> HDWallet {
         print("=== WalletService.createWallet START ===")
         print("Label: \(label)")
         print("Has mnemonic: \(mnemonic != nil)")
@@ -634,8 +633,8 @@ public class WalletService: ObservableObject {
     }
     
     // MARK: - Network Management
-    
-    func switchNetwork(to network: Network) async {
+
+    public func switchNetwork(to network: AppNetwork) async {
         guard network != currentNetwork else { return }
         
         print("=== WalletService.switchNetwork START ===")
@@ -1060,8 +1059,8 @@ extension WalletService {
     /// Compute the baseline start-from height across all wallets enabled on the given network.
     /// Defaults: mainnet=730_000, testnet=0, devnet=0 when no wallets are present.
     @MainActor
-    func computeNetworkBaselineSyncFromHeight(for network: Network) -> UInt32 {
-        let defaults: [Network: Int] = [.mainnet: 730_000, .testnet: 0, .devnet: 0]
+    func computeNetworkBaselineSyncFromHeight(for network: AppNetwork) -> UInt32 {
+        let defaults: [AppNetwork: Int] = [.mainnet: 730_000, .testnet: 0, .devnet: 0]
         guard let ctx = modelContainer?.mainContext else {
             return UInt32(defaults[network] ?? 0)
         }
@@ -1214,7 +1213,7 @@ extension WalletService {
 
     /// Print a concise list of per-wallet sync-from heights for debugging purposes.
     @MainActor
-    func logPerWalletSyncFromHeights(for network: Network) {
+    func logPerWalletSyncFromHeights(for network: AppNetwork) {
         guard let ctx = modelContainer?.mainContext else { return }
         let wallets: [HDWallet] = (try? ctx.fetch(FetchDescriptor<HDWallet>())) ?? []
         let items: [(String, Int)] = wallets.compactMap { w in
@@ -1255,7 +1254,7 @@ public enum SyncStage: Sendable {
 
 // Extension for Data to hex string
 extension Data {
-    var hexString: String {
+    public var hexString: String {
         return map { String(format: "%02hhx", $0) }.joined()
     }
 }

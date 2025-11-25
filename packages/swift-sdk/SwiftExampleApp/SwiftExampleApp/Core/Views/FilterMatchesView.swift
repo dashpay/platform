@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import SwiftDashSDK
 
 enum FilterDisplayMode: String, CaseIterable {
     case all = "All Filters"

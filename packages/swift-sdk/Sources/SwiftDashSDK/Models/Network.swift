@@ -1,12 +1,12 @@
 import Foundation
-import SwiftDashSDK
 
-enum Network: String, CaseIterable, Codable {
+/// App-level network enum (distinct from the SDK's DashSDKNetwork typealias)
+public enum AppNetwork: String, CaseIterable, Codable, Sendable {
     case mainnet = "mainnet"
     case testnet = "testnet"
     case devnet = "devnet"
-    
-    var displayName: String {
+
+    public var displayName: String {
         switch self {
         case .mainnet:
             return "Mainnet"
@@ -16,8 +16,8 @@ enum Network: String, CaseIterable, Codable {
             return "Devnet"
         }
     }
-    
-    var sdkNetwork: SwiftDashSDK.Network {
+
+    public var sdkNetwork: DashSDKNetwork {
         switch self {
         case .mainnet:
             return DashSDKNetwork(rawValue: 0)
@@ -27,13 +27,13 @@ enum Network: String, CaseIterable, Codable {
             return DashSDKNetwork(rawValue: 3)
         }
     }
-    
-    static var defaultNetwork: Network {
+
+    public static var defaultNetwork: AppNetwork {
         return .testnet
     }
-    
+
     // Convert to KeyWalletNetwork for wallet operations
-    func toKeyWalletNetwork() -> KeyWalletNetwork {
+    public func toKeyWalletNetwork() -> KeyWalletNetwork {
         switch self {
         case .mainnet:
             return .mainnet

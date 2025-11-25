@@ -1,10 +1,10 @@
 import Foundation
 import SwiftData
 
-struct DataContractParser {
-    
+public struct DataContractParser {
+
     // MARK: - Parse Data Contract
-    static func parseDataContract(contractData: [String: Any], contractId: Data, modelContext: ModelContext) throws {
+    public static func parseDataContract(contractData: [String: Any], contractId: Data, modelContext: ModelContext) throws {
         print("🔵 Parsing data contract with ID: \(contractId.toBase58String())")
         
         // Parse tokens if present

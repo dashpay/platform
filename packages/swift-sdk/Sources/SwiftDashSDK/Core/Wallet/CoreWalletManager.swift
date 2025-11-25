@@ -1,16 +1,16 @@
 import Foundation
 import SwiftData
 import Combine
-import SwiftDashSDK
+
 import DashSDKFFI
 
 // MARK: - Wallet Manager
 
-/// WalletManager is a wrapper around the SDK's WalletManager
+/// CoreWalletManager is a wrapper around the SDK's WalletManager
 /// It delegates all wallet operations to the SDK layer while maintaining
 /// SwiftUI compatibility through ObservableObject and SwiftData persistence
 @MainActor
-class WalletManager: ObservableObject {
+public class CoreWalletManager: ObservableObject {
     @Published public private(set) var wallets: [HDWallet] = []
     @Published public private(set) var currentWallet: HDWallet?
     @Published public private(set) var isLoading = false
@@ -57,7 +57,7 @@ class WalletManager: ObservableObject {
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil) async throws -> HDWallet {
+    func createWallet(label: String, network: AppNetwork, mnemonic: String? = nil, pin: String, networks: [AppNetwork]? = nil) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
@@ -156,7 +156,7 @@ class WalletManager: ObservableObject {
         return wallet
     }
     
-    func importWallet(label: String, network: Network, mnemonic: String, pin: String) async throws -> HDWallet {
+    func importWallet(label: String, network: AppNetwork, mnemonic: String, pin: String) async throws -> HDWallet {
         let wallet = try await createWallet(label: label, network: network, mnemonic: mnemonic, pin: pin)
         wallet.isImported = true
         try modelContainer.mainContext.save()
@@ -243,7 +243,7 @@ class WalletManager: ObservableObject {
         return try storage.retrieveSeedWithBiometric()
     }
     
-    func createWatchOnlyWallet(label: String, network: Network, extendedPublicKey: String) async throws -> HDWallet {
+    func createWatchOnlyWallet(label: String, network: AppNetwork, extendedPublicKey: String) async throws -> HDWallet {
         isLoading = true
         defer { isLoading = false }
         
@@ -285,7 +285,7 @@ class WalletManager: ObservableObject {
     ///   - wallet: The wallet to get transactions for
     ///   - accountIndex: The account index (default 0)
     /// - Returns: Array of wallet transactions
-    func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
+    public func getTransactions(for wallet: HDWallet, accountIndex: UInt32 = 0) async throws -> [WalletTransaction] {
         guard let walletId = wallet.walletId else {
             throw WalletError.walletError("Wallet ID not available")
         }
@@ -313,7 +313,7 @@ class WalletManager: ObservableObject {
     ///   - wallet: The wallet containing the account
     ///   - accountInfo: The account info to get details for
     /// - Returns: Detailed account information
-    func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
+    public func getAccountDetails(for wallet: HDWallet, accountInfo: AccountInfo) async throws -> AccountDetailInfo {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
         let network = wallet.dashNetwork.toKeyWalletNetwork()
         let collection = try sdkWalletManager.getManagedAccountCollection(walletId: walletId, network: network)
@@ -433,7 +433,7 @@ class WalletManager: ObservableObject {
     // Index-based derivation was removed. We now map paths by AccountCategory
     // via derivationPath(for:index:network:) below to avoid conflating type with index.
 
-    private func derivationPath(for category: AccountCategory, index: UInt32?, network: Network) -> String {
+    private func derivationPath(for category: AccountCategory, index: UInt32?, network: AppNetwork) -> String {
         let coinType = network == .testnet ? "1'" : "5'"
         switch category {
         case .bip44:
@@ -470,7 +470,7 @@ class WalletManager: ObservableObject {
     ///   - wallet: The wallet model
     ///   - network: Optional network override; defaults to wallet.dashNetwork
     /// - Returns: Account information including balances and address counts
-    func getAccounts(for wallet: HDWallet, network: Network? = nil) async throws -> [AccountInfo] {
+    public func getAccounts(for wallet: HDWallet, network: AppNetwork? = nil) async throws -> [AccountInfo] {
         guard let walletId = wallet.walletId else { throw WalletError.walletError("Wallet ID not available") }
         let effectiveNetwork = (network ?? wallet.dashNetwork).toKeyWalletNetwork()
         let collection: ManagedAccountCollection
