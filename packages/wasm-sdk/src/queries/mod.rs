@@ -212,6 +212,11 @@ pub struct ProofMetadataResponseWasm {
     proof: ProofInfoWasm,
 }
 
+#[wasm_bindgen(typescript_custom_section)]
+const PROOF_METADATA_TYPED_TS: &'static str = r#"
+export type ProofMetadataResponseTyped<T> = ProofMetadataResponse & { data: T };
+"#;
+
 #[wasm_bindgen(js_class = ProofMetadataResponse)]
 impl ProofMetadataResponseWasm {
     #[wasm_bindgen(constructor)]
