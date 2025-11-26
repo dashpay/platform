@@ -6,6 +6,7 @@ use drive_abci::config::{FromEnv, PlatformConfig};
 use drive_abci::platform_types::platform::Platform;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive_abci::rpc::core::DefaultCoreRPC;
+use drive_abci::verify;
 use replay_support::cli::{Cli, SkipRequest, load_env};
 use replay_support::log_ingest::LogRequestStream;
 use replay_support::replay::{
@@ -35,6 +36,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
 
     config.db_path = cli.db_path.clone();
     let db_was_created = ensure_db_directory(&config.db_path)?;
+
+    tracing::info!("running database verification before replay");
+    verify::run(&config, true).map_err(|e| format!("verification failed before replay: {}", e))?;
 
     let mut replay_items = Vec::new();
     for path in &cli.requests {
@@ -102,17 +106,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         .as_ref()
         .map(|info| info.basic_info().height);
 
-    if let Some(limit) = cli.stop_height {
-        if let Some(current) = known_height {
-            if current >= limit {
-                tracing::info!(
-                    "current platform height {} is already at or above stop height {}; ending replay",
-                    current,
-                    limit
-                );
-                return Ok(());
-            }
-        }
+    if let Some(limit) = cli.stop_height
+        && let Some(current) = known_height
+        && current >= limit
+    {
+        tracing::info!(
+            "current platform height {} is already at or above stop height {}; ending replay",
+            current,
+            limit
+        );
+        return Ok(());
     }
 
     let app = FullAbciApplication::new(&platform);
@@ -317,16 +320,14 @@ impl RequestSequenceValidator {
 
     fn bump_height(&mut self, height: u64, origin: &str) -> Result<(), Box<dyn Error>> {
         match self.last_height {
-            Some(last) if height < last => {
-                return Err(format!(
-                    "log {} has out-of-order height {} before {} ({})",
-                    self.path.display(),
-                    last,
-                    height,
-                    origin
-                )
-                .into());
-            }
+            Some(last) if height < last => Err(format!(
+                "log {} has out-of-order height {} before {} ({})",
+                self.path.display(),
+                last,
+                height,
+                origin
+            )
+            .into()),
             Some(last) if height == last => Ok(()),
             Some(last) => {
                 if !self.saw_process || !self.saw_finalize {
