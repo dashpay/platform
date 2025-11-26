@@ -1,5 +1,5 @@
 use clap::Parser;
-use rocksdb::{IteratorMode, Options, DB};
+use rocksdb::{DB, IteratorMode, Options};
 use std::{
     error::Error,
     fs::File,
@@ -43,11 +43,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut writer = BufWriter::new(writer);
 
-    writeln!(
-        writer,
-        "# RocksDB export from {}",
-        args.db_path.display()
-    )?;
+    writeln!(writer, "# RocksDB export from {}", args.db_path.display())?;
 
     for (cf_index, cf_name) in cf_names.iter().enumerate() {
         let cf_handle = db
