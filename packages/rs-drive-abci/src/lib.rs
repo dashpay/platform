@@ -52,3 +52,5 @@ pub mod utils;
 
 /// Drive server
 pub mod server;
+/// Verification helpers
+pub mod verify;
