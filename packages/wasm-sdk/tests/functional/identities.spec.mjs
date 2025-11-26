@@ -59,6 +59,41 @@ describe('Identity queries', function describeBlock() {
     expect(r).to.be.an('array');
   });
 
+  it('contract keys filtered by purpose and with proof', async () => {
+    const response = await client.getIdentitiesContractKeysWithProofInfo({
+      identityIds: [TEST_IDENTITY],
+      contractId: DPNS_CONTRACT,
+      purposes: [0], // authentication
+    });
+
+    // Basic shape
+    expect(response).to.be.ok();
+    expect(response.metadata).to.be.ok();
+    expect(response.proof).to.be.ok();
+
+    // Data sanity: if keys are returned, all should match the requested purpose set
+    const keysArray = response.data;
+    if (Array.isArray(keysArray) && keysArray.length > 0) {
+      for (const entry of keysArray) {
+        const keys = entry.keys;
+        for (const key of keys) {
+          expect(key.purpose).to.match(/Authentication/i);
+        }
+      }
+    }
+  });
+
+  it('contract keys batch handles multiple identities', async () => {
+    const r = await client.getIdentitiesContractKeys({
+      identityIds: [TEST_IDENTITY, TEST_IDENTITY],
+      contractId: DPNS_CONTRACT,
+    });
+    expect(r).to.be.an('array');
+    if (r.length > 0) {
+      expect(r[0].identityId).to.be.instanceOf(sdk.Identifier); // IdentifierWasm
+    }
+  });
+
   it('token balances/infos for identity and batches', async () => {
     const TOKEN_CONTRACT = 'H7FRpZJqZK933r9CzZMsCuf1BM34NT5P2wSJyjDkprqy';
     const tokenId = sdk.WasmSdk.calculateTokenIdFromContract(TOKEN_CONTRACT, 1);
