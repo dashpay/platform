@@ -17,6 +17,10 @@ export default function getConfigProfilesFactory() {
       profiles.push('platform');
     }
 
+    if (config.get('platform.quorumList.enabled')) {
+      profiles.push('platform-quorum');
+    }
+
     return Array.from(new Set(profiles));
   }
 

@@ -495,6 +495,36 @@ export default {
     platform: {
       type: 'object',
       properties: {
+        quorumList: {
+          type: 'object',
+          properties: {
+            enabled: {
+              type: 'boolean',
+            },
+            docker: {
+              $ref: '#/definitions/docker',
+            },
+            api: {
+              type: 'object',
+              properties: {
+                host: {
+                  $ref: '#/definitions/host',
+                },
+                port: {
+                  $ref: '#/definitions/port',
+                },
+              },
+              required: ['host', 'port'],
+              additionalProperties: false,
+            },
+            previousBlocksOffset: {
+              type: 'integer',
+              minimum: 0,
+            },
+          },
+          required: ['enabled', 'docker', 'api', 'previousBlocksOffset'],
+          additionalProperties: false,
+        },
         gateway: {
           type: 'object',
           properties: {

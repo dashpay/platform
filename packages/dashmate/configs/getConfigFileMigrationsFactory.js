@@ -1388,6 +1388,16 @@ export default function getConfigFileMigrationsFactory(homeDir, defaultConfigs) 
               && defaultConfig.has('platform.dapi.rsDapi.docker.image')) {
               options.platform.dapi.rsDapi.docker.image = defaultConfig.get('platform.dapi.rsDapi.docker.image');
             }
+
+            if (!options.platform.quorumList) {
+              options.platform.quorumList = lodash.cloneDeep(defaultConfig.get('platform.quorumList'));
+            }
+
+            if (!options.core.rpc.users.quorum_list) {
+              options.core.rpc.users.quorum_list = lodash.cloneDeep(
+                defaultConfig.get('core.rpc.users.quorum_list'),
+              );
+            }
           });
 
         return configFile;

@@ -56,6 +56,13 @@ Context and gaps to close before we can point the wasm-sdk and js-evo-sdk functi
 - Update SDKs/providers to accept a local quorum base URL (or auto-point `network=local` to the dashmate service) so trusted/proof flows work unchanged on local.
 - Keep the skip-path as a fallback only if the sidecar is unavailable; primary path is proof-parity via the local quorum service.
 
+### Dashmate integration notes (in progress)
+- We will ship the quorum-list server as a dashmate-managed service, backed by the new Docker image (build almost done). It must be **disabled by default** and only turned on for the `local_seed` node when `dashmate setup local` runs, so regular presets/users are unaffected.
+- Add the service to the local preset docker-compose, sourcing Core RPC credentials/host from the existing `local_seed` config and exposing an HTTPS port to the host for SDKs/tests to hit. Keep other nodes unaware of it unless explicitly enabled.
+- Provide a config toggle/flag (e.g., `--enable-quorum-list` or a preset-scoped setting) so CI/local flows can opt in; `dashmate status` should surface whether the service is running when the local preset is active.
+- When enabled, ensure the local SDK network config points to this service by default (either via preset defaults or env var wiring) so wasm/js functional suites don’t need manual URLs.
+- Config toggle landed: set `platform.quorumList.enabled=true` (profile `platform-quorum`, defaults to port `2444` bound to `127.0.0.1`; the sidecar binds internally to `0.0.0.0`). Local setup now enables it on `local_seed` and wires Core RPC credentials from the dedicated `quorum_list` RPC user. Compose service name: `quorum_list`.
+
 ## Temporary guidance
 
 - Until the above changes are implemented, do **not** run the functional suites in `packages/js-evo-sdk` or `packages/wasm-sdk` when invoking their `test` scripts; they assume public testnet data and will fail against a local dashmate network.
