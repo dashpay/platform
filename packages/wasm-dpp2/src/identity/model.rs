@@ -180,10 +180,44 @@ impl IdentityWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        self.0
+        let serializer = serde_wasm_bindgen::Serializer::new()
+            .serialize_maps_as_objects(true)
+            .serialize_bytes_as_arrays(true);
+        let mut js_value = self
+            .0
             .to_object()?
-            .serialize(&serde_wasm_bindgen::Serializer::default())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+            .serialize(&serializer)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        // Align with JS expectations: expose `id` as an Identifier instance
+        if js_value.is_object() {
+            let object = Object::from(js_value.clone());
+            let id_js = JsValue::from(self.get_id());
+            Reflect::set(&object, &JsValue::from_str("id"), &id_js).map_err(|err| {
+                WasmDppError::serialization(format!(
+                    "unable to set id on Identity object: {}",
+                    err.error_message()
+                ))
+            })?;
+            // balance/revision should be BigInt
+            let balance_bigint = js_sys::BigInt::from(self.get_balance() as u64);
+            let revision_bigint = js_sys::BigInt::from(self.get_revision() as u64);
+            Reflect::set(&object, &JsValue::from_str("balance"), &balance_bigint).map_err(|err| {
+                WasmDppError::serialization(format!(
+                    "unable to set balance on Identity object: {}",
+                    err.error_message()
+                ))
+            })?;
+            Reflect::set(&object, &JsValue::from_str("revision"), &revision_bigint).map_err(|err| {
+                WasmDppError::serialization(format!(
+                    "unable to set revision on Identity object: {}",
+                    err.error_message()
+                ))
+            })?;
+            js_value = object.into();
+        }
+
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]

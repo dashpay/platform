@@ -37,7 +37,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(createTransition.__wbg_ptr).to.not.equal(0);
@@ -51,7 +51,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = createTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 
@@ -99,7 +99,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(deleteTransition.__wbg_ptr).to.not.equal(0);
@@ -113,7 +113,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = deleteTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 
@@ -161,7 +161,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(replaceTransition.__wbg_ptr).to.not.equal(0);
@@ -175,7 +175,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = replaceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 
@@ -223,7 +223,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(transferTransition.__wbg_ptr).to.not.equal(0);
@@ -237,7 +237,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = transferTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 
@@ -285,7 +285,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(updatePriceTransition.__wbg_ptr).to.not.equal(0);
@@ -299,7 +299,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = updatePriceTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 
@@ -347,7 +347,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         expect(documentInstance.__wbg_ptr).to.not.equal(0);
         expect(purchaseTransition.__wbg_ptr).to.not.equal(0);
@@ -361,7 +361,7 @@ describe('DocumentsTransitions', () => {
 
         const documentTransition = purchaseTransition.toDocumentTransition();
 
-        const batchTransition = wasm.BatchTransition.fromV0Transitions([documentTransition, documentTransition], documentInstance.ownerId, 1, 1);
+        const batchTransition = wasm.BatchTransition.fromBatchedTransitions([new wasm.BatchedTransition(documentTransition), new wasm.BatchedTransition(documentTransition)], documentInstance.ownerId, 1);
 
         const st = batchTransition.toStateTransition();
 

@@ -7525,6 +7525,7 @@ name = "wasm-dpp2"
 version = "2.2.0-dev.1"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "bincode 2.0.0-rc.3",
  "dpp",
  "hex",

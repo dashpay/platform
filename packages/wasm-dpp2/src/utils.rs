@@ -1,5 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use anyhow::{Context, anyhow, bail};
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use base64::Engine;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
@@ -11,9 +13,22 @@ use wasm_bindgen::convert::RefFromWasmAbi;
 use wasm_bindgen::{JsCast, JsValue};
 
 pub fn stringify_wasm(data: &JsValue) -> WasmDppResult<String> {
+    // Convert known binary representations (Node Buffer, ArrayBuffer views) into plain arrays
+    // so subsequent serde_json parsing can treat them as byte sequences.
     let replacer_func = Function::new_with_args(
         "key, value",
-        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
+        r#"
+        if (value != undefined && value.type === 'Buffer') {
+            return value.data;
+        }
+        if (ArrayBuffer.isView(value)) {
+            return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+        }
+        if (value instanceof ArrayBuffer) {
+            return Array.from(new Uint8Array(value));
+        }
+        return value;
+    "#,
     );
 
     let data_string = js_sys::JSON::stringify_with_replacer(data, &JsValue::from(replacer_func))
@@ -130,10 +145,48 @@ pub fn with_serde_to_platform_value(data: &JsValue) -> WasmDppResult<Value> {
     Ok(with_serde_to_json_value(data.clone())?.into())
 }
 
+/// Recursively convert byte-array JSON values into base64 strings so they can be deserialized
+/// into human-readable serde types that expect strings for binary fields.
+pub fn normalize_json_bytes_to_strings(value: JsValue) -> WasmDppResult<JsonValue> {
+    fn normalize(val: JsonValue) -> JsonValue {
+        match val {
+            JsonValue::Array(arr) => {
+                if arr.iter().all(|v| v.is_u64()) {
+                    let bytes: Vec<u8> = arr
+                        .into_iter()
+                        .filter_map(|v| v.as_u64().map(|n| n as u8))
+                        .collect();
+                    JsonValue::String(BASE64_ENGINE.encode(bytes))
+                } else {
+                    JsonValue::Array(arr.into_iter().map(normalize).collect())
+                }
+            }
+            JsonValue::Object(map) => {
+                JsonValue::Object(map.into_iter().map(|(k, v)| (k, normalize(v))).collect())
+            }
+            other => other,
+        }
+    }
+
+    let json = with_serde_to_json_value(value)?;
+    Ok(normalize(json))
+}
+
 pub fn stringify(data: &JsValue) -> WasmDppResult<String> {
     let replacer_func = Function::new_with_args(
         "key, value",
-        "return (value != undefined && value.type=='Buffer')  ? value.data : value ",
+        r#"
+        if (value != undefined && value.type === 'Buffer') {
+            return value.data;
+        }
+        if (ArrayBuffer.isView(value)) {
+            return Array.from(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+        }
+        if (value instanceof ArrayBuffer) {
+            return Array.from(new Uint8Array(value));
+        }
+        return value;
+    "#,
     );
 
     let data_string: String =
@@ -241,6 +294,39 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
         return Ok(float_number as u64);
     }
     bail!("the value is not a number")
+}
+
+/// Extracts bytes from a base64 string, Uint8Array, or array of numbers.
+pub fn js_value_to_vec_u8(value: &JsValue) -> WasmDppResult<Vec<u8>> {
+    if let Some(s) = value.as_string() {
+        return BASE64_ENGINE.decode(s)
+            .map_err(|e| WasmDppError::invalid_argument(format!("unable to decode base64 string: {}", e)));
+    }
+
+    if value.is_instance_of::<js_sys::Uint8Array>() {
+        return Ok(js_sys::Uint8Array::new(value).to_vec());
+    }
+
+    if js_sys::Array::is_array(value) {
+        let array = js_sys::Array::from(value);
+        let mut bytes = Vec::with_capacity(array.length() as usize);
+        for item in array.iter() {
+            let n = item.as_f64().ok_or_else(|| {
+                WasmDppError::invalid_argument("expected array items to be numbers".to_string())
+            })?;
+            if n < 0.0 || n > u8::MAX as f64 {
+                return Err(WasmDppError::invalid_argument(
+                    "byte array item must be between 0 and 255".to_string(),
+                ));
+            }
+            bytes.push(n as u8);
+        }
+        return Ok(bytes);
+    }
+
+    Err(WasmDppError::invalid_argument(
+        "expected a base64 string, Uint8Array or numeric array for binary data".to_string(),
+    ))
 }
 
 pub fn generate_document_id_v0(

@@ -2,7 +2,7 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
-use crate::utils::IntoWasm;
+use crate::utils::{IntoWasm, with_serde_to_platform_value_wasm};
 use dpp::fee::Credits;
 use dpp::identity::KeyID;
 use dpp::platform_value::{BinaryData, Value};
@@ -18,7 +18,6 @@ use dpp::state_transition::StateTransitionValueConvert;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::version::PlatformVersion;
 use serde::Serialize;
-use serde_wasm_bindgen::from_value;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
 #[derive(Debug, Clone, PartialEq)]
@@ -182,17 +181,37 @@ impl BatchTransitionWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        self.0
+        let serializer = serde_wasm_bindgen::Serializer::new()
+            .serialize_maps_as_objects(true)
+            .serialize_bytes_as_arrays(true);
+        let mut js_value = self
+            .0
             .to_cleaned_object(false)?
-            .serialize(&serde_wasm_bindgen::Serializer::default())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+            .serialize(&serializer)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        // Ensure signature is returned as Uint8Array
+        if js_value.is_object() {
+            let object = js_sys::Object::from(js_value.clone());
+            let sig_val = js_sys::Reflect::get(&object, &JsValue::from_str("signature"))
+                .unwrap_or(JsValue::UNDEFINED);
+            if js_sys::Array::is_array(&sig_val) {
+                let array = js_sys::Array::from(&sig_val);
+                let u8arr = js_sys::Uint8Array::new(&array);
+                js_sys::Reflect::set(&object, &JsValue::from_str("signature"), &u8arr)
+                    .map_err(|e| WasmDppError::serialization(e.error_message()))?;
+                js_value = object.into();
+            }
+        }
+
+        Ok(js_value)
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        self.0
-            .to_cleaned_object(false)?
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+        let json = serde_json::to_value(&self.0)
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+        serde_wasm_bindgen::to_value(&json)
             .map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
@@ -216,10 +235,9 @@ impl BatchTransitionWasm {
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
         let platform_version = PlatformVersion::latest();
-        let value: Value =
-            from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        let batch =
-            BatchTransition::from_object(value, &platform_version).map_err(WasmDppError::from)?;
+        let value: Value = with_serde_to_platform_value_wasm(&js_value)?;
+        let batch = BatchTransition::from_object(value, &platform_version)
+            .map_err(WasmDppError::from)?;
         Ok(BatchTransitionWasm(batch))
     }
 

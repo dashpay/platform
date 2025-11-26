@@ -298,7 +298,7 @@ impl IdentityPublicKeyWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let serializer = Serializer::default();
+        let serializer = Serializer::new().serialize_maps_as_objects(true);
         self.0
             .to_cleaned_object()
             .map_err(WasmDppError::from)?

@@ -5,14 +5,11 @@ use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::enums::lock_types::AssetLockProofTypeWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{IntoWasm, get_class_type};
-use dpp::platform_value::Value;
+use crate::utils::{IntoWasm, JsValueExt, get_class_type};
 use dpp::prelude::AssetLockProof;
-use serde::Serialize;
-use serde_wasm_bindgen::from_value;
-use std::convert::TryFrom;
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
+use js_sys::{Object, Reflect};
 
 #[wasm_bindgen(js_name = "AssetLockProof")]
 #[derive(Clone)]
@@ -144,27 +141,62 @@ impl AssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> WasmDppResult<JsValue> {
-        let json_value = self.0.to_raw_object()?;
-
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::default())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        match &self.0 {
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.clone()).to_object()
+            }
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.clone()).to_object()
+            }
+        }
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
     pub fn from_object(js_value: JsValue) -> WasmDppResult<AssetLockProofWasm> {
-        let value: Value =
-            from_value(js_value).map_err(|err| WasmDppError::serialization(err.to_string()))?;
-        let proof = AssetLockProof::try_from(value).map_err(WasmDppError::from)?;
-        Ok(AssetLockProofWasm(proof))
+        if let Ok(existing) = js_value.to_wasm::<AssetLockProofWasm>("AssetLockProof") {
+            return Ok(existing.clone());
+        }
+
+        if let Ok(chain) = js_value.to_wasm::<ChainAssetLockProofWasm>("ChainAssetLockProof") {
+            return Ok(AssetLockProofWasm::from(chain.clone()));
+        }
+
+        if let Ok(instant) = js_value.to_wasm::<InstantAssetLockProofWasm>("InstantAssetLockProof") {
+            return Ok(AssetLockProofWasm::from(instant.clone()));
+        }
+
+        if js_value.is_object() {
+            let object = Object::from(js_value.clone());
+            if Reflect::has(&object, &JsValue::from_str("instantLock"))
+                .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?
+            {
+                return InstantAssetLockProofWasm::from_object(js_value)
+                    .map(AssetLockProofWasm::from);
+            }
+
+            if Reflect::has(&object, &JsValue::from_str("outPoint"))
+                .map_err(|e| WasmDppError::invalid_argument(e.error_message()))?
+            {
+                return ChainAssetLockProofWasm::from_object(js_value)
+                    .map(AssetLockProofWasm::from);
+            }
+        }
+
+        Err(WasmDppError::invalid_argument(
+            "Unsupported AssetLockProof object".to_string(),
+        ))
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
-        let json_value = self.0.to_raw_object()?;
-        json_value
-            .serialize(&serde_wasm_bindgen::Serializer::json_compatible())
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        match &self.0 {
+            AssetLockProof::Chain(chain) => {
+                ChainAssetLockProofWasm::from(chain.clone()).to_json()
+            }
+            AssetLockProof::Instant(instant) => {
+                InstantAssetLockProofWasm::from(instant.clone()).to_json()
+            }
+        }
     }
 
     #[wasm_bindgen(js_name = "fromJSON")]

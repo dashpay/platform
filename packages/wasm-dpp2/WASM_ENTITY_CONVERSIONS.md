@@ -18,17 +18,17 @@ This catalog helps track which entities already expose these conversions and whi
 Implementation plan:
 We should go one by one and report current status and what we have in rs-dpp for this structure. then tell me what you planning to do. get conformation and proceed with implementation. when it's ready and I reviewed, you implement tests and I review and make sure they are good. when it's finished add a checkmark here that we finished with it. then we go to the next one.
 
-BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no signature args) and exposes object/JSON converters alongside bytes/base64/hex helpers.
+BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no signature args) and exposes object/JSON converters alongside bytes/base64/hex helpers. As we normalize entities, remove duplicate/legacy conversion helpers (`fromRawObject`, `from_value`, `to_value`, etc.) in favor of the standard `fromObject`/`fromJSON`/`fromBytes` surface.
 
 | Entity | Source file | `to*` methods | `from*` methods |
 | --- | --- | --- | --- |
 | ✅ `AssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/proof.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
 | 🔸 `AuthorizedActionTakersWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/authorized_action_takers.rs` | — | — |
 | `BatchTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batch_transition.rs` | toBase64, toBytes, toHex, toObject, toJSON, toStateTransition | fromBase64, fromBatchedTransitions, fromBytes, fromHex, fromJSON, fromObject, fromStateTransition |
-| `BatchedTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/batched_transition.rs` | toTransition | — |
-| `BlockBasedDistributionWasm` | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
-| `BlockInfoWasm` | `packages/wasm-dpp2/src/block.rs` | — | — |
-| `ChainAssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/chain.rs` | — | fromRawObject |
+| 🔸 `BatchedTransitionWasm` (skipped) | `packages/wasm-dpp2/src/state_transitions/batch/batched_transition.rs` | toTransition | — |
+| 🔸 `BlockBasedDistributionWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
+| 🔸 `BlockInfoWasm` (skipped) | `packages/wasm-dpp2/src/block.rs` | — | — |
+| `ChainAssetLockProofWasm` | `packages/wasm-dpp2/src/asset_lock_proof/chain.rs` | toBytes, toJSON, toObject | fromBytes, fromJSON, fromObject, fromRawObject |
 | `ChangeControlRulesWasm` | `packages/wasm-dpp2/src/tokens/configuration/change_control_rules.rs` | — | — |
 | `ConsensusErrorWasm` | `packages/wasm-dpp2/src/consensus_error.rs` | — | — |
 | `ContenderWithSerializedDocumentWasm` | `packages/wasm-dpp2/src/voting/contender.rs` | — | — |
@@ -56,7 +56,7 @@ BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no 
 | `DocumentTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/document_transition.rs` | — | — |
 | `DocumentUpdatePriceTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/document_transitions/update_price.rs` | toDocumentTransition | fromDocumentTransition |
 | `DocumentWasm` | `packages/wasm-dpp2/src/data_contract/document/model.rs` | — | — |
-| `EpochBasedDistributionWasm` | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
+| 🔸 `EpochBasedDistributionWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
 | `ExtendedEpochInfoWasm` | `packages/wasm-dpp2/src/epoch/extended_epoch_info.rs` | — | — |
 | `FinalizedEpochInfoWasm` | `packages/wasm-dpp2/src/epoch/finalized_epoch_info.rs` | — | — |
 | `GroupActionEventWasm` | `packages/wasm-dpp2/src/group/action_event.rs` | — | — |
@@ -86,7 +86,7 @@ BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no 
 | `RewardDistributionTypeWasm` | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
 | `SharedEncryptedNoteWasm` | `packages/wasm-dpp2/src/tokens/encrypted_note/shared_encrypted_note.rs` | — | — |
 | `StateTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/base/state_transition.rs` | toBase64, toBytes, toHex | fromBase64, fromBytes, fromHex |
-| `TimeBasedDistributionWasm` | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
+| 🔸 `TimeBasedDistributionWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
 | `TokenBaseTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/token_base_transition.rs` | — | — |
 | `TokenBurnTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/token_transitions/token_burn.rs` | — | — |
 | `TokenClaimTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/token_transitions/token_claim.rs` | — | — |

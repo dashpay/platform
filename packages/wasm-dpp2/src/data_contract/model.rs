@@ -208,12 +208,7 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value).map_err(|err| {
-            WasmDppError::serialization(format!(
-                "unable to deserialize JSON value for DataContract.fromJSON: {}",
-                err
-            ))
-        })?;
+        let json_value: JsonValue = js_value.with_serde_to_json_value()?;
 
         let contract =
             DataContract::from_json(json_value, full_validation, &platform_version.into())
@@ -233,8 +228,7 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let json_value: JsonValue = serde_wasm_bindgen::from_value(js_value)
-            .map_err(|err| WasmDppError::serialization(err.to_string()))?;
+        let json_value: JsonValue = js_value.with_serde_to_json_value()?;
 
         let contract =
             DataContract::from_json(json_value, full_validation, &platform_version.into())
@@ -319,7 +313,7 @@ impl DataContractWasm {
             false => PlatformVersionWasm::try_from(js_platform_version)?,
         };
 
-        let serializer = serde_wasm_bindgen::Serializer::default();
+        let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
 
         self.0
             .clone()
