@@ -9,119 +9,40 @@ mod value_conversion;
 mod version;
 
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
+use crate::fee::Credits;
+use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
+use crate::identity::KeyOfType;
+use crate::prelude::UserFeeIncrease;
 use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
-use crate::fee::Credits;
-use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::{Identity, KeyOfType};
-use crate::prelude::{Identifier, UserFeeIncrease};
 
-use crate::identity::accessors::IdentityGettersV0;
-use crate::identity::state_transition::AssetLockProved;
-use crate::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
-use crate::version::PlatformVersion;
-use crate::ProtocolError;
+mod property_names {
+    pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
+    pub const OUTPUTS: &str = "outputs";
+    pub const OUTPUT_PAYING_FEES: &str = "outputPayingFees";
+    pub const SIGNATURE: &str = "signature";
+    pub const PROTOCOL_VERSION: &str = "protocolVersion";
+    pub const TRANSITION_TYPE: &str = "type";
+}
 
 #[derive(Debug, Clone, PartialEq, Encode, Decode, PlatformSignable)]
 #[cfg_attr(
     feature = "state-transition-serde-conversion",
     derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase"),
-    serde(try_from = "AddressFundingFromAssetLockTransitionV0Inner")
+    serde(rename_all = "camelCase")
 )]
-// There is a problem deriving bincode for a borrowed vector
-// Hence we set to do it somewhat manually inside the PlatformSignable proc macro
-// Instead of inside of bincode_derive
-#[platform_signable(derive_bincode_with_borrowed_vec)]
 #[derive(Default)]
 pub struct AddressFundingFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
     pub outputs: BTreeMap<KeyOfType, Credits>,
-    /// The output that will pay fees
-    pub outputPayingFees: u16,
+    /// The index of the output that will pay fees
+    pub output_paying_fees: u16,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
-}
-
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Deserialize),
-    serde(rename_all = "camelCase")
-)]
-struct AddressFundingFromAssetLockTransitionV0Inner {
-    // Own ST fields
-    public_keys: Vec<IdentityPublicKeyInCreation>,
-    asset_lock_proof: AssetLockProof,
-    // Generic identity ST fields
-    user_fee_increase: UserFeeIncrease,
-    signature: BinaryData,
-}
-
-impl TryFrom<AddressFundingFromAssetLockTransitionV0Inner> for AddressFundingFromAssetLockTransitionV0 {
-    type Error = ProtocolError;
-
-    fn try_from(value: AddressFundingFromAssetLockTransitionV0Inner) -> Result<Self, Self::Error> {
-        let AddressFundingFromAssetLockTransitionV0Inner {
-            public_keys,
-            asset_lock_proof,
-            user_fee_increase,
-            signature,
-        } = value;
-        let identity_id = asset_lock_proof.create_identifier()?;
-        Ok(Self {
-            public_keys,
-            asset_lock_proof,
-            user_fee_increase,
-            signature,
-            identity_id,
-        })
-    }
-}
-
-impl AddressFundingFromAssetLockTransitionV0 {
-    pub fn try_from_identity_v0(
-        identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-    ) -> Result<Self, ProtocolError> {
-        let mut address_funding_from_asset_lock_transition = AddressFundingFromAssetLockTransitionV0::default();
-
-        let public_keys = identity
-            .public_keys()
-            .values()
-            .map(|public_key| public_key.into())
-            .collect::<Vec<IdentityPublicKeyInCreation>>();
-        address_funding_from_asset_lock_transition.set_public_keys(public_keys);
-
-        address_funding_from_asset_lock_transition.set_asset_lock_proof(asset_lock_proof)?;
-
-        Ok(address_funding_from_asset_lock_transition)
-    }
-
-    pub fn try_from_identity(
-        identity: &Identity,
-        asset_lock_proof: AssetLockProof,
-        platform_version: &PlatformVersion,
-    ) -> Result<Self, ProtocolError> {
-        match platform_version
-            .dpp
-            .state_transition_conversion_versions
-            .identity_to_address_funding_from_asset_lock_transition
-        {
-            0 => Self::try_from_identity_v0(identity, asset_lock_proof),
-            version => Err(ProtocolError::UnknownVersionMismatch {
-                method: "AddressFundingFromAssetLockTransitionV0::try_from_identity".to_string(),
-                known_versions: vec![0],
-                received: version,
-            }),
-        }
-    }
 }

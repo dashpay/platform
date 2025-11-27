@@ -1,59 +1,61 @@
 mod v0;
 
+#[cfg(feature = "state-transition-signing")]
+use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
+use crate::fee::Credits;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::IdentityPublicKey;
+use crate::identity::KeyOfType;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::UserFeeIncrease;
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionType;
+use crate::{
+    prelude::UserFeeIncrease,
+    state_transition::{
+        address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0,
+        StateTransition,
+    },
+    ProtocolError,
+};
 #[cfg(feature = "state-transition-signing")]
-use crate::version::PlatformVersion;
-#[cfg(feature = "state-transition-signing")]
-use crate::{BlsModule, ProtocolError};
+use platform_version::version::PlatformVersion;
+
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
-        identity: &Identity,
+    fn try_from_asset_lock(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        signer: &S,
-        bls: &impl BlsModule,
+        outputs: BTreeMap<KeyOfType, Credits>,
+        output_paying_fees: u16,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         match platform_version
             .dpp
             .state_transition_conversion_versions
-            .identity_to_address_funding_from_asset_lock_transition_with_signer
+            .address_funding_from_asset_lock_transition
         {
-            0 => Ok(AddressFundingFromAssetLockTransitionV0::try_from_identity_with_signer(
-                identity,
-                asset_lock_proof,
-                asset_lock_proof_private_key,
-                signer,
-                bls,
-                user_fee_increase,
-                platform_version,
-            )?),
-            v => Err(ProtocolError::UnknownVersionError(format!(
-                "Unknown AddressFundingFromAssetLockTransition version for try_from_identity_with_signer {v}"
-            ))),
+            0 => Ok(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                    asset_lock_proof,
+                    asset_lock_proof_private_key,
+                    outputs,
+                    output_paying_fees,
+                    user_fee_increase,
+                    platform_version,
+                )?,
+            ),
+            version => Err(ProtocolError::UnknownVersionMismatch {
+                method: "AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer"
+                    .to_string(),
+                known_versions: vec![0],
+                received: version,
+            }),
         }
-    }
-
-    fn get_type() -> StateTransitionType {
-        StateTransitionType::IdentityCreate
     }
 }

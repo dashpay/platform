@@ -6,13 +6,12 @@ use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionType},
 };
 
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
 
-use crate::state_transition::StateTransitionType::IdentityCreate;
 use crate::version::FeatureVersion;
 
 impl From<AddressFundingFromAssetLockTransitionV0> for StateTransition {
@@ -29,17 +28,23 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransitionV0 {
 
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
-        IdentityCreate
+        StateTransitionType::AddressFundingFromAssetLock
     }
 
-    /// Returns ID of the created contract
+    /// Returns IDs of the modified data - the output addresses
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.identity_id]
+        self.outputs
+            .keys()
+            .map(|key| Identifier::from(key.unique_id()))
+            .collect()
     }
 
-    /// this is based on the asset lock
+    /// this is based on the asset lock proof
     fn unique_identifiers(&self) -> Vec<String> {
-        vec![BASE64_STANDARD.encode(self.identity_id)]
+        self.outputs
+            .keys()
+            .map(|key| BASE64_STANDARD.encode(key.unique_id()))
+            .collect()
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {
@@ -63,12 +68,5 @@ impl StateTransitionSingleSigned for AddressFundingFromAssetLockTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
-    }
-}
-
-impl StateTransitionOwned for AddressFundingFromAssetLockTransitionV0 {
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 }

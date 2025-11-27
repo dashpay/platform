@@ -1,13 +1,13 @@
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionOwned, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
 
 impl StateTransitionLike for AddressFundingFromAssetLockTransition {
-    /// Returns ID of the created contract
+    /// Returns IDs of the modified data - the output addresses
     fn modified_data_ids(&self) -> Vec<Identifier> {
         match self {
             AddressFundingFromAssetLockTransition::V0(transition) => transition.modified_data_ids(),
@@ -19,10 +19,13 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransition {
             AddressFundingFromAssetLockTransition::V0(_) => 0,
         }
     }
+
     /// returns the type of State Transition
     fn state_transition_type(&self) -> StateTransitionType {
         match self {
-            AddressFundingFromAssetLockTransition::V0(transition) => transition.state_transition_type(),
+            AddressFundingFromAssetLockTransition::V0(transition) => {
+                transition.state_transition_type()
+            }
         }
     }
 
@@ -32,6 +35,7 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransition {
             AddressFundingFromAssetLockTransition::V0(transition) => transition.user_fee_increase(),
         }
     }
+
     /// set a fee multiplier
     fn set_user_fee_increase(&mut self, user_fee_increase: UserFeeIncrease) {
         match self {
@@ -43,7 +47,9 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransition {
 
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
-            AddressFundingFromAssetLockTransition::V0(transition) => transition.unique_identifiers(),
+            AddressFundingFromAssetLockTransition::V0(transition) => {
+                transition.unique_identifiers()
+            }
         }
     }
 }
@@ -55,24 +61,21 @@ impl StateTransitionSingleSigned for AddressFundingFromAssetLockTransition {
             AddressFundingFromAssetLockTransition::V0(transition) => transition.signature(),
         }
     }
+
     /// set a new signature
     fn set_signature(&mut self, signature: BinaryData) {
         match self {
-            AddressFundingFromAssetLockTransition::V0(transition) => transition.set_signature(signature),
+            AddressFundingFromAssetLockTransition::V0(transition) => {
+                transition.set_signature(signature)
+            }
         }
     }
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         match self {
-            AddressFundingFromAssetLockTransition::V0(transition) => transition.set_signature_bytes(signature),
-        }
-    }
-}
-
-impl StateTransitionOwned for AddressFundingFromAssetLockTransition {
-    fn owner_id(&self) -> Identifier {
-        match self {
-            AddressFundingFromAssetLockTransition::V0(transition) => transition.owner_id(),
+            AddressFundingFromAssetLockTransition::V0(transition) => {
+                transition.set_signature_bytes(signature)
+            }
         }
     }
 }

@@ -26,7 +26,8 @@ impl IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        if self.inputs().len() > platform_version.dpp.state_transitions.max_address_inputs as usize {
+        if self.inputs().len() > platform_version.dpp.state_transitions.max_address_inputs as usize
+        {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 BasicError::TransitionOverMaxInputsError(TransitionOverMaxInputsError::new(
                     self.inputs().len().min(u16::MAX as usize) as u16,

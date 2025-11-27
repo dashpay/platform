@@ -3,7 +3,7 @@ mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
-pub mod proved;
+mod proved;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
@@ -56,8 +56,9 @@ impl AddressFundingFromAssetLockTransition {
     pub fn default_versioned(platform_version: &PlatformVersion) -> Result<Self, ProtocolError> {
         match platform_version
             .dpp
-            .identity_versions
-            .identity_structure_version
+            .state_transition_serialization_versions
+            .address_funding_from_asset_lock_state_transition
+            .default_current_version
         {
             0 => Ok(AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0::default(),
@@ -73,11 +74,11 @@ impl AddressFundingFromAssetLockTransition {
 
 impl StateTransitionFieldTypes for AddressFundingFromAssetLockTransition {
     fn signature_property_paths() -> Vec<&'static str> {
-        vec![SIGNATURE, PUBLIC_KEYS_SIGNATURE]
+        vec![SIGNATURE]
     }
 
     fn identifiers_property_paths() -> Vec<&'static str> {
-        vec![IDENTITY_ID]
+        vec![]
     }
 
     fn binary_property_paths() -> Vec<&'static str> {

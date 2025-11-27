@@ -26,6 +26,7 @@ pub struct DPPStateTransitionSerializationVersions {
     pub document_update_price_state_transition: DocumentFeatureVersionBounds,
     pub document_purchase_state_transition: DocumentFeatureVersionBounds,
     pub address_funds_transfer_state_transition: FeatureVersionBounds,
+    pub address_funding_from_asset_lock_state_transition: FeatureVersionBounds,
 }
 
 #[derive(Clone, Debug, Default)]

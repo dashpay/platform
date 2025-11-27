@@ -15,7 +15,9 @@ impl AssetLockProved for AddressFundingFromAssetLockTransition {
         asset_lock_proof: AssetLockProof,
     ) -> Result<(), ProtocolError> {
         match self {
-            AddressFundingFromAssetLockTransition::V0(v0) => v0.set_asset_lock_proof(asset_lock_proof),
+            AddressFundingFromAssetLockTransition::V0(v0) => {
+                v0.set_asset_lock_proof(asset_lock_proof)
+            }
         }
     }
 

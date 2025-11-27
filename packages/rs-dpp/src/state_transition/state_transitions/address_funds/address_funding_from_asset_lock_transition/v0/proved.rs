@@ -8,10 +8,7 @@ impl AssetLockProved for AddressFundingFromAssetLockTransitionV0 {
         &mut self,
         asset_lock_proof: AssetLockProof,
     ) -> Result<(), ProtocolError> {
-        self.identity_id = asset_lock_proof.create_identifier()?;
-
         self.asset_lock_proof = asset_lock_proof;
-
         Ok(())
     }
 

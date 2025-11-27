@@ -67,12 +67,16 @@ impl StateTransitionValueConvert<'_> for AddressFundingFromAssetLockTransition {
                 platform_version
                     .dpp
                     .state_transition_serialization_versions
-                    .contract_create_state_transition
+                    .address_funding_from_asset_lock_state_transition
                     .default_current_version
             });
 
         match version {
-            0 => Ok(AddressFundingFromAssetLockTransitionV0::from_object(raw_object, platform_version)?.into()),
+            0 => Ok(AddressFundingFromAssetLockTransitionV0::from_object(
+                raw_object,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown AddressFundingFromAssetLockTransition version {n}"
             ))),
@@ -90,14 +94,16 @@ impl StateTransitionValueConvert<'_> for AddressFundingFromAssetLockTransition {
                 platform_version
                     .dpp
                     .state_transition_serialization_versions
-                    .contract_create_state_transition
+                    .address_funding_from_asset_lock_state_transition
                     .default_current_version
             });
 
         match version {
-            0 => Ok(
-                AddressFundingFromAssetLockTransitionV0::from_value_map(raw_value_map, platform_version)?.into(),
-            ),
+            0 => Ok(AddressFundingFromAssetLockTransitionV0::from_value_map(
+                raw_value_map,
+                platform_version,
+            )?
+            .into()),
             n => Err(ProtocolError::UnknownVersionError(format!(
                 "Unknown AddressFundingFromAssetLockTransition version {n}"
             ))),

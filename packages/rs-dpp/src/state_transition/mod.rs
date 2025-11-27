@@ -74,6 +74,8 @@ use crate::identity::{IdentityPublicKey, KeyType};
 use crate::identity::{KeyID, SecurityLevel};
 use crate::prelude::{AssetLockProof, UserFeeIncrease};
 use crate::serialization::{PlatformDeserializable, Signable};
+use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use crate::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 use crate::state_transition::address_funds_transfer_transition::{
     AddressFundsTransferTransition, AddressFundsTransferTransitionSignable,
 };
@@ -131,8 +133,6 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
-use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
-use crate::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
