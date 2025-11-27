@@ -6,9 +6,9 @@ use rs_dapi_client::transport::{
     AppliedRequestSettings, BoxFuture, TransportError, TransportRequest,
 };
 
+use crate::platform::query::Query;
 use crate::platform::Identifier;
 use crate::Error;
-use crate::platform::query::Query;
 
 /// Request that is used to query identities' contract keys
 #[derive(Debug, Clone, dapi_grpc_macros::Mockable)]

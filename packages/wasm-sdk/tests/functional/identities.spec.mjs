@@ -75,7 +75,7 @@ describe('Identity queries', function describeBlock() {
     const keysArray = response.data;
     if (Array.isArray(keysArray) && keysArray.length > 0) {
       for (const entry of keysArray) {
-        const keys = entry.keys;
+        const { keys } = entry;
         for (const key of keys) {
           expect(key.purpose).to.match(/Authentication/i);
         }

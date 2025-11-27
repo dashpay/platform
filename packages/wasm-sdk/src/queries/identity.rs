@@ -99,7 +99,7 @@ impl IdentityContractKeysWasm {
 impl IdentityContractKeysWasm {
     #[wasm_bindgen(getter = "identityId")]
     pub fn identity_id(&self) -> IdentifierWasm {
-        self.identity_id.clone()
+        self.identity_id
     }
 
     #[wasm_bindgen(getter = "keys")]
@@ -955,12 +955,12 @@ impl WasmSdk {
                 }
 
                 if !identity_keys.is_empty() {
-                let identity_id_str = IdentifierWasm::from(identity_id);
-                responses.push(IdentityContractKeysWasm::new(
-                    identity_id_str,
-                    identity_keys,
-                ));
-            }
+                    let identity_id_str = IdentifierWasm::from(identity_id);
+                    responses.push(IdentityContractKeysWasm::new(
+                        identity_id_str,
+                        identity_keys,
+                    ));
+                }
             }
         }
 
@@ -1408,8 +1408,10 @@ impl WasmSdk {
                 }
 
                 if !identity_keys.is_empty() {
-                    all_responses
-                        .push(IdentityContractKeysWasm::new(IdentifierWasm::from(identity_id), identity_keys));
+                    all_responses.push(IdentityContractKeysWasm::new(
+                        IdentifierWasm::from(identity_id),
+                        identity_keys,
+                    ));
                 }
             }
         }

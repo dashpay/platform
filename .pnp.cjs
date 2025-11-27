@@ -8949,7 +8949,7 @@ const RAW_RUNTIME_STATE =
           ["memory-streams", "npm:0.1.3"],\
           ["mocha", "npm:11.1.0"],\
           ["mocha-sinon", "virtual:595d7482cc8ddf98ee6aef33fc48b46393554ab5f17f851ef62e6e39315e53666c3e66226b978689aa0bc7f1e83a03081511a21db1c381362fe67614887077f9#npm:2.1.2"],\
-          ["node-forge", "npm:1.3.1"],\
+          ["node-forge", "npm:1.3.2"],\
           ["node-graceful", "npm:3.1.0"],\
           ["oclif", "npm:4.0.3"],\
           ["pretty-bytes", "npm:5.6.0"],\
@@ -15105,10 +15105,10 @@ const RAW_RUNTIME_STATE =
       }]\
     ]],\
     ["node-forge", [\
-      ["npm:1.3.1", {\
-        "packageLocation": "./.yarn/cache/node-forge-npm-1.3.1-f31fd566cc-05bab68686.zip/node_modules/node-forge/",\
+      ["npm:1.3.2", {\
+        "packageLocation": "./.yarn/cache/node-forge-npm-1.3.2-39b26c0214-dcc54aaffe.zip/node_modules/node-forge/",\
         "packageDependencies": [\
-          ["node-forge", "npm:1.3.1"]\
+          ["node-forge", "npm:1.3.2"]\
         ],\
         "linkType": "HARD"\
       }]\
