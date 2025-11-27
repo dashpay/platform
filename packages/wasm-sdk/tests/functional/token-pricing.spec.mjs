@@ -9,8 +9,8 @@ describe('Token pricing', function describeTokenPricing() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 

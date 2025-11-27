@@ -1,5 +1,5 @@
 import { EvoSDK, DataContract } from '../../dist/evo-sdk.module.js';
-import { TEST_IDS } from '../fixtures/testnet.mjs';
+import { TEST_IDS } from '../fixtures/local.mjs';
 
 describe('Data Contracts', function dataContractsSuite() {
   let sdk;
@@ -7,7 +7,7 @@ describe('Data Contracts', function dataContractsSuite() {
   this.timeout(60000);
 
   before(async () => {
-    sdk = EvoSDK.testnetTrusted();
+    sdk = EvoSDK.localTrusted();
     await sdk.connect();
   });
 
@@ -32,6 +32,7 @@ describe('Data Contracts', function dataContractsSuite() {
   });
 
   it('getMany() returns multiple contracts', async () => {
+    if (!TEST_IDS.dataContractId) return this.skip();
     const res = await sdk.contracts.getMany([TEST_IDS.dataContractId]);
     expect(res).to.exist();
   });

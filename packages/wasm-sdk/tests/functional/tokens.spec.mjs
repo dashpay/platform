@@ -15,7 +15,8 @@ describe('Token queries', function describeTokenQueries() {
 
   before(async () => {
     await init();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 

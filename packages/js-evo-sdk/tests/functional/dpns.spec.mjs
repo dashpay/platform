@@ -1,12 +1,12 @@
 import { EvoSDK } from '../../dist/evo-sdk.module.js';
-import { TEST_IDS } from '../fixtures/testnet.mjs';
+import { TEST_IDS } from '../fixtures/local.mjs';
 
 describe('DPNS', function dpnsSuite() {
   this.timeout(60000);
   let sdk;
 
   before(async () => {
-    sdk = EvoSDK.testnetTrusted();
+    sdk = EvoSDK.localTrusted();
     await sdk.connect();
   });
 

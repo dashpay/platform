@@ -10,8 +10,8 @@ describe('Epochs and evonode blocks', function describeEpochs() {
 
   before(async () => {
     await init();
-    await sdk.WasmSdk.prefetchTrustedQuorumsTestnet();
-    builder = sdk.WasmSdkBuilder.testnetTrusted();
+    await sdk.WasmSdk.prefetchTrustedQuorumsLocal();
+    builder = sdk.WasmSdkBuilder.localTrusted();
     client = await builder.build();
   });
 
