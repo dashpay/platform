@@ -61,7 +61,7 @@ Context and gaps to close before we can point the wasm-sdk and js-evo-sdk functi
 - Add the service to the local preset docker-compose, sourcing Core RPC credentials/host from the existing `local_seed` config and exposing an HTTPS port to the host for SDKs/tests to hit. Keep other nodes unaware of it unless explicitly enabled.
 - Provide a config toggle/flag (e.g., `--enable-quorum-list` or a preset-scoped setting) so CI/local flows can opt in; `dashmate status` should surface whether the service is running when the local preset is active.
 - When enabled, ensure the local SDK network config points to this service by default (either via preset defaults or env var wiring) so wasm/js functional suites don’t need manual URLs.
-- Config toggle landed: set `platform.quorumList.enabled=true` (profile `platform-quorum`, defaults to port `2444` bound to `127.0.0.1`; the sidecar binds internally to `0.0.0.0`). Local setup now enables it on `local_seed` and wires Core RPC credentials from the dedicated `quorum_list` RPC user. Compose service name: `quorum_list`.
+- Config toggle landed: set `platform.quorumList.enabled=true` (profile `platform-quorum`, defaults to port `2444` bound to `127.0.0.1`; the sidecar binds internally to `0.0.0.0`). Local setup now enables it on `local_seed` and wires Core RPC credentials from the dedicated `quorum_list` RPC user. Compose service name: `quorum_list` (see `packages/dashmate/docs/services/quorum_list.md`).
 
 ## Temporary guidance
 

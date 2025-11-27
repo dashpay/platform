@@ -127,6 +127,24 @@ impl WasmTrustedContext {
         })
     }
 
+    pub fn new_local() -> Result<Self, ContextProviderError> {
+        Self::new_local_with_url("http://127.0.0.1:2444")
+    }
+
+    pub fn new_local_with_url(base_url: &str) -> Result<Self, ContextProviderError> {
+        let inner = rs_sdk_trusted_context_provider::TrustedHttpContextProvider::new_with_url(
+            dash_sdk::dpp::dashcore::Network::Regtest,
+            base_url.to_string(),
+            std::num::NonZeroUsize::new(100).unwrap(),
+        )
+        .map_err(|e| ContextProviderError::Generic(e.to_string()))?
+        .with_refetch_if_not_found(false);
+
+        Ok(Self {
+            inner: std::sync::Arc::new(inner),
+        })
+    }
+
     /// Pre-fetch quorum information to populate the cache
     pub async fn prefetch_quorums(&self) -> Result<(), ContextProviderError> {
         self.inner.update_quorum_caches().await.map_err(|e| {

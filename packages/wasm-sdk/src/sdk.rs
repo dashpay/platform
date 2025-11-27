@@ -14,6 +14,10 @@ pub(crate) static MAINNET_TRUSTED_CONTEXT: Lazy<
 pub(crate) static TESTNET_TRUSTED_CONTEXT: Lazy<
     Mutex<Option<crate::context_provider::WasmTrustedContext>>,
 > = Lazy::new(|| Mutex::new(None));
+pub(crate) static LOCAL_TRUSTED_CONTEXT: Lazy<
+    Mutex<Option<crate::context_provider::WasmTrustedContext>>,
+> = Lazy::new(|| Mutex::new(None));
+const DEFAULT_LOCAL_QUORUM_URL: &str = "http://127.0.0.1:2444";
 
 #[wasm_bindgen]
 pub struct WasmSdk(Sdk);
@@ -95,6 +99,25 @@ impl WasmSdk {
 
         // Store the context for later use
         *TESTNET_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
+
+        Ok(())
+    }
+
+    #[wasm_bindgen(js_name = "prefetchTrustedQuorumsLocal")]
+    pub async fn prefetch_trusted_quorums_local(quorum_url: Option<String>) -> Result<(), WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let quorum_url = quorum_url.unwrap_or_else(|| DEFAULT_LOCAL_QUORUM_URL.to_string());
+
+        let trusted_context = WasmTrustedContext::new_local_with_url(&quorum_url)
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        trusted_context
+            .prefetch_quorums()
+            .await
+            .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))?;
+
+        *LOCAL_TRUSTED_CONTEXT.lock().unwrap() = Some(trusted_context);
 
         Ok(())
     }
@@ -216,10 +239,21 @@ impl WasmSdkBuilder {
                     .with_context_provider(context)
             }
             Network::Regtest => {
-                // No trusted quorum source for local; use non-trusted context
+                let address_list = address_list.clone();
+
+                let context = {
+                    let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+                    guard.clone()
+                }
+                .map(Ok)
+                .unwrap_or_else(|| {
+                    WasmTrustedContext::new_local()
+                        .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+                })?;
+
                 SdkBuilder::new(address_list)
                     .with_network(network)
-                    .with_context_provider(WasmContext {})
+                    .with_context_provider(context)
             }
             _ => unreachable!("Network already validated to mainnet, testnet or local"),
         };
@@ -460,9 +494,42 @@ impl WasmSdkBuilder {
         let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
             .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
-            .with_context_provider(WasmContext {});
+            .with_context_provider(
+                LOCAL_TRUSTED_CONTEXT
+                    .lock()
+                    .unwrap()
+                    .clone()
+                    .unwrap_or_else(|| {
+                        // Fallback to non-trusted context if prefetch was not called
+                        tracing::warn!("Local trusted context not prefetched; running without trusted quorums");
+                        WasmContext {}
+                    }),
+            );
 
         Self(sdk_builder)
+    }
+
+    #[wasm_bindgen(js_name = "localTrusted")]
+    pub fn new_local_trusted() -> Result<Self, WasmSdkError> {
+        use crate::context_provider::WasmTrustedContext;
+
+        let trusted_context = {
+            let guard = LOCAL_TRUSTED_CONTEXT.lock().unwrap();
+            guard.clone()
+        }
+        .map(Ok)
+        .unwrap_or_else(|| {
+            WasmTrustedContext::new_local()
+                .map_err(|e| WasmSdkError::from(dash_sdk::Error::from(e)))
+        })?;
+
+        let local_addresses = vec!["https://127.0.0.1:2443".parse().unwrap()];
+        let address_list = dash_sdk::sdk::AddressList::from_iter(local_addresses);
+        let sdk_builder = SdkBuilder::new(address_list)
+            .with_network(dash_sdk::dpp::dashcore::Network::Regtest)
+            .with_context_provider(trusted_context);
+
+        Ok(Self(sdk_builder))
     }
 
     #[wasm_bindgen(js_name = "mainnetTrusted")]

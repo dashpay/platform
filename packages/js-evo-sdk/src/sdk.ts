@@ -14,6 +14,7 @@ import { VotingFacade } from './voting/facade.js';
 export interface ConnectionOptions {
   version?: number;
   proofs?: boolean;
+  quorumUrl?: string;
   // Configure tracing/logging emitted from the underlying Wasm SDK.
   // Accepts simple levels: 'off' | 'error' | 'warn' | 'info' | 'debug' | 'trace'
   // or a full EnvFilter string like: 'wasm_sdk=debug,rs_dapi_client=warn'
@@ -27,7 +28,7 @@ export interface ConnectionOptions {
 }
 
 export interface EvoSDKOptions extends ConnectionOptions {
-  network?: 'testnet' | 'mainnet';
+  network?: 'testnet' | 'mainnet' | 'local';
   trusted?: boolean;
   // Custom masternode addresses. When provided, network and trusted options are ignored.
   // Example: ['https://127.0.0.1:1443', 'https://192.168.1.100:1443']
@@ -83,7 +84,7 @@ export class EvoSDK {
     if (this.wasmSdk) return; // idempotent
     await initWasm();
 
-    const { network, trusted, version, proofs, settings, logs, addresses } = this.options;
+    const { network, trusted, version, proofs, settings, logs, addresses, quorumUrl } = this.options;
 
     let builder: wasm.WasmSdkBuilder;
 
@@ -94,6 +95,8 @@ export class EvoSDK {
         await wasm.WasmSdk.prefetchTrustedQuorumsMainnet();
       } else if (network === 'testnet') {
         await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
+      } else if (network === 'local') {
+        await wasm.WasmSdk.prefetchTrustedQuorumsLocal(quorumUrl ?? null);
       }
       builder = wasm.WasmSdkBuilder.withAddresses(addresses, network);
     } else if (network === 'mainnet') {
@@ -104,6 +107,11 @@ export class EvoSDK {
       await wasm.WasmSdk.prefetchTrustedQuorumsTestnet();
 
       builder = trusted ? wasm.WasmSdkBuilder.testnetTrusted() : wasm.WasmSdkBuilder.testnet();
+    } else if (network === 'local') {
+      // Default local dashmate gateway and quorum list sidecar
+      await wasm.WasmSdk.prefetchTrustedQuorumsLocal(quorumUrl ?? null);
+
+      builder = wasm.WasmSdkBuilder.local();
     } else {
       throw new Error(`Unknown network: ${network}`);
     }
@@ -144,6 +152,8 @@ export class EvoSDK {
   static mainnet(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', ...options }); }
   static testnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'testnet', trusted: true, ...options }); }
   static mainnetTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'mainnet', trusted: true, ...options }); }
+  static local(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
+  static localTrusted(options: ConnectionOptions = {}): EvoSDK { return new EvoSDK({ network: 'local', trusted: true, ...options }); }
 
   /**
    * Create an EvoSDK instance configured with specific masternode addresses.
@@ -159,7 +169,7 @@ export class EvoSDK {
    * await sdk.connect();
    * ```
    */
-  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
+  static withAddresses(addresses: string[], network: 'mainnet' | 'testnet' | 'local' = 'testnet', options: ConnectionOptions = {}): EvoSDK {
     return new EvoSDK({ addresses, network, ...options });
   }
 }
