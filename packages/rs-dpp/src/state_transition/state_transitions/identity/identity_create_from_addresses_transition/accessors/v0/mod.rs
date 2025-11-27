@@ -1,10 +1,4 @@
-use std::collections::BTreeMap;
-
-use crate::fee::Credits;
-use crate::identity::KeyOfType;
-use crate::prelude::KeyOfTypeNonce;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-use platform_value::Identifier;
 
 pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
     /// Get identity public keys

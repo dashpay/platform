@@ -10,7 +10,6 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         let IdentityCreateFromAddressesTransitionV0 {
             inputs,
             public_keys,
-            identity_id,
             user_fee_increase,
             ..
         } = value;
@@ -29,8 +28,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
     ) -> Result<Self, ConsensusError> {
         let IdentityCreateFromAddressesTransitionV0 {
             inputs,
-            public_keys,
-            identity_id,
+            public_keys, ,
             user_fee_increase,
             ..
         } = value;

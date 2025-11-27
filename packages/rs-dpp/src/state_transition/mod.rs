@@ -100,7 +100,6 @@ use crate::state_transition::errors::WrongPublicKeyPurposeError;
 use crate::state_transition::errors::{
     InvalidIdentityPublicKeyTypeError, PublicKeyMismatchError, StateTransitionIsNotSignedError,
 };
-use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::{
     IdentityCreateFromAddressesTransition, IdentityCreateFromAddressesTransitionSignable,
 };
@@ -132,6 +131,8 @@ use crate::state_transition::masternode_vote_transition::MasternodeVoteTransitio
 use crate::state_transition::state_transitions::document::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use state_transitions::document::batch_transition::batched_transition::token_transition::TokenTransition;
 pub use state_transitions::*;
+use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use crate::state_transition::address_funds_transfer_transition::accessors::AddressFundsTransferTransitionAccessorsV0;
 
 pub type GetDataContractSecurityLevelRequirementFn =
     fn(Identifier, String) -> Result<SecurityLevel, ProtocolError>;
@@ -152,6 +153,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreateFromAddresses(st) => st.$method($args),
             StateTransition::IdentityTopUpFromAddresses(st) => st.$method($args),
             StateTransition::AddressFundsTransfer(st) => st.$method($args),
+            StateTransition::AddressFundingFromAssetLock(st) => st.$method($args),
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -169,6 +171,7 @@ macro_rules! call_method {
             StateTransition::IdentityCreateFromAddresses(st) => st.$method(),
             StateTransition::IdentityTopUpFromAddresses(st) => st.$method(),
             StateTransition::AddressFundsTransfer(st) => st.$method(),
+            StateTransition::AddressFundingFromAssetLock(st) => st.$method(),
         }
     };
 }
@@ -189,6 +192,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreateFromAddresses(_) => None,
             StateTransition::IdentityTopUpFromAddresses(_) => None,
             StateTransition::AddressFundsTransfer(_) => None,
+            StateTransition::AddressFundingFromAssetLock(_) => None,
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -206,6 +210,7 @@ macro_rules! call_getter_method_identity_signed {
             StateTransition::IdentityCreateFromAddresses(_) => None,
             StateTransition::IdentityTopUpFromAddresses(_) => None,
             StateTransition::AddressFundsTransfer(_) => None,
+            StateTransition::AddressFundingFromAssetLock(_) => None,
         }
     };
 }
@@ -226,6 +231,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreateFromAddresses(_) => {}
             StateTransition::IdentityTopUpFromAddresses(_) => {}
             StateTransition::AddressFundsTransfer(_) => {}
+            StateTransition::AddressFundingFromAssetLock(_) => {}
         }
     };
     ($state_transition:expr, $method:ident ) => {
@@ -243,6 +249,7 @@ macro_rules! call_method_identity_signed {
             StateTransition::IdentityCreateFromAddresses(_) => {}
             StateTransition::IdentityTopUpFromAddresses(_) => {}
             StateTransition::AddressFundsTransfer(_) => {}
+            StateTransition::AddressFundingFromAssetLock(_) => {}
         }
     };
 }
@@ -274,6 +281,9 @@ macro_rules! call_errorable_method_identity_signed {
             StateTransition::AddressFundsTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "address funds transfer can not be called for identity signing".to_string(),
             )),
+            StateTransition::AddressFundingFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "address funding from asset lock can not be called for identity signing".to_string(),
+            )),
         }
     };
     ($state_transition:expr, $method:ident) => {
@@ -300,6 +310,9 @@ macro_rules! call_errorable_method_identity_signed {
             )),
             StateTransition::AddressFundsTransfer(_) => Err(ProtocolError::CorruptedCodeExecution(
                 "address funds transfer can not be called for identity signing".to_string(),
+            )),
+            StateTransition::AddressFundingFromAssetLock(_) => Err(ProtocolError::CorruptedCodeExecution(
+                "address funding from asset lock can not be called for identity signing".to_string(),
             )),
         }
     };
@@ -337,6 +350,7 @@ pub enum StateTransition {
     IdentityCreateFromAddresses(IdentityCreateFromAddressesTransition),
     IdentityTopUpFromAddresses(IdentityTopUpFromAddressesTransition),
     AddressFundsTransfer(AddressFundsTransferTransition),
+    AddressFundingFromAssetLock(AddressFundingFromAssetLockTransition),
 }
 
 impl OptionallyAssetLockProved for StateTransition {
@@ -416,7 +430,8 @@ impl StateTransition {
             StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
-            | StateTransition::AddressFundsTransfer(_) => 11..=LATEST_VERSION,
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::AddressFundingFromAssetLock(_) => 11..=LATEST_VERSION,
         }
     }
 
@@ -448,6 +463,15 @@ impl StateTransition {
                     .identities
                     .asset_locks
                     .required_asset_lock_duff_balance_for_processing_start_for_identity_top_up
+                    * CREDITS_PER_DUFF
+            }
+            StateTransition::AddressFundingFromAssetLock(_) => {
+                platform_version
+                    .dpp
+                    .state_transitions
+                    .identities
+                    .asset_locks
+                    .required_asset_lock_duff_balance_for_processing_start_for_address_funding
                     * CREDITS_PER_DUFF
             }
             _ => 0,
@@ -527,6 +551,7 @@ impl StateTransition {
             Self::IdentityCreateFromAddresses(_) => "IdentityCreateFromAddresses".to_string(),
             Self::IdentityTopUpFromAddresses(_) => "IdentityTopUpFromAddresses".to_string(),
             Self::AddressFundsTransfer(_) => "AddressFundsTransfer".to_string(),
+            Self::AddressFundingFromAssetLock(_) => "AddressFundingFromAssetLock".to_string(),
         }
     }
 
@@ -546,6 +571,7 @@ impl StateTransition {
             StateTransition::IdentityCreateFromAddresses(_) => None,
             StateTransition::IdentityTopUpFromAddresses(_) => None,
             StateTransition::AddressFundsTransfer(_) => None,
+            StateTransition::AddressFundingFromAssetLock(st) => Some(st.signature()),
         }
     }
 
@@ -553,6 +579,8 @@ impl StateTransition {
     pub fn required_number_of_private_keys(&self) -> u16 {
         match self {
             StateTransition::IdentityCreateFromAddresses(st) => st.inputs().len() as u16,
+            StateTransition::IdentityTopUpFromAddresses(st) => st.inputs().len() as u16,
+            StateTransition::AddressFundsTransfer(st) => st.inputs().len() as u16,
             _ => 1,
         }
     }
@@ -600,6 +628,7 @@ impl StateTransition {
             StateTransition::IdentityCreateFromAddresses(_) => None,
             StateTransition::IdentityTopUpFromAddresses(_) => None,
             StateTransition::AddressFundsTransfer(_) => None,
+            StateTransition::AddressFundingFromAssetLock(_) => None,
         }
     }
 
@@ -659,6 +688,10 @@ impl StateTransition {
             StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_) => false,
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                st.set_signature(signature);
+                true
+            }
         }
     }
 
@@ -795,6 +828,12 @@ impl StateTransition {
             StateTransition::AddressFundsTransfer(_) => {
                 return Err(ProtocolError::CorruptedCodeExecution(
                     "address funds transfer transition can not be called for identity signing"
+                        .to_string(),
+                ))
+            }
+            StateTransition::AddressFundingFromAssetLock(_) => {
+                return Err(ProtocolError::CorruptedCodeExecution(
+                    "address funding from asset lock transition can not be called for identity signing"
                         .to_string(),
                 ))
             }

@@ -20,7 +20,6 @@ use crate::version::drive_abci_versions::drive_abci_structure_versions::v1::DRIV
 use crate::version::drive_abci_versions::drive_abci_validation_versions::v6::DRIVE_ABCI_VALIDATION_VERSIONS_V6;
 use crate::version::drive_abci_versions::drive_abci_withdrawal_constants::v2::DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V2;
 use crate::version::drive_abci_versions::DriveAbciVersion;
-use crate::version::drive_versions::v5::DRIVE_VERSION_V5;
 use crate::version::drive_versions::v6::DRIVE_VERSION_V6;
 use crate::version::fee::v2::FEE_VERSION2;
 use crate::version::protocol_version::PlatformVersion;

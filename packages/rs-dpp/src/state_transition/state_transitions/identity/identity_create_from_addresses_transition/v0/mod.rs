@@ -16,7 +16,7 @@ use platform_serialization_derive::PlatformSignable;
 use crate::address_funds::AddressWitness;
 use crate::fee::Credits;
 use crate::identity::KeyOfType;
-use crate::prelude::{Identifier, KeyOfTypeNonce, UserFeeIncrease};
+use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreationSignable;
 use crate::ProtocolError;

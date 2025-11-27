@@ -2,7 +2,7 @@ use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use crate::state_transition::{
-    StateTransitionLike, StateTransitionOwned, StateTransitionType, StateTransitionWitnessSigned,
+    StateTransitionLike, StateTransitionType, StateTransitionWitnessSigned,
 };
 use crate::version::FeatureVersion;
 use platform_value::Identifier;
@@ -65,14 +65,6 @@ impl StateTransitionWitnessSigned for IdentityCreateFromAddressesTransition {
             IdentityCreateFromAddressesTransition::V0(transition) => {
                 transition.set_witnesses(witnesses)
             }
-        }
-    }
-}
-
-impl StateTransitionOwned for IdentityCreateFromAddressesTransition {
-    fn owner_id(&self) -> Identifier {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => transition.owner_id(),
         }
     }
 }

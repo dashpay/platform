@@ -1,4 +1,7 @@
-use crate::fee::Credits;
+use crate::{prelude::Identifier, state_transition::StateTransitionType};
+#[cfg(feature = "state-transition-signing")]
+use crate::{BlsModule, ProtocolError};
+
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
@@ -6,66 +9,60 @@ use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGetter
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
+use crate::identity::state_transition::AssetLockProved;
+#[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;
 #[cfg(feature = "state-transition-signing")]
+use crate::prelude::AssetLockProof;
+#[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
-use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
-use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use crate::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
+use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-use crate::state_transition::StateTransitionType;
-#[cfg(feature = "state-transition-signing")]
-use crate::{BlsModule, ProtocolError};
-use std::collections::BTreeMap;
 
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
-use crate::identity::KeyOfType;
-use crate::prelude::KeyOfTypeNonce;
-use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
+use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-use crate::state_transition::{StateTransitionAddressInputs, StateTransitionIdentityIdFromInputs};
 #[cfg(feature = "state-transition-signing")]
 use crate::version::PlatformVersion;
-
-impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
+impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
+    fn try_from_identity_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        input_private_keys: Vec<&[u8]>,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_proof_private_key: &[u8],
         signer: &S,
         bls: &impl BlsModule,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
-        let mut identity_create_from_addresses_transition =
-            IdentityCreateFromAddressesTransitionV0 {
-                inputs,
-                user_fee_increase,
-                ..Default::default()
-            };
+        let mut address_funding_from_asset_lock_transition = AddressFundingFromAssetLockTransitionV0 {
+            user_fee_increase,
+            ..Default::default()
+        };
         let public_keys = identity
             .public_keys()
             .values()
             .map(|public_key| public_key.clone().into())
             .collect();
-        identity_create_from_addresses_transition.set_public_keys(public_keys);
+        address_funding_from_asset_lock_transition.set_public_keys(public_keys);
+
+        address_funding_from_asset_lock_transition.set_asset_lock_proof(asset_lock_proof)?;
 
         //todo: remove clone
-        let state_transition: StateTransition =
-            identity_create_from_addresses_transition.clone().into();
+        let state_transition: StateTransition = address_funding_from_asset_lock_transition.clone().into();
 
         let key_signable_bytes = state_transition.signable_bytes()?;
 
-        // Sign with public keys
-        identity_create_from_addresses_transition
+        address_funding_from_asset_lock_transition
             .public_keys
             .iter_mut()
             .zip(identity.public_keys().iter())
@@ -77,24 +74,20 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
                 Ok::<(), ProtocolError>(())
             })?;
 
-        let mut state_transition: StateTransition =
-            identity_create_from_addresses_transition.into();
+        let mut state_transition: StateTransition = address_funding_from_asset_lock_transition.into();
 
-        // Sign with input private keys
-        for input_private_key in input_private_keys {
-            state_transition.sign_by_private_key(input_private_key, ECDSA_HASH160, bls)?;
-        }
+        state_transition.sign_by_private_key(asset_lock_proof_private_key, ECDSA_HASH160, bls)?;
 
         Ok(state_transition)
     }
 
     /// Get State Transition type
     fn get_type() -> StateTransitionType {
-        StateTransitionType::IdentityCreateFromAddresses
+        StateTransitionType::IdentityCreate
     }
 }
 
-impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddressesTransitionV0 {
+impl AddressFundingFromAssetLockTransitionAccessorsV0 for AddressFundingFromAssetLockTransitionV0 {
     /// Get identity public keys
     fn public_keys(&self) -> &[IdentityPublicKeyInCreation] {
         &self.public_keys
@@ -114,23 +107,14 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
         self.public_keys.append(public_keys);
     }
-}
 
-impl StateTransitionAddressInputs for IdentityCreateFromAddressesTransitionV0 {
-    /// Get inputs
-    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
-        &self.inputs
+    /// Returns identity id
+    fn identity_id(&self) -> Identifier {
+        self.identity_id
     }
 
-    /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
-        &mut self.inputs
-    }
-
-    /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
-        self.inputs = inputs;
+    /// Returns Owner ID
+    fn owner_id(&self) -> Identifier {
+        self.identity_id
     }
 }
-
-impl StateTransitionIdentityIdFromInputs for IdentityCreateFromAddressesTransitionV0 {}

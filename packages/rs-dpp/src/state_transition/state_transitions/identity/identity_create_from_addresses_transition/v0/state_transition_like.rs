@@ -5,7 +5,7 @@ use crate::state_transition::identity_create_from_addresses_transition::Identity
 use crate::state_transition::{StateTransition, StateTransitionWitnessSigned};
 use crate::{
     prelude::Identifier,
-    state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType},
+    state_transition::{StateTransitionLike, StateTransitionType},
 };
 
 use crate::state_transition::StateTransitionType::IdentityCreateFromAddresses;
@@ -29,7 +29,7 @@ impl StateTransitionLike for IdentityCreateFromAddressesTransitionV0 {
     }
     /// Returns ID of the created contract
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        vec![self.identity_id]
+        vec![]
     }
 
     /// each input must be unique in the mempool
@@ -56,12 +56,5 @@ impl StateTransitionWitnessSigned for IdentityCreateFromAddressesTransitionV0 {
 
     fn set_witnesses(&mut self, input_witnesses: Vec<AddressWitness>) {
         self.input_witnesses = input_witnesses;
-    }
-}
-
-impl StateTransitionOwned for IdentityCreateFromAddressesTransitionV0 {
-    /// Get owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
     }
 }
