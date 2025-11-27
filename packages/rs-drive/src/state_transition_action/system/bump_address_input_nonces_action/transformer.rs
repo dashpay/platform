@@ -1,10 +1,10 @@
-use dpp::fee::Credits;
 use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
 use crate::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNoncesAction, BumpAddressInputNoncesActionV0,
 };
+use dpp::fee::Credits;
 use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::state_transitions::identity::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::state_transitions::identity::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
@@ -114,13 +114,10 @@ impl BumpAddressInputNoncesAction {
     // AddressFundsTransfer transformers
 
     /// from AddressFundsTransfer transition
-    pub fn from_address_funds_transfer_transition(
-        value: AddressFundsTransferTransition,
-    ) -> Self {
+    pub fn from_address_funds_transfer_transition(value: AddressFundsTransferTransition) -> Self {
         match value {
             AddressFundsTransferTransition::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_address_funds_transfer_transition(v0)
-                    .into()
+                BumpAddressInputNoncesActionV0::from_address_funds_transfer_transition(v0).into()
             }
         }
     }

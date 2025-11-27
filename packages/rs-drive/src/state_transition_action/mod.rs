@@ -24,10 +24,13 @@ use crate::state_transition_action::identity::identity_topup::IdentityTopUpTrans
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use crate::state_transition_action::identity::identity_update::IdentityUpdateTransitionAction;
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
+use crate::state_transition_action::system::bump_address_input_nonces_action::{
+    BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
+    BumpAddressInputNoncesActionV0,
+};
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{
     BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionAccessorsV0,
 };
-use crate::state_transition_action::system::bump_address_input_nonces_action::{BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction, BumpAddressInputNoncesActionV0};
 use crate::state_transition_action::system::bump_identity_nonce_action::{
     BumpIdentityNonceAction, BumpIdentityNonceActionAccessorsV0,
 };
@@ -119,7 +122,9 @@ impl StateTransitionAction {
                 action.user_fee_increase()
             }
             StateTransitionAction::AddressFundsTransfer(action) => action.user_fee_increase(),
-            StateTransitionAction::BumpAddressInputNoncesAction(action) => action.user_fee_increase(),
+            StateTransitionAction::BumpAddressInputNoncesAction(action) => {
+                action.user_fee_increase()
+            }
         }
     }
 }

@@ -1,6 +1,8 @@
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::basic::state_transition::{InputWitnessCountMismatchError, TransitionOverMaxInputsError};
 use crate::error::Error;
+use dpp::consensus::basic::state_transition::{
+    InputWitnessCountMismatchError, TransitionOverMaxInputsError,
+};
+use dpp::consensus::basic::BasicError;
 use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
@@ -40,10 +42,9 @@ impl IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0
                     self.inputs().len().min(u16::MAX as usize) as u16,
                     self.witnesses().len().min(u16::MAX as usize) as u16,
                 ))
-                    .into(),
+                .into(),
             ));
         }
-
 
         if self.public_keys().len()
             > platform_version

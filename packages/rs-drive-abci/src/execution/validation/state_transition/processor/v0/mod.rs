@@ -791,7 +791,9 @@ impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
-            | StateTransition::AddressFundsTransfer(_) => Ok(SimpleConsensusValidationResult::new()),
+            | StateTransition::AddressFundsTransfer(_) => {
+                Ok(SimpleConsensusValidationResult::new())
+            }
         }
     }
 
@@ -1262,10 +1264,10 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
                             platform_version.protocol_version,
                             ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION,
                         )
-                            .into(),
+                        .into(),
                     ]))
                 }
-            },
+            }
             _ => Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                 "validate_is_allowed is not implemented for this state transition",
             ))),

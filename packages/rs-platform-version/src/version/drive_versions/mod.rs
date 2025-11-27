@@ -30,6 +30,7 @@ pub mod v2;
 pub mod v3;
 pub mod v4;
 pub mod v5;
+pub mod v6;
 
 #[derive(Clone, Debug, Default)]
 pub struct DriveVersion {

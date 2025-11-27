@@ -1,16 +1,16 @@
 /// transformer
 pub mod transformer;
 
-use dpp::identifier::Identifier;
-use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
-use std::collections::BTreeMap;
 use dpp::balances::credits::RemainingCredits;
 use dpp::fee::Credits;
+use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
+use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
 use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
+use std::collections::BTreeMap;
 
 /// action v0
 #[derive(Debug, Clone)]
@@ -55,9 +55,7 @@ impl From<&IdentityCreateFromAddressesTransitionActionV0> for PartialIdentity {
         PartialIdentity {
             id: *identity_id,
             loaded_public_keys: Default::default(), //no need to load public keys
-            balance: Some(
-                *fund_identity_amount
-            ),
+            balance: Some(*fund_identity_amount),
             revision: None,
 
             not_found_public_keys: Default::default(),

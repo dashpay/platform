@@ -8,7 +8,9 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("State transition has {actual_inputs} inputs, which exceeds the maximum allowed {max_inputs}")]
+#[error(
+    "State transition has {actual_inputs} inputs, which exceeds the maximum allowed {max_inputs}"
+)]
 #[platform_serialize(unversioned)]
 pub struct TransitionOverMaxInputsError {
     /*
