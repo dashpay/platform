@@ -1,7 +1,8 @@
 //! Main server process for RS-Drive-ABCI
 //!
 //! RS-Drive-ABCI server starts a single-threaded server and listens to connections from Tenderdash.
-
+#[cfg(feature = "replay")]
+use drive_abci::replay::{self, ReplayArgs};
 use drive_abci::verify::verify_grovedb;
 
 use clap::{Parser, Subcommand};
@@ -63,6 +64,11 @@ enum Commands {
     /// Print current software version
     #[command()]
     Version,
+
+    /// Replay ABCI requests captured from drive-abci logs.
+    #[cfg(feature = "replay")]
+    #[command()]
+    Replay(ReplayArgs),
 }
 
 /// Server that accepts connections from Tenderdash, and
@@ -153,6 +159,11 @@ impl Cli {
             Commands::Status => runtime.block_on(check_status(&config))?,
             Commands::Verify => drive_abci::verify::run(&config, true)?,
             Commands::Version => print_version(),
+            #[cfg(feature = "replay")]
+            Commands::Replay(args) => {
+                replay::run(config, args, cancel.clone()).map_err(|e| e.to_string())?;
+                return Ok(());
+            }
         };
 
         Ok(())

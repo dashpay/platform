@@ -41,7 +41,6 @@ members = [
     "packages/rs-dash-event-bus",
     "packages/rs-platform-wallet",
     "packages/wasm-sdk",
-    "packages/platform-debug-utils",
 ]
 
 [workspace.package]

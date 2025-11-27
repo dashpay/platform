@@ -1,60 +1,44 @@
-mod replay_support;
-use clap::Parser;
+mod cli;
+mod log_ingest;
+mod runner;
+
+use crate::abci::app::FullAbciApplication;
+use crate::config::PlatformConfig;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::rpc::core::DefaultCoreRPC;
+use crate::verify;
+use cli::SkipRequest;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
-use drive_abci::abci::app::FullAbciApplication;
-use drive_abci::config::{FromEnv, PlatformConfig};
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
-use drive_abci::rpc::core::DefaultCoreRPC;
-use drive_abci::verify;
-use replay_support::cli::{Cli, SkipRequest, load_env};
-use replay_support::log_ingest::LogRequestStream;
-use replay_support::replay::{
-    LoadedRequest, ProgressReporter, ReplayItem, ReplaySource, ensure_db_directory,
-    execute_request, load_request, log_last_committed_block,
+use log_ingest::LogRequestStream;
+use runner::{
+    ensure_db_directory, execute_request, log_last_committed_block, stop_height_reached,
+    LoadedRequest, ProgressReporter, ReplayItem,
 };
-use replay_support::telemetry::init_logging;
 use std::error::Error;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
+use tokio_util::sync::CancellationToken;
 
-fn main() -> Result<(), Box<dyn Error>> {
-    let cli = Cli::parse();
-    let _log_guard = init_logging(cli.output.as_deref())?;
-    run(cli)
-}
+pub use cli::ReplayArgs;
 
-fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
-    load_env(cli.config.as_deref())?;
-
-    let mut config = match PlatformConfig::from_env() {
-        Ok(config) => config,
-        Err(drive_abci::error::Error::Configuration(envy::Error::MissingValue(field))) => {
-            return Err(format!("missing configuration option: {}", field.to_uppercase()).into());
-        }
-        Err(err) => return Err(err.into()),
-    };
-
-    config.db_path = cli.db_path.clone();
+/// Replay ABCI requests captured in drive-abci JSON logs.
+pub fn run(
+    mut config: PlatformConfig,
+    args: ReplayArgs,
+    cancel: CancellationToken,
+) -> Result<(), Box<dyn Error>> {
+    let db_path = args
+        .db_path
+        .clone()
+        .unwrap_or_else(|| config.db_path.clone());
+    config.db_path = db_path;
     let db_was_created = ensure_db_directory(&config.db_path)?;
 
     tracing::info!("running database verification before replay");
     verify::run(&config, true).map_err(|e| format!("verification failed before replay: {}", e))?;
 
-    let mut replay_items = Vec::new();
-    for path in &cli.requests {
-        let loaded = load_request(path, cli.request_format)?;
-        tracing::info!("loaded {} request from {}", loaded.kind(), path.display());
-        let canonical_path = canonicalize_path(path);
-        let item = ReplayItem::from_file(canonical_path, loaded);
-        if should_skip_item(&item, &cli.skip) {
-            tracing::info!("skipping request {} due to --skip", item.describe());
-            continue;
-        }
-        replay_items.push(item);
-    }
-
     let mut log_streams = Vec::new();
-    for path in &cli.logs {
+    for path in &args.logs {
         let mut stream = LogRequestStream::open(path)?;
         if stream.peek()?.is_some() {
             tracing::info!("streaming ABCI requests from log {}", path.display());
@@ -64,24 +48,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         }
     }
 
-    if replay_items.is_empty() && log_streams.is_empty() {
-        return Err(
-            "no requests to replay; provide --requests and/or --logs with relevant inputs".into(),
-        );
+    if log_streams.is_empty() {
+        return Err("no requests to replay; provide --log with relevant inputs".into());
     }
 
     if db_was_created {
-        let first_is_init_chain = if let Some(item) = replay_items.first() {
-            matches!(item.request, LoadedRequest::InitChain(_))
-        } else if let Some(stream) = log_streams.first_mut() {
-            advance_stream(stream, None, &cli.skip)?;
-            match stream.peek()? {
-                Some(item) => matches!(item.request, LoadedRequest::InitChain(_)),
-                None => false,
+        let mut first_is_init_chain = false;
+        if let Some(stream) = log_streams.first_mut() {
+            advance_stream(stream, None, &args.skip)?;
+            if let Some(item) = stream.peek()? {
+                first_is_init_chain = matches!(item.request, LoadedRequest::InitChain(_));
             }
-        } else {
-            false
-        };
+        }
 
         if !first_is_init_chain {
             return Err(
@@ -106,64 +84,60 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         .as_ref()
         .map(|info| info.basic_info().height);
 
-    if let Some(limit) = cli.stop_height
-        && let Some(current) = known_height
-        && current >= limit
-    {
-        tracing::info!(
-            "current platform height {} is already at or above stop height {}; ending replay",
-            current,
-            limit
-        );
-        return Ok(());
+    if let Some(limit) = args.stop_height {
+        if let Some(current) = known_height {
+            if current >= limit {
+                tracing::info!(
+                    "current platform height {} is already at or above stop height {}; ending replay",
+                    current,
+                    limit
+                );
+                return Ok(());
+            }
+        }
     }
 
     let app = FullAbciApplication::new(&platform);
-    let mut progress = if cli.progress {
-        Some(ProgressReporter::new(cli.stop_height))
+    let mut progress = if args.progress {
+        Some(ProgressReporter::new(args.stop_height))
     } else {
         None
     };
-
-    for item in replay_items {
-        if stop_height_reached(cli.stop_height, known_height) {
-            tracing::info!(
-                "stop height {} reached; skipping remaining request files",
-                cli.stop_height.unwrap()
-            );
-            break;
-        }
-        let committed = execute_request(&app, item, progress.as_mut())?;
-        update_known_height(&mut known_height, committed);
-        if stop_height_reached(cli.stop_height, known_height) {
-            tracing::info!(
-                "stop height {} reached after request files; skipping remaining inputs",
-                cli.stop_height.unwrap()
-            );
-            break;
-        }
-    }
+    let mut cancelled = false;
 
     for mut stream in log_streams {
-        if stop_height_reached(cli.stop_height, known_height) {
+        if cancel.is_cancelled() {
+            tracing::info!("cancellation requested; stopping remaining log streams");
+            cancelled = true;
+            break;
+        }
+        if stop_height_reached(args.stop_height, known_height) {
             tracing::info!(
                 "stop height {} reached; skipping remaining log streams",
-                cli.stop_height.unwrap()
+                args.stop_height.unwrap()
             );
             break;
         }
         let mut validator = RequestSequenceValidator::new(stream.path().to_path_buf());
         let mut executed = 0usize;
         loop {
-            if stop_height_reached(cli.stop_height, known_height) {
+            if cancel.is_cancelled() {
+                tracing::info!(
+                    "cancellation requested; stopping replay for log {}",
+                    stream.path().display()
+                );
+                cancelled = true;
+                break;
+            }
+            if stop_height_reached(args.stop_height, known_height) {
                 tracing::info!(
                     "stop height {} reached; stopping replay for log {}",
-                    cli.stop_height.unwrap(),
+                    args.stop_height.unwrap(),
                     stream.path().display()
                 );
                 break;
             }
-            advance_stream(&mut stream, known_height, &cli.skip)?;
+            advance_stream(&mut stream, known_height, &args.skip)?;
             let Some(item) = stream.next_item()? else {
                 break;
             };
@@ -171,6 +145,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             let committed = execute_request(&app, item, progress.as_mut())?;
             update_known_height(&mut known_height, committed);
             executed += 1;
+        }
+        if cancelled {
+            break;
         }
         validator.finish()?;
         tracing::info!(
@@ -180,43 +157,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         );
     }
 
+    if cancelled {
+        tracing::info!("replay interrupted by cancellation");
+    }
+
     Ok(())
-}
-
-fn update_known_height(current: &mut Option<u64>, new_height: Option<u64>) {
-    if let Some(height) = new_height {
-        match current {
-            Some(existing) if height <= *existing => {}
-            _ => *current = Some(height),
-        }
-    }
-}
-
-fn canonicalize_path(path: &Path) -> PathBuf {
-    path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
-}
-
-fn should_skip_item(item: &ReplayItem, skip: &[SkipRequest]) -> bool {
-    skip.iter().any(|target| match &item.source {
-        ReplaySource::File(path) => target.line.is_none() && paths_equal(path, &target.path),
-        ReplaySource::Log { path, line, .. } => {
-            if !paths_equal(path, &target.path) {
-                return false;
-            }
-            match target.line {
-                Some(target_line) => target_line == *line,
-                None => true,
-            }
-        }
-    })
-}
-
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    if let (Ok(canon_a), Ok(canon_b)) = (a.canonicalize(), b.canonicalize()) {
-        canon_a == canon_b
-    } else {
-        a == b
-    }
 }
 
 fn advance_stream(
@@ -265,6 +210,20 @@ fn drain_skipped_entries(
     }
 
     Ok(())
+}
+
+fn should_skip_item(item: &ReplayItem, skip: &[SkipRequest]) -> bool {
+    skip.iter()
+        .any(|target| cli::skip_matches(item.source.path(), Some(item.source.line()), target))
+}
+
+fn update_known_height(current: &mut Option<u64>, new_height: Option<u64>) {
+    if let Some(height) = new_height {
+        match current {
+            Some(existing) if height <= *existing => {}
+            _ => *current = Some(height),
+        }
+    }
 }
 
 struct RequestSequenceValidator {
@@ -372,8 +331,4 @@ impl RequestSequenceValidator {
         }
         Ok(())
     }
-}
-
-fn stop_height_reached(limit: Option<u64>, known_height: Option<u64>) -> bool {
-    matches!((limit, known_height), (Some(limit), Some(height)) if height >= limit)
 }

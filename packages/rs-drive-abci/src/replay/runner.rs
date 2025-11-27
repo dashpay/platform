@@ -1,9 +1,8 @@
-use super::cli::{RequestFormat, parse_with};
+use crate::abci::app::FullAbciApplication;
+use crate::platform_types::platform::Platform;
+use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use dpp::version::PlatformVersion;
-use drive_abci::abci::app::FullAbciApplication;
-use drive_abci::platform_types::platform::Platform;
-use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use hex::ToHex;
 use std::collections::VecDeque;
 use std::convert::TryFrom;
@@ -12,28 +11,21 @@ use std::fmt::Write as _;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
-use tenderdash_abci::Application;
 use tenderdash_abci::proto::abci::{
-    Request, RequestExtendVote, RequestFinalizeBlock, RequestInfo, RequestInitChain,
-    RequestPrepareProposal, RequestProcessProposal, RequestVerifyVoteExtension, request,
-    response_process_proposal, response_verify_vote_extension,
+    response_process_proposal, response_verify_vote_extension, RequestExtendVote,
+    RequestFinalizeBlock, RequestInfo, RequestInitChain, RequestPrepareProposal,
+    RequestProcessProposal, RequestVerifyVoteExtension,
 };
+use tenderdash_abci::Application;
 
 #[derive(Debug, Clone)]
-pub struct ReplayItem {
-    pub source: ReplaySource,
-    pub request: LoadedRequest,
+pub(super) struct ReplayItem {
+    pub(super) source: ReplaySource,
+    pub(super) request: LoadedRequest,
 }
 
 impl ReplayItem {
-    pub fn from_file(path: PathBuf, request: LoadedRequest) -> Self {
-        Self {
-            source: ReplaySource::File(path),
-            request,
-        }
-    }
-
-    pub fn from_log(
+    pub(super) fn from_log(
         path: &Path,
         line: usize,
         timestamp: Option<String>,
@@ -41,7 +33,7 @@ impl ReplayItem {
         request: LoadedRequest,
     ) -> Self {
         Self {
-            source: ReplaySource::Log {
+            source: ReplaySource {
                 path: path.to_path_buf(),
                 line,
                 timestamp,
@@ -51,47 +43,42 @@ impl ReplayItem {
         }
     }
 
-    pub fn describe(&self) -> String {
+    pub(super) fn describe(&self) -> String {
         self.source.describe()
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum ReplaySource {
-    File(PathBuf),
-    Log {
-        path: PathBuf,
-        line: usize,
-        timestamp: Option<String>,
-        endpoint: Option<String>,
-    },
+pub(super) struct ReplaySource {
+    path: PathBuf,
+    line: usize,
+    timestamp: Option<String>,
+    endpoint: Option<String>,
 }
 
 impl ReplaySource {
     fn describe(&self) -> String {
-        match self {
-            ReplaySource::File(path) => format!("{}", path.display()),
-            ReplaySource::Log {
-                path,
-                line,
-                timestamp,
-                endpoint,
-            } => {
-                let mut out = format!("{}:{}", path.display(), line);
-                if let Some(endpoint) = endpoint {
-                    write!(&mut out, " {}", endpoint).ok();
-                }
-                if let Some(ts) = timestamp {
-                    write!(&mut out, " @{}", ts).ok();
-                }
-                out
-            }
+        let mut out = format!("{}:{}", self.path.display(), self.line);
+        if let Some(endpoint) = &self.endpoint {
+            write!(&mut out, " {}", endpoint).ok();
         }
+        if let Some(ts) = &self.timestamp {
+            write!(&mut out, " @{}", ts).ok();
+        }
+        out
+    }
+
+    pub(super) fn path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(super) fn line(&self) -> usize {
+        self.line
     }
 }
 
 #[derive(Debug, Clone)]
-pub enum LoadedRequest {
+pub(super) enum LoadedRequest {
     InitChain(RequestInitChain),
     Info(RequestInfo),
     Prepare(RequestPrepareProposal),
@@ -102,19 +89,7 @@ pub enum LoadedRequest {
 }
 
 impl LoadedRequest {
-    pub fn kind(&self) -> &'static str {
-        match self {
-            LoadedRequest::InitChain(_) => "init_chain",
-            LoadedRequest::Info(_) => "info",
-            LoadedRequest::Prepare(_) => "prepare_proposal",
-            LoadedRequest::Process(_) => "process_proposal",
-            LoadedRequest::Finalize(_) => "finalize_block",
-            LoadedRequest::ExtendVote(_) => "extend_vote",
-            LoadedRequest::VerifyVoteExtension(_) => "verify_vote_extension",
-        }
-    }
-
-    pub fn block_height(&self) -> Option<u64> {
+    pub(super) fn block_height(&self) -> Option<u64> {
         fn to_height(value: i64) -> Option<u64> {
             u64::try_from(value).ok()
         }
@@ -131,7 +106,7 @@ impl LoadedRequest {
     }
 }
 
-pub fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
+pub(super) fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
     if path.exists() {
         if !path.is_dir() {
             return Err(format!("{} exists but is not a directory", path.display()).into());
@@ -147,65 +122,19 @@ pub fn ensure_db_directory(path: &Path) -> Result<bool, Box<dyn Error>> {
     Ok(true)
 }
 
-pub fn load_request(path: &Path, format: RequestFormat) -> Result<LoadedRequest, Box<dyn Error>> {
-    let raw = fs::read_to_string(path)?;
-
-    if let Ok(request) = parse_with::<Request>(&raw, format) {
-        return map_request_value(request);
-    }
-
-    macro_rules! try_parse {
-        ($ty:ty, $variant:ident) => {
-            if let Ok(value) = parse_with::<$ty>(&raw, format) {
-                return Ok(LoadedRequest::$variant(value));
-            }
-        };
-    }
-
-    try_parse!(RequestInitChain, InitChain);
-    try_parse!(RequestInfo, Info);
-    try_parse!(RequestPrepareProposal, Prepare);
-    try_parse!(RequestProcessProposal, Process);
-    try_parse!(RequestFinalizeBlock, Finalize);
-    try_parse!(RequestExtendVote, ExtendVote);
-    try_parse!(RequestVerifyVoteExtension, VerifyVoteExtension);
-
-    Err("unsupported request file format".into())
-}
-
-fn map_request_value(request: Request) -> Result<LoadedRequest, Box<dyn Error>> {
-    match request.value {
-        Some(request::Value::InitChain(value)) => Ok(LoadedRequest::InitChain(value)),
-        Some(request::Value::Info(value)) => Ok(LoadedRequest::Info(value)),
-        Some(request::Value::PrepareProposal(value)) => Ok(LoadedRequest::Prepare(value)),
-        Some(request::Value::ProcessProposal(value)) => Ok(LoadedRequest::Process(value)),
-        Some(request::Value::FinalizeBlock(value)) => Ok(LoadedRequest::Finalize(value)),
-        Some(request::Value::ExtendVote(value)) => Ok(LoadedRequest::ExtendVote(value)),
-        Some(request::Value::VerifyVoteExtension(value)) => {
-            Ok(LoadedRequest::VerifyVoteExtension(value))
-        }
-        Some(other) => Err(format!(
-            "request file contains unsupported variant {}",
-            request_variant_name(&other)
-        )
-        .into()),
-        None => Err("request payload does not contain a value".into()),
-    }
-}
-
-pub fn execute_request<C>(
+pub(super) fn execute_request<C>(
     app: &FullAbciApplication<C>,
     item: ReplayItem,
     progress: Option<&mut ProgressReporter>,
 ) -> Result<Option<u64>, Box<dyn Error>>
 where
-    C: drive_abci::rpc::core::CoreRPCLike,
+    C: crate::rpc::core::CoreRPCLike,
 {
     let origin = item.describe();
     let mut committed_height = None;
     match item.request {
         LoadedRequest::InitChain(request) => {
-            tracing::info!("executing init_chain from {}", origin);
+            tracing::debug!("executing init_chain from {}", origin);
             let response = app.init_chain(request).map_err(|err| {
                 logged_error(format!("init_chain failed for {}: {:?}", origin, err))
             })?;
@@ -228,7 +157,7 @@ where
                 .map(|info| info.basic_info().height);
         }
         LoadedRequest::Info(request) => {
-            tracing::info!("executing info from {}", origin);
+            tracing::debug!("executing info from {}", origin);
             let response = app
                 .info(request)
                 .map_err(|err| logged_error(format!("info failed for {}: {:?}", origin, err)))?;
@@ -238,12 +167,11 @@ where
                 response.last_block_height,
                 hex::encode(response.last_block_app_hash)
             );
-            // Do not update committed_height; Info is read-only.
         }
         LoadedRequest::Prepare(request) => {
             let height = request.height;
             let context = format_height_round(Some(height), Some(request.round));
-            tracing::info!(
+            tracing::debug!(
                 "executing prepare_proposal from {} (height={})",
                 origin,
                 height
@@ -254,7 +182,7 @@ where
                     origin, context, err
                 ))
             })?;
-            tracing::info!(
+            tracing::debug!(
                 "prepare_proposal result ({}): height={}, app_hash=0x{}, tx_results={}, tx_records={}",
                 origin,
                 height,
@@ -266,7 +194,7 @@ where
         LoadedRequest::Process(request) => {
             let height = request.height;
             let context = format_height_round(Some(height), Some(request.round));
-            tracing::info!(
+            tracing::debug!(
                 "executing process_proposal from {} (height={})",
                 origin,
                 height
@@ -279,7 +207,7 @@ where
             })?;
             let status = response_process_proposal::ProposalStatus::try_from(response.status)
                 .unwrap_or(response_process_proposal::ProposalStatus::Unknown);
-            tracing::info!(
+            tracing::debug!(
                 "process_proposal result ({}): status={:?}, height={}, app_hash=0x{}, tx_results={}, events={}",
                 origin,
                 status,
@@ -293,7 +221,7 @@ where
             let height = request.height;
             let round = request.round;
             let context = format_height_round(Some(height), Some(round));
-            tracing::info!(
+            tracing::debug!(
                 "executing finalize_block from {} (height={}, round={})",
                 origin,
                 height,
@@ -332,7 +260,7 @@ where
                 .as_ref()
                 .map(|hash| hex::encode(hash))
                 .unwrap_or_else(|| "unknown".to_string());
-            tracing::info!(
+            tracing::debug!(
                 "finalize_block result ({}): height={}, retain_height={}, state_app_hash=0x{}, grove_root=0x{}",
                 origin,
                 height,
@@ -384,7 +312,7 @@ where
             }
             if let Some(reporter) = progress {
                 if let Ok(block_height) = u64::try_from(height) {
-                    if let Some(hash) = actual_hash.as_deref().or_else(|| expected.as_deref()) {
+                    if let Some(hash) = actual_hash.as_deref().or(expected.as_deref()) {
                         reporter.record(block_height, hash);
                     }
                 }
@@ -393,7 +321,7 @@ where
         }
         LoadedRequest::ExtendVote(request) => {
             let context = format_height_round(Some(request.height), Some(request.round));
-            tracing::info!(
+            tracing::debug!(
                 "executing extend_vote from {} (height={}, round={})",
                 origin,
                 request.height,
@@ -410,7 +338,7 @@ where
                 .iter()
                 .map(|ext| ext.extension.len())
                 .sum();
-            tracing::info!(
+            tracing::debug!(
                 "extend_vote result ({}): vote_extensions={}, total_extension_bytes={}",
                 origin,
                 response.vote_extensions.len(),
@@ -419,7 +347,7 @@ where
         }
         LoadedRequest::VerifyVoteExtension(request) => {
             let context = format_height_round(Some(request.height), Some(request.round));
-            tracing::info!(
+            tracing::debug!(
                 "executing verify_vote_extension from {} (height={}, round={})",
                 origin,
                 request.height,
@@ -433,7 +361,7 @@ where
             })?;
             let status = response_verify_vote_extension::VerifyStatus::try_from(response.status)
                 .unwrap_or(response_verify_vote_extension::VerifyStatus::Unknown);
-            tracing::info!(
+            tracing::debug!(
                 "verify_vote_extension result ({}): status={:?}",
                 origin,
                 status
@@ -448,14 +376,14 @@ const PROGRESS_MIN_INTERVAL: Duration = Duration::from_secs(1);
 const PROGRESS_WINDOW_SHORT: Duration = Duration::from_secs(60);
 const PROGRESS_WINDOW_LONG: Duration = Duration::from_secs(300);
 
-pub struct ProgressReporter {
+pub(super) struct ProgressReporter {
     history: VecDeque<(Instant, u64)>,
     last_emit: Option<Instant>,
     stop_height: Option<u64>,
 }
 
 impl ProgressReporter {
-    pub fn new(stop_height: Option<u64>) -> Self {
+    pub(super) fn new(stop_height: Option<u64>) -> Self {
         Self {
             history: VecDeque::new(),
             last_emit: None,
@@ -463,7 +391,7 @@ impl ProgressReporter {
         }
     }
 
-    pub fn record(&mut self, height: u64, app_hash: &[u8]) {
+    pub(super) fn record(&mut self, height: u64, app_hash: &[u8]) {
         let now = Instant::now();
         self.history.push_back((now, height));
         self.trim_history(now);
@@ -477,13 +405,13 @@ impl ProgressReporter {
         let rate_1m = self.rate_per_minute(now, PROGRESS_WINDOW_SHORT);
         let rate_5m = self.rate_per_minute(now, PROGRESS_WINDOW_LONG);
         let eta = Self::format_eta(self.eta(rate_5m, height));
-        println!(
-            "height={} app_hash={} rate_1m={} rate_5m={} eta={}",
+        tracing::info!(
             height,
-            Self::short_hash(app_hash),
-            Self::format_rate(rate_1m),
-            Self::format_rate(rate_5m),
-            eta
+            app_hash = Self::short_hash(app_hash),
+            rate_1m = Self::format_rate(rate_1m),
+            rate_5m = Self::format_rate(rate_5m),
+            eta,
+            "block processed",
         );
         self.last_emit = Some(now);
     }
@@ -560,38 +488,14 @@ impl ProgressReporter {
     }
 }
 
-fn extract_expected_app_hash(request: &RequestFinalizeBlock) -> Option<Vec<u8>> {
-    request
-        .block
-        .as_ref()
-        .and_then(|block| block.header.as_ref())
-        .map(|header| header.app_hash.clone())
-}
-
-fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
-    let mut parts = Vec::new();
-    if let Some(h) = height {
-        parts.push(format!("height={}", h));
-    }
-    if let Some(r) = round {
-        parts.push(format!("round={}", r));
-    }
-
-    if parts.is_empty() {
-        String::new()
-    } else {
-        format!(" ({})", parts.join(", "))
-    }
-}
-
-pub(crate) fn logged_error(message: String) -> Box<dyn Error> {
+fn logged_error(message: String) -> Box<dyn Error> {
     tracing::error!("{}", message);
     message.into()
 }
 
-pub fn log_last_committed_block<C>(platform: &Platform<C>)
+pub(super) fn log_last_committed_block<C>(platform: &Platform<C>)
 where
-    C: drive_abci::rpc::core::CoreRPCLike,
+    C: crate::rpc::core::CoreRPCLike,
 {
     let platform_state = platform.state.load();
     let grove_version = &platform_state
@@ -623,22 +527,30 @@ where
     }
 }
 
-fn request_variant_name(value: &request::Value) -> &'static str {
-    match value {
-        request::Value::Echo(_) => "Echo",
-        request::Value::Flush(_) => "Flush",
-        request::Value::Info(_) => "Info",
-        request::Value::InitChain(_) => "InitChain",
-        request::Value::Query(_) => "Query",
-        request::Value::CheckTx(_) => "CheckTx",
-        request::Value::ListSnapshots(_) => "ListSnapshots",
-        request::Value::OfferSnapshot(_) => "OfferSnapshot",
-        request::Value::LoadSnapshotChunk(_) => "LoadSnapshotChunk",
-        request::Value::ApplySnapshotChunk(_) => "ApplySnapshotChunk",
-        request::Value::PrepareProposal(_) => "PrepareProposal",
-        request::Value::ProcessProposal(_) => "ProcessProposal",
-        request::Value::ExtendVote(_) => "ExtendVote",
-        request::Value::VerifyVoteExtension(_) => "VerifyVoteExtension",
-        request::Value::FinalizeBlock(_) => "FinalizeBlock",
+pub(super) fn stop_height_reached(limit: Option<u64>, known_height: Option<u64>) -> bool {
+    matches!((limit, known_height), (Some(limit), Some(height)) if height >= limit)
+}
+
+fn extract_expected_app_hash(request: &RequestFinalizeBlock) -> Option<Vec<u8>> {
+    request
+        .block
+        .as_ref()
+        .and_then(|block| block.header.as_ref())
+        .map(|header| header.app_hash.clone())
+}
+
+fn format_height_round(height: Option<i64>, round: Option<i32>) -> String {
+    let mut parts = Vec::new();
+    if let Some(h) = height {
+        parts.push(format!("height={}", h));
+    }
+    if let Some(r) = round {
+        parts.push(format!("round={}", r));
+    }
+
+    if parts.is_empty() {
+        String::new()
+    } else {
+        format!(" ({})", parts.join(", "))
     }
 }
