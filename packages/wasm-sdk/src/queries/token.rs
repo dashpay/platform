@@ -4,10 +4,12 @@ use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::balances::credits::TokenAmount;
 use dash_sdk::dpp::tokens::calculate_token_id;
+use dash_sdk::dpp::data_contract::associated_token::token_perpetual_distribution::reward_distribution_moment::RewardDistributionMoment;
 use dash_sdk::dpp::tokens::info::IdentityTokenInfo;
 use dash_sdk::dpp::tokens::status::TokenStatus;
 use dash_sdk::dpp::tokens::token_pricing_schedule::TokenPricingSchedule;
-use dash_sdk::platform::{FetchMany, Identifier};
+use dash_sdk::platform::query::TokenLastClaimQuery;
+use dash_sdk::platform::{Fetch, FetchMany, Identifier};
 use js_sys::{BigInt, Map};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
@@ -480,172 +482,96 @@ impl WasmSdk {
         let identity_identifier = identifier_from_js(&identity_id, "identity ID")?;
         let token_identifier = identifier_from_js(&token_id, "token ID")?;
 
-        // Use direct gRPC request instead of high-level SDK fetch to avoid proof verification issues
-        use dapi_grpc::platform::v0::{
-            get_token_perpetual_distribution_last_claim_request::{
-                GetTokenPerpetualDistributionLastClaimRequestV0, Version,
-            },
-            GetTokenPerpetualDistributionLastClaimRequest,
-        };
-        use rs_dapi_client::DapiRequestExecutor;
-
-        // Create direct gRPC Request without proofs to avoid context provider issues
-        let request = GetTokenPerpetualDistributionLastClaimRequest {
-            version: Some(Version::V0(
-                GetTokenPerpetualDistributionLastClaimRequestV0 {
-                    token_id: token_identifier.to_vec(),
-                    identity_id: identity_identifier.to_vec(),
-                    contract_info: None, // Not needed for this query
-                    prove: false, // Use prove: false to avoid proof verification and context provider dependency
-                },
-            )),
+        // Create query and fetch via SDK (proofless variant)
+        let query = TokenLastClaimQuery {
+            token_id: token_identifier,
+            identity_id: identity_identifier,
         };
 
-        // Execute the gRPC request
-        let response = self
-            .inner_sdk()
-            .execute(request, rs_dapi_client::RequestSettings::default())
-            .await
-            .map_err(|e| {
-                WasmSdkError::generic(format!(
-                    "Failed to fetch token perpetual distribution last claim: {}",
-                    e
-                ))
-            })?;
+        // Try proof-backed fetch first; fall back to direct gRPC with prove=false if context lacks token config
+        let claim_result = match RewardDistributionMoment::fetch(self.as_ref(), query.clone()).await
+        {
+            Ok(res) => res,
+            Err(err) => {
+                // If proof verification failed due to missing token distribution type, retry without proofs
+                if err
+                    .to_string()
+                    .contains("Token distribution type not found with get_token_distribution")
+                {
+                    use dapi_grpc::platform::v0::{
+                        get_token_perpetual_distribution_last_claim_request::{
+                            GetTokenPerpetualDistributionLastClaimRequestV0, Version,
+                        },
+                        get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt,
+                        GetTokenPerpetualDistributionLastClaimRequest,
+                    };
+                    use rs_dapi_client::DapiRequestExecutor;
 
-        // Extract result from response and convert to our expected format
-        let claim_result = match response.inner.version {
-            Some(
-                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(
-                    v0,
-                ),
-            ) => {
-                match v0.result {
-                    Some(
-                        dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
-                            claim,
-                        ),
-                    ) => {
-                        match claim.paid_at {
-                            Some(
-                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::TimestampMs(
-                                    timestamp,
-                                ),
-                            ) => Some((timestamp, 0)),
-                            Some(
-                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::BlockHeight(
-                                    height,
-                                ),
-                            ) => Some((0, height)),
-                            Some(
-                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::Epoch(
-                                    epoch,
-                                ),
-                            ) => Some((0, epoch as u64)),
-                            Some(
-                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::last_claim_info::PaidAt::RawBytes(
-                                    bytes,
-                                ),
-                            ) => {
-                                // Raw bytes format specification (confirmed via server trace logs):
-                                // - Total length: 8 bytes (big-endian encoding)
-                                // - Bytes 0-3: Timestamp as u32 (seconds since Unix epoch, 0 = no timestamp recorded)
-                                // - Bytes 4-7: Block height as u32 (Dash blockchain block number)
-                                //
-                                // Validation ranges:
-                                // - Timestamp: 0 (unset) or >= 1609459200 (Jan 1, 2021 00:00:00 UTC, before Dash Platform mainnet)
-                                // - Block height: 0 (invalid) or >= 1 (valid blockchain height)
-                                if bytes.len() >= 8 {
-                                    let timestamp = u32::from_be_bytes([
-                                        bytes[0],
-                                        bytes[1],
-                                        bytes[2],
-                                        bytes[3],
-                                    ]) as u64;
-                                    let block_height = u32::from_be_bytes([
-                                        bytes[4],
-                                        bytes[5],
-                                        bytes[6],
-                                        bytes[7],
-                                    ]) as u64;
+                    let request = GetTokenPerpetualDistributionLastClaimRequest {
+                        version: Some(Version::V0(
+                            GetTokenPerpetualDistributionLastClaimRequestV0 {
+                                token_id: query.token_id.to_vec(),
+                                identity_id: query.identity_id.to_vec(),
+                                contract_info: None,
+                                prove: false,
+                            },
+                        )),
+                    };
 
-                                    // Validate timestamp: must be 0 (unset) or a reasonable Unix timestamp
-                                    let validated_timestamp = if timestamp != 0
-                                        && timestamp < 1609459200
-                                    {
-                                        tracing::warn!(
-                                            target = "wasm_sdk", timestamp,
-                                            "Invalid timestamp in raw bytes (too early)"
-                                        );
-                                        0 // Use 0 for invalid timestamps
-                                    } else {
-                                        timestamp
-                                    };
+                    let response = self
+                        .inner_sdk()
+                        .execute(request, rs_dapi_client::RequestSettings::default())
+                        .await
+                        .map_err(|e| {
+                            WasmSdkError::generic(format!(
+                                "Failed to fetch token perpetual distribution last claim (fallback): {}",
+                                e
+                            ))
+                        })?;
 
-                                    // Validate block height: must be a positive value
-                                    let validated_block_height = if block_height == 0 {
-                                        tracing::warn!(
-                                            target = "wasm_sdk",
-                                            "Invalid block height in raw bytes: 0 (genesis block not expected)"
-                                        );
-                                        1 // Use minimum valid block height
-                                    } else {
-                                        block_height
-                                    };
-
-                                    Some((validated_timestamp * 1000, validated_block_height))
-                                } else if bytes.len() >= 4 {
-                                    // Fallback: decode only the last 4 bytes as block height
-                                    let block_height = u32::from_be_bytes([
-                                        bytes[bytes.len() - 4],
-                                        bytes[bytes.len() - 3],
-                                        bytes[bytes.len() - 2],
-                                        bytes[bytes.len() - 1],
-                                    ]) as u64;
-
-                                    // Validate block height
-                                    let validated_block_height = if block_height == 0 {
-                                        tracing::warn!(
-                                            target = "wasm_sdk",
-                                            "Invalid block height in fallback parsing: 0"
-                                        );
-                                        1 // Use minimum valid block height
-                                    } else {
-                                        block_height
-                                    };
-
-                                    Some((0, validated_block_height))
-                                } else {
-                                    tracing::warn!(
-                                        target = "wasm_sdk", len = bytes.len(),
-                                        "Insufficient raw bytes length (expected 8 or 4)"
-                                    );
-                                    Some((0, 0))
-                                }
-                            }
-                            None => None, // No paid_at info
-                        }
-                    }
-                    Some(
-                        dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::Proof(
-                            _,
-                        ),
-                    ) => {
-                        return Err(
-                            WasmSdkError::generic(
-                                "Received proof instead of data - this should not happen with prove: false",
+                    let claim = match response.inner.version {
+                        Some(
+                            dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::Version::V0(
+                                v0,
                             ),
-                        );
+                        ) => match v0.result {
+                            Some(
+                                dapi_grpc::platform::v0::get_token_perpetual_distribution_last_claim_response::get_token_perpetual_distribution_last_claim_response_v0::Result::LastClaim(
+                                    claim,
+                                ),
+                            ) => claim.paid_at,
+                            _ => None,
+                        },
+                        _ => None,
+                    };
+
+                    match claim {
+                        Some(PaidAt::TimestampMs(ts)) => Some(RewardDistributionMoment::TimeBasedMoment(ts)),
+                        Some(PaidAt::BlockHeight(height)) => {
+                            Some(RewardDistributionMoment::BlockBasedMoment(height))
+                        }
+                        Some(PaidAt::Epoch(epoch)) => {
+                            Some(RewardDistributionMoment::EpochBasedMoment(epoch as u64))
+                        }
+                        _ => None,
                     }
-                    None => None, // No claim found
+                } else {
+                    return Err(err.into());
                 }
             }
-            None => return Err(WasmSdkError::generic("Invalid response version")),
         };
 
-        Ok(claim_result.map(|(timestamp_ms, block_height)| {
-            TokenLastClaimWasm::new(timestamp_ms, block_height)
-        }))
+        let data = claim_result.map(|moment| {
+            let (last_claim_timestamp_ms, last_claim_block_height) = match moment {
+                RewardDistributionMoment::BlockBasedMoment(height) => (0, height),
+                RewardDistributionMoment::TimeBasedMoment(timestamp) => (timestamp, 0),
+                RewardDistributionMoment::EpochBasedMoment(epoch) => (0, epoch as u64),
+            };
+
+            TokenLastClaimWasm::new(last_claim_timestamp_ms, last_claim_block_height)
+        });
+
+        Ok(data)
     }
 
     #[wasm_bindgen(js_name = "getTokenTotalSupply")]
