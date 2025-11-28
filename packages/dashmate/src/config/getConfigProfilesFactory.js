@@ -16,7 +16,10 @@ export default function getConfigProfilesFactory() {
     if (config.get('platform.enable')) {
       profiles.push('platform');
 
-      const deprecatedEnabled = config.get('platform.dapi.deprecated.enabled');
+      // Config option 'platform.dapi.deprecated.enabled' was removed
+      const deprecatedEnabled = config.has('platform.dapi.deprecated.enabled')
+        ? config.get('platform.dapi.deprecated.enabled')
+        : false;
 
       if (includeAll) {
         profiles.push('platform-dapi-deprecated');
