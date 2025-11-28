@@ -24,6 +24,7 @@ members = [
     "packages/rs-context-provider",
     "packages/rs-sdk-trusted-context-provider",
     "packages/wasm-dpp",
+    "packages/wasm-dpp2",
     "packages/rs-dapi-client",
     "packages/rs-sdk",
     "packages/strategy-tests",
@@ -44,4 +45,5 @@ members = [
 
 [workspace.package]
 
+version = "2.2.0-dev.1"
 rust-version = "1.89"

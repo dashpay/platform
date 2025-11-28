@@ -1,0 +1,40 @@
+extends:
+  - airbnb-base
+  - plugin:jsdoc/recommended
+env:
+  es2020: true
+  node: true
+  mocha: true
+parserOptions:
+  ecmaVersion: 2024
+rules:
+  eol-last:
+    - error
+    - always
+  import/extensions: off
+  class-methods-use-this: off
+  import/no-extraneous-dependencies: off
+  import/no-named-as-default: off
+  import/named: off
+  import/prefer-default-export: off
+  max-len: off
+  no-bitwise: off
+  no-underscore-dangle: off
+  no-unused-expressions: off
+  jsdoc/require-returns: off
+  comma-dangle: off
+  func-names: off
+  import/newline-after-import: off
+  prefer-arrow-callback: off
+  semi: off
+  curly:
+    - error
+    - all
+  no-restricted-syntax:
+    - error
+    - selector: "LabeledStatement"
+      message: Labels are a form of GOTO; using them makes code confusing and hard to maintain and understand.
+    - selector: "WithStatement"
+      message: "`with` is disallowed in strict mode because it makes code impossible to predict and optimize."
+globals:
+  expect: true

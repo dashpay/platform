@@ -5713,6 +5713,9 @@ export namespace GetStatusResponse {
           getCurrent(): number;
           setCurrent(value: number): void;
 
+          getNextEpoch(): number;
+          setNextEpoch(value: number): void;
+
           serializeBinary(): Uint8Array;
           toObject(includeInstance?: boolean): Drive.AsObject;
           static toObject(includeInstance: boolean, msg: Drive): Drive.AsObject;
@@ -5727,6 +5730,7 @@ export namespace GetStatusResponse {
           export type AsObject = {
             latest: number,
             current: number,
+            nextEpoch: number,
           }
         }
       }

@@ -5,6 +5,7 @@ export default function getConfigProfilesFactory() {
   /**
    * @typedef {function} getConfigProfiles
    * @param {Config} config
+   * @param {{ includeAll?: boolean }} [options]
    * @returns {string[]}
    */
   function getConfigProfiles(config) {
@@ -14,16 +15,9 @@ export default function getConfigProfilesFactory() {
 
     if (config.get('platform.enable')) {
       profiles.push('platform');
-
-      // Select which DAPI stack to enable via profiles
-      if (config.get('platform.dapi.deprecated.enabled')) {
-        profiles.push('platform-dapi-deprecated');
-      } else {
-        profiles.push('platform-dapi-rs');
-      }
     }
 
-    return profiles;
+    return Array.from(new Set(profiles));
   }
 
   return getConfigProfiles;

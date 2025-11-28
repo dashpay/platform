@@ -37,9 +37,9 @@ describe('DPNSFacade', () => {
     await client.dpns.registerName({
       label: 'l', identityId: 'i', publicKeyId: 1, privateKeyWif: 'w',
     });
-    await client.dpns.usernames('i', { limit: 2 });
+    await client.dpns.usernames({ identityId: 'i', limit: 2 });
     await client.dpns.username('i');
-    await client.dpns.usernamesWithProof('i', { limit: 3 });
+    await client.dpns.usernamesWithProof({ identityId: 'i', limit: 3 });
     await client.dpns.usernameWithProof('i');
     await client.dpns.getUsernameByName('u');
     await client.dpns.getUsernameByNameWithProof('u');
@@ -47,9 +47,9 @@ describe('DPNSFacade', () => {
     expect(wasmSdk.dpnsIsNameAvailable).to.be.calledOnceWithExactly('label');
     expect(wasmSdk.dpnsResolveName).to.be.calledOnceWithExactly('name');
     expect(wasmSdk.dpnsRegisterName).to.be.calledOnce();
-    expect(wasmSdk.getDpnsUsernames).to.be.calledOnceWithExactly('i', 2);
+    expect(wasmSdk.getDpnsUsernames).to.be.calledOnceWithExactly({ identityId: 'i', limit: 2 });
     expect(wasmSdk.getDpnsUsername).to.be.calledOnceWithExactly('i');
-    expect(wasmSdk.getDpnsUsernamesWithProofInfo).to.be.calledOnceWithExactly('i', 3);
+    expect(wasmSdk.getDpnsUsernamesWithProofInfo).to.be.calledOnceWithExactly({ identityId: 'i', limit: 3 });
     expect(wasmSdk.getDpnsUsernameWithProofInfo).to.be.calledOnceWithExactly('i');
     expect(wasmSdk.getDpnsUsernameByName).to.be.calledOnceWithExactly('u');
     expect(wasmSdk.getDpnsUsernameByNameWithProofInfo).to.be.calledOnceWithExactly('u');

@@ -13,8 +13,8 @@ describe('Group', function groupSuite() {
 
   it('contestedResources() returns contested resources (may be empty)', async () => {
     const res = await sdk.group.contestedResources({
+      dataContractId: TEST_IDS.dataContractId,
       documentTypeName: 'domain',
-      contractId: TEST_IDS.dataContractId,
       indexName: 'parentNameAndLabel',
       limit: 5,
     });
@@ -23,7 +23,7 @@ describe('Group', function groupSuite() {
 
   it('contestedResourceVotersForIdentity() returns voters (may be empty)', async () => {
     const res = await sdk.group.contestedResourceVotersForIdentity({
-      contractId: TEST_IDS.dataContractId,
+      dataContractId: TEST_IDS.dataContractId,
       documentTypeName: 'domain',
       indexName: 'parentNameAndLabel',
       indexValues: ['dash', TEST_IDS.username],
@@ -39,17 +39,26 @@ describe('Group', function groupSuite() {
   });
 
   it('members() is callable for group contracts', async () => {
-    const res = await sdk.group.members(TEST_IDS.groupContractId, 0, { limit: 5 });
+    const res = await sdk.group.members({
+      dataContractId: TEST_IDS.groupContractId,
+      groupContractPosition: 0,
+      limit: 5,
+    });
     expect(res).to.exist();
   });
 
   it('identityGroups() is callable for known identity', async () => {
-    const res = await sdk.group.identityGroups(TEST_IDS.identityId);
+    const res = await sdk.group.identityGroups({ identityId: TEST_IDS.identityId });
     expect(res).to.exist();
   });
 
   it('actions() is callable for group contract', async () => {
-    const res = await sdk.group.actions(TEST_IDS.groupContractId, 0, 'ACTIVE', { count: 5 });
+    const res = await sdk.group.actions({
+      dataContractId: TEST_IDS.groupContractId,
+      groupContractPosition: 0,
+      status: 'ACTIVE',
+      limit: 5,
+    });
     expect(res).to.exist();
   });
 

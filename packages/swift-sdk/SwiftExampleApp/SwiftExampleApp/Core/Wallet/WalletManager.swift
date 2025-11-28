@@ -57,7 +57,7 @@ class WalletManager: ObservableObject {
     
     // MARK: - Wallet Management
     
-    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil) async throws -> HDWallet {
+    func createWallet(label: String, network: Network, mnemonic: String? = nil, pin: String, networks: [Network]? = nil, isImport: Bool = false) async throws -> HDWallet {
         print("WalletManager.createWallet called")
         isLoading = true
         defer { isLoading = false }
@@ -89,19 +89,33 @@ class WalletManager: ObservableObject {
             let selectedNetworks = networks ?? [network]
             let keyWalletNetworks = selectedNetworks.map { $0.toKeyWalletNetwork() }
 
+            // Calculate birthHeight based on wallet type
+            // For imported wallets: use 730k for mainnet, 0 for test/devnets (need to sync from genesis)
+            // For new wallets: use 0 to signal "use latest checkpoint" (FFI interprets 0 as None)
+            let birthHeight: UInt32
+            if isImport {
+                // Imported wallet should sync from a reasonable historical point
+                birthHeight = network == .mainnet ? 730_000 : 1 // Use 1 instead of 0 to avoid "latest checkpoint" interpretation
+            } else {
+                // New wallet: pass 0 to use latest checkpoint (FFI converts 0 -> None -> latest)
+                birthHeight = 0
+            }
+
+            print("Creating wallet with birthHeight: \(birthHeight) (isImport: \(isImport), network: \(network))")
+
             // Add wallet using SDK's WalletManager with combined network bitfield and serialize
             let result = try sdkWalletManager.addWalletAndSerialize(
                 mnemonic: finalMnemonic,
                 passphrase: nil,
                 networks: keyWalletNetworks,
-                birthHeight: 0,
+                birthHeight: birthHeight,
                 accountOptions: .default,
                 downgradeToPublicKeyWallet: false,
                 allowExternalSigning: false
             )
             walletId = result.walletId
             serializedBytes = result.serializedWallet
-            
+
             print("Wallet added with ID: \(walletId.hexString)")
         } catch {
             print("Failed to add wallet: \(error)")
@@ -109,7 +123,7 @@ class WalletManager: ObservableObject {
         }
         
         // Create HDWallet model for SwiftUI
-        let wallet = HDWallet(label: label, network: network, isImported: false)
+        let wallet = HDWallet(label: label, network: network, isImported: isImport)
         wallet.walletId = walletId
         
         // Persist serialized wallet bytes for restoration on next launch
@@ -145,6 +159,35 @@ class WalletManager: ObservableObject {
                 }
             }
             wallet.networks = bitfield
+        }
+
+        // Set per-network sync-from heights
+        // These are used by WalletService.computeNetworkBaselineSyncFromHeight()
+        // to determine the SPV sync starting point across all wallets
+        if isImport {
+            // Imported wallet: use fixed per-network baselines
+            wallet.syncFromMainnet = 730_000
+            wallet.syncFromTestnet = 1  // Use 1 instead of 0 to avoid conflicts
+            wallet.syncFromDevnet = 1
+        } else {
+            // New wallet: use the latest checkpoint height for each enabled network
+            let nets = networks ?? [network]
+            for n in nets {
+                switch n {
+                case .mainnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 0)) {
+                        wallet.syncFromMainnet = Int(cp)
+                    }
+                case .testnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 1)) {
+                        wallet.syncFromTestnet = Int(cp)
+                    }
+                case .devnet:
+                    if let cp = SPVClient.latestCheckpointHeight(forNetwork: .init(rawValue: 2)) {
+                        wallet.syncFromDevnet = Int(cp)
+                    }
+                }
+            }
         }
 
         // Save to database

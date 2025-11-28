@@ -1,3 +1,11 @@
+### [2.1.2](https://github.com/dashpay/platform/compare/v2.1.1...v2.1.2) (2025-10-27)
+
+
+### Bug Fixes
+
+* **dashmate:** rs-dapi not stopped when dashmate reset --platform -f is called ([#2824](https://github.com/dashpay/platform/issues/2824))
+* incorrect JS package versions ([#2823](https://github.com/dashpay/platform/issues/2823))
+
 ### [2.1.1](https://github.com/dashpay/platform/compare/v2.1.0-rc.1...v2.1.1) (2025-10-27)
 
 

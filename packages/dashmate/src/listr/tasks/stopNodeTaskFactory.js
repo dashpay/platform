@@ -16,15 +16,9 @@ export default function stopNodeTaskFactory(
   getConnectionHost,
   getConfigProfiles,
 ) {
-  function getPlatformProfiles(config) {
-    const platformProfiles = getConfigProfiles(config)
+  function selectPlatformProfiles(config, options) {
+    return getConfigProfiles(config, options)
       .filter((profile) => profile.startsWith('platform'));
-
-    if (platformProfiles.length === 0) {
-      platformProfiles.push('platform');
-    }
-
-    return Array.from(new Set(platformProfiles));
   }
 
   /**
@@ -40,7 +34,9 @@ export default function stopNodeTaskFactory(
         title: 'Check node is running',
         skip: (ctx) => ctx.isForce,
         task: async (ctx) => {
-          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
+          const profiles = ctx.platformOnly
+            ? selectPlatformProfiles(config, { includeAll: true })
+            : [];
 
           if (!await dockerCompose.isNodeRunning(config, { profiles })) {
             throw new Error('Node is not running');
@@ -80,7 +76,9 @@ export default function stopNodeTaskFactory(
       {
         title: `Stopping ${config.getName()} node`,
         task: async (ctx) => {
-          const profiles = ctx.platformOnly ? getPlatformProfiles(config) : [];
+          const profiles = ctx.platformOnly
+            ? selectPlatformProfiles(config, { includeAll: true })
+            : [];
 
           await dockerCompose.stop(config, { profiles });
         },
