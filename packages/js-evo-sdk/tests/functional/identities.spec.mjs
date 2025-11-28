@@ -4,10 +4,28 @@ import { TEST_IDS, TEST_SECRETS } from '../fixtures/local.mjs';
 describe('Identities', function identitiesSuite() {
   this.timeout(60000);
   let sdk;
+  let uniqueHash;
+  let nonUniqueHash;
 
   before(async () => {
     sdk = EvoSDK.localTrusted();
     await sdk.connect();
+
+    const identity = await sdk.identities.fetch(TEST_IDS.identityId);
+    const keys = identity?.publicKeys ?? [];
+    const crypto = await import('crypto');
+
+    const hash160 = (buf) => {
+      const sha = crypto.createHash('sha256').update(buf).digest();
+      return crypto.createHash('ripemd160').update(sha).digest('hex');
+    };
+
+    if (keys[0]?.data) {
+      uniqueHash = hash160(Buffer.from(keys[0].data));
+    }
+    if (keys[keys.length - 1]?.data) {
+      nonUniqueHash = hash160(Buffer.from(keys[keys.length - 1].data));
+    }
   });
 
   it('fetch() returns identity', async () => {
@@ -54,12 +72,12 @@ describe('Identities', function identitiesSuite() {
   });
 
   it('byPublicKeyHash() resolves identity by unique hash', async () => {
-    const res = await sdk.identities.byPublicKeyHash(TEST_IDS.publicKeyHashUnique);
+    const res = await sdk.identities.byPublicKeyHash(uniqueHash);
     expect(res).to.exist();
   });
 
   it('byNonUniquePublicKeyHash() resolves entries (may be empty)', async () => {
-    const res = await sdk.identities.byNonUniquePublicKeyHash(TEST_IDS.publicKeyHashNonUnique);
+    const res = await sdk.identities.byNonUniquePublicKeyHash(nonUniqueHash);
     expect(res).to.exist();
   });
 
