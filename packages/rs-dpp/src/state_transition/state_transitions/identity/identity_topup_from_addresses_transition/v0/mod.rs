@@ -11,9 +11,8 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 use std::collections::BTreeMap;
 
-use crate::address_funds::AddressWitness;
+use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::fee::Credits;
-use crate::identity::KeyOfType;
 use crate::prelude::{Identifier, KeyOfTypeNonce, UserFeeIncrease};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -28,7 +27,7 @@ use crate::ProtocolError;
 )]
 #[derive(Default)]
 pub struct IdentityTopUpFromAddressesTransitionV0 {
-    pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    pub inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
     pub identity_id: Identifier,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

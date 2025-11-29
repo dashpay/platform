@@ -1,7 +1,10 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
+use std::collections::BTreeMap;
+
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
+use crate::fee::Credits;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -12,15 +15,13 @@ use crate::{
 };
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::{FeatureVersion, PlatformVersion};
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
 
 pub trait IdentityCreditTransferToAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        to_recipient_keys: BTreeMap<KeyOfType, Credits>,
+        to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
         signer: S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,

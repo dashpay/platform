@@ -1,11 +1,14 @@
 #[cfg(feature = "state-transition-signing")]
+use std::collections::BTreeMap;
+
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::KeyOfTypeNonce;
 #[cfg(feature = "state-transition-signing")]
@@ -18,13 +21,12 @@ use crate::version::FeatureVersion;
 use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-use std::collections::BTreeMap;
 
 pub trait IdentityTopUpFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
+    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         identity: &Identity,
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,

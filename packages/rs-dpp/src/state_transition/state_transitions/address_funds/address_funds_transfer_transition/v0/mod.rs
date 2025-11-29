@@ -7,12 +7,10 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::KeyOfType;
 use std::collections::BTreeMap;
 
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
-
-use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness};
 use crate::fee::Credits;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
@@ -38,8 +36,8 @@ use serde::{Deserialize, Serialize};
 #[platform_serialize(unversioned)]
 #[derive(Default)]
 pub struct AddressFundsTransferTransitionV0 {
-    pub inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-    pub outputs: BTreeMap<KeyOfType, Credits>,
+    pub inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+    pub outputs: BTreeMap<PlatformAddress, Credits>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
@@ -71,36 +69,26 @@ mod test {
 
     #[test]
     fn test_utxo_transfer_transition1() {
-        use crate::address_funds::AddressWitness;
-        use crate::identity::{KeyOfType, KeyType};
+        use crate::address_funds::{AddressWitness, PlatformAddress};
         use std::collections::BTreeMap;
-
-        let mut rng = rand::thread_rng();
 
         // Create some inputs
         let mut inputs = BTreeMap::new();
-        let input_key = KeyOfType {
-            key_type: KeyType::ECDSA_HASH160,
-            key_data: vec![
-                1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-            ],
-        };
-        inputs.insert(input_key, (1, 1000)); // nonce: 1, credits: 1000
+        let input_address =
+            PlatformAddress::P2pkh([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20]);
+        inputs.insert(input_address, (1, 1000)); // nonce: 1, credits: 1000
 
         // Create some outputs
         let mut outputs = BTreeMap::new();
-        let output_key = KeyOfType {
-            key_type: KeyType::ECDSA_HASH160,
-            key_data: vec![
-                20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1,
-            ],
-        };
-        outputs.insert(output_key, 900); // credits: 900
+        let output_address =
+            PlatformAddress::P2pkh([20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]);
+        outputs.insert(output_address, 900); // credits: 900
 
         let transition = AddressFundsTransferTransitionV0 {
             inputs,
             outputs,
             user_fee_increase: 0,
+            fee_strategy: Default::default(),
             input_witnesses: vec![],
         };
 

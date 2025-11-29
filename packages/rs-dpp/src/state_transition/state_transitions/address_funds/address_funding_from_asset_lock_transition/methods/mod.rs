@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
+use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
@@ -28,7 +28,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
     fn try_from_asset_lock(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        outputs: BTreeMap<KeyOfType, Credits>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         output_paying_fees: u16,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,

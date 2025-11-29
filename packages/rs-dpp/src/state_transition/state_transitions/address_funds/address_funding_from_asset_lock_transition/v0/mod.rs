@@ -15,9 +15,9 @@ use platform_serialization_derive::PlatformSignable;
 
 use crate::ProtocolError;
 
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::identity::KeyOfType;
 use crate::prelude::UserFeeIncrease;
 use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
@@ -41,7 +41,7 @@ mod property_names {
 #[derive(Default)]
 pub struct AddressFundingFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
-    pub outputs: BTreeMap<KeyOfType, Credits>,
+    pub outputs: BTreeMap<PlatformAddress, Credits>,
     /// The index of the output that will pay fees
     pub output_paying_fees: u16,
     pub user_fee_increase: UserFeeIncrease,

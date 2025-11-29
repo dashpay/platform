@@ -1,13 +1,8 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::{
-    prelude::{KeyOfTypeNonce, UserFeeIncrease},
-    state_transition::StateTransition,
-    ProtocolError,
-};
-#[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
-use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness};
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
@@ -15,19 +10,24 @@ use crate::identity::core_script::CoreScript;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
 use crate::serialization::Signable;
 use crate::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
+use crate::{
+    prelude::{KeyOfTypeNonce, UserFeeIncrease},
+    state_transition::StateTransition,
+    ProtocolError,
+};
+#[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
@@ -60,7 +60,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
 
         address_credit_withdrawal_transition.input_witnesses = inputs
             .iter()
-            .map(|(key_of_type, _)| signer.sign_create_witness(key_of_type, &signable_bytes))
+            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         tracing::debug!("try_from_inputs_with_signer: Successfully created transition");

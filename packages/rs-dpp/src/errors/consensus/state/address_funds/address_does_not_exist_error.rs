@@ -1,7 +1,7 @@
+use crate::address_funds::PlatformAddress;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
-use crate::identity::KeyOfType;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -10,23 +10,23 @@ use thiserror::Error;
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
 #[platform_serialize(unversioned)]
-#[error("Address does not exist for key: {key_of_type:?}")]
+#[error("Address does not exist: {address}")]
 pub struct AddressDoesNotExistError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    key_of_type: KeyOfType,
+    address: PlatformAddress,
 }
 
 impl AddressDoesNotExistError {
-    pub fn new(key_of_type: KeyOfType) -> Self {
-        Self { key_of_type }
+    pub fn new(address: PlatformAddress) -> Self {
+        Self { address }
     }
 
-    pub fn key_of_type(&self) -> &KeyOfType {
-        &self.key_of_type
+    pub fn address(&self) -> &PlatformAddress {
+        &self.address
     }
 }
 

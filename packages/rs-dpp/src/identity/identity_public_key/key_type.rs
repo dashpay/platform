@@ -15,16 +15,12 @@ use lazy_static::lazy_static;
 #[cfg(feature = "bls-signatures")]
 use crate::bls_signatures::{self as bls_signatures, Bls12381G2Impl, BlsError};
 use crate::fee::Credits;
-use crate::prelude::KeyOfTypeNonce;
 use crate::version::PlatformVersion;
 use crate::ProtocolError;
-use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "random-public-keys")]
 use rand::rngs::StdRng;
 #[cfg(feature = "random-public-keys")]
 use rand::Rng;
-#[cfg(feature = "state-transition-serde-conversion")]
-use serde::{Deserialize, Serialize};
 use serde_repr::{Deserialize_repr, Serialize_repr};
 use std::collections::HashMap;
 use std::convert::TryFrom;
@@ -54,110 +50,6 @@ pub enum KeyType {
     ECDSA_HASH160 = 2,
     BIP13_SCRIPT_HASH = 3,
     EDDSA_25519_HASH160 = 4,
-}
-
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Clone,
-    Hash,
-    Ord,
-    PartialOrd,
-    Encode,
-    Decode,
-    PlatformSerialize,
-    PlatformDeserialize,
-    Default,
-)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
-#[platform_serialize(unversioned)]
-pub struct KeyOfType {
-    pub key_type: KeyType,
-    pub key: Vec<u8>,
-}
-
-impl KeyOfType {
-    /// Converts the KeyOfType to bytes.
-    /// Format: [key_type (1 byte)] + [key data (variable length)]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(1 + self.key.len());
-        bytes.push(self.key_type as u8);
-        bytes.extend_from_slice(&self.key);
-        bytes
-    }
-
-    /// Gets a base64 string of the KeyOfType concatenated with the nonce.
-    pub fn base64_string_with_nonce(&self, nonce: KeyOfTypeNonce) -> String {
-        use base64::engine::general_purpose::STANDARD;
-        use base64::Engine;
-
-        // Gather the base bytes of the key
-        let mut bytes = self.to_bytes();
-
-        // Append nonce bytes (assuming it has a `to_bytes()` method)
-        bytes.extend_from_slice(&nonce.to_be_bytes());
-
-        // Encode full buffer
-        STANDARD.encode(bytes)
-    }
-
-    /// Creates a KeyOfType from bytes.
-    /// Format: [key_type (1 byte)] + [key data (variable length)]
-    pub fn from_bytes(bytes: &[u8]) -> Result<Self, ProtocolError> {
-        if bytes.is_empty() {
-            return Err(ProtocolError::DecodingError(
-                "cannot decode KeyOfType from empty bytes".to_string(),
-            ));
-        }
-
-        let key_type = KeyType::try_from(bytes[0])
-            .map_err(|e| ProtocolError::DecodingError(format!("invalid key type: {}", e)))?;
-
-        let key = bytes[1..].to_vec();
-
-        Ok(KeyOfType { key_type, key })
-    }
-}
-
-impl std::fmt::Display for KeyOfType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "KeyOfType({:?}, {})",
-            self.key_type,
-            hex::encode(&self.key)
-        )
-    }
-}
-
-#[derive(
-    Debug,
-    PartialEq,
-    Eq,
-    Clone,
-    Hash,
-    Ord,
-    PartialOrd,
-    Encode,
-    Decode,
-    PlatformSerialize,
-    PlatformDeserialize,
-    Default,
-)]
-#[cfg_attr(
-    feature = "state-transition-serde-conversion",
-    derive(Serialize, Deserialize),
-    serde(rename_all = "camelCase")
-)]
-#[platform_serialize(unversioned)]
-pub struct KeyOfTypeWithNonce {
-    pub key_of_type: KeyOfType,
-    pub nonce: KeyOfTypeNonce,
 }
 
 lazy_static! {

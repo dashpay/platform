@@ -1,17 +1,18 @@
+use std::collections::BTreeMap;
+
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
-use crate::identity::KeyOfType;
 use crate::prelude::KeyOfTypeNonce;
 use crate::ProtocolError;
 use platform_value::Identifier;
-use std::collections::BTreeMap;
 
 pub trait StateTransitionAddressInputs: Sized {
     /// Get inputs
-    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
     /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
     /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>);
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>);
 }
 
 pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
@@ -23,17 +24,17 @@ pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
             ));
         }
 
-        // Build a map containing only (KeyOfType, KeyOfTypeNonce) pairs,
+        // Build a map containing only (PlatformAddress, KeyOfTypeNonce) pairs,
         // ignoring the Credits in the input values.
-        let key_nonce_map: BTreeMap<&KeyOfType, &KeyOfTypeNonce> = self
+        let address_nonce_map: BTreeMap<&PlatformAddress, &KeyOfTypeNonce> = self
             .inputs()
             .iter()
-            .map(|(key, (nonce, _credits))| (key, nonce))
+            .map(|(address, (nonce, _credits))| (address, nonce))
             .collect();
 
         use crate::util::hash::hash_double;
 
-        let input_bytes = bincode::encode_to_vec(&key_nonce_map, bincode::config::standard())
+        let input_bytes = bincode::encode_to_vec(&address_nonce_map, bincode::config::standard())
             .map_err(|e| ProtocolError::EncodingError(format!("Failed to encode inputs: {}", e)))?;
 
         let hash = hash_double(input_bytes);

@@ -1,8 +1,8 @@
+use crate::address_funds::PlatformAddress;
 use crate::consensus::state::state_error::StateError;
 use crate::consensus::ConsensusError;
 use crate::errors::ProtocolError;
 use crate::fee::Credits;
-use crate::identity::KeyOfType;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
@@ -10,7 +10,7 @@ use thiserror::Error;
 #[derive(
     Error, Debug, Clone, PartialEq, Eq, Encode, Decode, PlatformSerialize, PlatformDeserialize,
 )]
-#[error("Insufficient address balance for key {key_of_type}: has {balance}, requires at least {required_balance}")]
+#[error("Insufficient address balance for {address}: has {balance}, requires at least {required_balance}")]
 #[platform_serialize(unversioned)]
 pub struct AddressTooLittleFundsError {
     /*
@@ -18,22 +18,22 @@ pub struct AddressTooLittleFundsError {
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
 
     */
-    key_of_type: KeyOfType,
+    address: PlatformAddress,
     balance: Credits,
     required_balance: Credits,
 }
 
 impl AddressTooLittleFundsError {
-    pub fn new(key_of_type: KeyOfType, balance: Credits, required_balance: Credits) -> Self {
+    pub fn new(address: PlatformAddress, balance: Credits, required_balance: Credits) -> Self {
         Self {
-            key_of_type,
+            address,
             balance,
             required_balance,
         }
     }
 
-    pub fn key_of_type(&self) -> &KeyOfType {
-        &self.key_of_type
+    pub fn address(&self) -> &PlatformAddress {
+        &self.address
     }
 
     pub fn balance(&self) -> Credits {

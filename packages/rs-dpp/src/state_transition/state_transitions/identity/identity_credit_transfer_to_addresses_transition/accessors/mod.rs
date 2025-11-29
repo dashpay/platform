@@ -1,12 +1,13 @@
 mod v0;
 
+use std::collections::BTreeMap;
+pub use v0::*;
+
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
-use crate::identity::KeyOfType;
 use crate::prelude::IdentityNonce;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 use platform_value::Identifier;
-use std::collections::BTreeMap;
-pub use v0::*;
 
 impl IdentityCreditTransferToAddressesTransitionAccessorsV0
     for IdentityCreditTransferToAddressesTransition
@@ -25,18 +26,18 @@ impl IdentityCreditTransferToAddressesTransitionAccessorsV0
         }
     }
 
-    fn recipient_keys(&self) -> &BTreeMap<KeyOfType, Credits> {
+    fn recipient_addresses(&self) -> &BTreeMap<PlatformAddress, Credits> {
         match self {
             IdentityCreditTransferToAddressesTransition::V0(transition) => {
-                &transition.recipient_keys
+                &transition.recipient_addresses
             }
         }
     }
 
-    fn set_recipient_keys(&mut self, recipient_keys: BTreeMap<KeyOfType, Credits>) {
+    fn set_recipient_addresses(&mut self, recipient_addresses: BTreeMap<PlatformAddress, Credits>) {
         match self {
             IdentityCreditTransferToAddressesTransition::V0(transition) => {
-                transition.recipient_keys = recipient_keys;
+                transition.recipient_addresses = recipient_addresses;
             }
         }
     }

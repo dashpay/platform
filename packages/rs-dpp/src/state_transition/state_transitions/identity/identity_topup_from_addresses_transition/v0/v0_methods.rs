@@ -1,37 +1,37 @@
+use std::collections::BTreeMap;
+
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::AddressWitness;
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::UserFeeIncrease;
 use crate::prelude::{Identifier, KeyOfTypeNonce};
 #[cfg(feature = "state-transition-signing")]
+use crate::prelude::UserFeeIncrease;
+#[cfg(feature = "state-transition-signing")]
 use crate::ProtocolError;
-use std::collections::BTreeMap;
-
-use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
-use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
-
-use crate::address_funds::AddressWitness;
-use crate::fee::Credits;
-use crate::identity::KeyOfType;
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
+use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
+use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+use crate::state_transition::StateTransitionAddressInputs;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionAddressInputs;
 use crate::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
 impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
+    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         identity: &Identity,
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
@@ -52,7 +52,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
 
         identity_top_up_from_addresses_transition.input_witnesses = inputs
             .iter()
-            .map(|(key_of_type, _)| signer.sign_create_witness(key_of_type, &signable_bytes))
+            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
             .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         Ok(identity_top_up_from_addresses_transition.into())
@@ -72,15 +72,15 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
 }
 
 impl StateTransitionAddressInputs for IdentityTopUpFromAddressesTransitionV0 {
-    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
         &self.inputs
     }
 
-    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
         &mut self.inputs
     }
 
-    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>) {
         self.inputs = inputs;
     }
 }

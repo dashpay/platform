@@ -5,9 +5,9 @@ use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
+use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
+use crate::fee::Credits;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::IdentityCreditTransferToAddressesTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -28,7 +28,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        to_recipient_keys: BTreeMap<KeyOfType, Credits>,
+        to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
         signer: S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
@@ -45,7 +45,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
             0 => Ok(
                 IdentityCreditTransferToAddressesTransitionV0::try_from_identity(
                     identity,
-                    to_recipient_keys,
+                    to_recipient_addresses,
                     user_fee_increase,
                     signer,
                     signing_withdrawal_key_to_use,

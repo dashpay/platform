@@ -1,4 +1,11 @@
 #[cfg(feature = "state-transition-signing")]
+use std::collections::BTreeMap;
+
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
+use crate::fee::Credits;
+#[cfg(feature = "state-transition-signing")]
 use crate::{
     identity::{
         accessors::IdentityGettersV0,
@@ -9,13 +16,7 @@ use crate::{
     state_transition::StateTransition,
     ProtocolError,
 };
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
 
-#[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::methods::IdentityCreditTransferToAddressesTransitionMethodsV0;
 use crate::state_transition::identity_credit_transfer_to_addresses_transition::v0::IdentityCreditTransferToAddressesTransitionV0;
 #[cfg(feature = "state-transition-signing")]
@@ -29,7 +30,7 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     #[cfg(feature = "state-transition-signing")]
     fn try_from_identity<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        to_recipient_keys: BTreeMap<KeyOfType, Credits>,
+        to_recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         user_fee_increase: UserFeeIncrease,
         signer: S,
         signing_withdrawal_key_to_use: Option<&IdentityPublicKey>,
@@ -39,11 +40,11 @@ impl IdentityCreditTransferToAddressesTransitionMethodsV0
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_identity: Started");
         tracing::debug!(identity_id = %identity.id(), "try_from_identity");
-        tracing::debug!(recipient_key = ?to_recipient_keys, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
+        tracing::debug!(recipient_addresses = ?to_recipient_addresses, has_signing_key = signing_withdrawal_key_to_use.is_some(), "try_from_identity inputs");
 
         let mut transition: StateTransition = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: identity.id(),
-            recipient_keys: to_recipient_keys,
+            recipient_addresses: to_recipient_addresses,
             nonce,
             user_fee_increase,
             signature_public_key_id: 0,

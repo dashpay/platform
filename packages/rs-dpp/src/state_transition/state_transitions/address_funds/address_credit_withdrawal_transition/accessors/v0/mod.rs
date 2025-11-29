@@ -1,17 +1,16 @@
 use std::collections::BTreeMap;
 
-use crate::address_funds::AddressFundsFeeStrategy;
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
-use crate::identity::KeyOfType;
 use crate::prelude::KeyOfTypeNonce;
 use crate::withdrawal::Pooling;
 
 pub trait AddressCreditWithdrawalTransitionAccessorsV0 {
     /// Get inputs
-    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>;
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
     /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>);
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>);
 
     /// Get fee strategy
     fn fee_strategy(&self) -> &AddressFundsFeeStrategy;

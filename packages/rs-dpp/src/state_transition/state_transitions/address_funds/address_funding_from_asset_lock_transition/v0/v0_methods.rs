@@ -1,7 +1,10 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
+use std::collections::BTreeMap;
+
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
+use crate::address_funds::PlatformAddress;
+#[cfg(feature = "state-transition-signing")]
+use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
@@ -10,18 +13,17 @@ use crate::state_transition::address_funding_from_asset_lock_transition::methods
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
+#[cfg(feature = "state-transition-signing")]
 use dashcore::signer;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_asset_lock(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
-        outputs: BTreeMap<KeyOfType, Credits>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         output_paying_fees: u16,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,

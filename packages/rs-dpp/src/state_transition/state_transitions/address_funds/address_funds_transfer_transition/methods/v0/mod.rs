@@ -1,10 +1,12 @@
 #[cfg(feature = "state-transition-signing")]
-use crate::address_funds::AddressFundsFeeStrategy;
+use std::collections::BTreeMap;
+
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
-use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
+use crate::identity::signer::Signer;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -14,14 +16,12 @@ use crate::{
 };
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
 
 pub trait AddressFundsTransferTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
-        outputs: BTreeMap<KeyOfType, Credits>,
+    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         user_fee_increase: UserFeeIncrease,

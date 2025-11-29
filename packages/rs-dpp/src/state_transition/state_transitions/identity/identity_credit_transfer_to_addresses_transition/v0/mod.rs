@@ -8,7 +8,8 @@ pub(super) mod v0_methods;
 mod value_conversion;
 mod version;
 
-use crate::identity::{KeyID, KeyOfType};
+use crate::address_funds::PlatformAddress;
+use crate::identity::KeyID;
 use std::collections::BTreeMap;
 
 use crate::prelude::{Identifier, IdentityNonce, UserFeeIncrease};
@@ -41,7 +42,7 @@ use serde::{Deserialize, Serialize};
 pub struct IdentityCreditTransferToAddressesTransitionV0 {
     // Own ST fields
     pub identity_id: Identifier,
-    pub recipient_keys: BTreeMap<KeyOfType, Credits>,
+    pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     pub nonce: IdentityNonce,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
@@ -75,11 +76,16 @@ mod test {
 
     #[test]
     fn test_identity_credit_transfer_to_addresses_transition1() {
+        use crate::address_funds::PlatformAddress;
+        use std::collections::BTreeMap;
+
         let mut rng = rand::thread_rng();
+        let mut recipient_addresses = BTreeMap::new();
+        recipient_addresses.insert(PlatformAddress::P2pkh([1u8; 20]), rng.gen::<u64>());
+
         let transition = IdentityCreditTransferToAddressesTransitionV0 {
             identity_id: Identifier::random(),
-            recipient_keys: Identifier::random(),
-            amount: rng.gen(),
+            recipient_addresses,
             nonce: 1,
             user_fee_increase: 0,
             signature_public_key_id: rng.gen(),

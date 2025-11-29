@@ -5,15 +5,13 @@ use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::address_funds::AddressFundsFeeStrategy;
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::core_script::CoreScript;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
 use crate::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::withdrawal::Pooling;
@@ -31,8 +29,8 @@ use platform_version::version::PlatformVersion;
 
 impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<KeyOfType>>(
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,

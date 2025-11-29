@@ -1,18 +1,13 @@
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
-use platform_value::btreemap_extensions::{
-    BTreeValueMapHelper, BTreeValueRemoveInnerValueFromMapHelper,
-};
+use platform_value::btreemap_extensions::BTreeValueRemoveInnerValueFromMapHelper;
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike},
-    ProtocolError,
-};
+use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
+use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::fee::Credits;
-use crate::identity::KeyOfType;
+use crate::prelude::KeyOfTypeNonce;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::fields::*;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
@@ -46,31 +41,26 @@ impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0
 
         // Parse inputs
         if let Some(inputs_value) = transition_map.remove(INPUTS) {
-            let inputs: Vec<KeyOfType> = platform_value::from_value(inputs_value)?;
-            state_transition.set_inputs(inputs);
-        }
-
-        // Parse outputs
-        if let Some(outputs_value) = transition_map.remove(OUTPUTS) {
-            let outputs: BTreeMap<KeyOfType, Credits> = platform_value::from_value(outputs_value)?;
-            state_transition.set_outputs(outputs);
+            let inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> =
+                platform_value::from_value(inputs_value)?;
+            state_transition.inputs = inputs;
         }
 
         // Parse user fee increase
-        if let Some(user_fee_increase) = transition_map.get_u16(USER_FEE_INCREASE)? {
-            state_transition.user_fee_increase = user_fee_increase;
+        if let Some(user_fee_increase_value) = transition_map.remove(USER_FEE_INCREASE) {
+            state_transition.user_fee_increase = platform_value::from_value(user_fee_increase_value)?;
         }
 
-        // Parse input signatures
-        if let Some(signatures_value) = transition_map
-            .remove_optional_inner_value_array::<Vec<_>>(INPUT_SIGNATURES)
+        // Parse input witnesses
+        if let Some(witnesses_value) = transition_map
+            .remove_optional_inner_value_array::<Vec<_>>(INPUT_WITNESSES)
             .map_err(ProtocolError::ValueError)?
         {
-            let signatures = signatures_value
+            let witnesses = witnesses_value
                 .into_iter()
                 .map(|val| platform_value::from_value(val))
-                .collect::<Result<Vec<_>, _>>()?;
-            state_transition.input_signatures = signatures;
+                .collect::<Result<Vec<AddressWitness>, _>>()?;
+            state_transition.input_witnesses = witnesses;
         }
 
         Ok(state_transition)

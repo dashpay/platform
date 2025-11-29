@@ -1,7 +1,11 @@
 mod v0;
 
+#[cfg(feature = "state-transition-signing")]
+use std::collections::BTreeMap;
 pub use v0::*;
 
+#[cfg(feature = "state-transition-signing")]
+use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
@@ -11,7 +15,6 @@ use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyOfType;
 use crate::prelude::KeyOfTypeNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
@@ -25,14 +28,12 @@ use crate::state_transition::StateTransitionType;
 use crate::version::PlatformVersion;
 #[cfg(feature = "state-transition-signing")]
 use crate::{BlsModule, ProtocolError};
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,

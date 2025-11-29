@@ -1,17 +1,17 @@
 use std::collections::BTreeMap;
-use std::convert::TryFrom;
 
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
 use crate::{prelude::Identifier, state_transition::StateTransitionFieldTypes, ProtocolError};
 
-use crate::prelude::AssetLockProof;
+use crate::address_funds::{AddressWitness, PlatformAddress};
+use crate::fee::Credits;
+use crate::prelude::KeyOfTypeNonce;
 
 use crate::state_transition::identity_topup_from_addresses_transition::fields::*;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 use crate::state_transition::StateTransitionValueConvert;
 
-use crate::state_transition::state_transitions::common_fields::property_names::USER_FEE_INCREASE;
 use platform_version::version::PlatformVersion;
 
 impl StateTransitionValueConvert<'_> for IdentityTopUpFromAddressesTransitionV0 {
@@ -19,31 +19,36 @@ impl StateTransitionValueConvert<'_> for IdentityTopUpFromAddressesTransitionV0 
         raw_object: Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let signature = raw_object
-            .get_optional_binary_data(SIGNATURE)
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or_default();
         let identity_id = Identifier::from(
             raw_object
                 .get_hash256(IDENTITY_ID)
                 .map_err(ProtocolError::ValueError)?,
         );
 
-        let raw_asset_lock_proof = raw_object
-            .get_value(ASSET_LOCK_PROOF)
-            .map_err(ProtocolError::ValueError)?;
-        let asset_lock_proof = AssetLockProof::try_from(raw_asset_lock_proof)?;
+        let inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> =
+            if let Some(inputs_value) = raw_object.get_optional_value(INPUTS).map_err(ProtocolError::ValueError)? {
+                platform_value::from_value(inputs_value.clone())?
+            } else {
+                BTreeMap::new()
+            };
 
         let user_fee_increase = raw_object
             .get_optional_integer(USER_FEE_INCREASE)
             .map_err(ProtocolError::ValueError)?
             .unwrap_or_default();
 
+        let input_witnesses: Vec<AddressWitness> =
+            if let Some(witnesses_value) = raw_object.get_optional_value(INPUT_WITNESSES).map_err(ProtocolError::ValueError)? {
+                platform_value::from_value(witnesses_value.clone())?
+            } else {
+                vec![]
+            };
+
         Ok(IdentityTopUpFromAddressesTransitionV0 {
-            signature,
+            inputs,
             identity_id,
-            asset_lock_proof,
             user_fee_increase,
+            input_witnesses,
         })
     }
 
