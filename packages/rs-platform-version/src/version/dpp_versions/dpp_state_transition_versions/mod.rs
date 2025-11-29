@@ -28,6 +28,7 @@ pub struct ContractTransitionVersions {
 #[derive(Clone, Debug, Default)]
 pub struct AddressFundsTransitionVersions {
     pub address_funds_transition_default_version: FeatureVersion,
+    pub credit_withdrawal: FeatureVersion,
 }
 
 #[derive(Clone, Debug, Default)]

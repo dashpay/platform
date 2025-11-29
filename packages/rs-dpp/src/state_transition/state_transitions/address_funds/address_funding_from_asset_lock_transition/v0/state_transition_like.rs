@@ -1,5 +1,3 @@
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use platform_value::BinaryData;
 
 use crate::prelude::UserFeeIncrease;
@@ -33,18 +31,12 @@ impl StateTransitionLike for AddressFundingFromAssetLockTransitionV0 {
 
     /// Returns IDs of the modified data - the output addresses
     fn modified_data_ids(&self) -> Vec<Identifier> {
-        self.outputs
-            .keys()
-            .map(|key| Identifier::from(key.unique_id()))
-            .collect()
+        vec![]
     }
 
     /// this is based on the asset lock proof
     fn unique_identifiers(&self) -> Vec<String> {
-        self.outputs
-            .keys()
-            .map(|key| BASE64_STANDARD.encode(key.unique_id()))
-            .collect()
+        vec![]
     }
 
     fn user_fee_increase(&self) -> UserFeeIncrease {

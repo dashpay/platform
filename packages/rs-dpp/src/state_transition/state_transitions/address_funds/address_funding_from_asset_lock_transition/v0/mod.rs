@@ -13,6 +13,8 @@ use std::collections::BTreeMap;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
+use crate::ProtocolError;
+
 use crate::fee::Credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::identity::KeyOfType;

@@ -1,11 +1,7 @@
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::state_transition::AssetLockProved;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyType::ECDSA_HASH160;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
 #[cfg(feature = "state-transition-signing")]
@@ -13,10 +9,7 @@ use crate::serialization::Signable;
 use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 #[cfg(feature = "state-transition-signing")]
-use crate::{
-    identity::signer::Signer, prelude::UserFeeIncrease, state_transition::StateTransition,
-    BlsModule, ProtocolError,
-};
+use crate::{prelude::UserFeeIncrease, state_transition::StateTransition, ProtocolError};
 use dashcore::signer;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
@@ -41,7 +34,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         );
 
         // Create the unsigned transition
-        let mut address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
+        let address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
             asset_lock_proof,
             outputs,
             output_paying_fees,

@@ -34,6 +34,7 @@ pub enum StateTransitionType {
     IdentityTopUpFromAddresses = 11,
     AddressFundsTransfer = 12,
     AddressFundingFromAssetLock = 13,
+    AddressCreditWithdrawal = 14,
 }
 
 impl std::fmt::Display for StateTransitionType {

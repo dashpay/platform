@@ -22,6 +22,7 @@ use crate::serialization::Signable;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionAddressInputs;
 use crate::version::FeatureVersion;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
@@ -67,5 +68,19 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
     /// Returns identity id
     fn identity_id(&self) -> &Identifier {
         &self.identity_id
+    }
+}
+
+impl StateTransitionAddressInputs for IdentityTopUpFromAddressesTransitionV0 {
+    fn inputs(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        &self.inputs
+    }
+
+    fn inputs_mut(&mut self) -> &mut BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+        &mut self.inputs
+    }
+
+    fn set_inputs(&mut self, inputs: BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>) {
+        self.inputs = inputs;
     }
 }

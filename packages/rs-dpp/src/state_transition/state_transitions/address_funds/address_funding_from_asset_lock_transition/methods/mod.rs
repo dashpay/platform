@@ -7,8 +7,6 @@ pub use v0::*;
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyOfType;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::AssetLockProof;
@@ -41,7 +39,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             .address_funding_from_asset_lock_transition
         {
             0 => Ok(
-                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock(
                     asset_lock_proof,
                     asset_lock_proof_private_key,
                     outputs,
