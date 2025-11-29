@@ -13,7 +13,7 @@ use crate::identity::signer::Signer;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::{KeyOfTypeNonce, UserFeeIncrease},
+    prelude::{AddressNonce, UserFeeIncrease},
     state_transition::{
         address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0, StateTransition,
     },
@@ -25,7 +25,7 @@ use platform_version::version::PlatformVersion;
 impl AddressFundsTransferTransitionMethodsV0 for AddressFundsTransferTransition {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,

@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -39,7 +39,7 @@ impl Drive {
     pub fn verify_addresses_infos<
         'a,
         I: IntoIterator<Item = &'a KeyOfType>,
-        T: FromIterator<(KeyOfType, Option<(KeyOfTypeNonce, Credits)>)>,
+        T: FromIterator<(KeyOfType, Option<(AddressNonce, Credits)>)>,
     >(
         proof: &[u8],
         keys_of_type: I,

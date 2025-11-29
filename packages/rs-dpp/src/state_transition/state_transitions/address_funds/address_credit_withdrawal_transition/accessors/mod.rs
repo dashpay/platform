@@ -5,19 +5,19 @@ use std::collections::BTreeMap;
 use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 use crate::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use crate::withdrawal::Pooling;
 pub use v0::*;
 
 impl AddressCreditWithdrawalTransitionAccessorsV0 for AddressCreditWithdrawalTransition {
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             AddressCreditWithdrawalTransition::V0(v0) => &v0.inputs,
         }
     }
 
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
         match self {
             AddressCreditWithdrawalTransition::V0(v0) => v0.inputs = inputs,
         }

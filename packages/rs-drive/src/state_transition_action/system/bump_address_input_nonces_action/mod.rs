@@ -3,7 +3,7 @@ use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
 use std::collections::BTreeMap;
 
-use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 
 /// transformer module
 pub mod transformer;
@@ -19,7 +19,7 @@ pub enum BumpAddressInputNoncesAction {
 }
 
 impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNoncesAction {
-    fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)> {
         match self {
             BumpAddressInputNoncesAction::V0(v0) => &v0.inputs_with_remaining_balance,
         }
@@ -28,7 +28,7 @@ impl BumpAddressInputNonceActionAccessorsV0 for BumpAddressInputNoncesAction {
     fn inputs_with_remaining_balance_and_outputs_owned(
         self,
     ) -> (
-        BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        BTreeMap<KeyOfType, (AddressNonce, Credits)>,
         BTreeMap<KeyOfType, Credits>,
     ) {
         match self {

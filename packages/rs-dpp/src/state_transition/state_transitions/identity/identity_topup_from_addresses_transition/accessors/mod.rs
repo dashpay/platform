@@ -5,7 +5,7 @@ pub use v0::*;
 
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
 use crate::state_transition::StateTransitionAddressInputs;
 use platform_value::Identifier;
@@ -27,19 +27,19 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
 }
 
 impl StateTransitionAddressInputs for IdentityTopUpFromAddressesTransition {
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransition::V0(transition) => transition.inputs(),
         }
     }
 
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransition::V0(transition) => transition.inputs_mut(),
         }
     }
 
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
         match self {
             IdentityTopUpFromAddressesTransition::V0(transition) => transition.set_inputs(inputs),
         }

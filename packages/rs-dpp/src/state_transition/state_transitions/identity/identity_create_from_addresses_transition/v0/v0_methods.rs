@@ -14,16 +14,16 @@ use crate::identity::Identity;
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::KeyType::ECDSA_HASH160;
+use crate::prelude::AddressNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
-use crate::prelude::KeyOfTypeNonce;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
-use crate::state_transition::StateTransitionAddressInputs;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
+use crate::state_transition::StateTransitionAddressInputs;
 use crate::state_transition::StateTransitionType;
 #[cfg(feature = "state-transition-signing")]
 use crate::{BlsModule, ProtocolError};
@@ -40,7 +40,7 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,
@@ -120,17 +120,17 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
 
 impl StateTransitionAddressInputs for IdentityCreateFromAddressesTransitionV0 {
     /// Get inputs
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         &self.inputs
     }
 
     /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         &mut self.inputs
     }
 
     /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
         self.inputs = inputs;
     }
 }

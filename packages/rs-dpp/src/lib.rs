@@ -114,7 +114,7 @@ pub mod prelude {
     pub type IdentityNonce = u64;
 
     /// The Key of type none is only 32 bits, which means an address can be used up to 4 billion times.
-    pub type KeyOfTypeNonce = u32;
+    pub type AddressNonce = u32;
 
     pub type SenderKeyIndex = u32;
     pub type RecipientKeyIndex = u32;

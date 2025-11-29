@@ -8,7 +8,7 @@ use derive_more::From;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
 use dpp::platform_value::Identifier;
-use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 
 /// action
@@ -20,7 +20,7 @@ pub enum IdentityTopUpFromAddressesTransitionAction {
 
 impl IdentityTopUpFromAddressesTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance
@@ -30,7 +30,7 @@ impl IdentityTopUpFromAddressesTransitionAction {
     /// Get inputs
     pub fn inputs_with_remaining_balance_owned(
         self,
-    ) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    ) -> BTreeMap<KeyOfType, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 transition.inputs_with_remaining_balance

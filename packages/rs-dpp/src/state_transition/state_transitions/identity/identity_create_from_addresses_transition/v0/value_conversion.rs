@@ -7,7 +7,7 @@ use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
 use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::fee::Credits;
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::fields::*;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
@@ -41,14 +41,15 @@ impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0
 
         // Parse inputs
         if let Some(inputs_value) = transition_map.remove(INPUTS) {
-            let inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> =
+            let inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
                 platform_value::from_value(inputs_value)?;
             state_transition.inputs = inputs;
         }
 
         // Parse user fee increase
         if let Some(user_fee_increase_value) = transition_map.remove(USER_FEE_INCREASE) {
-            state_transition.user_fee_increase = platform_value::from_value(user_fee_increase_value)?;
+            state_transition.user_fee_increase =
+                platform_value::from_value(user_fee_increase_value)?;
         }
 
         // Parse input witnesses

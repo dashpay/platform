@@ -7,7 +7,7 @@ use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::Identity;
 use dpp::identity::{IdentityPublicKey, IdentityV0, KeyOfType, PartialIdentity};
-use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use dpp::version::PlatformVersion;
 use dpp::ProtocolError;
 use std::collections::BTreeMap;
@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone)]
 pub struct IdentityCreateFromAddressesTransitionActionV0 {
     /// inputs
-    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (KeyOfTypeNonce, RemainingCredits)>,
+    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (AddressNonce, RemainingCredits)>,
     /// public keys
     pub public_keys: Vec<IdentityPublicKey>,
     /// identity id

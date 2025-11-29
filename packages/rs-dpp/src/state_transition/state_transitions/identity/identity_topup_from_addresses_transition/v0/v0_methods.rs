@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
-use crate::address_funds::PlatformAddress;
 #[cfg(feature = "state-transition-signing")]
 use crate::address_funds::AddressWitness;
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::accessors::IdentityGettersV0;
@@ -10,20 +10,20 @@ use crate::identity::accessors::IdentityGettersV0;
 use crate::identity::signer::Signer;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::Identity;
-use crate::prelude::{Identifier, KeyOfTypeNonce};
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
-#[cfg(feature = "state-transition-signing")]
-use crate::ProtocolError;
+use crate::prelude::{AddressNonce, Identifier};
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
-use crate::state_transition::StateTransitionAddressInputs;
 #[cfg(feature = "state-transition-signing")]
 use crate::state_transition::StateTransition;
+use crate::state_transition::StateTransitionAddressInputs;
 use crate::version::FeatureVersion;
+#[cfg(feature = "state-transition-signing")]
+use crate::ProtocolError;
 #[cfg(feature = "state-transition-signing")]
 use platform_version::version::PlatformVersion;
 
@@ -31,7 +31,7 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         identity: &Identity,
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         signer: &S,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
@@ -72,15 +72,15 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
 }
 
 impl StateTransitionAddressInputs for IdentityTopUpFromAddressesTransitionV0 {
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         &self.inputs
     }
 
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)> {
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         &mut self.inputs
     }
 
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>) {
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
         self.inputs = inputs;
     }
 }

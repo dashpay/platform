@@ -12,7 +12,7 @@ use crate::identity::Identity;
 #[cfg(feature = "state-transition-signing")]
 use crate::identity::IdentityPublicKey;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 #[cfg(feature = "state-transition-signing")]
 use crate::prelude::UserFeeIncrease;
 #[cfg(feature = "state-transition-signing")]
@@ -27,7 +27,7 @@ pub trait IdentityCreateFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
         identity: &Identity,
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         input_private_keys: Vec<&[u8]>,
         signer: &S,
         bls: &impl BlsModule,

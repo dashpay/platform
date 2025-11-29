@@ -3,14 +3,14 @@ use std::collections::BTreeMap;
 use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 use crate::withdrawal::Pooling;
 
 pub trait AddressCreditWithdrawalTransitionAccessorsV0 {
     /// Get inputs
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
     /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>);
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>);
 
     /// Get fee strategy
     fn fee_strategy(&self) -> &AddressFundsFeeStrategy;

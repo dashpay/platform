@@ -5,7 +5,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
@@ -28,7 +28,7 @@ impl Drive {
         key_of_type: &KeyOfType,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(KeyOfTypeNonce, Credits)>, Error> {
+    ) -> Result<Option<(AddressNonce, Credits)>, Error> {
         match platform_version
             .drive
             .methods

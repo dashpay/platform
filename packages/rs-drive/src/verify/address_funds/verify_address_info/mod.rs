@@ -6,7 +6,7 @@ use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 
 impl Drive {
@@ -38,7 +38,7 @@ impl Drive {
         key_of_type: &KeyOfType,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<(KeyOfTypeNonce, Credits)>), Error> {
+    ) -> Result<(RootHash, Option<(AddressNonce, Credits)>), Error> {
         match platform_version
             .drive
             .methods

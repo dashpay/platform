@@ -4,7 +4,7 @@ use crate::error::Error;
 use crate::verify::RootHash;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
 
@@ -14,7 +14,7 @@ impl Drive {
         key_of_type: &KeyOfType,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
-    ) -> Result<(RootHash, Option<(KeyOfTypeNonce, Credits)>), Error> {
+    ) -> Result<(RootHash, Option<(AddressNonce, Credits)>), Error> {
         let path_query = Self::balance_for_address_query(key_of_type);
 
         let (root_hash, mut proved_key_values) = if verify_subset_of_proof {
@@ -50,7 +50,7 @@ impl Drive {
                 let nonce_bytes: [u8; 8] = nonce_vec.try_into().map_err(|_| {
                     Error::Proof(ProofError::IncorrectValueSize("nonce should be 8 bytes"))
                 })?;
-                let nonce = KeyOfTypeNonce::from_be_bytes(nonce_bytes);
+                let nonce = AddressNonce::from_be_bytes(nonce_bytes);
 
                 if balance_i64 < 0 {
                     return Err(Error::Proof(ProofError::CorruptedProof(

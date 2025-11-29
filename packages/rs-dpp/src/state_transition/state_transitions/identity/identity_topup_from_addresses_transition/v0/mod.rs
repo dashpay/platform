@@ -13,7 +13,7 @@ use std::collections::BTreeMap;
 
 use crate::address_funds::{AddressWitness, PlatformAddress};
 use crate::fee::Credits;
-use crate::prelude::{Identifier, KeyOfTypeNonce, UserFeeIncrease};
+use crate::prelude::{AddressNonce, Identifier, UserFeeIncrease};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
@@ -27,7 +27,7 @@ use crate::ProtocolError;
 )]
 #[derive(Default)]
 pub struct IdentityTopUpFromAddressesTransitionV0 {
-    pub inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+    pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     pub identity_id: Identifier,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

@@ -5,7 +5,7 @@ use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
 
@@ -26,7 +26,7 @@ impl Drive {
         key_of_type: &KeyOfType,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<Option<(KeyOfTypeNonce, Credits)>, Error> {
+    ) -> Result<Option<(AddressNonce, Credits)>, Error> {
         let path = vec![vec![RootTree::AddressBalances as u8]];
         let key_bytes = key_of_type.to_bytes();
 
@@ -59,7 +59,7 @@ impl Drive {
                     ))
                 })?;
 
-                let nonce = KeyOfTypeNonce::from_be_bytes(nonce_array);
+                let nonce = AddressNonce::from_be_bytes(nonce_array);
 
                 Ok(Some((nonce, balance as Credits)))
             }

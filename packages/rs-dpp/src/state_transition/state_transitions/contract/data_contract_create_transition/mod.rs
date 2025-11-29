@@ -159,7 +159,9 @@ mod test {
     use crate::data_contract::conversion::value::v0::DataContractValueConversionMethodsV0;
     use crate::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
     use crate::state_transition::traits::StateTransitionLike;
-    use crate::state_transition::{StateTransitionOwned, StateTransitionType, StateTransitionValueConvert};
+    use crate::state_transition::{
+        StateTransitionOwned, StateTransitionType, StateTransitionValueConvert,
+    };
     use crate::tests::fixtures::get_data_contract_fixture;
 
     use crate::version::LATEST_PLATFORM_VERSION;

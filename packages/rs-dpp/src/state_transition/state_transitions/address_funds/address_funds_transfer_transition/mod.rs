@@ -3,6 +3,8 @@ pub mod fields;
 #[cfg(feature = "state-transition-json-conversion")]
 mod json_conversion;
 pub mod methods;
+#[cfg(all(test, feature = "state-transition-signing"))]
+mod signing_tests;
 mod state_transition_like;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]

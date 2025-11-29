@@ -3,7 +3,7 @@ use crate::error::drive::DriveError;
 use crate::error::Error;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::KeyOfTypeNonce;
+use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 use grovedb::{Element, TransactionArg};
 use std::collections::BTreeMap;
@@ -27,7 +27,7 @@ impl Drive {
         keys_of_type: I,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
-    ) -> Result<BTreeMap<KeyOfType, Option<(KeyOfTypeNonce, Credits)>>, Error>
+    ) -> Result<BTreeMap<KeyOfType, Option<(AddressNonce, Credits)>>, Error>
     where
         I: IntoIterator<Item = &'a KeyOfType>,
     {
@@ -67,7 +67,7 @@ impl Drive {
                                 ))
                             })?;
 
-                        let nonce = KeyOfTypeNonce::from_be_bytes(nonce_array);
+                        let nonce = AddressNonce::from_be_bytes(nonce_array);
 
                         Some((nonce, balance as Credits))
                     }

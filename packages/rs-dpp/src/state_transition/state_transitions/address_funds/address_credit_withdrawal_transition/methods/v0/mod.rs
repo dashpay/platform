@@ -14,7 +14,7 @@ use crate::state_transition::StateTransitionType;
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::{KeyOfTypeNonce, UserFeeIncrease},
+    prelude::{AddressNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
 };
@@ -25,7 +25,7 @@ pub trait AddressCreditWithdrawalTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]
     #[allow(clippy::too_many_arguments)]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,

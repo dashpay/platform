@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use crate::state_transition_action::address_funds::address_funds_transfer::v0::AddressFundsTransferTransitionActionV0;
 use crate::state_transition_action::identity::identity_create_from_addresses::v0::IdentityCreateFromAddressesTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
@@ -13,9 +13,9 @@ use dpp::state_transition::state_transitions::identity::identity_topup_from_addr
 /// Helper function to subtract penalty credits from input balances.
 /// The penalty is distributed across inputs in order, deducting as much as possible from each.
 fn deduct_penalty_from_inputs(
-    inputs: &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+    inputs: &BTreeMap<KeyOfType, (AddressNonce, Credits)>,
     penalty_credits: Credits,
-) -> BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+) -> BTreeMap<KeyOfType, (AddressNonce, Credits)> {
     let mut remaining_penalty = penalty_credits;
     inputs
         .iter()
@@ -30,7 +30,7 @@ fn deduct_penalty_from_inputs(
 impl BumpAddressInputNoncesActionV0 {
     /// Helper to create action with penalty deduction
     fn new_with_penalty(
-        inputs: &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        inputs: &BTreeMap<KeyOfType, (AddressNonce, Credits)>,
         penalty_credits: Credits,
         user_fee_increase: UserFeeIncrease,
     ) -> Self {

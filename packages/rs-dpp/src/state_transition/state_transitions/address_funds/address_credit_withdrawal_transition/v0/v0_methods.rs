@@ -17,7 +17,7 @@ use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCr
 use crate::withdrawal::Pooling;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    prelude::{KeyOfTypeNonce, UserFeeIncrease},
+    prelude::{AddressNonce, UserFeeIncrease},
     state_transition::StateTransition,
     ProtocolError,
 };
@@ -27,7 +27,7 @@ use platform_version::version::PlatformVersion;
 impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
-        inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,

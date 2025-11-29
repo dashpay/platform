@@ -7,7 +7,7 @@ use crate::state_transition_action::address_funds::address_funds_transfer::v0::A
 use derive_more::From;
 use dpp::fee::Credits;
 use dpp::identity::KeyOfType;
-use dpp::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 
 /// action
@@ -19,7 +19,7 @@ pub enum AddressFundsTransferTransitionAction {
 
 impl AddressFundsTransferTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)> {
         match self {
             AddressFundsTransferTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance
@@ -36,7 +36,7 @@ impl AddressFundsTransferTransitionAction {
     pub fn inputs_with_remaining_balance_and_outputs_owned(
         self,
     ) -> (
-        BTreeMap<KeyOfType, (KeyOfTypeNonce, Credits)>,
+        BTreeMap<KeyOfType, (AddressNonce, Credits)>,
         BTreeMap<KeyOfType, Credits>,
     ) {
         match self {

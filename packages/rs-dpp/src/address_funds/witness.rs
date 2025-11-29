@@ -223,8 +223,8 @@ impl<'de> Deserialize<'de> for AddressWitness {
                     "p2sh" => {
                         let signatures =
                             signatures.ok_or_else(|| de::Error::missing_field("signatures"))?;
-                        let redeem_script =
-                            redeem_script.ok_or_else(|| de::Error::missing_field("redeemScript"))?;
+                        let redeem_script = redeem_script
+                            .ok_or_else(|| de::Error::missing_field("redeemScript"))?;
                         Ok(AddressWitness::P2sh {
                             signatures,
                             redeem_script,
@@ -240,7 +240,13 @@ impl<'de> Deserialize<'de> for AddressWitness {
 
         deserializer.deserialize_struct(
             "AddressWitness",
-            &["type", "signature", "publicKey", "signatures", "redeemScript"],
+            &[
+                "type",
+                "signature",
+                "publicKey",
+                "signatures",
+                "redeemScript",
+            ],
             AddressWitnessVisitor,
         )
     }
@@ -338,7 +344,7 @@ mod tests {
     fn test_p2sh_witness_encode_decode() {
         let witness = AddressWitness::P2sh {
             signatures: vec![
-                BinaryData::new(vec![0x00]), // OP_0 placeholder
+                BinaryData::new(vec![0x00]),                   // OP_0 placeholder
                 BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]), // sig1
                 BinaryData::new(vec![0x30, 0x45, 0x02, 0x21]), // sig2
             ],
@@ -391,7 +397,10 @@ mod tests {
     #[test]
     fn test_unique_id_p2sh() {
         let witness = AddressWitness::P2sh {
-            signatures: vec![BinaryData::new(vec![0x00]), BinaryData::new(vec![0x30, 0x44])],
+            signatures: vec![
+                BinaryData::new(vec![0x00]),
+                BinaryData::new(vec![0x30, 0x44]),
+            ],
             redeem_script: BinaryData::new(vec![0x52, 0xae]),
         };
 
@@ -400,7 +409,10 @@ mod tests {
 
         // Different redeem script should produce different ID
         let witness2 = AddressWitness::P2sh {
-            signatures: vec![BinaryData::new(vec![0x00]), BinaryData::new(vec![0x30, 0x44])],
+            signatures: vec![
+                BinaryData::new(vec![0x00]),
+                BinaryData::new(vec![0x30, 0x44]),
+            ],
             redeem_script: BinaryData::new(vec![0x53, 0xae]),
         };
         assert_ne!(id, witness2.unique_id());
@@ -428,7 +440,10 @@ mod tests {
     #[test]
     fn test_p2sh_serde() {
         let witness = AddressWitness::P2sh {
-            signatures: vec![BinaryData::new(vec![0x00]), BinaryData::new(vec![0x30, 0x44])],
+            signatures: vec![
+                BinaryData::new(vec![0x00]),
+                BinaryData::new(vec![0x30, 0x44]),
+            ],
             redeem_script: BinaryData::new(vec![0x52, 0xae]),
         };
 

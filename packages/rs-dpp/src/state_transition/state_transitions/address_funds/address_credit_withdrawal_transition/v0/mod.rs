@@ -15,7 +15,7 @@ use std::collections::BTreeMap;
 
 use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
-use crate::prelude::{KeyOfTypeNonce, UserFeeIncrease};
+use crate::prelude::{AddressNonce, UserFeeIncrease};
 use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolError};
 
 #[derive(Debug, Clone, Encode, Decode, PlatformSignable, PartialEq)]
@@ -26,7 +26,7 @@ use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolErro
 )]
 #[derive(Default)]
 pub struct AddressCreditWithdrawalTransitionV0 {
-    pub inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>,
+    pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,

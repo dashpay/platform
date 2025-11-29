@@ -2,17 +2,17 @@ use std::collections::BTreeMap;
 
 use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
-use crate::prelude::KeyOfTypeNonce;
+use crate::prelude::AddressNonce;
 use crate::ProtocolError;
 use platform_value::Identifier;
 
 pub trait StateTransitionAddressInputs: Sized {
     /// Get inputs
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
+    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
     /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>;
+    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
     /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (KeyOfTypeNonce, Credits)>);
+    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>);
 }
 
 pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
@@ -26,7 +26,7 @@ pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
 
         // Build a map containing only (PlatformAddress, KeyOfTypeNonce) pairs,
         // ignoring the Credits in the input values.
-        let address_nonce_map: BTreeMap<&PlatformAddress, &KeyOfTypeNonce> = self
+        let address_nonce_map: BTreeMap<&PlatformAddress, &AddressNonce> = self
             .inputs()
             .iter()
             .map(|(address, (nonce, _credits))| (address, nonce))
@@ -35,7 +35,9 @@ pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
         use crate::util::hash::hash_double;
 
         let input_bytes = bincode::encode_to_vec(&address_nonce_map, bincode::config::standard())
-            .map_err(|e| ProtocolError::EncodingError(format!("Failed to encode inputs: {}", e)))?;
+            .map_err(|e| {
+            ProtocolError::EncodingError(format!("Failed to encode inputs: {}", e))
+        })?;
 
         let hash = hash_double(input_bytes);
         Ok(Identifier::new(hash))
