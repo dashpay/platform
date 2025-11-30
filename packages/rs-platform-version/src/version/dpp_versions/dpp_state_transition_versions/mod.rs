@@ -10,6 +10,8 @@ pub struct DPPStateTransitionVersions {
     pub contract: ContractTransitionVersions,
     pub address_funds: AddressFundsTransitionVersions,
     pub max_address_inputs: u16,
+    pub max_address_outputs: u16,
+    pub max_address_fee_strategies: u16,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -29,6 +31,12 @@ pub struct ContractTransitionVersions {
 pub struct AddressFundsTransitionVersions {
     pub address_funds_transition_default_version: FeatureVersion,
     pub credit_withdrawal: FeatureVersion,
+    /// Minimum credits for an address output (500,000 credits = 0.005 Dash)
+    pub min_output_amount: u64,
+    /// Minimum credits an input must contribute (100,000 credits = 0.001 Dash)
+    pub min_input_amount: u64,
+    /// Minimum credits to fund an identity (from addresses)
+    pub min_identity_funding_amount: u64,
 }
 
 #[derive(Clone, Debug, Default)]

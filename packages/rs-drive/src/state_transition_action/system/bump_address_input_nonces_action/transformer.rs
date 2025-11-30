@@ -127,7 +127,11 @@ impl BumpAddressInputNoncesAction {
     ) -> Self {
         match value {
             AddressFundsTransferTransition::V0(ref v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(v0, penalty_credits).into()
+                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
+                    v0,
+                    penalty_credits,
+                )
+                .into()
             }
         }
     }
@@ -139,8 +143,11 @@ impl BumpAddressInputNoncesAction {
     ) -> Self {
         match value {
             AddressFundsTransferTransition::V0(v0) => {
-                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(v0, penalty_credits)
-                    .into()
+                BumpAddressInputNoncesActionV0::from_borrowed_address_funds_transfer_transition(
+                    v0,
+                    penalty_credits,
+                )
+                .into()
             }
         }
     }

@@ -20,7 +20,9 @@ pub enum IdentityTopUpFromAddressesTransitionAction {
 
 impl IdentityTopUpFromAddressesTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(
+        &self,
+    ) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance

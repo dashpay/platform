@@ -18,8 +18,6 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::StateTransitionIdentityIdFromInputs;
-use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -28,6 +26,8 @@ use dpp::state_transition::identity_topup_from_addresses_transition::accessors::
 use dpp::state_transition::identity_topup_transition::accessors::IdentityTopUpTransitionAccessorsV0;
 use dpp::state_transition::identity_update_transition::accessors::IdentityUpdateTransitionAccessorsV0;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
+use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
 use dpp::voting::votes::resource_vote::accessors::v0::ResourceVoteGettersV0;
 use dpp::voting::votes::Vote;
@@ -226,9 +226,9 @@ impl Drive {
                     &platform_version.drive.grove_version,
                 )?
             }
-            StateTransition::AddressFundsTransfer(st) => {
-                Drive::balances_for_clear_addresses_query(st.inputs().keys().chain(st.outputs().keys()))
-            }
+            StateTransition::AddressFundsTransfer(st) => Drive::balances_for_clear_addresses_query(
+                st.inputs().keys().chain(st.outputs().keys()),
+            ),
             StateTransition::AddressFundingFromAssetLock(st) => {
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
                 Drive::balances_for_clear_addresses_query(st.outputs().keys())

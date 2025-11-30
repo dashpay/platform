@@ -6,6 +6,7 @@ pub mod methods;
 #[cfg(all(test, feature = "state-transition-signing"))]
 mod signing_tests;
 mod state_transition_like;
+mod state_transition_validation;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;

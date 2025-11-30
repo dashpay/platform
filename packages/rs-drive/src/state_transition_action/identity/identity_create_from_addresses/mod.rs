@@ -27,7 +27,9 @@ pub enum IdentityCreateFromAddressesTransitionAction {
 /// action
 impl IdentityCreateFromAddressesTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(
+        &self,
+    ) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityCreateFromAddressesTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance

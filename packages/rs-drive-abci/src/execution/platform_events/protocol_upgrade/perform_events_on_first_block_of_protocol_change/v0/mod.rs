@@ -13,6 +13,7 @@ use dpp::system_data_contracts::load_system_data_contract;
 use dpp::version::PlatformVersion;
 use dpp::version::ProtocolVersion;
 use dpp::voting::vote_polls::VotePoll;
+use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 use drive::drive::balances::TOTAL_TOKEN_SUPPLIES_STORAGE_KEY;
 use drive::drive::identity::key::fetch::{
     IdentityKeysRequest, KeyIDIdentityPublicKeyPairBTreeMap, KeyRequestType,
@@ -37,7 +38,6 @@ use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
-use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 
 impl<C> Platform<C> {
     /// Executes protocol-specific events on the first block after a protocol version change.

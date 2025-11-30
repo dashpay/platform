@@ -1,7 +1,9 @@
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use crate::state_transition::{
     StateTransitionLike, StateTransitionSingleSigned, StateTransitionType,
+    StateTransitionWitnessSigned,
 };
 use crate::version::FeatureVersion;
 use platform_value::{BinaryData, Identifier};
@@ -75,6 +77,56 @@ impl StateTransitionSingleSigned for AddressFundingFromAssetLockTransition {
         match self {
             AddressFundingFromAssetLockTransition::V0(transition) => {
                 transition.set_signature_bytes(signature)
+            }
+        }
+    }
+}
+
+impl StateTransitionWitnessSigned for AddressFundingFromAssetLockTransition {
+    fn inputs(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            AddressFundingFromAssetLockTransition::V0(transition) => transition.inputs(),
+        }
+    }
+
+    fn inputs_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            AddressFundingFromAssetLockTransition::V0(transition) => transition.inputs_mut(),
+        }
+    }
+
+    fn set_inputs(
+        &mut self,
+        inputs: std::collections::BTreeMap<
+            crate::address_funds::PlatformAddress,
+            (crate::prelude::AddressNonce, crate::fee::Credits),
+        >,
+    ) {
+        match self {
+            AddressFundingFromAssetLockTransition::V0(transition) => transition.set_inputs(inputs),
+        }
+    }
+
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        match self {
+            AddressFundingFromAssetLockTransition::V0(transition) => transition.witnesses(),
+        }
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
+        match self {
+            AddressFundingFromAssetLockTransition::V0(transition) => {
+                transition.set_witnesses(witnesses)
             }
         }
     }

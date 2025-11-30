@@ -1042,7 +1042,12 @@ impl Drive {
                 // Verify balances for output addresses after funding
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
                 let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(proof, st.outputs().keys(), false, platform_version)?;
+                    Drive::verify_addresses_infos(
+                        proof,
+                        st.outputs().keys(),
+                        false,
+                        platform_version,
+                    )?;
                 // Return the verified balances
                 // TODO: Define proper StateTransitionProofResult variant for address funding
                 Ok((
@@ -1060,7 +1065,12 @@ impl Drive {
                 // Verify balances for input addresses after withdrawal
                 use dpp::state_transition::StateTransitionWitnessSigned;
                 let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(proof, st.inputs().keys(), false, platform_version)?;
+                    Drive::verify_addresses_infos(
+                        proof,
+                        st.inputs().keys(),
+                        false,
+                        platform_version,
+                    )?;
                 // Return the verified balances
                 // TODO: Define proper StateTransitionProofResult variant for address withdrawal
                 Ok((

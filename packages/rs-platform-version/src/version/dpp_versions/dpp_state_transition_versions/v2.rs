@@ -34,6 +34,11 @@ pub const STATE_TRANSITION_VERSIONS_V2: DPPStateTransitionVersions = DPPStateTra
     address_funds: AddressFundsTransitionVersions {
         address_funds_transition_default_version: 0,
         credit_withdrawal: 0,
+        min_output_amount: 500_000,
+        min_input_amount: 100_000,
+        min_identity_funding_amount: 200_000,
     },
     max_address_inputs: 16,
+    max_address_outputs: 128,
+    max_address_fee_strategies: 4,
 };

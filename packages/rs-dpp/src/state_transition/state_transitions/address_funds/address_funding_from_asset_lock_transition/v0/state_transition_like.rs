@@ -1,16 +1,17 @@
 use platform_value::BinaryData;
 
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
+use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
+use crate::state_transition::{
+    StateTransition, StateTransitionSingleSigned, StateTransitionWitnessSigned,
+};
+use crate::version::FeatureVersion;
 use crate::{
     prelude::Identifier,
     state_transition::{StateTransitionLike, StateTransitionType},
 };
-
-use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
-use crate::state_transition::{StateTransition, StateTransitionSingleSigned};
-
-use crate::version::FeatureVersion;
 
 impl From<AddressFundingFromAssetLockTransitionV0> for StateTransition {
     fn from(value: AddressFundingFromAssetLockTransitionV0) -> Self {
@@ -60,5 +61,43 @@ impl StateTransitionSingleSigned for AddressFundingFromAssetLockTransitionV0 {
 
     fn set_signature_bytes(&mut self, signature: Vec<u8>) {
         self.signature = BinaryData::new(signature)
+    }
+}
+
+impl StateTransitionWitnessSigned for AddressFundingFromAssetLockTransitionV0 {
+    fn inputs(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        &self.inputs
+    }
+
+    fn inputs_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        &mut self.inputs
+    }
+
+    fn set_inputs(
+        &mut self,
+        inputs: std::collections::BTreeMap<
+            crate::address_funds::PlatformAddress,
+            (crate::prelude::AddressNonce, crate::fee::Credits),
+        >,
+    ) {
+        self.inputs = inputs;
+    }
+
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        &self.input_witnesses
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
+        self.input_witnesses = witnesses;
     }
 }

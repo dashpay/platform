@@ -1,12 +1,11 @@
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use dpp::address_funds::{AddressWitness, WitnessType};
+use dpp::address_funds::AddressWitness;
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::dashcore::signer;
 use dpp::dashcore::PublicKey as ECDSAPublicKey;
 use dpp::ed25519_dalek::Signer as BlsSigner;
-use dpp::ed25519_dalek::VerifyingKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
@@ -121,47 +120,39 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
         // First, sign the data to get the signature
         let signature = self.sign(key, data)?;
 
-        // Then create the appropriate WitnessType based on the key type
-        let witness_type = match key.key_type() {
+        // Create the appropriate AddressWitness based on the key type
+        match key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 // Get the public key from the identity public key
                 let pubkey_data = key.data();
-                let ecdsa_pubkey =
+                let public_key =
                     ECDSAPublicKey::from_slice(pubkey_data.as_slice()).map_err(|e| {
                         ProtocolError::Generic(format!("Invalid ECDSA public key: {}", e))
                     })?;
-                WitnessType::ECDSAPublicKey(ecdsa_pubkey)
+                Ok(AddressWitness::P2pkh {
+                    signature,
+                    public_key,
+                })
             }
             KeyType::EDDSA_25519_HASH160 => {
-                // Get the public key from the identity public key
-                let pubkey_data = key.data();
-                let pubkey_bytes: [u8; 32] = pubkey_data.as_slice().try_into().map_err(|_| {
-                    ProtocolError::Generic("Ed25519 public key must be 32 bytes".to_string())
-                })?;
-                let eddsa_pubkey = VerifyingKey::from_bytes(&pubkey_bytes).map_err(|e| {
-                    ProtocolError::Generic(format!("Invalid Ed25519 public key: {}", e))
-                })?;
-                WitnessType::EDDSAPublicKey(eddsa_pubkey)
+                // Ed25519 keys are not supported for address witnesses (P2PKH requires ECDSA)
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                    InvalidIdentityPublicKeyTypeError::new(key.key_type()),
+                ))
             }
             KeyType::BIP13_SCRIPT_HASH => {
-                // For script hash, we could use the script witness type
-                // but it's not clear what the script should be from just the key
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                // For script hash, we would need the redeem script which isn't available from just the key
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key.key_type()),
-                ));
+                ))
             }
             KeyType::BLS12_381 => {
-                // BLS keys are not typically used for address witnesses
-                return Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
+                // BLS keys are not supported for address witnesses
+                Err(ProtocolError::InvalidIdentityPublicKeyTypeError(
                     InvalidIdentityPublicKeyTypeError::new(key.key_type()),
-                ));
+                ))
             }
-        };
-
-        Ok(AddressWitness {
-            witness_type,
-            signature,
-        })
+        }
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {

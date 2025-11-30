@@ -72,9 +72,14 @@ use crate::consensus::basic::identity::{
 };
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
-    InputWitnessCountMismatchError, InvalidStateTransitionTypeError,
-    MissingStateTransitionTypeError, StateTransitionMaxSizeExceededError,
-    StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
+    FeeStrategyReduceWithdrawalNotLastError, FeeStrategyTooManyStepsError, InputBelowMinimumError,
+    InputOutputBalanceMismatchError, InputWitnessCountMismatchError, InputsNotLessThanOutputsError,
+    InsufficientFundingAmountError, InvalidStateTransitionTypeError,
+    MissingStateTransitionTypeError, OutputBelowMinimumError, OutputsNotGreaterThanInputsError,
+    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
+    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    WithdrawalBalanceMismatchError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -605,6 +610,48 @@ pub enum BasicError {
 
     #[error(transparent)]
     InputWitnessCountMismatchError(InputWitnessCountMismatchError),
+
+    #[error(transparent)]
+    TransitionNoInputsError(TransitionNoInputsError),
+
+    #[error(transparent)]
+    TransitionNoOutputsError(TransitionNoOutputsError),
+
+    #[error(transparent)]
+    FeeStrategyEmptyError(FeeStrategyEmptyError),
+
+    #[error(transparent)]
+    FeeStrategyDuplicateError(FeeStrategyDuplicateError),
+
+    #[error(transparent)]
+    FeeStrategyIndexOutOfBoundsError(FeeStrategyIndexOutOfBoundsError),
+
+    #[error(transparent)]
+    FeeStrategyTooManyStepsError(FeeStrategyTooManyStepsError),
+
+    #[error(transparent)]
+    FeeStrategyReduceWithdrawalNotLastError(FeeStrategyReduceWithdrawalNotLastError),
+
+    #[error(transparent)]
+    InputBelowMinimumError(InputBelowMinimumError),
+
+    #[error(transparent)]
+    OutputBelowMinimumError(OutputBelowMinimumError),
+
+    #[error(transparent)]
+    InputOutputBalanceMismatchError(InputOutputBalanceMismatchError),
+
+    #[error(transparent)]
+    OutputsNotGreaterThanInputsError(OutputsNotGreaterThanInputsError),
+
+    #[error(transparent)]
+    WithdrawalBalanceMismatchError(WithdrawalBalanceMismatchError),
+
+    #[error(transparent)]
+    InsufficientFundingAmountError(InsufficientFundingAmountError),
+
+    #[error(transparent)]
+    InputsNotLessThanOutputsError(InputsNotLessThanOutputsError),
 }
 
 impl From<BasicError> for ConsensusError {

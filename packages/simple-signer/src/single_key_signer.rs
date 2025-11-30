@@ -1,4 +1,4 @@
-use dpp::address_funds::{AddressWitness, WitnessType};
+use dpp::address_funds::AddressWitness;
 use dpp::dashcore;
 use dpp::dashcore::signer;
 use dpp::dashcore::Network;
@@ -111,30 +111,26 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
         // First, sign the data to get the signature
         let signature = self.sign(key, data)?;
 
-        // Then create the appropriate WitnessType based on the key type
+        // Create the appropriate AddressWitness based on the key type
         // SingleKeySigner only supports ECDSA keys
-        let witness_type = match key.key_type() {
+        match key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
                 // Get the public key from the identity public key
                 let pubkey_data = key.data();
-                let ecdsa_pubkey =
+                let public_key =
                     ECDSAPublicKey::from_slice(pubkey_data.as_slice()).map_err(|e| {
                         ProtocolError::Generic(format!("Invalid ECDSA public key: {}", e))
                     })?;
-                WitnessType::ECDSAPublicKey(ecdsa_pubkey)
+                Ok(AddressWitness::P2pkh {
+                    signature,
+                    public_key,
+                })
             }
-            _ => {
-                return Err(ProtocolError::Generic(format!(
-                    "SingleKeySigner only supports ECDSA keys, got {:?}",
-                    key.key_type()
-                )));
-            }
-        };
-
-        Ok(AddressWitness {
-            witness_type,
-            signature,
-        })
+            _ => Err(ProtocolError::Generic(format!(
+                "SingleKeySigner only supports ECDSA keys, got {:?}",
+                key.key_type()
+            ))),
+        }
     }
 
     fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {

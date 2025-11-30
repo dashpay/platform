@@ -10,7 +10,6 @@ pub const CLEAR_ADDRESS_POOL: &[u8; 1] = b"c";
 pub const CLEAR_ADDRESS_POOL_U8: u8 = b'c';
 
 impl Drive {
-
     /// Path to address balance storage.
     pub fn addresses_path() -> Vec<Vec<u8>> {
         vec![vec![RootTree::AddressBalances as u8]]

@@ -5,6 +5,7 @@ mod identity_signed;
 mod json_conversion;
 pub mod methods;
 mod state_transition_like;
+mod state_transition_validation;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;

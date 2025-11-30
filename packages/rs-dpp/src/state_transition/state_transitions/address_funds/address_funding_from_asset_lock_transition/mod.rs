@@ -5,6 +5,7 @@ mod json_conversion;
 pub mod methods;
 mod proved;
 mod state_transition_like;
+mod state_transition_validation;
 pub mod v0;
 #[cfg(feature = "state-transition-value-conversion")]
 mod value_conversion;
