@@ -1,4 +1,4 @@
-use crate::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::v0::modify_inputs_and_outputs_for_fee_v0;
+use crate::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::v0::deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0;
 use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::AddressNonce;
@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 
 mod v0;
 
-pub fn modify_inputs_and_outputs_for_fee(
+pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs(
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     outputs: BTreeMap<PlatformAddress, Credits>,
     fee_strategy: AddressFundsFeeStrategy,
@@ -24,11 +24,11 @@ pub fn modify_inputs_and_outputs_for_fee(
     match platform_version
         .dpp
         .methods
-        .modify_inputs_and_outputs_for_fee
+        .deduct_fee_from_outputs_or_remaining_balance_of_inputs
     {
-        0 => modify_inputs_and_outputs_for_fee_v0(inputs, outputs, fee_strategy, fee),
+        0 => deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(inputs, outputs, fee_strategy, fee),
         version => Err(ProtocolError::UnknownVersionMismatch {
-            method: "modify_inputs_and_outputs_for_fee".to_string(),
+            method: "deduct_fee_from_outputs_or_remaining_balance_of_inputs".to_string(),
             known_versions: vec![0],
             received: version,
         }),

@@ -12,7 +12,7 @@ use thiserror::Error;
 )]
 #[error("Insufficient address balance for {address}: has {balance}, requires at least {required_balance}")]
 #[platform_serialize(unversioned)]
-pub struct AddressTooLittleFundsError {
+pub struct AddressNotEnoughFundsError {
     /*
 
     DO NOT CHANGE ORDER OF FIELDS WITHOUT INTRODUCING OF NEW VERSION
@@ -23,7 +23,7 @@ pub struct AddressTooLittleFundsError {
     required_balance: Credits,
 }
 
-impl AddressTooLittleFundsError {
+impl AddressNotEnoughFundsError {
     pub fn new(address: PlatformAddress, balance: Credits, required_balance: Credits) -> Self {
         Self {
             address,
@@ -45,8 +45,8 @@ impl AddressTooLittleFundsError {
     }
 }
 
-impl From<AddressTooLittleFundsError> for ConsensusError {
-    fn from(err: AddressTooLittleFundsError) -> Self {
-        Self::StateError(StateError::AddressTooLittleFundsError(err))
+impl From<AddressNotEnoughFundsError> for ConsensusError {
+    fn from(err: AddressNotEnoughFundsError) -> Self {
+        Self::StateError(StateError::AddressNotEnoughFundsError(err))
     }
 }

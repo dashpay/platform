@@ -3,7 +3,7 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressTooLittleFundsError};
+use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::fee::Credits;
 use dpp::identity::{KeyCount, KeyOfType};
 use dpp::validation::ConsensusValidationResult;
@@ -40,7 +40,7 @@ pub(super) fn validate_addresses_for_balances_and_nonces_v0(
                 // Address exists in state, check if balance is sufficient
                 if actual_balance < minimum_balance {
                     return Ok(ConsensusValidationResult::new_with_error(
-                        AddressTooLittleFundsError::new(
+                        AddressNotEnoughFundsError::new(
                             key_of_type.clone(),
                             *actual_balance,
                             *minimum_balance,

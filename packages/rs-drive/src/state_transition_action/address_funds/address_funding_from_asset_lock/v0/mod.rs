@@ -7,13 +7,13 @@ use std::collections::BTreeMap;
 
 /// action v0
 #[derive(Default, Debug, Clone)]
-pub struct AddressFundsTransferTransitionActionV0 {
-    /// inputs
+pub struct AddressFundingFromAssetLockTransitionActionV0 {
+    /// inputs with remaining balance (may be empty if no existing addresses are used)
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// outputs
     pub outputs: BTreeMap<PlatformAddress, Credits>,
     /// fee strategy
     pub fee_strategy: AddressFundsFeeStrategy,
-    /// fee multiplier, this is already taken into account in the action
+    /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }

@@ -1,24 +1,24 @@
-use crate::state_transition_action::address_funds::address_funds_transfer::v0::AddressFundsTransferTransitionActionV0;
+use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
 use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
 use dpp::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
 use dpp::fee::Credits;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::state_transition::state_transitions::address_funds::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
+use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use std::collections::BTreeMap;
 
-impl AddressFundsTransferTransitionActionV0 {
+impl AddressFundingFromAssetLockTransitionActionV0 {
     /// Transforms the state transition into an action by validating inputs against provided balances.
     ///
-    /// For each input address:
+    /// For each input address (if any):
     /// 1. Validates the address exists in the provided balances
     /// 2. Validates there is sufficient balance for the claimed spend amount
     /// 3. Computes the remaining balance after the transfer
     pub fn try_from_transition(
-        value: &AddressFundsTransferTransitionV0,
+        value: &AddressFundingFromAssetLockTransitionV0,
         input_balances: BTreeMap<PlatformAddress, Credits>,
     ) -> ConsensusValidationResult<Self> {
-        let AddressFundsTransferTransitionV0 {
+        let AddressFundingFromAssetLockTransitionV0 {
             inputs,
             outputs,
             fee_strategy,
@@ -54,7 +54,7 @@ impl AddressFundsTransferTransitionActionV0 {
             }
         }
 
-        ConsensusValidationResult::new_with_data(AddressFundsTransferTransitionActionV0 {
+        ConsensusValidationResult::new_with_data(AddressFundingFromAssetLockTransitionActionV0 {
             inputs_with_remaining_balance,
             outputs: outputs.clone(),
             fee_strategy: fee_strategy.clone(),
