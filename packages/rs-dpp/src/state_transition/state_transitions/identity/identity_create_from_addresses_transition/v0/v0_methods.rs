@@ -21,7 +21,6 @@ use crate::state_transition::StateTransitionType;
 // ============================
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    address_funds::AddressWitness,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
