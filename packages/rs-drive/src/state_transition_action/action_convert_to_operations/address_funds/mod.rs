@@ -1,1 +1,3 @@
+mod address_credit_withdrawal_transition;
+mod address_funding_from_asset_lock_transition;
 mod address_funds_transfer_transition;

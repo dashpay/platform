@@ -80,21 +80,12 @@ impl AddressCreditWithdrawalTransitionActionV0 {
         let mut entropy = Vec::new();
         if let Some((first_address, (first_nonce, _))) = inputs.first_key_value() {
             entropy.extend_from_slice(&first_nonce.to_be_bytes());
-            entropy.extend_from_slice(first_address.as_slice());
+            entropy.extend_from_slice(first_address.to_bytes().as_slice());
         }
         entropy.extend_from_slice(output_script.as_bytes());
 
-        // Use a deterministic owner ID derived from the first input address
-        let owner_id = if let Some((first_address, _)) = inputs.first_key_value() {
-            // Convert address to Identifier (first 32 bytes, padded if needed)
-            let mut id_bytes = [0u8; 32];
-            let address_bytes = first_address.as_slice();
-            let copy_len = address_bytes.len().min(32);
-            id_bytes[..copy_len].copy_from_slice(&address_bytes[..copy_len]);
-            dpp::identifier::Identifier::new(id_bytes)
-        } else {
-            withdrawals_contract::OWNER_ID
-        };
+        // The owner_id is the contract owner
+        let owner_id = withdrawals_contract::OWNER_ID;
 
         let document_id = Document::generate_document_id_v0(
             &withdrawals_contract::ID,

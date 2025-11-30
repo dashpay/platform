@@ -11,6 +11,8 @@ mod address_funds;
 /// documents_batch
 pub mod batch;
 
+use crate::state_transition_action::address_funds::address_credit_withdrawal::AddressCreditWithdrawalTransitionAction;
+use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::state_transition_action::address_funds::address_funds_transfer::AddressFundsTransferTransitionAction;
 use crate::state_transition_action::batch::BatchTransitionAction;
 use crate::state_transition_action::contract::data_contract_create::DataContractCreateTransitionAction;
@@ -67,6 +69,10 @@ pub enum StateTransitionAction {
     IdentityCreditTransferToAddressesAction(IdentityCreditTransferToAddressesTransitionAction),
     /// address funds transfer
     AddressFundsTransfer(AddressFundsTransferTransitionAction),
+    /// address credit withdrawal
+    AddressCreditWithdrawal(AddressCreditWithdrawalTransitionAction),
+    /// address funding from asset lock
+    AddressFundingFromAssetLock(AddressFundingFromAssetLockTransitionAction),
     /// masternode vote action
     MasternodeVoteAction(MasternodeVoteTransitionAction),
     /// bump identity nonce action
@@ -121,6 +127,10 @@ impl StateTransitionAction {
                 action.user_fee_increase()
             }
             StateTransitionAction::AddressFundsTransfer(action) => action.user_fee_increase(),
+            StateTransitionAction::AddressCreditWithdrawal(action) => action.user_fee_increase(),
+            StateTransitionAction::AddressFundingFromAssetLock(action) => {
+                action.user_fee_increase()
+            }
             StateTransitionAction::BumpAddressInputNoncesAction(action) => {
                 action.user_fee_increase()
             }

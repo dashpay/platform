@@ -35,8 +35,12 @@ impl AddressFundingFromAssetLockTransitionActionV0 {
                     // Address exists, check if there's enough balance
                     if *actual_balance < *spend_amount {
                         return ConsensusValidationResult::new_with_error(
-                            AddressNotEnoughFundsError::new(*address, *actual_balance, *spend_amount)
-                                .into(),
+                            AddressNotEnoughFundsError::new(
+                                *address,
+                                *actual_balance,
+                                *spend_amount,
+                            )
+                            .into(),
                         );
                     }
 

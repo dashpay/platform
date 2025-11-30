@@ -2,7 +2,6 @@
 pub mod transformer;
 
 use dpp::address_funds::PlatformAddress;
-use dpp::balances::credits::RemainingCredits;
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
@@ -16,8 +15,8 @@ use std::collections::BTreeMap;
 /// action v0
 #[derive(Debug, Clone)]
 pub struct IdentityCreateFromAddressesTransitionActionV0 {
-    /// inputs with remaining balance before fee is removed
-    pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, RemainingCredits)>,
+    /// inputs with remaining balance after transfer
+    pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// optional output to send remaining credits to an address
     pub output: Option<(PlatformAddress, Credits)>,
     /// public keys

@@ -26,7 +26,12 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs(
         .methods
         .deduct_fee_from_outputs_or_remaining_balance_of_inputs
     {
-        0 => deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(inputs, outputs, fee_strategy, fee),
+        0 => deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
+            inputs,
+            outputs,
+            fee_strategy,
+            fee,
+        ),
         version => Err(ProtocolError::UnknownVersionMismatch {
             method: "deduct_fee_from_outputs_or_remaining_balance_of_inputs".to_string(),
             known_versions: vec![0],

@@ -98,6 +98,14 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                 bump_address_input_nonces_action,
             ) => bump_address_input_nonces_action
                 .into_high_level_drive_operations(epoch, platform_version),
+            StateTransitionAction::AddressCreditWithdrawal(address_credit_withdrawal) => {
+                address_credit_withdrawal.into_high_level_drive_operations(epoch, platform_version)
+            }
+
+            StateTransitionAction::AddressFundingFromAssetLock(address_funding_from_asset_lock) => {
+                address_funding_from_asset_lock
+                    .into_high_level_drive_operations(epoch, platform_version)
+            }
         }
     }
 }

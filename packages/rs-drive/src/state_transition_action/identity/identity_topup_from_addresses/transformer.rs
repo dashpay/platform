@@ -1,25 +1,24 @@
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
 use crate::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
-use dpp::consensus::ConsensusError;
+use dpp::address_funds::PlatformAddress;
+use dpp::fee::Credits;
+use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
+use std::collections::BTreeMap;
 
 impl IdentityTopUpFromAddressesTransitionAction {
-    /// try from
-    pub fn try_from(value: IdentityTopUpFromAddressesTransition) -> Result<Self, ConsensusError> {
-        match value {
-            IdentityTopUpFromAddressesTransition::V0(v0) => {
-                Ok(IdentityTopUpFromAddressesTransitionActionV0::try_from(v0)?.into())
-            }
-        }
-    }
-
-    /// try from borrowed
-    pub fn try_from_borrowed(
+    /// Transforms the state transition into an action by validating inputs against provided balances.
+    pub fn try_from_transition(
         value: &IdentityTopUpFromAddressesTransition,
-    ) -> Result<Self, ConsensusError> {
+        input_balances: BTreeMap<PlatformAddress, Credits>,
+    ) -> ConsensusValidationResult<Self> {
         match value {
             IdentityTopUpFromAddressesTransition::V0(v0) => {
-                Ok(IdentityTopUpFromAddressesTransitionActionV0::try_from_borrowed(v0)?.into())
+                let result = IdentityTopUpFromAddressesTransitionActionV0::try_from_transition(
+                    v0,
+                    input_balances,
+                );
+                result.map(|action| action.into())
             }
         }
     }

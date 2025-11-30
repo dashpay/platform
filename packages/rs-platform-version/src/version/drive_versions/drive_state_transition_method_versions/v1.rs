@@ -47,5 +47,7 @@ pub const DRIVE_STATE_TRANSITION_METHOD_VERSIONS_V1: DriveStateTransitionMethodV
                 token_set_price_for_direct_purchase_transition: 0,
                 identity_credit_transfer_to_addresses_transition: 0,
                 address_funds_transfer_transition: 0,
+                address_credit_withdrawal_transition: 0,
+                address_funding_from_asset_lock_transition: 0,
             },
     };
