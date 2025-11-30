@@ -27,7 +27,8 @@ use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolErro
 #[derive(Default)]
 pub struct AddressCreditWithdrawalTransitionV0 {
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    pub outputs: BTreeMap<PlatformAddress, Credits>,
+    /// Optional output for change
+    pub output: Option<(PlatformAddress, Credits)>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,

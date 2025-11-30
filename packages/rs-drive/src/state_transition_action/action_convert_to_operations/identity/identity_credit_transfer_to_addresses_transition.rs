@@ -7,7 +7,6 @@ use crate::error::Error;
 use crate::state_transition_action::identity::identity_credit_transfer_to_addresses::IdentityCreditTransferToAddressesTransitionAction;
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use dpp::block::epoch::Epoch;
-use dpp::identity::KeyOfTypeWithNonce;
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityCreditTransferToAddressesTransitionAction {
@@ -24,11 +23,10 @@ impl DriveHighLevelOperationConverter for IdentityCreditTransferToAddressesTrans
             .identity_credit_transfer_to_addresses_transition
         {
             0 => {
-
                 let identity_id = self.identity_id();
                 let nonce = self.nonce();
 
-                let recipient_keys = self.recipient_keys_owned();
+                let recipient_addresses = self.recipient_addresses_owned();
 
                 let mut drive_operations = vec![
                     IdentityOperation(IdentityOperationType::UpdateIdentityNonce {
@@ -37,18 +35,17 @@ impl DriveHighLevelOperationConverter for IdentityCreditTransferToAddressesTrans
                     }),
                     IdentityOperation(IdentityOperationType::RemoveFromIdentityBalance {
                         identity_id: identity_id.to_buffer(),
-                        balance_to_remove: recipient_keys.values().sum(),
+                        balance_to_remove: recipient_addresses.values().sum(),
                     }),
                 ];
 
-                for (recipient_key, credits) in recipient_keys {
-                    drive_operations.push(AddressFundsOperation(AddressFundsOperationType::SetBalanceToAddress {
-                        key_of_type_with_nonce: KeyOfTypeWithNonce {
-                            key_of_type: recipient_key,
-                            nonce: 0,
+                for (address, credits) in recipient_addresses {
+                    drive_operations.push(AddressFundsOperation(
+                        AddressFundsOperationType::AddBalanceToAddress {
+                            address,
+                            balance_to_add: credits,
                         },
-                        balance: credits,
-                    }));
+                    ));
                 }
                 Ok(drive_operations)
             }

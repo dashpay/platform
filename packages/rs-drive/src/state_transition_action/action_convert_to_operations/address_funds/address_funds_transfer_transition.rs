@@ -6,7 +6,6 @@ use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::DriveOperation;
 use crate::util::batch::DriveOperation::AddressFundsOperation;
 use dpp::block::epoch::Epoch;
-use dpp::identity::KeyOfTypeWithNonce;
 use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for AddressFundsTransferTransitionAction {
@@ -26,19 +25,20 @@ impl DriveHighLevelOperationConverter for AddressFundsTransferTransitionAction {
                 let (inputs, outputs) = self.inputs_with_remaining_balance_and_outputs_owned();
                 let mut drive_operations = vec![];
 
-                for (key_of_type, (nonce, remaining_balance)) in inputs {
+                for (address, (nonce, remaining_balance)) in inputs {
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::SetBalanceToAddress {
-                            key_of_type_with_nonce: KeyOfTypeWithNonce { key_of_type, nonce },
+                            address,
+                            nonce,
                             balance: remaining_balance,
                         },
                     ));
                 }
 
-                for (key_of_type, balance_to_add) in outputs {
+                for (address, balance_to_add) in outputs {
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::AddBalanceToAddress {
-                            key_of_type,
+                            address,
                             balance_to_add,
                         },
                     ));

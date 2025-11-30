@@ -4,7 +4,7 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
-use dpp::identity::KeyOfType;
+use dpp::address_funds::PlatformAddress;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
@@ -12,10 +12,10 @@ impl Drive {
     /// Proves the balance and nonce for a given address from the AddressBalances tree.
     ///
     /// This function queries the GroveDB to prove the balance and nonce associated with a specific
-    /// address key. The method selects the appropriate version based on the `platform_version` provided.
+    /// address. The method selects the appropriate version based on the `platform_version` provided.
     ///
     /// # Parameters
-    /// - `key_of_type`: The key (containing key type and key data) to prove
+    /// - `address`: The platform address to prove
     /// - `transaction`: The transaction argument used for the query.
     /// - `platform_version`: The version of the platform that determines the correct method version.
     ///
@@ -27,7 +27,7 @@ impl Drive {
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
     pub fn prove_balance_and_nonce(
         &self,
-        key_of_type: &KeyOfType,
+        address: &PlatformAddress,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Vec<u8>, Error> {
@@ -37,7 +37,7 @@ impl Drive {
             .address_funds
             .prove_balance_and_nonce
         {
-            0 => self.prove_balance_and_nonce_v0(key_of_type, transaction, platform_version),
+            0 => self.prove_balance_and_nonce_v0(address, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "prove_balance_and_nonce".to_string(),
                 known_versions: vec![0],
@@ -52,7 +52,7 @@ impl Drive {
     /// for tracking costs.
     ///
     /// # Parameters
-    /// - `key_of_type`: The key (containing key type and key data) to prove
+    /// - `address`: The platform address to prove
     /// - `transaction`: The transaction argument used for the query.
     /// - `drive_operations`: A mutable reference to a vector that stores low-level drive operations.
     /// - `platform_version`: The version of the platform that determines the correct method version.
@@ -65,7 +65,7 @@ impl Drive {
     /// - `DriveError::UnknownVersionMismatch`: If the `platform_version` does not match any known versions.
     pub fn prove_balance_and_nonce_operations(
         &self,
-        key_of_type: &KeyOfType,
+        address: &PlatformAddress,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         platform_version: &PlatformVersion,
@@ -77,7 +77,7 @@ impl Drive {
             .prove_balance_and_nonce
         {
             0 => self.prove_balance_and_nonce_operations_v0(
-                key_of_type,
+                address,
                 transaction,
                 drive_operations,
                 platform_version,

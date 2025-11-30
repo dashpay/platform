@@ -5,8 +5,8 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_credit_transfer_to_addresses::v0::IdentityCreditTransferToAddressesTransitionActionV0;
 use derive_more::From;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
@@ -26,20 +26,20 @@ impl IdentityCreditTransferToAddressesTransitionAction {
         }
     }
 
-    /// Recipient keys
-    pub fn recipient_keys(&self) -> &BTreeMap<KeyOfType, Credits> {
+    /// Recipient addresses
+    pub fn recipient_addresses(&self) -> &BTreeMap<PlatformAddress, Credits> {
         match self {
             IdentityCreditTransferToAddressesTransitionAction::V0(transition) => {
-                &transition.recipient_keys
+                &transition.recipient_addresses
             }
         }
     }
 
-    /// Recipient keys
-    pub fn recipient_keys_owned(self) -> BTreeMap<KeyOfType, Credits> {
+    /// Recipient addresses
+    pub fn recipient_addresses_owned(self) -> BTreeMap<PlatformAddress, Credits> {
         match self {
             IdentityCreditTransferToAddressesTransitionAction::V0(transition) => {
-                transition.recipient_keys
+                transition.recipient_addresses
             }
         }
     }

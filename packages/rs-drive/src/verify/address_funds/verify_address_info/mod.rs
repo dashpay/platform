@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 
@@ -19,14 +19,14 @@ impl Drive {
     ///
     /// # Arguments
     /// - `proof`: A byte slice containing the cryptographic proof for the address information.
-    /// - `key_of_type`: The address identifier (key type and key) to verify.
+    /// - `address`: The platform address to verify.
     /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof (useful for optimizations).
     /// - `platform_version`: A reference to the platform version, used to determine the appropriate versioned implementation.
     ///
     /// # Returns
-    /// - `Ok((RootHash, Option<(KeyOfTypeNonce, Credits)>))`: On success, returns a tuple containing:
+    /// - `Ok((RootHash, Option<(AddressNonce, Credits)>))`: On success, returns a tuple containing:
     ///   - `RootHash`: The root hash of the Merkle tree, confirming the proof's validity.
-    ///   - `Option<(KeyOfTypeNonce, Credits)>`: The verified address balance and nonce if it exists, or `None` if the address is absent.
+    ///   - `Option<(AddressNonce, Credits)>`: The verified address balance and nonce if it exists, or `None` if the address is absent.
     /// - `Err(Error)`: If verification fails, returns an [`Error`] indicating the cause of failure.
     ///
     /// # Errors
@@ -35,7 +35,7 @@ impl Drive {
     /// - [`Error::GroveDB`]: If the data deserialization or conversion fails during proof verification.
     pub fn verify_address_info(
         proof: &[u8],
-        key_of_type: &KeyOfType,
+        address: &PlatformAddress,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, Option<(AddressNonce, Credits)>), Error> {
@@ -48,7 +48,7 @@ impl Drive {
         {
             0 => Self::verify_address_info_v0(
                 proof,
-                key_of_type,
+                address,
                 verify_subset_of_proof,
                 platform_version,
             ),

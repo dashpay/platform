@@ -3,8 +3,8 @@ mod v0;
 use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::AddressNonce;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
@@ -14,7 +14,7 @@ impl Drive {
     /// This operation retrieves the stored balance and nonce if they exist.
     ///
     /// # Parameters
-    /// - `key_of_type`: The key (containing key type and key data) to look up
+    /// - `address`: The platform address to look up
     /// - `transaction`: The transaction argument for the operation.
     /// - `platform_version`: The platform version to select the correct function version to run.
     ///
@@ -25,7 +25,7 @@ impl Drive {
     /// - `Err(Error)` if any other error occurs during the operation.
     pub fn fetch_balance_and_nonce(
         &self,
-        key_of_type: &KeyOfType,
+        address: &PlatformAddress,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<(AddressNonce, Credits)>, Error> {
@@ -35,7 +35,7 @@ impl Drive {
             .address_funds
             .fetch_balance_and_nonce
         {
-            0 => self.fetch_balance_and_nonce_v0(key_of_type, transaction, platform_version),
+            0 => self.fetch_balance_and_nonce_v0(address, transaction, platform_version),
             version => Err(Error::Drive(DriveError::UnknownVersionMismatch {
                 method: "fetch_balance_and_nonce".to_string(),
                 known_versions: vec![0],

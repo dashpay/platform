@@ -15,18 +15,19 @@ use platform_serialization_derive::PlatformSignable;
 
 use crate::ProtocolError;
 
-use crate::address_funds::PlatformAddress;
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
-use crate::prelude::UserFeeIncrease;
+use crate::prelude::{AddressNonce, UserFeeIncrease};
 use platform_value::BinaryData;
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
 
 mod property_names {
     pub const ASSET_LOCK_PROOF: &str = "assetLockProof";
+    pub const INPUTS: &str = "inputs";
     pub const OUTPUTS: &str = "outputs";
-    pub const OUTPUT_PAYING_FEES: &str = "outputPayingFees";
+    pub const FEE_STRATEGY: &str = "feeStrategy";
     pub const SIGNATURE: &str = "signature";
     pub const PROTOCOL_VERSION: &str = "protocolVersion";
     pub const TRANSITION_TYPE: &str = "type";
@@ -41,10 +42,13 @@ mod property_names {
 #[derive(Default)]
 pub struct AddressFundingFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
+    /// Inputs from existing platform addresses (optional, for combining funds)
+    pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     pub outputs: BTreeMap<PlatformAddress, Credits>,
-    /// The index of the output that will pay fees
-    pub output_paying_fees: u16,
+    pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub signature: BinaryData,
+    #[platform_signable(exclude_from_sig_hash)]
+    pub input_witnesses: Vec<AddressWitness>,
 }

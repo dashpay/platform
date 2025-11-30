@@ -2,8 +2,8 @@ use crate::drive::Drive;
 use crate::error::proof::ProofError;
 use crate::error::Error;
 use crate::verify::RootHash;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::AddressNonce;
 use grovedb::{Element, GroveDb};
 use platform_version::version::PlatformVersion;
@@ -11,15 +11,15 @@ use platform_version::version::PlatformVersion;
 impl Drive {
     pub(super) fn verify_addresses_infos_v0<
         'a,
-        I: IntoIterator<Item = &'a KeyOfType>,
-        T: FromIterator<(KeyOfType, Option<(AddressNonce, Credits)>)>,
+        I: IntoIterator<Item = &'a PlatformAddress>,
+        T: FromIterator<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
     >(
         proof: &[u8],
-        keys_of_type: I,
+        addresses: I,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
-        let path_query = Self::balances_for_addresses_query(keys_of_type);
+        let path_query = Self::balances_for_clear_addresses_query(addresses);
 
         let (root_hash, proved_key_values) = if verify_subset_of_proof {
             GroveDb::verify_subset_query_with_absence_proof(
@@ -38,10 +38,10 @@ impl Drive {
         let values = proved_key_values
             .into_iter()
             .map(|(_path, key, element)| {
-                // Reconstruct KeyOfType from the key bytes
-                let key_of_type = KeyOfType::from_bytes(&key).map_err(|e| {
+                // Reconstruct PlatformAddress from the key bytes
+                let address = PlatformAddress::from_bytes(&key).map_err(|e| {
                     Error::Proof(ProofError::CorruptedProof(format!(
-                        "failed to deserialize KeyOfType: {}",
+                        "failed to deserialize PlatformAddress: {}",
                         e
                     )))
                 })?;
@@ -54,8 +54,8 @@ impl Drive {
                             )));
                         };
 
-                        let nonce_bytes: [u8; 8] = nonce_vec.try_into().map_err(|_| {
-                            Error::Proof(ProofError::IncorrectValueSize("nonce should be 8 bytes"))
+                        let nonce_bytes: [u8; 4] = nonce_vec.try_into().map_err(|_| {
+                            Error::Proof(ProofError::IncorrectValueSize("nonce should be 4 bytes"))
                         })?;
                         let nonce = AddressNonce::from_be_bytes(nonce_bytes);
 
@@ -70,7 +70,7 @@ impl Drive {
                     })
                     .transpose()?;
 
-                Ok((key_of_type, balance_info))
+                Ok((address, balance_info))
             })
             .collect::<Result<T, Error>>()?;
 

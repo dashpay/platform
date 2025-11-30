@@ -1,8 +1,8 @@
 /// transformer
 pub mod transformer;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 
@@ -12,7 +12,7 @@ use std::collections::BTreeMap;
 /// but not execute it
 pub struct BumpAddressInputNoncesActionV0 {
     /// inputs
-    pub inputs_with_remaining_balance: BTreeMap<KeyOfType, (AddressNonce, Credits)>,
+    pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
 }
@@ -20,14 +20,14 @@ pub struct BumpAddressInputNoncesActionV0 {
 /// document base transition action accessors v0
 pub trait BumpAddressInputNonceActionAccessorsV0 {
     /// Get inputs
-    fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)>;
+    fn inputs_with_remaining_balance(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
 
     /// Returns owned copies of inputs and outputs.
     fn inputs_with_remaining_balance_and_outputs_owned(
         self,
     ) -> (
-        BTreeMap<KeyOfType, (AddressNonce, Credits)>,
-        BTreeMap<KeyOfType, Credits>,
+        BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        BTreeMap<PlatformAddress, Credits>,
     );
 
     /// fee multiplier

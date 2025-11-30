@@ -9,7 +9,6 @@ use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::DriveOperation::{AddressFundsOperation, IdentityOperation};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use dpp::block::epoch::Epoch;
-use dpp::identity::KeyOfTypeWithNonce;
 use dpp::prelude::Identity;
 use dpp::version::PlatformVersion;
 
@@ -39,12 +38,13 @@ impl DriveHighLevelOperationConverter for IdentityCreateFromAddressesTransitionA
                         is_masternode_identity: false,
                     })];
 
-                for (key_of_type, (nonce, remaining_balance)) in
+                for (address, (nonce, remaining_balance)) in
                     self.inputs_with_remaining_balance_owned()
                 {
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::SetBalanceToAddress {
-                            key_of_type_with_nonce: KeyOfTypeWithNonce { key_of_type, nonce },
+                            address,
+                            nonce,
                             balance: remaining_balance,
                         },
                     ));

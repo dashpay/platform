@@ -6,7 +6,6 @@ use crate::util::batch::drive_op_batch::AddressFundsOperationType;
 use crate::util::batch::DriveOperation::{AddressFundsOperation, IdentityOperation};
 use crate::util::batch::{DriveOperation, IdentityOperationType};
 use dpp::block::epoch::Epoch;
-use dpp::identity::KeyOfTypeWithNonce;
 use dpp::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for IdentityTopUpFromAddressesTransitionAction {
@@ -24,6 +23,10 @@ impl DriveHighLevelOperationConverter for IdentityTopUpFromAddressesTransitionAc
         {
             0 => {
                 let identity_id = self.identity_id();
+                let inputs = self.inputs_with_remaining_balance_owned();
+
+                // Calculate total balance to add from inputs
+                let added_balance: u64 = inputs.values().map(|(_, balance)| *balance).sum();
 
                 let mut drive_operations = vec![IdentityOperation(
                     IdentityOperationType::AddToIdentityBalance {
@@ -32,12 +35,11 @@ impl DriveHighLevelOperationConverter for IdentityTopUpFromAddressesTransitionAc
                     },
                 )];
 
-                for (key_of_type, (nonce, remaining_balance)) in
-                    self.inputs_with_remaining_balance_owned()
-                {
+                for (address, (nonce, remaining_balance)) in inputs {
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::SetBalanceToAddress {
-                            key_of_type_with_nonce: KeyOfTypeWithNonce { key_of_type, nonce },
+                            address,
+                            nonce,
                             balance: remaining_balance,
                         },
                     ));

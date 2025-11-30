@@ -26,7 +26,6 @@ use crate::state_transition_action::identity::identity_update::IdentityUpdateTra
 use crate::state_transition_action::identity::masternode_vote::MasternodeVoteTransitionAction;
 use crate::state_transition_action::system::bump_address_input_nonces_action::{
     BumpAddressInputNonceActionAccessorsV0, BumpAddressInputNoncesAction,
-    BumpAddressInputNoncesActionV0,
 };
 use crate::state_transition_action::system::bump_identity_data_contract_nonce_action::{
     BumpIdentityDataContractNonceAction, BumpIdentityDataContractNonceActionAccessorsV0,

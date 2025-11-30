@@ -57,7 +57,9 @@ pub mod group;
 #[cfg(feature = "server")]
 mod shared;
 
-mod address_funds;
+/// Address funds module
+#[cfg(any(feature = "server", feature = "verify"))]
+pub mod address_funds;
 /// Token module
 #[cfg(any(feature = "server", feature = "verify"))]
 pub mod tokens;

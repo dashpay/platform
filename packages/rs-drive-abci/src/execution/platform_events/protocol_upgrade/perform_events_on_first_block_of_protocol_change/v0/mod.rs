@@ -31,12 +31,13 @@ use drive::drive::tokens::paths::{
     TOKEN_PRE_PROGRAMMED_DISTRIBUTIONS_KEY, TOKEN_STATUS_INFO_KEY, TOKEN_TIMED_DISTRIBUTIONS_KEY,
 };
 use drive::drive::votes::paths::vote_end_date_queries_tree_path_vec;
-use drive::drive::RootTree;
+use drive::drive::{Drive, RootTree};
 use drive::grovedb::{Element, PathQuery, Query, QueryItem, SizedQuery, Transaction};
 use drive::grovedb_path::SubtreePath;
 use drive::query::QueryResultType;
 use std::collections::HashSet;
 use std::ops::RangeFull;
+use drive::drive::address_funds::queries::CLEAR_ADDRESS_POOL_U8;
 
 impl<C> Platform<C> {
     /// Executes protocol-specific events on the first block after a protocol version change.
@@ -99,6 +100,10 @@ impl<C> Platform<C> {
 
         if previous_protocol_version < 9 && platform_version.protocol_version >= 9 {
             self.transition_to_version_9(block_info, transaction, platform_version)?;
+        }
+
+        if previous_protocol_version < 11 && platform_version.protocol_version >= 11 {
+            self.transition_to_version_11(transaction, platform_version)?;
         }
 
         Ok(())
@@ -519,6 +524,33 @@ impl<C> Platform<C> {
             platform_version,
         )?;
 
+        Ok(())
+    }
+
+    /// We introduced in version 11 Addresses
+    fn transition_to_version_11(
+        &self,
+        transaction: &Transaction,
+        platform_version: &PlatformVersion,
+    ) -> Result<(), Error> {
+        self.drive.grove_insert_if_not_exists(
+            SubtreePath::empty(),
+            &[RootTree::AddressBalances as u8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
+
+        let path = Drive::addresses_path();
+        self.drive.grove_insert_if_not_exists(
+            (&path).into(),
+            &[CLEAR_ADDRESS_POOL_U8],
+            Element::empty_sum_tree(),
+            Some(transaction),
+            None,
+            &platform_version.drive,
+        )?;
         Ok(())
     }
 }

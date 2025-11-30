@@ -13,7 +13,7 @@ use std::convert::TryFrom;
 use bincode::{Decode, Encode};
 use platform_serialization_derive::PlatformSignable;
 
-use crate::address_funds::{AddressWitness, PlatformAddress};
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -39,6 +39,9 @@ pub struct IdentityCreateFromAddressesTransitionV0 {
     #[platform_signable(into = "Vec<IdentityPublicKeyInCreationSignable>")]
     pub public_keys: Vec<IdentityPublicKeyInCreation>,
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    /// Optional output to send remaining credits to an address
+    pub output: Option<(PlatformAddress, Credits)>,
+    pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]
     pub input_witnesses: Vec<AddressWitness>,
@@ -53,6 +56,8 @@ struct IdentityCreateFromAddressesTransitionV0Inner {
     // Own ST fields
     public_keys: Vec<IdentityPublicKeyInCreation>,
     inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    output: Option<(PlatformAddress, Credits)>,
+    fee_strategy: AddressFundsFeeStrategy,
     user_fee_increase: UserFeeIncrease,
     input_witnesses: Vec<AddressWitness>,
 }
@@ -66,6 +71,8 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
         let IdentityCreateFromAddressesTransitionV0Inner {
             public_keys,
             inputs,
+            output,
+            fee_strategy,
             user_fee_increase,
             input_witnesses,
         } = value;
@@ -73,6 +80,8 @@ impl TryFrom<IdentityCreateFromAddressesTransitionV0Inner>
         Ok(Self {
             public_keys,
             inputs,
+            output,
+            fee_strategy,
             user_fee_increase,
             input_witnesses,
         })

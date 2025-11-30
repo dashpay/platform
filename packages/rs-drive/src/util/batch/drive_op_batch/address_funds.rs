@@ -2,9 +2,10 @@ use crate::drive::Drive;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::batch::drive_op_batch::DriveLowLevelOperationConverter;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::fee::Credits;
-use dpp::identity::{KeyOfType, KeyOfTypeWithNonce};
+use dpp::prelude::AddressNonce;
 use grovedb::batch::KeyInfoPath;
 use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -16,16 +17,18 @@ pub enum AddressFundsOperationType {
     /// Sets a balance for a given address in the AddressBalances tree.
     /// This operation directly sets (or overwrites) the balance for the address with the given nonce.
     SetBalanceToAddress {
-        /// The key (containing key type and key data) with its associated nonce
-        key_of_type_with_nonce: KeyOfTypeWithNonce,
+        /// The platform address
+        address: PlatformAddress,
+        /// The nonce for the address
+        nonce: AddressNonce,
         /// The balance value to set
         balance: Credits,
     },
     /// Adds a balance for a given address in the AddressBalances tree.
     /// This operation adds the balance for the address with the given nonce, that nonce is not changed.
     AddBalanceToAddress {
-        /// The key (containing key type and key data)
-        key_of_type: KeyOfType,
+        /// The platform address
+        address: PlatformAddress,
         /// The balance value to add
         balance_to_add: Credits,
     },
@@ -44,12 +47,14 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
     ) -> Result<Vec<LowLevelDriveOperation>, Error> {
         match self {
             AddressFundsOperationType::SetBalanceToAddress {
-                key_of_type_with_nonce,
+                address,
+                nonce,
                 balance,
             } => {
                 let mut drive_operations = vec![];
                 drive.set_balance_to_address(
-                    key_of_type_with_nonce,
+                    address,
+                    nonce,
                     balance,
                     &mut drive_operations,
                     platform_version,
@@ -57,12 +62,12 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
                 Ok(drive_operations)
             }
             AddressFundsOperationType::AddBalanceToAddress {
-                key_of_type,
+                address,
                 balance_to_add,
             } => {
                 let mut drive_operations = vec![];
                 drive.add_balance_to_address(
-                    key_of_type,
+                    address,
                     balance_to_add,
                     &mut drive_operations,
                     transaction,

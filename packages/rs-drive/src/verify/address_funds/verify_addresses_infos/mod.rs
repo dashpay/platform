@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::verify::RootHash;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::AddressNonce;
 use dpp::version::PlatformVersion;
 
@@ -18,18 +18,18 @@ impl Drive {
     ///
     /// # Type Parameters
     /// - `T`: The output container type that implements `FromIterator`. This is used to collect the verified address information
-    ///   as pairs of [`KeyOfType`] and `Option<(KeyOfTypeNonce, Credits)>`.
+    ///   as pairs of [`PlatformAddress`] and `Option<(AddressNonce, Credits)>`.
     ///
     /// # Arguments
     /// - `proof`: A byte slice containing the cryptographic proof for the address information.
-    /// - `keys_of_type`: An iterator over the addresses to verify.
+    /// - `addresses`: An iterator over the platform addresses to verify.
     /// - `verify_subset_of_proof`: A boolean flag indicating whether to verify only a subset of the proof (useful for optimizations).
     /// - `platform_version`: A reference to the platform version, used to determine the appropriate versioned implementation.
     ///
     /// # Returns
     /// - `Ok((RootHash, T))`: On success, returns a tuple containing:
     ///   - `RootHash`: The root hash of the Merkle tree, confirming the proof's validity.
-    ///   - `T`: A collection of verified address information as pairs of [`KeyOfType`] and `Option<(KeyOfTypeNonce, Credits)>`.
+    ///   - `T`: A collection of verified address information as pairs of [`PlatformAddress`] and `Option<(AddressNonce, Credits)>`.
     /// - `Err(Error)`: If verification fails, returns an [`Error`] indicating the cause of failure.
     ///
     /// # Errors
@@ -38,11 +38,11 @@ impl Drive {
     /// - Any other errors propagated from the versioned implementation.
     pub fn verify_addresses_infos<
         'a,
-        I: IntoIterator<Item = &'a KeyOfType>,
-        T: FromIterator<(KeyOfType, Option<(AddressNonce, Credits)>)>,
+        I: IntoIterator<Item = &'a PlatformAddress>,
+        T: FromIterator<(PlatformAddress, Option<(AddressNonce, Credits)>)>,
     >(
         proof: &[u8],
-        keys_of_type: I,
+        addresses: I,
         verify_subset_of_proof: bool,
         platform_version: &PlatformVersion,
     ) -> Result<(RootHash, T), Error> {
@@ -55,7 +55,7 @@ impl Drive {
         {
             0 => Self::verify_addresses_infos_v0(
                 proof,
-                keys_of_type,
+                addresses,
                 verify_subset_of_proof,
                 platform_version,
             ),

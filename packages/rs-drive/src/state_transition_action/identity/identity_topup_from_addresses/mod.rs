@@ -5,8 +5,8 @@ pub mod v0;
 
 use crate::state_transition_action::identity::identity_topup_from_addresses::v0::IdentityTopUpFromAddressesTransitionActionV0;
 use derive_more::From;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
@@ -20,7 +20,7 @@ pub enum IdentityTopUpFromAddressesTransitionAction {
 
 impl IdentityTopUpFromAddressesTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance
@@ -30,7 +30,7 @@ impl IdentityTopUpFromAddressesTransitionAction {
     /// Get inputs
     pub fn inputs_with_remaining_balance_owned(
         self,
-    ) -> BTreeMap<KeyOfType, (AddressNonce, Credits)> {
+    ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => {
                 transition.inputs_with_remaining_balance

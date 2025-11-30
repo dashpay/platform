@@ -2,11 +2,13 @@
 use std::collections::BTreeMap;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::address_funds::PlatformAddress;
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::AssetLockProof;
+use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::{AddressNonce, AssetLockProof};
 #[cfg(feature = "state-transition-signing")]
 use crate::serialization::Signable;
 use crate::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
@@ -20,44 +22,49 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_asset_lock(
+    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         outputs: BTreeMap<PlatformAddress, Credits>,
-        output_paying_fees: u16,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
         tracing::debug!("try_from_asset_lock_with_signer: Started");
         tracing::debug!(
+            input_count = inputs.len(),
             output_count = outputs.len(),
-            output_paying_fees = output_paying_fees,
             "try_from_asset_lock_with_signer"
         );
 
         // Create the unsigned transition
-        let address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
+        let mut address_funding_transition = AddressFundingFromAssetLockTransitionV0 {
             asset_lock_proof,
+            inputs: inputs.clone(),
             outputs,
-            output_paying_fees,
+            fee_strategy,
             user_fee_increase,
-            ..Default::default()
+            signature: Default::default(),
+            input_witnesses: Vec::new(),
         };
 
-        let mut state_transition: StateTransition = address_funding_transition.clone().into();
+        let state_transition: StateTransition = address_funding_transition.clone().into();
 
-        let data = state_transition.signable_bytes()?;
+        let signable_bytes = state_transition.signable_bytes()?;
 
-        let signature = signer::sign(&data, asset_lock_proof_private_key)?;
-        if !state_transition.set_signature(signature.to_vec().into()) {
-            return Err(ProtocolError::InvalidVerificationWrongNumberOfElements {
-                needed: state_transition.required_number_of_private_keys(),
-                using: 1,
-                msg: "failed to set ECDSA signature",
-            });
-        };
+        // Sign the asset lock proof
+        let signature = signer::sign(&signable_bytes, asset_lock_proof_private_key)?;
+        address_funding_transition.signature = signature.to_vec().into();
+
+        // Sign with input witnesses
+        address_funding_transition.input_witnesses = inputs
+            .iter()
+            .map(|(address, _)| signer.sign_create_witness(address, &signable_bytes))
+            .collect::<Result<Vec<AddressWitness>, ProtocolError>>()?;
 
         tracing::debug!("try_from_asset_lock_with_signer: Successfully created transition");
-        Ok(state_transition)
+        Ok(address_funding_transition.into())
     }
 }

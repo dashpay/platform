@@ -94,6 +94,10 @@ impl DriveHighLevelOperationConverter for StateTransitionAction {
                 address_funds_transfer_transition
                     .into_high_level_drive_operations(epoch, platform_version)
             }
+            StateTransitionAction::BumpAddressInputNoncesAction(
+                bump_address_input_nonces_action,
+            ) => bump_address_input_nonces_action
+                .into_high_level_drive_operations(epoch, platform_version),
         }
     }
 }

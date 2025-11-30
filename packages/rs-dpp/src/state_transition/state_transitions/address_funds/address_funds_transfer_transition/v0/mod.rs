@@ -50,8 +50,6 @@ mod test {
     use crate::serialization::{PlatformDeserializable, PlatformSerializable};
 
     use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
-    use platform_value::Identifier;
-    use rand::Rng;
     use std::fmt::Debug;
 
     fn test_utxo_transfer_transition<

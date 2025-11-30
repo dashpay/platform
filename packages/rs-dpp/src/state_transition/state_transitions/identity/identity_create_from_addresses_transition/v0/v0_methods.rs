@@ -7,6 +7,8 @@ use std::collections::BTreeMap;
 // ============================
 // Crate: Ungated Imports
 // ============================
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::fee::Credits;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
@@ -19,8 +21,7 @@ use crate::state_transition::StateTransitionType;
 // ============================
 #[cfg(feature = "state-transition-signing")]
 use crate::{
-    address_funds::PlatformAddress,
-    fee::Credits,
+    address_funds::AddressWitness,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
@@ -114,6 +115,26 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     /// Adds public keys to the existing public keys array
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
         self.public_keys.append(public_keys);
+    }
+
+    /// Get the optional output
+    fn output(&self) -> Option<&(PlatformAddress, Credits)> {
+        self.output.as_ref()
+    }
+
+    /// Set the optional output
+    fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
+        self.output = output;
+    }
+
+    /// Get fee strategy
+    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        &self.fee_strategy
+    }
+
+    /// Set fee strategy
+    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
+        self.fee_strategy = fee_strategy;
     }
 }
 

@@ -1,7 +1,7 @@
 mod transformer;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::platform_value::Identifier;
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
@@ -9,8 +9,8 @@ use std::collections::BTreeMap;
 /// action v0
 #[derive(Default, Debug, Clone)]
 pub struct IdentityCreditTransferToAddressesTransitionActionV0 {
-    /// recipient keys
-    pub recipient_keys: BTreeMap<KeyOfType, Credits>,
+    /// recipient addresses
+    pub recipient_addresses: BTreeMap<PlatformAddress, Credits>,
     /// identity id
     pub identity_id: Identifier,
     /// nonce

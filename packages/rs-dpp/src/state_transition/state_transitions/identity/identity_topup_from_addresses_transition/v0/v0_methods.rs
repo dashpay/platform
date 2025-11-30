@@ -1,6 +1,8 @@
 // =====================================
 // Ungated Imports
 // =====================================
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::fee::Credits;
 use crate::prelude::Identifier;
 use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
@@ -12,8 +14,7 @@ use crate::state_transition::identity_topup_from_addresses_transition::v0::Ident
 #[cfg(feature = "state-transition-signing")]
 use {
     crate::{
-        address_funds::{AddressWitness, PlatformAddress},
-        fee::Credits,
+        address_funds::AddressWitness,
         identity::{accessors::IdentityGettersV0, signer::Signer, Identity},
         prelude::{AddressNonce, UserFeeIncrease},
         serialization::Signable,
@@ -38,7 +39,9 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
         let mut identity_top_up_from_addresses_transition =
             IdentityTopUpFromAddressesTransitionV0 {
                 inputs: inputs.clone(),
+                output: None,
                 identity_id: identity.id(),
+                fee_strategy: AddressFundsFeeStrategy::default(),
                 user_fee_increase,
                 input_witnesses: vec![],
             };
@@ -66,5 +69,25 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
     /// Returns identity id
     fn identity_id(&self) -> &Identifier {
         &self.identity_id
+    }
+
+    /// Get the optional output
+    fn output(&self) -> Option<&(PlatformAddress, Credits)> {
+        self.output.as_ref()
+    }
+
+    /// Set the optional output
+    fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
+        self.output = output;
+    }
+
+    /// Get fee strategy
+    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        &self.fee_strategy
+    }
+
+    /// Set fee strategy
+    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
+        self.fee_strategy = fee_strategy;
     }
 }

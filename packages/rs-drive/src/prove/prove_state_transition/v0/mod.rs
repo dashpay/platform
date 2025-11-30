@@ -18,7 +18,8 @@ use dpp::state_transition::batch_transition::batched_transition::token_transitio
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransitionRef;
 use dpp::state_transition::batch_transition::document_base_transition::v0::v0_methods::DocumentBaseTransitionV0Methods;
 use dpp::state_transition::batch_transition::document_create_transition::v0::v0_methods::DocumentCreateTransitionV0Methods;
-use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
+use dpp::state_transition::StateTransitionIdentityIdFromInputs;
+use dpp::state_transition::StateTransitionWitnessSigned;
 use dpp::state_transition::identity_create_transition::accessors::IdentityCreateTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_to_addresses_transition::accessors::IdentityCreditTransferToAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_credit_transfer_transition::accessors::IdentityCreditTransferTransitionAccessorsV0;
@@ -204,12 +205,20 @@ impl Drive {
                 }
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                Drive::balances_for_addresses_query(st.recipient_keys().keys())
+                Drive::balances_for_clear_addresses_query(st.recipient_addresses().keys())
             }
-            StateTransition::IdentityCreateFromAddresses(st) => Drive::full_identity_query(
-                &st.identity_id().into_buffer(),
-                &platform_version.drive.grove_version,
-            )?,
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                let identity_id = st.identity_id_from_inputs().map_err(|e| {
+                    Error::Proof(ProofError::CorruptedProof(format!(
+                        "Failed to calculate identity_id from inputs: {}",
+                        e
+                    )))
+                })?;
+                Drive::full_identity_query(
+                    &identity_id.into_buffer(),
+                    &platform_version.drive.grove_version,
+                )?
+            }
             StateTransition::IdentityTopUpFromAddresses(st) => {
                 // we expect to get a new balance and revision
                 Drive::revision_and_balance_path_query(
@@ -218,7 +227,14 @@ impl Drive {
                 )?
             }
             StateTransition::AddressFundsTransfer(st) => {
-                Drive::balances_for_addresses_query(st.inputs().keys().chain(st.outputs().keys()))
+                Drive::balances_for_clear_addresses_query(st.inputs().keys().chain(st.outputs().keys()))
+            }
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
+                Drive::balances_for_clear_addresses_query(st.outputs().keys())
+            }
+            StateTransition::AddressCreditWithdrawal(st) => {
+                Drive::balances_for_clear_addresses_query(st.inputs().keys())
             }
         };
 

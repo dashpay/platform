@@ -4,8 +4,8 @@ use crate::drive::Drive;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use grovedb::TransactionArg;
 use platform_version::version::PlatformVersion;
 
@@ -15,7 +15,7 @@ impl Drive {
     /// The nonce stays the same. If there is no address the nonce becomes 0.
     ///
     /// # Parameters
-    /// - `key_of_type`: The key (containing key type and key data)
+    /// - `address`: The platform address
     /// - `balance`: The balance value to set
     /// - `drive_operations`: The list of drive operations to append to.
     /// * `transaction` - A `TransactionArg` object representing the database transaction to be used.
@@ -27,7 +27,7 @@ impl Drive {
     /// - `Err(Error)` if any other error occurs during the operation.
     pub fn add_balance_to_address(
         &self,
-        key_of_type: KeyOfType,
+        address: PlatformAddress,
         balance: Credits,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
@@ -40,7 +40,7 @@ impl Drive {
             .add_balance_to_address
         {
             0 => self.add_balance_to_address_v0(
-                key_of_type,
+                address,
                 balance,
                 drive_operations,
                 transaction,

@@ -5,11 +5,13 @@ use std::collections::BTreeMap;
 pub use v0::*;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::address_funds::PlatformAddress;
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
-use crate::prelude::AssetLockProof;
+use crate::identity::signer::Signer;
+#[cfg(feature = "state-transition-signing")]
+use crate::prelude::{AddressNonce, AssetLockProof};
 use crate::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 #[cfg(feature = "state-transition-signing")]
 use crate::{
@@ -25,11 +27,13 @@ use platform_version::version::PlatformVersion;
 
 impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetLockTransition {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_asset_lock(
+    fn try_from_asset_lock_with_signer<S: Signer<PlatformAddress>>(
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         outputs: BTreeMap<PlatformAddress, Credits>,
-        output_paying_fees: u16,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
         user_fee_increase: UserFeeIncrease,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
@@ -39,11 +43,13 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
             .address_funding_from_asset_lock_transition
         {
             0 => Ok(
-                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock(
+                AddressFundingFromAssetLockTransitionV0::try_from_asset_lock_with_signer::<S>(
                     asset_lock_proof,
                     asset_lock_proof_private_key,
+                    inputs,
                     outputs,
-                    output_paying_fees,
+                    fee_strategy,
+                    signer,
                     user_fee_increase,
                     platform_version,
                 )?,

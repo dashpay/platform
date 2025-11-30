@@ -1,7 +1,5 @@
 mod v0;
 
-use std::collections::BTreeMap;
-
 use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
@@ -10,15 +8,15 @@ use crate::withdrawal::Pooling;
 pub use v0::*;
 
 impl AddressCreditWithdrawalTransitionAccessorsV0 for AddressCreditWithdrawalTransition {
-    fn outputs(&self) -> &BTreeMap<PlatformAddress, Credits> {
+    fn output(&self) -> Option<&(PlatformAddress, Credits)> {
         match self {
-            AddressCreditWithdrawalTransition::V0(v0) => &v0.outputs,
+            AddressCreditWithdrawalTransition::V0(v0) => v0.output.as_ref(),
         }
     }
 
-    fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Credits>) {
+    fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
         match self {
-            AddressCreditWithdrawalTransition::V0(v0) => v0.outputs = outputs,
+            AddressCreditWithdrawalTransition::V0(v0) => v0.output = output,
         }
     }
 

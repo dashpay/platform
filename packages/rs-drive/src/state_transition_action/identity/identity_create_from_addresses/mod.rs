@@ -8,8 +8,9 @@ use crate::state_transition_action::identity::identity_create_from_addresses::v0
     IdentityFromIdentityCreateFromAddressesTransitionActionV0,
 };
 use derive_more::From;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::{Identity, IdentityPublicKey, KeyOfType, PartialIdentity};
+use dpp::identity::{Identity, IdentityPublicKey, PartialIdentity};
 use dpp::platform_value::Identifier;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use dpp::version::PlatformVersion;
@@ -26,7 +27,7 @@ pub enum IdentityCreateFromAddressesTransitionAction {
 /// action
 impl IdentityCreateFromAddressesTransitionAction {
     /// Get inputs
-    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<KeyOfType, (AddressNonce, Credits)> {
+    pub fn inputs_with_remaining_balance(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityCreateFromAddressesTransitionAction::V0(transition) => {
                 &transition.inputs_with_remaining_balance
@@ -36,7 +37,7 @@ impl IdentityCreateFromAddressesTransitionAction {
     /// Get inputs
     pub fn inputs_with_remaining_balance_owned(
         self,
-    ) -> BTreeMap<KeyOfType, (AddressNonce, Credits)> {
+    ) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
         match self {
             IdentityCreateFromAddressesTransitionAction::V0(transition) => {
                 transition.inputs_with_remaining_balance

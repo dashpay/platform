@@ -7,14 +7,14 @@ impl From<IdentityCreditTransferToAddressesTransitionV0>
     fn from(value: IdentityCreditTransferToAddressesTransitionV0) -> Self {
         let IdentityCreditTransferToAddressesTransitionV0 {
             identity_id,
-            recipient_keys,
+            recipient_addresses,
             nonce,
             user_fee_increase,
             ..
         } = value;
         IdentityCreditTransferToAddressesTransitionActionV0 {
             identity_id,
-            recipient_keys,
+            recipient_addresses,
             nonce,
             user_fee_increase,
         }
@@ -27,14 +27,14 @@ impl From<&IdentityCreditTransferToAddressesTransitionV0>
     fn from(value: &IdentityCreditTransferToAddressesTransitionV0) -> Self {
         let IdentityCreditTransferToAddressesTransitionV0 {
             identity_id,
-            recipient_keys,
+            recipient_addresses,
             nonce,
             user_fee_increase,
             ..
         } = value;
         IdentityCreditTransferToAddressesTransitionActionV0 {
             identity_id: *identity_id,
-            recipient_keys: recipient_keys.clone(),
+            recipient_addresses: recipient_addresses.clone(),
             nonce: *nonce,
             user_fee_increase: *user_fee_increase,
         }

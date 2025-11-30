@@ -3,8 +3,8 @@ use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
+use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::prelude::AddressNonce;
 use grovedb::{Element, TransactionArg};
 use platform_version::version::PlatformVersion;
@@ -14,7 +14,7 @@ impl Drive {
     /// This operation retrieves the balance and nonce for a given address from the AddressBalances tree.
     ///
     /// # Parameters
-    /// * `key_of_type`: The key (containing key type and key data) to look up
+    /// * `address`: The platform address to look up
     /// * `transaction`: The transaction argument for the operation.
     ///
     /// # Returns
@@ -23,12 +23,12 @@ impl Drive {
     /// * `Err(Error)` if the operation fails or if the element type is corrupted
     pub(in crate::drive::address_funds) fn fetch_balance_and_nonce_v0(
         &self,
-        key_of_type: &KeyOfType,
+        address: &PlatformAddress,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<(AddressNonce, Credits)>, Error> {
         let path = vec![vec![RootTree::AddressBalances as u8]];
-        let key_bytes = key_of_type.to_bytes();
+        let key_bytes = address.to_bytes();
 
         let mut drive_operations = vec![];
 
@@ -53,9 +53,9 @@ impl Drive {
                 }
 
                 // Parse the nonce from big-endian bytes
-                let nonce_array: [u8; 8] = nonce_bytes.as_slice().try_into().map_err(|_| {
+                let nonce_array: [u8; 4] = nonce_bytes.as_slice().try_into().map_err(|_| {
                     Error::Drive(DriveError::CorruptedSerialization(
-                        "nonce must be 8 bytes for a u64".to_string(),
+                        "nonce must be 4 bytes for a u32".to_string(),
                     ))
                 })?;
 

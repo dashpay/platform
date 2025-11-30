@@ -8,12 +8,14 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
         let IdentityTopUpFromAddressesTransitionV0 {
             identity_id,
             inputs,
+            output,
             user_fee_increase,
             ..
         } = value;
 
         Ok(IdentityTopUpFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance,
+            inputs_with_remaining_balance: inputs,
+            output,
             identity_id,
             user_fee_increase,
         })
@@ -26,12 +28,14 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
         let IdentityTopUpFromAddressesTransitionV0 {
             identity_id,
             inputs,
+            output,
             user_fee_increase,
             ..
         } = value;
 
         Ok(IdentityTopUpFromAddressesTransitionActionV0 {
-            inputs_with_remaining_balance: inputs.clone(), //todo
+            inputs_with_remaining_balance: inputs.clone(),
+            output: output.clone(),
             identity_id: *identity_id,
             user_fee_increase: *user_fee_increase,
         })
