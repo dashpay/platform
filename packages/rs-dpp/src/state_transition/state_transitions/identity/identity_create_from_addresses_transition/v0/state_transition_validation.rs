@@ -3,8 +3,8 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
-    InputsNotLessThanOutputsError, OutputBelowMinimumError, TransitionNoInputsError,
-    TransitionOverMaxInputsError,
+    InputsNotLessThanOutputsError, OutputAddressAlsoInputError, OutputBelowMinimumError,
+    TransitionNoInputsError, TransitionOverMaxInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
@@ -79,6 +79,16 @@ impl StateTransitionStructureValidation for IdentityCreateFromAddressesTransitio
                 ))
                 .into(),
             );
+        }
+
+        // Validate output address is not also an input address
+        if let Some((output_address, _)) = &self.output {
+            if self.inputs.contains_key(output_address) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::OutputAddressAlsoInputError(OutputAddressAlsoInputError::new())
+                        .into(),
+                );
+            }
         }
 
         // Validate fee strategy is not empty

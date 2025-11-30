@@ -2,8 +2,8 @@ use crate::address_funds::AddressFundsFeeWithWithdrawalStrategyStep;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyReduceWithdrawalNotLastError, FeeStrategyTooManyStepsError, InputBelowMinimumError,
-    InputWitnessCountMismatchError, OutputBelowMinimumError, TransitionNoInputsError,
-    TransitionOverMaxInputsError,
+    InputWitnessCountMismatchError, OutputAddressAlsoInputError, OutputBelowMinimumError,
+    TransitionNoInputsError, TransitionOverMaxInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
@@ -44,6 +44,16 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
                 ))
                 .into(),
             );
+        }
+
+        // Validate output address is not also an input address
+        if let Some((output_address, _)) = &self.output {
+            if self.inputs.contains_key(output_address) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::OutputAddressAlsoInputError(OutputAddressAlsoInputError::new())
+                        .into(),
+                );
+            }
         }
 
         // Validate fee strategy is not empty

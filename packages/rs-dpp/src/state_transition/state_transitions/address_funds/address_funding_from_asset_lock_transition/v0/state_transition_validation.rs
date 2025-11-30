@@ -3,8 +3,8 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
-    OutputBelowMinimumError, OutputsNotGreaterThanInputsError, TransitionNoOutputsError,
-    TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
+    OutputAddressAlsoInputError, OutputBelowMinimumError, OutputsNotGreaterThanInputsError,
+    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
@@ -57,6 +57,16 @@ impl StateTransitionStructureValidation for AddressFundingFromAssetLockTransitio
                 ))
                 .into(),
             );
+        }
+
+        // Validate no output address is also an input address
+        for output_address in self.outputs.keys() {
+            if self.inputs.contains_key(output_address) {
+                return SimpleConsensusValidationResult::new_with_error(
+                    BasicError::OutputAddressAlsoInputError(OutputAddressAlsoInputError::new())
+                        .into(),
+                );
+            }
         }
 
         // Validate fee strategy is not empty

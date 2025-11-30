@@ -76,10 +76,10 @@ use crate::consensus::basic::state_transition::{
     FeeStrategyReduceWithdrawalNotLastError, FeeStrategyTooManyStepsError, InputBelowMinimumError,
     InputOutputBalanceMismatchError, InputWitnessCountMismatchError, InputsNotLessThanOutputsError,
     InsufficientFundingAmountError, InvalidStateTransitionTypeError,
-    MissingStateTransitionTypeError, OutputBelowMinimumError, OutputsNotGreaterThanInputsError,
-    StateTransitionMaxSizeExceededError, StateTransitionNotActiveError, TransitionNoInputsError,
-    TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
-    WithdrawalBalanceMismatchError,
+    MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
+    OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
+    StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
+    TransitionOverMaxInputsError, TransitionOverMaxOutputsError, WithdrawalBalanceMismatchError,
 };
 use crate::consensus::basic::{
     IncompatibleProtocolVersionError, UnsupportedFeatureError, UnsupportedProtocolVersionError,
@@ -652,6 +652,9 @@ pub enum BasicError {
 
     #[error(transparent)]
     InputsNotLessThanOutputsError(InputsNotLessThanOutputsError),
+
+    #[error(transparent)]
+    OutputAddressAlsoInputError(OutputAddressAlsoInputError),
 }
 
 impl From<BasicError> for ConsensusError {

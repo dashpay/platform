@@ -225,6 +225,7 @@ impl ErrorWithCode for BasicError {
             Self::WithdrawalBalanceMismatchError(_) => 10618,
             Self::InsufficientFundingAmountError(_) => 10619,
             Self::InputsNotLessThanOutputsError(_) => 10620,
+            Self::OutputAddressAlsoInputError(_) => 10621,
 
             // General Errors 10700-10799
             Self::OverflowError(_) => 10700,
