@@ -51,6 +51,34 @@ impl StateTransitionLike for AddressCreditWithdrawalTransitionV0 {
 }
 
 impl StateTransitionWitnessSigned for AddressCreditWithdrawalTransitionV0 {
+    fn inputs(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        &self.inputs
+    }
+
+    fn inputs_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        &mut self.inputs
+    }
+
+    fn set_inputs(
+        &mut self,
+        inputs: std::collections::BTreeMap<
+            crate::address_funds::PlatformAddress,
+            (crate::prelude::AddressNonce, crate::fee::Credits),
+        >,
+    ) {
+        self.inputs = inputs;
+    }
+
     fn witnesses(&self) -> &Vec<AddressWitness> {
         &self.input_witnesses
     }

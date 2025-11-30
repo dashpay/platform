@@ -31,6 +31,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
@@ -48,6 +49,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
             0 => Ok(
                 AddressCreditWithdrawalTransitionV0::try_from_inputs_with_signer::<S>(
                     inputs,
+                    outputs,
                     fee_strategy,
                     core_fee_per_byte,
                     pooling,

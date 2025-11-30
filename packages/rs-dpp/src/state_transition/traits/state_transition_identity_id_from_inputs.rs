@@ -1,21 +1,12 @@
 use std::collections::BTreeMap;
 
 use crate::address_funds::PlatformAddress;
-use crate::fee::Credits;
 use crate::prelude::AddressNonce;
+use crate::state_transition::StateTransitionWitnessSigned;
 use crate::ProtocolError;
 use platform_value::Identifier;
 
-pub trait StateTransitionAddressInputs: Sized {
-    /// Get inputs
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
-    /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)>;
-    /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>);
-}
-
-pub trait StateTransitionIdentityIdFromInputs: StateTransitionAddressInputs {
+pub trait StateTransitionIdentityIdFromInputs: StateTransitionWitnessSigned {
     /// Get the identity id from inputs
     fn identity_id_from_inputs(&self) -> Result<Identifier, ProtocolError> {
         if self.inputs().is_empty() {

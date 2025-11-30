@@ -26,6 +26,7 @@ pub trait AddressCreditWithdrawalTransitionMethodsV0 {
     #[allow(clippy::too_many_arguments)]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,

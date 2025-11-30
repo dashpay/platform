@@ -1,31 +1,29 @@
-use std::collections::BTreeMap;
-
-#[cfg(feature = "state-transition-signing")]
-use crate::address_funds::AddressWitness;
-use crate::address_funds::PlatformAddress;
-use crate::fee::Credits;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::accessors::IdentityGettersV0;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::UserFeeIncrease;
-use crate::prelude::{AddressNonce, Identifier};
-#[cfg(feature = "state-transition-signing")]
-use crate::serialization::Signable;
+// =====================================
+// Ungated Imports
+// =====================================
+use crate::prelude::Identifier;
 use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::methods::IdentityTopUpFromAddressesTransitionMethodsV0;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
+
+// =====================================
+// Feature-Gated Imports
+// =====================================
 #[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransition;
-use crate::state_transition::StateTransitionAddressInputs;
-use crate::version::FeatureVersion;
-#[cfg(feature = "state-transition-signing")]
-use crate::ProtocolError;
-#[cfg(feature = "state-transition-signing")]
-use platform_version::version::PlatformVersion;
+use {
+    crate::{
+        address_funds::{AddressWitness, PlatformAddress},
+        fee::Credits,
+        identity::{accessors::IdentityGettersV0, signer::Signer, Identity},
+        prelude::{AddressNonce, UserFeeIncrease},
+        serialization::Signable,
+        state_transition::StateTransition,
+        version::FeatureVersion,
+        ProtocolError,
+    },
+    platform_version::version::PlatformVersion,
+    std::collections::BTreeMap,
+};
 
 impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -68,19 +66,5 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
     /// Returns identity id
     fn identity_id(&self) -> &Identifier {
         &self.identity_id
-    }
-}
-
-impl StateTransitionAddressInputs for IdentityTopUpFromAddressesTransitionV0 {
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-        &self.inputs
-    }
-
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-        &mut self.inputs
-    }
-
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
-        self.inputs = inputs;
     }
 }

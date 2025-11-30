@@ -1,6 +1,9 @@
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionType, StateTransitionWitnessSigned,
+};
 use crate::version::FeatureVersion;
 use platform_value::Identifier;
 
@@ -42,6 +45,54 @@ impl StateTransitionLike for AddressFundsTransferTransition {
     fn unique_identifiers(&self) -> Vec<String> {
         match self {
             AddressFundsTransferTransition::V0(transition) => transition.unique_identifiers(),
+        }
+    }
+}
+
+impl StateTransitionWitnessSigned for AddressFundsTransferTransition {
+    fn inputs(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => transition.inputs(),
+        }
+    }
+
+    fn inputs_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => transition.inputs_mut(),
+        }
+    }
+
+    fn set_inputs(
+        &mut self,
+        inputs: std::collections::BTreeMap<
+            crate::address_funds::PlatformAddress,
+            (crate::prelude::AddressNonce, crate::fee::Credits),
+        >,
+    ) {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => transition.set_inputs(inputs),
+        }
+    }
+
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => transition.witnesses(),
+        }
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
+        match self {
+            AddressFundsTransferTransition::V0(transition) => transition.set_witnesses(witnesses),
         }
     }
 }

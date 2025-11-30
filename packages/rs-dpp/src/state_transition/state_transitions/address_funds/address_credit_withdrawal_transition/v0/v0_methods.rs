@@ -28,6 +28,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
     #[cfg(feature = "state-transition-signing")]
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        outputs: BTreeMap<PlatformAddress, Credits>,
         fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
@@ -39,6 +40,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         tracing::debug!("try_from_inputs_with_signer: Started");
         tracing::debug!(
             input_count = inputs.len(),
+            output_count = outputs.len(),
             core_fee_per_byte = core_fee_per_byte,
             "try_from_inputs_with_signer"
         );
@@ -46,6 +48,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
         // Create the unsigned transition
         let mut address_credit_withdrawal_transition = AddressCreditWithdrawalTransitionV0 {
             inputs: inputs.clone(),
+            outputs,
             fee_strategy,
             core_fee_per_byte,
             pooling,

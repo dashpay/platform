@@ -1,26 +1,25 @@
-#[cfg(feature = "state-transition-signing")]
-use std::collections::BTreeMap;
-
-#[cfg(feature = "state-transition-signing")]
-use crate::address_funds::PlatformAddress;
-#[cfg(feature = "state-transition-signing")]
-use crate::fee::Credits;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::AddressNonce;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::UserFeeIncrease;
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransition;
+// =====================================
+// Ungated Imports
+// =====================================
 use crate::state_transition::StateTransitionType;
-use crate::version::FeatureVersion;
+
+// =====================================
+// Feature-Gated Imports
+// =====================================
 #[cfg(feature = "state-transition-signing")]
-use crate::ProtocolError;
-#[cfg(feature = "state-transition-signing")]
-use platform_version::version::PlatformVersion;
+use {
+    crate::{
+        address_funds::PlatformAddress,
+        fee::Credits,
+        identity::{signer::Signer, Identity},
+        prelude::{AddressNonce, UserFeeIncrease},
+        state_transition::StateTransition,
+        version::FeatureVersion,
+        ProtocolError,
+    },
+    platform_version::version::PlatformVersion,
+    std::collections::BTreeMap,
+};
 
 pub trait IdentityTopUpFromAddressesTransitionMethodsV0 {
     #[cfg(feature = "state-transition-signing")]

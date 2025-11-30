@@ -1,6 +1,9 @@
+use crate::address_funds::AddressWitness;
 use crate::prelude::UserFeeIncrease;
 use crate::state_transition::identity_topup_from_addresses_transition::IdentityTopUpFromAddressesTransition;
-use crate::state_transition::{StateTransitionLike, StateTransitionOwned, StateTransitionType};
+use crate::state_transition::{
+    StateTransitionLike, StateTransitionOwned, StateTransitionType, StateTransitionWitnessSigned,
+};
 use crate::version::FeatureVersion;
 use platform_value::Identifier;
 
@@ -52,6 +55,56 @@ impl StateTransitionOwned for IdentityTopUpFromAddressesTransition {
     fn owner_id(&self) -> Identifier {
         match self {
             IdentityTopUpFromAddressesTransition::V0(transition) => transition.owner_id(),
+        }
+    }
+}
+
+impl StateTransitionWitnessSigned for IdentityTopUpFromAddressesTransition {
+    fn inputs(
+        &self,
+    ) -> &std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            IdentityTopUpFromAddressesTransition::V0(transition) => transition.inputs(),
+        }
+    }
+
+    fn inputs_mut(
+        &mut self,
+    ) -> &mut std::collections::BTreeMap<
+        crate::address_funds::PlatformAddress,
+        (crate::prelude::AddressNonce, crate::fee::Credits),
+    > {
+        match self {
+            IdentityTopUpFromAddressesTransition::V0(transition) => transition.inputs_mut(),
+        }
+    }
+
+    fn set_inputs(
+        &mut self,
+        inputs: std::collections::BTreeMap<
+            crate::address_funds::PlatformAddress,
+            (crate::prelude::AddressNonce, crate::fee::Credits),
+        >,
+    ) {
+        match self {
+            IdentityTopUpFromAddressesTransition::V0(transition) => transition.set_inputs(inputs),
+        }
+    }
+
+    fn witnesses(&self) -> &Vec<AddressWitness> {
+        match self {
+            IdentityTopUpFromAddressesTransition::V0(transition) => transition.witnesses(),
+        }
+    }
+
+    fn set_witnesses(&mut self, witnesses: Vec<AddressWitness>) {
+        match self {
+            IdentityTopUpFromAddressesTransition::V0(transition) => {
+                transition.set_witnesses(witnesses)
+            }
         }
     }
 }

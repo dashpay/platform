@@ -1,40 +1,39 @@
+// ============================
+// Standard Library
+// ============================
+#[cfg(feature = "state-transition-signing")]
 use std::collections::BTreeMap;
 
-use crate::address_funds::PlatformAddress;
-use crate::fee::Credits;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::accessors::IdentityGettersV0;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::signer::Signer;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::Identity;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::IdentityPublicKey;
-#[cfg(feature = "state-transition-signing")]
-use crate::identity::KeyType::ECDSA_HASH160;
-use crate::prelude::AddressNonce;
-#[cfg(feature = "state-transition-signing")]
-use crate::prelude::UserFeeIncrease;
-#[cfg(feature = "state-transition-signing")]
-use crate::serialization::Signable;
+// ============================
+// Crate: Ungated Imports
+// ============================
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters;
-use crate::state_transition::StateTransitionAddressInputs;
-use crate::state_transition::StateTransitionType;
-#[cfg(feature = "state-transition-signing")]
-use crate::{BlsModule, ProtocolError};
-
 use crate::state_transition::identity_create_from_addresses_transition::v0::IdentityCreateFromAddressesTransitionV0;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-#[cfg(feature = "state-transition-signing")]
-use crate::state_transition::StateTransition;
 use crate::state_transition::StateTransitionIdentityIdFromInputs;
+use crate::state_transition::StateTransitionType;
+
+// ============================
+// Crate: Feature-Gated (state-transition-signing)
+// ============================
 #[cfg(feature = "state-transition-signing")]
-use crate::version::PlatformVersion;
+use crate::{
+    address_funds::PlatformAddress,
+    fee::Credits,
+    identity::{
+        accessors::IdentityGettersV0,
+        identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
+        IdentityPublicKey, KeyType::ECDSA_HASH160,
+    },
+    prelude::{AddressNonce, UserFeeIncrease},
+    serialization::Signable,
+    state_transition::{
+        public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters, StateTransition,
+    },
+    version::PlatformVersion,
+    BlsModule, ProtocolError,
+};
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
@@ -115,23 +114,6 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     /// Adds public keys to the existing public keys array
     fn add_public_keys(&mut self, public_keys: &mut Vec<IdentityPublicKeyInCreation>) {
         self.public_keys.append(public_keys);
-    }
-}
-
-impl StateTransitionAddressInputs for IdentityCreateFromAddressesTransitionV0 {
-    /// Get inputs
-    fn inputs(&self) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-        &self.inputs
-    }
-
-    /// Get inputs as a mutable map
-    fn inputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-        &mut self.inputs
-    }
-
-    /// Set inputs
-    fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>) {
-        self.inputs = inputs;
     }
 }
 
