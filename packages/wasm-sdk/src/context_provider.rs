@@ -137,11 +137,9 @@ impl WasmTrustedContext {
     pub async fn fetch_masternode_addresses(
         &self,
     ) -> Result<rs_dapi_client::AddressList, ContextProviderError> {
-        let urls = self
-            .inner
-            .fetch_masternode_addresses()
-            .await
-            .map_err(|e| ContextProviderError::Generic(format!("Failed to fetch masternodes: {}", e)))?;
+        let urls = self.inner.fetch_masternode_addresses().await.map_err(|e| {
+            ContextProviderError::Generic(format!("Failed to fetch masternodes: {}", e))
+        })?;
 
         let mut addresses = Vec::new();
         for url in urls {
@@ -149,7 +147,10 @@ impl WasmTrustedContext {
                 ContextProviderError::Generic(format!("Invalid masternode URI '{}': {}", url, e))
             })?;
             let address = rs_dapi_client::Address::try_from(uri).map_err(|e| {
-                ContextProviderError::Generic(format!("Invalid masternode address '{}': {}", url, e))
+                ContextProviderError::Generic(format!(
+                    "Invalid masternode address '{}': {}",
+                    url, e
+                ))
             })?;
             addresses.push(address);
         }
