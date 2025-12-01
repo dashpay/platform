@@ -3,6 +3,8 @@ use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBro
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::basic::state_transition::TransitionNoInputsError;
+use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
 use dpp::version::PlatformVersionError;
@@ -175,6 +177,24 @@ impl From<PlatformVersionError> for Error {
 impl From<ConsensusError> for Error {
     fn from(value: ConsensusError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))
+    }
+}
+
+impl From<TransitionNoInputsError> for Error {
+    fn from(value: TransitionNoInputsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<AddressDoesNotExistError> for Error {
+    fn from(value: AddressDoesNotExistError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<AddressNotEnoughFundsError> for Error {
+    fn from(value: AddressNotEnoughFundsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
     }
 }
 

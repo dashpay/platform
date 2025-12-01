@@ -1,15 +1,11 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
+use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::waitable::Waitable;
-use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
-use dpp::errors::consensus::basic::state_transition::transition_no_inputs_error::TransitionNoInputsError;
-use dpp::errors::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
-use dpp::errors::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
-use dpp::errors::consensus::ConsensusError;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::{Identity, IdentityPublicKey};
@@ -18,8 +14,6 @@ use dpp::prelude::AddressNonce;
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
-use dpp::ProtocolError;
-use drive_proof_verifier::types::{AddressInfo, AddressInfos};
 
 /// Helper trait to put an identity to Platform using address balances instead of an asset lock.
 #[async_trait::async_trait]
@@ -82,22 +76,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentityFromAddresses<S> for Identity {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        if inputs.is_empty() {
-            return Err(Error::from(TransitionNoInputsError::new()));
-        }
-
-        // Fetch address infos (nonce + current balance) to create full inputs map.
-        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
-        let address_infos = AddressInfo::fetch_many(sdk, address_set).await?;
-
-        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
-            BTreeMap::new();
-
-        for (address, amount) in inputs {
-            let info = ensure_address_exists(&address_infos, address)?;
-            ensure_address_balance(address, info.balance, amount)?;
-            inputs_with_nonce.insert(address, (info.nonce, amount));
-        }
+        let inputs_with_nonce = fetch_inputs_with_nonce(sdk, &inputs).await?;
 
         self.put_from_addresses_with_nonce(
             sdk,
@@ -170,30 +149,5 @@ impl<S: Signer<IdentityPublicKey>> PutIdentityFromAddresses<S> for Identity {
             .await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
-    }
-}
-
-fn ensure_address_exists<'a>(
-    infos: &'a AddressInfos,
-    address: PlatformAddress,
-) -> Result<&'a AddressInfo, Error> {
-    infos
-        .get(&address)
-        .ok_or_else(|| Error::from(AddressDoesNotExistError::new(address)))?
-        .as_ref()
-        .ok_or_else(|| Error::from(AddressDoesNotExistError::new(address)))
-}
-
-fn ensure_address_balance(
-    address: PlatformAddress,
-    available: Credits,
-    required: Credits,
-) -> Result<(), Error> {
-    if available < required {
-        Err(Error::from(AddressNotEnoughFundsError::new(
-            address, available, required,
-        )))
-    } else {
-        Ok(())
     }
 }

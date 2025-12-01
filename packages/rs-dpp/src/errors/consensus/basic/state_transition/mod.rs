@@ -15,7 +15,7 @@ mod output_below_minimum_error;
 mod outputs_not_greater_than_inputs_error;
 mod state_transition_max_size_exceeded_error;
 mod state_transition_not_active_error;
-mod transition_no_inputs_error;
+pub mod transition_no_inputs_error;
 mod transition_no_outputs_error;
 mod transition_over_max_inputs_error;
 mod transition_over_max_outputs_error;
