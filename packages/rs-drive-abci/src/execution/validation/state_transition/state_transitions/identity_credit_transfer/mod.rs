@@ -20,7 +20,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_credit_transfer::state::v0::IdentityCreditTransferStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_credit_transfer::structure::v0::IdentityCreditTransferStateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::v0::{
+use crate::execution::validation::state_transition::processor::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;

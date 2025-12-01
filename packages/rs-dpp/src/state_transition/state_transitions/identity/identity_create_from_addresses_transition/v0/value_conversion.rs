@@ -14,6 +14,7 @@ use crate::state_transition::identity_create_from_addresses_transition::v0::Iden
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 use crate::state_transition::StateTransitionValueConvert;
 
+use crate::identity::property_names::PUBLIC_KEYS;
 use platform_version::version::PlatformVersion;
 
 impl StateTransitionValueConvert<'_> for IdentityCreateFromAddressesTransitionV0 {

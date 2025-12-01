@@ -12,6 +12,7 @@ use dpp::state_transition::StateTransition;
 
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
+pub use traits::*;
 
 /// There are multiple stages in a state transition processing:
 ///     Basic Structure

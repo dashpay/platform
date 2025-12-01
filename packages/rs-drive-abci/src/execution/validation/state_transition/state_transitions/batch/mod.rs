@@ -32,7 +32,7 @@ use crate::execution::validation::state_transition::batch::advanced_structure::v
 use crate::execution::validation::state_transition::batch::identity_contract_nonce::v0::DocumentsBatchStateTransitionIdentityContractNonceV0;
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 
-use crate::execution::validation::state_transition::processor::v0::{
+use crate::execution::validation::state_transition::processor::{
     StateTransitionBasicStructureValidationV0, StateTransitionIdentityNonceValidationV0,
     StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };

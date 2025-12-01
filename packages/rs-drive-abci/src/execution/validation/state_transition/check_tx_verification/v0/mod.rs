@@ -15,6 +15,7 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
+use crate::execution::validation::state_transition::processor::{StateTransitionBasicStructureValidationV0, StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityBalanceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionIdentityNonceValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionStructureKnownInStateValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(

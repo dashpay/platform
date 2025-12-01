@@ -25,7 +25,7 @@ use crate::execution::validation::state_transition::data_contract_create::state:
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::processor::v0::{
+use crate::execution::validation::state_transition::processor::{
     StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0,
     StateTransitionStateValidationV0,
 };

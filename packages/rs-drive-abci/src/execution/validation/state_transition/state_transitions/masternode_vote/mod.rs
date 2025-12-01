@@ -19,7 +19,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::masternode_vote::state::v0::MasternodeVoteStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::masternode_vote::transform_into_action::v0::MasternodeVoteStateTransitionTransformIntoActionValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

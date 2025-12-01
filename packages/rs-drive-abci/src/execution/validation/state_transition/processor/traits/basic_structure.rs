@@ -1,8 +1,8 @@
 use crate::error::Error;
-use dpp::dash_spv::Network;
+use dpp::dashcore::Network;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
-use platform_version::version::PlatformVersion;
+use dpp::version::PlatformVersion;
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionBasicStructureValidationV0 {

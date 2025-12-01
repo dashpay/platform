@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::batch::balance::v0::DocumentsBatchTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionIdentityBalanceValidationV0;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::SimpleConsensusValidationResult;

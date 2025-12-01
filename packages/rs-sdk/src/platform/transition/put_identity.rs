@@ -6,6 +6,7 @@ use super::put_settings::PutSettings;
 use super::waitable::Waitable;
 use dpp::dashcore::PrivateKey;
 use dpp::identity::signer::Signer;
+use dpp::identity::IdentityPublicKey;
 use dpp::prelude::{AssetLockProof, Identity};
 use dpp::state_transition::StateTransition;
 

@@ -4,11 +4,17 @@ use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::address_funds::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
+use dpp::consensus::state::address_funds::{
+    AddressNotEnoughFundsError, AddressesNotEnoughFundsError,
+};
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
+use dpp::fee::Credits;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -151,6 +157,59 @@ where
                                 balance,
                                 required_balance,
                             ),
+                        )
+                        .into()],
+                    ))
+                }
+            }
+            ExecutionEvent::PaidFromAddressInputs {
+                input_original_balances,
+                removed_balance,
+                operations,
+                execution_operations,
+                additional_fixed_fee_cost,
+                user_fee_increase,
+                ..
+            } => {
+                let total_input_credit_amount = input_original_balances.values().sum::<Credits>();
+
+                let balance_after_principal_operation =
+                    total_input_credit_amount.saturating_sub(removed_balance.unwrap_or_default());
+                let mut estimated_fee_result = self
+                    .drive
+                    .apply_drive_operations(
+                        operations.clone(),
+                        false,
+                        block_info,
+                        transaction,
+                        platform_version,
+                        Some(previous_fee_versions),
+                    )
+                    .map_err(Error::Drive)?;
+
+                ValidationOperation::add_many_to_fee_result(
+                    execution_operations,
+                    &mut estimated_fee_result,
+                    platform_version,
+                )?;
+
+                estimated_fee_result.apply_user_fee_increase(*user_fee_increase);
+
+                let mut required_balance = estimated_fee_result.total_base_fee();
+
+                if let Some(additional_fixed_fee_cost) = additional_fixed_fee_cost {
+                    required_balance += *additional_fixed_fee_cost;
+                }
+
+                if balance_after_principal_operation >= required_balance {
+                    Ok(ConsensusValidationResult::new_with_data(
+                        estimated_fee_result,
+                    ))
+                } else {
+                    Ok(ConsensusValidationResult::new_with_data_and_errors(
+                        estimated_fee_result,
+                        vec![StateError::AddressesNotEnoughFundsError(
+                            AddressesNotEnoughFundsError::new(required_balance),
                         )
                         .into()],
                     ))

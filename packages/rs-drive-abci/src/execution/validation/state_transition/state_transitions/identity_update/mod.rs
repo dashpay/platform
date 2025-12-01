@@ -21,7 +21,7 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_update::basic_structure::v0::IdentityUpdateStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_update::state::v0::IdentityUpdateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::{
+use crate::execution::validation::state_transition::processor::{
     StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
 };
 

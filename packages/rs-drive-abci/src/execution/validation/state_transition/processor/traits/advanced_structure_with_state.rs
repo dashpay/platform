@@ -3,13 +3,13 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0;
 use dpp::block::block_info::BlockInfo;
-use dpp::dash_spv::Network;
+use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
-use platform_version::version::PlatformVersion;
 
 /// A trait for validating state transitions within a blockchain.
 pub(crate) trait StateTransitionStructureKnownInStateValidationV0 {

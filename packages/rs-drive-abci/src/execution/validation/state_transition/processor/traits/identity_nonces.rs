@@ -5,8 +5,8 @@ use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::StateTransition;
 use dpp::validation::SimpleConsensusValidationResult;
+use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
 
 /// A trait for validating identity nonce rules within a state transition.
 pub(crate) trait StateTransitionIdentityNonceValidationV0 {

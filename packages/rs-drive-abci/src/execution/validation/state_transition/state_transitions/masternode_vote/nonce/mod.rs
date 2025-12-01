@@ -3,7 +3,7 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::nonce::v0::MasternodeVoteTransitionIdentityNonceV0;
 use crate::execution::validation::state_transition::masternode_vote::nonce::v1::MasternodeVoteTransitionIdentityNonceV1;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityNonceValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionIdentityNonceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::masternode_vote_transition::MasternodeVoteTransition;

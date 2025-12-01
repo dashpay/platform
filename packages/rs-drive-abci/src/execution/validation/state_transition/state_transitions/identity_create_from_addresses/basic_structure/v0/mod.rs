@@ -1,15 +1,6 @@
 use crate::error::Error;
-use dpp::consensus::basic::state_transition::{
-    InputWitnessCountMismatchError, TransitionOverMaxInputsError,
-};
-use dpp::consensus::basic::BasicError;
-use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error::MaxIdentityPublicKeyLimitReachedError;
-use dpp::consensus::state::state_error::StateError;
-use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
-use dpp::state_transition::{
-    StateTransitionAddressInputs, StateTransitionStructureValidation, StateTransitionWitnessSigned,
-};
+use dpp::state_transition::StateTransitionStructureValidation;
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 

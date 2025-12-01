@@ -2,7 +2,7 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
@@ -42,8 +42,16 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
     /// A drive event that is paid by an identity
     PaidFromAddressInputs {
+        /// The original balances of inputs
+        input_original_balances: BTreeMap<PlatformAddress, Credits>,
+        /// The removed balance in the case of a create or top up identity from addresses
+        removed_balance: Option<Credits>,
         /// The removed balance in the case of a transfer or withdrawal
         input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        /// These are credits we added as outputs, we can only deduct fees of the amount we added.
+        added_to_balance_outputs: BTreeMap<PlatformAddress, Credits>,
+        /// Fee strategy
+        fee_strategy: AddressFundsFeeStrategy,
         /// the operations that we are requesting to perform
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for

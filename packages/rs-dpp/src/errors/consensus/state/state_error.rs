@@ -3,7 +3,7 @@ use bincode::{Decode, Encode};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 use thiserror::Error;
 
-use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
+use crate::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use crate::consensus::state::data_contract::data_contract_already_present_error::DataContractAlreadyPresentError;
 use crate::consensus::state::data_contract::data_contract_config_update_error::DataContractConfigUpdateError;
 use crate::consensus::state::data_contract::data_contract_is_readonly_error::DataContractIsReadonlyError;
@@ -328,6 +328,9 @@ pub enum StateError {
 
     #[error(transparent)]
     AddressNotEnoughFundsError(AddressNotEnoughFundsError),
+
+    #[error(transparent)]
+    AddressesNotEnoughFundsError(AddressesNotEnoughFundsError),
 }
 
 impl From<StateError> for ConsensusError {

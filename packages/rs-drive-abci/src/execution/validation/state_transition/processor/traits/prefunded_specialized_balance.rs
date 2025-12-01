@@ -4,9 +4,9 @@ use dpp::fee::Credits;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
+use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
 use std::collections::BTreeMap;
 
 pub(crate) trait StateTransitionPrefundedSpecializedBalanceValidationV0 {

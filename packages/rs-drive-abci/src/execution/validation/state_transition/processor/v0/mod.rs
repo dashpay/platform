@@ -12,6 +12,7 @@ use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;
+use crate::execution::validation::state_transition::processor::{StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityBalanceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionIdentityNonceValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionPrefundedSpecializedBalanceValidationV0, StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,

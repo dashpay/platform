@@ -3,7 +3,7 @@ use dpp::prelude::ConsensusValidationResult;
 use dpp::state_transition::StateTransition;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
-use platform_version::version::PlatformVersion;
+use dpp::version::PlatformVersion;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_state_transition_identity_signed::ValidateStateTransitionIdentitySignature;

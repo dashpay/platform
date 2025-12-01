@@ -2,11 +2,7 @@ use std::collections::BTreeMap;
 
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{prelude::Identifier, state_transition::StateTransitionFieldTypes, ProtocolError};
-
-use crate::address_funds::{AddressWitness, PlatformAddress};
-use crate::fee::Credits;
-use crate::prelude::AddressNonce;
+use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
 use crate::state_transition::identity_topup_from_addresses_transition::fields::*;
 use crate::state_transition::identity_topup_from_addresses_transition::v0::IdentityTopUpFromAddressesTransitionV0;
@@ -19,42 +15,7 @@ impl StateTransitionValueConvert<'_> for IdentityTopUpFromAddressesTransitionV0 
         raw_object: Value,
         _platform_version: &PlatformVersion,
     ) -> Result<Self, ProtocolError> {
-        let identity_id = Identifier::from(
-            raw_object
-                .get_hash256(IDENTITY_ID)
-                .map_err(ProtocolError::ValueError)?,
-        );
-
-        let inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)> = if let Some(inputs_value) =
-            raw_object
-                .get_optional_value(INPUTS)
-                .map_err(ProtocolError::ValueError)?
-        {
-            platform_value::from_value(inputs_value.clone())?
-        } else {
-            BTreeMap::new()
-        };
-
-        let user_fee_increase = raw_object
-            .get_optional_integer(USER_FEE_INCREASE)
-            .map_err(ProtocolError::ValueError)?
-            .unwrap_or_default();
-
-        let input_witnesses: Vec<AddressWitness> = if let Some(witnesses_value) = raw_object
-            .get_optional_value(INPUT_WITNESSES)
-            .map_err(ProtocolError::ValueError)?
-        {
-            platform_value::from_value(witnesses_value.clone())?
-        } else {
-            vec![]
-        };
-
-        Ok(IdentityTopUpFromAddressesTransitionV0 {
-            inputs,
-            identity_id,
-            user_fee_increase,
-            input_witnesses,
-        })
+        platform_value::from_value(raw_object).map_err(ProtocolError::ValueError)
     }
 
     fn clean_value(value: &mut Value) -> Result<(), ProtocolError> {

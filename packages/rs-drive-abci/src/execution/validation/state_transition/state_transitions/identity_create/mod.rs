@@ -10,7 +10,7 @@ use crate::error::execution::ExecutionError;
 
 use crate::execution::validation::state_transition::identity_create::basic_structure::v0::IdentityCreateStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create::state::v0::IdentityCreateStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;

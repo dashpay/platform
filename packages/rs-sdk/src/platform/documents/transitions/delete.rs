@@ -160,7 +160,7 @@ impl DocumentDeleteTransitionBuilder {
         &self,
         sdk: &Sdk,
         identity_public_key: &IdentityPublicKey,
-        signer: &impl Signer,
+        signer: &impl Signer<IdentityPublicKey>,
         platform_version: &PlatformVersion,
     ) -> Result<StateTransition, Error> {
         let identity_contract_nonce = sdk

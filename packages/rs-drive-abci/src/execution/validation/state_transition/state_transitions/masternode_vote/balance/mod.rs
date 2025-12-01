@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::masternode_vote::balance::v0::MasternodeVoteTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionPrefundedSpecializedBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionPrefundedSpecializedBalanceValidationV0;
 use dpp::fee::Credits;
 use dpp::prefunded_specialized_balance::PrefundedSpecializedBalanceIdentifier;
 use dpp::prelude::ConsensusValidationResult;

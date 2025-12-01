@@ -15,7 +15,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::StateTransitionBasicStructureValidationV0;
 
 use drive::state_transition_action::StateTransitionAction;
 
@@ -247,7 +247,7 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use crate::execution::validation::state_transition::processor::v0::StateTransitionStateValidationV0;
+        use crate::execution::validation::state_transition::processor::StateTransitionStateValidationV0;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 

@@ -1,4 +1,4 @@
-mod deduct_fee_from_inputs_and_outputs;
+pub mod deduct_fee_from_inputs_and_outputs;
 
 use bincode_derive::{Decode, Encode};
 use serde::{Deserialize, Serialize};

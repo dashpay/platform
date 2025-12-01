@@ -7,3 +7,13 @@ mod identity_nonces;
 mod is_allowed;
 mod prefunded_specialized_balance;
 mod state;
+
+pub use advanced_structure_with_state::*;
+pub use advanced_structure_without_state::*;
+pub use basic_structure::*;
+pub use identity_balance::*;
+pub use identity_based_signature::*;
+pub use identity_nonces::*;
+pub use is_allowed::*;
+pub use prefunded_specialized_balance::*;
+pub use state::*;
