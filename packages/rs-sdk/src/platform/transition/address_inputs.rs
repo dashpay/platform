@@ -1,7 +1,7 @@
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
-use dpp::errors::consensus::basic::state_transition::transition_no_inputs_error::TransitionNoInputsError;
+use dpp::errors::consensus::basic::state_transition::TransitionNoInputsError;
 use dpp::errors::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
 use dpp::errors::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
 use dpp::fee::Credits;

@@ -2,9 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::put_settings::PutSettings;
+use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
-use dpp::errors::consensus::basic::state_transition::transition_no_outputs_error::TransitionNoOutputsError;
+use dpp::errors::consensus::basic::state_transition::TransitionNoOutputsError;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::prelude::AddressNonce;
