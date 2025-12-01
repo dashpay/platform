@@ -6,10 +6,7 @@ use platform_value::btreemap_extensions::{
 };
 use platform_value::{IntegerReplacementType, ReplacementType, Value};
 
-use crate::{
-    state_transition::{StateTransitionFieldTypes, StateTransitionLike},
-    ProtocolError,
-};
+use crate::{state_transition::StateTransitionFieldTypes, ProtocolError};
 
 use crate::prelude::AssetLockProof;
 

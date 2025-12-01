@@ -4,12 +4,8 @@ use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
-use dpp::address_funds::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
-use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::state::address_funds::{
-    AddressNotEnoughFundsError, AddressesNotEnoughFundsError,
-};
+use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;

@@ -14,7 +14,7 @@ use dpp::platform_value::BinaryData;
 use dpp::serialization::PlatformSerializable;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::BatchTransition;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionOwned, StateTransitionSingleSigned};
 use wasm_bindgen::prelude::*;
 
 use crate::{
@@ -301,7 +301,7 @@ impl BatchTransitionWasm {
             )
             .with_js_error()?;
 
-        let signature = state_transition.signature().to_owned();
+        let signature = state_transition.signature().unwrap().to_owned();
         let signature_public_key_id = state_transition.signature_public_key_id().unwrap_or(0);
 
         self.0.set_signature(signature);

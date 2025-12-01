@@ -158,8 +158,4 @@ impl IdentityUpdateTransitionAccessorsV0 for IdentityUpdateTransitionV0 {
     fn public_key_ids_to_disable(&self) -> &[KeyID] {
         &self.disable_public_keys
     }
-
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
 }

@@ -112,9 +112,4 @@ impl IdentityCreateTransitionAccessorsV0 for IdentityCreateTransitionV0 {
     fn identity_id(&self) -> Identifier {
         self.identity_id
     }
-
-    /// Returns Owner ID
-    fn owner_id(&self) -> Identifier {
-        self.identity_id
-    }
 }

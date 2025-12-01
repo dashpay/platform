@@ -18,8 +18,7 @@ use dpp::ProtocolError;
 
 use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
-use dpp::state_transition::StateTransitionLike;
-
+use dpp::state_transition::StateTransitionSingleSigned;
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::identity::identity_create::IdentityCreateTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
