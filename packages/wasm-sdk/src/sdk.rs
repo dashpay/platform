@@ -4,6 +4,7 @@ use dash_sdk::dpp::version::PlatformVersion;
 use dash_sdk::{Sdk, SdkBuilder};
 use once_cell::sync::Lazy;
 use rs_dapi_client::{Address, RequestSettings};
+use dash_sdk::sdk::Uri;
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -18,6 +19,41 @@ static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
 static TESTNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
+
+fn parse_addresses(addresses: &[&str]) -> Vec<Address> {
+    addresses
+        .iter()
+        .filter_map(|addr| {
+            Uri::from_maybe_shared(addr.to_string())
+                .ok()
+                .and_then(|uri| Address::try_from(uri).ok())
+        })
+        .collect()
+}
+
+fn default_mainnet_addresses() -> Vec<Address> {
+    // Trimmed seed list to keep bundle size small; used only if no prefetched cache is available.
+    parse_addresses(&[
+        "https://149.28.241.190:443",
+        "https://198.7.115.48:443",
+        "https://134.255.182.186:443",
+        "https://93.115.172.39:443",
+        "https://5.189.164.253:443",
+    ])
+}
+
+fn default_testnet_addresses() -> Vec<Address> {
+    parse_addresses(&[
+        "https://52.12.176.90:1443",
+        "https://35.82.197.197:1443",
+        "https://44.240.98.102:1443",
+        "https://52.34.144.50:1443",
+        "https://44.239.39.153:1443",
+        "https://34.214.48.68:1443",
+        "https://54.149.33.167:1443",
+        "https://52.24.124.162:1443",
+    ])
+}
 
 async fn fetch_and_cache_addresses(
     trusted_context: &crate::context_provider::WasmTrustedContext,
@@ -233,9 +269,11 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "mainnet")]
     pub fn new_mainnet() -> Self {
-        let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES.lock().unwrap().clone().expect(
-            "Mainnet addresses not prefetched. Call prefetchTrustedQuorumsMainnet() first.",
-        );
+        let mainnet_addresses = MAINNET_DISCOVERED_ADDRESSES
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(default_mainnet_addresses);
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
@@ -264,11 +302,7 @@ impl WasmSdkBuilder {
             .lock()
             .unwrap()
             .clone()
-            .ok_or_else(|| {
-                WasmSdkError::generic(
-                    "Mainnet addresses not prefetched. Call prefetchTrustedQuorumsMainnet() first.",
-                )
-            })?;
+            .unwrap_or_else(default_mainnet_addresses);
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(mainnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
@@ -280,9 +314,11 @@ impl WasmSdkBuilder {
 
     #[wasm_bindgen(js_name = "testnet")]
     pub fn new_testnet() -> Self {
-        let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES.lock().unwrap().clone().expect(
-            "Testnet addresses not prefetched. Call prefetchTrustedQuorumsTestnet() first.",
-        );
+        let testnet_addresses = TESTNET_DISCOVERED_ADDRESSES
+            .lock()
+            .unwrap()
+            .clone()
+            .unwrap_or_else(default_testnet_addresses);
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
@@ -311,11 +347,7 @@ impl WasmSdkBuilder {
             .lock()
             .unwrap()
             .clone()
-            .ok_or_else(|| {
-                WasmSdkError::generic(
-                    "Testnet addresses not prefetched. Call prefetchTrustedQuorumsTestnet() first.",
-                )
-            })?;
+            .unwrap_or_else(default_testnet_addresses);
 
         let address_list = dash_sdk::sdk::AddressList::from_iter(testnet_addresses);
         let sdk_builder = SdkBuilder::new(address_list)
