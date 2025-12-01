@@ -67,9 +67,6 @@ pub enum Error {
     /// Returned when an attempt is made to create an object that already exists in the system
     #[error("Object already exists: {0}")]
     AlreadyExists(String),
-    /// Invalid address inputs provided to SDK helper
-    #[error("Invalid address inputs: {0}")]
-    InvalidAddressInputs(&'static str),
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -172,6 +169,12 @@ impl From<DapiClientError> for Error {
 impl From<PlatformVersionError> for Error {
     fn from(value: PlatformVersionError) -> Self {
         Self::Protocol(value.into())
+    }
+}
+
+impl From<ConsensusError> for Error {
+    fn from(value: ConsensusError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value)))
     }
 }
 

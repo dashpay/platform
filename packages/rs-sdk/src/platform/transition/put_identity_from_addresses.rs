@@ -6,6 +6,7 @@ use super::waitable::Waitable;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
+use dpp::errors::consensus::basic::state_transition::transition_no_inputs_error::TransitionNoInputsError;
 use dpp::errors::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
 use dpp::errors::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
 use dpp::errors::consensus::ConsensusError;
@@ -82,9 +83,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentityFromAddresses<S> for Identity {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
         if inputs.is_empty() {
-            return Err(Error::InvalidAddressInputs(
-                "at least one address entry must be provided",
-            ));
+            return Err(Error::from(TransitionNoInputsError::new()));
         }
 
         // Fetch address infos (nonce + current balance) to create full inputs map.
@@ -180,9 +179,9 @@ fn ensure_address_exists<'a>(
 ) -> Result<&'a AddressInfo, Error> {
     infos
         .get(&address)
-        .ok_or_else(|| consensus_error(AddressDoesNotExistError::new(address)))?
+        .ok_or_else(|| Error::from(AddressDoesNotExistError::new(address)))?
         .as_ref()
-        .ok_or_else(|| consensus_error(AddressDoesNotExistError::new(address)))
+        .ok_or_else(|| Error::from(AddressDoesNotExistError::new(address)))
 }
 
 fn ensure_address_balance(
@@ -191,14 +190,10 @@ fn ensure_address_balance(
     required: Credits,
 ) -> Result<(), Error> {
     if available < required {
-        Err(consensus_error(AddressNotEnoughFundsError::new(
+        Err(Error::from(AddressNotEnoughFundsError::new(
             address, available, required,
         )))
     } else {
         Ok(())
     }
-}
-
-fn consensus_error<E: Into<ConsensusError>>(error: E) -> Error {
-    Error::Protocol(ProtocolError::ConsensusError(Box::new(error.into())))
 }

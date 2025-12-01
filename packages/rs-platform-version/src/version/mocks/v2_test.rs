@@ -149,20 +149,7 @@ pub const TEST_PLATFORM_V2: PlatformVersion = PlatformVersion {
         validation_and_processing: DRIVE_ABCI_VALIDATION_VERSIONS_V1,
         withdrawal_constants: DRIVE_ABCI_WITHDRAWAL_CONSTANTS_V1,
         query: DriveAbciQueryVersions {
-            // TODO: address_funds_queries is just a  placeholder to make it compile, check if it's correct here
-            address_funds_queries:  DriveAbciQueryAddressFundsVersions{
-              address_info: FeatureVersionBounds {
-                  min_version: 0,
-                  max_version: 0,
-                  default_current_version: 0,
-              },
-              addresses_infos:  
-                FeatureVersionBounds {
-                    min_version: 0,
-                    max_version: 0,
-                    default_current_version: 0,
-                }},
-            max_returned_elements: 100,
+                        max_returned_elements: 100,
             response_metadata: 0,
             proofs_query: 0,
             document_query: FeatureVersionBounds {
