@@ -15,7 +15,6 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::v0::{StateTransitionIdentityBalanceValidationV0, StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionStructureKnownInStateValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionHasNonceValidationV0};
 use crate::execution::validation::state_transition::ValidationMode;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
@@ -45,8 +44,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             }
 
             // Only identity top up and identity create do not have nonces validation
-            if state_transition.has_nonce_validation(platform_version)? {
-                let result = state_transition.validate_nonces(
+            if state_transition.has_identity_nonce_validation(platform_version)? {
+                let result = state_transition.validate_identity_nonces(
                     &platform.into(),
                     platform.state.last_block_info(),
                     None,
@@ -241,8 +240,8 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
-                if state_transition.has_nonce_validation(platform_version)? {
-                    let result = state_transition.validate_nonces(
+                if state_transition.has_identity_nonce_validation(platform_version)? {
+                    let result = state_transition.validate_identity_nonces(
                         &platform.into(),
                         platform.state.last_block_info(),
                         None,

@@ -968,7 +968,11 @@ pub fn create_identities_state_transitions(
                     platform_version,
                 ) {
                     Ok(identity_create_transition) => {
-                        identity.set_id(identity_create_transition.owner_id().expect("identity create transitions have an identity id"));
+                        identity.set_id(
+                            identity_create_transition
+                                .owner_id()
+                                .expect("identity create transitions have an identity id"),
+                        );
                         Ok((identity, identity_create_transition))
                     }
                     Err(e) => Err(e),
@@ -1052,7 +1056,11 @@ where
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id().expect("identity create transitions have an identity id"));
+            identity.set_id(
+                identity_create_transition
+                    .owner_id()
+                    .expect("identity create transitions have an identity id"),
+            );
 
             (identity.clone(), identity_create_transition)
         })
@@ -1078,7 +1086,11 @@ pub fn create_state_transitions_for_identities_and_proofs(
                     platform_version,
                 )
                 .expect("expected to transform identity into identity create transition");
-            identity.set_id(identity_create_transition.owner_id().expect("identity create transitions have an identity id"));
+            identity.set_id(
+                identity_create_transition
+                    .owner_id()
+                    .expect("identity create transitions have an identity id"),
+            );
 
             (identity, identity_create_transition)
         })

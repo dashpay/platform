@@ -33,7 +33,7 @@ use crate::execution::validation::state_transition::batch::identity_contract_non
 use crate::execution::validation::state_transition::batch::state::v0::DocumentsBatchStateTransitionStateValidationV0;
 
 use crate::execution::validation::state_transition::processor::v0::{
-    StateTransitionBasicStructureValidationV0, StateTransitionNonceValidationV0,
+    StateTransitionBasicStructureValidationV0, StateTransitionIdentityNonceValidationV0,
     StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
 };
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
@@ -107,8 +107,8 @@ impl StateTransitionBasicStructureValidationV0 for BatchTransition {
     }
 }
 
-impl StateTransitionNonceValidationV0 for BatchTransition {
-    fn validate_nonces(
+impl StateTransitionIdentityNonceValidationV0 for BatchTransition {
+    fn validate_identity_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

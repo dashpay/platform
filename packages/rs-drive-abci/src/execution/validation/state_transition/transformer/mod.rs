@@ -119,6 +119,12 @@ impl StateTransitionActionTransformerV0 for StateTransition {
                 execution_context,
                 tx,
             ),
+            StateTransition::IdentityCreditTransferToAddresses(_) => {}
+            StateTransition::IdentityCreateFromAddresses(_) => {}
+            StateTransition::IdentityTopUpFromAddresses(_) => {}
+            StateTransition::AddressFundsTransfer(_) => {}
+            StateTransition::AddressFundingFromAssetLock(_) => {}
+            StateTransition::AddressCreditWithdrawal(_) => {}
         }
     }
 }

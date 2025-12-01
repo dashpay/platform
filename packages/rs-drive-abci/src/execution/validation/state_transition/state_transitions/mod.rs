@@ -28,6 +28,9 @@ pub mod masternode_vote;
 /// Identity create from addresses
 pub mod identity_create_from_addresses;
 
+/// Module for validation of address funds transitions
+pub mod address_funds;
+
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ValidationMode {

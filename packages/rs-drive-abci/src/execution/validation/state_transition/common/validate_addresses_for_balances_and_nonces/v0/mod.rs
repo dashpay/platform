@@ -3,9 +3,9 @@ use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
+use dpp::address_funds::PlatformAddress;
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::fee::Credits;
-use dpp::identity::{KeyCount, KeyOfType};
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
@@ -14,7 +14,7 @@ use std::collections::BTreeMap;
 
 /// This will validate that all addresses have at least the minimum required balance in the state
 pub(super) fn validate_addresses_for_balances_and_nonces_v0(
-    minimum_balances: &BTreeMap<KeyOfType, Credits>,
+    minimum_balances: &BTreeMap<PlatformAddress, Credits>,
     drive: &Drive,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
@@ -25,8 +25,8 @@ pub(super) fn validate_addresses_for_balances_and_nonces_v0(
         return Ok(ConsensusValidationResult::new());
     }
 
-    execution_context.add_operation(ValidationOperation::RetrieveKeyOfTypeNonceAndBalance(
-        minimum_balances.len() as KeyCount,
+    execution_context.add_operation(ValidationOperation::RetrieveAddressNonceAndBalance(
+        minimum_balances.len() as u16,
     ));
 
     // Fetch the actual balances and nonces from the state

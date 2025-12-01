@@ -7,7 +7,9 @@ use dpp::consensus::state::identity::max_identity_public_key_limit_reached_error
 use dpp::consensus::state::state_error::StateError;
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
-use dpp::state_transition::{StateTransitionAddressInputs, StateTransitionWitnessSigned};
+use dpp::state_transition::{
+    StateTransitionAddressInputs, StateTransitionStructureValidation, StateTransitionWitnessSigned,
+};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -26,48 +28,6 @@ impl IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0
         &self,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
-        if self.inputs().len() > platform_version.dpp.state_transitions.max_address_inputs as usize
-        {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                BasicError::TransitionOverMaxInputsError(TransitionOverMaxInputsError::new(
-                    self.inputs().len().min(u16::MAX as usize) as u16,
-                    platform_version.dpp.state_transitions.max_address_inputs,
-                ))
-                .into(),
-            ));
-        }
-
-        if self.inputs().len() != self.witnesses().len() {
-            return Ok(SimpleConsensusValidationResult::new_with_error(
-                BasicError::InputWitnessCountMismatchError(InputWitnessCountMismatchError::new(
-                    self.inputs().len().min(u16::MAX as usize) as u16,
-                    self.witnesses().len().min(u16::MAX as usize) as u16,
-                ))
-                .into(),
-            ));
-        }
-
-        if self.public_keys().len()
-            > platform_version
-                .dpp
-                .state_transitions
-                .identities
-                .max_public_keys_in_creation as usize
-        {
-            Ok(SimpleConsensusValidationResult::new_with_error(
-                StateError::MaxIdentityPublicKeyLimitReachedError(
-                    MaxIdentityPublicKeyLimitReachedError::new(
-                        platform_version
-                            .dpp
-                            .state_transitions
-                            .identities
-                            .max_public_keys_in_creation as usize,
-                    ),
-                )
-                .into(),
-            ))
-        } else {
-            Ok(SimpleConsensusValidationResult::new())
-        }
+        Ok(self.validate_structure(platform_version))
     }
 }

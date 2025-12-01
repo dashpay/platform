@@ -1,0 +1,182 @@
+use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::identity_create::StateTransitionStateValidationForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::ValidationMode;
+use crate::platform_types::platform::PlatformRef;
+use crate::rpc::core::CoreRPCLike;
+use dpp::block::block_info::BlockInfo;
+use dpp::prelude::ConsensusValidationResult;
+use dpp::serialization::Signable;
+use dpp::state_transition::StateTransition;
+use drive::grovedb::TransactionArg;
+use drive::state_transition_action::StateTransitionAction;
+
+/// A trait for validating state transitions within a blockchain.
+pub(crate) trait StateTransitionStateValidationV0:
+    StateTransitionActionTransformerV0
+{
+    /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
+    ///
+    /// # Arguments
+    ///
+    /// * `platform` - A reference to the platform containing the state data.
+    /// * `tx` - The transaction argument to be applied.
+    ///
+    /// # Type Parameters
+    ///
+    /// * `C: CoreRPCLike` - A type constraint indicating that C should implement `CoreRPCLike`.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
+    fn validate_state<C: CoreRPCLike>(
+        &self,
+        action: Option<StateTransitionAction>,
+        platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionStateValidationV0 for StateTransition {
+    fn validate_state<C: CoreRPCLike>(
+        &self,
+        action: Option<StateTransitionAction>,
+        platform: &PlatformRef<C>,
+        validation_mode: ValidationMode,
+        block_info: &BlockInfo,
+        execution_context: &mut StateTransitionExecutionContext,
+        tx: TransactionArg,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match self {
+            // The replay attack is prevented by checking if a data contract exists with this id first
+            StateTransition::DataContractCreate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            // The replay attack is prevented by identity data contract nonce
+            StateTransition::DataContractUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreate(st) => {
+                let action =
+                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "identity create validation should always an action",
+                    )))?;
+                let StateTransitionAction::IdentityCreateAction(action) = action else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a identity create transition action",
+                    )));
+                };
+                st.validate_state_for_identity_create_transition(
+                    action,
+                    platform,
+                    execution_context,
+                    tx,
+                )
+            }
+            StateTransition::IdentityUpdate(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityTopUp(st) => {
+                // Nothing to validate from state
+                if let Some(action) = action {
+                    Ok(ConsensusValidationResult::new_with_data(action))
+                } else {
+                    let signable_bytes = self.signable_bytes()?;
+                    st.transform_into_action_for_identity_top_up_transition(
+                        platform,
+                        signable_bytes,
+                        validation_mode,
+                        execution_context,
+                        tx,
+                    )
+                }
+            }
+            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            // The replay attack is prevented by identity data contract nonce
+            StateTransition::Batch(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditTransfer(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::MasternodeVote(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityCreateFromAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::IdentityTopUpFromAddresses(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+            StateTransition::AddressFundsTransfer(st) => st.validate_state(
+                action,
+                platform,
+                validation_mode,
+                block_info,
+                execution_context,
+                tx,
+            ),
+        }
+    }
+}

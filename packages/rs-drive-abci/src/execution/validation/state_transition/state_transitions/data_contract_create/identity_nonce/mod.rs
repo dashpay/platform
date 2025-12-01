@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_create::identity_nonce::v0::DataContractCreateTransitionIdentityNonceV0;
-use crate::execution::validation::state_transition::processor::v0::StateTransitionNonceValidationV0;
+use crate::execution::validation::state_transition::processor::v0::StateTransitionIdentityNonceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;
@@ -11,8 +11,8 @@ use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
 pub(crate) mod v0;
-impl StateTransitionNonceValidationV0 for DataContractCreateTransition {
-    fn validate_nonces(
+impl StateTransitionIdentityNonceValidationV0 for DataContractCreateTransition {
+    fn validate_identity_nonces(
         &self,
         platform: &PlatformStateRef,
         block_info: &BlockInfo,

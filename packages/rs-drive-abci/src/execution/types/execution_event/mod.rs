@@ -2,12 +2,14 @@ mod v0;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
+use dpp::address_funds::PlatformAddress;
 use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
 use dpp::block::epoch::Epoch;
 use dpp::fee::Credits;
+use std::collections::BTreeMap;
 
 use dpp::identity::PartialIdentity;
-use dpp::prelude::UserFeeIncrease;
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
 
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
@@ -30,6 +32,19 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
         /// The removed balance in the case of a transfer or withdrawal
         removed_balance: Option<Credits>,
         /// the operations that the identity is requesting to perform
+        operations: Vec<DriveOperation<'a>>,
+        /// the execution operations that we must also pay for
+        execution_operations: Vec<ValidationOperation>,
+        /// Additional fee cost, these are processing fees where the user fee increase does not apply
+        additional_fixed_fee_cost: Option<Credits>,
+        /// the fee multiplier that the user agreed to, 0 means 100% of the base fee, 1 means 101%
+        user_fee_increase: UserFeeIncrease,
+    },
+    /// A drive event that is paid by an identity
+    PaidFromAddressInputs {
+        /// The removed balance in the case of a transfer or withdrawal
+        input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        /// the operations that we are requesting to perform
         operations: Vec<DriveOperation<'a>>,
         /// the execution operations that we must also pay for
         execution_operations: Vec<ValidationOperation>,

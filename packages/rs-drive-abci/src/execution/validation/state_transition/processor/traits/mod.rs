@@ -1,0 +1,9 @@
+mod advanced_structure_with_state;
+mod advanced_structure_without_state;
+mod basic_structure;
+mod identity_balance;
+mod identity_based_signature;
+mod identity_nonces;
+mod is_allowed;
+mod prefunded_specialized_balance;
+mod state;

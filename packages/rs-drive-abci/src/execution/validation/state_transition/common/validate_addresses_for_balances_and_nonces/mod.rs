@@ -3,17 +3,17 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::validate_addresses_for_balances_and_nonces::v0::validate_addresses_for_balances_and_nonces_v0;
 use dpp::fee::Credits;
-use dpp::identity::KeyOfType;
 use dpp::validation::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
 use drive::drive::Drive;
 use drive::grovedb::TransactionArg;
 use std::collections::BTreeMap;
+use dpp::address_funds::PlatformAddress;
 
 pub mod v0;
 
 pub(crate) fn validate_addresses_for_balances_and_nonces(
-    minimum_balances: &BTreeMap<KeyOfType, Credits>,
+    minimum_balances: &BTreeMap<PlatformAddress, Credits>,
     drive: &Drive,
     execution_context: &mut StateTransitionExecutionContext,
     transaction: TransactionArg,
