@@ -9498,6 +9498,328 @@ export namespace GetGroupActionSignersResponse {
   }
 }
 
+export class GetAddressInfoRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressInfoRequest.GetAddressInfoRequestV0 | undefined;
+  setV0(value?: GetAddressInfoRequest.GetAddressInfoRequestV0): void;
+
+  getVersionCase(): GetAddressInfoRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressInfoRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressInfoRequest): GetAddressInfoRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressInfoRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressInfoRequest;
+  static deserializeBinaryFromReader(message: GetAddressInfoRequest, reader: jspb.BinaryReader): GetAddressInfoRequest;
+}
+
+export namespace GetAddressInfoRequest {
+  export type AsObject = {
+    v0?: GetAddressInfoRequest.GetAddressInfoRequestV0.AsObject,
+  }
+
+  export class GetAddressInfoRequestV0 extends jspb.Message {
+    getAddress(): Uint8Array | string;
+    getAddress_asU8(): Uint8Array;
+    getAddress_asB64(): string;
+    setAddress(value: Uint8Array | string): void;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressInfoRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressInfoRequestV0): GetAddressInfoRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressInfoRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressInfoRequestV0;
+    static deserializeBinaryFromReader(message: GetAddressInfoRequestV0, reader: jspb.BinaryReader): GetAddressInfoRequestV0;
+  }
+
+  export namespace GetAddressInfoRequestV0 {
+    export type AsObject = {
+      address: Uint8Array | string,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class AddressInfoEntry extends jspb.Message {
+  getAddress(): Uint8Array | string;
+  getAddress_asU8(): Uint8Array;
+  getAddress_asB64(): string;
+  setAddress(value: Uint8Array | string): void;
+
+  hasBalanceAndNonce(): boolean;
+  clearBalanceAndNonce(): void;
+  getBalanceAndNonce(): BalanceAndNonce | undefined;
+  setBalanceAndNonce(value?: BalanceAndNonce): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): AddressInfoEntry.AsObject;
+  static toObject(includeInstance: boolean, msg: AddressInfoEntry): AddressInfoEntry.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: AddressInfoEntry, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): AddressInfoEntry;
+  static deserializeBinaryFromReader(message: AddressInfoEntry, reader: jspb.BinaryReader): AddressInfoEntry;
+}
+
+export namespace AddressInfoEntry {
+  export type AsObject = {
+    address: Uint8Array | string,
+    balanceAndNonce?: BalanceAndNonce.AsObject,
+  }
+}
+
+export class BalanceAndNonce extends jspb.Message {
+  getBalance(): number;
+  setBalance(value: number): void;
+
+  getNonce(): number;
+  setNonce(value: number): void;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): BalanceAndNonce.AsObject;
+  static toObject(includeInstance: boolean, msg: BalanceAndNonce): BalanceAndNonce.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: BalanceAndNonce, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): BalanceAndNonce;
+  static deserializeBinaryFromReader(message: BalanceAndNonce, reader: jspb.BinaryReader): BalanceAndNonce;
+}
+
+export namespace BalanceAndNonce {
+  export type AsObject = {
+    balance: number,
+    nonce: number,
+  }
+}
+
+export class AddressInfoEntries extends jspb.Message {
+  clearAddressInfoEntriesList(): void;
+  getAddressInfoEntriesList(): Array<AddressInfoEntry>;
+  setAddressInfoEntriesList(value: Array<AddressInfoEntry>): void;
+  addAddressInfoEntries(value?: AddressInfoEntry, index?: number): AddressInfoEntry;
+
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): AddressInfoEntries.AsObject;
+  static toObject(includeInstance: boolean, msg: AddressInfoEntries): AddressInfoEntries.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: AddressInfoEntries, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): AddressInfoEntries;
+  static deserializeBinaryFromReader(message: AddressInfoEntries, reader: jspb.BinaryReader): AddressInfoEntries;
+}
+
+export namespace AddressInfoEntries {
+  export type AsObject = {
+    addressInfoEntriesList: Array<AddressInfoEntry.AsObject>,
+  }
+}
+
+export class GetAddressInfoResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressInfoResponse.GetAddressInfoResponseV0 | undefined;
+  setV0(value?: GetAddressInfoResponse.GetAddressInfoResponseV0): void;
+
+  getVersionCase(): GetAddressInfoResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressInfoResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressInfoResponse): GetAddressInfoResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressInfoResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressInfoResponse;
+  static deserializeBinaryFromReader(message: GetAddressInfoResponse, reader: jspb.BinaryReader): GetAddressInfoResponse;
+}
+
+export namespace GetAddressInfoResponse {
+  export type AsObject = {
+    v0?: GetAddressInfoResponse.GetAddressInfoResponseV0.AsObject,
+  }
+
+  export class GetAddressInfoResponseV0 extends jspb.Message {
+    hasAddressInfoEntry(): boolean;
+    clearAddressInfoEntry(): void;
+    getAddressInfoEntry(): AddressInfoEntry | undefined;
+    setAddressInfoEntry(value?: AddressInfoEntry): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetAddressInfoResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressInfoResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressInfoResponseV0): GetAddressInfoResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressInfoResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressInfoResponseV0;
+    static deserializeBinaryFromReader(message: GetAddressInfoResponseV0, reader: jspb.BinaryReader): GetAddressInfoResponseV0;
+  }
+
+  export namespace GetAddressInfoResponseV0 {
+    export type AsObject = {
+      addressInfoEntry?: AddressInfoEntry.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ADDRESS_INFO_ENTRY = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAddressesInfosRequest extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesInfosRequest.GetAddressesInfosRequestV0 | undefined;
+  setV0(value?: GetAddressesInfosRequest.GetAddressesInfosRequestV0): void;
+
+  getVersionCase(): GetAddressesInfosRequest.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesInfosRequest.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesInfosRequest): GetAddressesInfosRequest.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesInfosRequest, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesInfosRequest;
+  static deserializeBinaryFromReader(message: GetAddressesInfosRequest, reader: jspb.BinaryReader): GetAddressesInfosRequest;
+}
+
+export namespace GetAddressesInfosRequest {
+  export type AsObject = {
+    v0?: GetAddressesInfosRequest.GetAddressesInfosRequestV0.AsObject,
+  }
+
+  export class GetAddressesInfosRequestV0 extends jspb.Message {
+    clearAddressesList(): void;
+    getAddressesList(): Array<Uint8Array | string>;
+    getAddressesList_asU8(): Array<Uint8Array>;
+    getAddressesList_asB64(): Array<string>;
+    setAddressesList(value: Array<Uint8Array | string>): void;
+    addAddresses(value: Uint8Array | string, index?: number): Uint8Array | string;
+
+    getProve(): boolean;
+    setProve(value: boolean): void;
+
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesInfosRequestV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesInfosRequestV0): GetAddressesInfosRequestV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesInfosRequestV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesInfosRequestV0;
+    static deserializeBinaryFromReader(message: GetAddressesInfosRequestV0, reader: jspb.BinaryReader): GetAddressesInfosRequestV0;
+  }
+
+  export namespace GetAddressesInfosRequestV0 {
+    export type AsObject = {
+      addressesList: Array<Uint8Array | string>,
+      prove: boolean,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
+export class GetAddressesInfosResponse extends jspb.Message {
+  hasV0(): boolean;
+  clearV0(): void;
+  getV0(): GetAddressesInfosResponse.GetAddressesInfosResponseV0 | undefined;
+  setV0(value?: GetAddressesInfosResponse.GetAddressesInfosResponseV0): void;
+
+  getVersionCase(): GetAddressesInfosResponse.VersionCase;
+  serializeBinary(): Uint8Array;
+  toObject(includeInstance?: boolean): GetAddressesInfosResponse.AsObject;
+  static toObject(includeInstance: boolean, msg: GetAddressesInfosResponse): GetAddressesInfosResponse.AsObject;
+  static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+  static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+  static serializeBinaryToWriter(message: GetAddressesInfosResponse, writer: jspb.BinaryWriter): void;
+  static deserializeBinary(bytes: Uint8Array): GetAddressesInfosResponse;
+  static deserializeBinaryFromReader(message: GetAddressesInfosResponse, reader: jspb.BinaryReader): GetAddressesInfosResponse;
+}
+
+export namespace GetAddressesInfosResponse {
+  export type AsObject = {
+    v0?: GetAddressesInfosResponse.GetAddressesInfosResponseV0.AsObject,
+  }
+
+  export class GetAddressesInfosResponseV0 extends jspb.Message {
+    hasAddressInfoEntries(): boolean;
+    clearAddressInfoEntries(): void;
+    getAddressInfoEntries(): AddressInfoEntries | undefined;
+    setAddressInfoEntries(value?: AddressInfoEntries): void;
+
+    hasProof(): boolean;
+    clearProof(): void;
+    getProof(): Proof | undefined;
+    setProof(value?: Proof): void;
+
+    hasMetadata(): boolean;
+    clearMetadata(): void;
+    getMetadata(): ResponseMetadata | undefined;
+    setMetadata(value?: ResponseMetadata): void;
+
+    getResultCase(): GetAddressesInfosResponseV0.ResultCase;
+    serializeBinary(): Uint8Array;
+    toObject(includeInstance?: boolean): GetAddressesInfosResponseV0.AsObject;
+    static toObject(includeInstance: boolean, msg: GetAddressesInfosResponseV0): GetAddressesInfosResponseV0.AsObject;
+    static extensions: {[key: number]: jspb.ExtensionFieldInfo<jspb.Message>};
+    static extensionsBinary: {[key: number]: jspb.ExtensionFieldBinaryInfo<jspb.Message>};
+    static serializeBinaryToWriter(message: GetAddressesInfosResponseV0, writer: jspb.BinaryWriter): void;
+    static deserializeBinary(bytes: Uint8Array): GetAddressesInfosResponseV0;
+    static deserializeBinaryFromReader(message: GetAddressesInfosResponseV0, reader: jspb.BinaryReader): GetAddressesInfosResponseV0;
+  }
+
+  export namespace GetAddressesInfosResponseV0 {
+    export type AsObject = {
+      addressInfoEntries?: AddressInfoEntries.AsObject,
+      proof?: Proof.AsObject,
+      metadata?: ResponseMetadata.AsObject,
+    }
+
+    export enum ResultCase {
+      RESULT_NOT_SET = 0,
+      ADDRESS_INFO_ENTRIES = 1,
+      PROOF = 2,
+    }
+  }
+
+  export enum VersionCase {
+    VERSION_NOT_SET = 0,
+    V0 = 1,
+  }
+}
+
 export interface KeyPurposeMap {
   AUTHENTICATION: 0;
   ENCRYPTION: 1;
