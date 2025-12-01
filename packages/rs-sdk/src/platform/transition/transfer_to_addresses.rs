@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use crate::platform::transition::waitable::Waitable;
-use crate::platform::Fetch;
+use crate::platform::{Fetch, FetchMany};
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
@@ -41,7 +41,7 @@ impl TransferToAddresses for Identity {
         recipient_addresses: BTreeMap<PlatformAddress, Credits>,
         signing_transfer_key_to_use: Option<&IdentityPublicKey>,
         signer: S,
-        mut settings: Option<PutSettings>,
+        settings: Option<PutSettings>,
     ) -> Result<(u64, AddressInfos), Error> {
         if recipient_addresses.is_empty() {
             return Err(Error::Generic(
@@ -80,7 +80,7 @@ impl TransferToAddresses for Identity {
         }
 
         // Refresh identity balance after transfer to reflect final state
-        let updated_identity = Identity::fetch(sdk, *self.id())
+        let updated_identity = Identity::fetch(sdk, self.id())
             .await?
             .ok_or_else(|| Error::Generic("identity was not found after transfer".to_string()))?;
         let updated_balance = updated_identity.balance();

@@ -1,0 +1,204 @@
+use std::collections::{BTreeMap, BTreeSet};
+
+use super::broadcast::BroadcastStateTransition;
+use super::put_settings::PutSettings;
+use super::waitable::Waitable;
+use crate::platform::FetchMany;
+use crate::{Error, Sdk};
+use dpp::address_funds::PlatformAddress;
+use dpp::errors::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
+use dpp::errors::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
+use dpp::errors::consensus::ConsensusError;
+use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
+use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::native_bls::NativeBlsModule;
+use dpp::prelude::AddressNonce;
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
+use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
+use dpp::state_transition::StateTransition;
+use dpp::ProtocolError;
+use drive_proof_verifier::types::{AddressInfo, AddressInfos};
+
+/// Helper trait to put an identity to Platform using address balances instead of an asset lock.
+#[async_trait::async_trait]
+pub trait PutIdentityFromAddresses<S: Signer<IdentityPublicKey>>: Waitable {
+    /// Build and broadcast identity creation funded by address inputs, automatically fetching address nonces.
+    async fn put_from_addresses(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error>;
+
+    /// Build and broadcast identity creation with explicitly provided address nonces.
+    /// Build and broadcast identity creation with explicitly provided address nonces.
+    ///
+    /// Inputs are not pre-validated client-side (Drive will perform authoritative checks).
+    async fn put_from_addresses_with_nonce(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error>;
+
+    /// Broadcast identity creation (nonce lookup) and wait for the proof, returning the created identity.
+    async fn put_from_addresses_and_wait(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error>
+    where
+        Self: Sized;
+
+    /// Broadcast identity creation with provided address nonces and wait for the proof.
+    async fn put_from_addresses_with_nonce_and_wait(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error>
+    where
+        Self: Sized;
+}
+
+#[async_trait::async_trait]
+impl<S: Signer<IdentityPublicKey>> PutIdentityFromAddresses<S> for Identity {
+    async fn put_from_addresses(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error> {
+        if inputs.is_empty() {
+            return Err(Error::InvalidAddressInputs(
+                "at least one address entry must be provided",
+            ));
+        }
+
+        // Fetch address infos (nonce + current balance) to create full inputs map.
+        let address_set: BTreeSet<PlatformAddress> = inputs.keys().copied().collect();
+        let address_infos = AddressInfo::fetch_many(sdk, address_set).await?;
+
+        let mut inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)> =
+            BTreeMap::new();
+
+        for (address, amount) in inputs {
+            let info = ensure_address_exists(&address_infos, address)?;
+            ensure_address_balance(address, info.balance, amount)?;
+            inputs_with_nonce.insert(address, (info.nonce, amount));
+        }
+
+        self.put_from_addresses_with_nonce(
+            sdk,
+            inputs_with_nonce,
+            input_private_keys,
+            signer,
+            settings,
+        )
+        .await
+    }
+
+    async fn put_from_addresses_with_nonce(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error> {
+        let user_fee_increase = settings
+            .as_ref()
+            .and_then(|settings| settings.user_fee_increase)
+            .unwrap_or_default();
+
+        let key_refs: Vec<&[u8]> = input_private_keys
+            .iter()
+            .map(|key| key.as_slice())
+            .collect();
+
+        let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
+            self,
+            inputs,
+            key_refs,
+            signer,
+            &NativeBlsModule,
+            user_fee_increase,
+            sdk.version(),
+        )?;
+
+        state_transition.broadcast(sdk, settings).await?;
+
+        Ok(state_transition)
+    }
+
+    async fn put_from_addresses_and_wait(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error> {
+        let state_transition = self
+            .put_from_addresses(sdk, inputs, input_private_keys, signer, settings)
+            .await?;
+
+        Self::wait_for_response(sdk, state_transition, settings).await
+    }
+
+    async fn put_from_addresses_with_nonce_and_wait(
+        &self,
+        sdk: &Sdk,
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<Self, Error> {
+        let state_transition = self
+            .put_from_addresses_with_nonce(sdk, inputs, input_private_keys, signer, settings)
+            .await?;
+
+        Self::wait_for_response(sdk, state_transition, settings).await
+    }
+}
+
+fn ensure_address_exists<'a>(
+    infos: &'a AddressInfos,
+    address: PlatformAddress,
+) -> Result<&'a AddressInfo, Error> {
+    infos
+        .get(&address)
+        .ok_or_else(|| consensus_error(AddressDoesNotExistError::new(address)))?
+        .as_ref()
+        .ok_or_else(|| consensus_error(AddressDoesNotExistError::new(address)))
+}
+
+fn ensure_address_balance(
+    address: PlatformAddress,
+    available: Credits,
+    required: Credits,
+) -> Result<(), Error> {
+    if available < required {
+        Err(consensus_error(AddressNotEnoughFundsError::new(
+            address, available, required,
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+fn consensus_error<E: Into<ConsensusError>>(error: E) -> Error {
+    Error::Protocol(ProtocolError::ConsensusError(Box::new(error.into())))
+}

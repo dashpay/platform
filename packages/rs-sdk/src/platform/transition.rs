@@ -6,6 +6,7 @@ pub mod purchase_document;
 pub mod put_contract;
 pub mod put_document;
 pub mod put_identity;
+pub mod put_identity_from_addresses;
 pub mod put_settings;
 pub mod top_up_identity;
 pub mod transfer;
