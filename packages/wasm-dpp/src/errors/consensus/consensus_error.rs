@@ -88,6 +88,8 @@ use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
+use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
+use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, FeeStrategyReduceWithdrawalNotLastError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
 use dpp::consensus::state::voting::masternode_not_found_error::MasternodeNotFoundError;
@@ -429,6 +431,15 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::InvalidTokenPositionStateError(e) => {
             generic_consensus_error!(InvalidTokenPositionStateError, e).into()
+        }
+        StateError::AddressDoesNotExistError(e) => {
+            generic_consensus_error!(AddressDoesNotExistError, e).into()
+        }
+        StateError::AddressNotEnoughFundsError(e) => {
+            generic_consensus_error!(AddressNotEnoughFundsError, e).into()
+        }
+        StateError::AddressesNotEnoughFundsError(e) => {
+            generic_consensus_error!(AddressesNotEnoughFundsError, e).into()
         }
     }
 }
@@ -849,6 +860,63 @@ fn from_basic_error(basic_error: &BasicError) -> JsValue {
         }
         BasicError::InvalidKeyPurposeForContractBoundsError(e) => {
             generic_consensus_error!(InvalidKeyPurposeForContractBoundsError, e).into()
+        }
+        BasicError::StateTransitionNotActiveError(e) => {
+            generic_consensus_error!(StateTransitionNotActiveError, e).into()
+        }
+        BasicError::TransitionOverMaxInputsError(e) => {
+            generic_consensus_error!(TransitionOverMaxInputsError, e).into()
+        }
+        BasicError::TransitionOverMaxOutputsError(e) => {
+            generic_consensus_error!(TransitionOverMaxOutputsError, e).into()
+        }
+        BasicError::InputWitnessCountMismatchError(e) => {
+            generic_consensus_error!(InputWitnessCountMismatchError, e).into()
+        }
+        BasicError::TransitionNoInputsError(e) => {
+            generic_consensus_error!(TransitionNoInputsError, e).into()
+        }
+        BasicError::TransitionNoOutputsError(e) => {
+            generic_consensus_error!(TransitionNoOutputsError, e).into()
+        }
+        BasicError::FeeStrategyEmptyError(e) => {
+            generic_consensus_error!(FeeStrategyEmptyError, e).into()
+        }
+        BasicError::FeeStrategyDuplicateError(e) => {
+            generic_consensus_error!(FeeStrategyDuplicateError, e).into()
+        }
+        BasicError::FeeStrategyIndexOutOfBoundsError(e) => {
+            generic_consensus_error!(FeeStrategyIndexOutOfBoundsError, e).into()
+        }
+        BasicError::FeeStrategyTooManyStepsError(e) => {
+            generic_consensus_error!(FeeStrategyTooManyStepsError, e).into()
+        }
+        BasicError::FeeStrategyReduceWithdrawalNotLastError(e) => {
+            generic_consensus_error!(FeeStrategyReduceWithdrawalNotLastError, e).into()
+        }
+        BasicError::InputBelowMinimumError(e) => {
+            generic_consensus_error!(InputBelowMinimumError, e).into()
+        }
+        BasicError::OutputBelowMinimumError(e) => {
+            generic_consensus_error!(OutputBelowMinimumError, e).into()
+        }
+        BasicError::InputOutputBalanceMismatchError(e) => {
+            generic_consensus_error!(InputOutputBalanceMismatchError, e).into()
+        }
+        BasicError::OutputsNotGreaterThanInputsError(e) => {
+            generic_consensus_error!(OutputsNotGreaterThanInputsError, e).into()
+        }
+        BasicError::WithdrawalBalanceMismatchError(e) => {
+            generic_consensus_error!(WithdrawalBalanceMismatchError, e).into()
+        }
+        BasicError::InsufficientFundingAmountError(e) => {
+            generic_consensus_error!(InsufficientFundingAmountError, e).into()
+        }
+        BasicError::InputsNotLessThanOutputsError(e) => {
+            generic_consensus_error!(InputsNotLessThanOutputsError, e).into()
+        }
+        BasicError::OutputAddressAlsoInputError(e) => {
+            generic_consensus_error!(OutputAddressAlsoInputError, e).into()
         }
     }
 }
