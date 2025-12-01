@@ -1,10 +1,10 @@
 use crate::context_provider::WasmContext;
 use crate::error::WasmSdkError;
 use dash_sdk::dpp::version::PlatformVersion;
+use dash_sdk::sdk::Uri;
 use dash_sdk::{Sdk, SdkBuilder};
 use once_cell::sync::Lazy;
 use rs_dapi_client::{Address, RequestSettings};
-use dash_sdk::sdk::Uri;
 use std::ops::{Deref, DerefMut};
 use std::sync::Mutex;
 use std::time::Duration;
@@ -20,11 +20,11 @@ static MAINNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
 static TESTNET_DISCOVERED_ADDRESSES: Lazy<Mutex<Option<Vec<Address>>>> =
     Lazy::new(|| Mutex::new(None));
 
-fn parse_addresses(addresses: &[&str]) -> Vec<Address> {
+fn parse_addresses(addresses: &'static [&str]) -> Vec<Address> {
     addresses
         .iter()
         .filter_map(|addr| {
-            Uri::from_maybe_shared(addr.to_string())
+            Uri::from_maybe_shared(addr)
                 .ok()
                 .and_then(|uri| Address::try_from(uri).ok())
         })
