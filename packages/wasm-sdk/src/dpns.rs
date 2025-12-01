@@ -1,6 +1,6 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::{deserialize_required_query, identifier_from_js};
-use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::document::{Document, DocumentV0Getters};
 use dash_sdk::dpp::identity::accessors::IdentityGettersV0;
@@ -119,27 +119,6 @@ fn parse_dpns_usernames_query(
     })
 }
 
-#[wasm_bindgen(js_name = "DpnsUsernamesProofResponse")]
-#[derive(Clone)]
-pub struct DpnsUsernamesProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub usernames: Array,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_name = "DpnsUsernameProofResponse")]
-#[derive(Clone)]
-pub struct DpnsUsernameProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub username: JsValue,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
 impl WasmSdk {
     async fn prepare_dpns_usernames_query(
         &self,
@@ -189,7 +168,7 @@ impl WasmSdk {
         &self,
         identity_id: Identifier,
         limit: Option<u32>,
-    ) -> Result<DpnsUsernamesProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let query = self
             .prepare_dpns_usernames_query(identity_id, limit)
             .await?;
@@ -197,11 +176,11 @@ impl WasmSdk {
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
         let usernames_array = usernames_from_documents(documents_result);
 
-        Ok(DpnsUsernamesProofResponseWasm {
-            usernames: usernames_array,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            usernames_array.into(),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 }
 
@@ -480,43 +459,44 @@ impl WasmSdk {
             .map(Some)
             .ok_or_else(|| WasmSdkError::generic("DPNS username is not a string"))
     }
-    #[wasm_bindgen(js_name = "getDpnsUsernamesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getDpnsUsernamesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<string>>"
+    )]
     pub async fn get_dpns_usernames_with_proof_info(
         &self,
         query: DpnsUsernamesQueryJs,
-    ) -> Result<DpnsUsernamesProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let params = parse_dpns_usernames_query(query)?;
         self.fetch_dpns_usernames_with_proof(params.identity_id, params.limit)
             .await
     }
 
-    #[wasm_bindgen(js_name = "getDpnsUsernameWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getDpnsUsernameWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<string | null>"
+    )]
     pub async fn get_dpns_username_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "IdentifierLike")]
         identity_id: JsValue,
-    ) -> Result<DpnsUsernameProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let identity_id_parsed = identifier_from_js(&identity_id, "identity ID")?;
 
-        let DpnsUsernamesProofResponseWasm {
-            usernames,
-            metadata,
-            proof,
-        } = self
+        let mut response = self
             .fetch_dpns_usernames_with_proof(identity_id_parsed, Some(1))
             .await?;
 
+        let usernames = js_sys::Array::from(&response.data());
         let username = if usernames.length() > 0 {
             usernames.get(0)
         } else {
             JsValue::NULL
         };
 
-        Ok(DpnsUsernameProofResponseWasm {
-            username,
-            metadata,
-            proof,
-        })
+        response.set_data(username);
+
+        Ok(response)
     }
 }
