@@ -12,6 +12,7 @@ pub mod put_settings;
 pub mod top_up_identity;
 pub mod top_up_identity_from_addresses;
 pub mod transfer;
+pub mod transfer_address_funds;
 pub mod transfer_document;
 pub mod transfer_to_addresses;
 mod txid;
