@@ -4,7 +4,6 @@ mod address_inputs;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
 pub mod broadcast_request;
-pub mod credit_transfer;
 pub mod purchase_document;
 pub mod put_contract;
 pub mod put_document;

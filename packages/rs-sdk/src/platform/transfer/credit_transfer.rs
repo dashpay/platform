@@ -267,9 +267,9 @@ impl CreditTransferBuilder {
         S: TryInto<TransferInput> + Send,
         <S as TryInto<TransferInput>>::Error: ToString,
     {
-        let funding = source.try_into().map_err(|err| {
-            Error::InvalidCreditTransfer(format!("Invalid funding source: {}", err.to_string()))
-        })?;
+        let funding = source
+            .try_into()
+            .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
         self.inputs.push(funding);
         Ok(self)
     }
@@ -284,9 +284,9 @@ impl CreditTransferBuilder {
             return Err(Error::from(OutputBelowMinimumError::new(amount, 1)));
         }
 
-        let transfer_output = destination.try_into().map_err(|err| {
-            Error::InvalidCreditTransfer(format!("Invalid transfer output: {}", err.to_string()))
-        })?;
+        let transfer_output = destination
+            .try_into()
+            .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
 
         let entry = self.outputs.entry(transfer_output).or_insert(0);
         *entry = entry.saturating_add(amount);

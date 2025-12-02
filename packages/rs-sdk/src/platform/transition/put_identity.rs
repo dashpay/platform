@@ -1,5 +1,5 @@
+use crate::platform::transfer::TransferInput;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::platform::transition::credit_transfer::TransferInput;
 use crate::{Error, Sdk};
 
 use super::address_inputs::fetch_inputs_with_nonce;

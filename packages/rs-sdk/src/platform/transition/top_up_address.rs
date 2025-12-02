@@ -1,8 +1,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::broadcast::BroadcastStateTransition;
-use super::credit_transfer::TransferInput;
 use super::put_settings::PutSettings;
+use crate::platform::transfer::TransferInput;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
