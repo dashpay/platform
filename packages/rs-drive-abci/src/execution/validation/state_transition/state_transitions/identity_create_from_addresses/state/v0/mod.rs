@@ -1,9 +1,11 @@
 use crate::error::Error;
 use crate::platform_types::platform::PlatformRef;
-use crate::rpc::core::CoreRPCLike;
+use dpp::address_funds::PlatformAddress;
+use std::collections::BTreeMap;
 
 use dpp::consensus::state::identity::IdentityAlreadyExistsError;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::fee::Credits;
+use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use dpp::ProtocolError;
 
@@ -15,15 +17,13 @@ use drive::state_transition_action::StateTransitionAction;
 use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
-use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNoncesAction;
 use crate::execution::validation::state_transition::common::validate_unique_identity_public_key_hashes_in_state::validate_unique_identity_public_key_hashes_not_in_state;
-use crate::execution::validation::state_transition::ValidationMode;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_create_from_addresses) trait IdentityCreateFromAddressesStateTransitionStateValidationV0
 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<C>(
         &self,
         platform: &PlatformRef<C>,
         action: IdentityCreateFromAddressesTransitionAction,
@@ -32,21 +32,16 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
         platform_version: &PlatformVersion,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0(
         &self,
-        platform: &PlatformRef<C>,
-        signable_bytes: Vec<u8>,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
+        remaining_address_input_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
 impl IdentityCreateFromAddressesStateTransitionStateValidationV0
     for IdentityCreateFromAddressesTransition
 {
-    fn validate_state_v0<C: CoreRPCLike>(
+    fn validate_state_v0<C>(
         &self,
         platform: &PlatformRef<C>,
         action: IdentityCreateFromAddressesTransitionAction,
@@ -108,19 +103,16 @@ impl IdentityCreateFromAddressesStateTransitionStateValidationV0
         }
     }
 
-    fn transform_into_action_v0<C: CoreRPCLike>(
+    fn transform_into_action_v0(
         &self,
-        platform: &PlatformRef<C>,
-        signable_bytes: Vec<u8>,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        transaction: TransactionArg,
-        platform_version: &PlatformVersion,
+        remaining_address_input_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        match IdentityCreateFromAddressesTransitionAction::try_from_transition(self, input_balances)
-        {
-            Ok(action) => Ok(ConsensusValidationResult::new_with_data(action.into())),
-            Err(error) => Ok(ConsensusValidationResult::new_with_error(error)),
-        }
+        Ok(
+            IdentityCreateFromAddressesTransitionAction::try_from_transition(
+                self,
+                remaining_address_input_balances,
+            )
+            .map(|action| action.into()),
+        )
     }
 }

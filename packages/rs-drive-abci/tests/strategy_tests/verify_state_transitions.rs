@@ -11,7 +11,8 @@ use drive::drive::Drive;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
+use drive_abci::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;
@@ -68,9 +69,46 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionExecutionContext::default_for_platform_version(platform_version)
                     .expect("expected to get an execution context");
 
+            // Start by validating addresses if the transition has input addresses
+            let remaining_address_balances =
+                if state_transition.has_addresses_balances_and_nonces_validation() {
+                    // Here we validate that all input addresses have enough balance
+                    // We also validate that nonces are bumped
+                    let validation_result = state_transition
+                        .validate_address_balances_and_nonces(
+                            platform.drive,
+                            &mut execution_context,
+                            None,
+                            platform_version,
+                        )
+                        .expect("expected to validate address balances and nonces");
+                    if !validation_result.is_valid() {
+                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                        // isn't enough balance, either way the transaction should be rejected.
+                        if expected_validation_errors
+                            .contains(&validation_result.first_error().unwrap().code())
+                        {
+                            return (state_transition.clone(), None, false);
+                        } else {
+                            panic!(
+                                "unexpected address validation errors: {:?}",
+                                validation_result.errors
+                            )
+                        }
+                    }
+                    Some(
+                        validation_result
+                            .into_data()
+                            .expect("expected to have data"),
+                    )
+                } else {
+                    None
+                };
+
             let consensus_validation_result = match state_transition.transform_into_action(
                 &platform,
                 abci_app.platform.state.load().last_block_info(),
+                &remaining_address_balances,
                 ValidationMode::NoValidation, //using check_tx so we don't validate state
                 &mut execution_context,
                 None,

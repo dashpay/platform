@@ -88,7 +88,7 @@ use dpp::consensus::state::identity::RecipientIdentityDoesNotExistError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_insufficient_error::PrefundedSpecializedBalanceInsufficientError;
 use dpp::consensus::state::prefunded_specialized_balances::prefunded_specialized_balance_not_found_error::PrefundedSpecializedBalanceNotFoundError;
 use dpp::consensus::state::token::{IdentityDoesNotHaveEnoughTokenBalanceError, IdentityTokenAccountNotFrozenError, IdentityTokenAccountFrozenError, TokenIsPausedError, IdentityTokenAccountAlreadyFrozenError, UnauthorizedTokenActionError, TokenSettingMaxSupplyToLessThanCurrentSupplyError, TokenMintPastMaxSupplyError, NewTokensDestinationIdentityDoesNotExistError, NewAuthorizedActionTakerIdentityDoesNotExistError, NewAuthorizedActionTakerGroupDoesNotExistError, NewAuthorizedActionTakerMainGroupNotSetError, InvalidGroupPositionError, TokenAlreadyPausedError, TokenNotPausedError, InvalidTokenClaimPropertyMismatch, InvalidTokenClaimNoCurrentRewards, InvalidTokenClaimWrongClaimant, TokenTransferRecipientIdentityNotExistError, PreProgrammedDistributionTimestampInPastError, IdentityHasNotAgreedToPayRequiredTokenAmountError, RequiredTokenPaymentInfoNotSetError, IdentityTryingToPayWithWrongTokenError, TokenDirectPurchaseUserPriceTooLow, TokenAmountUnderMinimumSaleAmount, TokenNotForDirectSale, InvalidTokenPositionStateError};
-use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
+use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressInvalidNonceError, AddressNotEnoughFundsError, AddressesNotEnoughFundsError};
 use dpp::consensus::basic::state_transition::{StateTransitionNotActiveError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError, InputWitnessCountMismatchError, TransitionNoInputsError, TransitionNoOutputsError, FeeStrategyEmptyError, FeeStrategyDuplicateError, FeeStrategyIndexOutOfBoundsError, FeeStrategyTooManyStepsError, FeeStrategyReduceWithdrawalNotLastError, InputBelowMinimumError, OutputBelowMinimumError, InputOutputBalanceMismatchError, OutputsNotGreaterThanInputsError, WithdrawalBalanceMismatchError, InsufficientFundingAmountError, InputsNotLessThanOutputsError, OutputAddressAlsoInputError};
 use dpp::consensus::state::voting::masternode_incorrect_voter_identity_id_error::MasternodeIncorrectVoterIdentityIdError;
 use dpp::consensus::state::voting::masternode_incorrect_voting_address_error::MasternodeIncorrectVotingAddressError;
@@ -440,6 +440,9 @@ pub fn from_state_error(state_error: &StateError) -> JsValue {
         }
         StateError::AddressesNotEnoughFundsError(e) => {
             generic_consensus_error!(AddressesNotEnoughFundsError, e).into()
+        }
+        StateError::AddressInvalidNonceError(e) => {
+            generic_consensus_error!(AddressInvalidNonceError, e).into()
         }
     }
 }

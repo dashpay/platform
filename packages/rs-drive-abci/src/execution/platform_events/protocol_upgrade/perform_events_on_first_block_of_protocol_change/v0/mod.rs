@@ -544,7 +544,7 @@ impl<C> Platform<C> {
 
         let path = Drive::addresses_path();
         self.drive.grove_insert_if_not_exists(
-            (&path).into(),
+            path.as_slice().into(),
             &[CLEAR_ADDRESS_POOL_U8],
             Element::empty_sum_tree(),
             Some(transaction),

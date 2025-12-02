@@ -4,6 +4,7 @@ pub const DRIVE_ADDRESS_FUNDS_METHOD_VERSIONS_V1: DriveAddressFundsMethodVersion
     DriveAddressFundsMethodVersions {
         set_balance_to_address: 0,
         add_balance_to_address: 0,
+        remove_balance_from_address: 0,
         fetch_balance_and_nonce: 0,
         fetch_balances_with_nonces: 0,
         prove_balance_and_nonce: 0,

@@ -23,24 +23,34 @@ impl DriveHighLevelOperationConverter for IdentityTopUpFromAddressesTransitionAc
         {
             0 => {
                 let identity_id = self.identity_id();
+                let topup_amount = self.topup_amount();
+                let output = self.output();
                 let inputs = self.inputs_with_remaining_balance_owned();
-
-                // Calculate total balance to add from inputs
-                let added_balance: u64 = inputs.values().map(|(_, balance)| *balance).sum();
 
                 let mut drive_operations = vec![IdentityOperation(
                     IdentityOperationType::AddToIdentityBalance {
                         identity_id: identity_id.to_buffer(),
-                        added_balance,
+                        added_balance: topup_amount,
                     },
                 )];
 
+                // Update input address balances
                 for (address, (nonce, remaining_balance)) in inputs {
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::SetBalanceToAddress {
                             address,
                             nonce,
                             balance: remaining_balance,
+                        },
+                    ));
+                }
+
+                // Handle output address if present
+                if let Some((output_address, output_balance)) = output {
+                    drive_operations.push(AddressFundsOperation(
+                        AddressFundsOperationType::AddBalanceToAddress {
+                            address: output_address,
+                            balance_to_add: output_balance,
                         },
                     ));
                 }

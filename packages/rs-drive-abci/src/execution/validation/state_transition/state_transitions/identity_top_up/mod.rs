@@ -19,7 +19,8 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_top_up::structure::v0::IdentityTopUpStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_top_up::transform_into_action::v0::IdentityTopUpStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::StateTransitionBasicStructureValidationV0;
+
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;

@@ -1,13 +1,22 @@
 mod transformer;
 
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::fee::Credits;
+use dpp::platform_value::Bytes36;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use std::collections::BTreeMap;
 
 /// action v0
-#[derive(Default, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct AddressFundingFromAssetLockTransitionActionV0 {
+    /// The state transition signable bytes hash
+    pub signable_bytes_hasher: SignableBytesHasher,
+    /// the initial balance amount is equal to the remaining asset lock value
+    pub asset_lock_value_to_be_consumed: AssetLockValue,
+    /// asset lock outpoint
+    pub asset_lock_outpoint: Bytes36,
     /// inputs with remaining balance (may be empty if no existing addresses are used)
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// outputs

@@ -40,10 +40,24 @@ impl IdentityTopUpFromAddressesTransitionAction {
         }
     }
 
+    /// Get output address and amount (if any)
+    pub fn output(&self) -> Option<(PlatformAddress, Credits)> {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.output,
+        }
+    }
+
     /// Identity Id
     pub fn identity_id(&self) -> Identifier {
         match self {
             IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.identity_id,
+        }
+    }
+
+    /// Get the amount to add to the identity's balance
+    pub fn topup_amount(&self) -> Credits {
+        match self {
+            IdentityTopUpFromAddressesTransitionAction::V0(transition) => transition.topup_amount,
         }
     }
 

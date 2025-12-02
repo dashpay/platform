@@ -14,6 +14,7 @@ pub struct DriveGroupMethodVersions {
 pub struct DriveAddressFundsMethodVersions {
     pub set_balance_to_address: FeatureVersion,
     pub add_balance_to_address: FeatureVersion,
+    pub remove_balance_from_address: FeatureVersion,
     pub fetch_balance_and_nonce: FeatureVersion,
     pub fetch_balances_with_nonces: FeatureVersion,
     pub prove_balance_and_nonce: FeatureVersion,

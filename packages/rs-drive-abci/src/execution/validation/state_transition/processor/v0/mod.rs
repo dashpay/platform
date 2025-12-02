@@ -1,14 +1,19 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::processor::{
-    StateTransitionAdvancedStructureValidationV0, StateTransitionBasicStructureValidationV0,
-    StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityBalanceValidationV0,
-    StateTransitionIdentityBasedSignatureValidationV0, StateTransitionIdentityNonceValidationV0,
-    StateTransitionIsAllowedValidationV0, StateTransitionPrefundedSpecializedBalanceValidationV0,
-    StateTransitionStateValidationV0, StateTransitionStructureKnownInStateValidationV0,
+use crate::execution::validation::state_transition::processor::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
+use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
+use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_based_signature::StateTransitionIdentityBasedSignatureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::{
+    StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityNonceValidationV0,
 };
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
+use crate::execution::validation::state_transition::processor::prefunded_specialized_balance::StateTransitionPrefundedSpecializedBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -19,6 +24,7 @@ use dpp::state_transition::StateTransition;
 use dpp::version::{DefaultForPlatformVersion, PlatformVersion};
 use dpp::ProtocolError;
 use drive::grovedb::TransactionArg;
+
 pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
     block_info: &BlockInfo,
@@ -37,6 +43,28 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
+    // Start by validating addresses if the transition has input addresses
+    let remaining_address_balances = if state_transition
+        .has_addresses_balances_and_nonces_validation()
+    {
+        // Here we validate that all input addresses have enough balance
+        // We also validate that nonces are bumped
+        let result = state_transition.validate_address_balances_and_nonces(
+            platform.drive,
+            &mut state_transition_execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+            // isn't enough balance, either way the transaction should be rejected.
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+        Some(result.into_data()?)
+    } else {
+        None
+    };
+
     // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
         // Validating signature for identity based state transitions (all those except identity create and identity top up)
@@ -50,7 +78,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
                 platform_version,
             )
         } else {
-            // Currently only identity top up uses this,
+            // Currently only identity top up and identity top up from addresses uses this,
             // We will add the cost for a balance retrieval
             state_transition.retrieve_identity_info(
                 platform.drive,
@@ -127,8 +155,8 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             .ok_or(ProtocolError::CorruptedCodeExecution(
                 "identity must be known to validate the balance".to_string(),
             ))?;
-        let result =
-            state_transition.validate_minimum_balance_pre_check(identity, platform_version)?;
+        let result = state_transition
+            .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
 
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
@@ -152,7 +180,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     // Only identity update and data contract create have advanced structure validation without state
     if state_transition.has_advanced_structure_validation_without_state() {
-        // Currently only used for Identity Update
+        // Currently only used for Identity Update, Data Contract Create and Identity Create From Addresses
         // Next we have advanced structure validation, this is structure validation that does not require
         // state but isn't checked on check_tx. If advanced structure fails identity nonces or identity
         // contract nonces will be bumped
@@ -186,6 +214,7 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         let state_transition_action_result = state_transition.transform_into_action(
             platform,
             block_info,
+            &remaining_address_balances,
             ValidationMode::Validator,
             &mut state_transition_execution_context,
             transaction,
@@ -231,14 +260,27 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
 
     // Validating state
     // Only identity Top up does not validate state and instead just returns the action for topping up
-    let result = state_transition.validate_state(
-        action,
-        platform,
-        ValidationMode::Validator,
-        block_info,
-        &mut state_transition_execution_context,
-        transaction,
-    )?;
+    let result = if state_transition.has_state_validation() {
+        state_transition.validate_state(
+            action,
+            platform,
+            ValidationMode::Validator,
+            block_info,
+            &mut state_transition_execution_context,
+            transaction,
+        )?
+    } else if let Some(action) = action {
+        ConsensusValidationResult::new_with_data(action)
+    } else {
+        state_transition.transform_into_action(
+            platform,
+            block_info,
+            &remaining_address_balances,
+            ValidationMode::Validator,
+            &mut state_transition_execution_context,
+            transaction,
+        )?
+    };
 
     result.map_result(|action| {
         ExecutionEvent::create_from_state_transition_action(

@@ -11,4 +11,6 @@ pub mod prove;
 /// Query-building and execution utilities for GroveDB.
 pub mod queries;
 #[cfg(feature = "server")]
+mod remove_balance_from_address;
+#[cfg(feature = "server")]
 mod set_balance_to_address;

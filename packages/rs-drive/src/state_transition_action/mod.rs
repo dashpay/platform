@@ -7,7 +7,8 @@ pub mod identity;
 pub mod system;
 // TODO: Must crate only but we need to remove of use it first
 pub mod action_convert_to_operations;
-mod address_funds;
+/// address funds
+pub mod address_funds;
 /// documents_batch
 pub mod batch;
 

@@ -3,30 +3,32 @@ mod basic_structure;
 pub(crate) mod public_key_signatures;
 mod state;
 
-use crate::error::Error;
-use dpp::dashcore::Network;
-
 use crate::error::execution::ExecutionError;
+use crate::error::Error;
+use dpp::address_funds::PlatformAddress;
+use dpp::dashcore::Network;
+use dpp::fee::Credits;
+use std::collections::BTreeMap;
 
 use crate::execution::validation::state_transition::identity_create_from_addresses::basic_structure::v0::IdentityCreateFromAddressesStateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::state::v0::IdentityCreateFromAddressesStateTransitionStateValidationV0;
-use crate::execution::validation::state_transition::processor::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::platform_types::platform::PlatformRef;
 
 use crate::rpc::core::CoreRPCLike;
 
-use dpp::prelude::ConsensusValidationResult;
+use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
-use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::identity::identity_create_from_addresses::IdentityCreateFromAddressesTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
+use crate::execution::validation::state_transition::identity_create_from_addresses::advanced_structure::v0::IdentityCreateFromAddressesStateTransitionAdvancedStructureValidationV0;
 
 /// A trait for transforming into an action for the identity create from addresses transition
 pub trait StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0 {
@@ -34,10 +36,7 @@ pub trait StateTransitionActionTransformerForIdentityCreateFromAddressesTransiti
     fn transform_into_action_for_identity_create_from_addresses_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        signable_bytes: Vec<u8>,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
+        remaining_address_input_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
 }
 
@@ -47,10 +46,7 @@ impl StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0
     fn transform_into_action_for_identity_create_from_addresses_transition<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
-        signable_bytes: Vec<u8>,
-        validation_mode: ValidationMode,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
+        remaining_address_input_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
         let platform_version = platform.state.current_platform_version()?;
         match platform_version
@@ -60,14 +56,7 @@ impl StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0
             .identity_create_from_addresses_state_transition
             .transform_into_action
         {
-            0 => self.transform_into_action_v0(
-                platform,
-                signable_bytes,
-                validation_mode,
-                execution_context,
-                tx,
-                platform_version,
-            ),
+            0 => self.transform_into_action_v0(remaining_address_input_balances),
             version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                 method: "identity create from addresses transition: transform_into_action"
                     .to_string(),
@@ -115,7 +104,6 @@ pub trait StateTransitionStructureKnownInStateValidationForIdentityCreateFromAdd
     /// Validation of the advanced structure
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
-        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -127,7 +115,6 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
 {
     fn validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
         &self,
-        action: &IdentityCreateFromAddressesTransitionAction,
         signable_bytes: Vec<u8>,
         execution_context: &mut StateTransitionExecutionContext,
         platform_version: &PlatformVersion,
@@ -139,8 +126,7 @@ impl StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddresse
             .identity_create_from_addresses_state_transition
             .advanced_structure
         {
-            Some(0) => self.validate_advanced_structure_from_state_v0(
-                action,
+            Some(0) => self.validate_advanced_structure_v0(
                 signable_bytes,
                 execution_context,
                 platform_version,

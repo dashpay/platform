@@ -28,8 +28,17 @@ pub mod masternode_vote;
 /// Identity create from addresses
 pub mod identity_create_from_addresses;
 
-/// Module for validation of address funds transitions
-pub mod address_funds;
+/// Module for validation of address funding from asset lock transitions
+pub mod address_funding_from_asset_lock;
+
+/// Module for validation of credit transfer from an identity to addresses
+pub mod identity_credit_transfer_to_addresses;
+
+/// Module for validation of address credit withdrawal transitions
+pub mod address_credit_withdrawal;
+
+/// Module for validation of address funds transfer transitions
+pub mod address_funds_transfer;
 
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -29,7 +29,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        let path = vec![vec![RootTree::AddressBalances as u8]];
+        let path = Drive::clear_addresses_path();
 
         let key = address.to_bytes();
 

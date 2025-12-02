@@ -1,19 +1,11 @@
-mod advanced_structure_with_state;
-mod advanced_structure_without_state;
-mod basic_structure;
-mod identity_balance;
-mod identity_based_signature;
-mod identity_nonces;
-mod is_allowed;
-mod prefunded_specialized_balance;
-mod state;
-
-pub use advanced_structure_with_state::*;
-pub use advanced_structure_without_state::*;
-pub use basic_structure::*;
-pub use identity_balance::*;
-pub use identity_based_signature::*;
-pub use identity_nonces::*;
-pub use is_allowed::*;
-pub use prefunded_specialized_balance::*;
-pub use state::*;
+/// Address balance and nonce validation trait.
+pub mod address_balances_and_nonces;
+pub(crate) mod advanced_structure_with_state;
+pub(crate) mod advanced_structure_without_state;
+pub(crate) mod basic_structure;
+pub(crate) mod identity_balance;
+pub(crate) mod identity_based_signature;
+pub(crate) mod identity_nonces;
+pub(crate) mod is_allowed;
+pub(crate) mod prefunded_specialized_balance;
+pub(crate) mod state;

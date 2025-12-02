@@ -53,7 +53,12 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
             }
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
-            | StateTransition::MasternodeVote(_) => 0,
+            | StateTransition::MasternodeVote(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::AddressCreditWithdrawal(_) => 0,
             StateTransition::IdentityCreditWithdrawal(_) => {
                 platform_version
                     .fee_version
@@ -71,6 +76,12 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
                     .fee_version
                     .state_transition_min_fees
                     .credit_transfer
+            }
+            StateTransition::IdentityCreditTransferToAddresses(_) => {
+                platform_version
+                    .fee_version
+                    .state_transition_min_fees
+                    .credit_transfer_to_addresses
             }
         };
 

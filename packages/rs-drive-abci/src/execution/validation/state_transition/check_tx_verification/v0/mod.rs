@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::platform_types::platform::PlatformRef;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
@@ -15,8 +15,14 @@ use crate::error::execution::ExecutionError;
 use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
-use crate::execution::validation::state_transition::processor::{StateTransitionBasicStructureValidationV0, StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityBalanceValidationV0, StateTransitionIdentityBasedSignatureValidationV0, StateTransitionIdentityNonceValidationV0, StateTransitionIsAllowedValidationV0, StateTransitionStructureKnownInStateValidationV0};
+use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_based_signature::StateTransitionIdentityBasedSignatureValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::{StateTransitionHasIdentityNonceValidationV0, StateTransitionIdentityNonceValidationV0};
+use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
 use crate::execution::validation::state_transition::ValidationMode;
+use crate::execution::validation::state_transition::processor::traits::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
 
 pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPCLike>(
     platform: &'a PlatformRef<C>,
@@ -43,6 +49,31 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     );
                 }
             }
+
+            // Start by validating addresses if the transition has input addresses
+            let remaining_address_balances =
+                if state_transition.has_addresses_balances_and_nonces_validation() {
+                    // Here we validate that all input addresses have enough balance
+                    // We also validate that nonces are bumped
+                    let result = state_transition.validate_address_balances_and_nonces(
+                        platform.drive,
+                        &mut state_transition_execution_context,
+                        None,
+                        platform_version,
+                    )?;
+                    if !result.is_valid() {
+                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                        // isn't enough balance, either way the transaction should be rejected.
+                        return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                    }
+                    Some(result.into_data()?)
+                } else {
+                    None
+                };
 
             // Only identity top up and identity create do not have nonces validation
             if state_transition.has_identity_nonce_validation(platform_version)? {
@@ -121,6 +152,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -171,7 +203,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                         ))?;
 
                 let result = state_transition
-                    .validate_minimum_balance_pre_check(identity, platform_version)?;
+                    .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
 
                 if !result.is_valid() {
                     return Ok(
@@ -188,6 +220,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::CheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -241,6 +274,31 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                     )
                 }
             } else {
+                // Start by validating addresses if the transition has input addresses
+                let remaining_address_balances =
+                    if state_transition.has_addresses_balances_and_nonces_validation() {
+                        // Here we validate that all input addresses have enough balance
+                        // We also validate that nonces are bumped
+                        let result = state_transition.validate_address_balances_and_nonces(
+                            platform.drive,
+                            &mut state_transition_execution_context,
+                            None,
+                            platform_version,
+                        )?;
+                        if !result.is_valid() {
+                            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                            // isn't enough balance, either way the transaction should be rejected.
+                            return Ok(
+                            ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                                result.errors,
+                            ),
+                        );
+                        }
+                        Some(result.into_data()?)
+                    } else {
+                        None
+                    };
+
                 if state_transition.has_identity_nonce_validation(platform_version)? {
                     let result = state_transition.validate_identity_nonces(
                         &platform.into(),
@@ -262,6 +320,7 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 let state_transition_action_result = state_transition.transform_into_action(
                     platform,
                     platform.state.last_block_info(),
+                    &remaining_address_balances,
                     ValidationMode::RecheckTx,
                     &mut state_transition_execution_context,
                     None,
@@ -276,11 +335,19 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
                 let action = state_transition_action_result.into_data()?;
 
-                let maybe_identity = platform.drive.fetch_identity_with_balance(
-                    state_transition.owner_id().to_buffer(),
-                    None,
-                    platform_version,
-                )?;
+                let maybe_identity = if state_transition.uses_identity_in_state() {
+                    if let Some(owner_id) = state_transition.owner_id() {
+                        platform.drive.fetch_identity_with_balance(
+                            owner_id.to_buffer(),
+                            None,
+                            platform_version,
+                        )?
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
                 let execution_event = ExecutionEvent::create_from_state_transition_action(
                     action,
