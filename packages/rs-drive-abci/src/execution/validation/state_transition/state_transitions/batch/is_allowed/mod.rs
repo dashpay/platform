@@ -1,6 +1,6 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
-use crate::execution::validation::state_transition::processor::StateTransitionIsAllowedValidationV0;
+use crate::execution::validation::state_transition::processor::is_allowed::StateTransitionIsAllowedValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use dpp::state_transition::batch_transition::BatchTransition;
 use dpp::validation::ConsensusValidationResult;

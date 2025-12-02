@@ -16,15 +16,6 @@ use drive::state_transition_action::identity::identity_credit_withdrawal::Identi
 use drive::state_transition_action::StateTransitionAction;
 
 pub(in crate::execution::validation::state_transition::state_transitions::identity_credit_withdrawal) trait IdentityCreditWithdrawalStateTransitionStateValidationV0 {
-    fn validate_state_v0<C: CoreRPCLike>(
-        &self,
-        platform: &PlatformRef<C>,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
-
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
@@ -38,23 +29,6 @@ pub(in crate::execution::validation::state_transition::state_transitions::identi
 impl IdentityCreditWithdrawalStateTransitionStateValidationV0
     for IdentityCreditWithdrawalTransition
 {
-    fn validate_state_v0<C: CoreRPCLike>(
-        &self,
-        platform: &PlatformRef<C>,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-        platform_version: &PlatformVersion,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        self.transform_into_action_v0(
-            platform,
-            block_info,
-            execution_context,
-            tx,
-            platform_version,
-        )
-    }
-
     fn transform_into_action_v0<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,

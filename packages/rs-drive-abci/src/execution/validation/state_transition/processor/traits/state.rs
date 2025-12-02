@@ -2,22 +2,18 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStateValidationForIdentityCreateTransitionV0;
-use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::prelude::ConsensusValidationResult;
-use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
 use drive::state_transition_action::StateTransitionAction;
 
 /// A trait for validating state transitions within a blockchain.
-pub(crate) trait StateTransitionStateValidationV0:
-    StateTransitionActionTransformerV0
-{
+pub(crate) trait StateTransitionStateValidation: StateTransitionActionTransformer {
     /// Validates the state transition by analyzing the changes in the platform state after applying the transaction.
     ///
     /// # Arguments
@@ -41,9 +37,15 @@ pub(crate) trait StateTransitionStateValidationV0:
         execution_context: &mut StateTransitionExecutionContext,
         tx: TransactionArg,
     ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+
+    /// Do we perform the validate state call on this transaction?
+    /// Some parts of state validation (balances/nonces) happen outside this call.
+    fn has_state_validation(&self) -> bool {
+        true
+    }
 }
 
-impl StateTransitionStateValidationV0 for StateTransition {
+impl StateTransitionStateValidation for StateTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         action: Option<StateTransitionAction>,
@@ -97,29 +99,16 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityTopUp(st) => {
-                // Nothing to validate from state
-                if let Some(action) = action {
-                    Ok(ConsensusValidationResult::new_with_data(action))
-                } else {
-                    let signable_bytes = self.signable_bytes()?;
-                    st.transform_into_action_for_identity_top_up_transition(
-                        platform,
-                        signable_bytes,
-                        validation_mode,
-                        execution_context,
-                        tx,
-                    )
-                }
+            StateTransition::IdentityTopUp(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity top up should not have state validation",
+                )))
             }
-            StateTransition::IdentityCreditWithdrawal(st) => st.validate_state(
-                action,
-                platform,
-                validation_mode,
-                block_info,
-                execution_context,
-                tx,
-            ),
+            StateTransition::IdentityCreditWithdrawal(st) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity credit withdrawal should not have state validation",
+                )))
+            }
             // The replay attack is prevented by identity data contract nonce
             StateTransition::Batch(st) => st.validate_state(
                 action,
@@ -145,7 +134,42 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_state(
+            StateTransition::IdentityCreditTransferToAddresses(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity credit transfer to addresses should not have state validation",
+                )))
+            }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                let action =
+                    action.ok_or(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "identity create from addresses validation should always an action",
+                    )))?;
+                let StateTransitionAction::IdentityCreateFromAddressesAction(action) = action
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be a identity create transition action",
+                    )));
+                };
+                st.validate_state(
+                    action,
+                    platform,
+                    validation_mode,
+                    block_info,
+                    execution_context,
+                    tx,
+                )
+            }
+            StateTransition::IdentityTopUpFromAddresses(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "identity top up from addresses should not have state validation",
+                )))
+            }
+            StateTransition::AddressFundsTransfer(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "address funds transfer should not have state validation",
+                )))
+            }
+            StateTransition::AddressFundingFromAssetLock(st) => st.validate_state(
                 action,
                 platform,
                 validation_mode,
@@ -153,30 +177,31 @@ impl StateTransitionStateValidationV0 for StateTransition {
                 execution_context,
                 tx,
             ),
-            StateTransition::IdentityCreateFromAddresses(st) => st.validate_state(
-                action,
-                platform,
-                validation_mode,
-                block_info,
-                execution_context,
-                tx,
-            ),
-            StateTransition::IdentityTopUpFromAddresses(st) => st.validate_state(
-                action,
-                platform,
-                validation_mode,
-                block_info,
-                execution_context,
-                tx,
-            ),
-            StateTransition::AddressFundsTransfer(st) => st.validate_state(
-                action,
-                platform,
-                validation_mode,
-                block_info,
-                execution_context,
-                tx,
-            ),
+            StateTransition::AddressCreditWithdrawal(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "address credit withdrawal should not have state validation",
+                )))
+            }
+        }
+    }
+
+    fn has_state_validation(&self) -> bool {
+        match self {
+            StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::DataContractCreate(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::DataContractUpdate(_)
+            | StateTransition::Batch(_)
+            | StateTransition::IdentityUpdate(_)
+            | StateTransition::IdentityCreditTransfer(_)
+            | StateTransition::MasternodeVote(_) => true,
+            StateTransition::AddressFundsTransfer(_)
+            | StateTransition::IdentityTopUp(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::IdentityCreditWithdrawal(_)
+            | StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::IdentityCreditTransferToAddresses(_) => false,
         }
     }
 }

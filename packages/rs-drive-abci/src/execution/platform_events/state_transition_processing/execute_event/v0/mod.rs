@@ -26,7 +26,7 @@ where
     C: CoreRPCLike,
 {
     #[allow(clippy::too_many_arguments)]
-    fn paid_function(
+    fn paid_from_identity_function(
         &self,
         mut fee_validation_result: ConsensusValidationResult<FeeResult>,
         identity: PartialIdentity,
@@ -126,15 +126,15 @@ where
         previous_fee_versions: &CachedEpochIndexFeeVersions,
     ) -> Result<EventExecutionResult, Error> {
         let maybe_fee_validation_result = match event {
-            ExecutionEvent::PaidFromAssetLock { .. } | ExecutionEvent::Paid { .. } => {
-                Some(self.validate_fees_of_event(
-                    &event,
-                    block_info,
-                    Some(transaction),
-                    platform_version,
-                    previous_fee_versions,
-                )?)
-            }
+            ExecutionEvent::PaidFromAssetLock { .. }
+            | ExecutionEvent::Paid { .. }
+            | ExecutionEvent::PaidFromAddressInputs { .. } => Some(self.validate_fees_of_event(
+                &event,
+                block_info,
+                Some(transaction),
+                platform_version,
+                previous_fee_versions,
+            )?),
             ExecutionEvent::PaidFromAssetLockWithoutIdentity { .. }
             | ExecutionEvent::PaidFixedCost { .. }
             | ExecutionEvent::Free { .. } => None,
@@ -150,7 +150,7 @@ where
             } => {
                 // We can unwrap here because we have the match right above
                 let fee_validation_result = maybe_fee_validation_result.unwrap();
-                self.paid_function(
+                self.paid_from_identity_function(
                     fee_validation_result,
                     identity,
                     operations,
@@ -174,7 +174,34 @@ where
             } => {
                 // We can unwrap here because we have the match right above
                 let fee_validation_result = maybe_fee_validation_result.unwrap();
-                self.paid_function(
+                self.paid_from_identity_function(
+                    fee_validation_result,
+                    identity,
+                    operations,
+                    execution_operations,
+                    user_fee_increase,
+                    additional_fixed_fee_cost,
+                    block_info,
+                    consensus_errors,
+                    transaction,
+                    platform_version,
+                    previous_fee_versions,
+                )
+            }
+            ExecutionEvent::PaidFromAddressInputs {
+                input_original_balances,
+                removed_balance,
+                input_current_balances,
+                added_to_balance_outputs,
+                fee_strategy,
+                operations,
+                execution_operations,
+                additional_fixed_fee_cost,
+                user_fee_increase,
+            } => {
+                // We can unwrap here because we have the match right above
+                let fee_validation_result = maybe_fee_validation_result.unwrap();
+                self.paid_from_address_inputs_and_outputs(
                     fee_validation_result,
                     identity,
                     operations,

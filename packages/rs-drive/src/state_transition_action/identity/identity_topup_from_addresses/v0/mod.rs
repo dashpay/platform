@@ -1,5 +1,6 @@
 mod transformer;
 
+use dpp::address_funds::fee_strategy::AddressFundsFeeStrategy;
 use dpp::address_funds::PlatformAddress;
 use dpp::identifier::Identifier;
 use std::collections::BTreeMap;
@@ -14,6 +15,8 @@ pub struct IdentityTopUpFromAddressesTransitionActionV0 {
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// optional output to send remaining credits to an address
     pub output: Option<(PlatformAddress, Credits)>,
+    /// fee strategy for determining order of fee deduction
+    pub fee_strategy: AddressFundsFeeStrategy,
     /// identity id
     pub identity_id: Identifier,
     /// fee multiplier

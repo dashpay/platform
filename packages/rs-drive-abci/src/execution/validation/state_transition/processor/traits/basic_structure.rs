@@ -1,6 +1,7 @@
+use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use dpp::dashcore::Network;
-use dpp::state_transition::StateTransition;
+use dpp::state_transition::{StateTransition, StateTransitionStructureValidation};
 use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersion;
 
@@ -87,16 +88,154 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
                 }
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                st.validate_basic_structure(network_type, platform_version)
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_credit_transfer_to_addresses_state_transition
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
             }
             StateTransition::IdentityCreateFromAddresses(st) => {
-                st.validate_basic_structure(network_type, platform_version)
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_create_from_addresses_state_transition
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
             }
             StateTransition::IdentityTopUpFromAddresses(st) => {
-                st.validate_basic_structure(network_type, platform_version)
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .identity_top_up_from_addresses_state_transition
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
             }
             StateTransition::AddressFundsTransfer(st) => {
-                st.validate_basic_structure(network_type, platform_version)
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .address_funds_transfer
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .address_funds_from_asset_lock
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
+            }
+            StateTransition::AddressCreditWithdrawal(st) => {
+                match platform_version
+                    .drive_abci
+                    .validation_and_processing
+                    .state_transitions
+                    .address_credit_withdrawal
+                    .basic_structure
+                {
+                    Some(0) => {
+                        // There is nothing expensive to add as validation methods to the execution context
+                        Ok(st.validate_structure(platform_version))
+                    }
+                    Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                        received: version,
+                    })),
+                    None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                        method: "identity create from addresses transition: validate_basic_structure"
+                            .to_string(),
+                        known_versions: vec![0],
+                    })),
+                }
             }
         }
     }
@@ -131,7 +270,9 @@ impl StateTransitionBasicStructureValidationV0 for StateTransition {
             | StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityCreditTransferToAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
-            | StateTransition::IdentityTopUpFromAddresses(_) => true,
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::AddressCreditWithdrawal(_) => true,
             StateTransition::MasternodeVote(_) => false,
         }
     }

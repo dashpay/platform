@@ -334,6 +334,7 @@ impl ErrorWithCode for StateError {
             Self::AddressDoesNotExistError(_) => 40600,
             Self::AddressNotEnoughFundsError(_) => 40601,
             Self::AddressesNotEnoughFundsError(_) => 40602,
+            Self::AddressInvalidNonceError(_) => 40603,
 
             // Token errors: 40700-40799
             Self::IdentityDoesNotHaveEnoughTokenBalanceError(_) => 40700,

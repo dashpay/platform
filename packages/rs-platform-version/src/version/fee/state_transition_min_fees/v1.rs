@@ -2,6 +2,7 @@ use crate::version::fee::state_transition_min_fees::StateTransitionMinFees;
 
 pub const STATE_TRANSITION_MIN_FEES_VERSION1: StateTransitionMinFees = StateTransitionMinFees {
     credit_transfer: 100000,
+    credit_transfer_to_addresses: 500000,
     credit_withdrawal: 400000000, //credit withdrawals are more expensive that the rest
     identity_update: 100000,
     document_batch_sub_transition: 100000,

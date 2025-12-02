@@ -21,7 +21,7 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
     /// # Returns
     ///
     /// * `Result<ConsensusValidationResult<StateTransitionAction>, Error>` - A result with either a ConsensusValidationResult containing a StateTransitionAction or an Error.
-    fn validate_minimum_balance_pre_check(
+    fn validate_identity_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
@@ -36,23 +36,23 @@ pub(crate) trait StateTransitionIdentityBalanceValidationV0 {
 }
 
 impl StateTransitionIdentityBalanceValidationV0 for StateTransition {
-    fn validate_minimum_balance_pre_check(
+    fn validate_identity_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,
     ) -> Result<SimpleConsensusValidationResult, Error> {
         match self {
             StateTransition::IdentityCreditTransfer(st) => {
-                st.validate_minimum_balance_pre_check(identity, platform_version)
+                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::IdentityCreditWithdrawal(st) => {
-                st.validate_minimum_balance_pre_check(identity, platform_version)
+                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::Batch(st) => {
-                st.validate_minimum_balance_pre_check(identity, platform_version)
+                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::IdentityCreditTransferToAddresses(st) => {
-                st.validate_minimum_balance_pre_check(identity, platform_version)
+                st.validate_identity_minimum_balance_pre_check(identity, platform_version)
             }
             StateTransition::DataContractCreate(_)
             | StateTransition::DataContractUpdate(_)

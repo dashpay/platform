@@ -2,7 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::data_contract_create::identity_nonce::v0::DataContractCreateTransitionIdentityNonceV0;
-use crate::execution::validation::state_transition::processor::StateTransitionIdentityNonceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_nonces::StateTransitionIdentityNonceValidationV0;
 use crate::platform_types::platform::PlatformStateRef;
 use dpp::block::block_info::BlockInfo;
 use dpp::state_transition::data_contract_create_transition::DataContractCreateTransition;

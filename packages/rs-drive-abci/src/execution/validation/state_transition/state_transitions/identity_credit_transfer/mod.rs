@@ -3,12 +3,16 @@ mod nonce;
 mod state;
 mod structure;
 
+use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
+use dpp::fee::Credits;
+use dpp::prelude::AddressNonce;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::{ConsensusValidationResult, SimpleConsensusValidationResult};
 use dpp::version::PlatformVersion;
 use drive::state_transition_action::StateTransitionAction;
+use std::collections::BTreeMap;
 
 use drive::grovedb::TransactionArg;
 
@@ -20,18 +24,20 @@ use crate::rpc::core::CoreRPCLike;
 
 use crate::execution::validation::state_transition::identity_credit_transfer::state::v0::IdentityCreditTransferStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_credit_transfer::structure::v0::IdentityCreditTransferStateTransitionStructureValidationV0;
-use crate::execution::validation::state_transition::processor::{
-    StateTransitionBasicStructureValidationV0, StateTransitionStateValidationV0,
-};
-use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
+use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
+use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 
-impl StateTransitionActionTransformerV0 for IdentityCreditTransferTransition {
+impl StateTransitionActionTransformer for IdentityCreditTransferTransition {
     fn transform_into_action<C: CoreRPCLike>(
         &self,
         platform: &PlatformRef<C>,
         _block_info: &BlockInfo,
+        _remaining_address_input_balances: &Option<
+            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        >,
         _validation_mode: ValidationMode,
         _execution_context: &mut StateTransitionExecutionContext,
         _tx: TransactionArg,
@@ -85,7 +91,7 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditTransferTransit
     }
 }
 
-impl StateTransitionStateValidationV0 for IdentityCreditTransferTransition {
+impl StateTransitionStateValidation for IdentityCreditTransferTransition {
     fn validate_state<C: CoreRPCLike>(
         &self,
         _action: Option<StateTransitionAction>,

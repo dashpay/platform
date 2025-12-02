@@ -101,37 +101,20 @@ impl StateTransitionIdentityNonceValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
-            StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_nonces(
+            StateTransition::IdentityCreditTransferToAddresses(st) => st.validate_identity_nonces(
                 platform,
                 block_info,
                 tx,
                 execution_context,
                 platform_version,
             ),
-            StateTransition::IdentityCreateFromAddresses(st) => st.validate_nonces(
-                platform,
-                block_info,
-                tx,
-                execution_context,
-                platform_version,
-            ),
-            StateTransition::IdentityTopUpFromAddresses(st) => st.validate_nonces(
-                platform,
-                block_info,
-                tx,
-                execution_context,
-                platform_version,
-            ),
-            StateTransition::AddressFundsTransfer(st) => st.validate_nonces(
-                platform,
-                block_info,
-                tx,
-                execution_context,
-                platform_version,
-            ),
-            StateTransition::IdentityCreate(_) | StateTransition::IdentityTopUp(_) => {
-                Ok(SimpleConsensusValidationResult::new())
-            }
+            StateTransition::AddressCreditWithdrawal(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::IdentityCreateFromAddresses(_)
+            | StateTransition::IdentityTopUpFromAddresses(_)
+            | StateTransition::AddressFundsTransfer(_)
+            | StateTransition::IdentityCreate(_)
+            | StateTransition::IdentityTopUp(_) => Ok(SimpleConsensusValidationResult::new()),
         }
     }
 }

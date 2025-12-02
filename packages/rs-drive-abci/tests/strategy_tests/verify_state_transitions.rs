@@ -11,7 +11,7 @@ use drive::drive::Drive;
 use drive::query::{SingleDocumentDriveQuery, SingleDocumentDriveQueryContestedStatus};
 use drive::state_transition_action::batch::batched_transition::document_transition::DocumentTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
-use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformerV0;
+use drive_abci::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use drive_abci::platform_types::platform::PlatformRef;
 use drive_abci::rpc::core::MockCoreRPCLike;
 use tenderdash_abci::proto::abci::ExecTxResult;

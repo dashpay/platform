@@ -1,7 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::validation::state_transition::identity_credit_transfer::balance::v0::IdentityCreditTransferTransitionBalanceValidationV0;
-use crate::execution::validation::state_transition::processor::StateTransitionIdentityBalanceValidationV0;
+use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
 use dpp::identity::PartialIdentity;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::validation::SimpleConsensusValidationResult;
@@ -9,7 +9,7 @@ use dpp::version::PlatformVersion;
 
 pub(crate) mod v0;
 impl StateTransitionIdentityBalanceValidationV0 for IdentityCreditTransferTransition {
-    fn validate_minimum_balance_pre_check(
+    fn validate_identity_minimum_balance_pre_check(
         &self,
         identity: &PartialIdentity,
         platform_version: &PlatformVersion,

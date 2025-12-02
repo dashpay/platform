@@ -160,6 +160,7 @@ where
             }
             ExecutionEvent::PaidFromAddressInputs {
                 input_original_balances,
+                input_current_balances,
                 removed_balance,
                 operations,
                 execution_operations,
@@ -205,7 +206,10 @@ where
                     Ok(ConsensusValidationResult::new_with_data_and_errors(
                         estimated_fee_result,
                         vec![StateError::AddressesNotEnoughFundsError(
-                            AddressesNotEnoughFundsError::new(required_balance),
+                            AddressesNotEnoughFundsError::new(
+                                input_current_balances.clone(),
+                                required_balance,
+                            ),
                         )
                         .into()],
                     ))

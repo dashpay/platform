@@ -22,6 +22,7 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
             identity_id,
             inputs,
             output,
+            fee_strategy,
             user_fee_increase,
             ..
         } = value;
@@ -61,6 +62,7 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
         ConsensusValidationResult::new_with_data(IdentityTopUpFromAddressesTransitionActionV0 {
             inputs_with_remaining_balance,
             output: *output,
+            fee_strategy: fee_strategy.clone(),
             identity_id: *identity_id,
             user_fee_increase: *user_fee_increase,
         })
