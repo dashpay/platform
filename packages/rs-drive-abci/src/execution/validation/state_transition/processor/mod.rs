@@ -1,4 +1,5 @@
-pub(crate) mod traits;
+/// Processor traits.
+pub mod traits;
 pub(crate) mod v0;
 
 use crate::error::execution::ExecutionError;

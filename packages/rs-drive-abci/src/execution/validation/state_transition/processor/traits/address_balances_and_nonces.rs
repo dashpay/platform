@@ -122,9 +122,13 @@ impl StateTransitionAddressBalancesAndNoncesInnerValidation
 }
 impl StateTransitionAddressBalancesAndNoncesInnerValidation for AddressCreditWithdrawalTransition {}
 
-pub(crate) trait StateTransitionAddressBalancesAndNoncesValidation {
+/// Trait for validating address balances and nonces in state transitions.
+pub trait StateTransitionAddressBalancesAndNoncesValidation {
+    /// Returns true if this state transition requires address balance and nonce validation.
     fn has_addresses_balances_and_nonces_validation(&self) -> bool;
 
+    /// Validates that input addresses have sufficient balance and correct nonces.
+    /// Returns the remaining balances after the transition would consume funds.
     fn validate_address_balances_and_nonces(
         &self,
         drive: &Drive,
