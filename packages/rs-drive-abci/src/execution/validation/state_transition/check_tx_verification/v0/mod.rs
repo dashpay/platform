@@ -275,30 +275,29 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 }
             } else {
                 // Start by validating addresses if the transition has input addresses
-                let remaining_address_balances = if state_transition
-                    .has_addresses_balances_and_nonces_validation()
-                {
-                    // Here we validate that all input addresses have enough balance
-                    // We also validate that nonces are bumped
-                    let result = state_transition.validate_address_balances_and_nonces(
-                        platform.drive,
-                        &mut state_transition_execution_context,
-                        None,
-                        platform_version,
-                    )?;
-                    if !result.is_valid() {
-                        // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
-                        // isn't enough balance, either way the transaction should be rejected.
-                        return Ok(
+                let remaining_address_balances =
+                    if state_transition.has_addresses_balances_and_nonces_validation() {
+                        // Here we validate that all input addresses have enough balance
+                        // We also validate that nonces are bumped
+                        let result = state_transition.validate_address_balances_and_nonces(
+                            platform.drive,
+                            &mut state_transition_execution_context,
+                            None,
+                            platform_version,
+                        )?;
+                        if !result.is_valid() {
+                            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+                            // isn't enough balance, either way the transaction should be rejected.
+                            return Ok(
                             ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
                                 result.errors,
                             ),
                         );
-                    }
-                    Some(result.into_data()?)
-                } else {
-                    None
-                };
+                        }
+                        Some(result.into_data()?)
+                    } else {
+                        None
+                    };
 
                 if state_transition.has_identity_nonce_validation(platform_version)? {
                     let result = state_transition.validate_identity_nonces(

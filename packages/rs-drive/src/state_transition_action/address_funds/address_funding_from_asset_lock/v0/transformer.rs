@@ -1,64 +1,47 @@
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
 use dpp::address_funds::PlatformAddress;
-use dpp::consensus::state::address_funds::address_does_not_exist_error::AddressDoesNotExistError;
-use dpp::consensus::state::address_funds::address_not_enough_funds_error::AddressNotEnoughFundsError;
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
+use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutputNotFoundError;
+use dpp::consensus::ConsensusError;
 use dpp::fee::Credits;
-use dpp::prelude::ConsensusValidationResult;
+use dpp::platform_value::Bytes36;
+use dpp::prelude::AddressNonce;
+use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::state_transitions::address_funds::address_funding_from_asset_lock_transition::v0::AddressFundingFromAssetLockTransitionV0;
 use std::collections::BTreeMap;
 
 impl AddressFundingFromAssetLockTransitionActionV0 {
-    /// Transforms the state transition into an action by validating inputs against provided balances.
+    /// Transforms the state transition into an action using pre-validated asset lock and input balances.
     ///
-    /// For each input address (if any):
-    /// 1. Validates the address exists in the provided balances
-    /// 2. Validates there is sufficient balance for the claimed spend amount
-    /// 3. Computes the remaining balance after the transfer
+    /// # Arguments
+    /// * `value` - The state transition
+    /// * `signable_bytes_hasher` - The signable bytes hasher from validation
+    /// * `asset_lock_value_to_be_consumed` - The asset lock value from validation
+    /// * `inputs_with_remaining_balance` - Pre-validated inputs with remaining balances
     pub fn try_from_transition(
         value: &AddressFundingFromAssetLockTransitionV0,
-        input_balances: BTreeMap<PlatformAddress, Credits>,
-    ) -> ConsensusValidationResult<Self> {
+        signable_bytes_hasher: SignableBytesHasher,
+        asset_lock_value_to_be_consumed: AssetLockValue,
+        inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    ) -> Result<Self, ConsensusError> {
         let AddressFundingFromAssetLockTransitionV0 {
-            inputs,
+            asset_lock_proof,
             outputs,
             fee_strategy,
             user_fee_increase,
             ..
         } = value;
 
-        // Validate each input and compute remaining balances
-        let mut inputs_with_remaining_balance = BTreeMap::new();
+        let asset_lock_outpoint = asset_lock_proof.out_point().ok_or_else(|| {
+            IdentityAssetLockTransactionOutputNotFoundError::new(
+                asset_lock_proof.output_index() as usize
+            )
+        })?;
 
-        for (address, (expected_nonce, spend_amount)) in inputs {
-            match input_balances.get(address) {
-                Some(actual_balance) => {
-                    // Address exists, check if there's enough balance
-                    if *actual_balance < *spend_amount {
-                        return ConsensusValidationResult::new_with_error(
-                            AddressNotEnoughFundsError::new(
-                                *address,
-                                *actual_balance,
-                                *spend_amount,
-                            )
-                            .into(),
-                        );
-                    }
-
-                    // Compute remaining balance after the transfer
-                    let remaining_balance = actual_balance - spend_amount;
-                    inputs_with_remaining_balance
-                        .insert(*address, (*expected_nonce, remaining_balance));
-                }
-                None => {
-                    // Address does not exist
-                    return ConsensusValidationResult::new_with_error(
-                        AddressDoesNotExistError::new(*address).into(),
-                    );
-                }
-            }
-        }
-
-        ConsensusValidationResult::new_with_data(AddressFundingFromAssetLockTransitionActionV0 {
+        Ok(AddressFundingFromAssetLockTransitionActionV0 {
+            signable_bytes_hasher,
+            asset_lock_value_to_be_consumed,
+            asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             inputs_with_remaining_balance,
             outputs: outputs.clone(),
             fee_strategy: fee_strategy.clone(),

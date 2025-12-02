@@ -2,6 +2,7 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStateValidationForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform::PlatformRef;
@@ -104,7 +105,7 @@ impl StateTransitionStateValidation for StateTransition {
                     "identity top up should not have state validation",
                 )))
             }
-            StateTransition::IdentityCreditWithdrawal(st) => {
+            StateTransition::IdentityCreditWithdrawal(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "identity credit withdrawal should not have state validation",
                 )))
@@ -147,14 +148,12 @@ impl StateTransitionStateValidation for StateTransition {
                 let StateTransitionAction::IdentityCreateFromAddressesAction(action) = action
                 else {
                     return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
-                        "action must be a identity create transition action",
+                        "action must be a identity create from addresses transition action",
                     )));
                 };
-                st.validate_state(
+                st.validate_state_for_identity_create_from_addresses_transition(
                     action,
                     platform,
-                    validation_mode,
-                    block_info,
                     execution_context,
                     tx,
                 )
@@ -169,14 +168,11 @@ impl StateTransitionStateValidation for StateTransition {
                     "address funds transfer should not have state validation",
                 )))
             }
-            StateTransition::AddressFundingFromAssetLock(st) => st.validate_state(
-                action,
-                platform,
-                validation_mode,
-                block_info,
-                execution_context,
-                tx,
-            ),
+            StateTransition::AddressFundingFromAssetLock(_) => {
+                Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                    "address funding from asset lock should not have state validation",
+                )))
+            }
             StateTransition::AddressCreditWithdrawal(_) => {
                 Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
                     "address credit withdrawal should not have state validation",
@@ -188,7 +184,6 @@ impl StateTransitionStateValidation for StateTransition {
     fn has_state_validation(&self) -> bool {
         match self {
             StateTransition::IdentityCreateFromAddresses(_)
-            | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::DataContractCreate(_)
             | StateTransition::IdentityCreate(_)
             | StateTransition::DataContractUpdate(_)
@@ -198,6 +193,7 @@ impl StateTransitionStateValidation for StateTransition {
             | StateTransition::MasternodeVote(_) => true,
             StateTransition::AddressFundsTransfer(_)
             | StateTransition::IdentityTopUp(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreditWithdrawal(_)
             | StateTransition::AddressCreditWithdrawal(_)

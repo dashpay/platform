@@ -1,6 +1,9 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::address_credit_withdrawal::StateTransitionAddressCreditWithdrawalTransitionActionTransformer;
+use crate::execution::validation::state_transition::address_funding_from_asset_lock::StateTransitionAddressFundingFromAssetLockTransitionActionTransformer;
+use crate::execution::validation::state_transition::address_funds_transfer::StateTransitionAddressFundsTransferTransitionActionTransformer;
 use crate::execution::validation::state_transition::identity_create::StateTransitionActionTransformerForIdentityCreateTransitionV0;
 use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionActionTransformerForIdentityCreateFromAddressesTransitionV0;
 use crate::execution::validation::state_transition::identity_top_up::StateTransitionIdentityTopUpTransitionActionTransformer;
@@ -14,6 +17,7 @@ use dpp::prelude::{AddressNonce, ConsensusValidationResult};
 use dpp::serialization::Signable;
 use dpp::state_transition::StateTransition;
 use drive::grovedb::TransactionArg;
+use drive::state_transition_action::identity::identity_topup_from_addresses::IdentityTopUpFromAddressesTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -175,9 +179,12 @@ impl StateTransitionActionTransformer for StateTransition {
                         "we must have remaining address input balances",
                     )));
                 };
-                st.transform_into_action_for_identity_top_up_from_addresses_transition(
-                    platform,
-                    remaining_address_input_balances.clone(),
+                Ok(
+                    IdentityTopUpFromAddressesTransitionAction::try_from_transition(
+                        st,
+                        remaining_address_input_balances.clone(),
+                    )
+                    .map(|action| action.into()),
                 )
             }
             StateTransition::AddressFundsTransfer(st) => {
@@ -199,9 +206,14 @@ impl StateTransitionActionTransformer for StateTransition {
                         "we must have remaining address input balances",
                     )));
                 };
+                let signable_bytes = self.signable_bytes()?;
                 st.transform_into_action_for_address_funding_from_asset_lock_transition(
                     platform,
+                    signable_bytes,
                     remaining_address_input_balances.clone(),
+                    validation_mode,
+                    execution_context,
+                    tx,
                 )
             }
             StateTransition::AddressCreditWithdrawal(st) => {
@@ -213,6 +225,7 @@ impl StateTransitionActionTransformer for StateTransition {
                 };
                 st.transform_into_action_for_address_credit_withdrawal_transition(
                     platform,
+                    block_info,
                     remaining_address_input_balances.clone(),
                 )
             }

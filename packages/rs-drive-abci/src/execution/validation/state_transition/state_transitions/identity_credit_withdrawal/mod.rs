@@ -2,6 +2,7 @@ mod balance;
 mod nonce;
 pub(crate) mod signature_purpose_matches_requirements;
 mod structure;
+mod transform_into_action;
 
 use dpp::address_funds::PlatformAddress;
 use dpp::block::block_info::BlockInfo;
@@ -22,11 +23,10 @@ use crate::execution::types::state_transition_execution_context::StateTransition
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
 
-use crate::execution::validation::state_transition::identity_credit_withdrawal::state::v0::IdentityCreditWithdrawalStateTransitionStateValidationV0;
+use crate::execution::validation::state_transition::identity_credit_withdrawal::transform_into_action::v0::IdentityCreditWithdrawalStateTransitionStateValidationV0;
 use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v0::IdentityCreditWithdrawalStateTransitionStructureValidationV0;
 use crate::execution::validation::state_transition::identity_credit_withdrawal::structure::v1::IdentityCreditWithdrawalStateTransitionStructureValidationV1;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
-use crate::execution::validation::state_transition::processor::state::StateTransitionStateValidation;
 use crate::execution::validation::state_transition::transformer::StateTransitionActionTransformer;
 use crate::execution::validation::state_transition::ValidationMode;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
@@ -96,41 +96,6 @@ impl StateTransitionBasicStructureValidationV0 for IdentityCreditWithdrawalTrans
                 method: "identity credit withdrawal transition: validate_basic_structure"
                     .to_string(),
                 known_versions: vec![0],
-            })),
-        }
-    }
-}
-
-impl StateTransitionStateValidation for IdentityCreditWithdrawalTransition {
-    fn validate_state<C: CoreRPCLike>(
-        &self,
-        _action: Option<StateTransitionAction>,
-        platform: &PlatformRef<C>,
-        _validation_mode: ValidationMode,
-        block_info: &BlockInfo,
-        execution_context: &mut StateTransitionExecutionContext,
-        tx: TransactionArg,
-    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
-        let platform_version = platform.state.current_platform_version()?;
-
-        match platform_version
-            .drive_abci
-            .validation_and_processing
-            .state_transitions
-            .identity_credit_withdrawal_state_transition
-            .state
-        {
-            0 => self.validate_state_v0(
-                platform,
-                block_info,
-                execution_context,
-                tx,
-                platform_version,
-            ),
-            version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
-                method: "identity credit withdrawal transition: validate_state".to_string(),
-                known_versions: vec![0],
-                received: version,
             })),
         }
     }
