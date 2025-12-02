@@ -5,7 +5,7 @@ use dpp::platform_value::string_encoding::decode;
 use dpp::prelude::Identifier;
 use js_sys::Uint8Array;
 use serde::de::{self, Error, MapAccess, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use std::fmt;
 use wasm_bindgen::prelude::*;
@@ -176,7 +176,25 @@ impl<'de> Deserialize<'de> for IdentifierWasm {
     where
         D: Deserializer<'de>,
     {
-        deserializer.deserialize_any(IdentifierWasmVisitor)
+        if deserializer.is_human_readable() {
+            let s = String::deserialize(deserializer)?;
+            IdentifierWasm::try_from(s.as_str()).map_err(D::Error::custom)
+        } else {
+            deserializer.deserialize_any(IdentifierWasmVisitor)
+        }
+    }
+}
+
+impl Serialize for IdentifierWasm {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        if serializer.is_human_readable() {
+            serializer.serialize_str(&self.to_base58())
+        } else {
+            serializer.serialize_bytes(&self.0.to_vec())
+        }
     }
 }
 

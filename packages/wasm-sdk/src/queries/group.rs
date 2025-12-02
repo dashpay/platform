@@ -666,7 +666,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).to_base58();
                 // Fetch all groups for this contract
                 let query = GroupInfosQuery {
                     contract_id,
@@ -871,7 +871,7 @@ impl WasmSdk {
             group_result.map(GroupWasm::from),
             metadata,
             proof,
-        );
+        )?;
 
         Ok(response)
     }
@@ -904,7 +904,7 @@ impl WasmSdk {
             infos_map.set(&key.into(), &value);
         }
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(infos_map, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(infos_map, metadata, proof)?;
 
         Ok(response)
     }
@@ -945,7 +945,7 @@ impl WasmSdk {
             None => JsValue::UNDEFINED,
         };
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof)?;
 
         Ok(response)
     }
@@ -972,7 +972,7 @@ impl WasmSdk {
         // Check member data contracts
         if let Some(contracts) = member_data_contracts {
             for contract_id in contracts {
-                let contract_id_str = IdentifierWasm::from(contract_id).get_base58();
+                let contract_id_str = IdentifierWasm::from(contract_id).to_base58();
                 // Fetch all groups for this contract with proof
                 let query = GroupInfosQuery {
                     contract_id,
@@ -1017,7 +1017,7 @@ impl WasmSdk {
 
         let metadata = combined_metadata.unwrap_or_default();
         let proof = combined_proof.unwrap_or_default();
-        let response = ProofMetadataResponseWasm::from_sdk_parts(groups_array, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(groups_array, metadata, proof)?;
 
         Ok(response)
     }
@@ -1052,7 +1052,7 @@ impl WasmSdk {
             actions_map.set(&key, &value);
         }
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(actions_map, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(actions_map, metadata, proof)?;
 
         Ok(response)
     }
@@ -1087,7 +1087,7 @@ impl WasmSdk {
             }
         }
 
-        let response = ProofMetadataResponseWasm::from_sdk_parts(signers_map, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(signers_map, metadata, proof)?;
 
         Ok(response)
     }
@@ -1138,7 +1138,7 @@ impl WasmSdk {
 
         let metadata = combined_metadata.unwrap_or_default();
         let proof = combined_proof.unwrap_or_default();
-        let response = ProofMetadataResponseWasm::from_sdk_parts(contracts_map, metadata, proof);
+        let response = ProofMetadataResponseWasm::from_sdk_parts(contracts_map, metadata, proof)?;
 
         Ok(response)
     }

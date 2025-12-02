@@ -1,15 +1,18 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_object_json;
 use crate::queries::utils::identifier_from_js;
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
 use dash_sdk::dpp::core_types::validator_set::v0::ValidatorSetV0Getters;
 use dash_sdk::dpp::platform_value::string_encoding::Encoding;
 use js_sys::{Array, BigInt};
+use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "StatusSoftware")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusSoftwareWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub dapi: String,
@@ -30,7 +33,8 @@ impl StatusSoftwareWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusTenderdashProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusTenderdashProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub p2p: u32,
@@ -45,7 +49,8 @@ impl StatusTenderdashProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusDriveProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusDriveProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub latest: u32,
@@ -60,7 +65,8 @@ impl StatusDriveProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusProtocol")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusProtocolWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub tenderdash: StatusTenderdashProtocolWasm,
@@ -75,7 +81,8 @@ impl StatusProtocolWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusVersion")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusVersionWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub software: StatusSoftwareWasm,
@@ -90,7 +97,8 @@ impl StatusVersionWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusNode")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusNodeWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub id: String,
@@ -105,7 +113,8 @@ impl StatusNodeWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusChain")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusChainWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub catching_up: bool,
@@ -155,7 +164,8 @@ impl StatusChainWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusNetwork")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusNetworkWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub chain_id: String,
@@ -176,7 +186,8 @@ impl StatusNetworkWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusStateSync")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusStateSyncWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub total_synced_time: String,
@@ -197,7 +208,8 @@ pub struct StatusStateSyncWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusTime")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusTimeWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub local: String,
@@ -226,7 +238,8 @@ impl StatusTimeWasm {
 }
 
 #[wasm_bindgen(js_name = "StatusResponse")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StatusResponseWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub version: StatusVersionWasm,
@@ -262,8 +275,26 @@ impl StatusResponseWasm {
     }
 }
 
+impl_wasm_object_json!(StatusSoftwareWasm);
+impl_wasm_object_json!(StatusTenderdashProtocolWasm);
+impl_wasm_object_json!(StatusDriveProtocolWasm);
+impl_wasm_object_json!(StatusProtocolWasm);
+impl_wasm_object_json!(StatusVersionWasm);
+impl_wasm_object_json!(StatusNodeWasm);
+impl_wasm_object_json!(StatusChainWasm);
+impl_wasm_object_json!(StatusNetworkWasm);
+impl_wasm_object_json!(StatusStateSyncWasm);
+impl_wasm_object_json!(StatusTimeWasm);
+impl_wasm_object_json!(StatusResponseWasm);
+impl_wasm_object_json!(QuorumInfoWasm);
+impl_wasm_object_json!(CurrentQuorumsInfoWasm);
+impl_wasm_object_json!(PrefundedSpecializedBalanceWasm);
+impl_wasm_object_json!(PathElementWasm);
+impl_wasm_object_json!(StateTransitionResultWasm);
+
 #[wasm_bindgen(js_name = "QuorumInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct QuorumInfoWasm {
     quorum_hash: String,
     quorum_type: String,
@@ -319,7 +350,8 @@ impl QuorumInfoWasm {
 }
 
 #[wasm_bindgen(js_name = "CurrentQuorumsInfo")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CurrentQuorumsInfoWasm {
     quorums: Vec<QuorumInfoWasm>,
     height: u64,
@@ -349,7 +381,8 @@ impl CurrentQuorumsInfoWasm {
 }
 
 #[wasm_bindgen(js_name = "PrefundedSpecializedBalance")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PrefundedSpecializedBalanceWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub identity_id: String,
@@ -374,7 +407,8 @@ impl PrefundedSpecializedBalanceWasm {
 }
 
 #[wasm_bindgen(js_name = "PathElement")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct PathElementWasm {
     path: Vec<String>,
     value: Option<String>,
@@ -404,7 +438,8 @@ impl PathElementWasm {
 }
 
 #[wasm_bindgen(js_name = "StateTransitionResult")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct StateTransitionResultWasm {
     #[wasm_bindgen(getter_with_clone)]
     pub state_transition_hash: String,
@@ -930,7 +965,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        ))
+        )?)
     }
 
     #[wasm_bindgen(
@@ -968,7 +1003,7 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        ))
+        )?)
     }
 
     #[wasm_bindgen(
@@ -1031,6 +1066,6 @@ impl WasmSdk {
             elements_array,
             metadata,
             proof,
-        ))
+        )?)
     }
 }

@@ -7,9 +7,9 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::utils::{IntoWasm, JsValueExt, get_class_type};
 use dpp::prelude::AssetLockProof;
+use js_sys::{Object, Reflect};
 use wasm_bindgen::JsValue;
 use wasm_bindgen::prelude::wasm_bindgen;
-use js_sys::{Object, Reflect};
 
 #[wasm_bindgen(js_name = "AssetLockProof")]
 #[derive(Clone)]
@@ -161,7 +161,8 @@ impl AssetLockProofWasm {
             return Ok(AssetLockProofWasm::from(chain.clone()));
         }
 
-        if let Ok(instant) = js_value.to_wasm::<InstantAssetLockProofWasm>("InstantAssetLockProof") {
+        if let Ok(instant) = js_value.to_wasm::<InstantAssetLockProofWasm>("InstantAssetLockProof")
+        {
             return Ok(AssetLockProofWasm::from(instant.clone()));
         }
 
@@ -190,9 +191,7 @@ impl AssetLockProofWasm {
     #[wasm_bindgen(js_name = "toJSON")]
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         match &self.0 {
-            AssetLockProof::Chain(chain) => {
-                ChainAssetLockProofWasm::from(chain.clone()).to_json()
-            }
+            AssetLockProof::Chain(chain) => ChainAssetLockProofWasm::from(chain.clone()).to_json(),
             AssetLockProof::Instant(instant) => {
                 InstantAssetLockProofWasm::from(instant.clone()).to_json()
             }

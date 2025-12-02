@@ -2,19 +2,19 @@ use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
 use crate::state_transitions::StateTransitionWasm;
 use crate::state_transitions::batch::batched_transition::BatchedTransitionWasm;
-use crate::utils::{IntoWasm, with_serde_to_platform_value_wasm};
+use crate::utils::{IntoWasm, JsValueExt, with_serde_to_platform_value_wasm};
 use dpp::fee::Credits;
 use dpp::identity::KeyID;
-use dpp::platform_value::{BinaryData, Value};
 use dpp::platform_value::string_encoding::Encoding::{Base64, Hex};
 use dpp::platform_value::string_encoding::{decode, encode};
+use dpp::platform_value::{BinaryData, Value};
 use dpp::prelude::{IdentityNonce, UserFeeIncrease};
 use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
+use dpp::state_transition::StateTransitionValueConvert;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::batched_transition::BatchedTransition;
 use dpp::state_transition::batch_transition::methods::v0::DocumentsBatchTransitionMethodsV0;
 use dpp::state_transition::batch_transition::{BatchTransition, BatchTransitionV1};
-use dpp::state_transition::StateTransitionValueConvert;
 use dpp::state_transition::{StateTransition, StateTransitionIdentitySigned, StateTransitionLike};
 use dpp::version::PlatformVersion;
 use serde::Serialize;
@@ -211,8 +211,7 @@ impl BatchTransitionWasm {
     pub fn to_json(&self) -> WasmDppResult<JsValue> {
         let json = serde_json::to_value(&self.0)
             .map_err(|e| WasmDppError::serialization(e.to_string()))?;
-        serde_wasm_bindgen::to_value(&json)
-            .map_err(|e| WasmDppError::serialization(e.to_string()))
+        serde_wasm_bindgen::to_value(&json).map_err(|e| WasmDppError::serialization(e.to_string()))
     }
 
     #[wasm_bindgen(js_name = "toHex")]
@@ -236,8 +235,8 @@ impl BatchTransitionWasm {
     pub fn from_object(js_value: JsValue) -> WasmDppResult<BatchTransitionWasm> {
         let platform_version = PlatformVersion::latest();
         let value: Value = with_serde_to_platform_value_wasm(&js_value)?;
-        let batch = BatchTransition::from_object(value, &platform_version)
-            .map_err(WasmDppError::from)?;
+        let batch =
+            BatchTransition::from_object(value, &platform_version).map_err(WasmDppError::from)?;
         Ok(BatchTransitionWasm(batch))
     }
 

@@ -386,11 +386,11 @@ impl WasmSdk {
             }
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(documents_map),
-            metadata.into(),
-            proof.into(),
-        ))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            documents_map,
+            metadata,
+            proof,
+        )?)
     }
 
     #[wasm_bindgen(js_name = "getDocument")]
@@ -489,10 +489,10 @@ impl WasmSdk {
         let document_js = document_result
             .map(|doc| DocumentWasm::from_batch(doc, contract_id, document_type.to_string(), None));
 
-        Ok(ProofMetadataResponseWasm::from_parts(
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
             JsValue::from(document_js),
-            metadata.into(),
-            proof.into(),
-        ))
+            metadata,
+            proof,
+        )?)
     }
 }

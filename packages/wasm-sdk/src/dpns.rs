@@ -1,4 +1,5 @@
 use crate::error::WasmSdkError;
+use crate::impl_wasm_object_json;
 use crate::queries::utils::{deserialize_required_query, identifier_from_js};
 use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
@@ -20,27 +21,43 @@ use wasm_bindgen::prelude::*;
 use wasm_dpp2::identifier::IdentifierWasm;
 
 #[wasm_bindgen(js_name = "RegisterDpnsNameResult")]
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct RegisterDpnsNameResult {
     #[wasm_bindgen(getter_with_clone, js_name = "preorderDocumentId")]
-    pub preorder_document_id: String,
+    pub preorder_document_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "domainDocumentId")]
-    pub domain_document_id: String,
+    pub domain_document_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "fullDomainName")]
     pub full_domain_name: String,
 }
 
 #[wasm_bindgen(js_name = "DpnsUsernameInfo")]
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DpnsUsernameInfo {
     #[wasm_bindgen(getter_with_clone)]
     pub username: String,
     #[wasm_bindgen(getter_with_clone, js_name = "identityId")]
-    pub identity_id: String,
+    pub identity_id: IdentifierWasm,
     #[wasm_bindgen(getter_with_clone, js_name = "documentId")]
-    pub document_id: String,
+    pub document_id: IdentifierWasm,
 }
+
+#[wasm_bindgen(js_class = DpnsUsernameInfo)]
+impl DpnsUsernameInfo {
+    #[wasm_bindgen(constructor)]
+    pub fn new(username: String, identity_id: IdentifierWasm, document_id: IdentifierWasm) -> Self {
+        Self {
+            username,
+            identity_id,
+            document_id,
+        }
+    }
+}
+
+impl_wasm_object_json!(RegisterDpnsNameResult);
+impl_wasm_object_json!(DpnsUsernameInfo);
 
 const DEFAULT_DPNS_USERNAMES_LIMIT: u32 = 10;
 
@@ -176,11 +193,11 @@ impl WasmSdk {
             Document::fetch_many_with_metadata_and_proof(self.as_ref(), query, None).await?;
         let usernames_array = usernames_from_documents(documents_result);
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            usernames_array.into(),
-            metadata.into(),
-            proof.into(),
-        ))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            usernames_array,
+            metadata,
+            proof,
+        )?)
     }
 }
 
@@ -278,8 +295,8 @@ impl WasmSdk {
         });
 
         Ok(RegisterDpnsNameResult {
-            preorder_document_id: result.preorder_document.id().to_string(Encoding::Base58),
-            domain_document_id: result.domain_document.id().to_string(Encoding::Base58),
+            preorder_document_id: IdentifierWasm::from(result.preorder_document.id()),
+            domain_document_id: IdentifierWasm::from(result.domain_document.id()),
             full_domain_name: result.full_domain_name,
         })
     }
@@ -345,8 +362,8 @@ impl WasmSdk {
         if let Some((_, Some(document))) = documents.into_iter().next() {
             Ok(DpnsUsernameInfo {
                 username: username.to_string(),
-                identity_id: document.owner_id().to_string(Encoding::Base58),
-                document_id: document.id().to_string(Encoding::Base58),
+                identity_id: IdentifierWasm::from(document.owner_id().clone()),
+                document_id: IdentifierWasm::from(document.id()),
             })
         } else {
             Err(WasmSdkError::not_found(format!(
@@ -406,16 +423,15 @@ impl WasmSdk {
         if let Some((_, Some(document))) = documents.into_iter().next() {
             let result = DpnsUsernameInfo {
                 username: username.to_string(),
-                identity_id: document.owner_id().to_string(Encoding::Base58),
-                document_id: document.id().to_string(Encoding::Base58),
+                identity_id: IdentifierWasm::from(document.owner_id()),
+                document_id: IdentifierWasm::from(document.id()),
             };
 
             let data = serde_wasm_bindgen::to_value(&result).map_err(|e| {
                 WasmSdkError::serialization(format!("Failed to serialize username info: {}", e))
             })?;
 
-            let response =
-                ProofMetadataResponseWasm::from_parts(data, metadata.into(), proof.into());
+            let response = ProofMetadataResponseWasm::from_sdk_parts(data, metadata, proof)?;
 
             Ok(response)
         } else {
@@ -495,7 +511,7 @@ impl WasmSdk {
             JsValue::NULL
         };
 
-        response.set_data(username);
+        response.set_data(username)?;
 
         Ok(response)
     }

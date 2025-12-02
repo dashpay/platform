@@ -212,6 +212,6 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             data, metadata, proof,
-        ))
+        )?)
     }
 }

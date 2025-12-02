@@ -1,11 +1,13 @@
 use wasm_bindgen::prelude::wasm_bindgen;
 
+pub mod bytes_b64;
 pub mod context_provider;
 pub mod dpns;
 pub mod error;
 pub mod logging;
 pub mod queries;
 pub mod sdk;
+pub mod serialization;
 pub mod state_transitions;
 pub mod utils;
 pub mod wallet;

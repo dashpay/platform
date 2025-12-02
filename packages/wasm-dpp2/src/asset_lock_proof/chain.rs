@@ -1,16 +1,16 @@
 use crate::asset_lock_proof::outpoint::OutPointWasm;
 use crate::error::{WasmDppError, WasmDppResult};
 use crate::identifier::IdentifierWasm;
-use crate::utils::{js_value_to_vec_u8, JsValueExt};
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
+use crate::utils::{JsValueExt, js_value_to_vec_u8};
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use bincode::serde::{decode_from_slice, encode_to_vec};
 use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+use js_sys::{Object, Reflect};
 use serde::{Deserialize, Serialize};
-use wasm_bindgen::prelude::wasm_bindgen;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::JsValue;
-use js_sys::{Object, Reflect};
+use wasm_bindgen::prelude::wasm_bindgen;
 
 #[wasm_bindgen(js_name = "ChainAssetLockProof")]
 #[derive(Clone, Serialize, Deserialize)]
@@ -132,20 +132,17 @@ impl ChainAssetLockProofWasm {
 
     #[wasm_bindgen(js_name = "fromBytes")]
     pub fn from_bytes(bytes: Vec<u8>) -> WasmDppResult<ChainAssetLockProofWasm> {
-        let proof: ChainAssetLockProof =
-            decode_from_slice(&bytes, bincode::config::standard())
-                .map_err(|e| WasmDppError::serialization(e.to_string()))?
-                .0;
+        let proof: ChainAssetLockProof = decode_from_slice(&bytes, bincode::config::standard())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?
+            .0;
         Ok(ChainAssetLockProofWasm(proof))
     }
 }
 
-fn parse_chain_asset_lock_proof_fields(
-    js_value: JsValue,
-) -> WasmDppResult<(u32, Vec<u8>)> {
-    let object = js_value
-        .dyn_into::<Object>()
-        .map_err(|_| WasmDppError::invalid_argument("ChainAssetLockProof expects an object".to_string()))?;
+fn parse_chain_asset_lock_proof_fields(js_value: JsValue) -> WasmDppResult<(u32, Vec<u8>)> {
+    let object = js_value.dyn_into::<Object>().map_err(|_| {
+        WasmDppError::invalid_argument("ChainAssetLockProof expects an object".to_string())
+    })?;
 
     let height_js =
         Reflect::get(&object, &JsValue::from_str("coreChainLockedHeight")).map_err(|err| {
@@ -155,17 +152,12 @@ fn parse_chain_asset_lock_proof_fields(
             ))
         })?;
     let out_point_js = Reflect::get(&object, &JsValue::from_str("outPoint")).map_err(|err| {
-        WasmDppError::invalid_argument(format!(
-            "unable to read outPoint: {}",
-            err.error_message()
-        ))
+        WasmDppError::invalid_argument(format!("unable to read outPoint: {}", err.error_message()))
     })?;
 
-    let core_chain_locked_height = height_js
-        .as_f64()
-        .ok_or_else(|| {
-            WasmDppError::invalid_argument("coreChainLockedHeight must be a number".to_string())
-        })? as u32;
+    let core_chain_locked_height = height_js.as_f64().ok_or_else(|| {
+        WasmDppError::invalid_argument("coreChainLockedHeight must be a number".to_string())
+    })? as u32;
 
     let out_point = js_value_to_vec_u8(&out_point_js)?;
     if out_point.len() != 36 {

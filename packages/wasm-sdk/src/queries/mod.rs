@@ -12,18 +12,28 @@ pub mod voting;
 // Re-export all query functions for easy access
 pub use group::*;
 
-use js_sys::{Object, Reflect, Uint8Array};
+use crate::bytes_b64;
+use crate::impl_wasm_object_json;
+use crate::serialization::{
+    from_json_value, from_object, js_to_json_value, json_value_to_js, to_json_value, to_object,
+};
+use crate::WasmSdkError;
+use js_sys::Uint8Array;
+use serde::{Deserialize, Serialize};
+use serde_json::Value as JsonValue;
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::JsValue;
 
 #[wasm_bindgen(js_name = "ResponseMetadata")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ResponseMetadataWasm {
     height: u64,
     core_chain_locked_height: u32,
     epoch: u32,
     time_ms: u64,
     protocol_version: u32,
+    #[serde(with = "bytes_b64")]
     chain_id: Vec<u8>,
 }
 
@@ -82,40 +92,8 @@ impl ResponseMetadataWasm {
     pub fn set_chain_id(&mut self, #[wasm_bindgen(js_name = "chainId")] chain_id: Uint8Array) {
         self.chain_id = chain_id.to_vec();
     }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> JsValue {
-        let obj = Object::new();
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("height"),
-            &JsValue::from_f64(self.height as f64),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("coreChainLockedHeight"),
-            &JsValue::from_f64(self.core_chain_locked_height as f64),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("epoch"),
-            &JsValue::from_f64(self.epoch as f64),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("timeMs"),
-            &JsValue::from_f64(self.time_ms as f64),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("protocolVersion"),
-            &JsValue::from_f64(self.protocol_version as f64),
-        );
-        let _ = Reflect::set(&obj, &JsValue::from_str("chainId"), &self.chain_id());
-
-        JsValue::from(obj)
-    }
 }
+impl_wasm_object_json!(ResponseMetadataWasm);
 
 // Helper function to convert platform ResponseMetadata to our ResponseMetadata
 impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadataWasm {
@@ -132,12 +110,17 @@ impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadataWasm 
 }
 
 #[wasm_bindgen(js_name = "ProofInfo")]
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ProofInfoWasm {
+    #[serde(with = "bytes_b64")]
     grovedb_proof: Vec<u8>,
+    #[serde(with = "bytes_b64")]
     quorum_hash: Vec<u8>,
+    #[serde(with = "bytes_b64")]
     signature: Vec<u8>,
     round: u32,
+    #[serde(with = "bytes_b64")]
     block_id_hash: Vec<u8>,
     quorum_type: u32,
 }
@@ -221,36 +204,8 @@ impl ProofInfoWasm {
     ) {
         self.block_id_hash = block_id_hash.to_vec();
     }
-
-    #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> JsValue {
-        let obj = Object::new();
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("grovedbProof"),
-            &self.grovedb_proof(),
-        );
-        let _ = Reflect::set(&obj, &JsValue::from_str("quorumHash"), &self.quorum_hash());
-        let _ = Reflect::set(&obj, &JsValue::from_str("signature"), &self.signature());
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("round"),
-            &JsValue::from_f64(self.round as f64),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("blockIdHash"),
-            &self.block_id_hash(),
-        );
-        let _ = Reflect::set(
-            &obj,
-            &JsValue::from_str("quorumType"),
-            &JsValue::from_f64(self.quorum_type as f64),
-        );
-
-        JsValue::from(obj)
-    }
 }
+impl_wasm_object_json!(ProofInfoWasm);
 
 // Helper function to convert platform Proof to our ProofInfo
 impl From<dash_sdk::platform::proto::Proof> for ProofInfoWasm {
@@ -281,13 +236,33 @@ export type ProofMetadataResponseTyped<T> = ProofMetadataResponse & { data: T };
 
 #[wasm_bindgen(js_class = ProofMetadataResponse)]
 impl ProofMetadataResponseWasm {
+    fn to_serde(&self) -> Result<ProofMetadataResponseSerde, WasmSdkError> {
+        Ok(ProofMetadataResponseSerde {
+            data: js_to_json_value(self.data.clone())?,
+            metadata: self.metadata.clone(),
+            proof: self.proof.clone(),
+        })
+    }
+
+    fn from_serde(serde: ProofMetadataResponseSerde) -> Result<Self, WasmSdkError> {
+        Ok(ProofMetadataResponseWasm {
+            data: json_value_to_js(&serde.data)?,
+            metadata: serde.metadata,
+            proof: serde.proof,
+        })
+    }
+
     #[wasm_bindgen(constructor)]
-    pub fn new(data: JsValue, metadata: ResponseMetadataWasm, proof: ProofInfoWasm) -> Self {
-        ProofMetadataResponseWasm {
-            data,
+    pub fn new(
+        data: JsValue,
+        metadata: ResponseMetadataWasm,
+        proof: ProofInfoWasm,
+    ) -> Result<Self, WasmSdkError> {
+        ProofMetadataResponseWasm::from_serde(ProofMetadataResponseSerde {
+            data: js_to_json_value(data)?,
             metadata,
             proof,
-        }
+        })
     }
 
     #[wasm_bindgen(getter)]
@@ -296,8 +271,9 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "setData")]
-    pub fn set_data(&mut self, data: JsValue) {
-        self.data = data;
+    pub fn set_data(&mut self, data: JsValue) -> Result<(), WasmSdkError> {
+        self.data = json_value_to_js(&js_to_json_value(data)?)?;
+        Ok(())
     }
 
     #[wasm_bindgen(getter)]
@@ -321,41 +297,53 @@ impl ProofMetadataResponseWasm {
     }
 
     #[wasm_bindgen(js_name = "toJSON")]
-    pub fn to_json(&self) -> JsValue {
-        let metadata_obj = self.metadata.to_json();
-        let proof_obj = self.proof.to_json();
+    pub fn to_json(&self) -> Result<JsValue, WasmSdkError> {
+        let serde_value = self.to_serde()?;
+        to_json_value(&serde_value)
+    }
 
-        let obj = Object::new();
-        let _ = Reflect::set(&obj, &JsValue::from_str("data"), &self.data);
-        let _ = Reflect::set(&obj, &JsValue::from_str("metadata"), &metadata_obj);
-        let _ = Reflect::set(&obj, &JsValue::from_str("proof"), &proof_obj);
+    #[wasm_bindgen(js_name = "fromJSON")]
+    pub fn from_json(js: JsValue) -> Result<Self, WasmSdkError> {
+        let serde_struct: ProofMetadataResponseSerde = from_json_value(js)?;
+        ProofMetadataResponseWasm::from_serde(serde_struct)
+    }
 
-        JsValue::from(obj)
+    #[wasm_bindgen(js_name = "toObject")]
+    pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
+        let serde_value = self.to_serde()?;
+        to_object(&serde_value)
+    }
+
+    #[wasm_bindgen(js_name = "fromObject")]
+    pub fn from_object(obj: JsValue) -> Result<Self, WasmSdkError> {
+        let serde_struct: ProofMetadataResponseSerde = from_object(obj)?;
+        ProofMetadataResponseWasm::from_serde(serde_struct)
     }
 }
 
 impl ProofMetadataResponseWasm {
+    // TODO: remove this one
     pub(crate) fn from_parts(
         data: JsValue,
         metadata: ResponseMetadataWasm,
         proof: ProofInfoWasm,
-    ) -> Self {
-        ProofMetadataResponseWasm {
-            data,
-            metadata,
-            proof,
-        }
+    ) -> Result<Self, WasmSdkError> {
+        ProofMetadataResponseWasm::new(data, metadata, proof)
     }
 
     pub(crate) fn from_sdk_parts(
         data: impl Into<JsValue>,
         metadata: dash_sdk::platform::proto::ResponseMetadata,
         proof: dash_sdk::platform::proto::Proof,
-    ) -> Self {
-        ProofMetadataResponseWasm {
-            data: data.into(),
-            metadata: metadata.into(),
-            proof: proof.into(),
-        }
+    ) -> Result<Self, WasmSdkError> {
+        ProofMetadataResponseWasm::new(data.into(), metadata.into(), proof.into())
     }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct ProofMetadataResponseSerde {
+    data: JsonValue,
+    metadata: ResponseMetadataWasm,
+    proof: ProofInfoWasm,
 }

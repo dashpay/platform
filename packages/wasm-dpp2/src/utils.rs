@@ -1,7 +1,7 @@
 use crate::error::{WasmDppError, WasmDppResult};
 use anyhow::{Context, anyhow, bail};
-use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64_ENGINE;
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::util::hash::hash_double_to_vec;
@@ -299,8 +299,9 @@ pub fn convert_number_to_u64(js_number: js_sys::Number) -> Result<u64, anyhow::E
 /// Extracts bytes from a base64 string, Uint8Array, or array of numbers.
 pub fn js_value_to_vec_u8(value: &JsValue) -> WasmDppResult<Vec<u8>> {
     if let Some(s) = value.as_string() {
-        return BASE64_ENGINE.decode(s)
-            .map_err(|e| WasmDppError::invalid_argument(format!("unable to decode base64 string: {}", e)));
+        return BASE64_ENGINE.decode(s).map_err(|e| {
+            WasmDppError::invalid_argument(format!("unable to decode base64 string: {}", e))
+        });
     }
 
     if value.is_instance_of::<js_sys::Uint8Array>() {

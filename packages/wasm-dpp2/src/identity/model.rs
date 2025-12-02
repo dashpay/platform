@@ -202,18 +202,22 @@ impl IdentityWasm {
             // balance/revision should be BigInt
             let balance_bigint = js_sys::BigInt::from(self.get_balance() as u64);
             let revision_bigint = js_sys::BigInt::from(self.get_revision() as u64);
-            Reflect::set(&object, &JsValue::from_str("balance"), &balance_bigint).map_err(|err| {
-                WasmDppError::serialization(format!(
-                    "unable to set balance on Identity object: {}",
-                    err.error_message()
-                ))
-            })?;
-            Reflect::set(&object, &JsValue::from_str("revision"), &revision_bigint).map_err(|err| {
-                WasmDppError::serialization(format!(
-                    "unable to set revision on Identity object: {}",
-                    err.error_message()
-                ))
-            })?;
+            Reflect::set(&object, &JsValue::from_str("balance"), &balance_bigint).map_err(
+                |err| {
+                    WasmDppError::serialization(format!(
+                        "unable to set balance on Identity object: {}",
+                        err.error_message()
+                    ))
+                },
+            )?;
+            Reflect::set(&object, &JsValue::from_str("revision"), &revision_bigint).map_err(
+                |err| {
+                    WasmDppError::serialization(format!(
+                        "unable to set revision on Identity object: {}",
+                        err.error_message()
+                    ))
+                },
+            )?;
             js_value = object.into();
         }
 

@@ -439,11 +439,9 @@ impl WasmSdk {
             epochs_map.set(&key.into(), &JsValue::from(value));
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(epochs_map),
-            metadata.into(),
-            proof.into(),
-        ))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            epochs_map, metadata, proof,
+        )?)
     }
 
     #[wasm_bindgen(
@@ -456,11 +454,11 @@ impl WasmSdk {
         let (epoch, metadata, proof) =
             ExtendedEpochInfo::fetch_current_with_metadata_and_proof(self.as_ref()).await?;
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(ExtendedEpochInfoWasm::from(epoch)),
-            metadata.into(),
-            proof.into(),
-        ))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            ExtendedEpochInfoWasm::from(epoch),
+            metadata,
+            proof,
+        )?)
     }
 
     // Additional proof info versions for epoch queries
@@ -514,11 +512,9 @@ impl WasmSdk {
             epochs_map.set(&key.into(), &JsValue::from(value));
         }
 
-        Ok(ProofMetadataResponseWasm::from_parts(
-            JsValue::from(epochs_map),
-            metadata.into(),
-            proof.into(),
-        ))
+        Ok(ProofMetadataResponseWasm::from_sdk_parts(
+            epochs_map, metadata, proof,
+        )?)
     }
 
     #[wasm_bindgen(js_name = "getEvonodesProposedEpochBlocksByIdsWithProofInfo")]
