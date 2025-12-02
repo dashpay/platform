@@ -28,45 +28,43 @@ export class DpnsFacade {
     return w.dpnsIsNameAvailable(label);
   }
 
-  async resolveName(name: string): Promise<any> {
+  async resolveName(name: string): Promise<string | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.dpnsResolveName(name);
   }
 
-  async registerName(args: { label: string; identityId: string; publicKeyId: number; privateKeyWif: string; onPreorder?: Function }): Promise<any> {
+  async registerName(args: { label: string; identityId: wasm.IdentifierLike; publicKeyId: number; privateKeyWif: string; onPreorder?: Function }): Promise<wasm.RegisterDpnsNameResult> {
     const { label, identityId, publicKeyId, privateKeyWif, onPreorder } = args;
     const w = await this.sdk.getWasmSdkConnected();
     return w.dpnsRegisterName(label, identityId, publicKeyId, privateKeyWif, onPreorder ?? null);
   }
 
-  async usernames(identityId: string, opts: { limit?: number } = {}): Promise<any> {
-    const { limit } = opts;
+  async usernames(query: wasm.DpnsUsernamesQuery): Promise<string[]> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDpnsUsernames(identityId, limit ?? null);
+    return w.getDpnsUsernames(query);
   }
 
-  async username(identityId: string): Promise<any> {
+  async username(identityId: wasm.IdentifierLike): Promise<string | undefined> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsername(identityId);
   }
 
-  async usernamesWithProof(identityId: string, opts: { limit?: number } = {}): Promise<any> {
-    const { limit } = opts;
+  async usernamesWithProof(query: wasm.DpnsUsernamesQuery): Promise<wasm.ProofMetadataResponseTyped<Array<string>>> {
     const w = await this.sdk.getWasmSdkConnected();
-    return w.getDpnsUsernamesWithProofInfo(identityId, limit ?? null);
+    return w.getDpnsUsernamesWithProofInfo(query);
   }
 
-  async usernameWithProof(identityId: string): Promise<any> {
+  async usernameWithProof(identityId: wasm.IdentifierLike): Promise<wasm.ProofMetadataResponseTyped<string | null>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsernameWithProofInfo(identityId);
   }
 
-  async getUsernameByName(username: string): Promise<any> {
+  async getUsernameByName(username: string): Promise<wasm.DpnsUsernameInfo> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsernameByName(username);
   }
 
-  async getUsernameByNameWithProof(username: string): Promise<any> {
+  async getUsernameByNameWithProof(username: string): Promise<wasm.ProofMetadataResponseTyped<wasm.DpnsUsernameInfo>> {
     const w = await this.sdk.getWasmSdkConnected();
     return w.getDpnsUsernameByNameWithProofInfo(username);
   }

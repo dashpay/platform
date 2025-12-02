@@ -1,6 +1,6 @@
 {
   "name": "@dashevo/wasm-dpp2",
-  "version": "2.1.0-dev.8",
+  "version": "2.2.0-dev.2",
   "type": "module",
   "main": "./dist/dpp.js",
   "types": "./dist/dpp.d.ts",

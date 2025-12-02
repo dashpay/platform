@@ -260,7 +260,7 @@ Metrics include:
 - Host: `platform.gateway.metrics.host` (default: 127.0.0.1)
 - Port: `platform.gateway.metrics.port` (default: 9090)
 
-**Note:** admin interface must be enabled too.
+**Note:** Dashmate automatically enables the Envoy admin endpoint whenever metrics are turned on so the Prometheus listener can proxy `/stats/prometheus`. If the admin service remains disabled, this socket is not exposed outside Docker; once you explicitly enable admin, it uses the host you configure.
 
 ### Security Considerations
 

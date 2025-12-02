@@ -82,7 +82,10 @@ impl BroadcastStateTransition for StateTransition {
 
         match &result {
             Ok(_) => trace!("broadcast: completed successfully"),
-            Err(e) => warn!(error = ?e, "broadcast: failed after retries"),
+            Err(e) => {
+                warn!(error = ?e, "broadcast: failed after retries");
+                sdk.refresh_identity_nonce(&self.owner_id()).await;
+            }
         }
         result
     }
@@ -135,7 +138,7 @@ impl BroadcastStateTransition for StateTransition {
             };
 
             if let Some(e) = state_transition_broadcast_error {
-                warn!("wait: state transition broadcast error detected");
+                warn!(error=?e, "wait: state transition broadcast error detected");
                 let state_transition_broadcast_error: StateTransitionBroadcastError =
                     StateTransitionBroadcastError::try_from(e.clone())
                         .wrap_to_execution_result(&response)?
