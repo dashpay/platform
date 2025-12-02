@@ -4,7 +4,7 @@ use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, AssetLockProof};
-use zeroize::Zeroizing;
+use zeroize::Zeroize;
 
 /// Generic funding sources for credit-backed transitions.
 pub enum FundingSource {
@@ -16,13 +16,42 @@ pub enum FundingSource {
     /// Use balances held on Platform addresses (nonces fetched automatically).
     Addresses {
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Zeroizing<Vec<Vec<u8>>>,
+        input_private_keys: Vec<Vec<u8>>,
     },
     /// Use balances held on Platform addresses with explicitly provided nonces.
     AddressesWithNonce {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Zeroizing<Vec<Vec<u8>>>,
+        input_private_keys: Vec<Vec<u8>>,
     },
+}
+
+impl Zeroize for FundingSource {
+    fn zeroize(&mut self) {
+        match self {
+            FundingSource::AssetLock {
+                asset_lock_private_key,
+                ..
+            } => {
+                asset_lock_private_key.inner.non_secure_erase();
+            }
+            FundingSource::Addresses {
+                input_private_keys, ..
+            } => {
+                input_private_keys.zeroize();
+            }
+            FundingSource::AddressesWithNonce {
+                input_private_keys, ..
+            } => {
+                input_private_keys.zeroize();
+            }
+        }
+    }
+}
+
+impl Drop for FundingSource {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl FundingSource {
@@ -36,23 +65,23 @@ impl FundingSource {
         }
     }
 
-    pub fn from_addresses<Z: Into<Zeroizing<Vec<Vec<u8>>>>>(
+    pub fn from_addresses(
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Z,
+        input_private_keys: Vec<Vec<u8>>,
     ) -> Self {
         Self::Addresses {
             inputs,
-            input_private_keys: input_private_keys.into(),
+            input_private_keys,
         }
     }
 
-    pub fn from_addresses_with_nonce<Z: Into<Zeroizing<Vec<Vec<u8>>>>>(
+    pub fn from_addresses_with_nonce(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Z,
+        input_private_keys: Vec<Vec<u8>>,
     ) -> Self {
         Self::AddressesWithNonce {
             inputs,
-            input_private_keys: input_private_keys.into(),
+            input_private_keys,
         }
     }
 }

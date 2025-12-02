@@ -133,13 +133,13 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
-    match funding {
+    match &funding {
         FundingSource::AssetLock {
             asset_lock_proof,
             asset_lock_private_key,
         } => {
             let (state_transition, _) = identity.broadcast_request_for_new_identity(
-                asset_lock_proof,
+                asset_lock_proof.to_owned(),
                 &asset_lock_private_key,
                 signer,
                 sdk.version(),
@@ -156,7 +156,7 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
                 identity,
                 sdk,
                 inputs_with_nonce,
-                &input_private_keys,
+                input_private_keys,
                 signer,
                 settings,
             )
@@ -169,8 +169,8 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
             send_identity_with_addresses(
                 identity,
                 sdk,
-                inputs,
-                &input_private_keys,
+                inputs.clone(),
+                input_private_keys,
                 signer,
                 settings,
             )
