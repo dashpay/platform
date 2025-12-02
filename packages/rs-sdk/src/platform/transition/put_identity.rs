@@ -102,7 +102,7 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         let funding_source = funding
             .try_into()
             .map_err(|e| Error::Generic(e.to_string()))?;
-        send_identity_with_source(self, sdk, funding_source, signer, settings).await
+        send_to_identity_with_source(self, sdk, funding_source, signer, settings).await
     }
 
     async fn send_to_platform_and_wait_for_response<F>(
@@ -120,13 +120,13 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
             .try_into()
             .map_err(|e| Error::Generic(e.to_string()))?;
         let state_transition =
-            send_identity_with_source(self, sdk, funding_source, signer, settings).await?;
+            send_to_identity_with_source(self, sdk, funding_source, signer, settings).await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
     }
 }
 
-async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
+async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
     funding: TransferInput,
@@ -176,6 +176,9 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
             )
             .await
         }
+        TransferInput::Identity(_) => Err(Error::InvalidCreditTransfer(
+            "Using identity balance to create new identity is not supported".to_string(),
+        )),
     }
 }
 

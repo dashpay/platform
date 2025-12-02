@@ -78,9 +78,13 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, C
                 sdk,
             )?,
             TransferInput::Addresses { .. } | TransferInput::AddressesWithNonce { .. } => {
-                return Err(Error::Generic(
-                    "AddressFundingFromAssetLock transition requires an asset lock funding source"
-                        .to_string(),
+                return Err(Error::InvalidCreditTransfer(
+                    "Address top up requires an asset lock funding source".to_string(),
+                ))
+            }
+            TransferInput::Identity(_) => {
+                return Err(Error::InvalidCreditTransfer(
+                    "Identity funding cannot be used for address top ups".to_string(),
                 ))
             }
         };

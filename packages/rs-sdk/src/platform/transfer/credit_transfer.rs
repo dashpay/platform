@@ -1,229 +1,17 @@
-use crate::Error;
-use dpp::address_funds::PlatformAddress;
-use dpp::dashcore::Address;
-use dpp::dashcore::PrivateKey;
+use super::identity::classify_identity_transfer;
+use super::types::{DynIdentitySigner, IdentityTransferConfig, TransferInput, TransferOutput};
+use crate::platform::transition::broadcast::BroadcastStateTransition;
+use crate::platform::transition::put_settings::PutSettings;
+use crate::{Error, Sdk};
 use dpp::errors::consensus::basic::state_transition::{
     OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
 };
 use dpp::fee::Credits;
-use dpp::identifier::Identifier;
-use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::core_script::CoreScript;
-use dpp::identity::Identity;
-use dpp::prelude::{AddressNonce, AssetLockProof};
+use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::state_transition::proof_result::StateTransitionProofResult;
+use dpp::state_transition::StateTransition;
 use std::collections::BTreeMap;
-use std::convert::Infallible;
-use zeroize::Zeroize;
-
-/// Generic funding sources for credit-backed transitions.
-pub enum TransferInput {
-    /// Use an asset lock proof/private key pair.
-    AssetLock {
-        asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: PrivateKey,
-    },
-    /// Use balances held on Platform addresses (nonces fetched automatically).
-    Addresses {
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
-    },
-    /// Use balances held on Platform addresses with explicitly provided nonces.
-    AddressesWithNonce {
-        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
-    },
-}
-
-impl Zeroize for TransferInput {
-    fn zeroize(&mut self) {
-        match self {
-            TransferInput::AssetLock {
-                asset_lock_private_key,
-                ..
-            } => {
-                asset_lock_private_key.inner.non_secure_erase();
-            }
-            TransferInput::Addresses {
-                input_private_keys, ..
-            } => {
-                input_private_keys.zeroize();
-            }
-            TransferInput::AddressesWithNonce {
-                input_private_keys, ..
-            } => {
-                input_private_keys.zeroize();
-            }
-        }
-    }
-}
-
-impl Drop for TransferInput {
-    fn drop(&mut self) {
-        self.zeroize();
-    }
-}
-
-impl TransferInput {
-    pub fn from_asset_lock(
-        asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: PrivateKey,
-    ) -> Self {
-        Self::AssetLock {
-            asset_lock_proof,
-            asset_lock_private_key,
-        }
-    }
-
-    pub fn from_addresses(
-        inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
-    ) -> Self {
-        Self::Addresses {
-            inputs,
-            input_private_keys,
-        }
-    }
-
-    pub fn from_addresses_with_nonce(
-        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
-    ) -> Self {
-        Self::AddressesWithNonce {
-            inputs,
-            input_private_keys,
-        }
-    }
-}
-
-impl From<(AssetLockProof, PrivateKey)> for TransferInput {
-    fn from(value: (AssetLockProof, PrivateKey)) -> Self {
-        Self::from_asset_lock(value.0, value.1)
-    }
-}
-
-impl From<(BTreeMap<PlatformAddress, Credits>, Vec<Vec<u8>>)> for TransferInput {
-    fn from(value: (BTreeMap<PlatformAddress, Credits>, Vec<Vec<u8>>)) -> Self {
-        Self::from_addresses(value.0, value.1)
-    }
-}
-
-impl
-    From<(
-        BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        Vec<Vec<u8>>,
-    )> for TransferInput
-{
-    fn from(
-        value: (
-            BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-            Vec<Vec<u8>>,
-        ),
-    ) -> Self {
-        Self::from_addresses_with_nonce(value.0, value.1)
-    }
-}
-
-/// Destination variants for credit transfers.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TransferOutput {
-    /// Existing identity will receive credits.
-    Identity(Identifier),
-    /// Platform address will receive credits.
-    PlatformAddress(PlatformAddress),
-    /// Credits will be withdrawn to a core script (P2PKH/P2SH, etc.).
-    CoreScript(Vec<u8>),
-    /// Identity withdrawal without explicit destination (Drive will apply defaults).
-    DefaultWithdrawal,
-}
-
-impl TransferOutput {
-    fn from_core_script_bytes(bytes: Vec<u8>) -> Self {
-        TransferOutput::CoreScript(bytes)
-    }
-}
-
-impl TryFrom<Identifier> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: Identifier) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::Identity(value))
-    }
-}
-
-impl TryFrom<&Identifier> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: &Identifier) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::Identity(*value))
-    }
-}
-
-impl TryFrom<&Identity> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: &Identity) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::Identity(value.id()))
-    }
-}
-
-impl TryFrom<Identity> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: Identity) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::Identity(value.id()))
-    }
-}
-
-impl TryFrom<PlatformAddress> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: PlatformAddress) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::PlatformAddress(value))
-    }
-}
-
-impl TryFrom<Address> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: Address) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::from_core_script_bytes(
-            value.script_pubkey().into_bytes(),
-        ))
-    }
-}
-
-impl TryFrom<CoreScript> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: CoreScript) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::from_core_script_bytes(
-            value.as_bytes().to_vec(),
-        ))
-    }
-}
-
-impl TryFrom<&CoreScript> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: &CoreScript) -> Result<Self, Self::Error> {
-        Ok(TransferOutput::from_core_script_bytes(
-            value.as_bytes().to_vec(),
-        ))
-    }
-}
-
-impl TryFrom<Option<Address>> for TransferOutput {
-    type Error = Infallible;
-
-    fn try_from(value: Option<Address>) -> Result<Self, Self::Error> {
-        Ok(match value {
-            Some(address) => {
-                TransferOutput::from_core_script_bytes(address.script_pubkey().into_bytes())
-            }
-            None => TransferOutput::DefaultWithdrawal,
-        })
-    }
-}
+use std::sync::Arc;
 
 /// Aggregated credit transfer description created via [`CreditTransferBuilder`].
 pub struct CreditTransfer {
@@ -251,6 +39,56 @@ impl CreditTransfer {
     pub fn into_parts(self) -> (Vec<TransferInput>, BTreeMap<TransferOutput, Credits>) {
         (self.inputs, self.outputs)
     }
+
+    #[cfg(test)]
+    fn from_parts_for_tests(
+        inputs: Vec<TransferInput>,
+        outputs: BTreeMap<TransferOutput, Credits>,
+    ) -> Self {
+        CreditTransfer { inputs, outputs }
+    }
+
+    /// Execute a credit transfer between two identities using the configured plan.
+    pub async fn broadcast_and_wait(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<(u64, u64), Error> {
+        let identity_context = classify_identity_transfer(&self.inputs, &self.outputs)?;
+
+        identity_context
+            .config
+            .execute(
+                sdk,
+                identity_context.plan.recipient_id,
+                identity_context.plan.amount,
+                settings,
+            )
+            .await
+    }
+
+    async fn build_state_transition(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error> {
+        let identity_context = classify_identity_transfer(&self.inputs, &self.outputs)?;
+        let user_fee_increase = settings
+            .as_ref()
+            .and_then(|settings| settings.user_fee_increase)
+            .unwrap_or_default();
+
+        identity_context
+            .config
+            .state_transition(
+                sdk,
+                identity_context.plan.recipient_id,
+                identity_context.plan.amount,
+                user_fee_increase,
+                settings,
+            )
+            .await
+    }
 }
 
 /// Builder used to configure `CreditTransfer` inputs and outputs.
@@ -271,6 +109,18 @@ impl CreditTransferBuilder {
             .try_into()
             .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
         self.inputs.push(funding);
+        Ok(self)
+    }
+
+    /// Adds an identity funding source with its signer context.
+    pub fn identity_input(
+        &mut self,
+        identity: Identity,
+        signer: Arc<DynIdentitySigner>,
+        signing_key: Option<IdentityPublicKey>,
+    ) -> Result<&mut Self, Error> {
+        let config = IdentityTransferConfig::new(identity, signer, signing_key);
+        self.inputs.push(TransferInput::Identity(config));
         Ok(self)
     }
 
@@ -308,5 +158,157 @@ impl CreditTransferBuilder {
             inputs: self.inputs,
             outputs: self.outputs,
         })
+    }
+}
+
+#[async_trait::async_trait]
+impl BroadcastStateTransition for CreditTransfer {
+    async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
+        let state_transition = self.build_state_transition(sdk, settings.clone()).await?;
+        state_transition.broadcast(sdk, settings).await
+    }
+
+    async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
+        &self,
+        _sdk: &Sdk,
+        _settings: Option<PutSettings>,
+    ) -> Result<T, Error> {
+        Err(Error::InvalidCreditTransfer(
+            "waiting for a previously broadcast credit transfer is not supported; \
+use broadcast_and_wait instead"
+                .to_string(),
+        ))
+    }
+
+    async fn broadcast_and_wait<T: TryFrom<StateTransitionProofResult>>(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<T, Error> {
+        let state_transition = self.build_state_transition(sdk, settings.clone()).await?;
+        state_transition.broadcast_and_wait(sdk, settings).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::identity::classify_identity_transfer;
+    use super::super::types::{DynIdentitySigner, IdentityTransferConfig};
+    use super::*;
+    use dpp::address_funds::{AddressWitness, PlatformAddress};
+    use dpp::identifier::Identifier;
+    use dpp::identity::signer::Signer;
+    use dpp::identity::v0::IdentityV0;
+    use dpp::platform_value::BinaryData;
+    use dpp::ProtocolError;
+    use std::collections::BTreeMap;
+    use std::sync::Arc;
+
+    fn identifier(index: u8) -> Identifier {
+        let bytes = [index; 32];
+        bytes.into()
+    }
+
+    #[test]
+    fn identity_transfer_plan_succeeds() {
+        let sender_id = identifier(1);
+        let recipient_id = identifier(2);
+
+        let transfer = build_identity_transfer(sender_id, recipient_id, 42);
+
+        let context = classify_identity_transfer(&transfer.inputs, &transfer.outputs)
+            .expect("plan should build");
+
+        assert_eq!(context.config.identity_id(), sender_id);
+        assert_eq!(context.plan.recipient_id, recipient_id);
+        assert_eq!(context.plan.amount, 42);
+    }
+
+    #[test]
+    fn identity_transfer_plan_requires_identity_input() {
+        let recipient_id = identifier(3);
+        let transfer = CreditTransfer::from_parts_for_tests(
+            vec![TransferInput::from_addresses(BTreeMap::new(), vec![])],
+            BTreeMap::from([(TransferOutput::Identity(recipient_id), 10)]),
+        );
+
+        let err = classify_identity_transfer(&transfer.inputs, &transfer.outputs).unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn identity_transfer_plan_requires_identity_output() {
+        let sender_id = identifier(4);
+        let transfer = CreditTransfer::from_parts_for_tests(
+            vec![identity_input(sender_id)],
+            BTreeMap::from([(
+                TransferOutput::PlatformAddress(PlatformAddress::default()),
+                10,
+            )]),
+        );
+
+        let err = classify_identity_transfer(&transfer.inputs, &transfer.outputs).unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    fn build_identity_transfer(
+        sender_id: Identifier,
+        recipient_id: Identifier,
+        amount: Credits,
+    ) -> CreditTransfer {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .identity_input(identity_with_id(sender_id), test_signer(), None)
+            .expect("failed to add input");
+        builder
+            .output(recipient_id, amount)
+            .expect("failed to add output");
+        builder.build().expect("builder should produce transfer")
+    }
+
+    fn identity_input(identifier: Identifier) -> TransferInput {
+        let identity = identity_with_id(identifier);
+        let signer = test_signer();
+        TransferInput::Identity(IdentityTransferConfig::new(identity, signer, None))
+    }
+
+    fn identity_with_id(identifier: Identifier) -> Identity {
+        Identity::V0(IdentityV0 {
+            id: identifier,
+            public_keys: BTreeMap::new(),
+            balance: 0,
+            revision: 0,
+        })
+    }
+
+    fn test_signer() -> Arc<DynIdentitySigner> {
+        Arc::new(TestIdentitySigner) as Arc<DynIdentitySigner>
+    }
+
+    #[derive(Clone, Debug)]
+    struct TestIdentitySigner;
+
+    impl Signer<IdentityPublicKey> for TestIdentitySigner {
+        fn sign(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<BinaryData, ProtocolError> {
+            Ok(BinaryData::new(vec![]))
+        }
+
+        fn sign_create_witness(
+            &self,
+            _key: &IdentityPublicKey,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "not implemented for tests".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
     }
 }
