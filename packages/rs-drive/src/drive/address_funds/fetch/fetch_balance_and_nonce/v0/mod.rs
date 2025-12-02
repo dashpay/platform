@@ -27,7 +27,7 @@ impl Drive {
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Option<(AddressNonce, Credits)>, Error> {
-        let path = vec![vec![RootTree::AddressBalances as u8]];
+        let path = Drive::clear_addresses_path();
         let key_bytes = address.to_bytes();
 
         let mut drive_operations = vec![];
