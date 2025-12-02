@@ -1,4 +1,5 @@
 //! State transitions used to put changed objects to the Dash Platform.
+pub mod address_credit_withdrawal;
 mod address_inputs;
 pub mod broadcast;
 pub(crate) mod broadcast_identity;
