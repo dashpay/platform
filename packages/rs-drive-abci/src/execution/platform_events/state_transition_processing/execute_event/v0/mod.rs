@@ -146,14 +146,16 @@ where
             let total_fee = individual_fee_result.total_base_fee();
 
             // Deduct fee from outputs or remaining balance of inputs according to strategy
-            let (adjusted_inputs, adjusted_outputs) =
-                deduct_fee_from_outputs_or_remaining_balance_of_inputs(
-                    input_current_balances.clone(),
-                    added_to_balance_outputs.clone(),
-                    fee_strategy,
-                    total_fee,
-                    platform_version,
-                )?;
+            let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
+                input_current_balances.clone(),
+                added_to_balance_outputs.clone(),
+                &fee_strategy,
+                total_fee,
+                platform_version,
+            )?;
+
+            let adjusted_inputs = fee_deduction_result.remaining_input_balances;
+            let adjusted_outputs = fee_deduction_result.adjusted_outputs;
 
             // Now apply the fee adjustments to the state
             // For outputs: compare original with adjusted and remove the difference

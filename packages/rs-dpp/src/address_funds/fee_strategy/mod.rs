@@ -1,5 +1,7 @@
 pub mod deduct_fee_from_inputs_and_outputs;
 
+pub use deduct_fee_from_inputs_and_outputs::FeeDeductionResult;
+
 use bincode_derive::{Decode, Encode};
 use serde::{Deserialize, Serialize};
 
