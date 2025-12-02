@@ -1,9 +1,12 @@
 use crate::error::WasmSdkError;
 use crate::queries::utils::deserialize_required_query;
-use crate::queries::{ProofInfoWasm, ProofMetadataResponseWasm, ResponseMetadataWasm};
+use crate::queries::ProofMetadataResponseWasm;
 use crate::sdk::WasmSdk;
+use dash_sdk::dpp::identity::identities_contract_keys::IdentitiesContractKeys;
 use dash_sdk::dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dash_sdk::dpp::identity::identity_public_key::IdentityPublicKey;
+use dash_sdk::dpp::identity::Purpose;
+use dash_sdk::platform::identities_contract_keys_query::IdentitiesContractKeysQuery;
 use dash_sdk::platform::{Fetch, FetchMany, Identifier, Identity, IdentityKeysQuery};
 use drive_proof_verifier::types::{IdentityPublicKeys, IndexMap};
 use js_sys::{Array, BigInt, Map, Uint8Array};
@@ -82,12 +85,12 @@ impl IdentityKeyInfoWasm {
 #[wasm_bindgen(js_name = "IdentityContractKeys")]
 #[derive(Clone)]
 pub struct IdentityContractKeysWasm {
-    identity_id: String,
+    identity_id: IdentifierWasm,
     keys: Vec<IdentityKeyInfoWasm>,
 }
 
 impl IdentityContractKeysWasm {
-    fn new(identity_id: String, keys: Vec<IdentityKeyInfoWasm>) -> Self {
+    fn new(identity_id: IdentifierWasm, keys: Vec<IdentityKeyInfoWasm>) -> Self {
         IdentityContractKeysWasm { identity_id, keys }
     }
 }
@@ -95,8 +98,8 @@ impl IdentityContractKeysWasm {
 #[wasm_bindgen(js_class = IdentityContractKeys)]
 impl IdentityContractKeysWasm {
     #[wasm_bindgen(getter = "identityId")]
-    pub fn identity_id(&self) -> String {
-        self.identity_id.clone()
+    pub fn identity_id(&self) -> IdentifierWasm {
+        self.identity_id
     }
 
     #[wasm_bindgen(getter = "keys")]
@@ -194,28 +197,6 @@ impl IdentityNonceWasm {
         BigInt::from(self.nonce)
     }
 }
-
-#[wasm_bindgen(js_name = "IdentityProofResponse")]
-#[derive(Clone)]
-pub struct IdentityProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub identity: Option<IdentityWasm>,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
-
-#[wasm_bindgen(js_name = "IdentityKeysProofResponse")]
-#[derive(Clone)]
-pub struct IdentityKeysProofResponseWasm {
-    #[wasm_bindgen(getter_with_clone)]
-    pub keys: Array,
-    #[wasm_bindgen(getter_with_clone)]
-    pub metadata: ResponseMetadataWasm,
-    #[wasm_bindgen(getter_with_clone)]
-    pub proof: ProofInfoWasm,
-}
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITIES_CONTRACT_KEYS_QUERY_TS: &'static str = r#"
 /**
@@ -239,11 +220,13 @@ export interface IdentitiesContractKeysQuery {
   purposes?: number[];
 }
 "#;
+
 #[wasm_bindgen]
 extern "C" {
     #[wasm_bindgen(typescript_type = "IdentitiesContractKeysQuery")]
     pub type IdentitiesContractKeysQueryJs;
 }
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct IdentitiesContractKeysQueryInput {
@@ -254,19 +237,55 @@ struct IdentitiesContractKeysQueryInput {
     #[serde(default)]
     purposes: Option<Vec<u32>>,
 }
+
 struct IdentitiesContractKeysQueryParsed {
     identity_ids: Vec<Identifier>,
     contract_id: Identifier,
-    purposes: Option<Vec<u32>>,
+    purposes: Vec<Purpose>,
 }
+
+impl TryInto<IdentitiesContractKeysQuery> for IdentitiesContractKeysQueryParsed {
+    type Error = WasmSdkError;
+
+    fn try_into(self) -> Result<IdentitiesContractKeysQuery, Self::Error> {
+        IdentitiesContractKeysQuery::new(self.identity_ids, self.contract_id, None, self.purposes)
+            .map_err(|e| WasmSdkError::generic(format!("Failed to build query: {}", e)))
+    }
+}
+
 fn parse_identities_contract_keys_query(
     query: IdentitiesContractKeysQueryJs,
 ) -> Result<IdentitiesContractKeysQueryParsed, WasmSdkError> {
+    use dash_sdk::dpp::identity::Purpose;
+
     let input: IdentitiesContractKeysQueryInput = deserialize_required_query(
         query,
         "Query object is required",
         "identities contract keys query",
     )?;
+
+    let purposes = match input.purposes {
+        Some(values) => values
+            .into_iter()
+            .map(|p| {
+                let byte: u8 = p.try_into().map_err(|_| {
+                    WasmSdkError::invalid_argument(format!("Invalid purpose value: {}", p))
+                })?;
+                Purpose::try_from(byte).map_err(|e| {
+                    WasmSdkError::invalid_argument(format!("Invalid purpose value {}: {}", p, e))
+                })
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        None => vec![
+            Purpose::AUTHENTICATION,
+            Purpose::ENCRYPTION,
+            Purpose::DECRYPTION,
+            Purpose::TRANSFER,
+            Purpose::SYSTEM,
+            Purpose::VOTING,
+        ],
+    };
+
     Ok(IdentitiesContractKeysQueryParsed {
         identity_ids: input
             .identity_ids
@@ -274,9 +293,10 @@ fn parse_identities_contract_keys_query(
             .map(Identifier::from)
             .collect(),
         contract_id: input.contract_id.into(),
-        purposes: input.purposes,
+        purposes,
     })
 }
+
 #[wasm_bindgen(typescript_custom_section)]
 const IDENTITY_KEYS_QUERY_TS: &'static str = r#"
 /**
@@ -445,13 +465,16 @@ impl WasmSdk {
         Ok(identity.map(IdentityWasm::from))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Identity>"
+    )]
     pub async fn get_identity_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
         #[wasm_bindgen(unchecked_param_type = "Identifier | Uint8Array | string")]
         identity_id: JsValue,
-    ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let id: Identifier = IdentifierWasm::try_from(&identity_id)
             .map_err(|err| WasmSdkError::invalid_argument(format!("Invalid identity ID: {}", err)))?
             .into();
@@ -459,14 +482,15 @@ impl WasmSdk {
         let (identity, metadata, proof) =
             Identity::fetch_with_metadata_and_proof(self.as_ref(), id, None).await?;
 
-        match identity {
-            Some(identity) => Ok(IdentityProofResponseWasm {
-                identity: Some(IdentityWasm::from(identity)),
-                metadata: metadata.into(),
-                proof: proof.into(),
-            }),
-            None => Err(WasmSdkError::not_found("Identity not found")),
-        }
+        identity
+            .map(|identity| {
+                ProofMetadataResponseWasm::from_parts(
+                    JsValue::from(IdentityWasm::from(identity)),
+                    metadata.into(),
+                    proof.into(),
+                )
+            })
+            .ok_or_else(|| WasmSdkError::not_found("Identity not found"))
     }
 
     #[wasm_bindgen(js_name = "getIdentityUnproved")]
@@ -521,7 +545,10 @@ impl WasmSdk {
         }
     }
 
-    #[wasm_bindgen(js_name = "getIdentityKeys")]
+    #[wasm_bindgen(
+        js_name = "getIdentityKeys",
+        unchecked_return_type = "Array<IdentityKeyInfo>"
+    )]
     pub async fn get_identity_keys(
         &self,
         query: IdentityKeysQueryJs,
@@ -679,7 +706,10 @@ impl WasmSdk {
         Ok(IdentityNonceWasm::new(nonce))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityNonceWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityNonceWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<IdentityNonce>"
+    )]
     pub async fn get_identity_nonce_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -738,7 +768,10 @@ impl WasmSdk {
         Ok(IdentityNonceWasm::new(nonce))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityContractNonceWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityContractNonceWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<IdentityNonce>"
+    )]
     pub async fn get_identity_contract_nonce_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -799,7 +832,10 @@ impl WasmSdk {
             .ok_or_else(|| WasmSdkError::not_found("Identity balance not found"))
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesBalances")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesBalances",
+        unchecked_return_type = "Array<IdentityBalanceEntry>"
+    )]
     pub async fn get_identities_balances(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -891,62 +927,40 @@ impl WasmSdk {
             .map(Into::into)
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesContractKeys")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesContractKeys",
+        unchecked_return_type = "Array<IdentityContractKeys>"
+    )]
     pub async fn get_identities_contract_keys(
         &self,
         query: IdentitiesContractKeysQueryJs,
     ) -> Result<Array, WasmSdkError> {
-        use dash_sdk::dpp::identity::Purpose;
+        use dash_sdk::platform::Fetch;
+
         let params = parse_identities_contract_keys_query(query)?;
-        let identity_identifiers = params.identity_ids;
-        let _contract_identifier = params.contract_id;
 
-        // Convert purposes if provided
-        let purposes_opt = params.purposes.map(|p| {
-            p.into_iter()
-                .filter_map(|purpose_int| match purpose_int {
-                    0 => Some(Purpose::AUTHENTICATION as u32),
-                    1 => Some(Purpose::ENCRYPTION as u32),
-                    2 => Some(Purpose::DECRYPTION as u32),
-                    3 => Some(Purpose::TRANSFER as u32),
-                    4 => Some(Purpose::SYSTEM as u32),
-                    5 => Some(Purpose::VOTING as u32),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        });
+        let query: IdentitiesContractKeysQuery = params.try_into()?;
 
-        // For now, we'll implement this by fetching keys for each identity individually
-        // The SDK doesn't fully expose the batch query yet
+        let keys_result: Option<IdentitiesContractKeys> =
+            IdentitiesContractKeys::fetch(self.as_ref(), query).await?;
+
         let mut responses: Vec<IdentityContractKeysWasm> = Vec::new();
-
-        for identity_id in identity_identifiers {
-            let identity_bytes = *identity_id.as_bytes();
-            // Get keys for this identity using the regular identity keys query
-            let keys_result = IdentityPublicKey::fetch_many(self.as_ref(), identity_id).await?;
-
-            let mut identity_keys = Vec::new();
-
-            // Filter keys by purpose if specified
-            for (key_id, key_opt) in keys_result {
-                if let Some(key) = key_opt {
-                    // Check if this key matches the requested purposes
-                    if let Some(ref purposes) = purposes_opt {
-                        if !purposes.contains(&(key.purpose() as u32)) {
-                            continue;
-                        }
+        if let Some(keys_map) = keys_result {
+            for (identity_id, purposes_map) in keys_map {
+                let mut identity_keys = Vec::new();
+                for (_, key_opt) in purposes_map {
+                    if let Some(key) = key_opt {
+                        identity_keys.push(IdentityKeyInfoWasm::from_entry(key.id(), &key));
                     }
-
-                    identity_keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
                 }
-            }
 
-            if !identity_keys.is_empty() {
-                let identity_id_str = IdentifierWasm::from(identity_bytes).get_base58();
-                responses.push(IdentityContractKeysWasm::new(
-                    identity_id_str,
-                    identity_keys,
-                ));
+                if !identity_keys.is_empty() {
+                    let identity_id_str = IdentifierWasm::from(identity_id);
+                    responses.push(IdentityContractKeysWasm::new(
+                        identity_id_str,
+                        identity_keys,
+                    ));
+                }
             }
         }
 
@@ -958,7 +972,10 @@ impl WasmSdk {
         Ok(array)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHash")]
+    #[wasm_bindgen(
+        js_name = "getIdentityByNonUniquePublicKeyHash",
+        unchecked_return_type = "Array<Identity>"
+    )]
     pub async fn get_identity_by_non_unique_public_key_hash(
         &self,
         #[wasm_bindgen(js_name = "publicKeyHash")]
@@ -1017,7 +1034,10 @@ impl WasmSdk {
         Ok(js_array)
     }
 
-    #[wasm_bindgen(js_name = "getIdentityTokenBalances")]
+    #[wasm_bindgen(
+        js_name = "getIdentityTokenBalances",
+        unchecked_return_type = "Map<Identifier, bigint>"
+    )]
     pub async fn get_identity_token_balances(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -1069,11 +1089,14 @@ impl WasmSdk {
 
     // Proof info versions for identity queries
 
-    #[wasm_bindgen(js_name = "getIdentityKeysWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityKeysWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityKeyInfo>>"
+    )]
     pub async fn get_identity_keys_with_proof_info(
         &self,
         query: IdentityKeysQueryJs,
-    ) -> Result<IdentityKeysProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         let IdentityKeysQueryParsed {
             identity_id,
             request,
@@ -1122,14 +1145,17 @@ impl WasmSdk {
             }
         }
 
-        Ok(IdentityKeysProofResponseWasm {
-            keys: keys_array,
-            metadata: metadata.into(),
-            proof: proof.into(),
-        })
+        Ok(ProofMetadataResponseWasm::from_parts(
+            JsValue::from(keys_array),
+            metadata.into(),
+            proof.into(),
+        ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityBalanceWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityBalanceWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<IdentityBalance>"
+    )]
     pub async fn get_identity_balance_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -1158,7 +1184,10 @@ impl WasmSdk {
             .ok_or_else(|| WasmSdkError::not_found("Identity balance not found"))
     }
 
-    #[wasm_bindgen(js_name = "getIdentitiesBalancesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesBalancesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityBalanceEntry>>"
+    )]
     pub async fn get_identities_balances_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityIds")]
@@ -1207,7 +1236,10 @@ impl WasmSdk {
         ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityBalanceAndRevisionWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityBalanceAndRevisionWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<IdentityBalanceAndRevision>"
+    )]
     pub async fn get_identity_balance_and_revision_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]
@@ -1236,13 +1268,16 @@ impl WasmSdk {
             .ok_or_else(|| WasmSdkError::not_found("Identity balance and revision not found"))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityByPublicKeyHashWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityByPublicKeyHashWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Identity>"
+    )]
     pub async fn get_identity_by_public_key_hash_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "publicKeyHash")]
         #[wasm_bindgen(unchecked_param_type = "string | Uint8Array")]
         public_key_hash: JsValue,
-    ) -> Result<IdentityProofResponseWasm, WasmSdkError> {
+    ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
         use dash_sdk::platform::types::identity::PublicKeyHash;
         let hash_bytes: Vec<u8> = if let Some(hex_str) = public_key_hash.as_string() {
             hex::decode(&hex_str).map_err(|e| {
@@ -1265,19 +1300,21 @@ impl WasmSdk {
             Identity::fetch_with_metadata_and_proof(self.as_ref(), PublicKeyHash(hash_array), None)
                 .await?;
 
-        match result {
-            Some(identity) => Ok(IdentityProofResponseWasm {
-                identity: Some(IdentityWasm::from(identity)),
-                metadata: metadata.into(),
-                proof: proof.into(),
-            }),
-            None => Err(WasmSdkError::not_found(
-                "Identity not found for public key hash",
-            )),
-        }
+        result
+            .map(|identity| {
+                ProofMetadataResponseWasm::from_parts(
+                    JsValue::from(IdentityWasm::from(identity)),
+                    metadata.into(),
+                    proof.into(),
+                )
+            })
+            .ok_or_else(|| WasmSdkError::not_found("Identity not found for public key hash"))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityByNonUniquePublicKeyHashWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityByNonUniquePublicKeyHashWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<Identity>>"
+    )]
     pub async fn get_identity_by_non_unique_public_key_hash_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "publicKeyHash")]
@@ -1344,75 +1381,38 @@ impl WasmSdk {
     }
 
     // TODO: This method returns proof only for first identity
-    #[wasm_bindgen(js_name = "getIdentitiesContractKeysWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentitiesContractKeysWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Array<IdentityContractKeys>>"
+    )]
     pub async fn get_identities_contract_keys_with_proof_info(
         &self,
         query: IdentitiesContractKeysQueryJs,
     ) -> Result<ProofMetadataResponseWasm, WasmSdkError> {
-        use dash_sdk::dpp::identity::Purpose;
+        use dash_sdk::platform::Fetch;
         let params = parse_identities_contract_keys_query(query)?;
-        let identity_ids = params.identity_ids;
-        let _contract_identifier = params.contract_id;
+        let query: IdentitiesContractKeysQuery = params.try_into()?;
 
-        // Convert purposes if provided
-        let purposes_opt = params.purposes.map(|p| {
-            p.into_iter()
-                .filter_map(|purpose_int| match purpose_int {
-                    0 => Some(Purpose::AUTHENTICATION as u32),
-                    1 => Some(Purpose::ENCRYPTION as u32),
-                    2 => Some(Purpose::DECRYPTION as u32),
-                    3 => Some(Purpose::TRANSFER as u32),
-                    4 => Some(Purpose::SYSTEM as u32),
-                    5 => Some(Purpose::VOTING as u32),
-                    _ => None,
-                })
-                .collect::<Vec<_>>()
-        });
-
-        // For now, we'll implement this by fetching keys for each identity individually with proof
-        // The SDK doesn't fully expose the batch query with proof yet
-        let mut all_responses: Vec<IdentityContractKeysWasm> = Vec::new();
-        let mut combined_metadata: Option<dash_sdk::platform::proto::ResponseMetadata> = None;
-        let mut combined_proof: Option<dash_sdk::platform::proto::Proof> = None;
-
-        for identity_id in identity_ids {
-            let identity_bytes = *identity_id.as_bytes();
-            // Get keys for this identity using the regular identity keys query with proof
-            let (keys_result, metadata, proof) =
-                IdentityPublicKey::fetch_many_with_metadata_and_proof(
-                    self.as_ref(),
-                    identity_id,
-                    None,
-                )
+        let (keys_result, metadata, proof): (Option<IdentitiesContractKeys>, _, _) =
+            IdentitiesContractKeys::fetch_with_metadata_and_proof(self.as_ref(), query, None)
                 .await?;
 
-            // Store first metadata and proof
-            if combined_metadata.is_none() {
-                combined_metadata = Some(metadata);
-                combined_proof = Some(proof);
-            }
-
-            let mut identity_keys = Vec::new();
-
-            // Filter keys by purpose if specified
-            for (key_id, key_opt) in keys_result {
-                if let Some(key) = key_opt {
-                    // Check if this key matches the requested purposes
-                    if let Some(ref purposes) = purposes_opt {
-                        if !purposes.contains(&(key.purpose() as u32)) {
-                            continue;
-                        }
+        let mut all_responses: Vec<IdentityContractKeysWasm> = Vec::new();
+        if let Some(keys_map) = keys_result {
+            for (identity_id, purposes_map) in keys_map {
+                let mut identity_keys = Vec::new();
+                for (_, key_opt) in purposes_map {
+                    if let Some(key) = key_opt {
+                        identity_keys.push(IdentityKeyInfoWasm::from_entry(key.id(), &key));
                     }
-
-                    identity_keys.push(IdentityKeyInfoWasm::from_entry(key_id, &key));
                 }
-            }
 
-            if !identity_keys.is_empty() {
-                all_responses.push(IdentityContractKeysWasm::new(
-                    IdentifierWasm::from(identity_bytes).get_base58(),
-                    identity_keys,
-                ));
+                if !identity_keys.is_empty() {
+                    all_responses.push(IdentityContractKeysWasm::new(
+                        IdentifierWasm::from(identity_id),
+                        identity_keys,
+                    ));
+                }
             }
         }
 
@@ -1423,12 +1423,15 @@ impl WasmSdk {
 
         Ok(ProofMetadataResponseWasm::from_sdk_parts(
             responses_array,
-            combined_metadata.unwrap_or_default(),
-            combined_proof.unwrap_or_default(),
+            metadata,
+            proof,
         ))
     }
 
-    #[wasm_bindgen(js_name = "getIdentityTokenBalancesWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getIdentityTokenBalancesWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<Map<Identifier, bigint>>"
+    )]
     pub async fn get_identity_token_balances_with_proof_info(
         &self,
         #[wasm_bindgen(js_name = "identityId")]

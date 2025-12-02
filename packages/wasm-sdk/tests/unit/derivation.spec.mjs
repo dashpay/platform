@@ -9,30 +9,30 @@ describe('Key derivation', () => {
     it('BIP44 mainnet/testnet', () => {
       const m = sdk.WasmSdk.derivationPathBip44Mainnet(0, 0, 0);
       expect(m.purpose).to.equal(44);
-      expect(m.coin_type).to.equal(5);
+      expect(m.coinType).to.equal(5);
       expect(m.account).to.equal(0);
       expect(m.change).to.equal(0);
       expect(m.index).to.equal(0);
-      const expectedMain = `m/${m.purpose}'/${m.coin_type}'/${m.account}'/${m.change}/${m.index}`;
+      const expectedMain = `m/${m.purpose}'/${m.coinType}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/44'/5'/0'/0/0");
 
       const t = sdk.WasmSdk.derivationPathBip44Testnet(0, 0, 0);
-      expect(t.coin_type).to.equal(1);
-      const expectedTest = `m/${t.purpose}'/${t.coin_type}'/${t.account}'/${t.change}/${t.index}`;
+      expect(t.coinType).to.equal(1);
+      const expectedTest = `m/${t.purpose}'/${t.coinType}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/44'/1'/0'/0/0");
     });
 
     it('DIP9 mainnet/testnet', () => {
       const m = sdk.WasmSdk.derivationPathDip9Mainnet(5, 0, 0);
       expect(m.purpose).to.equal(9);
-      expect(m.coin_type).to.equal(5);
+      expect(m.coinType).to.equal(5);
       expect(m.account).to.equal(5);
-      const expectedMain = `m/${m.purpose}'/${m.coin_type}'/${m.account}'/${m.change}/${m.index}`;
+      const expectedMain = `m/${m.purpose}'/${m.coinType}'/${m.account}'/${m.change}/${m.index}`;
       expect(expectedMain).to.equal("m/9'/5'/5'/0/0");
 
       const t = sdk.WasmSdk.derivationPathDip9Testnet(5, 0, 0);
-      expect(t.coin_type).to.equal(1);
-      const expectedTest = `m/${t.purpose}'/${t.coin_type}'/${t.account}'/${t.change}/${t.index}`;
+      expect(t.coinType).to.equal(1);
+      const expectedTest = `m/${t.purpose}'/${t.coinType}'/${t.account}'/${t.change}/${t.index}`;
       expect(expectedTest).to.equal("m/9'/1'/5'/0/0");
     });
 
@@ -68,7 +68,7 @@ describe('Key derivation', () => {
       });
       expect(r).to.exist();
       expect(r.path).to.equal(path);
-      expect(r.private_key_wif).to.be.a('string');
+      expect(r.privateKeyWif).to.be.a('string');
       expect(r.address).to.be.a('string');
     });
 

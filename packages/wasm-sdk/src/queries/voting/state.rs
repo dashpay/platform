@@ -339,7 +339,10 @@ impl WasmSdk {
         Ok(convert_contenders(contenders))
     }
 
-    #[wasm_bindgen(js_name = "getContestedResourceVoteStateWithProofInfo")]
+    #[wasm_bindgen(
+        js_name = "getContestedResourceVoteStateWithProofInfo",
+        unchecked_return_type = "ProofMetadataResponseTyped<ContestedResourceVoteState>"
+    )]
     pub async fn get_contested_resource_vote_state_with_proof_info(
         &self,
         query: ContestedResourceVoteStateQueryJs,

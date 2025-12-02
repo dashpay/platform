@@ -46,15 +46,15 @@ describe('Keys and mnemonics', () => {
 
     it('derives address from pubkey equals generated address', () => {
       const kp = sdk.WasmSdk.generateKeyPair('mainnet');
-      const addr = sdk.WasmSdk.pubkeyToAddress(kp.public_key, 'mainnet');
+      const addr = sdk.WasmSdk.pubkeyToAddress(kp.publicKey, 'mainnet');
       expect(addr).to.equal(kp.address);
     });
 
     it('signs messages deterministically for same inputs', () => {
       const kp = sdk.WasmSdk.generateKeyPair('mainnet');
       const msg = 'Hello, Dash!';
-      const s1 = sdk.WasmSdk.signMessage(msg, kp.private_key_wif);
-      const s2 = sdk.WasmSdk.signMessage(msg, kp.private_key_wif);
+      const s1 = sdk.WasmSdk.signMessage(msg, kp.privateKeyWif);
+      const s2 = sdk.WasmSdk.signMessage(msg, kp.privateKeyWif);
       expect(s1).to.be.a('string');
       expect(s1).to.equal(s2);
     });
