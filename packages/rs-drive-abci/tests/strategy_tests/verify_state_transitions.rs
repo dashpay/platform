@@ -1,3 +1,4 @@
+use dpp::consensus::codes::ErrorWithCode;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
 use dpp::document::{Document, DocumentV0Getters};
@@ -715,6 +716,81 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                 StateTransitionAction::BumpIdentityNonceAction(_) => {}
                 StateTransitionAction::BumpIdentityDataContractNonceAction(_) => {}
                 StateTransitionAction::PartiallyUseAssetLockAction(_) => {}
+                StateTransitionAction::IdentityCreateFromAddressesAction(
+                    identity_create_from_addresses_action,
+                ) => {
+                    // Verify identity was created from addresses
+                    let (root_hash, identity) = Drive::verify_full_identity_by_identity_id(
+                        &response_proof.grovedb_proof,
+                        false,
+                        identity_create_from_addresses_action
+                            .identity_id()
+                            .into_buffer(),
+                        platform_version,
+                    )
+                    .expect("expected to verify full identity");
+                    assert_eq!(
+                        &root_hash,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+                    if *was_executed {
+                        let proved_identity = identity
+                            .expect("expected an identity")
+                            .into_partial_identity_info_no_balance();
+                        assert_eq!(
+                            proved_identity.id,
+                            identity_create_from_addresses_action.identity_id()
+                        );
+                    } else {
+                        assert!(identity.is_none());
+                    }
+                }
+                StateTransitionAction::IdentityTopUpFromAddressesAction(
+                    identity_top_up_from_addresses_action,
+                ) => {
+                    // Verify identity balance was topped up from addresses
+                    let (root_hash, balance) = Drive::verify_identity_balance_for_identity_id(
+                        &response_proof.grovedb_proof,
+                        identity_top_up_from_addresses_action
+                            .identity_id()
+                            .into_buffer(),
+                        false,
+                        platform_version,
+                    )
+                    .expect("expected to verify balance identity for top up from addresses");
+                    let _balance = balance.expect("expected a balance");
+                    assert_eq!(
+                        &root_hash,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+                }
+                StateTransitionAction::IdentityCreditTransferToAddressesAction(
+                    _identity_credit_transfer_to_addresses_action,
+                ) => {
+                    // TODO: Add verification for credit transfer to addresses
+                    // This should verify the address balances were updated
+                }
+                StateTransitionAction::AddressFundsTransfer(_address_funds_transfer_action) => {
+                    // TODO: Add verification for address funds transfer
+                    // This should verify the address balances were updated
+                }
+                StateTransitionAction::AddressFundingFromAssetLock(
+                    _address_funding_from_asset_lock_action,
+                ) => {
+                    // TODO: Add verification for address funding from asset lock
+                    // This should verify the address was funded from the asset lock
+                }
+                StateTransitionAction::AddressCreditWithdrawal(
+                    _address_credit_withdrawal_action,
+                ) => {
+                    // TODO: Add verification for address credit withdrawal
+                    // This should verify the withdrawal document was created
+                }
+                StateTransitionAction::BumpAddressInputNoncesAction(_) => {}
             }
         } else {
             // if we don't have an action this means there was a problem in the validation of the state transition

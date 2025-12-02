@@ -1,5 +1,4 @@
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::util::grove_operations::DirectQueryType;
