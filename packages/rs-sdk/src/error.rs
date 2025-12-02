@@ -3,7 +3,9 @@ use dapi_grpc::platform::v0::StateTransitionBroadcastError as StateTransitionBro
 use dapi_grpc::tonic::Code;
 pub use dash_context_provider::ContextProviderError;
 use dpp::block::block_info::BlockInfo;
-use dpp::consensus::basic::state_transition::{TransitionNoInputsError, TransitionNoOutputsError};
+use dpp::consensus::basic::state_transition::{
+    OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
+};
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
@@ -69,6 +71,9 @@ pub enum Error {
     /// Returned when an attempt is made to create an object that already exists in the system
     #[error("Object already exists: {0}")]
     AlreadyExists(String),
+    /// Invalid credit transfer configuration
+    #[error("Invalid credit transfer: {0}")]
+    InvalidCreditTransfer(String),
     /// Generic error
     // TODO: Use domain specific errors instead of generic ones
     #[error("SDK error: {0}")]
@@ -188,6 +193,12 @@ impl From<TransitionNoInputsError> for Error {
 
 impl From<TransitionNoOutputsError> for Error {
     fn from(value: TransitionNoOutputsError) -> Self {
+        Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<OutputBelowMinimumError> for Error {
+    fn from(value: OutputBelowMinimumError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
     }
 }

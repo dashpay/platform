@@ -1,5 +1,5 @@
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
-use crate::platform::transition::FundingSource;
+use crate::platform::transition::credit_transfer::TransferInput;
 use crate::{Error, Sdk};
 
 use super::address_inputs::fetch_inputs_with_nonce;
@@ -30,8 +30,8 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>
     where
-        F: TryInto<FundingSource> + Send,
-        <F as TryInto<FundingSource>>::Error: ToString;
+        F: TryInto<TransferInput> + Send,
+        <F as TryInto<TransferInput>>::Error: ToString;
 
     /// Sends the identity and waits for confirmation proof.
     async fn send_to_platform_and_wait_for_response<F>(
@@ -42,8 +42,8 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
         settings: Option<PutSettings>,
     ) -> Result<Self, Error>
     where
-        F: TryInto<FundingSource> + Send,
-        <F as TryInto<FundingSource>>::Error: ToString;
+        F: TryInto<TransferInput> + Send,
+        <F as TryInto<TransferInput>>::Error: ToString;
 
     /// Deprecated alias for [`send_to_platform`].
     #[deprecated(note = "use send_to_platform instead")]
@@ -96,8 +96,8 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error>
     where
-        F: TryInto<FundingSource> + Send,
-        <F as TryInto<FundingSource>>::Error: ToString,
+        F: TryInto<TransferInput> + Send,
+        <F as TryInto<TransferInput>>::Error: ToString,
     {
         let funding_source = funding
             .try_into()
@@ -113,8 +113,8 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
         settings: Option<PutSettings>,
     ) -> Result<Identity, Error>
     where
-        F: TryInto<FundingSource> + Send,
-        <F as TryInto<FundingSource>>::Error: ToString,
+        F: TryInto<TransferInput> + Send,
+        <F as TryInto<TransferInput>>::Error: ToString,
     {
         let funding_source = funding
             .try_into()
@@ -129,12 +129,12 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
 async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
-    funding: FundingSource,
+    funding: TransferInput,
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     match &funding {
-        FundingSource::AssetLock {
+        TransferInput::AssetLock {
             asset_lock_proof,
             asset_lock_private_key,
         } => {
@@ -147,7 +147,7 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
             state_transition.broadcast(sdk, settings).await?;
             Ok(state_transition)
         }
-        FundingSource::Addresses {
+        TransferInput::Addresses {
             inputs,
             input_private_keys,
         } => {
@@ -162,7 +162,7 @@ async fn send_identity_with_source<S: Signer<IdentityPublicKey>>(
             )
             .await
         }
-        FundingSource::AddressesWithNonce {
+        TransferInput::AddressesWithNonce {
             inputs,
             input_private_keys,
         } => {
