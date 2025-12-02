@@ -207,17 +207,15 @@ where
                     .map_err(Error::Drive)?;
             }
 
-            let fee_result = FeeResult::default_with_fees(0, total_fee);
-
             if consensus_errors.is_empty() {
                 Ok(SuccessfulPaidExecution(
                     Some(fee_validation_result.into_data()?),
-                    fee_result,
+                    individual_fee_result,
                 ))
             } else {
                 Ok(UnsuccessfulPaidExecution(
                     Some(fee_validation_result.into_data()?),
-                    fee_result,
+                    individual_fee_result,
                     consensus_errors,
                 ))
             }
