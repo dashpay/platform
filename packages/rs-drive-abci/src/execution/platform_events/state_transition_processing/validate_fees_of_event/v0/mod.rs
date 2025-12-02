@@ -159,19 +159,18 @@ where
                 }
             }
             ExecutionEvent::PaidFromAddressInputs {
-                input_original_balances,
                 input_current_balances,
-                removed_balance,
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
                 user_fee_increase,
                 ..
             } => {
-                let total_input_credit_amount = input_original_balances.values().sum::<Credits>();
+                let balance_after_principal_operation = input_current_balances
+                    .values()
+                    .map(|(_, credits)| credits)
+                    .sum::<Credits>();
 
-                let balance_after_principal_operation =
-                    total_input_credit_amount.saturating_sub(removed_balance.unwrap_or_default());
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(

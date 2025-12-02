@@ -38,7 +38,7 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
     fn into_low_level_drive_operations(
         self,
         drive: &Drive,
-        _estimated_costs_only_with_layer_info: &mut Option<
+        estimated_costs_only_with_layer_info: &mut Option<
             HashMap<KeyInfoPath, EstimatedLayerInformation>,
         >,
         _block_info: &BlockInfo,
@@ -50,31 +50,23 @@ impl DriveLowLevelOperationConverter for AddressFundsOperationType {
                 address,
                 nonce,
                 balance,
-            } => {
-                let mut drive_operations = vec![];
-                drive.set_balance_to_address(
-                    address,
-                    nonce,
-                    balance,
-                    &mut drive_operations,
-                    platform_version,
-                )?;
-                Ok(drive_operations)
-            }
+            } => drive.set_balance_to_address_operations(
+                address,
+                nonce,
+                balance,
+                estimated_costs_only_with_layer_info,
+                platform_version,
+            ),
             AddressFundsOperationType::AddBalanceToAddress {
                 address,
                 balance_to_add,
-            } => {
-                let mut drive_operations = vec![];
-                drive.add_balance_to_address(
-                    address,
-                    balance_to_add,
-                    &mut drive_operations,
-                    transaction,
-                    platform_version,
-                )?;
-                Ok(drive_operations)
-            }
+            } => drive.add_balance_to_address_operations(
+                address,
+                balance_to_add,
+                estimated_costs_only_with_layer_info,
+                transaction,
+                platform_version,
+            ),
         }
     }
 }

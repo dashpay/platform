@@ -1,13 +1,14 @@
 use crate::drive::Drive;
-use crate::drive::RootTree;
 use crate::error::drive::DriveError;
 use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use crate::util::grove_operations::DirectQueryType;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use grovedb::{Element, TransactionArg};
+use grovedb::batch::KeyInfoPath;
+use grovedb::{Element, EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
+use std::collections::HashMap;
 
 impl Drive {
     /// Version 0 implementation of removing balance from an address.
@@ -18,6 +19,7 @@ impl Drive {
     /// # Parameters
     /// * `address`: The platform address
     /// * `amount_to_remove`: The balance amount to subtract
+    /// * `estimated_costs_only_with_layer_info`: If `Some`, only estimates costs without applying.
     /// * `drive_operations`: The list of drive operations to append to.
     /// * `transaction`: A `TransactionArg` object representing the database transaction.
     /// * `platform_version`: The platform version.
@@ -29,16 +31,39 @@ impl Drive {
         &self,
         address: PlatformAddress,
         amount_to_remove: Credits,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
     ) -> Result<Credits, Error> {
-        let path: [Vec<u8>; 1] = [vec![RootTree::AddressBalances as u8]];
+        let path = Drive::clear_addresses_path();
         let key = address.to_bytes();
+
+        // When estimating, just add estimation costs and return the requested amount
+        if let Some(estimated_costs_only_with_layer_info) = estimated_costs_only_with_layer_info {
+            Self::add_estimation_costs_for_address_balance_update(
+                estimated_costs_only_with_layer_info,
+                &platform_version.drive,
+            )?;
+            // For estimation, we assume the full amount can be removed
+            // Add a replace operation with estimated element size
+            drive_operations.push(LowLevelDriveOperation::replace_for_known_path_key_element(
+                path.to_vec(),
+                key,
+                Element::new_item_with_sum_item_with_flags(
+                    vec![0u8; 8], // nonce placeholder
+                    0i64,         // balance placeholder
+                    None,
+                ),
+            ));
+            return Ok(amount_to_remove);
+        }
 
         // Fetch the existing element
         let existing_element = self.grove_get_raw_optional(
-            (&path as &[Vec<u8>]).into(),
+            (path.as_slice()).into(),
             key.as_slice(),
             DirectQueryType::StatefulDirectQuery,
             transaction,

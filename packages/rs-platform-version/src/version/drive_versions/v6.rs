@@ -20,12 +20,15 @@ use crate::version::drive_versions::{
 };
 use grovedb_version::version::v2::GROVE_V2;
 
-/// This was introduced in protocol v11 (2.2) to deal with identity update conversion.
+/// This was introduced in protocol v11 (2.2).
+/// v11 was done for 2 reasons
+///     * platform addresses
+///     * identity update conversion
 pub const DRIVE_VERSION_V6: DriveVersion = DriveVersion {
     structure: DRIVE_STRUCTURE_V1,
     methods: DriveMethodVersions {
         initialization: DriveInitializationMethodVersions {
-            create_initial_state_structure: 1,
+            create_initial_state_structure: 2,
         },
         credit_pools: CREDIT_POOL_METHOD_VERSIONS_V1,
         protocol_upgrade: DriveProtocolUpgradeVersions {

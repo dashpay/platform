@@ -2,6 +2,9 @@ use crate::error::Error;
 use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::processor::address_balances_and_nonces::StateTransitionAddressBalancesAndNoncesValidation;
+use crate::execution::validation::state_transition::processor::address_witnesses::{
+    StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0,
+};
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -43,28 +46,6 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         }
     }
 
-    // Start by validating addresses if the transition has input addresses
-    let remaining_address_balances = if state_transition
-        .has_addresses_balances_and_nonces_validation()
-    {
-        // Here we validate that all input addresses have enough balance
-        // We also validate that nonces are bumped
-        let result = state_transition.validate_address_balances_and_nonces(
-            platform.drive,
-            &mut state_transition_execution_context,
-            transaction,
-            platform_version,
-        )?;
-        if !result.is_valid() {
-            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
-            // isn't enough balance, either way the transaction should be rejected.
-            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
-        }
-        Some(result.into_data()?)
-    } else {
-        None
-    };
-
     // Only identity create does not use identity in state validation, because it doesn't yet have the identity in state
     let mut maybe_identity = if state_transition.uses_identity_in_state() {
         // Validating signature for identity based state transitions (all those except identity create and identity top up)
@@ -98,6 +79,38 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
         Some(result.into_data()?)
     } else {
         // Currently only identity create
+        None
+    };
+
+    if state_transition.has_address_witness_validation(platform_version)? {
+        let result = state_transition.validate_address_witnesses(platform_version)?;
+        if !result.is_valid() {
+            // If the witnesses are not valid
+            // Proposers should remove such transactions from the block
+            // Other validators should reject blocks with such transactions
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+    }
+
+    // Start by validating addresses if the transition has input addresses
+    let remaining_address_balances = if state_transition
+        .has_addresses_balances_and_nonces_validation()
+    {
+        // Here we validate that all input addresses have enough balance
+        // We also validate that nonces are bumped
+        let result = state_transition.validate_address_balances_and_nonces(
+            platform.drive,
+            &mut state_transition_execution_context,
+            transaction,
+            platform_version,
+        )?;
+        if !result.is_valid() {
+            // The nonces are not valid or there is not enough balance. The transaction is each replaying an input or there
+            // isn't enough balance, either way the transaction should be rejected.
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+        Some(result.into_data()?)
+    } else {
         None
     };
 

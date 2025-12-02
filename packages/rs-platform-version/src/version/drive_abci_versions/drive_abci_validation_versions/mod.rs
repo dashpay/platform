@@ -11,6 +11,8 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub has_nonce_validation: FeatureVersion,
+    pub has_address_witness_validation: FeatureVersion,
+    pub validate_address_witnesses: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,

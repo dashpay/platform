@@ -166,6 +166,7 @@ where
                     self.drive.remove_balance_from_address(
                         *address,
                         amount_to_remove,
+                        &mut None,
                         &mut fee_drive_operations,
                         Some(transaction),
                         platform_version,
@@ -184,6 +185,7 @@ where
                         *address,
                         *nonce,
                         adjusted_remaining,
+                        &mut None,
                         &mut fee_drive_operations,
                         platform_version,
                     )?;

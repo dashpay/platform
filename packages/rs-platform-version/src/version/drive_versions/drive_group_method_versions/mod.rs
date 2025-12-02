@@ -19,6 +19,7 @@ pub struct DriveAddressFundsMethodVersions {
     pub fetch_balances_with_nonces: FeatureVersion,
     pub prove_balance_and_nonce: FeatureVersion,
     pub prove_balances_with_nonces: FeatureVersion,
+    pub cost_estimation: DriveAddressFundsCostEstimationMethodVersions,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -52,4 +53,9 @@ pub struct DriveGroupInsertMethodVersions {
 pub struct DriveGroupCostEstimationMethodVersions {
     pub for_add_group_action: FeatureVersion,
     pub for_add_group: FeatureVersion,
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct DriveAddressFundsCostEstimationMethodVersions {
+    pub for_address_balance_update: FeatureVersion,
 }

@@ -1,5 +1,8 @@
 #[cfg(feature = "server")]
 mod add_balance_to_address;
+/// Cost estimation for address balance operations.
+#[cfg(feature = "server")]
+mod estimated_costs;
 /// Functionality for fetching data from GroveDB.
 #[cfg(feature = "server")]
 pub mod fetch;

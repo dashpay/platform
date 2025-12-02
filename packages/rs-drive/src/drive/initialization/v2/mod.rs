@@ -55,12 +55,12 @@ impl Drive {
     pub(in crate::drive::initialization) fn initial_state_structure_lower_layers_add_operations_2(
         &self,
         batch: &mut GroveDbOpBatch,
-        _platform_version: &PlatformVersion,
+        platform_version: &PlatformVersion,
     ) -> Result<(), Error> {
-        self.initial_state_structure_lower_layers_add_operations_1(batch, _platform_version)?;
+        self.initial_state_structure_lower_layers_add_operations_1(batch, platform_version)?;
 
         batch.add_insert(
-            misc_path_vec(),
+            Self::addresses_path(),
             CLEAR_ADDRESS_POOL.to_vec(),
             Element::empty_sum_tree(),
         );

@@ -30,7 +30,7 @@ use crate::version::ProtocolVersion;
 pub const PROTOCOL_VERSION_11: ProtocolVersion = 11;
 
 /// This version was for Platform release 2.2.0
-pub const PLATFORM_V10: PlatformVersion = PlatformVersion {
+pub const PLATFORM_V11: PlatformVersion = PlatformVersion {
     protocol_version: PROTOCOL_VERSION_11,
     drive: DRIVE_VERSION_V6, // Changed to fix identity update issue
     drive_abci: DriveAbciVersion {

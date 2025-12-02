@@ -217,7 +217,6 @@ impl From<RootTree> for &'static [u8; 1] {
             RootTree::Pools => &[48],
             RootTree::PreFundedSpecializedBalances => &[40],
             RootTree::AddressBalances => &[56],
-            // RootTree::MasternodeLists => &[56],
             RootTree::Misc => &[104],
             RootTree::WithdrawalTransactions => &[80],
             RootTree::Balances => &[96],
