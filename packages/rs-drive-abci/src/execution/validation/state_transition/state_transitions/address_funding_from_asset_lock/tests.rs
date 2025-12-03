@@ -1,7 +1,8 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
-    use crate::platform_types::platform::Platform;
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::platform_types::platform::{Platform, PlatformRef};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
@@ -607,6 +608,35 @@ mod tests {
         // For now, always return true - tests using this need to be updated
         // when proper asset lock spent tracking is implemented
         true
+    }
+
+    /// Perform check_tx on a raw transaction and return whether it's valid
+    /// This simulates what happens when a transaction is submitted to the mempool.
+    /// - invalid_unpaid transactions should return false (rejected from mempool)
+    /// - invalid_paid transactions should return true (accepted to mempool, will fail at processing)
+    fn check_tx_is_valid(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        raw_tx: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(
+                raw_tx,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        check_result.is_valid()
     }
 
     /// Generate signable bytes for an address funding from asset lock transition
@@ -1500,6 +1530,13 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should PASS for invalid_paid transactions - they get accepted to mempool
+            // but fail at processing time (fees are still paid)
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (insufficient funds for outputs)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1517,7 +1554,9 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail with AddressesNotEnoughFundsError
-            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+            // Note: This is now invalid_paid because advanced structure validation
+            // creates a PartiallyUseAssetLockAction that deducts a penalty from the asset lock
+            assert_eq!(processing_result.invalid_paid_count(), 1);
         }
 
         #[test]
@@ -1961,6 +2000,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong asset lock signature)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -2041,6 +2086,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong input signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2269,6 +2320,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient P2SH signatures)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2892,6 +2949,12 @@ mod tests {
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result2, platform_version),
+                "check_tx should reject invalid_unpaid transaction (asset lock already used)"
+            );
+
             let platform_state2 = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
@@ -2956,6 +3019,12 @@ mod tests {
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid signature format)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -3203,6 +3272,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong signature length)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -3285,6 +3360,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong redeem script hash)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -3352,6 +3433,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (witness type mismatch)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -3921,6 +4008,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result2, platform_version),
+                "check_tx should reject invalid_unpaid transaction (asset lock fully used)"
+            );
+
             let platform_state = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
@@ -4070,6 +4163,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (nonce gap)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -4147,6 +4246,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (nonce already used)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4289,6 +4394,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output exceeds asset lock value)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -4365,6 +4476,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (zero input amount)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -4428,6 +4545,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (zero output amount)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4497,6 +4620,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient balance)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4723,6 +4852,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (dust output after fee)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -4871,6 +5006,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (recovered pubkey wrong address)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -4956,6 +5097,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid recovery ID)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -5034,6 +5181,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature for different message)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5241,6 +5394,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (same address in input and output)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5470,6 +5629,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient confirmations)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -5544,6 +5709,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (empty signature)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -5606,6 +5777,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature too short)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -5667,6 +5844,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature too long)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5733,6 +5916,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong signature key)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5824,6 +6013,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (witnesses wrong order)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -5912,6 +6107,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (missing middle witness)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6501,6 +6702,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (address not found)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -6580,6 +6787,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient balance)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -6657,6 +6870,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid nonce)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6768,6 +6987,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (high-S signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -7006,6 +7231,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (one invalid input signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -7845,6 +8076,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output sum overflow)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -7924,6 +8161,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (input sum overflow)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -7988,6 +8231,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output plus fee overflow)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -8508,6 +8757,482 @@ mod tests {
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
             );
+        }
+    }
+
+    // ==========================================
+    // INVALID PAID FEE SOURCE TESTS
+    // These test the different scenarios for where fees come from when
+    // PartiallyUseAssetLockAction is used due to insufficient funds validation failure
+    // ==========================================
+
+    mod invalid_paid_fee_sources {
+        use super::*;
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+        use dpp::asset_lock::StoredAssetLockInfo;
+
+        /// Helper to get asset lock info after processing
+        fn get_asset_lock_info(
+            platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            outpoint: &dpp::dashcore::OutPoint,
+            transaction: &drive::grovedb::Transaction,
+        ) -> StoredAssetLockInfo {
+            let platform_version = PlatformVersion::latest();
+            let outpoint_bytes: [u8; 36] = {
+                let mut bytes = [0u8; 36];
+                bytes[..32].copy_from_slice(outpoint.txid.as_raw_hash().as_byte_array());
+                bytes[32..36].copy_from_slice(&outpoint.vout.to_le_bytes());
+                bytes
+            };
+
+            platform
+                .drive
+                .fetch_asset_lock_outpoint_info(
+                    &outpoint_bytes.into(),
+                    Some(transaction),
+                    &platform_version.drive,
+                )
+                .expect("should fetch asset lock info")
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_asset_lock_only() {
+            // Scenario: No inputs provided, so the penalty must come entirely from the asset lock.
+            // Expected: Asset lock remaining balance is reduced by at least the penalty.
+            //
+            // Note: The exact fee includes penalty + processing fees computed at the time of
+            // validation. The final aggregated_fees may differ slightly due to storage costs
+            // added during operation execution.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(2001);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            // No inputs - fee can only come from asset lock
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 2 DASH - more than the 1 DASH asset lock (will fail)
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(2.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid (fee deducted from asset lock)
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            // Verify asset lock was partially consumed
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+                    let initial = value.initial_credit_value();
+
+                    // Initial should match our expected value
+                    assert_eq!(initial, initial_asset_lock_value);
+
+                    // Remaining should be less than initial
+                    assert!(
+                        remaining < initial_asset_lock_value,
+                        "Asset lock remaining {} should be less than initial {}",
+                        remaining,
+                        initial_asset_lock_value
+                    );
+
+                    // Calculate the amount deducted from asset lock
+                    let amount_deducted = initial_asset_lock_value - remaining;
+
+                    // The penalty is the minimum that should have been deducted
+                    let penalty = platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .address_funds_insufficient_balance;
+
+                    // Verify at least the penalty was deducted
+                    assert!(
+                        amount_deducted >= penalty,
+                        "Amount deducted {} should be at least the penalty {}",
+                        amount_deducted,
+                        penalty
+                    );
+
+                    // Verify fee was collected
+                    let processing_fee = processing_result.aggregated_fees().processing_fee;
+                    assert!(
+                        processing_fee > 0,
+                        "Processing fee should be greater than 0"
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_input_only() {
+            // Scenario: Input has enough balance to cover the entire penalty + processing fee.
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input balance is reduced, asset lock remains untouched.
+            //
+            // Note: When a transition fails in advanced_structure validation, the action still has
+            // the "remaining balance" which is (actual_balance - input_spend_amount). The fee is
+            // then deducted from this remaining balance. So the final balance is:
+            // actual_balance - input_spend_amount - fee_from_remaining
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([200u8; 32]);
+
+            // Set up input with plenty of balance to cover fees
+            // Penalty is 10_000_000 + some processing fee (~10M total)
+            // We need: input_spend_amount + enough left over to cover fee
+            let initial_input_balance = dash_to_credits!(0.5); // 50_000_000_000 credits
+            let input_spend_amount = dash_to_credits!(0.1); // 10_000_000_000 - What we're trying to spend
+                                                            // remaining_balance in action = 40_000_000_000 (plenty to cover ~20M fee)
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2002);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Try to send 3 DASH total - more than asset_lock (1) + input spend (0.1) = 1.1 DASH
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            // Fee strategy: Deduct from input first
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (input covers fee)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Get the input balance before processing
+            let input_balance_before = get_address_balance(&platform, input_address, &transaction);
+            assert_eq!(input_balance_before, initial_input_balance);
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+
+            // Verify input balance was reduced
+            let input_balance_after = get_address_balance(&platform, input_address, &transaction);
+
+            // The remaining_balance in action = initial_input_balance - input_spend_amount
+            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+
+            // Fee deducted from input = remaining_balance - balance_after
+            let fee_from_input = remaining_balance_in_action - input_balance_after;
+
+            // Verify that input was charged (balance reduced)
+            assert!(
+                input_balance_after < remaining_balance_in_action,
+                "Input balance {} should be less than remaining {} (some fee was taken)",
+                input_balance_after,
+                remaining_balance_in_action
+            );
+
+            // Verify at least the penalty was taken from input
+            assert!(
+                fee_from_input >= penalty,
+                "Fee from input {} should be at least the penalty {}",
+                fee_from_input,
+                penalty
+            );
+
+            // Verify asset lock is untouched (full value remains)
+            // Since input had enough to cover penalty + processing fee at advanced_structure time
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+
+                    // Asset lock should still have full value since input covered the fees
+                    assert_eq!(
+                        remaining, initial_asset_lock_value,
+                        "Asset lock should be unchanged when input covers all fees (remaining {}, initial {})",
+                        remaining, initial_asset_lock_value
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_input_then_asset_lock() {
+            // Scenario: Input has some balance but not enough for the full fee (penalty + processing).
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input contributes what it can, remainder comes from asset lock.
+            //
+            // Note: The action's inputs_with_remaining_balance contains (actual_balance - input_spend_amount).
+            // Fee is deducted from this remaining balance, not the original balance.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([201u8; 32]);
+
+            // Set up input such that remaining_balance < total_fee
+            // remaining_balance = initial_input_balance - input_spend_amount
+            // We want: remaining_balance < penalty (~10M) + processing (~10M)
+            // But remaining_balance > 0 so both input and asset lock contribute
+            let initial_input_balance = 15_000_000u64; // 15M credits
+            let input_spend_amount = 10_000_000u64; // 10M credits
+                                                    // remaining_balance_in_action = 15M - 10M = 5M (less than ~20M total fee)
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2003);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Try to send 3 DASH - more than available, will fail
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            // Fee strategy: Deduct from input first, then reduce output (but output won't be created)
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (input+asset_lock covers fee)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Get the input balance before processing
+            let input_balance_before = get_address_balance(&platform, input_address, &transaction);
+            assert_eq!(input_balance_before, initial_input_balance);
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+
+            // Verify input balance after processing
+            let input_balance_after = get_address_balance(&platform, input_address, &transaction);
+
+            // The remaining_balance in action = initial_input_balance - input_spend_amount
+            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+
+            // Input balance should be 0 or reduced significantly (fee deducted from remaining)
+            // Final balance = remaining_balance - min(fee, remaining_balance) = 0 (if remaining < fee)
+            assert!(
+                input_balance_after < remaining_balance_in_action,
+                "Input balance after {} should be less than remaining {} (some fee was taken)",
+                input_balance_after,
+                remaining_balance_in_action
+            );
+
+            // Fee deducted from input = remaining_balance_in_action - input_balance_after
+            let fee_from_input = remaining_balance_in_action - input_balance_after;
+
+            // Verify asset lock was partially consumed
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+
+                    // Asset lock should have been reduced
+                    assert!(
+                        remaining < initial_asset_lock_value,
+                        "Asset lock remaining {} should be less than initial {}",
+                        remaining,
+                        initial_asset_lock_value
+                    );
+
+                    // Fee from asset lock
+                    let fee_from_asset_lock = initial_asset_lock_value - remaining;
+
+                    // Verify that both sources contributed
+                    assert!(
+                        fee_from_input > 0,
+                        "Input should have contributed to fee payment, got {} contribution",
+                        fee_from_input
+                    );
+                    assert!(
+                        fee_from_asset_lock > 0,
+                        "Asset lock should have contributed to fee payment, got {} contribution",
+                        fee_from_asset_lock
+                    );
+
+                    // Total fee collected should be at least the penalty
+                    let total_collected = fee_from_input + fee_from_asset_lock;
+                    assert!(
+                        total_collected >= penalty,
+                        "Total collected {} should be at least penalty {}",
+                        total_collected,
+                        penalty
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
         }
     }
 }

@@ -115,4 +115,14 @@ impl AddressFundingFromAssetLockTransitionAction {
             AddressFundingFromAssetLockTransitionAction::V0(transition) => &transition.fee_strategy,
         }
     }
+
+    /// Removes the remainder output (the one with None value) from the action.
+    /// This should be called when total available funds exactly match explicit outputs.
+    pub fn remove_remainder_output(&mut self) {
+        match self {
+            AddressFundingFromAssetLockTransitionAction::V0(transition) => {
+                transition.outputs.retain(|_, v| v.is_some());
+            }
+        }
+    }
 }

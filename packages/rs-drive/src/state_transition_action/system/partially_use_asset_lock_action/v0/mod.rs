@@ -1,7 +1,10 @@
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::platform_value::{Bytes32, Bytes36};
-use dpp::prelude::UserFeeIncrease;
+use dpp::prelude::{AddressNonce, UserFeeIncrease};
+use std::collections::BTreeMap;
 mod transformer;
+
 #[derive(Default, Debug, Clone)]
 pub struct PartiallyUseAssetLockActionV0 {
     /// asset lock outpoint
@@ -19,6 +22,12 @@ pub struct PartiallyUseAssetLockActionV0 {
     pub used_credits: Credits,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
+    /// Optional inputs with their remaining balances (for address funding transitions)
+    /// The nonce is the current nonce, and Credits is the remaining balance after deducting input amount
+    pub inputs_with_remaining_balance: Option<BTreeMap<PlatformAddress, (AddressNonce, Credits)>>,
+    /// Optional fee strategy (for address funding transitions)
+    /// Specifies the order in which fees should be deducted from inputs/outputs
+    pub fee_strategy: Option<AddressFundsFeeStrategy>,
 }
 
 /// document base transition action accessors v0
@@ -40,4 +49,12 @@ pub trait PartiallyUseAssetLockActionAccessorsV0 {
 
     /// the previous transaction signable bytes hashes that tried to used this asset lock, but failed
     fn previous_transaction_hashes_ref(&self) -> &Vec<Bytes32>;
+
+    /// Optional inputs with their remaining balances (for address funding transitions)
+    fn inputs_with_remaining_balance(
+        &self,
+    ) -> Option<&BTreeMap<PlatformAddress, (AddressNonce, Credits)>>;
+
+    /// Optional fee strategy (for address funding transitions)
+    fn fee_strategy(&self) -> Option<&AddressFundsFeeStrategy>;
 }

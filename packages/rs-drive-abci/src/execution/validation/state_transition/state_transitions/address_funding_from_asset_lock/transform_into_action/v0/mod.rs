@@ -4,7 +4,6 @@ use crate::rpc::core::CoreRPCLike;
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValue, AssetLockValueGettersV0};
 use dpp::balances::credits::CREDITS_PER_DUFF;
 use dpp::consensus::basic::identity::IdentityAssetLockTransactionOutPointNotEnoughBalanceError;
-use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 
 use dpp::consensus::signature::{BasicECDSAError, SignatureError};
 use dpp::dashcore::hashes::Hash;
@@ -14,7 +13,6 @@ use dpp::identity::KeyType;
 
 use dpp::prelude::ConsensusValidationResult;
 
-use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::signable_bytes_hasher::SignableBytesHasher;
 use dpp::state_transition::StateTransitionSingleSigned;
@@ -196,36 +194,11 @@ impl AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
             }
         }
 
-        // Calculate total available funds (asset lock + input amounts from transition)
-        let asset_lock_remaining = asset_lock_value_to_be_consumed.remaining_credit_value();
-        // Use the transition's input amounts (what's being spent), not the remaining balances
-        let inputs_total: Credits = self.inputs().values().map(|(_, amount)| *amount).sum();
-        let total_available = asset_lock_remaining.saturating_add(inputs_total);
-
-        // Calculate sum of explicit outputs (Some values only)
-        let explicit_outputs_sum: Credits = self.outputs().values().filter_map(|v| *v).sum();
-
-        // Validate that we have enough funds for explicit outputs
-        if total_available < explicit_outputs_sum {
-            return Ok(ConsensusValidationResult::new_with_error(
-                AddressesNotEnoughFundsError::new(
-                    inputs_with_remaining_balance.clone(),
-                    explicit_outputs_sum,
-                )
-                .into(),
-            ));
-        }
-
-        // Determine if remainder output should be removed
-        // If total_available == explicit_outputs_sum, there's nothing left for remainder
-        let should_remove_remainder = total_available == explicit_outputs_sum;
-
         match AddressFundingFromAssetLockTransitionAction::try_from_transition(
             self,
             signable_bytes_hasher,
             asset_lock_value_to_be_consumed,
             inputs_with_remaining_balance,
-            should_remove_remainder,
         ) {
             Ok(action) => Ok(ConsensusValidationResult::new_with_data(action.into())),
             Err(error) => Ok(ConsensusValidationResult::new_with_error(error)),

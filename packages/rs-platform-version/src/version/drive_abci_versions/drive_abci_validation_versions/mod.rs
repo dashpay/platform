@@ -81,6 +81,8 @@ pub struct PenaltyAmounts {
     pub unique_key_already_present: u64,
     pub validation_of_added_keys_structure_failure: u64,
     pub validation_of_added_keys_proof_of_possession_failure: u64,
+    /// Penalty for address funding with insufficient funds for outputs
+    pub address_funds_insufficient_balance: u64,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
