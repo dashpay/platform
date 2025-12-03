@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
 use derive_more::From;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
@@ -56,6 +56,13 @@ impl AddressFundingFromAssetLockTransitionAction {
             AddressFundingFromAssetLockTransitionAction::V0(transition) => {
                 transition.user_fee_increase
             }
+        }
+    }
+
+    /// fee strategy
+    pub fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        match self {
+            AddressFundingFromAssetLockTransitionAction::V0(transition) => &transition.fee_strategy,
         }
     }
 }

@@ -1142,7 +1142,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -1200,7 +1203,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -1262,7 +1268,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -1334,9 +1343,8 @@ mod tests {
             // Should fail because input address doesn't exist
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(StateError::AddressDoesNotExistError(_)),
-                    _
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressDoesNotExistError(_))
                 )]
             );
         }
@@ -1403,9 +1411,8 @@ mod tests {
             // Should fail because of insufficient balance
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(StateError::AddressesNotEnoughFundsError(_)),
-                    _
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressesNotEnoughFundsError(_))
                 )]
             );
         }
@@ -1472,9 +1479,8 @@ mod tests {
             // Should fail because of invalid nonce
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::PaidConsensusError(
-                    ConsensusError::StateError(StateError::AddressInvalidNonceError(_)),
-                    _
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressInvalidNonceError(_))
                 )]
             );
         }
@@ -1543,7 +1549,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to signature verification error
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -1623,7 +1629,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to witness verification error
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -1692,7 +1698,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -1760,7 +1769,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -1843,7 +1855,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to insufficient signatures
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -2122,7 +2134,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -2182,7 +2197,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -2252,7 +2270,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -2326,7 +2347,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -2387,7 +2411,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -2452,7 +2479,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Commit the transaction
             platform
@@ -2491,7 +2521,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Second attempt should fail - asset lock already used
-            assert_eq!(processing_result2.invalid_paid_count(), 1);
+            assert_eq!(processing_result2.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -2556,7 +2586,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to invalid signature
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -2620,7 +2650,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Commit the transaction
             platform
@@ -2631,14 +2664,14 @@ mod tests {
                 .expect("expected to commit");
 
             // Verify the output address received funds (minus fees)
-            let balance = platform
+            let balance_and_nonce = platform
                 .drive
-                .fetch_address_balance(output_address, None, platform_version)
+                .fetch_balance_and_nonce(&output_address, None, platform_version)
                 .expect("expected to fetch balance");
 
             // Balance should be approximately 0.9 DASH minus processing fees
-            assert!(balance.is_some());
-            let actual_balance = balance.unwrap();
+            assert!(balance_and_nonce.is_some());
+            let (_nonce, actual_balance) = balance_and_nonce.unwrap();
             // Should be less than requested due to fees, but greater than 0
             assert!(actual_balance > 0);
             assert!(actual_balance < dash_to_credits!(0.9));
@@ -2703,7 +2736,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Commit the transaction
             platform
@@ -2714,13 +2750,13 @@ mod tests {
                 .expect("expected to commit");
 
             // Verify the input address balance was reduced
-            let remaining_balance = platform
+            let remaining_balance_and_nonce = platform
                 .drive
-                .fetch_address_balance(input_address, None, platform_version)
+                .fetch_balance_and_nonce(&input_address, None, platform_version)
                 .expect("expected to fetch balance");
 
-            assert!(remaining_balance.is_some());
-            let actual_remaining = remaining_balance.unwrap();
+            assert!(remaining_balance_and_nonce.is_some());
+            let (_nonce, actual_remaining) = remaining_balance_and_nonce.unwrap();
             // Remaining should be initial - input_amount = 1.0 - 0.5 = 0.5 DASH
             assert_eq!(actual_remaining, initial_balance - input_amount);
         }
@@ -2802,7 +2838,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to invalid witness
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -2890,7 +2926,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to wrong redeem script hash
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -2964,7 +3000,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to witness type mismatch
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -3034,7 +3070,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed if fee is covered by remaining 0.01 DASH
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -3098,7 +3137,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - no funds left for fee
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3160,7 +3199,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - user fee increase makes it too expensive
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3222,7 +3261,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with small fee increase
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -3383,8 +3425,11 @@ mod tests {
                 .expect("expected to process state transition");
 
             // First should succeed, second should fail as double spend
-            assert_eq!(processing_result.valid_count(), 1);
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3447,13 +3492,17 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Commit the transaction
             platform
                 .drive
                 .grove
                 .commit_transaction(transaction)
+                .unwrap()
                 .expect("commit");
 
             // Now try to use the same asset lock again
@@ -3496,7 +3545,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - asset lock already used
-            assert_eq!(processing_result2.invalid_paid_count(), 1);
+            assert_eq!(processing_result2.invalid_unpaid_count(), 1);
         }
     }
 
@@ -3576,7 +3625,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -3654,7 +3706,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to nonce gap
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3732,7 +3784,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to nonce already used
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3755,8 +3807,8 @@ mod tests {
 
             let mut signer = TestAddressSigner::new();
             let input_address = signer.add_p2pkh([23u8; 32]);
-            // Very high nonce
-            let high_nonce: AddressNonce = u64::MAX - 1;
+            // Very high nonce (max u32 - 1)
+            let high_nonce: AddressNonce = u32::MAX - 1;
             setup_address_with_balance(
                 &mut platform,
                 input_address,
@@ -3815,7 +3867,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with high nonce
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -3882,7 +3937,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - output exceeds asset lock value
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -3960,7 +4015,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - input exceeds balance
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -4168,7 +4223,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - insufficient balance
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -4235,7 +4290,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Verify balance was added (not replaced)
             // After: should have 1.0 + 0.5 = 1.5 DASH
@@ -4323,7 +4381,10 @@ mod tests {
 
             // This demonstrates that BTreeMap deduplication works
             // The transition itself should succeed (with only one input)
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -4391,7 +4452,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - output would be dust after fee deduction
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -4455,7 +4516,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed if output after fee >= minimum
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -4541,7 +4605,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - recovered pubkey doesn't match input address
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -4626,7 +4690,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - invalid recovery ID
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -4705,7 +4769,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - signature for different message
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -4777,7 +4841,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with multiple P2SH inputs
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -4845,7 +4912,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -4978,7 +5048,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with large amounts
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -5046,7 +5119,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with chain asset lock proof
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -5126,7 +5202,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - insufficient confirmations
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -5254,7 +5330,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - signature too short
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -5316,7 +5392,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - signature too long
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -5382,7 +5458,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - wrong key for asset lock signature
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -5472,7 +5548,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - witnesses in wrong order
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
@@ -5630,7 +5706,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with 1-of-1 P2SH
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -5695,7 +5774,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with 3-of-3 P2SH
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -5773,7 +5855,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed - extra signatures are valid
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -5840,7 +5925,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with 15-of-15
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -5912,7 +6000,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Verify nonce was incremented
             let new_nonce = get_address_nonce(&platform, input_address, &transaction);
@@ -5978,7 +6069,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Verify asset lock is marked as spent
             let is_spent = is_asset_lock_spent(&platform, &asset_lock_outpoint, &transaction);
@@ -6062,7 +6156,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Verify exact balance changes
             let new_input_balance = get_address_balance(&platform, input_address, &transaction);
@@ -6143,24 +6240,22 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
 
             // Verify specific error type
-            let errors = processing_result
+            let result = processing_result
                 .into_execution_results()
                 .into_iter()
-                .filter_map(|r| {
-                    r.into_consensus_validation_result()
-                        .errors
-                        .into_iter()
-                        .next()
-                })
-                .collect::<Vec<_>>();
+                .next()
+                .unwrap();
+            let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result
+            else {
+                panic!("expected an unpaid consensus error");
+            };
 
-            assert!(!errors.is_empty());
             assert!(matches!(
-                errors[0],
-                ConsensusError::StateError(StateError::AddressNotFoundError(_))
+                consensus_error,
+                ConsensusError::StateError(StateError::AddressDoesNotExistError(_))
             ));
         }
 
@@ -6224,24 +6319,22 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
 
             // Verify specific error type
-            let errors = processing_result
+            let result = processing_result
                 .into_execution_results()
                 .into_iter()
-                .filter_map(|r| {
-                    r.into_consensus_validation_result()
-                        .errors
-                        .into_iter()
-                        .next()
-                })
-                .collect::<Vec<_>>();
+                .next()
+                .unwrap();
+            let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result
+            else {
+                panic!("expected an unpaid consensus error");
+            };
 
-            assert!(!errors.is_empty());
             assert!(matches!(
-                errors[0],
-                ConsensusError::StateError(StateError::AddressInsufficientBalanceError(_))
+                consensus_error,
+                ConsensusError::StateError(StateError::AddressNotEnoughFundsError(_))
             ));
         }
 
@@ -6304,24 +6397,22 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
 
             // Verify specific error type
-            let errors = processing_result
+            let result = processing_result
                 .into_execution_results()
                 .into_iter()
-                .filter_map(|r| {
-                    r.into_consensus_validation_result()
-                        .errors
-                        .into_iter()
-                        .next()
-                })
-                .collect::<Vec<_>>();
+                .next()
+                .unwrap();
+            let StateTransitionExecutionResult::UnpaidConsensusError(consensus_error) = result
+            else {
+                panic!("expected an unpaid consensus error");
+            };
 
-            assert!(!errors.is_empty());
             assert!(matches!(
-                errors[0],
-                ConsensusError::StateError(StateError::InvalidAddressNonceError(_))
+                consensus_error,
+                ConsensusError::StateError(StateError::AddressInvalidNonceError(_))
             ));
         }
     }
@@ -6418,7 +6509,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - high-S signature
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -6495,7 +6586,7 @@ mod tests {
             // The important thing is it doesn't panic
             assert!(
                 processing_result.valid_count()
-                    + processing_result.invalid_paid_count()
+                    + processing_result.invalid_unpaid_count()
                     + processing_result.invalid_unpaid_count()
                     == 1
             );
@@ -6567,7 +6658,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed (no height restrictions on this transition type)
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -6663,7 +6757,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Whole transaction should fail due to one invalid signature
-            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
 
@@ -6734,7 +6828,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -6758,30 +6855,26 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
+            let signer = TestAddressSigner::new();
+
             let mut rng = StdRng::seed_from_u64(800);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             // Create address with all-zero hash
-            let zero_address = PlatformAddress::new([0u8; 20]);
+            let zero_address = PlatformAddress::P2pkh([0u8; 20]);
 
             let mut outputs = BTreeMap::new();
             outputs.insert(zero_address, dash_to_credits!(0.5));
 
-            let transition = AddressFundingFromAssetLockTransition::V0(
-                AddressFundingFromAssetLockTransitionV0 {
-                    asset_lock_proof,
-                    inputs: BTreeMap::new(),
-                    outputs,
-                    fee_strategy: AddressFundsFeeStrategy::from(vec![
-                        AddressFundsFeeStrategyStep::ReduceOutput(0),
-                    ]),
-                    user_fee_increase: 0,
-                    signature: BinaryData::new(asset_lock_pk.to_vec()),
-                    input_witnesses: vec![],
-                },
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(), // No inputs
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
             );
 
-            let state_transition: StateTransition = transition.into();
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
@@ -6803,7 +6896,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed - all-zero address is technically valid
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -6823,30 +6919,26 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
+            let signer = TestAddressSigner::new();
+
             let mut rng = StdRng::seed_from_u64(801);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             // Create address with all-FF hash
-            let max_address = PlatformAddress::new([0xFFu8; 20]);
+            let max_address = PlatformAddress::P2pkh([0xFFu8; 20]);
 
             let mut outputs = BTreeMap::new();
             outputs.insert(max_address, dash_to_credits!(0.5));
 
-            let transition = AddressFundingFromAssetLockTransition::V0(
-                AddressFundingFromAssetLockTransitionV0 {
-                    asset_lock_proof,
-                    inputs: BTreeMap::new(),
-                    outputs,
-                    fee_strategy: AddressFundsFeeStrategy::from(vec![
-                        AddressFundsFeeStrategyStep::ReduceOutput(0),
-                    ]),
-                    user_fee_increase: 0,
-                    signature: BinaryData::new(asset_lock_pk.to_vec()),
-                    input_witnesses: vec![],
-                },
+            let state_transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                BTreeMap::new(), // No inputs
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
             );
 
-            let state_transition: StateTransition = transition.into();
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
@@ -6868,7 +6960,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed - all-FF address is technically valid
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 
@@ -6939,7 +7034,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with combined strategy
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
@@ -7005,7 +7103,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed - fee covered by asset lock remainder
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Verify input balance is now 0
             let remaining_balance = get_address_balance(&platform, input_address, &transaction);
@@ -7075,13 +7176,17 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
 
             // Commit
             platform
                 .drive
                 .grove
                 .commit_transaction(transaction)
+                .unwrap()
                 .expect("commit");
 
             // Second execution of same transition - should fail (asset lock already spent)
@@ -7102,7 +7207,7 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - can't replay same transition
-            assert_eq!(processing_result2.invalid_paid_count(), 1);
+            assert_eq!(processing_result2.invalid_unpaid_count(), 1);
         }
     }
 
@@ -7232,7 +7337,10 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should succeed with exactly minimum amount
-            assert_eq!(processing_result.valid_count(), 1);
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
     }
 }
