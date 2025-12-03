@@ -1,39 +1,39 @@
-use super::types::{
-    DynIdentitySigner, IdentityTransferConfig, IdentityTransferSigner, TransferInput,
-    TransferOutput,
-};
+use super::types::{IdentityTransferConfig, TransferInput, TransferOutput};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::transfer::TransferToIdentity;
 use crate::{Error, Sdk};
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
-use dpp::identity::IdentityPublicKey;
-use dpp::platform_value::BinaryData;
 use dpp::prelude::UserFeeIncrease;
 use dpp::state_transition::identity_credit_transfer_transition::methods::IdentityCreditTransferTransitionMethodsV0;
 use dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition;
 use dpp::state_transition::StateTransition;
-use dpp::ProtocolError;
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
+/// Minimal plan describing an identity-to-identity transfer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct IdentityTransferPlan {
+    /// Destination identity receiving the credits.
     pub(crate) recipient_id: Identifier,
+    /// Number of credits to transfer.
     pub(crate) amount: Credits,
 }
 
-#[derive(Debug)]
-pub(crate) struct IdentityTransferContext<'a> {
-    pub(crate) config: &'a IdentityTransferConfig,
+/// Fully classified identity transfer with config and plan.
+#[derive(Debug, Clone)]
+pub(crate) struct IdentityTransferSelection {
+    /// Funding identity configuration.
+    pub(crate) config: IdentityTransferConfig,
+    /// Planned transfer amount and destination.
     pub(crate) plan: IdentityTransferPlan,
 }
 
-pub(crate) fn classify_identity_transfer<'a>(
-    inputs: &'a [TransferInput],
+/// Build identity transfer context after validating inputs and outputs.
+pub(crate) fn classify_identity_transfer(
+    inputs: &[TransferInput],
     outputs: &BTreeMap<TransferOutput, Credits>,
-) -> Result<IdentityTransferContext<'a>, Error> {
+) -> Result<IdentityTransferSelection, Error> {
     if inputs.len() != 1 {
         return Err(Error::InvalidCreditTransfer(
             "identity transfer expects exactly one funding input".to_string(),
@@ -41,7 +41,7 @@ pub(crate) fn classify_identity_transfer<'a>(
     }
 
     let config = match inputs.first() {
-        Some(TransferInput::Identity(config)) => config,
+        Some(TransferInput::Identity(config)) => config.clone(),
         Some(_) => {
             return Err(Error::InvalidCreditTransfer(
                 "identity transfer requires the funding input to be an identity".to_string(),
@@ -71,14 +71,11 @@ pub(crate) fn classify_identity_transfer<'a>(
         amount,
     };
 
-    Ok(IdentityTransferContext { config, plan })
+    Ok(IdentityTransferSelection { config, plan })
 }
 
 impl IdentityTransferConfig {
-    pub fn signer_arc(&self) -> Arc<DynIdentitySigner> {
-        self.signer.inner()
-    }
-
+    /// Execute a transfer immediately, returning balance changes.
     pub async fn execute(
         &self,
         sdk: &Sdk,
@@ -92,12 +89,13 @@ impl IdentityTransferConfig {
                 recipient_id,
                 amount,
                 self.signing_key(),
-                self.signer().clone(),
+                self.signer(),
                 settings,
             )
             .await
     }
 
+    /// Build a state transition for the given recipient and amount.
     pub async fn state_transition(
         &self,
         sdk: &Sdk,
@@ -115,7 +113,7 @@ impl IdentityTransferConfig {
             recipient_id,
             amount,
             user_fee_increase,
-            self.signer().clone(),
+            self.signer(),
             self.signing_key(),
             nonce,
             sdk.version(),
@@ -131,23 +129,5 @@ impl std::fmt::Debug for IdentityTransferConfig {
         f.debug_struct("IdentityTransferConfig")
             .field("identity", &self.identity.id())
             .finish()
-    }
-}
-
-impl dpp::identity::signer::Signer<IdentityPublicKey> for IdentityTransferSigner {
-    fn sign(&self, key: &IdentityPublicKey, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.inner().sign(key, data)
-    }
-
-    fn sign_create_witness(
-        &self,
-        key: &IdentityPublicKey,
-        data: &[u8],
-    ) -> Result<dpp::address_funds::AddressWitness, ProtocolError> {
-        self.inner().sign_create_witness(key, data)
-    }
-
-    fn can_sign_with(&self, key: &IdentityPublicKey) -> bool {
-        self.inner().can_sign_with(key)
     }
 }
