@@ -56,8 +56,19 @@ impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionA
                     ));
                 }
 
+                // Calculate the sum of explicit outputs
+                let explicit_outputs_sum: u64 = outputs.values().flatten().sum();
+
+                // Calculate remainder: initial_balance - explicit_outputs_sum
+                // Note: fees are handled separately during validation, inputs have been consumed above
+                let remainder_balance = initial_balance.saturating_sub(explicit_outputs_sum);
+
                 // Add balance to outputs
-                for (address, balance_to_add) in outputs {
+                for (address, balance_option) in outputs {
+                    let balance_to_add = match balance_option {
+                        Some(explicit_amount) => explicit_amount,
+                        None => remainder_balance, // This address receives the remainder
+                    };
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::AddBalanceToAddress {
                             address,

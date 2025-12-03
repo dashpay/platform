@@ -17,11 +17,13 @@ impl AddressFundingFromAssetLockTransitionAction {
     /// * `signable_bytes_hasher` - The signable bytes hasher from validation
     /// * `asset_lock_value_to_be_consumed` - The asset lock value from validation
     /// * `inputs_with_remaining_balance` - Pre-validated inputs with remaining balances
+    /// * `should_remove_remainder` - If true, removes the None (remainder) output from the action
     pub fn try_from_transition(
         value: &AddressFundingFromAssetLockTransition,
         signable_bytes_hasher: SignableBytesHasher,
         asset_lock_value_to_be_consumed: AssetLockValue,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        should_remove_remainder: bool,
     ) -> Result<Self, ConsensusError> {
         match value {
             AddressFundingFromAssetLockTransition::V0(v0) => Ok(
@@ -30,6 +32,7 @@ impl AddressFundingFromAssetLockTransitionAction {
                     signable_bytes_hasher,
                     asset_lock_value_to_be_consumed,
                     inputs_with_remaining_balance,
+                    should_remove_remainder,
                 )?
                 .into(),
             ),

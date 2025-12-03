@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::address_funds::address_credit_withdrawal::v0::AddressCreditWithdrawalTransitionActionV0;
 use derive_more::From;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
@@ -41,6 +41,13 @@ impl AddressCreditWithdrawalTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             AddressCreditWithdrawalTransitionAction::V0(transition) => transition.user_fee_increase,
+        }
+    }
+
+    /// fee strategy
+    pub fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        match self {
+            AddressCreditWithdrawalTransitionAction::V0(transition) => &transition.fee_strategy,
         }
     }
 

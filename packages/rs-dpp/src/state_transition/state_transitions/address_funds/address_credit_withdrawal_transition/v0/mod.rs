@@ -14,9 +14,7 @@ use platform_serialization_derive::PlatformSignable;
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-use crate::address_funds::{
-    AddressFundsFeeWithWithdrawalsStrategy, AddressWitness, PlatformAddress,
-};
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use crate::fee::Credits;
 use crate::prelude::{AddressNonce, UserFeeIncrease};
 use crate::{identity::core_script::CoreScript, withdrawal::Pooling, ProtocolError};
@@ -32,7 +30,7 @@ pub struct AddressCreditWithdrawalTransitionV0 {
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     /// Optional output for change
     pub output: Option<(PlatformAddress, Credits)>,
-    pub fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+    pub fee_strategy: AddressFundsFeeStrategy,
     pub core_fee_per_byte: u32,
     pub pooling: Pooling,
     pub output_script: CoreScript,

@@ -1,6 +1,6 @@
 mod transformer;
 
-use dpp::address_funds::{AddressFundsFeeWithWithdrawalsStrategy, PlatformAddress};
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::document::Document;
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
@@ -14,7 +14,7 @@ pub struct AddressCreditWithdrawalTransitionActionV0 {
     /// optional output for change
     pub output: Option<(PlatformAddress, Credits)>,
     /// fee strategy
-    pub fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+    pub fee_strategy: AddressFundsFeeStrategy,
     /// fee multiplier
     pub user_fee_increase: UserFeeIncrease,
     /// prepared withdrawal document

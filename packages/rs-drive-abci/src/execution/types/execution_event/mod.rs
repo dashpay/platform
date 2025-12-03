@@ -289,11 +289,36 @@ impl ExecutionEvent<'_> {
                 let input_current_balances = address_funding_from_asset_lock_action
                     .inputs_with_remaining_balance()
                     .clone();
+                // Use resolved_outputs to compute the remainder and get concrete amounts
                 let added_to_balance_outputs =
-                    address_funding_from_asset_lock_action.outputs().clone();
+                    address_funding_from_asset_lock_action.resolved_outputs();
                 let fee_strategy = address_funding_from_asset_lock_action
                     .fee_strategy()
                     .clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::AddressCreditWithdrawal(address_credit_withdrawal_action) => {
+                let user_fee_increase = address_credit_withdrawal_action.user_fee_increase();
+                let input_current_balances = address_credit_withdrawal_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                let added_to_balance_outputs =
+                    if let Some(output) = address_credit_withdrawal_action.output() {
+                        [output].into()
+                    } else {
+                        BTreeMap::new()
+                    };
+                let fee_strategy = address_credit_withdrawal_action.fee_strategy().clone();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAddressInputs {

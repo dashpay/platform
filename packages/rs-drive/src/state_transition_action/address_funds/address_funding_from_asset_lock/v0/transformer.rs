@@ -18,11 +18,13 @@ impl AddressFundingFromAssetLockTransitionActionV0 {
     /// * `signable_bytes_hasher` - The signable bytes hasher from validation
     /// * `asset_lock_value_to_be_consumed` - The asset lock value from validation
     /// * `inputs_with_remaining_balance` - Pre-validated inputs with remaining balances
+    /// * `should_remove_remainder` - If true, removes the None (remainder) output from the action
     pub fn try_from_transition(
         value: &AddressFundingFromAssetLockTransitionV0,
         signable_bytes_hasher: SignableBytesHasher,
         asset_lock_value_to_be_consumed: AssetLockValue,
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        should_remove_remainder: bool,
     ) -> Result<Self, ConsensusError> {
         let AddressFundingFromAssetLockTransitionV0 {
             asset_lock_proof,
@@ -38,12 +40,23 @@ impl AddressFundingFromAssetLockTransitionActionV0 {
             )
         })?;
 
+        // If should_remove_remainder is true, filter out the None output
+        let final_outputs = if should_remove_remainder {
+            outputs
+                .iter()
+                .filter(|(_, v)| v.is_some())
+                .map(|(k, v)| (*k, *v))
+                .collect()
+        } else {
+            outputs.clone()
+        };
+
         Ok(AddressFundingFromAssetLockTransitionActionV0 {
             signable_bytes_hasher,
             asset_lock_value_to_be_consumed,
             asset_lock_outpoint: Bytes36::new(asset_lock_outpoint.into()),
             inputs_with_remaining_balance,
-            outputs: outputs.clone(),
+            outputs: final_outputs,
             fee_strategy: fee_strategy.clone(),
             user_fee_increase: *user_fee_increase,
         })

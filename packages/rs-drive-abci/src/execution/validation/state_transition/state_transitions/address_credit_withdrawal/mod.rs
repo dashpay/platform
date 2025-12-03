@@ -1,3 +1,4 @@
+mod tests;
 mod transform_into_action;
 
 use dpp::address_funds::PlatformAddress;
