@@ -196,12 +196,10 @@ impl AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0
             }
         }
 
-        // Calculate total available funds (asset lock + inputs from transition)
+        // Calculate total available funds (asset lock + input amounts from transition)
         let asset_lock_remaining = asset_lock_value_to_be_consumed.remaining_credit_value();
-        let inputs_total: Credits = inputs_with_remaining_balance
-            .values()
-            .map(|(_, amount)| *amount)
-            .sum();
+        // Use the transition's input amounts (what's being spent), not the remaining balances
+        let inputs_total: Credits = self.inputs().values().map(|(_, amount)| *amount).sum();
         let total_available = asset_lock_remaining.saturating_add(inputs_total);
 
         // Calculate sum of explicit outputs (Some values only)

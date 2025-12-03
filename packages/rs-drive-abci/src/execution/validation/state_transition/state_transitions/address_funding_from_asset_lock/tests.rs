@@ -1452,6 +1452,255 @@ mod tests {
     }
 
     // ==========================================
+    // REMAINDER OUTPUT HANDLING TESTS
+    // These test the logic for handling remainder outputs based on available funds
+    // ==========================================
+
+    mod remainder_output_handling {
+        use super::*;
+
+        #[test]
+        fn test_explicit_outputs_exceed_available_funds_returns_error() {
+            // When explicit outputs sum > asset_lock + inputs, should return error
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(950);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            // No inputs
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 2 DASH - more than the 1 DASH asset lock
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(2.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail with AddressesNotEnoughFundsError
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_exact_match_removes_remainder_output() {
+            // When explicit outputs sum == asset_lock + inputs, remainder output should be removed
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([51u8; 32]);
+            // Set up input address with exactly the amount we need to make totals match
+            // Asset lock = 1 DASH, we want explicit output = 1.5 DASH
+            // So input needs to provide 0.5 DASH
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.5));
+
+            let mut rng = StdRng::seed_from_u64(951);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let mut outputs = BTreeMap::new();
+            // Explicit output of exactly 1.5 DASH (= 1 DASH asset lock + 0.5 DASH input)
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(1.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder - should be removed
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should succeed
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Verify the explicit output address received funds (minus fees)
+            let output_balance =
+                get_address_balance(&platform, create_platform_address(1), &transaction);
+            assert!(
+                output_balance > 0,
+                "Output address should have received funds"
+            );
+            // Should be less than 1.5 DASH due to fee deduction
+            assert!(
+                output_balance < dash_to_credits!(1.5),
+                "Output balance {} should be less than 1.5 DASH due to fees",
+                output_balance
+            );
+
+            // Verify the remainder address received nothing (was removed)
+            let remainder_balance =
+                get_address_balance(&platform, create_platform_address(2), &transaction);
+            assert_eq!(
+                remainder_balance, 0,
+                "Remainder address should have received nothing when funds exactly match"
+            );
+        }
+
+        #[test]
+        fn test_surplus_funds_go_to_remainder() {
+            // When explicit outputs sum < asset_lock + inputs, remainder gets the difference
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(952);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            // No inputs
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 0.3 DASH - less than the 1 DASH asset lock
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(2), None); // Remainder - should receive ~0.7 DASH minus fees
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should succeed
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Verify the explicit output received its amount (minus fees from ReduceOutput(0))
+            let explicit_balance =
+                get_address_balance(&platform, create_platform_address(1), &transaction);
+            assert!(
+                explicit_balance > 0 && explicit_balance < dash_to_credits!(0.3),
+                "Explicit output should have received funds minus fees"
+            );
+
+            // Verify the remainder address received the surplus
+            let remainder_balance =
+                get_address_balance(&platform, create_platform_address(2), &transaction);
+            assert!(
+                remainder_balance > 0,
+                "Remainder address should have received surplus funds"
+            );
+            // Remainder should be approximately 0.7 DASH (1.0 - 0.3)
+            assert!(
+                remainder_balance > dash_to_credits!(0.5),
+                "Remainder balance {} should be substantial",
+                remainder_balance
+            );
+        }
+    }
+
+    // ==========================================
     // STATE VALIDATION TESTS
     // These test state validation errors (StateError)
     // ==========================================
