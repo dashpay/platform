@@ -1,7 +1,8 @@
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
-    UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
+    UncompressedPublicKeyNotAllowedErrorWasm, UnsupportedProtocolVersionErrorWasm,
+    UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
@@ -953,6 +954,9 @@ fn from_signature_error(signature_error: &SignatureError) -> JsValue {
         SignatureError::BasicBLSError(err) => BasicBLSErrorWasm::from(err).into(),
         SignatureError::InvalidSignaturePublicKeyPurposeError(err) => {
             InvalidSignaturePublicKeyPurposeErrorWasm::from(err).into()
+        }
+        SignatureError::UncompressedPublicKeyNotAllowedError(err) => {
+            UncompressedPublicKeyNotAllowedErrorWasm::from(err).into()
         }
     }
 }

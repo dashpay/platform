@@ -15,6 +15,19 @@ impl From<&InvalidSignaturePublicKeyPurposeError> for InvalidSignaturePublicKeyP
     }
 }
 
+#[wasm_bindgen(js_name=UncompressedPublicKeyNotAllowedError)]
+pub struct UncompressedPublicKeyNotAllowedErrorWasm {
+    inner: dpp::consensus::signature::UncompressedPublicKeyNotAllowedError,
+}
+
+impl From<&dpp::consensus::signature::UncompressedPublicKeyNotAllowedError>
+    for UncompressedPublicKeyNotAllowedErrorWasm
+{
+    fn from(e: &dpp::consensus::signature::UncompressedPublicKeyNotAllowedError) -> Self {
+        Self { inner: e.clone() }
+    }
+}
+
 #[wasm_bindgen(js_class=InvalidSignaturePublicKeyPurposeError)]
 impl InvalidSignaturePublicKeyPurposeErrorWasm {
     #[wasm_bindgen(js_name=getPublicKeyPurpose)]
