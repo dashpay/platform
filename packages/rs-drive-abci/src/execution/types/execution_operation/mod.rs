@@ -80,6 +80,7 @@ pub enum ValidationOperation {
     PerformNetworkThresholdSigning,
     SingleSha256(HashBlockCount),
     DoubleSha256(HashBlockCount),
+    Ripemd160(HashBlockCount),
     ValidateKeyStructure(KeyCount), // This is extremely cheap
     SignatureVerification(SignatureVerificationOperation),
     PrecalculatedOperation(FeeResult),
@@ -132,6 +133,17 @@ impl ValidationOperation {
                             platform_version.fee_version.hashing.single_sha256_base
                                 + platform_version.fee_version.hashing.sha256_per_block
                                     * (*block_count as u64),
+                        )
+                        .ok_or(ExecutionError::Overflow(
+                            "execution processing fee overflow error",
+                        ))?;
+                }
+                ValidationOperation::Ripemd160(block_count) => {
+                    fee_result.processing_fee = fee_result
+                        .processing_fee
+                        .checked_add(
+                            platform_version.fee_version.hashing.ripemd160_per_block
+                                * (*block_count as u64),
                         )
                         .ok_or(ExecutionError::Overflow(
                             "execution processing fee overflow error",

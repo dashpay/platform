@@ -2,7 +2,6 @@ use bincode::de::{BorrowDecoder, Decoder};
 use bincode::enc::Encoder;
 use bincode::error::{DecodeError, EncodeError};
 use bincode::{Decode, Encode};
-use dashcore::PublicKey;
 use platform_value::BinaryData;
 use serde::{Deserialize, Serialize};
 
@@ -11,14 +10,14 @@ use serde::{Deserialize, Serialize};
 /// This enum captures the different spending patterns for P2PKH and P2SH addresses.
 #[derive(Debug, Clone, PartialEq)]
 pub enum AddressWitness {
-    /// P2PKH witness: signature + public key
+    /// P2PKH witness: recoverable signature only
     ///
     /// Used for spending from a Pay-to-Public-Key-Hash address.
+    /// The public key is recovered from the signature during verification,
+    /// saving 33 bytes per witness compared to including the public key.
     P2pkh {
-        /// The ECDSA signature authorizing the spend
+        /// The recoverable ECDSA signature (65 bytes with recovery byte prefix)
         signature: BinaryData,
-        /// The public key whose hash matches the address
-        public_key: PublicKey,
     },
     /// P2SH witness: signatures + redeem script
     ///
@@ -36,14 +35,9 @@ pub enum AddressWitness {
 impl Encode for AddressWitness {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         match self {
-            AddressWitness::P2pkh {
-                signature,
-                public_key,
-            } => {
+            AddressWitness::P2pkh { signature } => {
                 0u8.encode(encoder)?;
                 signature.encode(encoder)?;
-                let pubkey_bytes = public_key.to_bytes();
-                pubkey_bytes.encode(encoder)?;
             }
             AddressWitness::P2sh {
                 signatures,
@@ -64,14 +58,7 @@ impl Decode for AddressWitness {
         match discriminant {
             0 => {
                 let signature = BinaryData::decode(decoder)?;
-                let pubkey_bytes: Vec<u8> = Vec::decode(decoder)?;
-                let public_key = PublicKey::from_slice(&pubkey_bytes).map_err(|e| {
-                    DecodeError::OtherString(format!("Invalid ECDSA public key: {}", e))
-                })?;
-                Ok(AddressWitness::P2pkh {
-                    signature,
-                    public_key,
-                })
+                Ok(AddressWitness::P2pkh { signature })
             }
             1 => {
                 let signatures = Vec::<BinaryData>::decode(decoder)?;
@@ -95,14 +82,7 @@ impl<'de> bincode::BorrowDecode<'de> for AddressWitness {
         match discriminant {
             0 => {
                 let signature = BinaryData::borrow_decode(decoder)?;
-                let pubkey_bytes: Vec<u8> = Vec::borrow_decode(decoder)?;
-                let public_key = PublicKey::from_slice(&pubkey_bytes).map_err(|e| {
-                    DecodeError::OtherString(format!("Invalid ECDSA public key: {}", e))
-                })?;
-                Ok(AddressWitness::P2pkh {
-                    signature,
-                    public_key,
-                })
+                Ok(AddressWitness::P2pkh { signature })
             }
             1 => {
                 let signatures = Vec::<BinaryData>::borrow_decode(decoder)?;
@@ -129,14 +109,10 @@ impl Serialize for AddressWitness {
         use serde::ser::SerializeStruct;
 
         match self {
-            AddressWitness::P2pkh {
-                signature,
-                public_key,
-            } => {
-                let mut state = serializer.serialize_struct("AddressWitness", 3)?;
+            AddressWitness::P2pkh { signature } => {
+                let mut state = serializer.serialize_struct("AddressWitness", 2)?;
                 state.serialize_field("type", "p2pkh")?;
                 state.serialize_field("signature", signature)?;
-                state.serialize_field("publicKey", &public_key.to_bytes())?;
                 state.end()
             }
             AddressWitness::P2sh {
@@ -177,7 +153,6 @@ impl<'de> Deserialize<'de> for AddressWitness {
             {
                 let mut witness_type: Option<String> = None;
                 let mut signature: Option<BinaryData> = None;
-                let mut public_key: Option<Vec<u8>> = None;
                 let mut signatures: Option<Vec<BinaryData>> = None;
                 let mut redeem_script: Option<BinaryData> = None;
 
@@ -188,9 +163,6 @@ impl<'de> Deserialize<'de> for AddressWitness {
                         }
                         "signature" => {
                             signature = Some(map.next_value()?);
-                        }
-                        "publicKey" => {
-                            public_key = Some(map.next_value()?);
                         }
                         "signatures" => {
                             signatures = Some(map.next_value()?);
@@ -210,15 +182,7 @@ impl<'de> Deserialize<'de> for AddressWitness {
                     "p2pkh" => {
                         let signature =
                             signature.ok_or_else(|| de::Error::missing_field("signature"))?;
-                        let pubkey_bytes =
-                            public_key.ok_or_else(|| de::Error::missing_field("publicKey"))?;
-                        let public_key = PublicKey::from_slice(&pubkey_bytes).map_err(|e| {
-                            de::Error::custom(format!("Invalid ECDSA public key: {}", e))
-                        })?;
-                        Ok(AddressWitness::P2pkh {
-                            signature,
-                            public_key,
-                        })
+                        Ok(AddressWitness::P2pkh { signature })
                     }
                     "p2sh" => {
                         let signatures =
@@ -240,13 +204,7 @@ impl<'de> Deserialize<'de> for AddressWitness {
 
         deserializer.deserialize_struct(
             "AddressWitness",
-            &[
-                "type",
-                "signature",
-                "publicKey",
-                "signatures",
-                "redeemScript",
-            ],
+            &["type", "signature", "signatures", "redeemScript"],
             AddressWitnessVisitor,
         )
     }
@@ -263,12 +221,8 @@ impl AddressWitness {
         let mut data = Vec::new();
 
         match self {
-            AddressWitness::P2pkh {
-                signature,
-                public_key,
-            } => {
+            AddressWitness::P2pkh { signature } => {
                 data.push(0u8);
-                data.extend_from_slice(&public_key.to_bytes());
                 data.extend_from_slice(signature.as_slice());
             }
             AddressWitness::P2sh {
@@ -284,14 +238,6 @@ impl AddressWitness {
         }
 
         BASE64_STANDARD.encode(&data)
-    }
-
-    /// Returns the public key if this is a P2PKH witness
-    pub fn public_key(&self) -> Option<&PublicKey> {
-        match self {
-            AddressWitness::P2pkh { public_key, .. } => Some(public_key),
-            AddressWitness::P2sh { .. } => None,
-        }
     }
 
     /// Returns the redeem script if this is a P2SH witness
@@ -320,14 +266,8 @@ mod tests {
 
     #[test]
     fn test_p2pkh_witness_encode_decode() {
-        // Create a valid ECDSA public key (33 bytes compressed)
-        let mut pubkey_bytes = vec![0x02]; // compressed prefix
-        pubkey_bytes.extend_from_slice(&[0x12; 32]); // x coordinate
-        let public_key = PublicKey::from_slice(&pubkey_bytes).unwrap();
-
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]),
-            public_key,
         };
 
         let encoded = bincode::encode_to_vec(&witness, config::standard()).unwrap();
@@ -370,26 +310,16 @@ mod tests {
 
     #[test]
     fn test_unique_id_p2pkh() {
-        let mut pubkey_bytes = vec![0x02];
-        pubkey_bytes.extend_from_slice(&[0x12; 32]);
-        let public_key = PublicKey::from_slice(&pubkey_bytes).unwrap();
-
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44]),
-            public_key,
         };
 
         let id = witness.unique_id();
         assert!(!id.is_empty());
 
-        // Different public key should produce different ID
-        let mut pubkey_bytes2 = vec![0x03];
-        pubkey_bytes2.extend_from_slice(&[0x12; 32]);
-        let public_key2 = PublicKey::from_slice(&pubkey_bytes2).unwrap();
-
+        // Different signature should produce different ID
         let witness2 = AddressWitness::P2pkh {
-            signature: BinaryData::new(vec![0x30, 0x44]),
-            public_key: public_key2,
+            signature: BinaryData::new(vec![0x30, 0x45]),
         };
         assert_ne!(id, witness2.unique_id());
     }
@@ -421,13 +351,8 @@ mod tests {
     #[cfg(feature = "state-transition-serde-conversion")]
     #[test]
     fn test_p2pkh_serde() {
-        let mut pubkey_bytes = vec![0x02];
-        pubkey_bytes.extend_from_slice(&[0x12; 32]);
-        let public_key = PublicKey::from_slice(&pubkey_bytes).unwrap();
-
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]),
-            public_key,
         };
 
         let json = serde_json::to_string(&witness).unwrap();

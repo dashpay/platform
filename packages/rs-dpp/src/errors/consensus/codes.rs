@@ -248,6 +248,7 @@ impl ErrorWithCode for SignatureError {
             Self::BasicECDSAError(_) => 20009,
             Self::BasicBLSError(_) => 20010,
             Self::InvalidSignaturePublicKeyPurposeError(_) => 20011,
+            Self::UncompressedPublicKeyNotAllowedError(_) => 20012,
         }
     }
 }

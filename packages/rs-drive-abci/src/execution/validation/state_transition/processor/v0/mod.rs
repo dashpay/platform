@@ -83,7 +83,10 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
     };
 
     if state_transition.has_address_witness_validation(platform_version)? {
-        let result = state_transition.validate_address_witnesses(platform_version)?;
+        let result = state_transition.validate_address_witnesses(
+            &mut state_transition_execution_context,
+            platform_version,
+        )?;
         if !result.is_valid() {
             // If the witnesses are not valid
             // Proposers should remove such transactions from the block

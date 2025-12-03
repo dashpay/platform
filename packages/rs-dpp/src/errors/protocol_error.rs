@@ -3,6 +3,7 @@ use thiserror::Error;
 use crate::consensus::basic::state_transition::InvalidStateTransitionTypeError;
 use crate::consensus::signature::{
     InvalidSignaturePublicKeySecurityLevelError, PublicKeyIsDisabledError,
+    UncompressedPublicKeyNotAllowedError,
 };
 use crate::consensus::ConsensusError;
 use crate::data_contract::errors::*;
@@ -194,6 +195,9 @@ pub enum ProtocolError {
 
     #[error(transparent)]
     PublicKeyIsDisabledError(PublicKeyIsDisabledError),
+
+    #[error(transparent)]
+    UncompressedPublicKeyNotAllowedError(UncompressedPublicKeyNotAllowedError),
 
     #[error(transparent)]
     IdentityNotPresentError(IdentityNotPresentError),

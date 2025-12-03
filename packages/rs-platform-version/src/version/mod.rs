@@ -1,6 +1,5 @@
 mod protocol_version;
 
-use crate::version::v10::PROTOCOL_VERSION_10;
 use crate::version::v11::PROTOCOL_VERSION_11;
 pub use protocol_version::*;
 use std::ops::RangeInclusive;

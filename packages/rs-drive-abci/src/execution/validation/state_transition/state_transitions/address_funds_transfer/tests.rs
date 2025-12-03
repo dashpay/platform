@@ -35,24 +35,22 @@ mod tests {
     // Test Infrastructure - Signer
     // ==========================================
 
-    /// A P2PKH key entry containing secret key and public key
+    /// A P2PKH key entry containing the secret key only
+    /// (public key is recovered from signature during verification)
     #[derive(Debug, Clone)]
     struct P2pkhKeyEntry {
         secret_key: RawSecretKey,
-        public_key: PublicKey,
     }
 
     /// A P2SH multisig entry containing multiple secret keys and the redeem script
+    /// (public keys are embedded in the redeem script)
     #[derive(Debug, Clone)]
     struct P2shMultisigEntry {
         /// The threshold (M in M-of-N)
         threshold: u8,
         /// Secret keys for all participants
         secret_keys: Vec<RawSecretKey>,
-        /// Public keys for all participants
-        #[allow(dead_code)]
-        public_keys: Vec<PublicKey>,
-        /// The redeem script
+        /// The redeem script (contains the public keys)
         redeem_script: Vec<u8>,
     }
 
@@ -102,13 +100,8 @@ mod tests {
         fn add_p2pkh(&mut self, seed: [u8; 32]) -> PlatformAddress {
             let (secret_key, public_key) = Self::create_keypair(seed);
             let pubkey_hash = *public_key.pubkey_hash().as_byte_array();
-            self.p2pkh_keys.insert(
-                pubkey_hash,
-                P2pkhKeyEntry {
-                    secret_key,
-                    public_key,
-                },
-            );
+            self.p2pkh_keys
+                .insert(pubkey_hash, P2pkhKeyEntry { secret_key });
             PlatformAddress::P2pkh(pubkey_hash)
         }
 
@@ -127,7 +120,6 @@ mod tests {
                 P2shMultisigEntry {
                     threshold,
                     secret_keys,
-                    public_keys,
                     redeem_script,
                 },
             );
@@ -185,9 +177,10 @@ mod tests {
                         ))
                     })?;
                     let signature = Self::sign_data(data, &entry.secret_key);
+                    // P2PKH witness only needs the signature - the public key is recovered
+                    // during verification, saving 33 bytes per witness
                     Ok(AddressWitness::P2pkh {
                         signature: BinaryData::new(signature),
-                        public_key: entry.public_key,
                     })
                 }
                 PlatformAddress::P2sh(hash) => {
@@ -236,13 +229,9 @@ mod tests {
     /// Helper function to create a dummy P2PKH witness for testing structure validation
     /// (used for tests that should fail before witness validation)
     fn create_dummy_witness() -> AddressWitness {
-        let mut pubkey_bytes = vec![0x02]; // compressed prefix
-        pubkey_bytes.extend_from_slice(&[0x12; 32]); // x coordinate
-        let public_key = PublicKey::from_slice(&pubkey_bytes).expect("valid public key");
-
+        // P2PKH witness only needs the signature - public key is recovered during verification
         AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]), // dummy signature
-            public_key,
         }
     }
 
@@ -1816,76 +1805,10 @@ mod tests {
             );
         }
 
-        #[test]
-        fn test_wrong_public_key_returns_error() {
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([1u8; 32]);
-            let output_address = create_platform_address(2);
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            // Create a different public key
-            let (_, wrong_public_key) = TestAddressSigner::create_keypair([99u8; 32]);
-
-            // Create transition with wrong public key (signature is valid but for different key)
-            let transition = create_transition_with_tampered_witness(
-                &signer,
-                input_address,
-                1,
-                dash_to_credits!(0.1),
-                output_address,
-                dash_to_credits!(0.1),
-                |witness| {
-                    if let AddressWitness::P2pkh { public_key, .. } = witness {
-                        *public_key = wrong_public_key;
-                    }
-                },
-            );
-
-            let transition_bytes = transition
-                .serialize_to_bytes()
-                .expect("expected to serialize transition");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![transition_bytes],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            // Public key hash won't match address hash
-            assert_matches!(
-                processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(
-                    ConsensusError::SignatureError(
-                        SignatureError::InvalidStateTransitionSignatureError(_)
-                    )
-                )]
-            );
-        }
+        // NOTE: test_wrong_public_key_returns_error was removed because P2PKH witnesses
+        // no longer include the public key - it's recovered from the signature during verification.
+        // The equivalent test is test_signature_from_different_key_returns_error which tests
+        // that a signature made with a different private key is rejected.
 
         #[test]
         fn test_empty_signature_returns_error() {
@@ -4679,10 +4602,8 @@ mod tests {
                 ref mut v0,
             )) = transition
             {
-                let (_, pk) = TestAddressSigner::create_keypair([99u8; 32]);
                 v0.input_witnesses[0] = AddressWitness::P2pkh {
                     signature: BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]),
-                    public_key: pk,
                 };
             }
 
@@ -7321,18 +7242,14 @@ mod tests {
                 ref inner,
             )) = st
             {
-                if let AddressWitness::P2pkh {
-                    ref signature,
-                    ref public_key,
-                } = inner.input_witnesses[0]
-                {
+                if let AddressWitness::P2pkh { ref signature } = inner.input_witnesses[0] {
                     // Try to create a high-S signature by flipping the S value
                     // DER format: 0x30 <len> 0x02 <r_len> <r> 0x02 <s_len> <s>
                     let sig_bytes = signature.as_slice();
 
                     // secp256k1 order n
                     let n_hex = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFEBAAEDCE6AF48A03BBFD25E8CD0364141";
-                    let n = hex::decode(n_hex).unwrap();
+                    let _n = hex::decode(n_hex).unwrap();
 
                     // Parse the DER signature to extract r and s
                     if sig_bytes.len() > 8 && sig_bytes[0] == 0x30 {
@@ -7341,8 +7258,6 @@ mod tests {
                         let s_len = sig_bytes[s_start - 1] as usize;
 
                         if s_start + s_len <= sig_bytes.len() {
-                            let s_bytes = &sig_bytes[s_start..s_start + s_len];
-
                             // Check if S is already low or high
                             // For a proper test, we'd compute n - s, but this is complex
                             // Instead, just verify the system handles the signature
@@ -7350,7 +7265,6 @@ mod tests {
                             // Create witness with potentially malleated signature
                             let witness = AddressWitness::P2pkh {
                                 signature: signature.clone(),
-                                public_key: public_key.clone(),
                             };
 
                             let malleated_transition = AddressFundsTransferTransition::V0(
@@ -7421,12 +7335,6 @@ mod tests {
             let amount = dash_to_credits!(1.0);
             setup_address_with_balance(&mut platform, input_address, 0, amount);
 
-            // Get the public key from the signer
-            let hash = match input_address {
-                PlatformAddress::P2pkh(h) => h,
-                _ => panic!("Expected P2PKH"),
-            };
-
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, amount));
             let mut outputs = BTreeMap::new();
@@ -7447,12 +7355,8 @@ mod tests {
                 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
             ];
 
-            // We need a valid public key
-            let (_, public_key) = TestAddressSigner::create_keypair([1u8; 32]);
-
             let witness = AddressWitness::P2pkh {
                 signature: BinaryData::new(non_canonical_sig),
-                public_key,
             };
 
             let transition = AddressFundsTransferTransition::V0(AddressFundsTransferTransitionV0 {
@@ -7790,8 +7694,8 @@ mod tests {
 
             // Assert exact values - UPDATE THESE if fees legitimately change
             assert_eq!(
-                processing_fee, 402020,
-                "Processing fee changed! Was 402020, now {}",
+                processing_fee, 442220,
+                "Processing fee changed! Was 442220, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7800,8 +7704,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6153020,
-                "Total fee changed! Was 6153020, now {}",
+                total_fee, 6193220,
+                "Total fee changed! Was 6193220, now {}",
                 total_fee
             );
         }
@@ -7875,8 +7779,8 @@ mod tests {
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 402020,
-                "Processing fee changed! Was 402020, now {}",
+                processing_fee, 442220,
+                "Processing fee changed! Was 442220, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7885,8 +7789,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6153020,
-                "Total fee changed! Was 6153020, now {}",
+                total_fee, 6193220,
+                "Total fee changed! Was 6193220, now {}",
                 total_fee
             );
         }
@@ -7962,8 +7866,8 @@ mod tests {
 
             // Assert exact values - 2 inputs should cost more processing than 1 input
             assert_eq!(
-                processing_fee, 485920,
-                "Processing fee changed! Was 485920, now {}",
+                processing_fee, 566120,
+                "Processing fee changed! Was 566120, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -7972,8 +7876,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6236920,
-                "Total fee changed! Was 6236920, now {}",
+                total_fee, 6317120,
+                "Total fee changed! Was 6317120, now {}",
                 total_fee
             );
         }
@@ -8048,8 +7952,8 @@ mod tests {
 
             // Assert exact values - 2 outputs should cost more storage than 1 output
             assert_eq!(
-                processing_fee, 499400,
-                "Processing fee changed! Was 499400, now {}",
+                processing_fee, 539600,
+                "Processing fee changed! Was 539600, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8058,8 +7962,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 12001400,
-                "Total fee changed! Was 12001400, now {}",
+                total_fee, 12041600,
+                "Total fee changed! Was 12041600, now {}",
                 total_fee
             );
         }
@@ -8142,8 +8046,8 @@ mod tests {
 
             // Assert exact values - P2SH with 2 signatures
             assert_eq!(
-                processing_fee, 402020,
-                "Processing fee changed! Was 402020, now {}",
+                processing_fee, 462220,
+                "Processing fee changed! Was 462220, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8152,8 +8056,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6153020,
-                "Total fee changed! Was 6153020, now {}",
+                total_fee, 6213220,
+                "Total fee changed! Was 6213220, now {}",
                 total_fee
             );
         }
@@ -8236,8 +8140,8 @@ mod tests {
 
             // Assert exact values - 3-of-5 multisig
             assert_eq!(
-                processing_fee, 402020,
-                "Processing fee changed! Was 402020, now {}",
+                processing_fee, 477220,
+                "Processing fee changed! Was 477220, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8246,8 +8150,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6153020,
-                "Total fee changed! Was 6153020, now {}",
+                total_fee, 6228220,
+                "Total fee changed! Was 6228220, now {}",
                 total_fee
             );
         }
@@ -8321,17 +8225,17 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // Base processing fee is 402020, with user_fee_increase=100 it should be higher
+            // Base processing fee is 442220, with user_fee_increase=100 it should be higher
             // The exact formula depends on implementation
             assert!(
-                processing_fee > 402020,
+                processing_fee > 442220,
                 "Processing fee with user_fee_increase should be higher than base"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 804040,
-                "Processing fee changed! Was 804040, now {}",
+                processing_fee, 884440,
+                "Processing fee changed! Was 884440, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8340,8 +8244,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6555040,
-                "Total fee changed! Was 6555040, now {}",
+                total_fee, 6635440,
+                "Total fee changed! Was 6635440, now {}",
                 total_fee
             );
         }
@@ -8419,16 +8323,16 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // 16 inputs should have higher processing fee than 1 input (base is ~402K)
+            // 16 inputs should have higher processing fee than 1 input (base is ~442K)
             assert!(
-                processing_fee > 402020,
+                processing_fee > 442220,
                 "16 inputs should have processing fee > single input"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 1646140,
-                "Processing fee changed! Was 1646140, now {}",
+                processing_fee, 2846340,
+                "Processing fee changed! Was 2846340, now {}",
                 processing_fee
             );
             assert_eq!(
@@ -8437,8 +8341,8 @@ mod tests {
                 storage_fee
             );
             assert_eq!(
-                total_fee, 7397140,
-                "Total fee changed! Was 7397140, now {}",
+                total_fee, 8597340,
+                "Total fee changed! Was 8597340, now {}",
                 total_fee
             );
         }
@@ -8573,15 +8477,15 @@ mod tests {
 
             // Assert exact values for new address
             assert_eq!(
-                total_fee_new, 6153020,
-                "Total fee to new address changed! Was 6153020, now {}",
+                total_fee_new, 6193220,
+                "Total fee to new address changed! Was 6193220, now {}",
                 total_fee_new
             );
 
             // Assert exact values for existing address (much cheaper - only updates balance)
             assert_eq!(
-                total_fee_existing, 388820,
-                "Total fee to existing address changed! Was 388820, now {}",
+                total_fee_existing, 429020,
+                "Total fee to existing address changed! Was 429020, now {}",
                 total_fee_existing
             );
         }

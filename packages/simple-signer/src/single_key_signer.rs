@@ -3,7 +3,6 @@ use dpp::dashcore;
 use dpp::dashcore::signer;
 use dpp::dashcore::Network;
 use dpp::dashcore::PrivateKey;
-use dpp::dashcore::PublicKey as ECDSAPublicKey;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{IdentityPublicKey, KeyType};
@@ -115,16 +114,9 @@ impl Signer<IdentityPublicKey> for SingleKeySigner {
         // SingleKeySigner only supports ECDSA keys
         match key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                // Get the public key from the identity public key
-                let pubkey_data = key.data();
-                let public_key =
-                    ECDSAPublicKey::from_slice(pubkey_data.as_slice()).map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid ECDSA public key: {}", e))
-                    })?;
-                Ok(AddressWitness::P2pkh {
-                    signature,
-                    public_key,
-                })
+                // P2PKH witness only needs the signature - the public key is recovered
+                // during verification, saving 33 bytes per witness
+                Ok(AddressWitness::P2pkh { signature })
             }
             _ => Err(ProtocolError::Generic(format!(
                 "SingleKeySigner only supports ECDSA keys, got {:?}",

@@ -1,7 +1,6 @@
 //! Drive Initialization
 
 use crate::drive::address_funds::queries::CLEAR_ADDRESS_POOL;
-use crate::drive::system::misc_path_vec;
 use crate::drive::{Drive, RootTree};
 use crate::error::Error;
 use crate::util::batch::grovedb_op_batch::GroveDbOpBatchV0Methods;

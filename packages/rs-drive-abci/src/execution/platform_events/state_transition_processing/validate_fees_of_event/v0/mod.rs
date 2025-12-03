@@ -11,7 +11,6 @@ use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;

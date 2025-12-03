@@ -1,11 +1,16 @@
 use crate::address_funds::AddressWitness;
+use crate::address_funds::AddressWitnessVerificationOperations;
 use crate::prelude::AddressNonce;
 use crate::ProtocolError;
 use bincode::{Decode, Encode};
 use dashcore::address::Payload;
 use dashcore::blockdata::script::ScriptBuf;
-use dashcore::hashes::Hash;
-use dashcore::{Address, Network, PubkeyHash, ScriptHash};
+use dashcore::hashes::{sha256d, Hash};
+use dashcore::key::Secp256k1;
+use dashcore::secp256k1::ecdsa::RecoverableSignature;
+use dashcore::secp256k1::Message;
+use dashcore::signer::CompactSignature;
+use dashcore::{Address, Network, PubkeyHash, PublicKey, ScriptHash};
 use platform_serialization_derive::{PlatformDeserialize, PlatformSerialize};
 #[cfg(feature = "state-transition-serde-conversion")]
 use serde::{Deserialize, Serialize};
@@ -172,40 +177,35 @@ impl PlatformAddress {
     /// * `signable_bytes` - The data that was signed (will be double-SHA256 hashed internally)
     ///
     /// # Returns
-    /// * `Ok(())` if the witness matches this address and all signatures are valid
+    /// * `Ok(AddressWitnessVerificationOperations)` - Operations performed if verification succeeds
     /// * `Err(ProtocolError)` if verification fails
     pub fn verify_bytes_against_witness(
         &self,
         witness: &AddressWitness,
         signable_bytes: &[u8],
-    ) -> Result<(), ProtocolError> {
+    ) -> Result<AddressWitnessVerificationOperations, ProtocolError> {
         match (self, witness) {
-            (
-                PlatformAddress::P2pkh(pubkey_hash),
-                AddressWitness::P2pkh {
-                    signature,
-                    public_key,
-                },
-            ) => {
-                // First verify the public key hashes to the address
-                let computed_hash = public_key.pubkey_hash();
-                if computed_hash.as_byte_array() != pubkey_hash {
-                    return Err(ProtocolError::Generic(format!(
-                        "Public key hash {} does not match address hash {}",
-                        hex::encode(computed_hash.as_byte_array()),
-                        hex::encode(pubkey_hash)
-                    )));
-                }
-
-                // Verify the signature
-                dashcore::signer::verify_data_signature(
-                    signable_bytes,
+            (PlatformAddress::P2pkh(pubkey_hash), AddressWitness::P2pkh { signature }) => {
+                // Use verify_hash_signature which:
+                // 1. Computes double_sha256(signable_bytes)
+                // 2. Recovers the public key from the signature
+                // 3. Verifies Hash160(recovered_pubkey) matches pubkey_hash
+                //
+                // This saves 33 bytes per witness (no need to include pubkey)
+                // at a ~4% CPU cost increase (recovery vs verify).
+                let data_hash = dashcore::signer::double_sha(signable_bytes);
+                dashcore::signer::verify_hash_signature(
+                    &data_hash,
                     signature.as_slice(),
-                    &public_key.to_bytes(),
+                    pubkey_hash,
                 )
                 .map_err(|e| {
                     ProtocolError::Generic(format!("P2PKH signature verification failed: {}", e))
-                })
+                })?;
+
+                Ok(AddressWitnessVerificationOperations::for_p2pkh(
+                    signable_bytes.len(),
+                ))
             }
             (
                 PlatformAddress::P2sh(script_hash),
@@ -248,15 +248,31 @@ impl PlatformAddress {
                 let mut sig_idx = 0;
                 let mut pubkey_idx = 0;
                 let mut matched = 0;
+                let mut signature_verifications: u16 = 0;
+
+                let signable_bytes_hash =
+                    sha256d::Hash::hash(signable_bytes.as_ref()).to_byte_array();
+                let msg = Message::from_digest(signable_bytes_hash);
+                let secp = Secp256k1::new();
 
                 while sig_idx < valid_signatures.len() && pubkey_idx < pubkeys.len() {
-                    let result = dashcore::signer::verify_data_signature(
-                        signable_bytes,
-                        valid_signatures[sig_idx].as_slice(),
-                        &pubkeys[pubkey_idx],
-                    );
+                    signature_verifications += 1;
 
-                    if result.is_ok() {
+                    let sig = RecoverableSignature::from_compact_signature(
+                        valid_signatures[sig_idx].as_slice(),
+                    )
+                    .map_err(|e| {
+                        ProtocolError::Generic(format!("Invalid signature format: {}", e))
+                    })?;
+
+                    let pub_key = PublicKey::from_slice(&pubkeys[pubkey_idx]).map_err(|e| {
+                        ProtocolError::Generic(format!("Invalid public key: {}", e))
+                    })?;
+
+                    if secp
+                        .verify_ecdsa(&msg, &sig.to_standard(), &pub_key.inner)
+                        .is_ok()
+                    {
                         matched += 1;
                         sig_idx += 1;
                     }
@@ -264,7 +280,10 @@ impl PlatformAddress {
                 }
 
                 if matched >= threshold {
-                    Ok(())
+                    Ok(AddressWitnessVerificationOperations::for_p2sh_multisig(
+                        signature_verifications,
+                        signable_bytes.len(),
+                    ))
                 } else {
                     Err(ProtocolError::Generic(format!(
                         "Not enough valid signatures: verified {}, need {}",
@@ -341,13 +360,14 @@ impl PlatformAddress {
         loop {
             match instructions.next() {
                 Some(Ok(dashcore::blockdata::script::Instruction::PushBytes(bytes))) => {
-                    // Validate it looks like a public key (33 or 65 bytes)
+                    // Only compressed public keys (33 bytes) are allowed
                     let len = bytes.len();
-                    if len != 33 && len != 65 {
-                        return Err(ProtocolError::Generic(format!(
-                            "Invalid public key in multisig script: expected 33 or 65 bytes, got {}",
-                            len
-                        )));
+                    if len != 33 {
+                        return Err(ProtocolError::UncompressedPublicKeyNotAllowedError(
+                            crate::consensus::signature::UncompressedPublicKeyNotAllowedError::new(
+                                len,
+                            ),
+                        ));
                     }
                     pubkeys.push(bytes.as_bytes().to_vec());
                 }
@@ -502,10 +522,9 @@ mod tests {
         // Sign the data
         let signature = sign_data(signable_bytes, &secret_key);
 
-        // Create witness
+        // Create witness (only signature needed - public key is recovered)
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(signature),
-            public_key,
         };
 
         // Verify should succeed
@@ -535,10 +554,9 @@ mod tests {
         // Create witness with signature for different data
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(signature),
-            public_key,
         };
 
-        // Verify should fail
+        // Verify should fail (recovered pubkey won't match because message differs)
         let result = address.verify_bytes_against_witness(&witness, verify_bytes);
         assert!(
             result.is_err(),
@@ -547,41 +565,37 @@ mod tests {
     }
 
     #[test]
-    fn test_p2pkh_verify_wrong_pubkey_fails() {
+    fn test_p2pkh_verify_wrong_key_fails() {
         // Create two keypairs
         let seed1 = [1u8; 32];
         let seed2 = [2u8; 32];
-        let (secret_key1, public_key1) = create_keypair(seed1);
-        let (_secret_key2, public_key2) = create_keypair(seed2);
+        let (_secret_key1, public_key1) = create_keypair(seed1);
+        let (secret_key2, _public_key2) = create_keypair(seed2);
 
         // Create P2PKH address from public key 1's hash
         let pubkey_hash = public_key1.pubkey_hash();
         let address = PlatformAddress::P2pkh(*pubkey_hash.as_byte_array());
 
-        // Sign with key 1
+        // Sign with key 2 (wrong key)
         let signable_bytes = b"test message";
-        let signature = sign_data(signable_bytes, &secret_key1);
+        let signature = sign_data(signable_bytes, &secret_key2);
 
-        // Create witness with public key 2 (wrong key)
+        // Create witness (signature is from key 2, but address is for key 1)
         let witness = AddressWitness::P2pkh {
             signature: BinaryData::new(signature),
-            public_key: public_key2,
         };
 
-        // Verify should fail (public key doesn't match address)
+        // Verify should fail (recovered pubkey hash won't match address)
         let result = address.verify_bytes_against_witness(&witness, signable_bytes);
         assert!(
             result.is_err(),
-            "P2PKH verification should fail with wrong public key"
-        );
-        assert!(
-            result
-                .unwrap_err()
-                .to_string()
-                .contains("does not match address hash"),
-            "Error should mention hash mismatch"
+            "P2PKH verification should fail when signed with wrong key"
         );
     }
+
+    // NOTE: test_uncompressed_public_key_rejected was removed because P2PKH witnesses
+    // no longer include the public key - it's recovered from the signature during verification.
+    // ECDSA recovery always produces a compressed public key (33 bytes).
 
     #[test]
     fn test_p2sh_2_of_3_multisig_verify_success() {
@@ -765,7 +779,6 @@ mod tests {
         let p2pkh_sig = sign_data(signable_bytes, &p2pkh_secret);
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(p2pkh_sig),
-            public_key: p2pkh_pubkey,
         };
         let p2pkh_result =
             p2pkh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
@@ -821,7 +834,6 @@ mod tests {
         // Try P2PKH witness on P2SH address
         let p2pkh_witness = AddressWitness::P2pkh {
             signature: BinaryData::new(vec![0x30, 0x44]),
-            public_key,
         };
         let result = p2sh_address.verify_bytes_against_witness(&p2pkh_witness, signable_bytes);
         assert!(result.is_err());

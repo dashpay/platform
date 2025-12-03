@@ -12,7 +12,11 @@ use serde::{Deserialize, Serialize};
     serde(rename_all = "camelCase")
 )]
 pub enum AddressFundsFeeStrategyStep {
+    /// Deduct fee from a specific input address by index.
+    /// The input must have remaining balance after its contribution to outputs.
     DeductFromInput(u16),
+    /// Reduce a specific output by the fee amount.
+    /// The output amount will be reduced to cover the fee.
     ReduceOutput(u16),
 }
 
