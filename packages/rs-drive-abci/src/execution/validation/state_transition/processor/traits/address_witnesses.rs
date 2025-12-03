@@ -181,7 +181,8 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     StateTransition::AddressFundsTransfer(_)
                     | StateTransition::IdentityCreateFromAddresses(_)
                     | StateTransition::IdentityTopUpFromAddresses(_)
-                    | StateTransition::AddressCreditWithdrawal(_) => true,
+                    | StateTransition::AddressCreditWithdrawal(_)
+                    | StateTransition::AddressFundingFromAssetLock(_) => true,
                     StateTransition::DataContractCreate(_)
                     | StateTransition::DataContractUpdate(_)
                     | StateTransition::Batch(_)
@@ -191,8 +192,7 @@ impl StateTransitionHasAddressWitnessValidationV0 for StateTransition {
                     | StateTransition::IdentityUpdate(_)
                     | StateTransition::IdentityCreditTransfer(_)
                     | StateTransition::MasternodeVote(_)
-                    | StateTransition::IdentityCreditTransferToAddresses(_)
-                    | StateTransition::AddressFundingFromAssetLock(_) => false,
+                    | StateTransition::IdentityCreditTransferToAddresses(_) => false,
                 };
 
                 Ok(has_address_witness_validation)

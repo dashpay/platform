@@ -53,16 +53,20 @@ impl Drive {
     ///   compatible with a sum item update (indicating corrupted state).
     /// - `Err(DriveError::CorruptedCodeExecution)` if the method is not
     ///   implemented for the selected version (should not occur in production).
-    pub fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists(
+    pub fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists<D>(
         &self,
         path: &[Vec<u8>],
         key: &[u8],
         amount_to_add: Credits,
+        default_item: D,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        D: Into<Vec<u8>>,
+    {
         match drive_version
             .grove_methods
             .batch
@@ -72,6 +76,7 @@ impl Drive {
                 path,
                 key,
                 amount_to_add,
+                default_item,
                 apply_type,
                 transaction,
                 drive_operations,

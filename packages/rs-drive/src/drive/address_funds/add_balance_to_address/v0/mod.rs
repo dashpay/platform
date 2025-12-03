@@ -58,10 +58,11 @@ impl Drive {
         };
 
         let mut drive_operations = vec![];
-        self.batch_keep_item_insert_sum_item_or_add_to_if_already_exists(
+        self.batch_keep_item_insert_sum_item_or_add_to_if_already_exists::<[u8; 4]>(
             &path,
             key.as_slice(),
             amount_to_add,
+            0u32.to_be_bytes(),
             apply_type,
             transaction,
             &mut drive_operations,

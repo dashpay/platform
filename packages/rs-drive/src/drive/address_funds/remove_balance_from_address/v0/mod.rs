@@ -53,7 +53,7 @@ impl Drive {
                 path.to_vec(),
                 key,
                 Element::new_item_with_sum_item_with_flags(
-                    vec![0u8; 8], // nonce placeholder
+                    vec![0u8; 4], // nonce placeholder
                     0i64,         // balance placeholder
                     None,
                 ),

@@ -22,16 +22,20 @@ impl Drive {
     /// # Returns
     /// * `Ok(())` if the operation was successful.
     /// * `Err(DriveError::CorruptedCodeExecution)` if the operation is not supported.
-    pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0(
+    pub(super) fn batch_keep_item_insert_sum_item_or_add_to_if_already_exists_v0<D>(
         &self,
         path: &[Vec<u8>],
         key: &[u8],
         amount_to_add: Credits,
+        default_item: D,
         apply_type: BatchInsertApplyType,
         transaction: TransactionArg,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         drive_version: &DriveVersion,
-    ) -> Result<(), Error> {
+    ) -> Result<(), Error>
+    where
+        D: Into<Vec<u8>>,
+    {
         // Check if the sum item already exists
         let existing_element = self.grove_get_raw_optional(
             path.into(),
@@ -68,7 +72,7 @@ impl Drive {
             drive_operations.push(LowLevelDriveOperation::insert_for_known_path_key_element(
                 path.to_vec(),
                 key.to_vec(),
-                Element::new_item_with_sum_item(0_u64.to_be_bytes().to_vec(), amount_to_add as i64),
+                Element::new_item_with_sum_item(default_item.into(), amount_to_add as i64),
             ));
         }
         Ok(())

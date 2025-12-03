@@ -6,7 +6,9 @@ pub mod v0;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::v0::AddressFundingFromAssetLockTransitionActionV0;
 use derive_more::From;
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::asset_lock::reduced_asset_lock_value::AssetLockValue;
 use dpp::fee::Credits;
+use dpp::platform_value::Bytes36;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
 
@@ -37,16 +39,26 @@ impl AddressFundingFromAssetLockTransitionAction {
     }
 
     /// Returns owned copies of inputs and outputs.
-    pub fn inputs_with_remaining_balance_and_outputs_owned(
+    pub fn inputs_with_remaining_balance_outputs_and_asset_lock_value_owned(
         self,
     ) -> (
         BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         BTreeMap<PlatformAddress, Credits>,
+        AssetLockValue,
     ) {
         match self {
-            AddressFundingFromAssetLockTransitionAction::V0(transition) => {
-                (transition.inputs_with_remaining_balance, transition.outputs)
-            }
+            AddressFundingFromAssetLockTransitionAction::V0(transition) => (
+                transition.inputs_with_remaining_balance,
+                transition.outputs,
+                transition.asset_lock_value_to_be_consumed,
+            ),
+        }
+    }
+
+    /// Asset Lock Outpoint
+    pub fn asset_lock_outpoint(&self) -> Bytes36 {
+        match self {
+            AddressFundingFromAssetLockTransitionAction::V0(action) => action.asset_lock_outpoint,
         }
     }
 
