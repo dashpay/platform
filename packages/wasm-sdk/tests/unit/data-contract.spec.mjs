@@ -133,7 +133,7 @@ describe('DataContract', () => {
         documentSchemas: {},
       };
 
-      const contract = sdk.DataContract.fromValue(
+      const contract = sdk.DataContract.fromJSON(
         contractWithOnlyTokens,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
@@ -264,21 +264,21 @@ describe('DataContract', () => {
       contract2.free();
     });
 
-    it('should preserve all data through object round-trip for V1 contract', async () => {
+    it('should preserve all data through JSON round-trip for V1 contract (object output)', async () => {
       const contract = sdk.DataContract.fromJSON(
         contractFixtureV1,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
       );
-      const objectRepresentation = contract.toObject(PLATFORM_VERSION_CONTRACT_V1);
+      const jsonRepresentation = contract.toJSON(PLATFORM_VERSION_CONTRACT_V1);
 
-      const contract2 = sdk.DataContract.fromObject(
-        objectRepresentation,
+      const contract2 = sdk.DataContract.fromJSON(
+        jsonRepresentation,
         true,
         PLATFORM_VERSION_CONTRACT_V1,
       );
 
-      expect(contract2.toObject(PLATFORM_VERSION_CONTRACT_V1)).to.deep.equal(objectRepresentation);
+      expect(contract2.toJSON(PLATFORM_VERSION_CONTRACT_V1)).to.deep.equal(jsonRepresentation);
 
       contract.free();
       contract2.free();
