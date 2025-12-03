@@ -23,7 +23,6 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
                 validate_simple_pre_check_balance: 0,
                 validate_non_masternode_identity_exists: 0,
                 validate_identity_exists: 0,
-                validate_addresses_for_balances_and_nonces: 0,
             },
             max_asset_lock_usage_attempts: 16,
             identity_create_state_transition: DriveAbciStateTransitionValidationVersion {
@@ -218,6 +217,8 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
             },
         },
         has_nonce_validation: 0,
+        has_address_witness_validation: 0,
+        validate_address_witnesses: 0,
         process_state_transition: 0,
         state_transition_to_execution_event_for_check_tx: 0,
         penalties: PenaltyAmounts {

@@ -174,9 +174,10 @@ impl Signer<PlatformAddress> for TestAddressSigner {
                     ))
                 })?;
                 let signature = Self::sign_data(data, &entry.secret_key);
+                // P2PKH witness only needs the signature - the public key is recovered
+                // during verification, saving 33 bytes per witness
                 Ok(AddressWitness::P2pkh {
                     signature: BinaryData::new(signature),
-                    public_key: entry.public_key,
                 })
             }
             PlatformAddress::P2sh(hash) => {
@@ -240,7 +241,7 @@ fn verify_transition_signatures(
         .zip(transition.input_witnesses.iter())
         .enumerate()
     {
-        address
+        let _operations = address
             .verify_bytes_against_witness(witness, &signable_bytes)
             .map_err(|e| {
                 ProtocolError::Generic(format!("Witness {} verification failed: {}", i, e))

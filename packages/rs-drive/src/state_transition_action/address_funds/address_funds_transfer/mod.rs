@@ -5,7 +5,7 @@ pub mod v0;
 
 use crate::state_transition_action::address_funds::address_funds_transfer::v0::AddressFundsTransferTransitionActionV0;
 use derive_more::From;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::prelude::{AddressNonce, UserFeeIncrease};
 use std::collections::BTreeMap;
@@ -51,6 +51,12 @@ impl AddressFundsTransferTransitionAction {
     pub fn user_fee_increase(&self) -> UserFeeIncrease {
         match self {
             AddressFundsTransferTransitionAction::V0(transition) => transition.user_fee_increase,
+        }
+    }
+    /// fee strategy
+    pub fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
+        match self {
+            AddressFundsTransferTransitionAction::V0(transition) => &transition.fee_strategy,
         }
     }
 }

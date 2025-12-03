@@ -1,5 +1,6 @@
 /// Address balance and nonce validation trait.
 pub mod address_balances_and_nonces;
+pub(crate) mod address_witnesses;
 pub(crate) mod advanced_structure_with_state;
 pub(crate) mod advanced_structure_without_state;
 pub(crate) mod basic_structure;

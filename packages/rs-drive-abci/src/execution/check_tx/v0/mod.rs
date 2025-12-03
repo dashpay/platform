@@ -239,7 +239,7 @@ mod tests {
     use dpp::state_transition::identity_update_transition::IdentityUpdateTransition;
     use dpp::state_transition::public_key_in_creation::v0::IdentityPublicKeyInCreationV0;
     use dpp::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
-    use dpp::state_transition::{StateTransition, StateTransitionLike};
+    use dpp::state_transition::{StateTransition, StateTransitionLike, StateTransitionOwned};
     use dpp::tests::fixtures::{
         get_dashpay_contract_fixture, get_dpns_data_contract_fixture,
         instant_asset_lock_proof_fixture,

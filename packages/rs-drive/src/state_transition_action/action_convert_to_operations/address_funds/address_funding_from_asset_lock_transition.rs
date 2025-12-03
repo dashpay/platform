@@ -3,9 +3,13 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
-use crate::util::batch::DriveOperation;
-use crate::util::batch::DriveOperation::AddressFundsOperation;
+use crate::util::batch::DriveOperation::{
+    AddressFundsOperation, IdentityOperation, SystemOperation,
+};
+use crate::util::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
+use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 use dpp::block::epoch::Epoch;
+use dpp::identity::Identity;
 use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionAction {
@@ -22,8 +26,24 @@ impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionA
             .address_funding_from_asset_lock_transition
         {
             0 => {
-                let (inputs, outputs) = self.inputs_with_remaining_balance_and_outputs_owned();
-                let mut drive_operations = vec![];
+                let asset_lock_outpoint = self.asset_lock_outpoint();
+
+                let (inputs, outputs, mut asset_lock_value) =
+                    self.inputs_with_remaining_balance_outputs_and_asset_lock_value_owned();
+
+                let initial_balance = asset_lock_value.remaining_credit_value();
+
+                asset_lock_value.set_remaining_credit_value(0); // We are using the entire value
+
+                let mut drive_operations = vec![
+                    SystemOperation(SystemOperationType::AddToSystemCredits {
+                        amount: initial_balance,
+                    }),
+                    SystemOperation(SystemOperationType::AddUsedAssetLock {
+                        asset_lock_outpoint,
+                        asset_lock_value,
+                    }),
+                ];
 
                 // Set remaining balances for all inputs (if any existing addresses were used)
                 for (address, (nonce, remaining_balance)) in inputs {

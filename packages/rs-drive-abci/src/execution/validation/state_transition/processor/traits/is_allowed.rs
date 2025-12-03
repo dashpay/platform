@@ -51,7 +51,9 @@ impl StateTransitionIsAllowedValidationV0 for StateTransition {
             StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
-            | StateTransition::IdentityCreditTransferToAddresses(_) => {
+            | StateTransition::IdentityCreditTransferToAddresses(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
+            | StateTransition::AddressCreditWithdrawal(_) => {
                 if platform_version.protocol_version >= ADDRESS_FUNDS_INITIAL_PROTOCOL_VERSION {
                     Ok(ConsensusValidationResult::new())
                 } else {

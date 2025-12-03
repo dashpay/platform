@@ -6,8 +6,10 @@ use crate::error::Error;
 use crate::fees::op::LowLevelDriveOperation;
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
-use grovedb::TransactionArg;
+use grovedb::batch::KeyInfoPath;
+use grovedb::{EstimatedLayerInformation, TransactionArg};
 use platform_version::version::PlatformVersion;
+use std::collections::HashMap;
 
 impl Drive {
     /// Removes a balance from a given address in the AddressBalances tree.
@@ -18,6 +20,7 @@ impl Drive {
     /// # Parameters
     /// - `address`: The platform address
     /// - `amount_to_remove`: The balance amount to subtract
+    /// - `estimated_costs_only_with_layer_info`: If `Some`, only estimates costs without applying.
     /// - `drive_operations`: The list of drive operations to append to.
     /// * `transaction` - A `TransactionArg` object representing the database transaction to be used.
     /// - `platform_version`: The platform version to select the correct function version to run.
@@ -30,6 +33,9 @@ impl Drive {
         &self,
         address: PlatformAddress,
         amount_to_remove: Credits,
+        estimated_costs_only_with_layer_info: &mut Option<
+            HashMap<KeyInfoPath, EstimatedLayerInformation>,
+        >,
         drive_operations: &mut Vec<LowLevelDriveOperation>,
         transaction: TransactionArg,
         platform_version: &PlatformVersion,
@@ -43,6 +49,7 @@ impl Drive {
             0 => self.remove_balance_from_address_v0(
                 address,
                 amount_to_remove,
+                estimated_costs_only_with_layer_info,
                 drive_operations,
                 transaction,
                 platform_version,

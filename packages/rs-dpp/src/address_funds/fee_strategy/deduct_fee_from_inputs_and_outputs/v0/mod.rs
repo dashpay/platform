@@ -1,3 +1,4 @@
+use crate::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::FeeDeductionResult;
 use crate::address_funds::fee_strategy::AddressFundsFeeStrategyStep;
 use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
@@ -18,15 +19,9 @@ use std::collections::BTreeMap;
 pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
     mut inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     mut outputs: BTreeMap<PlatformAddress, Credits>,
-    fee_strategy: AddressFundsFeeStrategy,
+    fee_strategy: &AddressFundsFeeStrategy,
     fee: Credits,
-) -> Result<
-    (
-        BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        BTreeMap<PlatformAddress, Credits>,
-    ),
-    ProtocolError,
-> {
+) -> Result<FeeDeductionResult, ProtocolError> {
     let mut remaining_fee = fee;
 
     for step in fee_strategy {
@@ -37,7 +32,7 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
         match step {
             AddressFundsFeeStrategyStep::DeductFromInput(index) => {
                 // Reduce the remaining balance of the input at the specified index
-                if let Some((&address, &(nonce, amount))) = inputs.iter().nth(index as usize) {
+                if let Some((&address, &(nonce, amount))) = inputs.iter().nth(*index as usize) {
                     let reduction = remaining_fee.min(amount);
                     let new_amount = amount - reduction;
                     remaining_fee -= reduction;
@@ -51,7 +46,7 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
             }
             AddressFundsFeeStrategyStep::ReduceOutput(index) => {
                 // Reduce the output at the specified index
-                if let Some((&address, &amount)) = outputs.iter().nth(index as usize) {
+                if let Some((&address, &amount)) = outputs.iter().nth(*index as usize) {
                     let reduction = remaining_fee.min(amount);
                     let new_amount = amount - reduction;
                     remaining_fee -= reduction;
@@ -66,5 +61,9 @@ pub fn deduct_fee_from_outputs_or_remaining_balance_of_inputs_v0(
         }
     }
 
-    Ok((inputs, outputs))
+    Ok(FeeDeductionResult {
+        remaining_input_balances: inputs,
+        adjusted_outputs: outputs,
+        fee_fully_covered: remaining_fee == 0,
+    })
 }

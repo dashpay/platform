@@ -4,13 +4,13 @@ use crate::execution::types::execution_event::ExecutionEvent;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
+use dpp::address_funds::fee_strategy::deduct_fee_from_inputs_and_outputs::deduct_fee_from_outputs_or_remaining_balance_of_inputs;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::state::address_funds::AddressesNotEnoughFundsError;
 use dpp::consensus::state::identity::IdentityInsufficientBalanceError;
 use dpp::consensus::state::state_error::StateError;
 use dpp::fee::default_costs::CachedEpochIndexFeeVersions;
 use dpp::fee::fee_result::FeeResult;
-use dpp::fee::Credits;
 
 use dpp::prelude::ConsensusValidationResult;
 use dpp::version::PlatformVersion;
@@ -159,19 +159,15 @@ where
                 }
             }
             ExecutionEvent::PaidFromAddressInputs {
-                input_original_balances,
                 input_current_balances,
-                removed_balance,
+                added_to_balance_outputs,
+                fee_strategy,
                 operations,
                 execution_operations,
                 additional_fixed_fee_cost,
                 user_fee_increase,
                 ..
             } => {
-                let total_input_credit_amount = input_original_balances.values().sum::<Credits>();
-
-                let balance_after_principal_operation =
-                    total_input_credit_amount.saturating_sub(removed_balance.unwrap_or_default());
                 let mut estimated_fee_result = self
                     .drive
                     .apply_drive_operations(
@@ -198,7 +194,15 @@ where
                     required_balance += *additional_fixed_fee_cost;
                 }
 
-                if balance_after_principal_operation >= required_balance {
+                let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
+                    input_current_balances.clone(),
+                    added_to_balance_outputs.clone(),
+                    fee_strategy,
+                    required_balance,
+                    platform_version,
+                )?;
+
+                if fee_deduction_result.fee_fully_covered {
                     Ok(ConsensusValidationResult::new_with_data(
                         estimated_fee_result,
                     ))

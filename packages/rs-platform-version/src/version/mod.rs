@@ -1,6 +1,6 @@
 mod protocol_version;
 
-use crate::version::v10::PROTOCOL_VERSION_10;
+use crate::version::v11::PROTOCOL_VERSION_11;
 pub use protocol_version::*;
 use std::ops::RangeInclusive;
 
@@ -31,5 +31,5 @@ pub type ProtocolVersion = u32;
 
 pub const ALL_VERSIONS: RangeInclusive<ProtocolVersion> = 1..=LATEST_VERSION;
 
-pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_10;
+pub const LATEST_VERSION: ProtocolVersion = PROTOCOL_VERSION_11;
 pub const INITIAL_PROTOCOL_VERSION: ProtocolVersion = 1;

@@ -17,7 +17,10 @@ impl Drive {
 
     /// Path to the clear-address pool under address balances.
     pub fn clear_addresses_path() -> Vec<Vec<u8>> {
-        vec![vec![RootTree::AddressBalances as u8, CLEAR_ADDRESS_POOL_U8]]
+        vec![
+            vec![RootTree::AddressBalances as u8],
+            vec![CLEAR_ADDRESS_POOL_U8],
+        ]
     }
 
     /// The query for a single address balance and nonce.
@@ -35,14 +38,16 @@ impl Drive {
     {
         let path = Self::clear_addresses_path();
         let mut query = Query::new();
+        let mut limit: u16 = 0;
         for address in addresses {
             query.insert_item(QueryItem::Key(address.to_bytes()));
+            limit = limit.saturating_add(1);
         }
         PathQuery {
             path,
             query: SizedQuery {
                 query,
-                limit: None,
+                limit: Some(limit),
                 offset: None,
             },
         }

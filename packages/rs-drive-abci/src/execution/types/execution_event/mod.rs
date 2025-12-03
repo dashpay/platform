@@ -42,10 +42,6 @@ pub(in crate::execution) enum ExecutionEvent<'a> {
     },
     /// A drive event that is paid by an identity
     PaidFromAddressInputs {
-        /// The original balances of inputs
-        input_original_balances: BTreeMap<PlatformAddress, Credits>,
-        /// The removed balance in the case of a create or top up identity from addresses
-        removed_balance: Option<Credits>,
         /// The removed balance in the case of a transfer or withdrawal
         input_current_balances: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         /// These are credits we added as outputs, we can only deduct fees of the amount we added.
@@ -266,6 +262,49 @@ impl ExecutionEvent<'_> {
                         "partial identity should be present for other state transitions",
                     )))
                 }
+            }
+            StateTransitionAction::AddressFundsTransfer(address_funds_transfer_action) => {
+                let user_fee_increase = address_funds_transfer_action.user_fee_increase();
+                let input_current_balances = address_funds_transfer_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                let added_to_balance_outputs = address_funds_transfer_action.outputs().clone();
+                let fee_strategy = address_funds_transfer_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::AddressFundingFromAssetLock(
+                address_funding_from_asset_lock_action,
+            ) => {
+                let user_fee_increase = address_funding_from_asset_lock_action.user_fee_increase();
+                let input_current_balances = address_funding_from_asset_lock_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                let added_to_balance_outputs =
+                    address_funding_from_asset_lock_action.outputs().clone();
+                let fee_strategy = address_funding_from_asset_lock_action
+                    .fee_strategy()
+                    .clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
             }
             _ => {
                 let user_fee_increase = action.user_fee_increase();

@@ -53,7 +53,7 @@ mod test {
     use crate::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use std::fmt::Debug;
 
-    fn test_utxo_transfer_transition<
+    fn address_funds_transfer_transition_serialization_deserialization<
         T: PlatformSerializable + PlatformDeserializable + Debug + PartialEq,
     >(
         transition: T,
@@ -67,8 +67,8 @@ mod test {
     }
 
     #[test]
-    fn test_utxo_transfer_transition1() {
-        use crate::address_funds::{AddressWitness, PlatformAddress};
+    fn test_address_funds_transfer_transition_serialization_deserialization() {
+        use crate::address_funds::PlatformAddress;
         use std::collections::BTreeMap;
 
         // Create some inputs
@@ -93,6 +93,6 @@ mod test {
             input_witnesses: vec![],
         };
 
-        test_utxo_transfer_transition(transition);
+        address_funds_transfer_transition_serialization_deserialization(transition);
     }
 }

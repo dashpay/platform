@@ -146,14 +146,16 @@ where
             let total_fee = individual_fee_result.total_base_fee();
 
             // Deduct fee from outputs or remaining balance of inputs according to strategy
-            let (adjusted_inputs, adjusted_outputs) =
-                deduct_fee_from_outputs_or_remaining_balance_of_inputs(
-                    input_current_balances.clone(),
-                    added_to_balance_outputs.clone(),
-                    fee_strategy,
-                    total_fee,
-                    platform_version,
-                )?;
+            let fee_deduction_result = deduct_fee_from_outputs_or_remaining_balance_of_inputs(
+                input_current_balances.clone(),
+                added_to_balance_outputs.clone(),
+                &fee_strategy,
+                total_fee,
+                platform_version,
+            )?;
+
+            let adjusted_inputs = fee_deduction_result.remaining_input_balances;
+            let adjusted_outputs = fee_deduction_result.adjusted_outputs;
 
             // Now apply the fee adjustments to the state
             // For outputs: compare original with adjusted and remove the difference
@@ -166,6 +168,7 @@ where
                     self.drive.remove_balance_from_address(
                         *address,
                         amount_to_remove,
+                        &mut None,
                         &mut fee_drive_operations,
                         Some(transaction),
                         platform_version,
@@ -184,6 +187,7 @@ where
                         *address,
                         *nonce,
                         adjusted_remaining,
+                        &mut None,
                         &mut fee_drive_operations,
                         platform_version,
                     )?;
@@ -203,17 +207,15 @@ where
                     .map_err(Error::Drive)?;
             }
 
-            let fee_result = FeeResult::default_with_fees(0, total_fee);
-
             if consensus_errors.is_empty() {
                 Ok(SuccessfulPaidExecution(
                     Some(fee_validation_result.into_data()?),
-                    fee_result,
+                    individual_fee_result,
                 ))
             } else {
                 Ok(UnsuccessfulPaidExecution(
                     Some(fee_validation_result.into_data()?),
-                    fee_result,
+                    individual_fee_result,
                     consensus_errors,
                 ))
             }

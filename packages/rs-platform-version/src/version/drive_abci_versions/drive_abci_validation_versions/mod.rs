@@ -11,6 +11,8 @@ use versioned_feature_core::{FeatureVersion, OptionalFeatureVersion};
 pub struct DriveAbciValidationVersions {
     pub state_transitions: DriveAbciStateTransitionValidationVersions,
     pub has_nonce_validation: FeatureVersion,
+    pub has_address_witness_validation: FeatureVersion,
+    pub validate_address_witnesses: FeatureVersion,
     pub process_state_transition: FeatureVersion,
     pub state_transition_to_execution_event_for_check_tx: FeatureVersion,
     pub penalties: PenaltyAmounts,
@@ -70,7 +72,6 @@ pub struct DriveAbciStateTransitionCommonValidationVersions {
     pub validate_simple_pre_check_balance: FeatureVersion,
     pub validate_non_masternode_identity_exists: FeatureVersion,
     pub validate_identity_exists: FeatureVersion,
-    pub validate_addresses_for_balances_and_nonces: FeatureVersion,
 }
 
 /// All of these penalty amounts are in credits

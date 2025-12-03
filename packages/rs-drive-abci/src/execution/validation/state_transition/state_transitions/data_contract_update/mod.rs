@@ -254,7 +254,7 @@ mod tests {
         use dpp::consensus::state::state_error::StateError::DataContractIsReadonlyError;
         use dpp::errors::consensus::ConsensusError;
 
-        use crate::execution::validation::state_transition::processor::traits::StateTransitionStateValidation;
+        use crate::execution::validation::state_transition::processor::traits::state::StateTransitionStateValidation;
         use dpp::block::block_info::BlockInfo;
         use dpp::data_contract::accessors::v0::{DataContractV0Getters, DataContractV0Setters};
 

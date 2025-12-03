@@ -4,7 +4,6 @@ use dpp::address_funds::AddressWitness;
 use dpp::bincode::{Decode, Encode};
 use dpp::bls_signatures::{Bls12381G2Impl, SignatureSchemes};
 use dpp::dashcore::signer;
-use dpp::dashcore::PublicKey as ECDSAPublicKey;
 use dpp::ed25519_dalek::Signer as BlsSigner;
 use dpp::identity::identity_public_key::accessors::v0::IdentityPublicKeyGettersV0;
 use dpp::identity::signer::Signer;
@@ -123,16 +122,9 @@ impl Signer<IdentityPublicKey> for SimpleSigner {
         // Create the appropriate AddressWitness based on the key type
         match key.key_type() {
             KeyType::ECDSA_SECP256K1 | KeyType::ECDSA_HASH160 => {
-                // Get the public key from the identity public key
-                let pubkey_data = key.data();
-                let public_key =
-                    ECDSAPublicKey::from_slice(pubkey_data.as_slice()).map_err(|e| {
-                        ProtocolError::Generic(format!("Invalid ECDSA public key: {}", e))
-                    })?;
-                Ok(AddressWitness::P2pkh {
-                    signature,
-                    public_key,
-                })
+                // P2PKH witness only needs the signature - the public key is recovered
+                // during verification, saving 33 bytes per witness
+                Ok(AddressWitness::P2pkh { signature })
             }
             KeyType::EDDSA_25519_HASH160 => {
                 // Ed25519 keys are not supported for address witnesses (P2PKH requires ECDSA)
