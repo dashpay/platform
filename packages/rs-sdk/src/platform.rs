@@ -17,6 +17,7 @@ pub mod group_actions;
 mod identities_contract_keys_query;
 pub mod query;
 pub mod tokens;
+pub mod transfer;
 pub mod transition;
 pub mod types;
 
