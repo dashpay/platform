@@ -15,7 +15,8 @@ pub use group::*;
 use crate::bytes_b64;
 use crate::impl_wasm_object_json;
 use crate::serialization::{
-    from_json_value, from_object, js_to_json_value, json_value_to_js, to_json_value, to_object,
+    from_json_value, from_object, js_to_json_value, json_value_to_js, to_json_value,
+    to_object_bytes,
 };
 use crate::WasmSdkError;
 use js_sys::Uint8Array;
@@ -93,7 +94,7 @@ impl ResponseMetadataWasm {
         self.chain_id = chain_id.to_vec();
     }
 }
-impl_wasm_object_json!(ResponseMetadataWasm);
+impl_wasm_object_json!(ResponseMetadataWasm, ResponseMetadata);
 
 // Helper function to convert platform ResponseMetadata to our ResponseMetadata
 impl From<dash_sdk::platform::proto::ResponseMetadata> for ResponseMetadataWasm {
@@ -205,7 +206,7 @@ impl ProofInfoWasm {
         self.block_id_hash = block_id_hash.to_vec();
     }
 }
-impl_wasm_object_json!(ProofInfoWasm);
+impl_wasm_object_json!(ProofInfoWasm, ProofInfo);
 
 // Helper function to convert platform Proof to our ProofInfo
 impl From<dash_sdk::platform::proto::Proof> for ProofInfoWasm {
@@ -311,7 +312,7 @@ impl ProofMetadataResponseWasm {
     #[wasm_bindgen(js_name = "toObject")]
     pub fn to_object(&self) -> Result<JsValue, WasmSdkError> {
         let serde_value = self.to_serde()?;
-        to_object(&serde_value)
+        to_object_bytes(&serde_value)
     }
 
     #[wasm_bindgen(js_name = "fromObject")]
