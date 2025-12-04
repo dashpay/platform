@@ -690,6 +690,33 @@ mod tests {
     }
 
     #[test]
+    /// Example: top up a Platform address using an asset lock funding source.
+    fn example_address_top_up_flow_showcases_asset_lock_usage() {
+        let mut builder = CreditTransfer::builder();
+        // 1. Provide the asset lock proof/private key as the funding source.
+        builder
+            .input(asset_lock_input())
+            .expect("asset lock input should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        // 2. Point the builder at the Platform address that should receive funds.
+        builder
+            .output(platform_address(12), 30)
+            .expect("platform address output should be accepted");
+
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("builder should succeed");
+        match transfer_kind {
+            TransferKind::AddressTopUp(_) => {}
+            _ => panic!("top up flow should produce AddressTopUp transfer"),
+        }
+
+        // To submit the transition for real, call:
+        // let transfer = builder.build(&sdk, None).await?;
+        // transfer.broadcast_and_wait::<StateTransitionProofResult>(&sdk, None).await?;
+    }
+
+    #[test]
     ///  Example: withdraw to a Core script with change sent back to Platform.
     fn example_withdrawal_flow_showcases_core_withdrawals() {
         let mut builder = CreditTransfer::builder();
