@@ -1,86 +1,107 @@
-use dpp::address_funds::{AddressWitness, PlatformAddress};
+use crate::Error;
+use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::{Address, PrivateKey};
 use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::{core_script::CoreScript, Identity, IdentityPublicKey};
-use dpp::platform_value::BinaryData;
 use dpp::prelude::{AddressNonce, AssetLockProof};
-use dpp::ProtocolError;
 use std::collections::BTreeMap;
 use std::convert::Infallible;
-use std::fmt;
 use std::sync::Arc;
 use zeroize::Zeroize;
 
-/// Trait-object alias for identity signers.
-pub type DynIdentitySigner = dyn Signer<IdentityPublicKey> + Send + Sync;
+/// Dynamic identity signer handle.
+pub type IdentitySigner = Arc<dyn Signer<IdentityPublicKey> + Send + Sync>;
+/// Dynamic Platform address signer handle.
+pub type AddressSigner = Arc<dyn Signer<PlatformAddress> + Send + Sync>;
 
-/// Generic wrapper around dynamic signers.
-#[derive(Clone)]
-pub struct TransferSigner<T> {
-    inner: Arc<dyn Signer<T> + Send + Sync>,
+/// Builder-friendly signer configuration capable of holding either dynamic signers or raw keys.
+#[derive(Clone, Debug)]
+pub enum TransferSigner {
+    /// Identity signer with optional preferred public key.
+    Identity {
+        signer: IdentitySigner,
+        signing_key: Option<IdentityPublicKey>,
+    },
+    /// Platform address signer.
+    Address(AddressSigner),
+    /// Raw private keys (in order of the inputs supplied).
+    PrivateKeys(Vec<Vec<u8>>),
 }
 
-impl<T> TransferSigner<T> {
-    /// Create a wrapper from a dynamic signer.
-    pub fn new(inner: Arc<dyn Signer<T> + Send + Sync>) -> Self {
-        Self { inner }
+impl TransferSigner {
+    /// Backwards-compatible identity constructor.
+    pub fn new(signer: IdentitySigner) -> Self {
+        Self::new_identity_signer(signer)
     }
 
-    /// Clone the inner signer.
-    pub fn as_arc(&self) -> Arc<dyn Signer<T> + Send + Sync> {
-        Arc::clone(&self.inner)
-    }
-}
-
-impl<T> fmt::Debug for TransferSigner<T> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("TransferSigner").finish()
-    }
-}
-
-impl<T> From<Arc<dyn Signer<T> + Send + Sync>> for TransferSigner<T> {
-    fn from(inner: Arc<dyn Signer<T> + Send + Sync>) -> Self {
-        Self { inner }
-    }
-}
-
-impl<T, S> From<Arc<S>> for TransferSigner<T>
-where
-    S: Signer<T> + Send + Sync + 'static,
-{
-    fn from(signer: Arc<S>) -> Self {
-        let inner: Arc<dyn Signer<T> + Send + Sync> = signer;
-        Self { inner }
-    }
-}
-
-impl<T> From<TransferSigner<T>> for Arc<dyn Signer<T> + Send + Sync> {
-    fn from(wrapper: TransferSigner<T>) -> Self {
-        wrapper.inner
-    }
-}
-
-impl<T> Signer<T> for TransferSigner<T> {
-    fn sign(&self, key: &T, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-        self.inner.sign(key, data)
+    /// Backwards-compatible identity constructor with explicit key.
+    pub fn new_with_public_key(
+        signer: IdentitySigner,
+        signing_key: IdentityPublicKey,
+    ) -> Self {
+        Self::new_identity_signer_with_public_key(signer, signing_key)
     }
 
-    fn sign_create_witness(&self, key: &T, data: &[u8]) -> Result<AddressWitness, ProtocolError> {
-        self.inner.sign_create_witness(key, data)
+    /// Create an identity signer configuration.
+    pub fn new_identity_signer(signer: IdentitySigner) -> Self {
+        Self::Identity {
+            signer,
+            signing_key: None,
+        }
     }
 
-    fn can_sign_with(&self, key: &T) -> bool {
-        self.inner.can_sign_with(key)
+    /// Create an identity signer configuration with an explicit signing key.
+    pub fn new_identity_signer_with_public_key(
+        signer: IdentitySigner,
+        signing_key: IdentityPublicKey,
+    ) -> Self {
+        Self::Identity {
+            signer,
+            signing_key: Some(signing_key),
+        }
+    }
+
+    /// Wrap a Platform address signer handle.
+    pub fn address_signer(signer: AddressSigner) -> Self {
+        Self::Address(signer)
+    }
+
+    /// Store raw Platform address private keys for flows that require them.
+    pub fn private_keys<I, K>(keys: I) -> Self
+    where
+        I: IntoIterator<Item = K>,
+        K: Into<Vec<u8>>,
+    {
+        Self::PrivateKeys(keys.into_iter().map(Into::into).collect())
     }
 }
 
-/// Wrapper used for identity signers exposed via the builder API.
-pub type IdentitySigner = TransferSigner<IdentityPublicKey>;
-/// Wrapper used for Platform address signers exposed via the builder API.
-pub type AddressSigner = TransferSigner<PlatformAddress>;
+impl From<IdentitySigner> for TransferSigner {
+    fn from(signer: IdentitySigner) -> Self {
+        TransferSigner::Identity {
+            signer,
+            signing_key: None,
+        }
+    }
+}
+
+impl From<(IdentitySigner, IdentityPublicKey)> for TransferSigner {
+    fn from((signer, signing_key): (IdentitySigner, IdentityPublicKey)) -> Self {
+        TransferSigner::Identity {
+            signer,
+            signing_key: Some(signing_key),
+        }
+    }
+}
+
+impl From<AddressSigner> for TransferSigner {
+    fn from(signer: AddressSigner) -> Self {
+        TransferSigner::Address(signer)
+    }
+}
 
 /// Configuration describing an identity funding source.
 #[derive(Clone)]
@@ -106,14 +127,33 @@ impl IdentityTransferConfig {
         }
     }
 
+    /// Create a configuration from a [`TransferSigner`] helper.
+    pub fn from_transfer_signer(identity: Identity, signer: TransferSigner) -> Result<Self, Error> {
+        match signer {
+            TransferSigner::Identity {
+                signer,
+                signing_key,
+            } => Ok(Self {
+                identity,
+                signer,
+                signing_key,
+            }),
+            TransferSigner::Address(_) | TransferSigner::PrivateKeys(_) => {
+                Err(Error::InvalidCreditTransfer(
+                    "identity transfer requires an identity signer configuration".to_string(),
+                ))
+            }
+        }
+    }
+
     /// Return the identity identifier.
     pub fn identity_id(&self) -> Identifier {
         self.identity.id()
     }
 
     /// Clone the signer.
-    pub(crate) fn signer(&self) -> Arc<DynIdentitySigner> {
-        self.signer.as_arc()
+    pub(crate) fn signer(&self) -> IdentitySigner {
+        Arc::clone(&self.signer)
     }
 
     /// Borrow the preferred signing key if provided.
@@ -130,39 +170,29 @@ impl IdentityTransferConfig {
 /// Generic funding sources for credit-backed transitions.
 #[allow(private_interfaces)]
 pub enum TransferInput {
-    /// Asset-lock proof paired with its private key.
+    /// Asset-lock proof.
     AssetLock {
         asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: PrivateKey,
     },
     /// Platform address inputs without nonce information.
     Addresses {
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
     },
     /// Platform address inputs with nonce information.
     AddressesWithNonce {
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
     },
-    /// Identity source containing signer metadata.
-    Identity(IdentityTransferConfig),
+    /// Identity funding source.
+    Identity(Identity),
 }
 
 impl Zeroize for TransferInput {
     fn zeroize(&mut self) {
         match self {
-            TransferInput::AssetLock {
-                asset_lock_private_key,
-                ..
-            } => asset_lock_private_key.inner.non_secure_erase(),
-            TransferInput::Addresses {
-                input_private_keys, ..
-            }
-            | TransferInput::AddressesWithNonce {
-                input_private_keys, ..
-            } => input_private_keys.zeroize(),
-            TransferInput::Identity(_) => {}
+            TransferInput::AssetLock { .. }
+            | TransferInput::Addresses { .. }
+            | TransferInput::AddressesWithNonce { .. }
+            | TransferInput::Identity(_) => {}
         }
     }
 }
@@ -177,52 +207,39 @@ impl TransferInput {
     /// Build an asset-lock funding source.
     pub fn from_asset_lock(
         asset_lock_proof: AssetLockProof,
-        asset_lock_private_key: PrivateKey,
     ) -> Self {
-        Self::AssetLock {
-            asset_lock_proof,
-            asset_lock_private_key,
-        }
+        Self::AssetLock { asset_lock_proof }
     }
 
     /// Build a Platform address funding source without nonce.
     pub fn from_addresses(
         inputs: BTreeMap<PlatformAddress, Credits>,
-        input_private_keys: Vec<Vec<u8>>,
     ) -> Self {
-        Self::Addresses {
-            inputs,
-            input_private_keys,
-        }
+        Self::Addresses { inputs }
     }
 
     /// Build a Platform address funding source that carries nonce information.
     pub fn from_addresses_with_nonce(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<Vec<u8>>,
     ) -> Self {
-        Self::AddressesWithNonce {
-            inputs,
-            input_private_keys,
-        }
+        Self::AddressesWithNonce { inputs }
     }
-}
 
-impl From<IdentityTransferConfig> for TransferInput {
-    fn from(value: IdentityTransferConfig) -> Self {
-        TransferInput::Identity(value)
+    /// Build an identity funding source awaiting signer configuration.
+    pub fn from_identity(identity: Identity) -> Self {
+        Self::Identity(identity)
     }
 }
 
 impl From<(AssetLockProof, PrivateKey)> for TransferInput {
     fn from(value: (AssetLockProof, PrivateKey)) -> Self {
-        Self::from_asset_lock(value.0, value.1)
+        Self::from_asset_lock(value.0)
     }
 }
 
 impl From<(BTreeMap<PlatformAddress, Credits>, Vec<Vec<u8>>)> for TransferInput {
     fn from(value: (BTreeMap<PlatformAddress, Credits>, Vec<Vec<u8>>)) -> Self {
-        Self::from_addresses(value.0, value.1)
+        Self::from_addresses(value.0)
     }
 }
 
@@ -238,7 +255,19 @@ impl
             Vec<Vec<u8>>,
         ),
     ) -> Self {
-        Self::from_addresses_with_nonce(value.0, value.1)
+        Self::from_addresses_with_nonce(value.0)
+    }
+}
+
+impl From<Identity> for TransferInput {
+    fn from(identity: Identity) -> Self {
+        TransferInput::from_identity(identity)
+    }
+}
+
+impl From<&Identity> for TransferInput {
+    fn from(identity: &Identity) -> Self {
+        TransferInput::from_identity(identity.clone())
     }
 }
 

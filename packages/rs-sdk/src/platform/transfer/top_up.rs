@@ -1,18 +1,20 @@
-use super::types::{AddressSigner, TransferInput, TransferOutput};
+use super::types::{TransferInput, TransferOutput};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use dpp::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 use dpp::fee::Credits;
+use dpp::identity::signer::Signer;
+use dpp::platform_value::BinaryData;
 use dpp::prelude::AssetLockProof;
 use dpp::state_transition::address_funding_from_asset_lock_transition::methods::AddressFundingFromAssetLockTransitionMethodsV0;
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::state_transition::StateTransition;
+use dpp::ProtocolError;
 use std::collections::BTreeMap;
 use zeroize::Zeroize;
 
 /// Plan describing an address top up funded via an asset lock.
 pub(crate) struct AddressTopUpPlan {
-    signer: AddressSigner,
     fee_strategy: AddressFundsFeeStrategy,
     asset_lock_proof: AssetLockProof,
     asset_lock_private_key: Vec<u8>,
@@ -29,14 +31,12 @@ impl std::fmt::Debug for AddressTopUpPlan {
 
 impl AddressTopUpPlan {
     fn new(
-        signer: AddressSigner,
         fee_strategy: AddressFundsFeeStrategy,
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: Vec<u8>,
         outputs: BTreeMap<PlatformAddress, Option<Credits>>,
     ) -> Self {
         Self {
-            signer,
             fee_strategy,
             asset_lock_proof,
             asset_lock_private_key,
@@ -54,13 +54,15 @@ impl AddressTopUpPlan {
             .and_then(|settings| settings.user_fee_increase)
             .unwrap_or_default();
 
+        let signer = NullAddressSigner;
+
         AddressFundingFromAssetLockTransition::try_from_asset_lock_with_signer(
             self.asset_lock_proof.clone(),
             self.asset_lock_private_key.as_slice(),
             BTreeMap::new(),
             self.outputs.clone(),
             self.fee_strategy.clone(),
-            &self.signer,
+            &signer,
             user_fee_increase,
             sdk.version(),
         )
@@ -78,40 +80,33 @@ impl Drop for AddressTopUpPlan {
 pub(crate) fn classify_address_top_up(
     inputs: &[TransferInput],
     outputs: &BTreeMap<TransferOutput, Credits>,
-    signer: AddressSigner,
+    asset_lock_private_key: Vec<u8>,
     fee_strategy: AddressFundsFeeStrategy,
 ) -> Result<AddressTopUpPlan, Error> {
-    let (proof, private_key) = extract_asset_lock_funding(inputs)?;
+    let proof = extract_asset_lock_funding(inputs)?;
     let address_outputs = collect_top_up_outputs(outputs)?;
     Ok(AddressTopUpPlan::new(
-        signer,
         fee_strategy,
         proof,
-        private_key,
+        asset_lock_private_key,
         address_outputs,
     ))
 }
 
 fn extract_asset_lock_funding(
     inputs: &[TransferInput],
-) -> Result<(AssetLockProof, Vec<u8>), Error> {
-    let mut funding: Option<(AssetLockProof, Vec<u8>)> = None;
+) -> Result<AssetLockProof, Error> {
+    let mut funding: Option<AssetLockProof> = None;
 
     for source in inputs {
         match source {
-            TransferInput::AssetLock {
-                asset_lock_proof,
-                asset_lock_private_key,
-            } => {
+            TransferInput::AssetLock { asset_lock_proof } => {
                 if funding.is_some() {
                     return Err(Error::InvalidCreditTransfer(
                         "address top up supports exactly one asset lock funding input".to_string(),
                     ));
                 }
-                funding = Some((
-                    asset_lock_proof.clone(),
-                    asset_lock_private_key.inner.as_ref().to_vec(),
-                ));
+                funding = Some(asset_lock_proof.clone());
             }
             TransferInput::Addresses { .. } | TransferInput::AddressesWithNonce { .. } => {
                 return Err(Error::InvalidCreditTransfer(
@@ -157,4 +152,29 @@ fn collect_top_up_outputs(
     }
 
     Ok(address_outputs)
+}
+
+#[derive(Debug)]
+struct NullAddressSigner;
+
+impl Signer<PlatformAddress> for NullAddressSigner {
+    fn sign(&self, _key: &PlatformAddress, _data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        Err(ProtocolError::Generic(
+            "address signatures are not supported for top ups".to_string(),
+        ))
+    }
+
+    fn sign_create_witness(
+        &self,
+        _key: &PlatformAddress,
+        _data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        Err(ProtocolError::Generic(
+            "address witnesses are not supported for top ups".to_string(),
+        ))
+    }
+
+    fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
+        false
+    }
 }

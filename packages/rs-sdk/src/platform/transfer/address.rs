@@ -260,11 +260,11 @@ fn collect_address_inputs(inputs: &[TransferInput], context: &str) -> Result<Add
 
     for funding in inputs {
         match funding {
-            TransferInput::Addresses { inputs, .. } => {
+            TransferInput::Addresses { inputs } => {
                 has_address_input = true;
                 merge_without_nonce(&mut pending_inputs, &inputs_with_nonce, inputs)?;
             }
-            TransferInput::AddressesWithNonce { inputs, .. } => {
+            TransferInput::AddressesWithNonce { inputs } => {
                 has_address_input = true;
                 merge_with_nonce(&mut inputs_with_nonce, &pending_inputs, inputs)?;
             }
@@ -344,17 +344,14 @@ mod tests {
     #[test]
     fn classify_address_transfer_collects_inputs_and_outputs() {
         let inputs = vec![
-            TransferInput::from_addresses(BTreeMap::from([(address(1), 10)]), vec![]),
-            TransferInput::from_addresses_with_nonce(
-                BTreeMap::from([(address(2), (5, 15))]),
-                vec![],
-            ),
+            TransferInput::from_addresses(BTreeMap::from([(address(1), 10)])),
+            TransferInput::from_addresses_with_nonce(BTreeMap::from([(address(2), (5, 15))])),
         ];
 
         let outputs =
             BTreeMap::from([(TransferOutput::PlatformAddress(address(3)), 25 as Credits)]);
 
-        let signer: AddressSigner = Arc::new(TestAddressSigner).into();
+        let signer: AddressSigner = Arc::new(TestAddressSigner);
         let context =
             classify_address_transfer(&inputs, &outputs, signer, AddressFundsFeeStrategy::new())
                 .expect("valid context");
@@ -368,12 +365,11 @@ mod tests {
     fn classify_address_transfer_rejects_non_platform_outputs() {
         let inputs = vec![TransferInput::from_addresses(
             BTreeMap::from([(address(1), 10)]),
-            vec![],
         )];
         let outputs =
             BTreeMap::from([(TransferOutput::Identity(Default::default()), 5 as Credits)]);
 
-        let signer: AddressSigner = Arc::new(TestAddressSigner).into();
+        let signer: AddressSigner = Arc::new(TestAddressSigner);
         let err =
             classify_address_transfer(&inputs, &outputs, signer, AddressFundsFeeStrategy::new())
                 .unwrap_err();

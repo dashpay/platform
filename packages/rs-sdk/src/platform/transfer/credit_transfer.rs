@@ -4,9 +4,9 @@ use super::address::{
 };
 use super::identity::{classify_identity_transfer, IdentityTransferSelection};
 use super::top_up::{classify_address_top_up, AddressTopUpPlan};
-use super::types::{
-    AddressSigner, IdentitySigner, IdentityTransferConfig, TransferInput, TransferOutput,
-};
+#[cfg(test)]
+use super::types::IdentitySigner;
+use super::types::{AddressSigner, TransferInput, TransferOutput, TransferSigner};
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::validation::ensure_valid_state_transition_structure;
@@ -17,7 +17,10 @@ use dpp::errors::consensus::basic::state_transition::{
 };
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
-use dpp::identity::{Identity, IdentityPublicKey};
+#[cfg(test)]
+use dpp::identity::Identity;
+#[cfg(test)]
+use dpp::identity::IdentityPublicKey;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::withdrawal::Pooling;
@@ -45,6 +48,71 @@ impl CreditTransfer {
     /// Borrow the prepared state transition.
     fn state_transition(&self) -> &StateTransition {
         &self.state_transition
+    }
+}
+
+fn finalize_inputs(inputs: Vec<TransferInput>) -> Result<Vec<TransferInput>, Error> {
+    let identity_count = inputs
+        .iter()
+        .filter(|input| matches!(input, TransferInput::Identity(_)))
+        .count();
+
+    if identity_count > 1 {
+        return Err(Error::InvalidCreditTransfer(
+            "multiple identity inputs are not supported".to_string(),
+        ));
+    }
+
+    Ok(inputs)
+}
+
+fn require_address_signer(
+    signer: &mut Option<TransferSigner>,
+    context: &str,
+) -> Result<AddressSigner, Error> {
+    match signer.take() {
+        Some(TransferSigner::Address(address_signer)) => Ok(address_signer),
+        Some(TransferSigner::Identity { .. }) => Err(Error::InvalidCreditTransfer(format!(
+            "{context} requires a Platform address signer configuration",
+        ))),
+        Some(TransferSigner::PrivateKeys(_)) => Err(Error::InvalidCreditTransfer(
+            "address private key signers are not supported yet".to_string(),
+        )),
+        None => Err(Error::InvalidCreditTransfer(format!(
+            "{context} requires a signer configuration",
+        ))),
+    }
+}
+
+fn require_identity_signer(
+    signer: &mut Option<TransferSigner>,
+) -> Result<TransferSigner, Error> {
+    match signer.take() {
+        Some(identity_signer @ TransferSigner::Identity { .. }) => Ok(identity_signer),
+        Some(other) => Err(Error::InvalidCreditTransfer(format!(
+            "identity transfers require an identity signer, received {other:?}",
+        ))),
+        None => Err(Error::InvalidCreditTransfer(
+            "identity transfers require a signer configuration".to_string(),
+        )),
+    }
+}
+
+fn require_private_keys(
+    signer: &mut Option<TransferSigner>,
+    context: &str,
+) -> Result<Vec<Vec<u8>>, Error> {
+    match signer.take() {
+        Some(TransferSigner::PrivateKeys(keys)) if !keys.is_empty() => Ok(keys),
+        Some(TransferSigner::PrivateKeys(_)) => Err(Error::InvalidCreditTransfer(
+            "private key signer must include at least one key".to_string(),
+        )),
+        Some(_) => Err(Error::InvalidCreditTransfer(format!(
+            "{context} requires raw private keys signer",
+        ))),
+        None => Err(Error::InvalidCreditTransfer(format!(
+            "{context} requires a signer configuration",
+        ))),
     }
 }
 
@@ -101,8 +169,8 @@ pub struct CreditTransferBuilder {
     inputs: Vec<TransferInput>,
     /// Outputs aggregated by destination.
     outputs: BTreeMap<TransferOutput, Credits>,
-    /// Signer used for Platform address transfers.
-    address_signer: Option<AddressSigner>,
+    /// Signer used for the transfer (identity or address context).
+    signer: Option<TransferSigner>,
     /// Fee configuration when spending Platform addresses.
     address_fee_strategy: AddressFundsFeeStrategy,
     /// Optional address withdrawal configuration.
@@ -114,7 +182,7 @@ impl std::fmt::Debug for CreditTransferBuilder {
         f.debug_struct("CreditTransferBuilder")
             .field("input_count", &self.inputs.len())
             .field("outputs", &self.outputs)
-            .field("has_address_signer", &self.address_signer.is_some())
+            .field("has_signer", &self.signer.is_some())
             .field("address_fee_strategy", &self.address_fee_strategy)
             .field("has_withdrawal", &self.withdrawal.is_some())
             .finish()
@@ -123,40 +191,21 @@ impl std::fmt::Debug for CreditTransferBuilder {
 
 impl CreditTransferBuilder {
     /// Adds a funding source to the transfer.
-    pub fn input<S>(&mut self, source: S) -> Result<&mut Self, Error>
+    pub fn input<S>(&mut self, source: S) -> &mut Self
     where
-        S: TryInto<TransferInput> + Send,
-        <S as TryInto<TransferInput>>::Error: ToString,
+        S: Into<TransferInput>,
     {
-        let funding = source
-            .try_into()
-            .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
-        self.inputs.push(funding);
-        Ok(self)
-    }
-
-    /// Adds an identity funding source with its signer context.
-    pub fn identity_input<S>(
-        &mut self,
-        identity: Identity,
-        signer: S,
-        signing_key: Option<IdentityPublicKey>,
-    ) -> Result<&mut Self, Error>
-    where
-        S: Into<IdentitySigner>,
-    {
-        let config = IdentityTransferConfig::new(identity, signer, signing_key);
-        self.inputs.push(TransferInput::Identity(config));
-        Ok(self)
-    }
-
-    /// Sets the signer used when spending Platform addresses.
-    pub fn address_signer<S>(&mut self, signer: S) -> &mut Self
-    where
-        S: Into<AddressSigner>,
-    {
-        self.address_signer = Some(signer.into());
+        self.inputs.push(source.into());
         self
+    }
+
+    /// Registers a signer used for the current transfer context.
+    pub fn with_signer<S>(&mut self, signer: S) -> Result<&mut Self, Error>
+    where
+        S: Into<TransferSigner>,
+    {
+        self.signer = Some(signer.into());
+        Ok(self)
     }
 
     /// Configures the fee strategy for address-to-address transfers.
@@ -324,10 +373,13 @@ impl CreditTransferBuilder {
         let CreditTransferBuilder {
             inputs,
             outputs,
-            address_signer,
+            signer,
             address_fee_strategy,
             withdrawal,
+            ..
         } = self;
+        let mut signer = signer;
+        let inputs = finalize_inputs(inputs)?;
 
         if let Some(withdrawal_config) = withdrawal {
             if !outputs.is_empty() {
@@ -336,12 +388,7 @@ impl CreditTransferBuilder {
                 ));
             }
 
-            let signer = address_signer.ok_or_else(|| {
-                Error::InvalidCreditTransfer(
-                    "address transfers require an address signer configuration".to_string(),
-                )
-            })?;
-
+            let signer = require_address_signer(&mut signer, "address withdrawal")?;
             let transfer_kind = TransferKind::AddressWithdrawal(classify_address_withdrawal(
                 &inputs,
                 signer,
@@ -354,8 +401,12 @@ impl CreditTransferBuilder {
             .keys()
             .all(|output| matches!(output, TransferOutput::Identity(_)));
         if outputs_are_identities {
-            let transfer_kind =
-                TransferKind::Identity(classify_identity_transfer(&inputs, &outputs)?);
+            let identity_signer = require_identity_signer(&mut signer)?;
+            let transfer_kind = TransferKind::Identity(classify_identity_transfer(
+                &inputs,
+                &outputs,
+                identity_signer,
+            )?);
             return Ok(transfer_kind);
         }
 
@@ -367,25 +418,23 @@ impl CreditTransferBuilder {
                 .iter()
                 .any(|input| matches!(input, TransferInput::AssetLock { .. }))
             {
-                let signer = address_signer.clone().ok_or_else(|| {
-                    Error::InvalidCreditTransfer(
-                        "address transfers require an address signer configuration".to_string(),
-                    )
-                })?;
+                let mut private_keys = require_private_keys(&mut signer, "address top up")?;
+                if private_keys.len() != 1 {
+                    return Err(Error::InvalidCreditTransfer(
+                        "address top up requires exactly one asset lock private key".to_string(),
+                    ));
+                }
+                let asset_lock_private_key = private_keys.remove(0);
                 let transfer_kind = TransferKind::AddressTopUp(classify_address_top_up(
                     &inputs,
                     &outputs,
-                    signer,
+                    asset_lock_private_key,
                     address_fee_strategy.clone(),
                 )?);
                 return Ok(transfer_kind);
             }
 
-            let signer = address_signer.ok_or_else(|| {
-                Error::InvalidCreditTransfer(
-                    "address transfers require an address signer configuration".to_string(),
-                )
-            })?;
+            let signer = require_address_signer(&mut signer, "address transfer")?;
             let transfer_kind = TransferKind::Address(classify_address_transfer(
                 &inputs,
                 &outputs,
@@ -464,11 +513,18 @@ mod tests {
     }
 
     fn asset_lock_input() -> TransferInput {
-        TransferInput::from_asset_lock(AssetLockProof::default(), test_asset_lock_private_key())
+        TransferInput::from_asset_lock(AssetLockProof::default())
     }
 
     fn test_asset_lock_private_key() -> PrivateKey {
         PrivateKey::from_byte_array(&[11u8; 32], Network::Testnet).expect("private key")
+    }
+
+    fn asset_lock_private_key_bytes() -> Vec<u8> {
+        test_asset_lock_private_key()
+            .inner
+            .as_ref()
+            .to_vec()
     }
 
     #[test]
@@ -492,9 +548,9 @@ mod tests {
     fn identity_transfer_plan_requires_identity_input() {
         let recipient_id = identifier(3);
         let mut builder = CreditTransfer::builder();
-        builder
-            .input((BTreeMap::<PlatformAddress, Credits>::new(), vec![]))
-            .expect("input should be accepted");
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::<PlatformAddress, Credits>::new(),
+        ));
         builder
             .output(recipient_id, 10)
             .expect("output should be accepted");
@@ -507,9 +563,10 @@ mod tests {
     fn identity_transfer_plan_requires_identity_output() {
         let sender_id = identifier(4);
         let mut builder = CreditTransfer::builder();
+        builder.input(identity_with_id(sender_id));
         builder
-            .identity_input(identity_with_id(sender_id), test_signer(), None)
-            .expect("input should be accepted");
+            .with_signer(TransferSigner::new(test_signer()))
+            .expect("signer should be configured");
         builder
             .output(PlatformAddress::default(), 10)
             .expect("output should be accepted");
@@ -528,12 +585,9 @@ mod tests {
     #[test]
     fn withdrawal_plan_requires_signer() {
         let mut builder = CreditTransfer::builder();
-        builder
-            .input(TransferInput::from_addresses(
-                BTreeMap::from([(platform_address(1), 10)]),
-                vec![],
-            ))
-            .expect("input should be accepted");
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::from([(platform_address(1), 10)]),
+        ));
         builder
             .output(CoreScript::from_bytes(vec![0u8; 1]), 0)
             .expect("withdrawal destination should be configured");
@@ -545,13 +599,12 @@ mod tests {
     #[test]
     fn withdrawal_plan_succeeds() {
         let mut builder = CreditTransfer::builder();
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::from([(platform_address(2), 10)]),
+        ));
         builder
-            .input(TransferInput::from_addresses(
-                BTreeMap::from([(platform_address(2), 10)]),
-                vec![],
-            ))
-            .expect("input should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::address_signer(Arc::new(TestAddressSigner)))
+            .expect("signer should be configured");
         builder
             .output(CoreScript::from_bytes(vec![1u8; 2]), 0)
             .expect("withdrawal destination should be configured");
@@ -571,9 +624,7 @@ mod tests {
     #[test]
     fn address_top_up_requires_signer() {
         let mut builder = CreditTransfer::builder();
-        builder
-            .input(asset_lock_input())
-            .expect("input should be accepted");
+        builder.input(asset_lock_input());
         builder
             .output(platform_address(6), 12)
             .expect("output should be accepted");
@@ -585,10 +636,12 @@ mod tests {
     #[test]
     fn address_top_up_plan_succeeds() {
         let mut builder = CreditTransfer::builder();
+        builder.input(asset_lock_input());
         builder
-            .input(asset_lock_input())
-            .expect("input should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::private_keys(vec![
+                asset_lock_private_key_bytes(),
+            ]))
+            .expect("signer should be configured");
         builder
             .output(platform_address(7), 18)
             .expect("output should be accepted");
@@ -605,13 +658,12 @@ mod tests {
     #[test]
     fn change_rejects_unsupported_destination() {
         let mut builder = CreditTransfer::builder();
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::from([(platform_address(4), 10)]),
+        ));
         builder
-            .input(TransferInput::from_addresses(
-                BTreeMap::from([(platform_address(4), 10)]),
-                vec![],
-            ))
-            .expect("input should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::address_signer(Arc::new(TestAddressSigner)))
+            .expect("signer should be configured");
         builder
             .output(CoreScript::from_bytes(vec![6u8; 2]), 0)
             .expect("withdrawal destination should be configured");
@@ -638,9 +690,10 @@ mod tests {
 
         let mut builder = CreditTransfer::builder();
         // 1. Provide identity balance and signer context.
+        builder.input(identity_with_id(sender_id));
         builder
-            .identity_input(identity_with_id(sender_id), test_signer(), None)
-            .expect("identity funding should be accepted");
+            .with_signer(TransferSigner::new(test_signer()))
+            .expect("signer should be configured");
         // 2. Describe the output target and amount.
         builder
             .output(recipient_id, 10)
@@ -665,13 +718,12 @@ mod tests {
     /// Example: transfer 25 credits between Platform addresses.
     fn example_address_transfer_flow_showcases_platform_inputs() {
         let mut builder = CreditTransfer::builder();
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::from([(platform_address(8), 50)]),
+        ));
         builder
-            .input(TransferInput::from_addresses(
-                BTreeMap::from([(platform_address(8), 50)]),
-                vec![],
-            ))
-            .expect("address funding should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::address_signer(Arc::new(TestAddressSigner)))
+            .expect("signer should be configured");
         builder
             .output(platform_address(9), 25)
             .expect("platform address output should be accepted");
@@ -694,10 +746,12 @@ mod tests {
     fn example_address_top_up_flow_showcases_asset_lock_usage() {
         let mut builder = CreditTransfer::builder();
         // 1. Provide the asset lock proof/private key as the funding source.
+        builder.input(asset_lock_input());
         builder
-            .input(asset_lock_input())
-            .expect("asset lock input should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::private_keys(vec![
+                asset_lock_private_key_bytes(),
+            ]))
+            .expect("signer should be configured");
         // 2. Point the builder at the Platform address that should receive funds.
         builder
             .output(platform_address(12), 30)
@@ -720,13 +774,12 @@ mod tests {
     ///  Example: withdraw to a Core script with change sent back to Platform.
     fn example_withdrawal_flow_showcases_core_withdrawals() {
         let mut builder = CreditTransfer::builder();
+        builder.input(TransferInput::from_addresses(
+            BTreeMap::from([(platform_address(10), 75)]),
+        ));
         builder
-            .input(TransferInput::from_addresses(
-                BTreeMap::from([(platform_address(10), 75)]),
-                vec![],
-            ))
-            .expect("funding should be accepted");
-        builder.address_signer(Arc::new(TestAddressSigner));
+            .with_signer(TransferSigner::address_signer(Arc::new(TestAddressSigner)))
+            .expect("signer should be configured");
         builder
             .output(CoreScript::from_bytes(vec![0x51]), 0) // simple OP_TRUE script for illustration
             .expect("core script should configure withdrawal");
@@ -753,9 +806,10 @@ mod tests {
         amount: Credits,
     ) -> TransferKind {
         let mut builder = CreditTransfer::builder();
+        builder.input(identity_with_id(sender_id));
         builder
-            .identity_input(identity_with_id(sender_id), test_signer(), None)
-            .expect("failed to add input");
+            .with_signer(TransferSigner::new(test_signer()))
+            .expect("signer should be configured");
         builder
             .output(recipient_id, amount)
             .expect("failed to add output");
@@ -773,7 +827,7 @@ mod tests {
         })
     }
 
-    fn test_signer() -> Arc<TestIdentitySigner> {
+    fn test_signer() -> IdentitySigner {
         Arc::new(TestIdentitySigner)
     }
 

@@ -10,4 +10,4 @@ mod top_up;
 mod types;
 
 pub use credit_transfer::{CreditTransfer, CreditTransferBuilder};
-pub use types::{AddressSigner, IdentitySigner, TransferInput, TransferOutput};
+pub use types::{AddressSigner, IdentitySigner, TransferInput, TransferOutput, TransferSigner};

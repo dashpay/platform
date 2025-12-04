@@ -1,4 +1,4 @@
-use super::types::{IdentityTransferConfig, TransferInput, TransferOutput};
+use super::types::{IdentityTransferConfig, TransferInput, TransferOutput, TransferSigner};
 use crate::platform::transition::put_settings::PutSettings;
 use crate::platform::transition::transfer::TransferToIdentity;
 use crate::{Error, Sdk};
@@ -33,6 +33,7 @@ pub(crate) struct IdentityTransferSelection {
 pub(crate) fn classify_identity_transfer(
     inputs: &[TransferInput],
     outputs: &BTreeMap<TransferOutput, Credits>,
+    signer: TransferSigner,
 ) -> Result<IdentityTransferSelection, Error> {
     if inputs.len() != 1 {
         return Err(Error::InvalidCreditTransfer(
@@ -41,7 +42,9 @@ pub(crate) fn classify_identity_transfer(
     }
 
     let config = match inputs.first() {
-        Some(TransferInput::Identity(config)) => config.clone(),
+        Some(TransferInput::Identity(identity)) => {
+            IdentityTransferConfig::from_transfer_signer(identity.clone(), signer)?
+        }
         Some(_) => {
             return Err(Error::InvalidCreditTransfer(
                 "identity transfer requires the funding input to be an identity".to_string(),
