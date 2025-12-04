@@ -269,6 +269,38 @@ mod tests {
             .expect("expected to apply drive operations");
     }
 
+    /// Perform check_tx on a raw transaction and return whether it's valid
+    /// - valid transactions should return true (accepted to mempool)
+    /// - invalid_unpaid transactions should return false (rejected from mempool)
+    /// - invalid_paid transactions should return true (accepted to mempool, will fail at processing)
+    fn check_tx_is_valid(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        raw_tx: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        use crate::execution::check_tx::CheckTxLevel;
+        use crate::platform_types::platform::PlatformRef;
+
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(
+                raw_tx,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        check_result.is_valid()
+    }
+
     /// Create a simple AddressFundsTransferTransition with proper signing
     fn create_signed_address_funds_transfer_transition(
         signer: &TestAddressSigner,
@@ -6416,6 +6448,8 @@ mod tests {
         #[test]
         fn test_receive_and_spend_same_block() {
             // Can an address receive funds and spend them in the same block?
+            // - check_tx for the second tx should FAIL (middle_address doesn't exist in mempool view)
+            // - but block execution of both should SUCCEED (first tx creates middle_address before second runs)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -6477,6 +6511,21 @@ mod tests {
             let bytes1 = transition1.serialize_to_bytes().unwrap();
             let bytes2 = transition2.serialize_to_bytes().unwrap();
 
+            // check_tx for the first transaction should pass (source has funds)
+            assert!(
+                check_tx_is_valid(&platform, &bytes1, platform_version),
+                "check_tx should accept first transaction"
+            );
+
+            // check_tx for the second transaction should FAIL
+            // (middle_address doesn't exist yet in the current state)
+            assert!(
+                !check_tx_is_valid(&platform, &bytes2, platform_version),
+                "check_tx should reject second transaction because middle_address doesn't exist yet"
+            );
+
+            // However, during block execution, both should succeed because
+            // the first transaction creates and funds middle_address before the second runs
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -6499,14 +6548,12 @@ mod tests {
                 StateTransitionExecutionResult::SuccessfulExecution(..)
             );
 
-            // Second should fail - middle_address doesn't exist yet in state
-            // (it will be created by first transaction, but second is validated against initial state)
-            assert!(
-                !matches!(
-                    &processing_result.execution_results()[1],
-                    StateTransitionExecutionResult::SuccessfulExecution(..)
-                ),
-                "Should not be able to spend funds received in same block"
+            // Second should also succeed during block execution
+            // (the first tx creates middle_address before second tx is validated)
+            assert_matches!(
+                &processing_result.execution_results()[1],
+                StateTransitionExecutionResult::SuccessfulExecution(..),
+                "Block execution should allow spending funds received in same block"
             );
         }
 
@@ -7694,18 +7741,18 @@ mod tests {
 
             // Assert exact values - UPDATE THESE if fees legitimately change
             assert_eq!(
-                processing_fee, 442220,
-                "Processing fee changed! Was 442220, now {}",
+                processing_fee, 440620,
+                "Processing fee changed! Was 440620, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6193220,
-                "Total fee changed! Was 6193220, now {}",
+                total_fee, 6083620,
+                "Total fee changed! Was 6083620, now {}",
                 total_fee
             );
         }
@@ -7779,18 +7826,18 @@ mod tests {
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 442220,
-                "Processing fee changed! Was 442220, now {}",
+                processing_fee, 440620,
+                "Processing fee changed! Was 440620, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6193220,
-                "Total fee changed! Was 6193220, now {}",
+                total_fee, 6083620,
+                "Total fee changed! Was 6083620, now {}",
                 total_fee
             );
         }
@@ -7866,18 +7913,18 @@ mod tests {
 
             // Assert exact values - 2 inputs should cost more processing than 1 input
             assert_eq!(
-                processing_fee, 566120,
-                "Processing fee changed! Was 566120, now {}",
+                processing_fee, 564520,
+                "Processing fee changed! Was 564520, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6317120,
-                "Total fee changed! Was 6317120, now {}",
+                total_fee, 6207520,
+                "Total fee changed! Was 6207520, now {}",
                 total_fee
             );
         }
@@ -7952,18 +7999,18 @@ mod tests {
 
             // Assert exact values - 2 outputs should cost more storage than 1 output
             assert_eq!(
-                processing_fee, 539600,
-                "Processing fee changed! Was 539600, now {}",
+                processing_fee, 536400,
+                "Processing fee changed! Was 536400, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 11502000,
-                "Storage fee changed! Was 11502000, now {}",
+                storage_fee, 11286000,
+                "Storage fee changed! Was 11286000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 12041600,
-                "Total fee changed! Was 12041600, now {}",
+                total_fee, 11822400,
+                "Total fee changed! Was 11822400, now {}",
                 total_fee
             );
         }
@@ -8046,18 +8093,18 @@ mod tests {
 
             // Assert exact values - P2SH with 2 signatures
             assert_eq!(
-                processing_fee, 462220,
-                "Processing fee changed! Was 462220, now {}",
+                processing_fee, 460620,
+                "Processing fee changed! Was 460620, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6213220,
-                "Total fee changed! Was 6213220, now {}",
+                total_fee, 6103620,
+                "Total fee changed! Was 6103620, now {}",
                 total_fee
             );
         }
@@ -8140,18 +8187,18 @@ mod tests {
 
             // Assert exact values - 3-of-5 multisig
             assert_eq!(
-                processing_fee, 477220,
-                "Processing fee changed! Was 477220, now {}",
+                processing_fee, 475620,
+                "Processing fee changed! Was 475620, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6228220,
-                "Total fee changed! Was 6228220, now {}",
+                total_fee, 6118620,
+                "Total fee changed! Was 6118620, now {}",
                 total_fee
             );
         }
@@ -8225,27 +8272,27 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // Base processing fee is 442220, with user_fee_increase=100 it should be higher
+            // Base processing fee is 440620, with user_fee_increase=100 it should be higher
             // The exact formula depends on implementation
             assert!(
-                processing_fee > 442220,
+                processing_fee > 440620,
                 "Processing fee with user_fee_increase should be higher than base"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 884440,
-                "Processing fee changed! Was 884440, now {}",
+                processing_fee, 881240,
+                "Processing fee changed! Was 881240, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 6635440,
-                "Total fee changed! Was 6635440, now {}",
+                total_fee, 6524240,
+                "Total fee changed! Was 6524240, now {}",
                 total_fee
             );
         }
@@ -8323,26 +8370,26 @@ mod tests {
                 processing_fee, storage_fee, total_fee
             );
 
-            // 16 inputs should have higher processing fee than 1 input (base is ~442K)
+            // 16 inputs should have higher processing fee than 1 input (base is ~440K)
             assert!(
-                processing_fee > 442220,
+                processing_fee > 440620,
                 "16 inputs should have processing fee > single input"
             );
 
             // Assert exact values
             assert_eq!(
-                processing_fee, 2846340,
-                "Processing fee changed! Was 2846340, now {}",
+                processing_fee, 2844740,
+                "Processing fee changed! Was 2844740, now {}",
                 processing_fee
             );
             assert_eq!(
-                storage_fee, 5751000,
-                "Storage fee changed! Was 5751000, now {}",
+                storage_fee, 5643000,
+                "Storage fee changed! Was 5643000, now {}",
                 storage_fee
             );
             assert_eq!(
-                total_fee, 8597340,
-                "Total fee changed! Was 8597340, now {}",
+                total_fee, 8487740,
+                "Total fee changed! Was 8487740, now {}",
                 total_fee
             );
         }
@@ -8477,8 +8524,8 @@ mod tests {
 
             // Assert exact values for new address
             assert_eq!(
-                total_fee_new, 6193220,
-                "Total fee to new address changed! Was 6193220, now {}",
+                total_fee_new, 6083620,
+                "Total fee to new address changed! Was 6083620, now {}",
                 total_fee_new
             );
 

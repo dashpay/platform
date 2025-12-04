@@ -2704,7 +2704,9 @@ mod tests {
         }
 
         #[test]
-        fn test_exactly_minimum_input_amount_is_valid() {
+        fn test_single_minimum_input_amount_fails_due_to_insufficient_funding() {
+            // A single input at min_input_amount (100k) fails because identity creation
+            // requires at least min_identity_funding_amount (200k) worth of credits.
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -2716,12 +2718,18 @@ mod tests {
                 .address_funds
                 .min_input_amount;
 
+            let min_identity_funding = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_identity_funding_amount;
+
             let public_keys = create_default_public_keys(&mut rng, platform_version);
 
             let mut inputs = BTreeMap::new();
             inputs.insert(
                 create_platform_address(1),
-                (1 as AddressNonce, min_input), // Exactly minimum
+                (1 as AddressNonce, min_input), // Exactly minimum per-input (100k)
             );
 
             let transition = create_raw_transition_with_dummy_witnesses(
@@ -2738,9 +2746,66 @@ mod tests {
                 .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
                 .expect("validation should not return Err");
 
+            // Single min_input (100k) < min_identity_funding_amount (200k), so this should fail
+            assert!(
+                !result.is_valid(),
+                "Expected invalid structure with single min input ({}), needs at least {} for identity funding",
+                min_input,
+                min_identity_funding
+            );
+
+            assert!(matches!(
+                result.errors.first(),
+                Some(ConsensusError::BasicError(
+                    BasicError::InputsNotLessThanOutputsError(_)
+                ))
+            ));
+        }
+
+        #[test]
+        fn test_two_minimum_inputs_meet_identity_funding_requirement() {
+            // Two inputs at min_input_amount (100k each = 200k total) should succeed
+            // because it meets min_identity_funding_amount (200k).
+            use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
+
+            let platform_version = PlatformVersion::latest();
+            let mut rng = StdRng::seed_from_u64(610);
+
+            let min_input = platform_version
+                .dpp
+                .state_transitions
+                .address_funds
+                .min_input_amount;
+
+            let public_keys = create_default_public_keys(&mut rng, platform_version);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, min_input), // 100k
+            );
+            inputs.insert(
+                create_platform_address(2),
+                (1 as AddressNonce, min_input), // 100k (total: 200k)
+            );
+
+            let transition = create_raw_transition_with_dummy_witnesses(
+                public_keys,
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                2, // Two witnesses for two inputs
+            );
+
+            let result = transition
+                .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
+                .expect("validation should not return Err");
+
             assert!(
                 result.is_valid(),
-                "Expected valid structure with exactly min input, got {:?}",
+                "Expected valid structure with two min inputs totaling min_identity_funding_amount, got {:?}",
                 result.errors
             );
         }

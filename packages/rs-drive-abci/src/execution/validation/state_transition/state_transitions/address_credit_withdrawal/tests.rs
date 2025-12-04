@@ -3675,9 +3675,9 @@ mod tests {
 
             // Create exactly max_inputs (16) input addresses
             for i in 0..max_inputs {
-                let mut seed = [0u8; 32];
-                seed[0] = i as u8;
-                seed[1] = (i >> 8) as u8;
+                let mut seed = [1u8; 32]; // Start with non-zero values to ensure valid secp256k1 keys
+                seed[0] = (i + 1) as u8; // Add 1 to avoid all-zeros case
+                seed[1] = ((i + 1) >> 8) as u8;
                 let address = signer.add_p2pkh(seed);
                 setup_address_with_balance(&mut platform, address, 0, dash_to_credits!(0.5));
                 inputs.insert(address, (1 as AddressNonce, dash_to_credits!(0.1)));
@@ -4165,9 +4165,9 @@ mod tests {
 
             // Create maximum number of inputs
             for i in 0..max_inputs {
-                let mut seed = [0u8; 32];
-                seed[0] = i as u8;
-                seed[1] = (i >> 8) as u8;
+                let mut seed = [1u8; 32]; // Start with non-zero values to ensure valid secp256k1 keys
+                seed[0] = (i + 1) as u8; // Add 1 to avoid all-zeros case
+                seed[1] = ((i + 1) >> 8) as u8;
                 let address = signer.add_p2pkh(seed);
                 inputs.insert(address, (1 as AddressNonce, dash_to_credits!(0.1)));
             }
