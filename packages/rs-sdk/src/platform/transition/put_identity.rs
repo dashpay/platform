@@ -5,6 +5,7 @@ use crate::{Error, Sdk};
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use dpp::address_funds::PlatformAddress;
 use dpp::dashcore::PrivateKey;
@@ -144,6 +145,7 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
                 signer,
                 sdk.version(),
             )?;
+            ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
             state_transition.broadcast(sdk, settings).await?;
             Ok(state_transition)
         }
@@ -214,6 +216,7 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
         user_fee_increase,
         sdk.version(),
     )?;
+    ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
     state_transition.broadcast(sdk, settings).await?;
     Ok(state_transition)

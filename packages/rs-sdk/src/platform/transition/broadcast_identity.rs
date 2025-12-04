@@ -20,6 +20,7 @@ use dpp::version::PlatformVersion;
 use rs_dapi_client::transport::TransportRequest;
 
 use super::broadcast_request::BroadcastRequestForStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use crate::error::Error;
 
 /// Trait implemented by objects that can be used to broadcast new identity state transitions.
@@ -114,6 +115,7 @@ impl<S: Signer<IdentityPublicKey>>
             0,
             platform_version,
         )?;
+        ensure_valid_state_transition_structure(&identity_create_transition, platform_version)?;
         let request = identity_create_transition.broadcast_request_for_state_transition()?;
         Ok((identity_create_transition, request))
     }

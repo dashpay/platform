@@ -17,6 +17,7 @@ pub mod transfer_address_funds;
 pub mod transfer_document;
 pub mod transfer_to_addresses;
 mod txid;
+pub(crate) mod validation;
 pub mod update_price_of_document;
 pub mod vote;
 pub mod waitable;

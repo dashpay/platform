@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
@@ -72,6 +73,7 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)

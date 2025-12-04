@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
@@ -87,6 +88,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
             user_fee_increase,
             self.version(),
         )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, settings)

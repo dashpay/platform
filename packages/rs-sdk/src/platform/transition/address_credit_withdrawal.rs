@@ -3,9 +3,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
-use dpp::address_funds::{AddressFundsFeeWithWithdrawalsStrategy, PlatformAddress};
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
 use dpp::identity::core_script::CoreScript;
 use dpp::identity::signer::Signer;
@@ -25,7 +26,7 @@ pub trait WithdrawAddressFunds<S: Signer<PlatformAddress>> {
         &self,
         inputs: BTreeMap<PlatformAddress, Credits>,
         change_output: Option<(PlatformAddress, Credits)>,
-        fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+        fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -41,7 +42,7 @@ pub trait WithdrawAddressFunds<S: Signer<PlatformAddress>> {
         &self,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         change_output: Option<(PlatformAddress, Credits)>,
-        fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+        fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -56,7 +57,7 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         &self,
         inputs: BTreeMap<PlatformAddress, Credits>,
         change_output: Option<(PlatformAddress, Credits)>,
-        fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+        fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -81,7 +82,7 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         &self,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         change_output: Option<(PlatformAddress, Credits)>,
-        fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+        fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,
@@ -104,6 +105,7 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
             user_fee_increase,
             self.version(),
         )?;
+        ensure_valid_state_transition_structure(&state_transition, self.version())?;
 
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(self, settings)
