@@ -3,7 +3,7 @@ use dpp::data_contract::TokenConfiguration;
 use dpp::prelude::{CoreBlockHeight, DataContract, Identifier};
 use dpp::version::PlatformVersion;
 use drive::{error::proof::ProofError, query::ContractLookupFn};
-use std::{ops::Deref, sync::Arc};
+use std::{future::Future, ops::Deref, pin::Pin, sync::Arc};
 
 #[cfg(feature = "mocks")]
 use {
@@ -62,7 +62,11 @@ pub trait ContextProvider: Send + Sync {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError>;
 
-    /// Fetches the public key for a specified quorum.
+    /// Fetches the public key for a specified quorum asynchronously.
+    ///
+    /// This is the primary method that should be implemented. The synchronous version
+    /// [get_quorum_public_key](ContextProvider::get_quorum_public_key) should typically
+    /// wrap this method using `dash_sdk::sync::block_on()`.
     ///
     /// # Arguments
     ///
@@ -72,7 +76,30 @@ pub trait ContextProvider: Send + Sync {
     ///
     /// # Returns
     ///
-    /// * `Ok(Vec<u8>)`: On success, returns a byte vector representing the public key of the quorum.
+    /// * `Ok([u8; 48])`: On success, returns a 48-byte array representing the public key of the quorum.
+    /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Pin<Box<dyn Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>>;
+
+    /// Fetches the public key for a specified quorum synchronously.
+    ///
+    /// This method is typically implemented as a wrapper around
+    /// [get_quorum_public_key_async](ContextProvider::get_quorum_public_key_async)
+    /// using `dash_sdk::sync::block_on()`.
+    ///
+    /// # Arguments
+    ///
+    /// * `quorum_type`: The type of the quorum.
+    /// * `quorum_hash`: The hash of the quorum. This is used to determine which quorum's public key to fetch.
+    /// * `core_chain_locked_height`: Core chain locked height for which the quorum must be valid
+    ///
+    /// # Returns
+    ///
+    /// * `Ok([u8; 48])`: On success, returns a 48-byte array representing the public key of the quorum.
     /// * `Err(Error)`: On failure, returns an error indicating why the operation failed.
     fn get_quorum_public_key(
         &self,
@@ -104,6 +131,20 @@ impl<C: AsRef<dyn ContextProvider> + Send + Sync> ContextProvider for C {
         token_id: &Identifier,
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         self.as_ref().get_token_configuration(token_id)
+    }
+
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Pin<Box<dyn Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>>
+    {
+        self.as_ref().get_quorum_public_key_async(
+            quorum_type,
+            quorum_hash,
+            core_chain_locked_height,
+        )
     }
 
     fn get_quorum_public_key(
@@ -140,6 +181,19 @@ where
     ) -> Result<Option<TokenConfiguration>, ContextProviderError> {
         let lock = self.lock().expect("lock poisoned");
         lock.get_token_configuration(token_id)
+    }
+
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Pin<Box<dyn Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>>
+    {
+        // Compute synchronously under the lock, then return a ready future.
+        // This avoids holding the MutexGuard across await points which would be unsound.
+        let result = self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height);
+        Box::pin(async move { result })
     }
 
     fn get_quorum_public_key(
@@ -227,7 +281,22 @@ impl Default for MockContextProvider {
 
 #[cfg(feature = "mocks")]
 impl ContextProvider for MockContextProvider {
-    /// Mock implementation of [ContextProvider] that returns keys from files saved on disk.
+    /// Mock implementation of async [ContextProvider] that returns keys from files saved on disk.
+    ///
+    /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> Pin<Box<dyn Future<Output = Result<[u8; 48], ContextProviderError>> + Send + 'static>>
+    {
+        // For the mock implementation, we just wrap the sync version
+        let result = self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height);
+        Box::pin(async move { result })
+    }
+
+    /// Mock implementation of sync [ContextProvider] that returns keys from files saved on disk.
     ///
     /// Use [dash_sdk::SdkBuilder::with_dump_dir()] to generate quorum keys files.
     fn get_quorum_public_key(

@@ -13,6 +13,23 @@ use std::sync::Arc;
 struct MyFallbackProvider;
 
 impl ContextProvider for MyFallbackProvider {
+    fn get_quorum_public_key_async(
+        &self,
+        quorum_type: u32,
+        quorum_hash: [u8; 32],
+        core_chain_locked_height: u32,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<Output = Result<[u8; 48], ContextProviderError>>
+                + Send
+                + 'static,
+        >,
+    > {
+        // Wrap the sync version in an async block
+        let result = self.get_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height);
+        Box::pin(async move { result })
+    }
+
     fn get_quorum_public_key(
         &self,
         _quorum_type: u32,
