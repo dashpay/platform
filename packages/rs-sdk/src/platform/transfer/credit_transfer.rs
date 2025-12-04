@@ -603,6 +603,91 @@ mod tests {
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
+    #[test]
+    /// Example: transfer 10 credits between two identities.
+    fn example_identity_transfer_flow_showcases_builder_usage() {
+        let sender_id = identifier(11);
+        let recipient_id = identifier(22);
+
+        let mut builder = CreditTransfer::builder();
+        // 1. Provide identity balance and signer context.
+        builder
+            .identity_input(identity_with_id(sender_id), test_signer(), None)
+            .expect("identity funding should be accepted");
+        // 2. Describe the output target and amount.
+        builder
+            .output(recipient_id, 10)
+            .expect("identity output should be accepted");
+
+        let transfer = builder.build().expect("builder should succeed");
+        match transfer.transfer_kind {
+            TransferKind::Identity(_) => {}
+            _ => panic!("identity flow should produce an Identity transfer"),
+        }
+
+        // Real-world broadcast (commented out to keep tests offline):
+        // let sdk = acquire_sdk();
+        // sdk.sync(|sdk| async move {
+        //     transfer
+        //         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
+        //         .await
+        //         .expect("state transition should be accepted");
+        // });
+    }
+
+    #[test]
+    /// Example: transfer 25 credits between Platform addresses.
+    fn example_address_transfer_flow_showcases_platform_inputs() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(TransferInput::from_addresses(
+                BTreeMap::from([(platform_address(8), 50)]),
+                vec![],
+            ))
+            .expect("address funding should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        builder
+            .output(platform_address(9), 25)
+            .expect("platform address output should be accepted");
+
+        let transfer = builder.build().expect("builder should succeed");
+        match transfer.transfer_kind {
+            TransferKind::Address(_) => {}
+            _ => panic!("address flow should produce an Address transfer"),
+        }
+
+        // Offline-friendly example:
+        // transfer.broadcast(&sdk, None).await?;
+    }
+
+    #[test]
+    ///  Example: withdraw to a Core script with change sent back to Platform.
+    fn example_withdrawal_flow_showcases_core_withdrawals() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(TransferInput::from_addresses(
+                BTreeMap::from([(platform_address(10), 75)]),
+                vec![],
+            ))
+            .expect("funding should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        builder
+            .output(CoreScript::from_bytes(vec![0x51]), 0) // simple OP_TRUE script for illustration
+            .expect("core script should configure withdrawal");
+        builder
+            .change(platform_address(11), 5)
+            .expect("change output should be accepted");
+
+        let transfer = builder.build().expect("builder should succeed");
+        match transfer.transfer_kind {
+            TransferKind::AddressWithdrawal(_) => {}
+            _ => panic!("withdrawal flow should produce AddressWithdrawal transfer"),
+        }
+
+        // After funding the Core chain fee account, you could broadcast:
+        // transfer.broadcast_and_wait::<StateTransitionProofResult>(&sdk, None).await?;
+    }
+
     fn build_identity_transfer(
         sender_id: Identifier,
         recipient_id: Identifier,
