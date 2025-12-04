@@ -1,8 +1,7 @@
 use crate::errors::consensus::basic::{
     IncompatibleProtocolVersionErrorWasm, InvalidIdentifierErrorWasm,
     InvalidSignaturePublicKeyPurposeErrorWasm, JsonSchemaErrorWasm,
-    UncompressedPublicKeyNotAllowedErrorWasm, UnsupportedProtocolVersionErrorWasm,
-    UnsupportedVersionErrorWasm,
+    UnsupportedProtocolVersionErrorWasm, UnsupportedVersionErrorWasm,
 };
 use dpp::consensus::ConsensusError as DPPConsensusError;
 
@@ -118,7 +117,7 @@ use crate::errors::consensus::basic::state_transition::{
 };
 use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
-    SignatureShouldNotBePresentErrorWasm,
+    SignatureShouldNotBePresentErrorWasm, UncompressedPublicKeyNotAllowedErrorWasm,
 };
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm, DataTriggerInvalidResultErrorWasm,
