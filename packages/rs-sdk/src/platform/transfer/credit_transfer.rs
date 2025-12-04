@@ -9,6 +9,7 @@ use super::types::{
 };
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::errors::consensus::basic::state_transition::{
@@ -31,8 +32,8 @@ use std::collections::BTreeMap;
 /// - [AddressCreditWithdrawalTransition](dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition)
 #[derive(Debug)]
 pub struct CreditTransfer {
-    /// Fully classified transfer plan captured during build.
-    transfer_kind: TransferKind,
+    /// Prepared state transition validated during build.
+    state_transition: StateTransition,
 }
 
 impl CreditTransfer {
@@ -41,13 +42,32 @@ impl CreditTransfer {
         CreditTransferBuilder::default()
     }
 
-    /// Build the appropriate state transition for the captured inputs and outputs.
+    /// Borrow the prepared state transition.
+    fn state_transition(&self) -> &StateTransition {
+        &self.state_transition
+    }
+}
+
+/// Enum describing the resolved transfer flow.
+#[derive(Debug)]
+enum TransferKind {
+    /// Transfer between identities.
+    Identity(IdentityTransferSelection),
+    /// Transfer between Platform addresses.
+    Address(AddressTransferPlan),
+    /// Top up Platform addresses using asset lock proofs.
+    AddressTopUp(AddressTopUpPlan),
+    /// Withdraw credits from Platform addresses to a Core script.
+    AddressWithdrawal(AddressWithdrawalPlan),
+}
+
+impl TransferKind {
     async fn build_state_transition(
         &self,
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        match &self.transfer_kind {
+        match self {
             TransferKind::Identity(selection) => {
                 let user_fee_increase = settings
                     .as_ref()
@@ -72,19 +92,6 @@ impl CreditTransfer {
             }
         }
     }
-}
-
-/// Enum describing the resolved transfer flow.
-#[derive(Debug)]
-enum TransferKind {
-    /// Transfer between identities.
-    Identity(IdentityTransferSelection),
-    /// Transfer between Platform addresses.
-    Address(AddressTransferPlan),
-    /// Top up Platform addresses using asset lock proofs.
-    AddressTopUp(AddressTopUpPlan),
-    /// Withdraw credits from Platform addresses to a Core script.
-    AddressWithdrawal(AddressWithdrawalPlan),
 }
 
 /// Builder used to configure `CreditTransfer` inputs and outputs.
@@ -292,8 +299,19 @@ impl CreditTransferBuilder {
         Ok(())
     }
 
-    /// Finalizes the builder and returns an immutable `CreditTransfer`.
-    pub fn build(self) -> Result<CreditTransfer, Error> {
+    /// Finalizes the builder, constructs, and validates the state transition.
+    pub async fn build(
+        self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<CreditTransfer, Error> {
+        let transfer_kind = self.into_transfer_kind()?;
+        let state_transition = transfer_kind.build_state_transition(sdk, settings).await?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
+        Ok(CreditTransfer { state_transition })
+    }
+
+    fn into_transfer_kind(self) -> Result<TransferKind, Error> {
         if self.inputs.is_empty() {
             return Err(Error::from(TransitionNoInputsError::new()));
         }
@@ -329,7 +347,7 @@ impl CreditTransferBuilder {
                 signer,
                 withdrawal_config,
             )?);
-            return Ok(CreditTransfer { transfer_kind });
+            return Ok(transfer_kind);
         }
 
         let outputs_are_identities = outputs
@@ -338,7 +356,7 @@ impl CreditTransferBuilder {
         if outputs_are_identities {
             let transfer_kind =
                 TransferKind::Identity(classify_identity_transfer(&inputs, &outputs)?);
-            return Ok(CreditTransfer { transfer_kind });
+            return Ok(transfer_kind);
         }
 
         let outputs_are_addresses = outputs
@@ -360,7 +378,7 @@ impl CreditTransferBuilder {
                     signer,
                     address_fee_strategy.clone(),
                 )?);
-                return Ok(CreditTransfer { transfer_kind });
+                return Ok(transfer_kind);
             }
 
             let signer = address_signer.ok_or_else(|| {
@@ -374,7 +392,7 @@ impl CreditTransferBuilder {
                 signer,
                 address_fee_strategy,
             )?);
-            return Ok(CreditTransfer { transfer_kind });
+            return Ok(transfer_kind);
         }
 
         if outputs.is_empty() {
@@ -385,13 +403,17 @@ impl CreditTransferBuilder {
             ))
         }
     }
+
+    #[cfg(test)]
+    fn build_transfer_kind(self) -> Result<TransferKind, Error> {
+        self.into_transfer_kind()
+    }
 }
 
 #[async_trait::async_trait]
 impl BroadcastStateTransition for CreditTransfer {
     async fn broadcast(&self, sdk: &Sdk, settings: Option<PutSettings>) -> Result<(), Error> {
-        let state_transition = self.build_state_transition(sdk, settings.clone()).await?;
-        state_transition.broadcast(sdk, settings).await
+        self.state_transition().broadcast(sdk, settings).await
     }
 
     async fn wait_for_response<T: TryFrom<StateTransitionProofResult>>(
@@ -411,8 +433,9 @@ use broadcast_and_wait instead"
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<T, Error> {
-        let state_transition = self.build_state_transition(sdk, settings.clone()).await?;
-        state_transition.broadcast_and_wait(sdk, settings).await
+        self.state_transition()
+            .broadcast_and_wait(sdk, settings)
+            .await
     }
 }
 
@@ -453,9 +476,9 @@ mod tests {
         let sender_id = identifier(1);
         let recipient_id = identifier(2);
 
-        let transfer = build_identity_transfer(sender_id, recipient_id, 42);
+        let transfer_kind = build_identity_transfer(sender_id, recipient_id, 42);
 
-        match &transfer.transfer_kind {
+        match transfer_kind {
             TransferKind::Identity(selection) => {
                 assert_eq!(selection.config.identity_id(), sender_id);
                 assert_eq!(selection.plan.recipient_id, recipient_id);
@@ -476,7 +499,7 @@ mod tests {
             .output(recipient_id, 10)
             .expect("output should be accepted");
 
-        let err = builder.build().unwrap_err();
+        let err = builder.build_transfer_kind().unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
@@ -491,7 +514,7 @@ mod tests {
             .output(PlatformAddress::default(), 10)
             .expect("output should be accepted");
 
-        let err = builder.build().unwrap_err();
+        let err = builder.build_transfer_kind().unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
@@ -515,7 +538,7 @@ mod tests {
             .output(CoreScript::from_bytes(vec![0u8; 1]), 0)
             .expect("withdrawal destination should be configured");
 
-        let err = builder.build().unwrap_err();
+        let err = builder.build_transfer_kind().unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
@@ -536,8 +559,10 @@ mod tests {
             .change(platform_address(3), 5)
             .expect("change output should be set");
 
-        let transfer = builder.build().expect("builder should produce transfer");
-        match transfer.transfer_kind {
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("builder should produce transfer");
+        match transfer_kind {
             TransferKind::AddressWithdrawal(_) => {}
             _ => panic!("expected address withdrawal variant"),
         }
@@ -553,7 +578,7 @@ mod tests {
             .output(platform_address(6), 12)
             .expect("output should be accepted");
 
-        let err = builder.build().unwrap_err();
+        let err = builder.build_transfer_kind().unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
@@ -568,8 +593,10 @@ mod tests {
             .output(platform_address(7), 18)
             .expect("output should be accepted");
 
-        let transfer = builder.build().expect("transfer should be built");
-        match transfer.transfer_kind {
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("transfer should be built");
+        match transfer_kind {
             TransferKind::AddressTopUp(_) => {}
             _ => panic!("expected address top up variant"),
         }
@@ -619,20 +646,19 @@ mod tests {
             .output(recipient_id, 10)
             .expect("identity output should be accepted");
 
-        let transfer = builder.build().expect("builder should succeed");
-        match transfer.transfer_kind {
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("builder should succeed");
+        match transfer_kind {
             TransferKind::Identity(_) => {}
             _ => panic!("identity flow should produce an Identity transfer"),
         }
 
-        // Real-world broadcast (commented out to keep tests offline):
-        // let sdk = acquire_sdk();
-        // sdk.sync(|sdk| async move {
-        //     transfer
-        //         .broadcast_and_wait::<StateTransitionProofResult>(sdk, None)
-        //         .await
-        //         .expect("state transition should be accepted");
-        // });
+        // Real-world build/broadcast (commented out to keep tests offline):
+        // let transfer = builder.build(&sdk, None).await?;
+        // transfer
+        //     .broadcast_and_wait::<StateTransitionProofResult>(&sdk, None)
+        //     .await?;
     }
 
     #[test]
@@ -650,13 +676,16 @@ mod tests {
             .output(platform_address(9), 25)
             .expect("platform address output should be accepted");
 
-        let transfer = builder.build().expect("builder should succeed");
-        match transfer.transfer_kind {
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("builder should succeed");
+        match transfer_kind {
             TransferKind::Address(_) => {}
             _ => panic!("address flow should produce an Address transfer"),
         }
 
         // Offline-friendly example:
+        // let transfer = builder.build(&sdk, None).await?;
         // transfer.broadcast(&sdk, None).await?;
     }
 
@@ -678,13 +707,16 @@ mod tests {
             .change(platform_address(11), 5)
             .expect("change output should be accepted");
 
-        let transfer = builder.build().expect("builder should succeed");
-        match transfer.transfer_kind {
+        let transfer_kind = builder
+            .build_transfer_kind()
+            .expect("builder should succeed");
+        match transfer_kind {
             TransferKind::AddressWithdrawal(_) => {}
             _ => panic!("withdrawal flow should produce AddressWithdrawal transfer"),
         }
 
         // After funding the Core chain fee account, you could broadcast:
+        // let transfer = builder.build(&sdk, None).await?;
         // transfer.broadcast_and_wait::<StateTransitionProofResult>(&sdk, None).await?;
     }
 
@@ -692,7 +724,7 @@ mod tests {
         sender_id: Identifier,
         recipient_id: Identifier,
         amount: Credits,
-    ) -> CreditTransfer {
+    ) -> TransferKind {
         let mut builder = CreditTransfer::builder();
         builder
             .identity_input(identity_with_id(sender_id), test_signer(), None)
@@ -700,7 +732,9 @@ mod tests {
         builder
             .output(recipient_id, amount)
             .expect("failed to add output");
-        builder.build().expect("builder should produce transfer")
+        builder
+            .build_transfer_kind()
+            .expect("builder should produce transfer")
     }
 
     fn identity_with_id(identifier: Identifier) -> Identity {
