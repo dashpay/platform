@@ -1,4 +1,3 @@
-use crate::platform::transfer::TransferInput;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::{Error, Sdk};
 
@@ -19,32 +18,44 @@ use dpp::state_transition::identity_create_from_addresses_transition::IdentityCr
 use dpp::state_transition::StateTransition;
 use std::collections::BTreeMap;
 
+/// Funding sources supported when creating an identity.
+pub enum IdentityFunding {
+    AssetLock {
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: PrivateKey,
+    },
+    Addresses {
+        inputs: BTreeMap<PlatformAddress, Credits>,
+        input_private_keys: Vec<Vec<u8>>,
+    },
+    AddressesWithNonce {
+        inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+        input_private_keys: Vec<Vec<u8>>,
+    },
+}
+
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
     /// Sends a new identity to Platform using the provided funding source.
-    async fn send_to_platform<F>(
+    async fn send_to_platform(
         &self,
         sdk: &Sdk,
-        funding: F,
+        funding: IdentityFunding,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>
-    where
-        F: TryInto<TransferInput> + Send,
-        <F as TryInto<TransferInput>>::Error: ToString;
+    ) -> Result<StateTransition, Error>;
 
     /// Sends the identity and waits for confirmation proof.
-    async fn send_to_platform_and_wait_for_response<F>(
+    async fn send_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
-        funding: F,
+        funding: IdentityFunding,
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<Self, Error>
     where
-        F: TryInto<TransferInput> + Send,
-        <F as TryInto<TransferInput>>::Error: ToString;
+        Self: Sized;
 
     /// Deprecated alias for [`send_to_platform`].
     #[deprecated(note = "use send_to_platform instead")]
@@ -58,7 +69,10 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
     ) -> Result<StateTransition, Error> {
         self.send_to_platform(
             sdk,
-            (asset_lock_proof, *asset_lock_proof_private_key),
+            IdentityFunding::AssetLock {
+                asset_lock_proof,
+                asset_lock_private_key: *asset_lock_proof_private_key,
+            },
             signer,
             settings,
         )
@@ -80,7 +94,10 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
     {
         self.send_to_platform_and_wait_for_response(
             sdk,
-            (asset_lock_proof, *asset_lock_proof_private_key),
+            IdentityFunding::AssetLock {
+                asset_lock_proof,
+                asset_lock_private_key: *asset_lock_proof_private_key,
+            },
             signer,
             settings,
         )
@@ -89,39 +106,25 @@ pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
 }
 #[async_trait::async_trait]
 impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
-    async fn send_to_platform<F>(
+    async fn send_to_platform(
         &self,
         sdk: &Sdk,
-        funding: F,
+        funding: IdentityFunding,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<StateTransition, Error>
-    where
-        F: TryInto<TransferInput> + Send,
-        <F as TryInto<TransferInput>>::Error: ToString,
-    {
-        let funding_source = funding
-            .try_into()
-            .map_err(|e| Error::Generic(e.to_string()))?;
-        send_to_identity_with_source(self, sdk, funding_source, signer, settings).await
+    ) -> Result<StateTransition, Error> {
+        send_to_identity_with_source(self, sdk, funding, signer, settings).await
     }
 
-    async fn send_to_platform_and_wait_for_response<F>(
+    async fn send_to_platform_and_wait_for_response(
         &self,
         sdk: &Sdk,
-        funding: F,
+        funding: IdentityFunding,
         signer: &S,
         settings: Option<PutSettings>,
-    ) -> Result<Identity, Error>
-    where
-        F: TryInto<TransferInput> + Send,
-        <F as TryInto<TransferInput>>::Error: ToString,
-    {
-        let funding_source = funding
-            .try_into()
-            .map_err(|e| Error::Generic(e.to_string()))?;
+    ) -> Result<Identity, Error> {
         let state_transition =
-            send_to_identity_with_source(self, sdk, funding_source, signer, settings).await?;
+            send_to_identity_with_source(self, sdk, funding, signer, settings).await?;
 
         Self::wait_for_response(sdk, state_transition, settings).await
     }
@@ -130,18 +133,18 @@ impl<S: Signer<IdentityPublicKey>> PutIdentity<S> for Identity {
 async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
-    funding: TransferInput,
+    funding: IdentityFunding,
     signer: &S,
     settings: Option<PutSettings>,
 ) -> Result<StateTransition, Error> {
     match &funding {
-        TransferInput::AssetLock {
+        IdentityFunding::AssetLock {
             asset_lock_proof,
             asset_lock_private_key,
         } => {
             let (state_transition, _) = identity.broadcast_request_for_new_identity(
                 asset_lock_proof.to_owned(),
-                &asset_lock_private_key,
+                asset_lock_private_key,
                 signer,
                 sdk.version(),
             )?;
@@ -149,7 +152,7 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
             state_transition.broadcast(sdk, settings).await?;
             Ok(state_transition)
         }
-        TransferInput::Addresses {
+        IdentityFunding::Addresses {
             inputs,
             input_private_keys,
         } => {
@@ -164,7 +167,7 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
             )
             .await
         }
-        TransferInput::AddressesWithNonce {
+        IdentityFunding::AddressesWithNonce {
             inputs,
             input_private_keys,
         } => {
@@ -178,9 +181,6 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
             )
             .await
         }
-        TransferInput::Identity(_) => Err(Error::InvalidCreditTransfer(
-            "Using identity balance to create new identity is not supported".to_string(),
-        )),
     }
 }
 
