@@ -118,7 +118,7 @@ use crate::errors::consensus::basic::state_transition::{
 };
 use crate::errors::consensus::signature::{
     BasicBLSErrorWasm, BasicECDSAErrorWasm, IdentityNotFoundErrorWasm,
-    SignatureShouldNotBePresentErrorWasm, UncompressedPublicKeyNotAllowedErrorWasm,
+    SignatureShouldNotBePresentErrorWasm,
 };
 use crate::errors::consensus::state::data_contract::data_trigger::{
     DataTriggerConditionErrorWasm, DataTriggerExecutionErrorWasm, DataTriggerInvalidResultErrorWasm,
