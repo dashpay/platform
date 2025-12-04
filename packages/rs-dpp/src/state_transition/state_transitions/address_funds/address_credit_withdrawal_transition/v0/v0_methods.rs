@@ -2,9 +2,7 @@
 use std::collections::BTreeMap;
 
 #[cfg(feature = "state-transition-signing")]
-use crate::address_funds::{
-    AddressFundsFeeWithWithdrawalsStrategy, AddressWitness, PlatformAddress,
-};
+use crate::address_funds::{AddressFundsFeeStrategy, AddressWitness, PlatformAddress};
 #[cfg(feature = "state-transition-signing")]
 use crate::fee::Credits;
 #[cfg(feature = "state-transition-signing")]
@@ -31,7 +29,7 @@ impl AddressCreditWithdrawalTransitionMethodsV0 for AddressCreditWithdrawalTrans
     fn try_from_inputs_with_signer<S: Signer<PlatformAddress>>(
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
         output: Option<(PlatformAddress, Credits)>,
-        fee_strategy: AddressFundsFeeWithWithdrawalsStrategy,
+        fee_strategy: AddressFundsFeeStrategy,
         core_fee_per_byte: u32,
         pooling: Pooling,
         output_script: CoreScript,

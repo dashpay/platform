@@ -19,8 +19,8 @@ pub struct AddressFundingFromAssetLockTransitionActionV0 {
     pub asset_lock_outpoint: Bytes36,
     /// inputs with remaining balance (may be empty if no existing addresses are used)
     pub inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    /// outputs
-    pub outputs: BTreeMap<PlatformAddress, Credits>,
+    /// outputs (Some = explicit amount, None = remainder recipient)
+    pub outputs: BTreeMap<PlatformAddress, Option<Credits>>,
     /// fee strategy
     pub fee_strategy: AddressFundsFeeStrategy,
     /// fee multiplier

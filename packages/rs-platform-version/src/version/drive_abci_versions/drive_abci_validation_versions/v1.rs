@@ -199,7 +199,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
             },
             address_funds_from_asset_lock: DriveAbciStateTransitionValidationVersion {
                 basic_structure: Some(0),
-                advanced_structure: None,
+                advanced_structure: Some(0),
                 identity_signatures: None,
                 advanced_minimum_balance_pre_check: Some(0),
                 nonce: Some(0),
@@ -226,6 +226,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V1: DriveAbciValidationVersions =
             unique_key_already_present: 10000000,
             validation_of_added_keys_structure_failure: 10000000,
             validation_of_added_keys_proof_of_possession_failure: 50000000,
+            address_funds_insufficient_balance: 10000000,
         },
         event_constants: DriveAbciValidationConstants {
             maximum_vote_polls_to_process: 2,

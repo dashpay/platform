@@ -45,7 +45,11 @@ pub struct AddressFundingFromAssetLockTransitionV0 {
     pub asset_lock_proof: AssetLockProof,
     /// Inputs from existing platform addresses (optional, for combining funds)
     pub inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    pub outputs: BTreeMap<PlatformAddress, Credits>,
+    /// Outputs to fund platform addresses.
+    /// - `Some(credits)` = explicit amount to send to this address
+    /// - `None` = this address receives everything remaining after explicit outputs and fees
+    /// Exactly one output must be `None` to receive the remainder (ensures full asset lock consumption).
+    pub outputs: BTreeMap<PlatformAddress, Option<Credits>>,
     pub fee_strategy: AddressFundsFeeStrategy,
     pub user_fee_increase: UserFeeIncrease,
     #[platform_signable(exclude_from_sig_hash)]

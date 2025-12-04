@@ -31,7 +31,7 @@ impl AddressFundingFromAssetLockTransitionMethodsV0 for AddressFundingFromAssetL
         asset_lock_proof: AssetLockProof,
         asset_lock_proof_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        outputs: BTreeMap<PlatformAddress, Credits>,
+        outputs: BTreeMap<PlatformAddress, Option<Credits>>,
         fee_strategy: AddressFundsFeeStrategy,
         signer: &S,
         user_fee_increase: UserFeeIncrease,

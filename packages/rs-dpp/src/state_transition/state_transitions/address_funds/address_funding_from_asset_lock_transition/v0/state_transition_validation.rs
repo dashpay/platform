@@ -3,7 +3,7 @@ use crate::consensus::basic::overflow_error::OverflowError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
     FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
-    OutputAddressAlsoInputError, OutputBelowMinimumError, OutputsNotGreaterThanInputsError,
+    InvalidRemainderOutputCountError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     TransitionNoOutputsError, TransitionOverMaxInputsError, TransitionOverMaxOutputsError,
 };
 use crate::consensus::basic::BasicError;
@@ -22,6 +22,20 @@ impl StateTransitionStructureValidation for AddressFundingFromAssetLockTransitio
         if self.outputs.is_empty() {
             return SimpleConsensusValidationResult::new_with_error(
                 BasicError::TransitionNoOutputsError(TransitionNoOutputsError::new()).into(),
+            );
+        }
+
+        // Validate exactly one output has None value (remainder recipient)
+        // This ensures full asset lock consumption - one address receives whatever is left
+        let remainder_count = self.outputs.values().filter(|v| v.is_none()).count();
+        if remainder_count != 1 {
+            return SimpleConsensusValidationResult::new_with_error(
+                BasicError::InvalidRemainderOutputCountError(
+                    InvalidRemainderOutputCountError::new(
+                        remainder_count.min(u16::MAX as usize) as u16
+                    ),
+                )
+                .into(),
             );
         }
 
@@ -159,8 +173,9 @@ impl StateTransitionStructureValidation for AddressFundingFromAssetLockTransitio
             }
         }
 
-        // Validate each output is at least min_output_amount
-        for amount in self.outputs.values() {
+        // Validate each explicit output (Some value) is at least min_output_amount
+        // The None output (remainder) will be computed at execution time
+        for amount in self.outputs.values().flatten() {
             if *amount < min_output_amount {
                 return SimpleConsensusValidationResult::new_with_error(
                     BasicError::OutputBelowMinimumError(OutputBelowMinimumError::new(
@@ -172,43 +187,16 @@ impl StateTransitionStructureValidation for AddressFundingFromAssetLockTransitio
             }
         }
 
-        // Validate outputs sum is greater than inputs sum (asset lock adds funds)
-        let input_sum = self
-            .inputs
-            .values()
-            .try_fold(0u64, |acc, (_, amount)| acc.checked_add(*amount));
-        let input_sum = match input_sum {
-            Some(sum) => sum,
-            None => {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::OverflowError(OverflowError::new("Input sum overflow".to_string()))
-                        .into(),
-                );
-            }
-        };
-
-        let output_sum = self
+        // Validate explicit outputs sum doesn't overflow
+        let explicit_output_sum = self
             .outputs
             .values()
+            .flatten()
             .try_fold(0u64, |acc, amount| acc.checked_add(*amount));
-        let output_sum = match output_sum {
-            Some(sum) => sum,
-            None => {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::OverflowError(OverflowError::new(
-                        "Output sum overflow".to_string(),
-                    ))
-                    .into(),
-                );
-            }
-        };
-
-        if output_sum <= input_sum {
+        if explicit_output_sum.is_none() {
             return SimpleConsensusValidationResult::new_with_error(
-                BasicError::OutputsNotGreaterThanInputsError(
-                    OutputsNotGreaterThanInputsError::new(input_sum, output_sum),
-                )
-                .into(),
+                BasicError::OverflowError(OverflowError::new("Output sum overflow".to_string()))
+                    .into(),
             );
         }
 

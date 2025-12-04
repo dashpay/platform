@@ -1,7 +1,10 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::platform_types::platform::{Platform, PlatformRef};
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
+    use crate::rpc::core::MockCoreRPCLike;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
     use dpp::address_funds::{
@@ -18,7 +21,12 @@ mod tests {
     use dpp::dashcore::secp256k1::{
         PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey,
     };
-    use dpp::dashcore::{Network, PrivateKey, PublicKey};
+    use dpp::dashcore::transaction::special_transaction::asset_lock::AssetLockPayload;
+    use dpp::dashcore::transaction::special_transaction::TransactionPayload;
+    use dpp::dashcore::{
+        BlockHash, Network, OutPoint, PrivateKey, PublicKey, Transaction, TxIn, TxOut, Txid,
+    };
+    use dpp::dashcore_rpc::json::GetRawTransactionResult;
     use dpp::identity::signer::Signer;
     use dpp::identity::KeyType::ECDSA_SECP256K1;
     use dpp::platform_value::BinaryData;
@@ -34,7 +42,10 @@ mod tests {
     use platform_version::version::PlatformVersion;
     use rand::prelude::StdRng;
     use rand::SeedableRng;
+    use serde_json::json;
     use std::collections::{BTreeMap, HashMap};
+    use std::str::FromStr;
+    use tempfile::TempDir;
 
     // ==========================================
     // Test Infrastructure - Signer
@@ -351,7 +362,7 @@ mod tests {
     fn create_raw_transition_with_dummy_witnesses(
         asset_lock_proof: dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
-        outputs: BTreeMap<PlatformAddress, u64>,
+        outputs: BTreeMap<PlatformAddress, Option<u64>>,
         fee_strategy: AddressFundsFeeStrategy,
         input_witnesses_count: usize,
     ) -> StateTransition {
@@ -390,34 +401,166 @@ mod tests {
         (asset_lock_proof, pk.to_vec())
     }
 
-    /// Creates a chain asset lock proof and returns it with the private key for signing
-    /// Note: Uses instant lock for now - chain lock fixture will be a separate implementation
+    /// Creates a chain asset lock proof with transaction and private key.
+    /// Returns (AssetLockProof, private_key_bytes, Transaction).
+    /// The Transaction can be used to set up Core RPC mock expectations.
+    fn create_chain_asset_lock_proof_with_key_and_tx(
+        rng: &mut StdRng,
+    ) -> (
+        dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
+        Vec<u8>,
+        Transaction,
+    ) {
+        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
+
+        let platform_version = PlatformVersion::latest();
+        let secp = Secp256k1::new();
+
+        // Generate the one-time key that will receive the asset lock funds
+        let (_, pk) = ECDSA_SECP256K1
+            .random_public_and_private_key_data(rng, platform_version)
+            .unwrap();
+
+        let one_time_private_key = PrivateKey::from_slice(&pk, Network::Testnet).unwrap();
+        let one_time_public_key = one_time_private_key.public_key(&secp);
+        let one_time_key_hash = one_time_public_key.pubkey_hash();
+
+        // Create a fake input (doesn't need to be real for our tests)
+        let input_txid =
+            Txid::from_str("a477af6b2667c29670467e4e0728b685ee07b240235771862318e29ddbe58458")
+                .unwrap();
+        let input = TxIn {
+            previous_output: OutPoint::new(input_txid, 0),
+            script_sig: ScriptBuf::new(),
+            sequence: 0xffffffff,
+            witness: Default::default(),
+        };
+
+        // Create the funding output (P2PKH to the one-time key)
+        let funding_output = TxOut {
+            value: 100000000, // 1 Dash
+            script_pubkey: ScriptBuf::new_p2pkh(&one_time_key_hash),
+        };
+
+        // Create the burn output (OP_RETURN)
+        let burn_output = TxOut {
+            value: 100000000, // 1 Dash
+            script_pubkey: ScriptBuf::new_op_return(&[]),
+        };
+
+        // Create the asset lock payload
+        let payload = TransactionPayload::AssetLockPayloadType(AssetLockPayload {
+            version: 1,
+            credit_outputs: vec![funding_output.clone()],
+        });
+
+        // Create the transaction
+        let transaction = Transaction {
+            version: 3,
+            lock_time: 0,
+            input: vec![input],
+            output: vec![burn_output],
+            special_transaction_payload: Some(payload),
+        };
+
+        let txid = transaction.txid();
+
+        // Create the chain proof with out_point pointing to this transaction
+        let mut out_point_bytes = [0u8; 36];
+        out_point_bytes[..32].copy_from_slice(txid.as_raw_hash().as_byte_array());
+        out_point_bytes[32..36].copy_from_slice(&0u32.to_le_bytes());
+
+        // Use core_chain_locked_height of 100 (will need platform state to match)
+        let core_chain_locked_height = 100;
+
+        let chain_proof = ChainAssetLockProof::new(core_chain_locked_height, out_point_bytes);
+
+        (AssetLockProof::Chain(chain_proof), pk.to_vec(), transaction)
+    }
+
+    /// Creates a chain asset lock proof and returns it with the private key for signing.
+    /// Note: This version doesn't return the transaction - use create_chain_asset_lock_proof_with_key_and_tx
+    /// for tests that need to set up Core RPC mocks.
+    #[allow(dead_code)]
     fn create_chain_asset_lock_proof_with_key(
         rng: &mut StdRng,
     ) -> (
         dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         Vec<u8>,
     ) {
-        use dpp::identity::state_transition::asset_lock_proof::chain::ChainAssetLockProof;
-        use rand::RngCore;
+        let (proof, pk, _tx) = create_chain_asset_lock_proof_with_key_and_tx(rng);
+        (proof, pk)
+    }
 
-        let platform_version = PlatformVersion::latest();
-        let (_, pk) = ECDSA_SECP256K1
-            .random_public_and_private_key_data(rng, platform_version)
-            .unwrap();
+    /// Creates a platform with a Core RPC mock configured to return the given transaction
+    fn create_platform_with_chain_asset_lock_mock(
+        platform_config: PlatformConfig,
+        transaction: Transaction,
+        transaction_height: i64,
+    ) -> crate::test::helpers::setup::TempPlatform<MockCoreRPCLike> {
+        let tempdir = TempDir::new().expect("should create temp dir");
 
-        // Create a random out_point (36 bytes: 32 byte txid + 4 byte vout index)
-        let mut out_point = [0u8; 36];
-        rng.fill_bytes(&mut out_point);
+        let mut core_rpc_mock = MockCoreRPCLike::new();
 
-        // Use core_chain_locked_height of 0 so it works with default platform state
-        // (which has last_committed_core_height of 0)
-        // The validation check is: current < proof_height, so 0 < 0 is false = valid
-        let core_chain_locked_height = 0;
+        // Set up block hash expectation
+        core_rpc_mock.expect_get_block_hash().returning(|_| {
+            Ok(BlockHash::from_str(
+                "0000000000000000000000000000000000000000000000000000000000000000",
+            )
+            .unwrap())
+        });
 
-        let chain_proof = ChainAssetLockProof::new(core_chain_locked_height, out_point);
+        // Set up block JSON expectation
+        core_rpc_mock.expect_get_block_json().returning(|_| {
+            Ok(json!({
+                "tx": [],
+            }))
+        });
 
-        (AssetLockProof::Chain(chain_proof), pk.to_vec())
+        // Set up the optional transaction extended info expectation
+        let tx_clone = transaction.clone();
+        core_rpc_mock
+            .expect_get_optional_transaction_extended_info()
+            .returning(move |_txid| {
+                // Create the GetRawTransactionResult
+                Ok(Some(GetRawTransactionResult {
+                    in_active_chain: true,
+                    hex: dpp::dashcore::consensus::serialize(&tx_clone),
+                    txid: tx_clone.txid(),
+                    size: 0,
+                    version: tx_clone.version as u32,
+                    tx_type: 8, // Asset lock transaction type
+                    locktime: tx_clone.lock_time,
+                    vin: vec![],
+                    vout: vec![],
+                    extra_payload_size: None,
+                    extra_payload: None,
+                    blockhash: Some(
+                        BlockHash::from_str(
+                            "0000000000000000000000000000000000000000000000000000000000000001",
+                        )
+                        .unwrap(),
+                    ),
+                    confirmations: Some(1000),
+                    time: Some(0),
+                    blocktime: Some(0),
+                    height: Some(transaction_height as i32),
+                    instantlock: false,
+                    instantlock_internal: false,
+                    chainlock: true,
+                }))
+            });
+
+        let use_initial_protocol_version = Some(PlatformVersion::latest().protocol_version);
+        let platform = Platform::<MockCoreRPCLike>::open_with_client(
+            tempdir.path(),
+            Some(platform_config),
+            core_rpc_mock,
+            use_initial_protocol_version,
+        )
+        .expect("should open Platform successfully");
+
+        crate::test::helpers::setup::TempPlatform { platform, tempdir }
     }
 
     /// Get the balance of an address from the drive
@@ -467,12 +610,41 @@ mod tests {
         true
     }
 
+    /// Perform check_tx on a raw transaction and return whether it's valid
+    /// This simulates what happens when a transaction is submitted to the mempool.
+    /// - invalid_unpaid transactions should return false (rejected from mempool)
+    /// - invalid_paid transactions should return true (accepted to mempool, will fail at processing)
+    fn check_tx_is_valid(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        raw_tx: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(
+                raw_tx,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        check_result.is_valid()
+    }
+
     /// Generate signable bytes for an address funding from asset lock transition
     /// This creates an unsigned transition and gets its signable bytes
     fn get_signable_bytes_for_transition(
         asset_lock_proof: &dpp::identity::state_transition::asset_lock_proof::AssetLockProof,
         inputs: &BTreeMap<PlatformAddress, (AddressNonce, u64)>,
-        outputs: &BTreeMap<PlatformAddress, u64>,
+        outputs: &BTreeMap<PlatformAddress, Option<u64>>,
     ) -> Vec<u8> {
         use dpp::serialization::Signable;
 
@@ -501,7 +673,7 @@ mod tests {
         asset_lock_private_key: &[u8],
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
-        outputs: BTreeMap<PlatformAddress, u64>,
+        outputs: BTreeMap<PlatformAddress, Option<u64>>,
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
     ) -> StateTransition {
         create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
@@ -520,7 +692,7 @@ mod tests {
         asset_lock_private_key: &[u8],
         signer: &TestAddressSigner,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
-        outputs: BTreeMap<PlatformAddress, u64>,
+        outputs: BTreeMap<PlatformAddress, Option<u64>>,
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
         user_fee_increase: u16,
     ) -> StateTransition {
@@ -543,7 +715,7 @@ mod tests {
         asset_lock_proof: AssetLockProof,
         asset_lock_private_key: &[u8],
         inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
-        outputs: BTreeMap<PlatformAddress, u64>,
+        outputs: BTreeMap<PlatformAddress, Option<u64>>,
         fee_strategy: Vec<AddressFundsFeeStrategyStep>,
         custom_witnesses: Vec<AddressWitness>,
     ) -> StateTransition {
@@ -665,13 +837,15 @@ mod tests {
             }
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(100), dash_to_credits!(2.0));
+            outputs.insert(create_platform_address(100), None); // Remainder recipient
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
                 inputs,
                 outputs,
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
                 input_count, // Match input count
             );
 
@@ -708,9 +882,14 @@ mod tests {
             let output_count = max_outputs as usize + 1;
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            for i in 0..output_count {
-                outputs.insert(create_platform_address(i as u8), dash_to_credits!(0.1));
+            // First output_count - 1 are explicit, last one is remainder
+            for i in 0..(output_count - 1) {
+                outputs.insert(
+                    create_platform_address(i as u8),
+                    Some(dash_to_credits!(0.1)),
+                );
             }
+            outputs.insert(create_platform_address((output_count - 1) as u8), None); // Remainder
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
@@ -761,14 +940,16 @@ mod tests {
             );
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(3), dash_to_credits!(1.2));
+            outputs.insert(create_platform_address(3), None); // Remainder recipient
 
             // Create transition with 2 inputs but only 1 witness
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
                 inputs,
                 outputs,
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
                 1, // Only 1 witness for 2 inputs
             );
 
@@ -805,13 +986,15 @@ mod tests {
             inputs.insert(same_address, (1 as AddressNonce, dash_to_credits!(0.1)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(same_address, dash_to_credits!(1.1)); // Same address as input
+            outputs.insert(same_address, None); // Same address as input (remainder)
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
                 inputs,
                 outputs,
-                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
                 1,
             );
 
@@ -840,7 +1023,7 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Empty fee strategy
             let transition = create_raw_transition_with_dummy_witnesses(
@@ -901,9 +1084,10 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(1.0))); // Explicit output
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
-            // ReduceOutput(5) but only 1 output exists
+            // ReduceOutput(5) but only 1 explicit output exists (index 0)
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
                 inputs,
@@ -954,11 +1138,8 @@ mod tests {
         }
 
         #[test]
-        fn test_outputs_not_greater_than_inputs_returns_error() {
-            // For AddressFundingFromAssetLock, outputs must be greater than inputs
-            // because the asset lock provides extra credits.
-            // Structure validation happens before signature validation
-            // so we test it directly without needing valid signatures
+        fn test_no_remainder_output_returns_error() {
+            // Exactly one output must be None (the remainder recipient)
             use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
 
             let platform_version = PlatformVersion::latest();
@@ -966,22 +1147,19 @@ mod tests {
             let mut rng = StdRng::seed_from_u64(567);
             let (asset_lock_proof, _) = create_asset_lock_proof_with_key(&mut rng);
 
-            let mut inputs = BTreeMap::new();
-            inputs.insert(
-                create_platform_address(1),
-                (1 as AddressNonce, dash_to_credits!(1.0)),
-            );
+            let inputs = BTreeMap::new();
 
             let mut outputs = BTreeMap::new();
-            // Output is NOT greater than input - should fail for asset lock funding
-            outputs.insert(create_platform_address(2), dash_to_credits!(0.5));
+            // All outputs are explicit (Some) - no remainder recipient
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.4)));
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
                 inputs,
                 outputs,
                 AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::ReduceOutput(0)]),
-                1,
+                0,
             );
 
             let result = transition
@@ -993,9 +1171,54 @@ mod tests {
             assert!(
                 matches!(
                     error,
-                    ConsensusError::BasicError(BasicError::OutputsNotGreaterThanInputsError(_))
+                    ConsensusError::BasicError(BasicError::InvalidRemainderOutputCountError(e))
+                    if e.actual_count() == 0
                 ),
-                "Expected OutputsNotGreaterThanInputsError, got {:?}",
+                "Expected InvalidRemainderOutputCountError with 0 count, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_multiple_remainder_outputs_returns_error() {
+            // Exactly one output must be None (the remainder recipient)
+            use crate::execution::validation::state_transition::processor::traits::basic_structure::StateTransitionBasicStructureValidationV0;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let (asset_lock_proof, _) = create_asset_lock_proof_with_key(&mut rng);
+
+            let inputs = BTreeMap::new();
+
+            let mut outputs = BTreeMap::new();
+            // Two remainder recipients - invalid
+            outputs.insert(create_platform_address(1), None);
+            outputs.insert(create_platform_address(2), None);
+
+            let transition = create_raw_transition_with_dummy_witnesses(
+                asset_lock_proof,
+                inputs,
+                outputs,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                0,
+            );
+
+            let result = transition
+                .validate_basic_structure(dpp::dashcore::Network::Testnet, platform_version)
+                .expect("validation should not return Err");
+
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(BasicError::InvalidRemainderOutputCountError(e))
+                    if e.actual_count() == 2
+                ),
+                "Expected InvalidRemainderOutputCountError with 2 count, got {:?}",
                 error
             );
         }
@@ -1009,7 +1232,8 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), 100); // Very small output - below minimum
+            outputs.insert(create_platform_address(1), Some(100)); // Very small explicit output - below minimum
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
@@ -1092,8 +1316,9 @@ mod tests {
             // No inputs - just funding from asset lock
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            let output_address = create_platform_address(1);
-            outputs.insert(output_address, dash_to_credits!(0.9)); // Less than 1 DASH to account for fees
+            // One explicit output and one remainder
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5))); // Explicit output
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1152,9 +1377,9 @@ mod tests {
             // No inputs - funding from asset lock to multiple outputs
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.3));
-            outputs.insert(create_platform_address(2), dash_to_credits!(0.3));
-            outputs.insert(create_platform_address(3), dash_to_credits!(0.3));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(3), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1218,8 +1443,9 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            // Output is greater than input because asset lock adds 1 DASH
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.2));
+            // Explicit output plus remainder
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.5))); // Explicit output
+            outputs.insert(create_platform_address(3), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1251,6 +1477,264 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // REMAINDER OUTPUT HANDLING TESTS
+    // These test the logic for handling remainder outputs based on available funds
+    // ==========================================
+
+    mod remainder_output_handling {
+        use super::*;
+
+        #[test]
+        fn test_explicit_outputs_exceed_available_funds_returns_error() {
+            // When explicit outputs sum > asset_lock + inputs, should return error
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(950);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            // No inputs
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 2 DASH - more than the 1 DASH asset lock
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(2.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions - they get accepted to mempool
+            // but fail at processing time (fees are still paid)
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (insufficient funds for outputs)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail with AddressesNotEnoughFundsError
+            // Note: This is now invalid_paid because advanced structure validation
+            // creates a PartiallyUseAssetLockAction that deducts a penalty from the asset lock
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+        }
+
+        #[test]
+        fn test_exact_match_removes_remainder_output() {
+            // When explicit outputs sum == asset_lock + inputs, remainder output should be removed
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([51u8; 32]);
+            // Set up input address with exactly the amount we need to make totals match
+            // Asset lock = 1 DASH, we want explicit output = 1.5 DASH
+            // So input needs to provide 0.5 DASH
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.5));
+
+            let mut rng = StdRng::seed_from_u64(951);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let mut outputs = BTreeMap::new();
+            // Explicit output of exactly 1.5 DASH (= 1 DASH asset lock + 0.5 DASH input)
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(1.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder - should be removed
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should succeed
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Verify the explicit output address received funds (minus fees)
+            let output_balance =
+                get_address_balance(&platform, create_platform_address(1), &transaction);
+            assert!(
+                output_balance > 0,
+                "Output address should have received funds"
+            );
+            // Should be less than 1.5 DASH due to fee deduction
+            assert!(
+                output_balance < dash_to_credits!(1.5),
+                "Output balance {} should be less than 1.5 DASH due to fees",
+                output_balance
+            );
+
+            // Verify the remainder address received nothing (was removed)
+            let remainder_balance =
+                get_address_balance(&platform, create_platform_address(2), &transaction);
+            assert_eq!(
+                remainder_balance, 0,
+                "Remainder address should have received nothing when funds exactly match"
+            );
+        }
+
+        #[test]
+        fn test_surplus_funds_go_to_remainder() {
+            // When explicit outputs sum < asset_lock + inputs, remainder gets the difference
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(952);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            // Asset lock is 1 DASH
+
+            // No inputs
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 0.3 DASH - less than the 1 DASH asset lock
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(2), None); // Remainder - should receive ~0.7 DASH minus fees
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should succeed
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Verify the explicit output received its amount (minus fees from ReduceOutput(0))
+            let explicit_balance =
+                get_address_balance(&platform, create_platform_address(1), &transaction);
+            assert!(
+                explicit_balance > 0 && explicit_balance < dash_to_credits!(0.3),
+                "Explicit output should have received funds minus fees"
+            );
+
+            // Verify the remainder address received the surplus
+            let remainder_balance =
+                get_address_balance(&platform, create_platform_address(2), &transaction);
+            assert!(
+                remainder_balance > 0,
+                "Remainder address should have received surplus funds"
+            );
+            // Remainder should be approximately 0.7 DASH (1.0 - 0.3)
+            assert!(
+                remainder_balance > dash_to_credits!(0.5),
+                "Remainder balance {} should be substantial",
+                remainder_balance
             );
         }
     }
@@ -1291,7 +1775,8 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.1)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(3), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1359,7 +1844,8 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.8)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.5));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(3), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1427,7 +1913,8 @@ mod tests {
             inputs.insert(input_address, (5 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.2));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(3), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1499,7 +1986,8 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.9));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1511,6 +1999,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong asset lock signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1578,7 +2072,8 @@ mod tests {
             inputs.insert(real_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(3), dash_to_credits!(1.2));
+            outputs.insert(create_platform_address(3), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(4), None); // Remainder
 
             // Sign with wrong signer
             let transition = create_signed_address_funding_from_asset_lock_transition(
@@ -1591,6 +2086,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong input signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1649,7 +2150,8 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.4));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1719,8 +2221,8 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            // 0.3 + 0.3 + 1.0 (asset lock) = 1.6 DASH input, 1.5 output
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.5));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -1784,7 +2286,8 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.4));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder
 
             // Create transition manually with only 1 signature instead of required 2
             let mut transition = AddressFundingFromAssetLockTransitionV0 {
@@ -1817,6 +2320,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient P2SH signatures)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1855,8 +2364,8 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
-            outputs.insert(create_platform_address(2), dash_to_credits!(0.4));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.5)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             // Duplicate fee strategy steps
             let transition = create_raw_transition_with_dummy_witnesses(
@@ -1929,7 +2438,7 @@ mod tests {
             );
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             // DeductFromInput(5) but only 1 input exists
             let transition = create_raw_transition_with_dummy_witnesses(
@@ -1974,7 +2483,7 @@ mod tests {
             inputs.insert(create_platform_address(1), (1 as AddressNonce, 100));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = create_raw_transition_with_dummy_witnesses(
                 asset_lock_proof,
@@ -2040,7 +2549,7 @@ mod tests {
 
             let mut outputs = BTreeMap::new();
             // 16 * 0.05 = 0.8 from inputs + 1.0 from asset lock = 1.8 total
-            outputs.insert(create_platform_address(100), dash_to_credits!(1.7));
+            outputs.insert(create_platform_address(100), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2101,9 +2610,10 @@ mod tests {
 
             // Create exactly 16 outputs (the maximum allowed)
             let mut outputs = BTreeMap::new();
-            for i in 1..=16u8 {
-                outputs.insert(create_platform_address(i), dash_to_credits!(0.05));
+            for i in 1..=15u8 {
+                outputs.insert(create_platform_address(i), Some(dash_to_credits!(0.05)));
             }
+            outputs.insert(create_platform_address(16), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2176,7 +2686,7 @@ mod tests {
 
             let mut outputs = BTreeMap::new();
             // 0.6 from inputs + 1.0 from asset lock = 1.6 total
-            outputs.insert(create_platform_address(10), dash_to_credits!(1.5));
+            outputs.insert(create_platform_address(10), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2247,8 +2757,8 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.6));
-            outputs.insert(create_platform_address(2), dash_to_credits!(0.6));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.6)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             // Multiple fee strategy steps: first try input, then outputs
             let transition = create_signed_address_funding_from_asset_lock_transition(
@@ -2316,7 +2826,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.4));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Only DeductFromInput, fees come from input surplus
             let transition = create_signed_address_funding_from_asset_lock_transition(
@@ -2384,7 +2894,7 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.9));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof.clone(),
@@ -2439,6 +2949,12 @@ mod tests {
 
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result2, platform_version),
+                "check_tx should reject invalid_unpaid transaction (asset lock already used)"
+            );
+
             let platform_state2 = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
 
@@ -2468,7 +2984,7 @@ mod tests {
 
             let inputs = BTreeMap::new();
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.9));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Create transition with invalid signature (wrong length)
             let transition = AddressFundingFromAssetLockTransition::V0(
@@ -2503,6 +3019,12 @@ mod tests {
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid signature format)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2556,7 +3078,7 @@ mod tests {
             let inputs = BTreeMap::new();
             let output_address = create_platform_address(1);
             let mut outputs = BTreeMap::new();
-            outputs.insert(output_address, dash_to_credits!(0.9));
+            outputs.insert(output_address, None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2604,12 +3126,12 @@ mod tests {
                 .fetch_balance_and_nonce(&output_address, None, platform_version)
                 .expect("expected to fetch balance");
 
-            // Balance should be approximately 0.9 DASH minus processing fees
+            // Balance should be approximately 1.0 DASH minus processing fees (gets remainder)
             assert!(balance_and_nonce.is_some());
             let (_nonce, actual_balance) = balance_and_nonce.unwrap();
-            // Should be less than requested due to fees, but greater than 0
+            // Should be less than full asset lock value due to fees, but greater than 0
             assert!(actual_balance > 0);
-            assert!(actual_balance < dash_to_credits!(0.9));
+            assert!(actual_balance < dash_to_credits!(1.0));
         }
 
         #[test]
@@ -2642,7 +3164,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, input_amount));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.4));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2732,7 +3254,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.2));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             // Create transition with invalid witness (wrong signature length)
             let state_transition = create_transition_with_custom_witnesses(
@@ -2749,6 +3271,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong signature length)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2798,7 +3326,7 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.4));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Get the real entry for signatures
             let hash = match p2sh_address {
@@ -2831,6 +3359,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong redeem script hash)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2881,7 +3415,7 @@ mod tests {
             inputs.insert(p2pkh_address, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(2), dash_to_credits!(1.2));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             // Create transition with P2SH witness for P2PKH address (type mismatch)
             let state_transition = create_transition_with_custom_witnesses(
@@ -2899,6 +3433,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (witness type mismatch)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -2949,9 +3489,8 @@ mod tests {
             // Asset lock provides 1 DASH
 
             let mut outputs = BTreeMap::new();
-            // Output exactly matches asset lock minus expected fee
-            // This should work if fee calculation is correct
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.99));
+            // Output receives remainder after fees
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -2991,7 +3530,11 @@ mod tests {
 
         #[test]
         fn test_fee_exceeds_remaining_by_one_credit() {
-            // Test where fee exceeds remaining balance by just 1 credit
+            // Test where the output amount equals the entire asset lock value.
+            // The fee strategy reduces the output to cover fees.
+            // After fee deduction, the output should be reduced, which is valid behavior.
+            // This test confirms that when ReduceOutput is used, the transaction succeeds
+            // by reducing the output amount (the fee is taken from the output itself).
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3011,8 +3554,8 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            // Try to output entire asset lock amount, leaving nothing for fee
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            // Output gets the remainder after fees
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -3044,12 +3587,19 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Should fail - no funds left for fee
-            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+            // Should succeed - the fee is deducted from the output amount
+            // The recipient receives (1 DASH - fee) instead of 1 DASH
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
         }
 
         #[test]
-        fn test_user_fee_increase_makes_transaction_unaffordable() {
+        fn test_user_fee_increase_with_reduce_output_succeeds() {
+            // Test that the fee increase actually results in higher fees being paid.
+            // The user_fee_increase multiplier only applies to processing fees, not storage fees.
+            // Formula: total_fee = storage_fee + processing_fee * (1 + user_fee_increase / 100)
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -3059,8 +3609,12 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
+            let output_address = create_platform_address(1);
+            let asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            // First transaction: NO fee increase
+            let platform_no_increase = TestPlatformBuilder::new()
+                .with_config(platform_config.clone())
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
@@ -3069,28 +3623,28 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(output_address, None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
-            let state_transition =
+            let state_transition_no_increase =
                 create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
                     asset_lock_proof,
                     &asset_lock_pk,
                     &signer,
                     BTreeMap::new(),
-                    outputs,
+                    outputs.clone(),
                     vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-                    u16::MAX, // Maximum fee increase
+                    0, // No fee increase
                 );
 
-            let result = state_transition
+            let result = state_transition_no_increase
                 .serialize_to_bytes()
                 .expect("should serialize");
 
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
+            let platform_state = platform_no_increase.state.load();
+            let transaction = platform_no_increase.drive.grove.start_transaction();
 
-            let processing_result = platform
+            let processing_result = platform_no_increase
                 .platform
                 .process_raw_state_transitions(
                     &vec![result],
@@ -3103,8 +3657,117 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Should fail - user fee increase makes it too expensive
-            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+            let fee_result_no_increase = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, fee_result)] => fee_result.clone()
+            );
+
+            let balance_no_increase =
+                get_address_balance(&platform_no_increase, output_address, &transaction);
+
+            // Second transaction: MAXIMUM fee increase (u16::MAX = 655.35% extra on processing fees)
+            let platform_max_increase = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(6020); // Different seed for different asset lock
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let state_transition_max_increase =
+                create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                    u16::MAX, // Maximum fee increase (655.35% extra on processing fees)
+                );
+
+            let result = state_transition_max_increase
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform_max_increase.state.load();
+            let transaction = platform_max_increase.drive.grove.start_transaction();
+
+            let processing_result = platform_max_increase
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            let fee_result_max_increase = assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, fee_result)] => fee_result.clone()
+            );
+
+            let balance_max_increase =
+                get_address_balance(&platform_max_increase, output_address, &transaction);
+
+            // Calculate actual fees paid (deducted from the asset lock value)
+            let fee_paid_no_increase = asset_lock_value - balance_no_increase;
+            let fee_paid_max_increase = asset_lock_value - balance_max_increase;
+
+            // Verify the balance with max fee increase is lower (more fee was paid)
+            assert!(
+                balance_max_increase < balance_no_increase,
+                "Balance with max fee increase ({}) should be less than balance without increase ({})",
+                balance_max_increase,
+                balance_no_increase
+            );
+
+            // Storage fees should be the same (not affected by user_fee_increase)
+            assert_eq!(
+                fee_result_no_increase.storage_fee, fee_result_max_increase.storage_fee,
+                "Storage fees should be identical regardless of user_fee_increase"
+            );
+
+            // Processing fee with max increase should be much higher
+            // With u16::MAX (65535), multiplier is (1 + 65535/100) = 656.35x
+            let expected_processing_fee_multiplier = 1.0 + (u16::MAX as f64 / 100.0);
+            let actual_processing_fee_ratio = fee_result_max_increase.processing_fee as f64
+                / fee_result_no_increase.processing_fee as f64;
+
+            assert!(
+                (actual_processing_fee_ratio - expected_processing_fee_multiplier).abs() < 1.0,
+                "Processing fee ratio should be ~{:.2}x, got {:.2}x (no_increase: {}, max_increase: {})",
+                expected_processing_fee_multiplier,
+                actual_processing_fee_ratio,
+                fee_result_no_increase.processing_fee,
+                fee_result_max_increase.processing_fee
+            );
+
+            // Verify the actual fee deducted from output matches the fee result
+            let total_fee_no_increase = fee_result_no_increase.total_base_fee();
+            let total_fee_max_increase = fee_result_max_increase.total_base_fee();
+
+            assert_eq!(
+                fee_paid_no_increase, total_fee_no_increase,
+                "Fee deducted from output should match total_base_fee (no increase)"
+            );
+            assert_eq!(
+                fee_paid_max_increase, total_fee_max_increase,
+                "Fee deducted from output should match total_base_fee (max increase)"
+            );
+
+            // Verify both fees are positive
+            assert!(fee_paid_no_increase > 0, "Base fee should be positive");
+            assert!(
+                fee_paid_max_increase > fee_paid_no_increase,
+                "Max increase fee ({}) should be higher than base fee ({})",
+                fee_paid_max_increase,
+                fee_paid_no_increase
+            );
         }
 
         #[test]
@@ -3130,7 +3793,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition =
                 create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
@@ -3175,72 +3838,6 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_asset_lock_output_index_out_of_bounds() {
-            // Test where asset lock proof references non-existent output index
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let mut rng = StdRng::seed_from_u64(610);
-            let (mut asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
-
-            // Modify output index to be out of bounds
-            match &mut asset_lock_proof {
-                AssetLockProof::Instant(instant) => {
-                    instant.output_index = 100; // Way out of bounds
-                }
-                AssetLockProof::Chain(_) => {}
-            }
-
-            let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
-
-            let signer = TestAddressSigner::new();
-            let state_transition = create_signed_address_funding_from_asset_lock_transition(
-                asset_lock_proof,
-                &asset_lock_pk,
-                &signer,
-                BTreeMap::new(),
-                outputs,
-                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
-
-            let result = state_transition
-                .serialize_to_bytes()
-                .expect("should serialize");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            // Should fail - output index out of bounds
-            assert_eq!(processing_result.invalid_unpaid_count(), 1);
-        }
-
-        #[test]
         fn test_asset_lock_double_spend_same_block() {
             // Test using the same asset lock twice in the same block
             let platform_version = PlatformVersion::latest();
@@ -3262,10 +3859,10 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs1 = BTreeMap::new();
-            outputs1.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs1.insert(create_platform_address(1), None); // Remainder recipient
 
             let mut outputs2 = BTreeMap::new();
-            outputs2.insert(create_platform_address(2), dash_to_credits!(0.5));
+            outputs2.insert(create_platform_address(2), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
 
@@ -3347,7 +3944,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
 
@@ -3396,7 +3993,7 @@ mod tests {
 
             // Now try to use the same asset lock again
             let mut outputs2 = BTreeMap::new();
-            outputs2.insert(create_platform_address(2), dash_to_credits!(0.5));
+            outputs2.insert(create_platform_address(2), None); // Remainder recipient
 
             let state_transition2 = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -3410,6 +4007,12 @@ mod tests {
             let result2 = state_transition2
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result2, platform_version),
+                "check_tx should reject invalid_unpaid transaction (asset lock fully used)"
+            );
 
             let platform_state = platform.state.load();
             let transaction2 = platform.drive.grove.start_transaction();
@@ -3465,7 +4068,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // First nonce should be 1
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -3533,7 +4136,7 @@ mod tests {
             inputs.insert(input_address, (7 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -3559,6 +4162,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (nonce gap)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -3611,7 +4220,7 @@ mod tests {
             inputs.insert(input_address, (5 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -3637,6 +4246,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (nonce already used)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -3694,7 +4309,7 @@ mod tests {
             inputs.insert(input_address, (high_nonce + 1, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -3757,7 +4372,8 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), u64::MAX - 1000);
+            outputs.insert(create_platform_address(1), Some(u64::MAX - 1000));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -3778,6 +4394,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output exceeds asset lock value)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -3795,84 +4417,6 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail - output exceeds asset lock value
-            assert_eq!(processing_result.invalid_unpaid_count(), 1);
-        }
-
-        #[test]
-        fn test_input_amount_exceeds_balance() {
-            // Input tries to use more than available balance
-            let platform_version = PlatformVersion::latest();
-            let platform_config = PlatformConfig {
-                testing_configs: PlatformTestConfig {
-                    disable_instant_lock_signature_verification: true,
-                    ..Default::default()
-                },
-                ..Default::default()
-            };
-
-            let mut platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
-            let mut signer = TestAddressSigner::new();
-            let input_address = signer.add_p2pkh([31u8; 32]);
-            // Address has 1 DASH
-            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
-
-            let mut rng = StdRng::seed_from_u64(631);
-            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
-
-            let mut inputs = BTreeMap::new();
-            // Try to use 2 DASH from an address with only 1 DASH
-            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(2.0)));
-
-            let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(2.5));
-
-            let signable_bytes =
-                get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
-            let witness = signer
-                .sign_p2pkh(input_address, &signable_bytes)
-                .expect("should sign");
-
-            let transition = AddressFundingFromAssetLockTransition::V0(
-                AddressFundingFromAssetLockTransitionV0 {
-                    asset_lock_proof,
-                    inputs,
-                    outputs,
-                    fee_strategy: AddressFundsFeeStrategy::from(vec![
-                        AddressFundsFeeStrategyStep::ReduceOutput(0),
-                    ]),
-                    user_fee_increase: 0,
-                    signature: BinaryData::new(asset_lock_pk.to_vec()),
-                    input_witnesses: vec![witness],
-                },
-            );
-
-            let state_transition: StateTransition = transition.into();
-            let result = state_transition
-                .serialize_to_bytes()
-                .expect("should serialize");
-
-            let platform_state = platform.state.load();
-            let transaction = platform.drive.grove.start_transaction();
-
-            let processing_result = platform
-                .platform
-                .process_raw_state_transitions(
-                    &vec![result],
-                    &platform_state,
-                    &BlockInfo::default(),
-                    &transaction,
-                    platform_version,
-                    false,
-                    None,
-                )
-                .expect("expected to process state transition");
-
-            // Should fail - input exceeds balance
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
@@ -3905,7 +4449,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, 0)); // Zero amount
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -3931,6 +4475,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (zero input amount)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -3974,7 +4524,8 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), 0); // Zero amount
+            outputs.insert(create_platform_address(1), Some(0)); // Zero amount
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -3994,6 +4545,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (zero output amount)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4049,7 +4606,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -4063,6 +4620,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient balance)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4110,7 +4673,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(output_address, dash_to_credits!(0.5));
+            outputs.insert(output_address, None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -4149,7 +4712,7 @@ mod tests {
             );
 
             // Verify balance was added (not replaced)
-            // Initial: 1.0 DASH, Output: 0.5 DASH minus fees via ReduceOutput(0)
+            // Initial: 1.0 DASH, Remainder output receives asset lock value (1.0 DASH) minus fees
             // Balance should be > 1.0 DASH (original) since we added from asset lock
             let new_balance = get_address_balance(&platform, output_address, &transaction);
             assert!(
@@ -4157,10 +4720,11 @@ mod tests {
                 "Balance {} should be greater than original 1.0 DASH",
                 new_balance
             );
-            // Balance should be less than 1.5 DASH due to fee deduction
+            // Balance should be close to 2.0 DASH (1.0 initial + 1.0 from asset lock - fees)
+            // But less than 2.0 DASH due to fee deduction
             assert!(
-                new_balance < dash_to_credits!(1.5),
-                "Balance {} should be less than 1.5 DASH due to fees",
+                new_balance < dash_to_credits!(2.0),
+                "Balance {} should be less than 2.0 DASH due to fees",
                 new_balance
             );
         }
@@ -4200,7 +4764,7 @@ mod tests {
             assert_eq!(inputs.len(), 1);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -4244,8 +4808,8 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_fee_deduction_leaves_dust_on_output() {
-            // After fee deduction, output has dust amount (below minimum)
+        fn test_output_becomes_below_minimum_after_fee_deduction() {
+            // Output starts above minimum but falls below after fee deduction
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4266,7 +4830,8 @@ mod tests {
 
             let mut outputs = BTreeMap::new();
             // Set output to minimum allowed + tiny bit, so after fee deduction it might be dust
-            outputs.insert(create_platform_address(1), 1001); // Just above minimum
+            outputs.insert(create_platform_address(1), Some(1001)); // Just above minimum
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -4286,6 +4851,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (dust output after fee)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4329,8 +4900,8 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            // Set output high enough that after fee, it's at minimum (1000 credits)
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.1));
+            // Output receives remainder after fees
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -4406,7 +4977,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Sign with the wrong signer's key
             let signable_bytes =
@@ -4434,6 +5005,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (recovered pubkey wrong address)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4484,7 +5061,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -4519,6 +5096,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid recovery ID)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4569,7 +5152,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Sign DIFFERENT signable bytes (create a different transition with different input amount)
             let mut wrong_inputs = BTreeMap::new();
@@ -4598,6 +5181,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature for different message)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4656,7 +5245,7 @@ mod tests {
             inputs.insert(p2sh_address2, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(2.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -4716,13 +5305,13 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.3));
-            outputs.insert(create_platform_address(2), dash_to_credits!(0.3));
-            outputs.insert(create_platform_address(3), dash_to_credits!(0.3));
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(2), Some(dash_to_credits!(0.3)));
+            outputs.insert(create_platform_address(3), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
 
-            // Fee deducted from multiple outputs
+            // Fee deducted from multiple explicit outputs (ReduceOutput only applies to explicit outputs)
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
                 &asset_lock_pk,
@@ -4732,7 +5321,6 @@ mod tests {
                 vec![
                     AddressFundsFeeStrategyStep::ReduceOutput(0),
                     AddressFundsFeeStrategyStep::ReduceOutput(1),
-                    AddressFundsFeeStrategyStep::ReduceOutput(2),
                 ],
             );
 
@@ -4792,7 +5380,7 @@ mod tests {
             inputs.insert(address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(address, dash_to_credits!(1.0)); // Same address as input
+            outputs.insert(address, None); // Same address as input (remainder recipient)
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -4806,6 +5394,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (same address in input and output)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -4863,9 +5457,8 @@ mod tests {
             // Address inputs: 16 * 100 DASH = 1600 DASH
             // Asset lock: 1 DASH
             // Total: 1601 DASH
-            // Validation requires: output_sum > address_input_sum (1600 DASH)
-            // So output must be > 1600 DASH, but < 1601 DASH to leave room for fee
-            outputs.insert(create_platform_address(1), dash_to_credits!(1600.5));
+            // Output receives remainder after fees
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -4919,19 +5512,30 @@ mod tests {
                 ..Default::default()
             };
 
-            // Default genesis state has core height 0, and our chain proof uses height 0
-            let platform = TestPlatformBuilder::new()
-                .with_config(platform_config)
-                .with_latest_protocol_version()
-                .build_with_mock_rpc()
-                .set_genesis_state();
-
             let mut rng = StdRng::seed_from_u64(700);
-            let (chain_asset_lock_proof, asset_lock_pk) =
-                create_chain_asset_lock_proof_with_key(&mut rng);
+            let (chain_asset_lock_proof, asset_lock_pk, asset_lock_tx) =
+                create_chain_asset_lock_proof_with_key_and_tx(&mut rng);
+
+            // The chain proof has core_chain_locked_height = 100
+            // We need the transaction to be mined at or before that height
+            // Create platform with mock that returns the transaction at height 50
+            let platform = create_platform_with_chain_asset_lock_mock(
+                platform_config,
+                asset_lock_tx,
+                50, // Transaction mined at height 50, proof height is 100
+            );
+
+            // Set genesis state
+            let platform = platform.set_genesis_state_with_activation_info(0, 1);
+
+            // Fast forward to set last_committed_core_height >= proof's core_chain_locked_height (100)
+            // The chain proof requires platform's core height to be at least 100
+            crate::test::helpers::fast_forward_to_block::fast_forward_to_block(
+                &platform, 0, 1, 200, 0, false,
+            );
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -4950,12 +5554,20 @@ mod tests {
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
+            // Use BlockInfo with core_height >= proof's core_chain_locked_height
+            let block_info = BlockInfo {
+                time_ms: 0,
+                height: 1,
+                core_height: 200,
+                epoch: Default::default(),
+            };
+
             let processing_result = platform
                 .platform
                 .process_raw_state_transitions(
                     &vec![result],
                     &platform_state,
-                    &BlockInfo::default(),
+                    &block_info,
                     &transaction,
                     platform_version,
                     false,
@@ -5001,7 +5613,7 @@ mod tests {
             }
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -5016,6 +5628,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient confirmations)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5070,7 +5688,7 @@ mod tests {
             let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -5090,6 +5708,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (empty signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5132,7 +5756,7 @@ mod tests {
             let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -5152,6 +5776,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature too short)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5194,7 +5824,7 @@ mod tests {
             let (asset_lock_proof, _asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -5214,6 +5844,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (signature too long)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5260,7 +5896,7 @@ mod tests {
             let wrong_pk = [99u8; 32];
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -5280,6 +5916,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (wrong signature key)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5338,7 +5980,7 @@ mod tests {
             inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(2.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // All inputs sign the same signable bytes (the entire transition)
             let signable_bytes =
@@ -5370,6 +6012,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (witnesses wrong order)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5427,7 +6075,7 @@ mod tests {
             inputs.insert(input_address3, (1 as AddressNonce, dash_to_credits!(0.3)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // All inputs sign the same signable bytes
             let signable_bytes =
@@ -5459,6 +6107,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (missing middle witness)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -5514,7 +6168,7 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -5582,7 +6236,7 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -5650,7 +6304,7 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -5727,7 +6381,7 @@ mod tests {
             inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -5803,7 +6457,7 @@ mod tests {
             inputs.insert(input_address, (initial_nonce + 1, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -5866,7 +6520,7 @@ mod tests {
             let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -5940,9 +6594,8 @@ mod tests {
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, input_amount));
 
-            let output_amount = dash_to_credits!(1.5);
             let mut outputs = BTreeMap::new();
-            outputs.insert(output_address, output_amount);
+            outputs.insert(output_address, None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -5985,18 +6638,19 @@ mod tests {
             // Input should have: initial - input_amount = 2.0 - 1.0 = 1.0 DASH
             assert_eq!(new_input_balance, initial_input_balance - input_amount);
 
-            // Output should have output_amount MINUS fee (since ReduceOutput(0) deducts fee from output)
-            // Output amount was 1.5 DASH, fee gets deducted from it
+            // Output should receive asset_lock_value + input_amount MINUS fee
+            // (since ReduceOutput(0) deducts fee from the remainder output)
+            let total_funds = asset_lock_value + input_amount;
             assert!(
                 new_output_balance > 0,
                 "Output balance should be > 0, got {}",
                 new_output_balance
             );
             assert!(
-                new_output_balance < output_amount,
+                new_output_balance < total_funds,
                 "Output balance {} should be less than {} due to fee deduction",
                 new_output_balance,
-                output_amount
+                total_funds
             );
         }
     }
@@ -6033,7 +6687,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6047,6 +6701,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (address not found)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6112,7 +6772,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5))); // More than available
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6126,6 +6786,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (insufficient balance)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6190,7 +6856,7 @@ mod tests {
             inputs.insert(input_address, (3 as AddressNonce, dash_to_credits!(0.5))); // Wrong nonce (should be 6)
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6204,6 +6870,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (invalid nonce)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6273,7 +6945,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signable_bytes =
                 get_signable_bytes_for_transition(&asset_lock_proof, &inputs, &outputs);
@@ -6315,6 +6987,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (high-S signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6362,7 +7040,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -6432,7 +7110,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -6515,7 +7193,7 @@ mod tests {
             inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(2.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Get the correct signable bytes for this transition
             let signable_bytes =
@@ -6553,6 +7231,12 @@ mod tests {
             let result = state_transition
                 .serialize_to_bytes()
                 .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (one invalid input signature)"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -6600,9 +7284,8 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            // Output needs to be high enough that after fee deduction, it's still >= 500k minimum
-            // Fee is typically ~1-2 million credits, so we use 0.5 DASH (50 billion credits)
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            // Output receives remainder after fee deduction
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -6674,7 +7357,7 @@ mod tests {
             let zero_address = PlatformAddress::P2pkh([0u8; 20]);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(zero_address, dash_to_credits!(0.5));
+            outputs.insert(zero_address, None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6738,7 +7421,7 @@ mod tests {
             let max_address = PlatformAddress::P2pkh([0xFFu8; 20]);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(max_address, dash_to_credits!(0.5));
+            outputs.insert(max_address, None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6809,7 +7492,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             // Combined strategy: first try output, then remaining input balance
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -6881,7 +7564,7 @@ mod tests {
             inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(1.0));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
                 asset_lock_proof,
@@ -6948,7 +7631,7 @@ mod tests {
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
             let state_transition = create_signed_address_funding_from_asset_lock_transition(
@@ -7016,11 +7699,18 @@ mod tests {
         }
     }
 
-    mod small_amounts {
+    // ==========================================
+    // CONCURRENT INPUT USAGE TESTS
+    // ==========================================
+
+    mod concurrent_input_usage {
         use super::*;
 
         #[test]
-        fn test_one_credit_transfer() {
+        fn test_two_transitions_same_input_address_same_block() {
+            // Two transitions in the same block both try to use the same input address.
+            // The second one should fail due to nonce mismatch (first uses nonce 1,
+            // but both were created expecting nonce 1).
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -7036,12 +7726,336 @@ mod tests {
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let mut rng = StdRng::seed_from_u64(830);
+            // Create input address with enough balance for both transitions
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([50u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(10.0));
+
+            // First transition: uses nonce 1
+            let mut rng1 = StdRng::seed_from_u64(901);
+            let (asset_lock_proof1, asset_lock_pk1) = create_asset_lock_proof_with_key(&mut rng1);
+
+            let mut inputs1 = BTreeMap::new();
+            inputs1.insert(input_address, (1 as AddressNonce, dash_to_credits!(2.0)));
+
+            let mut outputs1 = BTreeMap::new();
+            outputs1.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition1 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof1,
+                &asset_lock_pk1,
+                &signer,
+                inputs1,
+                outputs1,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            // Second transition: also uses nonce 1 (will conflict)
+            let mut rng2 = StdRng::seed_from_u64(902);
+            let (asset_lock_proof2, asset_lock_pk2) = create_asset_lock_proof_with_key(&mut rng2);
+
+            let mut inputs2 = BTreeMap::new();
+            inputs2.insert(input_address, (1 as AddressNonce, dash_to_credits!(3.0)));
+
+            let mut outputs2 = BTreeMap::new();
+            outputs2.insert(create_platform_address(2), None); // Remainder recipient
+
+            let state_transition2 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof2,
+                &asset_lock_pk2,
+                &signer,
+                inputs2,
+                outputs2,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result1 = state_transition1
+                .serialize_to_bytes()
+                .expect("should serialize");
+            let result2 = state_transition2
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process both transitions in the same block
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result1, result2],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transitions");
+
+            // First should succeed, second should fail (nonce conflict)
+            let results = processing_result.execution_results();
+            assert_eq!(results.len(), 2);
+
+            assert_matches!(
+                &results[0],
+                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+            );
+
+            // Second fails because nonce 1 was already used by first transition
+            // This is an UnpaidConsensusError because nonce validation happens before fee payment
+            assert_matches!(
+                &results[1],
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                    StateError::AddressInvalidNonceError(_)
+                ))
+            );
+        }
+
+        #[test]
+        fn test_two_transitions_same_input_address_sequential_nonces() {
+            // Two transitions in the same block using same input but with sequential nonces.
+            // First uses nonce 1, second uses nonce 2. Both should succeed.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create input address with enough balance for both transitions
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([51u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(10.0));
+
+            // First transition: uses nonce 1
+            let mut rng1 = StdRng::seed_from_u64(903);
+            let (asset_lock_proof1, asset_lock_pk1) = create_asset_lock_proof_with_key(&mut rng1);
+
+            let mut inputs1 = BTreeMap::new();
+            inputs1.insert(input_address, (1 as AddressNonce, dash_to_credits!(2.0)));
+
+            let mut outputs1 = BTreeMap::new();
+            outputs1.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition1 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof1,
+                &asset_lock_pk1,
+                &signer,
+                inputs1,
+                outputs1,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            // Second transition: uses nonce 2 (sequential)
+            let mut rng2 = StdRng::seed_from_u64(904);
+            let (asset_lock_proof2, asset_lock_pk2) = create_asset_lock_proof_with_key(&mut rng2);
+
+            let mut inputs2 = BTreeMap::new();
+            inputs2.insert(input_address, (2 as AddressNonce, dash_to_credits!(3.0)));
+
+            let mut outputs2 = BTreeMap::new();
+            outputs2.insert(create_platform_address(2), None); // Remainder recipient
+
+            let state_transition2 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof2,
+                &asset_lock_pk2,
+                &signer,
+                inputs2,
+                outputs2,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result1 = state_transition1
+                .serialize_to_bytes()
+                .expect("should serialize");
+            let result2 = state_transition2
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process both transitions in the same block
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result1, result2],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transitions");
+
+            // Both should succeed with sequential nonces
+            let results = processing_result.execution_results();
+            assert_eq!(results.len(), 2);
+
+            assert_matches!(
+                &results[0],
+                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+            );
+            assert_matches!(
+                &results[1],
+                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+            );
+
+            // Verify final balance: started with 10, spent 2+3=5
+            let final_balance = get_address_balance(&platform, input_address, &transaction);
+            assert_eq!(final_balance, dash_to_credits!(5.0));
+        }
+
+        #[test]
+        fn test_second_transition_exceeds_remaining_balance() {
+            // Two transitions in same block. First succeeds, second fails because
+            // the first consumed balance that second was counting on.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            // Create input address with limited balance
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([52u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(5.0));
+
+            // First transition: uses 3 DASH (nonce 1)
+            let mut rng1 = StdRng::seed_from_u64(905);
+            let (asset_lock_proof1, asset_lock_pk1) = create_asset_lock_proof_with_key(&mut rng1);
+
+            let mut inputs1 = BTreeMap::new();
+            inputs1.insert(input_address, (1 as AddressNonce, dash_to_credits!(3.0)));
+
+            let mut outputs1 = BTreeMap::new();
+            outputs1.insert(create_platform_address(1), None); // Remainder recipient
+
+            let state_transition1 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof1,
+                &asset_lock_pk1,
+                &signer,
+                inputs1,
+                outputs1,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            // Second transition: tries to use 3 DASH (nonce 2)
+            // But after first transition, only 2 DASH remains
+            let mut rng2 = StdRng::seed_from_u64(906);
+            let (asset_lock_proof2, asset_lock_pk2) = create_asset_lock_proof_with_key(&mut rng2);
+
+            let mut inputs2 = BTreeMap::new();
+            inputs2.insert(input_address, (2 as AddressNonce, dash_to_credits!(3.0)));
+
+            let mut outputs2 = BTreeMap::new();
+            outputs2.insert(create_platform_address(2), None); // Remainder recipient
+
+            let state_transition2 = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof2,
+                &asset_lock_pk2,
+                &signer,
+                inputs2,
+                outputs2,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result1 = state_transition1
+                .serialize_to_bytes()
+                .expect("should serialize");
+            let result2 = state_transition2
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Process both transitions in the same block
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result1, result2],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transitions");
+
+            // First should succeed, second should fail (insufficient balance)
+            let results = processing_result.execution_results();
+            assert_eq!(results.len(), 2);
+
+            assert_matches!(
+                &results[0],
+                StateTransitionExecutionResult::SuccessfulExecution(_, _)
+            );
+
+            // Second fails because balance was depleted by first
+            // This is an UnpaidConsensusError because balance validation happens before fee payment
+            assert_matches!(
+                &results[1],
+                StateTransitionExecutionResult::UnpaidConsensusError(ConsensusError::StateError(
+                    StateError::AddressNotEnoughFundsError(_)
+                ))
+            );
+        }
+    }
+
+    // ==========================================
+    // OVERFLOW PROTECTION TESTS
+    // ==========================================
+
+    mod overflow_protection {
+        use super::*;
+
+        #[test]
+        fn test_output_sum_overflow() {
+            // Multiple outputs that would overflow u64 when summed
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(910);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            // Try to output just 1 credit (likely below minimum)
-            outputs.insert(create_platform_address(1), 1);
+            // Two outputs that would overflow when added together
+            // At least one must be a remainder (None), but we can still have an explicit huge one
+            outputs.insert(create_platform_address(1), Some(u64::MAX - 1000));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
 
             let transition = AddressFundingFromAssetLockTransition::V0(
                 AddressFundingFromAssetLockTransitionV0 {
@@ -7062,6 +8076,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output sum overflow)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -7078,14 +8098,13 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Should fail - 1 credit is below minimum (1000)
+            // Should fail - outputs exceed what any asset lock could provide
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
 
         #[test]
-        fn test_minimum_viable_amount() {
-            // Output needs to cover both the fee and result in at least 500k credits minimum
-            // after fee deduction via ReduceOutput(0)
+        fn test_input_sum_overflow() {
+            // Multiple inputs that would overflow u64 when summed
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -7095,28 +8114,186 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
                 .set_genesis_state();
 
-            let mut rng = StdRng::seed_from_u64(831);
+            let mut rng = StdRng::seed_from_u64(911);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let signer = TestAddressSigner::new();
+            let input_address1 = create_platform_address(10);
+            let input_address2 = create_platform_address(11);
+
+            let mut inputs = BTreeMap::new();
+            // Two inputs that would overflow when added together
+            inputs.insert(input_address1, (1 as AddressNonce, u64::MAX - 1000));
+            inputs.insert(input_address2, (1 as AddressNonce, u64::MAX - 1000));
+
+            let mut outputs = BTreeMap::new();
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let transition = AddressFundingFromAssetLockTransition::V0(
+                AddressFundingFromAssetLockTransitionV0 {
+                    asset_lock_proof,
+                    inputs,
+                    outputs,
+                    fee_strategy: AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::ReduceOutput(0),
+                    ]),
+                    user_fee_increase: 0,
+                    signature: BinaryData::new(asset_lock_pk.to_vec()),
+                    input_witnesses: vec![
+                        AddressWitness::P2pkh {
+                            signature: BinaryData::new(vec![0u8; 65]),
+                        },
+                        AddressWitness::P2pkh {
+                            signature: BinaryData::new(vec![0u8; 65]),
+                        },
+                    ],
+                },
+            );
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (input sum overflow)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail - likely overflow or validation error
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_output_plus_fee_overflow() {
+            // Output amount that when fee is added would overflow
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(912);
             let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
 
             let mut outputs = BTreeMap::new();
-            // Output high enough that after fee deduction, it's still >= 500k minimum
-            outputs.insert(create_platform_address(1), dash_to_credits!(0.5));
+            // Output very close to u64::MAX, so adding any fee would overflow
+            outputs.insert(create_platform_address(1), Some(u64::MAX - 100));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = AddressFundingFromAssetLockTransition::V0(
+                AddressFundingFromAssetLockTransitionV0 {
+                    asset_lock_proof,
+                    inputs: BTreeMap::new(),
+                    outputs,
+                    fee_strategy: AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0), // Try to deduct from non-existent input
+                    ]),
+                    user_fee_increase: 0,
+                    signature: BinaryData::new(asset_lock_pk.to_vec()),
+                    input_witnesses: vec![],
+                },
+            );
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject invalid_unpaid transaction (output plus fee overflow)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail - output exceeds asset lock or overflow protection kicks in
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_user_fee_increase_overflow() {
+            // Very high fee increase that could cause overflow in fee calculation
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut rng = StdRng::seed_from_u64(913);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+
+            let mut outputs = BTreeMap::new();
+            // Output receives remainder
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
 
             let signer = TestAddressSigner::new();
-            let state_transition = create_signed_address_funding_from_asset_lock_transition(
-                asset_lock_proof,
-                &asset_lock_pk,
-                &signer,
-                BTreeMap::new(),
-                outputs,
-                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
-            );
+            let state_transition =
+                create_signed_address_funding_from_asset_lock_transition_with_fee_increase(
+                    asset_lock_proof,
+                    &asset_lock_pk,
+                    &signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                    u16::MAX, // Maximum fee increase
+                );
 
             let result = state_transition
                 .serialize_to_bytes()
@@ -7138,11 +8315,924 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Should succeed with exactly minimum amount
+            // Should succeed - fee increase is handled with saturating arithmetic
+            // and ReduceOutput will just take more from the output
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
             );
+        }
+    }
+
+    // ==========================================
+    // PARTIALLY USED ASSET LOCK TESTS
+    // These test scenarios where an asset lock has been partially consumed
+    // (e.g., by a failed identity create with duplicate unique key)
+    // ==========================================
+
+    mod partially_used_asset_lock {
+        use super::*;
+        use dpp::identity::accessors::IdentityGettersV0;
+        use dpp::identity::{Identity, IdentityPublicKey, IdentityV0};
+        use dpp::native_bls::NativeBlsModule;
+        use dpp::prelude::Identifier;
+        use dpp::state_transition::identity_create_transition::methods::IdentityCreateTransitionMethodsV0;
+        use dpp::state_transition::identity_create_transition::IdentityCreateTransition;
+        use simple_signer::signer::SimpleSigner;
+
+        #[test]
+        fn test_address_funding_with_partially_used_asset_lock() {
+            // This test verifies that an asset lock that was partially consumed
+            // (due to a failed identity create with duplicate unique key) can still
+            // be used for address funding with the remaining balance.
+
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_state = platform.state.load();
+
+            let mut identity_signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Create keys for the identity we'll try to create
+            let (master_key, master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(58),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            identity_signer.add_key(master_key.clone(), master_private_key);
+
+            let (critical_public_key_that_is_already_in_system, private_key) =
+                IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                    1,
+                    Some(999),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            // First, add an identity with the same unique key to the system
+            let (another_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(53),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            let identity_already_in_system: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([
+                    (0, another_master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 100000,
+                revision: 0,
+            }
+            .into();
+
+            // Add this identity to the system first
+            platform
+                .drive
+                .add_new_identity(
+                    identity_already_in_system,
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            identity_signer.add_key(
+                critical_public_key_that_is_already_in_system.clone(),
+                private_key,
+            );
+
+            // Create an asset lock proof
+            let (_, pk) = dpp::identity::KeyType::ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+
+            let asset_lock_proof = dpp::tests::fixtures::instant_asset_lock_proof_fixture(
+                Some(
+                    dpp::dashcore::PrivateKey::from_byte_array(
+                        &pk,
+                        dpp::dashcore::Network::Testnet,
+                    )
+                    .unwrap(),
+                ),
+                None, // 1 DASH default
+            );
+
+            let identifier = asset_lock_proof
+                .create_identifier()
+                .expect("expected an identifier");
+
+            // Try to create an identity with the duplicate key (this will fail and partially use the asset lock)
+            let identity_to_fail: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([
+                    (0, master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity_to_fail,
+                    asset_lock_proof.clone(),
+                    pk.as_slice(),
+                    &identity_signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized_transition = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized_transition],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Identity creation should fail due to duplicate unique key
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            // Penalty was paid from the asset lock (10000000 penalty + processing fee)
+            let penalty_fee = processing_result.aggregated_fees().processing_fee;
+            assert!(
+                penalty_fee > 10000000,
+                "Expected penalty fee > 10M, got {}",
+                penalty_fee
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            // Now try to use the same asset lock for address funding
+            // The remaining balance should still be available
+
+            let address_signer = TestAddressSigner::new();
+
+            let mut outputs = BTreeMap::new();
+            // Remainder recipient - gets whatever is left from the partially consumed asset lock
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let address_funding_transition =
+                create_signed_address_funding_from_asset_lock_transition(
+                    asset_lock_proof,
+                    &pk,
+                    &address_signer,
+                    BTreeMap::new(), // No additional inputs
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                );
+
+            let address_funding_serialized = address_funding_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![address_funding_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Address funding should succeed with the remaining asset lock balance
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_address_funding_with_small_output_after_partial_consumption() {
+            // This test verifies that an asset lock that was partially consumed can still
+            // be used for address funding with an output that fits within the remaining balance.
+            //
+            // Key calculations (CREDITS_PER_DUFF = 1000):
+            // - Asset lock: 200,000 duffs = 200,000,000 credits (minimum for identity create)
+            // - Penalty for unique_key_already_present: 10,000,000 credits = 10,000 duffs
+            // - Processing fees: ~1-2M credits = ~1-2K duffs per attempt
+            // - After 1 failure: ~188,000 duffs remain
+            // - Then request 100,000,000 credits (100,000 duffs) which fits within remaining
+
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_initial_state_structure();
+
+            let platform_state = platform.state.load();
+
+            let mut identity_signer = SimpleSigner::default();
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let (critical_public_key_that_is_already_in_system, private_key) =
+                IdentityPublicKey::random_ecdsa_critical_level_authentication_key(
+                    1,
+                    Some(999),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            // First, add an identity with the unique key to the system
+            let (another_master_key, _) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(53),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            let identity_already_in_system: Identity = IdentityV0 {
+                id: Identifier::random_with_rng(&mut rng),
+                public_keys: BTreeMap::from([
+                    (0, another_master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 100000,
+                revision: 0,
+            }
+            .into();
+
+            platform
+                .drive
+                .add_new_identity(
+                    identity_already_in_system,
+                    false,
+                    &BlockInfo::default(),
+                    true,
+                    None,
+                    platform_version,
+                )
+                .expect("expected to add a new identity");
+
+            identity_signer.add_key(
+                critical_public_key_that_is_already_in_system.clone(),
+                private_key,
+            );
+
+            // Create an asset lock with 200,000 duffs (minimum for identity create)
+            let (_, pk) = dpp::identity::KeyType::ECDSA_SECP256K1
+                .random_public_and_private_key_data(&mut rng, platform_version)
+                .unwrap();
+
+            let asset_lock_proof = dpp::tests::fixtures::instant_asset_lock_proof_fixture(
+                Some(
+                    dpp::dashcore::PrivateKey::from_byte_array(
+                        &pk,
+                        dpp::dashcore::Network::Testnet,
+                    )
+                    .unwrap(),
+                ),
+                Some(200000), // 200,000 duffs = minimum for identity create
+            );
+
+            let identifier = asset_lock_proof
+                .create_identifier()
+                .expect("expected an identifier");
+
+            // Consume some of the asset lock with a failed identity create
+            let (new_master_key, new_master_private_key) =
+                IdentityPublicKey::random_ecdsa_master_authentication_key(
+                    0,
+                    Some(60),
+                    platform_version,
+                )
+                .expect("expected to get key pair");
+
+            identity_signer.add_key(new_master_key.clone(), new_master_private_key);
+
+            let identity: Identity = IdentityV0 {
+                id: identifier,
+                public_keys: BTreeMap::from([
+                    (0, new_master_key.clone()),
+                    (1, critical_public_key_that_is_already_in_system.clone()),
+                ]),
+                balance: 1000000000,
+                revision: 0,
+            }
+            .into();
+
+            let identity_create_transition: StateTransition =
+                IdentityCreateTransition::try_from_identity_with_signer(
+                    &identity,
+                    asset_lock_proof.clone(),
+                    pk.as_slice(),
+                    &identity_signer,
+                    &NativeBlsModule,
+                    0,
+                    platform_version,
+                )
+                .expect("expected an identity create transition");
+
+            let identity_create_serialized = identity_create_transition
+                .serialize_to_bytes()
+                .expect("serialized state transition");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![identity_create_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail with penalty charged (~12,000 duffs consumed)
+            assert_eq!(
+                processing_result.invalid_paid_count(),
+                1,
+                "Identity create should fail with penalty"
+            );
+
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("expected to commit");
+
+            // Now use the partially-used asset lock for address funding
+            // After 1 failure (~12,000 duffs consumed), ~188,000 duffs remain
+            // Remainder recipient will receive whatever is left
+            let address_signer = TestAddressSigner::new();
+
+            let mut outputs = BTreeMap::new();
+            // Remainder recipient receives whatever is left from the asset lock
+            outputs.insert(create_platform_address(1), None); // Remainder recipient
+
+            let address_funding_transition =
+                create_signed_address_funding_from_asset_lock_transition(
+                    asset_lock_proof,
+                    &pk,
+                    &address_signer,
+                    BTreeMap::new(),
+                    outputs,
+                    vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+                );
+
+            let address_funding_serialized = address_funding_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![address_funding_serialized],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should succeed - output fits within remaining balance
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // INVALID PAID FEE SOURCE TESTS
+    // These test the different scenarios for where fees come from when
+    // PartiallyUseAssetLockAction is used due to insufficient funds validation failure
+    // ==========================================
+
+    mod invalid_paid_fee_sources {
+        use super::*;
+        use dpp::asset_lock::reduced_asset_lock_value::AssetLockValueGettersV0;
+        use dpp::asset_lock::StoredAssetLockInfo;
+
+        /// Helper to get asset lock info after processing
+        fn get_asset_lock_info(
+            platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+            outpoint: &dpp::dashcore::OutPoint,
+            transaction: &drive::grovedb::Transaction,
+        ) -> StoredAssetLockInfo {
+            let platform_version = PlatformVersion::latest();
+            let outpoint_bytes: [u8; 36] = {
+                let mut bytes = [0u8; 36];
+                bytes[..32].copy_from_slice(outpoint.txid.as_raw_hash().as_byte_array());
+                bytes[32..36].copy_from_slice(&outpoint.vout.to_le_bytes());
+                bytes
+            };
+
+            platform
+                .drive
+                .fetch_asset_lock_outpoint_info(
+                    &outpoint_bytes.into(),
+                    Some(transaction),
+                    &platform_version.drive,
+                )
+                .expect("should fetch asset lock info")
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_asset_lock_only() {
+            // Scenario: No inputs provided, so the penalty must come entirely from the asset lock.
+            // Expected: Asset lock remaining balance is reduced by at least the penalty.
+            //
+            // Note: The exact fee includes penalty + processing fees computed at the time of
+            // validation. The final aggregated_fees may differ slightly due to storage costs
+            // added during operation execution.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let signer = TestAddressSigner::new();
+            let mut rng = StdRng::seed_from_u64(2001);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            // No inputs - fee can only come from asset lock
+            let inputs = BTreeMap::new();
+            let mut outputs = BTreeMap::new();
+            // Explicit output of 2 DASH - more than the 1 DASH asset lock (will fail)
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(2.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![AddressFundsFeeStrategyStep::ReduceOutput(0)],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid (fee deducted from asset lock)
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            // Verify asset lock was partially consumed
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+                    let initial = value.initial_credit_value();
+
+                    // Initial should match our expected value
+                    assert_eq!(initial, initial_asset_lock_value);
+
+                    // Remaining should be less than initial
+                    assert!(
+                        remaining < initial_asset_lock_value,
+                        "Asset lock remaining {} should be less than initial {}",
+                        remaining,
+                        initial_asset_lock_value
+                    );
+
+                    // Calculate the amount deducted from asset lock
+                    let amount_deducted = initial_asset_lock_value - remaining;
+
+                    // The penalty is the minimum that should have been deducted
+                    let penalty = platform_version
+                        .drive_abci
+                        .validation_and_processing
+                        .penalties
+                        .address_funds_insufficient_balance;
+
+                    // Verify at least the penalty was deducted
+                    assert!(
+                        amount_deducted >= penalty,
+                        "Amount deducted {} should be at least the penalty {}",
+                        amount_deducted,
+                        penalty
+                    );
+
+                    // Verify fee was collected
+                    let processing_fee = processing_result.aggregated_fees().processing_fee;
+                    assert!(
+                        processing_fee > 0,
+                        "Processing fee should be greater than 0"
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_input_only() {
+            // Scenario: Input has enough balance to cover the entire penalty + processing fee.
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input balance is reduced, asset lock remains untouched.
+            //
+            // Note: When a transition fails in advanced_structure validation, the action still has
+            // the "remaining balance" which is (actual_balance - input_spend_amount). The fee is
+            // then deducted from this remaining balance. So the final balance is:
+            // actual_balance - input_spend_amount - fee_from_remaining
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([200u8; 32]);
+
+            // Set up input with plenty of balance to cover fees
+            // Penalty is 10_000_000 + some processing fee (~10M total)
+            // We need: input_spend_amount + enough left over to cover fee
+            let initial_input_balance = dash_to_credits!(0.5); // 50_000_000_000 credits
+            let input_spend_amount = dash_to_credits!(0.1); // 10_000_000_000 - What we're trying to spend
+                                                            // remaining_balance in action = 40_000_000_000 (plenty to cover ~20M fee)
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2002);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Try to send 3 DASH total - more than asset_lock (1) + input spend (0.1) = 1.1 DASH
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            // Fee strategy: Deduct from input first
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (input covers fee)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Get the input balance before processing
+            let input_balance_before = get_address_balance(&platform, input_address, &transaction);
+            assert_eq!(input_balance_before, initial_input_balance);
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+
+            // Verify input balance was reduced
+            let input_balance_after = get_address_balance(&platform, input_address, &transaction);
+
+            // The remaining_balance in action = initial_input_balance - input_spend_amount
+            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+
+            // Fee deducted from input = remaining_balance - balance_after
+            let fee_from_input = remaining_balance_in_action - input_balance_after;
+
+            // Verify that input was charged (balance reduced)
+            assert!(
+                input_balance_after < remaining_balance_in_action,
+                "Input balance {} should be less than remaining {} (some fee was taken)",
+                input_balance_after,
+                remaining_balance_in_action
+            );
+
+            // Verify at least the penalty was taken from input
+            assert!(
+                fee_from_input >= penalty,
+                "Fee from input {} should be at least the penalty {}",
+                fee_from_input,
+                penalty
+            );
+
+            // Verify asset lock is untouched (full value remains)
+            // Since input had enough to cover penalty + processing fee at advanced_structure time
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+
+                    // Asset lock should still have full value since input covered the fees
+                    assert_eq!(
+                        remaining, initial_asset_lock_value,
+                        "Asset lock should be unchanged when input covers all fees (remaining {}, initial {})",
+                        remaining, initial_asset_lock_value
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
+        }
+
+        #[test]
+        fn test_invalid_paid_fee_from_input_then_asset_lock() {
+            // Scenario: Input has some balance but not enough for the full fee (penalty + processing).
+            // Fee strategy specifies DeductFromInput first.
+            // Expected: Input contributes what it can, remainder comes from asset lock.
+            //
+            // Note: The action's inputs_with_remaining_balance contains (actual_balance - input_spend_amount).
+            // Fee is deducted from this remaining balance, not the original balance.
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([201u8; 32]);
+
+            // Set up input such that remaining_balance < total_fee
+            // remaining_balance = initial_input_balance - input_spend_amount
+            // We want: remaining_balance < penalty (~10M) + processing (~10M)
+            // But remaining_balance > 0 so both input and asset lock contribute
+            let initial_input_balance = 15_000_000u64; // 15M credits
+            let input_spend_amount = 10_000_000u64; // 10M credits
+                                                    // remaining_balance_in_action = 15M - 10M = 5M (less than ~20M total fee)
+            setup_address_with_balance(&mut platform, input_address, 0, initial_input_balance);
+
+            let mut rng = StdRng::seed_from_u64(2003);
+            let (asset_lock_proof, asset_lock_pk) = create_asset_lock_proof_with_key(&mut rng);
+            let asset_lock_outpoint = asset_lock_proof.out_point().expect("should have outpoint");
+            let initial_asset_lock_value = dash_to_credits!(1.0); // From fixture
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, input_spend_amount));
+
+            let mut outputs = BTreeMap::new();
+            // Try to send 3 DASH - more than available, will fail
+            outputs.insert(create_platform_address(1), Some(dash_to_credits!(3.0)));
+            outputs.insert(create_platform_address(2), None); // Remainder recipient
+
+            // Fee strategy: Deduct from input first, then reduce output (but output won't be created)
+            let transition = create_signed_address_funding_from_asset_lock_transition(
+                asset_lock_proof,
+                &asset_lock_pk,
+                &signer,
+                inputs,
+                outputs,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should PASS for invalid_paid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept invalid_paid transaction to mempool (input+asset_lock covers fee)"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            // Get the input balance before processing
+            let input_balance_before = get_address_balance(&platform, input_address, &transaction);
+            assert_eq!(input_balance_before, initial_input_balance);
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should be invalid_paid
+            assert_eq!(processing_result.invalid_paid_count(), 1);
+            assert_eq!(processing_result.valid_count(), 0);
+
+            let penalty = platform_version
+                .drive_abci
+                .validation_and_processing
+                .penalties
+                .address_funds_insufficient_balance;
+
+            // Verify input balance after processing
+            let input_balance_after = get_address_balance(&platform, input_address, &transaction);
+
+            // The remaining_balance in action = initial_input_balance - input_spend_amount
+            let remaining_balance_in_action = initial_input_balance - input_spend_amount;
+
+            // Input balance should be 0 or reduced significantly (fee deducted from remaining)
+            // Final balance = remaining_balance - min(fee, remaining_balance) = 0 (if remaining < fee)
+            assert!(
+                input_balance_after < remaining_balance_in_action,
+                "Input balance after {} should be less than remaining {} (some fee was taken)",
+                input_balance_after,
+                remaining_balance_in_action
+            );
+
+            // Fee deducted from input = remaining_balance_in_action - input_balance_after
+            let fee_from_input = remaining_balance_in_action - input_balance_after;
+
+            // Verify asset lock was partially consumed
+            let asset_lock_info =
+                get_asset_lock_info(&platform, &asset_lock_outpoint, &transaction);
+            match asset_lock_info {
+                StoredAssetLockInfo::PartiallyConsumed(value) => {
+                    let remaining = value.remaining_credit_value();
+
+                    // Asset lock should have been reduced
+                    assert!(
+                        remaining < initial_asset_lock_value,
+                        "Asset lock remaining {} should be less than initial {}",
+                        remaining,
+                        initial_asset_lock_value
+                    );
+
+                    // Fee from asset lock
+                    let fee_from_asset_lock = initial_asset_lock_value - remaining;
+
+                    // Verify that both sources contributed
+                    assert!(
+                        fee_from_input > 0,
+                        "Input should have contributed to fee payment, got {} contribution",
+                        fee_from_input
+                    );
+                    assert!(
+                        fee_from_asset_lock > 0,
+                        "Asset lock should have contributed to fee payment, got {} contribution",
+                        fee_from_asset_lock
+                    );
+
+                    // Total fee collected should be at least the penalty
+                    let total_collected = fee_from_input + fee_from_asset_lock;
+                    assert!(
+                        total_collected >= penalty,
+                        "Total collected {} should be at least penalty {}",
+                        total_collected,
+                        penalty
+                    );
+                }
+                StoredAssetLockInfo::FullyConsumed => {
+                    panic!("Asset lock should be partially consumed, not fully consumed");
+                }
+                StoredAssetLockInfo::NotPresent => {
+                    panic!("Asset lock should be present after processing");
+                }
+            }
         }
     }
 }

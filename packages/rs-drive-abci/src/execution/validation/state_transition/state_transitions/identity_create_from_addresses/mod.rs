@@ -2,6 +2,8 @@ mod advanced_structure;
 mod basic_structure;
 pub(crate) mod public_key_signatures;
 mod state;
+#[cfg(test)]
+mod tests;
 
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
@@ -185,12 +187,3 @@ impl StateTransitionStateValidationForIdentityCreateFromAddressesTransitionV0
         }
     }
 }
-
-// TODO: Tests for IdentityCreateFromAddressesTransition need to be implemented.
-// These tests require:
-// 1. Setting up platform addresses with funds in drive (using set_balance_to_address)
-// 2. Creating the transition using try_from_inputs_with_signer with platform address inputs
-// 3. The tests should validate identity creation from platform addresses, not asset locks
-//
-// The previous tests were incorrectly using asset lock proofs which are for
-// IdentityCreateTransition, not IdentityCreateFromAddressesTransition.
