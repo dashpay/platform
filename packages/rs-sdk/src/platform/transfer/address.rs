@@ -4,11 +4,30 @@ use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::fee::Credits;
+use dpp::identity::core_script::CoreScript;
 use dpp::prelude::AddressNonce;
+use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
+use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
 use dpp::state_transition::address_funds_transfer_transition::methods::AddressFundsTransferTransitionMethodsV0;
 use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
 use dpp::state_transition::StateTransition;
+use dpp::withdrawal::Pooling;
 use std::collections::BTreeMap;
+
+#[derive(Debug, Clone)]
+struct AddressInputs {
+    inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    pending_inputs: BTreeMap<PlatformAddress, Credits>,
+}
+
+impl AddressInputs {
+    async fn resolve(
+        &self,
+        sdk: &Sdk,
+    ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
+        resolve_inputs(sdk, self.inputs_with_nonce.clone(), &self.pending_inputs).await
+    }
+}
 
 /// Fully resolved address transfer plan.
 #[derive(Debug, Clone)]
@@ -17,10 +36,8 @@ pub(crate) struct AddressTransferPlan {
     signer: AddressSigner,
     /// Fee strategy controlling extra funding requirements.
     fee_strategy: AddressFundsFeeStrategy,
-    /// Inputs already accompanied by nonces.
-    inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-    /// Inputs missing nonce information and requiring RPC lookup.
-    pending_inputs: BTreeMap<PlatformAddress, Credits>,
+    /// Classified funding inputs.
+    inputs: AddressInputs,
     /// Outputs keyed by Platform address.
     outputs: BTreeMap<PlatformAddress, Credits>,
 }
@@ -30,38 +47,15 @@ impl AddressTransferPlan {
     fn new(
         signer: AddressSigner,
         fee_strategy: AddressFundsFeeStrategy,
-        inputs_with_nonce: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        pending_inputs: BTreeMap<PlatformAddress, Credits>,
+        inputs: AddressInputs,
         outputs: BTreeMap<PlatformAddress, Credits>,
     ) -> Self {
         Self {
             signer,
             fee_strategy,
-            inputs_with_nonce,
-            pending_inputs,
+            inputs,
             outputs,
         }
-    }
-
-    /// Resolve missing nonce info by querying Drive when needed.
-    async fn resolve_inputs(
-        &self,
-        sdk: &Sdk,
-    ) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
-        let mut resolved = self.inputs_with_nonce.clone();
-        if !self.pending_inputs.is_empty() {
-            let fetched = fetch_inputs_with_nonce(sdk, &self.pending_inputs).await?;
-            for (address, entry) in fetched {
-                if resolved.insert(address, entry).is_some() {
-                    return Err(Error::InvalidCreditTransfer(format!(
-                        "input for {} provided with and without nonce",
-                        address
-                    )));
-                }
-            }
-        }
-
-        Ok(resolved)
     }
 
     /// Build the address-based state transition for this plan.
@@ -70,7 +64,7 @@ impl AddressTransferPlan {
         sdk: &Sdk,
         settings: Option<PutSettings>,
     ) -> Result<StateTransition, Error> {
-        let inputs = self.resolve_inputs(sdk).await?;
+        let inputs = self.inputs.resolve(sdk).await?;
         let user_fee_increase = settings
             .as_ref()
             .and_then(|settings| settings.user_fee_increase)
@@ -88,6 +82,83 @@ impl AddressTransferPlan {
     }
 }
 
+/// Withdraw request captured by the builder prior to classification.
+#[derive(Debug, Clone)]
+pub(crate) struct AddressWithdrawalRequest {
+    pub(crate) output_script: CoreScript,
+    pub(crate) change_output: Option<(PlatformAddress, Credits)>,
+    pub(crate) fee_strategy: AddressFundsFeeStrategy,
+    pub(crate) core_fee_per_byte: u32,
+    pub(crate) pooling: Pooling,
+}
+
+impl AddressWithdrawalRequest {
+    pub(crate) fn new(output_script: CoreScript) -> Self {
+        Self {
+            output_script,
+            change_output: None,
+            fee_strategy: Vec::new(),
+            core_fee_per_byte: 1,
+            pooling: Pooling::Never,
+        }
+    }
+}
+
+/// Fully resolved address withdrawal plan ready to produce a state transition.
+#[derive(Debug, Clone)]
+pub(crate) struct AddressWithdrawalPlan {
+    signer: AddressSigner,
+    fee_strategy: AddressFundsFeeStrategy,
+    core_fee_per_byte: u32,
+    pooling: Pooling,
+    output_script: CoreScript,
+    change_output: Option<(PlatformAddress, Credits)>,
+    inputs: AddressInputs,
+}
+
+impl AddressWithdrawalPlan {
+    fn new(
+        signer: AddressSigner,
+        request: AddressWithdrawalRequest,
+        inputs: AddressInputs,
+    ) -> Self {
+        Self {
+            signer,
+            fee_strategy: request.fee_strategy,
+            core_fee_per_byte: request.core_fee_per_byte,
+            pooling: request.pooling,
+            output_script: request.output_script,
+            change_output: request.change_output,
+            inputs,
+        }
+    }
+
+    pub(crate) async fn build_state_transition(
+        &self,
+        sdk: &Sdk,
+        settings: Option<PutSettings>,
+    ) -> Result<StateTransition, Error> {
+        let inputs = self.inputs.resolve(sdk).await?;
+        let user_fee_increase = settings
+            .as_ref()
+            .and_then(|settings| settings.user_fee_increase)
+            .unwrap_or_default();
+
+        AddressCreditWithdrawalTransition::try_from_inputs_with_signer(
+            inputs,
+            self.change_output,
+            self.fee_strategy.clone(),
+            self.core_fee_per_byte,
+            self.pooling,
+            self.output_script.clone(),
+            &self.signer,
+            user_fee_increase,
+            sdk.version(),
+        )
+        .map_err(Error::from)
+    }
+}
+
 /// Classify Platform address transfers by validating inputs and outputs.
 pub(crate) fn classify_address_transfer(
     inputs: &[TransferInput],
@@ -95,47 +166,27 @@ pub(crate) fn classify_address_transfer(
     signer: AddressSigner,
     fee_strategy: AddressFundsFeeStrategy,
 ) -> Result<AddressTransferPlan, Error> {
-    let mut pending_inputs = BTreeMap::new();
-    let mut inputs_with_nonce = BTreeMap::new();
-    let mut has_address_input = false;
-
-    for funding in inputs {
-        match funding {
-            TransferInput::Addresses {
-                inputs,
-                input_private_keys: _input_private_keys,
-            } => {
-                has_address_input = true;
-                merge_without_nonce(&mut pending_inputs, &inputs_with_nonce, inputs)?
-            }
-            TransferInput::AddressesWithNonce {
-                inputs,
-                input_private_keys: _input_private_keys,
-            } => {
-                has_address_input = true;
-                merge_with_nonce(&mut inputs_with_nonce, &pending_inputs, inputs)?
-            }
-            _ => {
-                return Err(Error::InvalidCreditTransfer(
-                    "address transfer requires Platform address funding inputs".to_string(),
-                ))
-            }
-        }
-    }
-
-    if !has_address_input {
-        return Err(Error::InvalidCreditTransfer(
-            "address transfer requires at least one Platform address input".to_string(),
-        ));
-    }
-
+    let inputs_classification = collect_address_inputs(inputs, "address transfer")?;
     let address_outputs = collect_address_outputs(outputs)?;
     Ok(AddressTransferPlan::new(
         signer,
         fee_strategy,
-        inputs_with_nonce,
-        pending_inputs,
+        inputs_classification,
         address_outputs,
+    ))
+}
+
+/// Classify Platform address withdrawals by validating inputs and destination config.
+pub(crate) fn classify_address_withdrawal(
+    inputs: &[TransferInput],
+    signer: AddressSigner,
+    request: AddressWithdrawalRequest,
+) -> Result<AddressWithdrawalPlan, Error> {
+    let inputs_classification = collect_address_inputs(inputs, "address withdrawal")?;
+    Ok(AddressWithdrawalPlan::new(
+        signer,
+        request,
+        inputs_classification,
     ))
 }
 
@@ -202,18 +253,73 @@ fn collect_address_outputs(
     }
 }
 
+fn collect_address_inputs(inputs: &[TransferInput], context: &str) -> Result<AddressInputs, Error> {
+    let mut pending_inputs = BTreeMap::new();
+    let mut inputs_with_nonce = BTreeMap::new();
+    let mut has_address_input = false;
+
+    for funding in inputs {
+        match funding {
+            TransferInput::Addresses { inputs, .. } => {
+                has_address_input = true;
+                merge_without_nonce(&mut pending_inputs, &inputs_with_nonce, inputs)?;
+            }
+            TransferInput::AddressesWithNonce { inputs, .. } => {
+                has_address_input = true;
+                merge_with_nonce(&mut inputs_with_nonce, &pending_inputs, inputs)?;
+            }
+            _ => {
+                return Err(Error::InvalidCreditTransfer(format!(
+                    "{context} requires Platform address funding inputs",
+                )))
+            }
+        }
+    }
+
+    if !has_address_input {
+        return Err(Error::InvalidCreditTransfer(format!(
+            "{context} requires at least one Platform address input",
+        )));
+    }
+
+    Ok(AddressInputs {
+        inputs_with_nonce,
+        pending_inputs,
+    })
+}
+
+async fn resolve_inputs(
+    sdk: &Sdk,
+    mut resolved: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+    pending: &BTreeMap<PlatformAddress, Credits>,
+) -> Result<BTreeMap<PlatformAddress, (AddressNonce, Credits)>, Error> {
+    if !pending.is_empty() {
+        let fetched = fetch_inputs_with_nonce(sdk, pending).await?;
+        for (address, entry) in fetched {
+            if resolved.insert(address, entry).is_some() {
+                return Err(Error::InvalidCreditTransfer(format!(
+                    "input for {} provided with and without nonce",
+                    address
+                )));
+            }
+        }
+    }
+
+    Ok(resolved)
+}
+
 #[cfg(test)]
 impl AddressTransferPlan {
     /// Return pending inputs for assertions.
     pub(crate) fn pending_inputs_for_tests(&self) -> &BTreeMap<PlatformAddress, Credits> {
-        &self.pending_inputs
+        &self.inputs.pending_inputs
     }
 
     /// Return inputs with nonce for assertions.
     pub(crate) fn inputs_with_nonce_for_tests(
         &self,
     ) -> &BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
-        &self.inputs_with_nonce
+        &self.inputs.inputs_with_nonce
     }
 
     /// Return outputs for assertions.
@@ -249,13 +355,9 @@ mod tests {
             BTreeMap::from([(TransferOutput::PlatformAddress(address(3)), 25 as Credits)]);
 
         let signer: AddressSigner = Arc::new(TestAddressSigner).into();
-        let context = classify_address_transfer(
-            &inputs,
-            &outputs,
-            signer,
-            AddressFundsFeeStrategy::new(),
-        )
-        .expect("valid context");
+        let context =
+            classify_address_transfer(&inputs, &outputs, signer, AddressFundsFeeStrategy::new())
+                .expect("valid context");
 
         assert_eq!(context.pending_inputs_for_tests().len(), 1);
         assert_eq!(context.inputs_with_nonce_for_tests().len(), 1);
@@ -272,13 +374,9 @@ mod tests {
             BTreeMap::from([(TransferOutput::Identity(Default::default()), 5 as Credits)]);
 
         let signer: AddressSigner = Arc::new(TestAddressSigner).into();
-        let err = classify_address_transfer(
-            &inputs,
-            &outputs,
-            signer,
-            AddressFundsFeeStrategy::new(),
-        )
-        .unwrap_err();
+        let err =
+            classify_address_transfer(&inputs, &outputs, signer, AddressFundsFeeStrategy::new())
+                .unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 

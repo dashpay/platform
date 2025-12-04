@@ -4,7 +4,7 @@ use dpp::fee::Credits;
 use dpp::identifier::Identifier;
 use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
-use dpp::identity::{Identity, IdentityPublicKey};
+use dpp::identity::{core_script::CoreScript, Identity, IdentityPublicKey};
 use dpp::platform_value::BinaryData;
 use dpp::prelude::{AddressNonce, AssetLockProof};
 use dpp::ProtocolError;
@@ -259,6 +259,16 @@ impl TransferOutput {
     /// Helper constructing from raw script bytes.
     fn from_core_script_bytes(bytes: Vec<u8>) -> Self {
         TransferOutput::CoreScript(bytes)
+    }
+
+    /// Construct an output targeting a Core script.
+    pub fn core_script(script: &CoreScript) -> Self {
+        TransferOutput::from_core_script_bytes(script.as_bytes().to_vec())
+    }
+
+    /// Construct an output targeting a Core address.
+    pub fn core_address(address: &Address) -> Self {
+        TransferOutput::from_core_script_bytes(address.script_pubkey().into_bytes())
     }
 }
 

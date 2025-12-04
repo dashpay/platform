@@ -1,4 +1,7 @@
-use super::address::{classify_address_transfer, AddressTransferPlan};
+use super::address::{
+    classify_address_transfer, classify_address_withdrawal, AddressTransferPlan,
+    AddressWithdrawalPlan, AddressWithdrawalRequest,
+};
 use super::identity::{classify_identity_transfer, IdentityTransferSelection};
 use super::types::{
     AddressSigner, IdentitySigner, IdentityTransferConfig, TransferInput, TransferOutput,
@@ -6,14 +9,16 @@ use super::types::{
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
 use crate::{Error, Sdk};
-use dpp::address_funds::AddressFundsFeeStrategy;
+use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::errors::consensus::basic::state_transition::{
     OutputBelowMinimumError, TransitionNoInputsError, TransitionNoOutputsError,
 };
 use dpp::fee::Credits;
+use dpp::identity::core_script::CoreScript;
 use dpp::identity::{Identity, IdentityPublicKey};
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
+use dpp::withdrawal::Pooling;
 use std::collections::BTreeMap;
 
 /// Aggregated credit transfer description created via [`CreditTransferBuilder`].
@@ -58,6 +63,9 @@ impl CreditTransfer {
                     .await
             }
             TransferKind::Address(plan) => plan.build_state_transition(sdk, settings).await,
+            TransferKind::AddressWithdrawal(plan) => {
+                plan.build_state_transition(sdk, settings).await
+            }
         }
     }
 }
@@ -69,6 +77,8 @@ enum TransferKind {
     Identity(IdentityTransferSelection),
     /// Transfer between Platform addresses.
     Address(AddressTransferPlan),
+    /// Withdraw credits from Platform addresses to a Core script.
+    AddressWithdrawal(AddressWithdrawalPlan),
 }
 
 /// Builder used to configure `CreditTransfer` inputs and outputs.
@@ -82,6 +92,20 @@ pub struct CreditTransferBuilder {
     address_signer: Option<AddressSigner>,
     /// Fee configuration when spending Platform addresses.
     address_fee_strategy: AddressFundsFeeStrategy,
+    /// Optional address withdrawal configuration.
+    withdrawal: Option<AddressWithdrawalRequest>,
+}
+
+impl std::fmt::Debug for CreditTransferBuilder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CreditTransferBuilder")
+            .field("input_count", &self.inputs.len())
+            .field("outputs", &self.outputs)
+            .field("has_address_signer", &self.address_signer.is_some())
+            .field("address_fee_strategy", &self.address_fee_strategy)
+            .field("has_withdrawal", &self.withdrawal.is_some())
+            .finish()
+    }
 }
 
 impl CreditTransferBuilder {
@@ -128,24 +152,138 @@ impl CreditTransferBuilder {
         self
     }
 
+    /// Set a custom fee strategy for an address withdrawal.
+    pub fn withdrawal_fee_strategy(
+        &mut self,
+        strategy: AddressFundsFeeStrategy,
+    ) -> Result<&mut Self, Error> {
+        let config = self.withdrawal_config_mut()?;
+        config.fee_strategy = strategy;
+        Ok(self)
+    }
+
+    /// Override the Core chain fee-per-byte value for withdrawals.
+    pub fn withdrawal_core_fee_per_byte(&mut self, fee_per_byte: u32) -> Result<&mut Self, Error> {
+        let config = self.withdrawal_config_mut()?;
+        config.core_fee_per_byte = fee_per_byte;
+        Ok(self)
+    }
+
+    /// Update the pooling preference for a withdrawal transition.
+    pub fn withdrawal_pooling(&mut self, pooling: Pooling) -> Result<&mut Self, Error> {
+        let config = self.withdrawal_config_mut()?;
+        config.pooling = pooling;
+        Ok(self)
+    }
+
+    /// Configure a change output for transitions supporting it.
+    pub fn change<D>(&mut self, destination: D, amount: Credits) -> Result<&mut Self, Error>
+    where
+        D: TryInto<TransferOutput>,
+        <D as TryInto<TransferOutput>>::Error: ToString,
+    {
+        let transfer_output = destination
+            .try_into()
+            .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
+
+        match transfer_output {
+            TransferOutput::PlatformAddress(address) => {
+                self.configure_withdrawal_change_output(address, amount)?
+            }
+            _ => {
+                return Err(Error::InvalidCreditTransfer(
+                    "change output currently supports only Platform addresses".to_string(),
+                ))
+            }
+        }
+
+        Ok(self)
+    }
+
+    /// Configure an optional Platform address to receive change after withdrawal.
+    pub fn withdrawal_change_output(
+        &mut self,
+        address: PlatformAddress,
+        amount: Credits,
+    ) -> Result<&mut Self, Error> {
+        self.change(address, amount)
+    }
+
     /// Adds an output destination with the specified amount.
     pub fn output<D>(&mut self, destination: D, amount: Credits) -> Result<&mut Self, Error>
     where
         D: TryInto<TransferOutput>,
         <D as TryInto<TransferOutput>>::Error: ToString,
     {
-        if amount == 0 {
-            return Err(Error::from(OutputBelowMinimumError::new(amount, 1)));
-        }
-
         let transfer_output = destination
             .try_into()
             .map_err(|err| Error::InvalidCreditTransfer(err.to_string()))?;
 
-        let entry = self.outputs.entry(transfer_output).or_insert(0);
-        *entry = entry.saturating_add(amount);
+        match transfer_output {
+            TransferOutput::CoreScript(bytes) => {
+                self.configure_withdrawal_destination(CoreScript::from_bytes(bytes))?;
+                return Ok(self);
+            }
+            TransferOutput::DefaultWithdrawal => {
+                return Err(Error::InvalidCreditTransfer(
+                    "default withdrawal destination is not supported".to_string(),
+                ))
+            }
+            other => {
+                if self.withdrawal.is_some() {
+                    return Err(Error::InvalidCreditTransfer(
+                        "address withdrawals cannot define additional outputs".to_string(),
+                    ));
+                }
+
+                if amount == 0 {
+                    return Err(Error::from(OutputBelowMinimumError::new(amount, 1)));
+                }
+
+                let entry = self.outputs.entry(other).or_insert(0);
+                *entry = entry.saturating_add(amount);
+            }
+        }
 
         Ok(self)
+    }
+
+    fn withdrawal_config_mut(&mut self) -> Result<&mut AddressWithdrawalRequest, Error> {
+        self.withdrawal.as_mut().ok_or_else(|| {
+            Error::InvalidCreditTransfer(
+                "configure a withdrawal destination before customizing settings".to_string(),
+            )
+        })
+    }
+
+    fn configure_withdrawal_change_output(
+        &mut self,
+        address: PlatformAddress,
+        amount: Credits,
+    ) -> Result<(), Error> {
+        if amount == 0 {
+            return Err(Error::from(OutputBelowMinimumError::new(amount, 1)));
+        }
+        let config = self.withdrawal_config_mut()?;
+        config.change_output = Some((address, amount));
+        Ok(())
+    }
+
+    fn configure_withdrawal_destination(&mut self, script: CoreScript) -> Result<(), Error> {
+        if !self.outputs.is_empty() {
+            return Err(Error::InvalidCreditTransfer(
+                "address withdrawals cannot define standard outputs".to_string(),
+            ));
+        }
+
+        if self.withdrawal.is_some() {
+            return Err(Error::InvalidCreditTransfer(
+                "address withdrawal already configured".to_string(),
+            ));
+        }
+
+        self.withdrawal = Some(AddressWithdrawalRequest::new(script));
+        Ok(())
     }
 
     /// Finalizes the builder and returns an immutable `CreditTransfer`.
@@ -154,7 +292,8 @@ impl CreditTransferBuilder {
             return Err(Error::from(TransitionNoInputsError::new()));
         }
 
-        if self.outputs.is_empty() {
+        let has_withdrawal = self.withdrawal.is_some();
+        if self.outputs.is_empty() && !has_withdrawal {
             return Err(Error::from(TransitionNoOutputsError::new()));
         }
 
@@ -163,7 +302,29 @@ impl CreditTransferBuilder {
             outputs,
             address_signer,
             address_fee_strategy,
+            withdrawal,
         } = self;
+
+        if let Some(withdrawal_config) = withdrawal {
+            if !outputs.is_empty() {
+                return Err(Error::InvalidCreditTransfer(
+                    "address withdrawals cannot define standard outputs".to_string(),
+                ));
+            }
+
+            let signer = address_signer.ok_or_else(|| {
+                Error::InvalidCreditTransfer(
+                    "address transfers require an address signer configuration".to_string(),
+                )
+            })?;
+
+            let transfer_kind = TransferKind::AddressWithdrawal(classify_address_withdrawal(
+                &inputs,
+                signer,
+                withdrawal_config,
+            )?);
+            return Ok(CreditTransfer { transfer_kind });
+        }
 
         let outputs_are_identities = outputs
             .keys()
@@ -171,8 +332,6 @@ impl CreditTransferBuilder {
         if outputs_are_identities {
             let transfer_kind =
                 TransferKind::Identity(classify_identity_transfer(&inputs, &outputs)?);
-            drop(inputs);
-            drop(outputs);
             return Ok(CreditTransfer { transfer_kind });
         }
 
@@ -191,14 +350,16 @@ impl CreditTransferBuilder {
                 signer,
                 address_fee_strategy,
             )?);
-            drop(inputs);
-            drop(outputs);
             return Ok(CreditTransfer { transfer_kind });
         }
 
-        Err(Error::InvalidCreditTransfer(
-            "unsupported credit transfer outputs".to_string(),
-        ))
+        if outputs.is_empty() {
+            Err(Error::from(TransitionNoOutputsError::new()))
+        } else {
+            Err(Error::InvalidCreditTransfer(
+                "unsupported credit transfer outputs".to_string(),
+            ))
+        }
     }
 }
 
@@ -236,6 +397,7 @@ mod tests {
     use super::*;
     use dpp::address_funds::{AddressWitness, PlatformAddress};
     use dpp::identifier::Identifier;
+    use dpp::identity::core_script::CoreScript;
     use dpp::identity::signer::Signer;
     use dpp::identity::v0::IdentityV0;
     use dpp::platform_value::BinaryData;
@@ -246,6 +408,10 @@ mod tests {
     fn identifier(index: u8) -> Identifier {
         let bytes = [index; 32];
         bytes.into()
+    }
+
+    fn platform_address(byte: u8) -> PlatformAddress {
+        PlatformAddress::P2pkh([byte; 20])
     }
 
     #[test]
@@ -292,6 +458,82 @@ mod tests {
             .expect("output should be accepted");
 
         let err = builder.build().unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn change_requires_destination_configuration() {
+        let mut builder = CreditTransfer::builder();
+        let err = builder.change(platform_address(10), 5).unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn withdrawal_plan_requires_signer() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(TransferInput::from_addresses(
+                BTreeMap::from([(platform_address(1), 10)]),
+                vec![],
+            ))
+            .expect("input should be accepted");
+        builder
+            .output(CoreScript::from_bytes(vec![0u8; 1]), 0)
+            .expect("withdrawal destination should be configured");
+
+        let err = builder.build().unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn withdrawal_plan_succeeds() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(TransferInput::from_addresses(
+                BTreeMap::from([(platform_address(2), 10)]),
+                vec![],
+            ))
+            .expect("input should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        builder
+            .output(CoreScript::from_bytes(vec![1u8; 2]), 0)
+            .expect("withdrawal destination should be configured");
+        builder
+            .change(platform_address(3), 5)
+            .expect("change output should be set");
+
+        let transfer = builder.build().expect("builder should produce transfer");
+        match transfer.transfer_kind {
+            TransferKind::AddressWithdrawal(_) => {}
+            _ => panic!("expected address withdrawal variant"),
+        }
+    }
+
+    #[test]
+    fn change_rejects_unsupported_destination() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(TransferInput::from_addresses(
+                BTreeMap::from([(platform_address(4), 10)]),
+                vec![],
+            ))
+            .expect("input should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        builder
+            .output(CoreScript::from_bytes(vec![6u8; 2]), 0)
+            .expect("withdrawal destination should be configured");
+
+        let err = builder.change(identifier(1), 5).unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn withdraw_cannot_mix_with_standard_outputs() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .output(CoreScript::from_bytes(vec![5u8; 2]), 0)
+            .expect("configured withdrawal");
+        let err = builder.output(identifier(9), 10).unwrap_err();
         assert!(matches!(err, Error::InvalidCreditTransfer(_)));
     }
 
@@ -346,6 +588,31 @@ mod tests {
         }
 
         fn can_sign_with(&self, _key: &IdentityPublicKey) -> bool {
+            true
+        }
+    }
+
+    #[derive(Debug)]
+    struct TestAddressSigner;
+
+    impl Signer<PlatformAddress> for TestAddressSigner {
+        fn sign(&self, _key: &PlatformAddress, _data: &[u8]) -> Result<BinaryData, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "sign should not be called in tests".to_string(),
+            ))
+        }
+
+        fn sign_create_witness(
+            &self,
+            _key: &PlatformAddress,
+            _data: &[u8],
+        ) -> Result<AddressWitness, ProtocolError> {
+            Err(ProtocolError::Generic(
+                "sign_create_witness should not be called in tests".to_string(),
+            ))
+        }
+
+        fn can_sign_with(&self, _key: &PlatformAddress) -> bool {
             true
         }
     }
