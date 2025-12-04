@@ -1,7 +1,5 @@
 import init, * as sdk from '../../dist/sdk.compressed.js';
 
-const { expect } = global;
-
 describe('serde conversions (unit)', () => {
   before(async () => {
     await init();
@@ -37,6 +35,11 @@ describe('serde conversions (unit)', () => {
     expect(Buffer.from(identityBytes)).to.deep.equal(Buffer.from(bytes));
     expect(Buffer.from(documentBytes)).to.deep.equal(Buffer.from(bytes));
 
+    const object = info.toObject();
+    expect(Buffer.from(object.identityId)).to.deep.equal(Buffer.from(bytes));
+    expect(Buffer.from(object.documentId)).to.deep.equal(Buffer.from(bytes));
+
+    const json = info.toJSON();
     expect(json.identityId).to.equal(expectedBase58);
     expect(json.documentId).to.equal(expectedBase58);
 
