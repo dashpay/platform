@@ -59,12 +59,8 @@ impl std::fmt::Debug for VTableSigner {
     }
 }
 
-impl Signer for VTableSigner {
-    fn sign(
-        &self,
-        identity_public_key: &IdentityPublicKey,
-        data: &[u8],
-    ) -> Result<BinaryData, ProtocolError> {
+impl<K: bincode::Encode> Signer<K> for VTableSigner {
+    fn sign(&self, identity_public_key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
         unsafe {
             // Serialize the public key
             let key_bytes =
@@ -95,7 +91,7 @@ impl Signer for VTableSigner {
         }
     }
 
-    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
+    fn can_sign_with(&self, identity_public_key: &K) -> bool {
         unsafe {
             // Serialize the public key
             match bincode::encode_to_vec(identity_public_key, bincode::config::standard()) {
@@ -107,6 +103,14 @@ impl Signer for VTableSigner {
                 Err(_) => false,
             }
         }
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &K,
+        data: &[u8],
+    ) -> Result<dash_sdk::dpp::address_funds::AddressWitness, ProtocolError> {
+        todo!()
     }
 }
 

@@ -147,6 +147,7 @@ fn get_path_elements(
                                 Element::CountSumTree(_, count, sum, _) => {
                                     format!("count_sum_tree:{}:{}", count, sum)
                                 }
+                                Element::ItemWithSumItem(items, _, items1) => todo!(),
                             };
 
                             format!(
@@ -162,6 +163,7 @@ fn get_path_elements(
                                     Element::BigSumTree(_, _, _) => "big_sum_tree",
                                     Element::CountTree(_, _, _) => "count_tree",
                                     Element::CountSumTree(_, _, _, _) => "count_sum_tree",
+                                    Element::ItemWithSumItem(items, _, items1) => todo!(),
                                 }
                             )
                         })
