@@ -3,6 +3,7 @@ use super::address::{
     AddressWithdrawalPlan, AddressWithdrawalRequest,
 };
 use super::identity::{classify_identity_transfer, IdentityTransferSelection};
+use super::top_up::{classify_address_top_up, AddressTopUpPlan};
 use super::types::{
     AddressSigner, IdentitySigner, IdentityTransferConfig, TransferInput, TransferOutput,
 };
@@ -26,6 +27,8 @@ use std::collections::BTreeMap;
 /// Supports the following state transition types:
 /// - [IdentityCreditTransferTransition](dpp::state_transition::identity_credit_transfer_transition::IdentityCreditTransferTransition)
 /// - [AddressFundsTransferTransition](dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition)
+/// - [AddressFundingFromAssetLockTransition](dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition)
+/// - [AddressCreditWithdrawalTransition](dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition)
 #[derive(Debug)]
 pub struct CreditTransfer {
     /// Fully classified transfer plan captured during build.
@@ -63,6 +66,7 @@ impl CreditTransfer {
                     .await
             }
             TransferKind::Address(plan) => plan.build_state_transition(sdk, settings).await,
+            TransferKind::AddressTopUp(plan) => plan.build_state_transition(sdk, settings).await,
             TransferKind::AddressWithdrawal(plan) => {
                 plan.build_state_transition(sdk, settings).await
             }
@@ -77,6 +81,8 @@ enum TransferKind {
     Identity(IdentityTransferSelection),
     /// Transfer between Platform addresses.
     Address(AddressTransferPlan),
+    /// Top up Platform addresses using asset lock proofs.
+    AddressTopUp(AddressTopUpPlan),
     /// Withdraw credits from Platform addresses to a Core script.
     AddressWithdrawal(AddressWithdrawalPlan),
 }
@@ -339,6 +345,24 @@ impl CreditTransferBuilder {
             .keys()
             .all(|output| matches!(output, TransferOutput::PlatformAddress(_)));
         if outputs_are_addresses {
+            if inputs
+                .iter()
+                .any(|input| matches!(input, TransferInput::AssetLock { .. }))
+            {
+                let signer = address_signer.clone().ok_or_else(|| {
+                    Error::InvalidCreditTransfer(
+                        "address transfers require an address signer configuration".to_string(),
+                    )
+                })?;
+                let transfer_kind = TransferKind::AddressTopUp(classify_address_top_up(
+                    &inputs,
+                    &outputs,
+                    signer,
+                    address_fee_strategy.clone(),
+                )?);
+                return Ok(CreditTransfer { transfer_kind });
+            }
+
             let signer = address_signer.ok_or_else(|| {
                 Error::InvalidCreditTransfer(
                     "address transfers require an address signer configuration".to_string(),
@@ -396,11 +420,13 @@ use broadcast_and_wait instead"
 mod tests {
     use super::*;
     use dpp::address_funds::{AddressWitness, PlatformAddress};
+    use dpp::dashcore::{Network, PrivateKey};
     use dpp::identifier::Identifier;
     use dpp::identity::core_script::CoreScript;
     use dpp::identity::signer::Signer;
     use dpp::identity::v0::IdentityV0;
     use dpp::platform_value::BinaryData;
+    use dpp::prelude::AssetLockProof;
     use dpp::ProtocolError;
     use std::collections::BTreeMap;
     use std::sync::Arc;
@@ -412,6 +438,14 @@ mod tests {
 
     fn platform_address(byte: u8) -> PlatformAddress {
         PlatformAddress::P2pkh([byte; 20])
+    }
+
+    fn asset_lock_input() -> TransferInput {
+        TransferInput::from_asset_lock(AssetLockProof::default(), test_asset_lock_private_key())
+    }
+
+    fn test_asset_lock_private_key() -> PrivateKey {
+        PrivateKey::from_byte_array(&[11u8; 32], Network::Testnet).expect("private key")
     }
 
     #[test]
@@ -506,6 +540,38 @@ mod tests {
         match transfer.transfer_kind {
             TransferKind::AddressWithdrawal(_) => {}
             _ => panic!("expected address withdrawal variant"),
+        }
+    }
+
+    #[test]
+    fn address_top_up_requires_signer() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(asset_lock_input())
+            .expect("input should be accepted");
+        builder
+            .output(platform_address(6), 12)
+            .expect("output should be accepted");
+
+        let err = builder.build().unwrap_err();
+        assert!(matches!(err, Error::InvalidCreditTransfer(_)));
+    }
+
+    #[test]
+    fn address_top_up_plan_succeeds() {
+        let mut builder = CreditTransfer::builder();
+        builder
+            .input(asset_lock_input())
+            .expect("input should be accepted");
+        builder.address_signer(Arc::new(TestAddressSigner));
+        builder
+            .output(platform_address(7), 18)
+            .expect("output should be accepted");
+
+        let transfer = builder.build().expect("transfer should be built");
+        match transfer.transfer_kind {
+            TransferKind::AddressTopUp(_) => {}
+            _ => panic!("expected address top up variant"),
         }
     }
 

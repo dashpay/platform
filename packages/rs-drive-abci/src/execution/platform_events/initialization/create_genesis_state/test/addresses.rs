@@ -34,6 +34,11 @@ impl<C> Platform<C> {
                 nonce: PLATFORM_ADDRESS_2_NONCE,
                 balance: PLATFORM_ADDRESS_2_BALANCE,
             }),
+            DriveOperation::SystemOperation(
+                drive::util::batch::SystemOperationType::AddToSystemCredits {
+                    amount: PLATFORM_ADDRESS_1_BALANCE + PLATFORM_ADDRESS_2_BALANCE,
+                },
+            ),
         ];
 
         self.drive.apply_drive_operations(

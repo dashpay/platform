@@ -6,6 +6,7 @@
 mod address;
 pub mod credit_transfer;
 mod identity;
+mod top_up;
 mod types;
 
 pub use credit_transfer::{CreditTransfer, CreditTransferBuilder};
