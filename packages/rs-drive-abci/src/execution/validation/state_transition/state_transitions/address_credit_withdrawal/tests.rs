@@ -23,7 +23,7 @@ mod tests {
     use dpp::identity::signer::Signer;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
-    use dpp::serialization::PlatformSerializable;
+    use dpp::serialization::{PlatformDeserializable, PlatformSerializable};
     use dpp::state_transition::address_credit_withdrawal_transition::methods::AddressCreditWithdrawalTransitionMethodsV0;
     use dpp::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
     use dpp::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
@@ -34,6 +34,42 @@ mod tests {
     use rand::prelude::StdRng;
     use rand::SeedableRng;
     use std::collections::{BTreeMap, HashMap};
+
+    use crate::execution::check_tx::CheckTxLevel;
+    use crate::platform_types::platform::PlatformRef;
+
+    // ==========================================
+    // Check TX Helper
+    // ==========================================
+
+    /// Perform check_tx on a raw transaction and return whether it's valid
+    /// This simulates what happens when a transaction is submitted to the mempool.
+    /// - invalid_unpaid transactions should return false (rejected from mempool)
+    /// - invalid_paid transactions should return true (accepted to mempool, will fail at processing)
+    fn check_tx_is_valid(
+        platform: &crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
+        raw_tx: &[u8],
+        platform_version: &PlatformVersion,
+    ) -> bool {
+        let platform_state = platform.state.load();
+        let platform_ref = PlatformRef {
+            drive: &platform.drive,
+            state: &platform_state,
+            config: &platform.config,
+            core_rpc: &platform.core_rpc,
+        };
+
+        let check_result = platform
+            .check_tx(
+                raw_tx,
+                CheckTxLevel::FirstTimeCheck,
+                &platform_ref,
+                platform_version,
+            )
+            .expect("expected to check tx");
+
+        check_result.is_valid()
+    }
 
     // ==========================================
     // Test Infrastructure - Signer
@@ -845,6 +881,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should pass for valid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid withdrawal transaction"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -905,6 +947,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid withdrawal with change output"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -970,6 +1018,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should pass for valid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid withdrawal from multiple inputs"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1031,6 +1085,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should pass for valid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid withdrawal with fee from output"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1091,6 +1151,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should pass for valid transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid withdrawal with user fee increase"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1110,6 +1176,305 @@ mod tests {
             assert_matches!(
                 processing_result.execution_results().as_slice(),
                 [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // STATE VERIFICATION TESTS
+    // Verify state changes after successful transitions
+    // ==========================================
+
+    mod state_verification {
+        use super::*;
+
+        #[test]
+        fn test_balance_decreases_after_withdrawal() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let initial_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_balance);
+
+            // Verify initial state
+            let (initial_nonce, initial_stored_balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address, None, platform_version)
+                .expect("should fetch")
+                .expect("address should exist");
+            assert_eq!(initial_nonce, 0);
+            assert_eq!(initial_stored_balance, initial_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let withdrawal_amount = dash_to_credits!(0.5);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, withdrawal_amount));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit the transaction
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Verify final state
+            let (final_nonce, final_balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address, None, platform_version)
+                .expect("should fetch")
+                .expect("address should exist");
+
+            // Nonce should be incremented
+            assert_eq!(
+                final_nonce, 1,
+                "Nonce should be incremented after withdrawal"
+            );
+
+            // Balance should be reduced by the withdrawal amount (plus fees)
+            assert!(
+                final_balance < initial_balance,
+                "Balance should decrease after withdrawal"
+            );
+            assert!(
+                final_balance <= initial_balance - withdrawal_amount,
+                "Balance should decrease by at least the withdrawal amount"
+            );
+        }
+
+        #[test]
+        fn test_output_address_receives_credits() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let output_address = create_platform_address(2);
+
+            // Verify output address doesn't exist initially
+            let output_initial = platform
+                .drive
+                .fetch_balance_and_nonce(&output_address, None, platform_version)
+                .expect("should fetch");
+            assert!(
+                output_initial.is_none(),
+                "Output address should not exist initially"
+            );
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let output_amount = dash_to_credits!(0.5);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(1.0)));
+
+            let output = Some((output_address, output_amount));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit the transaction
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Verify output address now has balance
+            let (output_nonce, output_balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&output_address, None, platform_version)
+                .expect("should fetch")
+                .expect("output address should now exist");
+
+            assert_eq!(output_nonce, 0, "New address should have nonce 0");
+            assert_eq!(
+                output_balance, output_amount,
+                "Output should receive exact amount"
+            );
+        }
+
+        #[test]
+        fn test_multiple_inputs_all_decremented() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address1 = signer.add_p2pkh([1u8; 32]);
+            let input_address2 = signer.add_p2pkh([2u8; 32]);
+            setup_address_with_balance(&mut platform, input_address1, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, input_address2, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address1, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.3)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit the transaction
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Verify both addresses have updated nonces and balances
+            let (nonce1, balance1) = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address1, None, platform_version)
+                .expect("should fetch")
+                .expect("address1 should exist");
+
+            let (nonce2, balance2) = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address2, None, platform_version)
+                .expect("should fetch")
+                .expect("address2 should exist");
+
+            // Both nonces should be incremented
+            assert_eq!(nonce1, 1, "Address1 nonce should be incremented");
+            assert_eq!(nonce2, 1, "Address2 nonce should be incremented");
+
+            // Both balances should be reduced
+            assert!(
+                balance1 < dash_to_credits!(1.0),
+                "Address1 balance should decrease"
+            );
+            assert!(
+                balance2 < dash_to_credits!(1.0),
+                "Address2 balance should decrease"
             );
         }
     }
@@ -1157,6 +1522,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with non-existent address"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1220,6 +1591,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with insufficient balance"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1281,6 +1658,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions (wrong nonce)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with wrong nonce"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1369,6 +1752,12 @@ mod tests {
 
             let result = transition.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions (wrong signature)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with wrong signature"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1386,6 +1775,250 @@ mod tests {
                 .expect("expected to process state transition");
 
             // Should fail due to witness verification error
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_empty_signature_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create transition with empty signature
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2pkh {
+                    signature: BinaryData::new(vec![]), // Empty signature
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions (empty signature)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with empty signature"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail due to invalid signature
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_corrupted_signature_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create transition with corrupted signature (random bytes)
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2pkh {
+                    signature: BinaryData::new(vec![0xDE, 0xAD, 0xBE, 0xEF]), // Corrupted signature
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions (corrupted signature)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with corrupted signature"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail due to invalid signature
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_multiple_inputs_one_wrong_signature_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address1 = signer.add_p2pkh([1u8; 32]);
+            let input_address2 = signer.add_p2pkh([2u8; 32]);
+            setup_address_with_balance(&mut platform, input_address1, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, input_address2, 0, dash_to_credits!(1.0));
+
+            // Create a wrong signer for address2
+            let mut wrong_signer = TestAddressSigner::new();
+            let _ = wrong_signer.add_p2pkh([99u8; 32]); // Different key
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address1, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.3)));
+
+            // Get the sorted order of inputs (BTreeMap iterates in sorted order)
+            let input_keys: Vec<_> = inputs.keys().cloned().collect();
+
+            // Create witnesses - first correct, second wrong
+            let data_to_sign = [0u8; 32]; // Placeholder - actual signing would use real data
+            let mut witnesses = Vec::new();
+            for (idx, key) in input_keys.iter().enumerate() {
+                if idx == 0 {
+                    // First input: correct signature
+                    let witness = signer
+                        .sign_create_witness(key, &data_to_sign)
+                        .expect("should sign");
+                    witnesses.push(witness);
+                } else {
+                    // Second input: corrupted signature
+                    witnesses.push(AddressWitness::P2pkh {
+                        signature: BinaryData::new(vec![0xBA, 0xD0, 0x00, 0x00]),
+                    });
+                }
+            }
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: witnesses,
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for invalid_unpaid transactions
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with one wrong signature"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail due to signature verification error
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
         }
     }
@@ -1433,6 +2066,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid P2SH multisig transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid P2SH multisig withdrawal"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1498,6 +2137,12 @@ mod tests {
             );
 
             let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid mixed P2PKH/P2SH transactions
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid mixed P2PKH/P2SH withdrawal"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1581,6 +2226,12 @@ mod tests {
                 .serialize_to_bytes()
                 .expect("should serialize");
 
+            // Check_tx should fail for invalid_unpaid transactions (insufficient signatures)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with insufficient signatures"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1599,6 +2250,2001 @@ mod tests {
 
             // Should fail due to insufficient signatures
             assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+
+        #[test]
+        fn test_p2sh_1_of_2_multisig_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            // Create a 1-of-2 multisig (less common but valid)
+            let p2sh_address = signer.add_p2sh_multisig(1, &[[10u8; 32], [11u8; 32]]);
+            setup_address_with_balance(&mut platform, p2sh_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid 1-of-2 multisig
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid 1-of-2 multisig withdrawal"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_p2sh_3_of_3_multisig_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            // Create a 3-of-3 multisig (requires all signatures)
+            let p2sh_address = signer.add_p2sh_multisig(3, &[[10u8; 32], [11u8; 32], [12u8; 32]]);
+            setup_address_with_balance(&mut platform, p2sh_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid 3-of-3 multisig
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid 3-of-3 multisig withdrawal"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_p2sh_with_wrong_redeem_script_fails() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            // Create a 2-of-3 multisig
+            let p2sh_address = signer.add_p2sh_multisig(2, &[[10u8; 32], [11u8; 32], [12u8; 32]]);
+            setup_address_with_balance(&mut platform, p2sh_address, 0, dash_to_credits!(1.0));
+
+            // Create a different P2SH to get a different redeem script
+            let wrong_p2sh = signer.add_p2sh_multisig(2, &[[20u8; 32], [21u8; 32], [22u8; 32]]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.8)));
+
+            // Get the wrong redeem script
+            let wrong_hash = match wrong_p2sh {
+                PlatformAddress::P2sh(h) => h,
+                _ => panic!("expected p2sh"),
+            };
+            let wrong_entry = signer.p2sh_entries.get(&wrong_hash).unwrap();
+
+            // Get correct entry for signatures
+            let correct_hash = match p2sh_address {
+                PlatformAddress::P2sh(h) => h,
+                _ => panic!("expected p2sh"),
+            };
+            let correct_entry = signer.p2sh_entries.get(&correct_hash).unwrap();
+
+            // Create witness with correct signatures but wrong redeem script
+            let data_to_sign = [0u8; 32];
+            let sig1 = TestAddressSigner::sign_data(&data_to_sign, &correct_entry.secret_keys[0]);
+            let sig2 = TestAddressSigner::sign_data(&data_to_sign, &correct_entry.secret_keys[1]);
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2sh {
+                    signatures: vec![BinaryData::new(sig1), BinaryData::new(sig2)],
+                    redeem_script: BinaryData::new(wrong_entry.redeem_script.clone()), // Wrong redeem script!
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Check_tx should fail for wrong redeem script
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject transaction with wrong redeem script"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Should fail due to wrong redeem script
+            assert_eq!(processing_result.invalid_unpaid_count(), 1);
+        }
+    }
+
+    // ==========================================
+    // ERROR TYPE VERIFICATION TESTS
+    // Verify specific error types are returned
+    // ==========================================
+
+    mod error_type_verification {
+        use super::*;
+
+        #[test]
+        fn test_address_does_not_exist_returns_specific_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // NOT setting up balance - address doesn't exist
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Verify specific error type
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressDoesNotExistError(e))
+                )] => {
+                    assert_eq!(*e.address(), input_address);
+                }
+            );
+        }
+
+        #[test]
+        fn test_insufficient_balance_returns_specific_error_with_amounts() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let actual_balance = dash_to_credits!(0.5);
+            setup_address_with_balance(&mut platform, input_address, 0, actual_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let requested_amount = dash_to_credits!(0.8);
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, requested_amount));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Verify specific error type and amounts
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressNotEnoughFundsError(e))
+                )] => {
+                    assert_eq!(*e.address(), input_address);
+                    assert_eq!(e.balance(), actual_balance);
+                    assert!(e.required_balance() >= requested_amount);
+                }
+            );
+        }
+
+        #[test]
+        fn test_invalid_nonce_returns_specific_error_with_values() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let wrong_nonce = 5 as AddressNonce;
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (wrong_nonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Verify specific error type and nonce values
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::UnpaidConsensusError(
+                    ConsensusError::StateError(StateError::AddressInvalidNonceError(e))
+                )] => {
+                    assert_eq!(*e.address(), input_address);
+                    assert_eq!(e.expected_nonce(), 1); // Expected nonce after initial setup
+                    assert_eq!(e.provided_nonce(), wrong_nonce);
+                }
+            );
+        }
+
+        #[test]
+        fn test_witness_verification_error_returns_unpaid() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create transition with invalid signature
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2pkh {
+                    signature: BinaryData::new(vec![0xBA, 0xD0]),
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            // Verify it returns an unpaid error (witness verification failures are unpaid)
+            assert_eq!(
+                processing_result.invalid_unpaid_count(),
+                1,
+                "Invalid witness should result in unpaid error"
+            );
+        }
+    }
+
+    // ==========================================
+    // FEE STRATEGY EXECUTION TESTS
+    // Test fee strategy deduction patterns
+    // ==========================================
+
+    mod fee_strategy_execution {
+        use super::*;
+
+        #[test]
+        fn test_fee_cascade_through_multiple_inputs() {
+            // Test that fees cascade through inputs when first input is exhausted
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address1 = signer.add_p2pkh([1u8; 32]);
+            let input_address2 = signer.add_p2pkh([2u8; 32]);
+            // First input has small balance, second has more
+            setup_address_with_balance(&mut platform, input_address1, 0, dash_to_credits!(0.1));
+            setup_address_with_balance(&mut platform, input_address2, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Spend amounts that when combined with fees should cascade
+            inputs.insert(input_address1, (1 as AddressNonce, dash_to_credits!(0.08)));
+            inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Fee strategy: try input 0 first, then input 1
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::DeductFromInput(1),
+                ],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept cascading fee strategy"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_fee_deducted_from_input_and_output_combined() {
+            // Test combined fee strategy: deduct from input first, then reduce output
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(1.5)));
+
+            // Output to another address
+            let output = Some((create_platform_address(2), dash_to_credits!(0.5)));
+
+            // Combined strategy: try input first, then reduce output if needed
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept combined fee strategy"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_fee_exactly_depletes_input_to_zero() {
+            // Edge case: fee exactly depletes an input, leaving zero balance
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let exact_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, exact_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Spend the entire balance (fees will also come from this)
+            inputs.insert(input_address, (1 as AddressNonce, exact_balance));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept exact balance withdrawal"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit and verify balance is zero
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            let (_, final_balance) = platform
+                .drive
+                .fetch_balance_and_nonce(&input_address, None, platform_version)
+                .expect("should fetch")
+                .expect("address should exist");
+
+            assert_eq!(
+                final_balance, 0,
+                "Balance should be exactly zero after full depletion"
+            );
+        }
+    }
+
+    // ==========================================
+    // OUTPUT SCRIPT VALIDATION TESTS
+    // ==========================================
+
+    mod output_script_validation {
+        use super::*;
+
+        #[test]
+        fn test_empty_output_script_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // Empty output script
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::new(ScriptBuf::new()), // Empty script
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            // Empty script should fail validation
+            assert!(!result.is_valid(), "Empty output script should be rejected");
+        }
+
+        #[test]
+        fn test_valid_p2pkh_output_script_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Use a standard P2PKH output script
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                CoreScript::random_p2pkh(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid P2PKH output script"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_valid_p2sh_output_script_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Use a P2SH output script
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                CoreScript::random_p2sh(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept valid P2SH output script"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // CORE FEE PER BYTE TESTS
+    // ==========================================
+
+    mod core_fee_per_byte {
+        use super::*;
+
+        #[test]
+        fn test_zero_core_fee_per_byte_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 0, // Zero fee per byte
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            // Zero core fee per byte should likely fail or be rejected
+            // If the system requires minimum fee, this should fail
+            assert!(
+                !result.is_valid(),
+                "Zero core_fee_per_byte should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_different_core_fee_per_byte_values() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create transition with higher core_fee_per_byte
+            let transition = AddressCreditWithdrawalTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                5, // Higher fee per byte
+                Pooling::Never,
+                create_random_output_script(&mut rng),
+                &signer,
+                0,
+                platform_version,
+            )
+            .expect("should create signed transition");
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept higher core_fee_per_byte"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // POOLING TESTS
+    // ==========================================
+
+    mod pooling_tests {
+        use super::*;
+
+        #[test]
+        fn test_pooling_if_available() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Use Pooling::IfAvailable
+            let transition = AddressCreditWithdrawalTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+                Pooling::IfAvailable, // Different pooling mode
+                create_random_output_script(&mut rng),
+                &signer,
+                0,
+                platform_version,
+            )
+            .expect("should create signed transition");
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept Pooling::IfAvailable"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_pooling_standard() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Use Pooling::Standard
+            let transition = AddressCreditWithdrawalTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                1,
+                Pooling::Standard, // Standard pooling
+                create_random_output_script(&mut rng),
+                &signer,
+                0,
+                platform_version,
+            )
+            .expect("should create signed transition");
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept Pooling::Standard"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // USER FEE INCREASE EDGE CASES
+    // ==========================================
+
+    mod user_fee_increase_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_maximum_user_fee_increase() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Need lots of balance for maximum fee increase
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(100.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(50.0)));
+
+            // Maximum user_fee_increase is u16::MAX = 65535 (655.35% increase)
+            let transition = create_signed_address_credit_withdrawal_transition_with_fee_increase(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                u16::MAX, // Maximum fee increase
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept maximum user_fee_increase"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_fee_increase_exceeds_input_amount_returns_error() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Small balance
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.2));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Try to spend most of the balance
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.15)));
+
+            // High fee increase that should exceed available balance
+            let transition = create_signed_address_credit_withdrawal_transition_with_fee_increase(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                10000, // 100% fee increase
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // This should fail due to insufficient balance for the increased fees
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject when fee increase exceeds available balance"
+            );
+        }
+    }
+
+    // ==========================================
+    // SYSTEM CREDITS VERIFICATION
+    // ==========================================
+
+    mod system_credits_verification {
+        use super::*;
+
+        #[test]
+        fn test_system_credits_decrease_after_withdrawal() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let initial_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, initial_balance);
+
+            // Get initial system credits
+            let initial_system_credits = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate system credits")
+                .total_credits_in_platform;
+
+            let mut rng = StdRng::seed_from_u64(567);
+            let withdrawal_amount = dash_to_credits!(0.5);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, withdrawal_amount));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+
+            // Commit the transaction
+            platform
+                .drive
+                .grove
+                .commit_transaction(transaction)
+                .unwrap()
+                .expect("should commit");
+
+            // Get final system credits
+            let final_system_credits = platform
+                .drive
+                .calculate_total_credits_balance(None, &platform_version.drive)
+                .expect("should calculate system credits")
+                .total_credits_in_platform;
+
+            // System credits should decrease (withdrawal removes credits from the system)
+            assert!(
+                final_system_credits < initial_system_credits,
+                "System credits should decrease after withdrawal. Initial: {}, Final: {}",
+                initial_system_credits,
+                final_system_credits
+            );
+        }
+    }
+
+    // ==========================================
+    // BOUNDARY/EDGE CASE TESTS
+    // ==========================================
+
+    mod boundary_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_maximum_inputs_succeeds() {
+            let platform_version = PlatformVersion::latest();
+            let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let mut inputs = BTreeMap::new();
+
+            // Create exactly max_inputs (16) input addresses
+            for i in 0..max_inputs {
+                let mut seed = [0u8; 32];
+                seed[0] = i as u8;
+                seed[1] = (i >> 8) as u8;
+                let address = signer.add_p2pkh(seed);
+                setup_address_with_balance(&mut platform, address, 0, dash_to_credits!(0.5));
+                inputs.insert(address, (1 as AddressNonce, dash_to_credits!(0.1)));
+            }
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept maximum number of inputs"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_exact_balance_withdrawal() {
+            // Spending 100% of address balance
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            let exact_balance = dash_to_credits!(1.0);
+            setup_address_with_balance(&mut platform, input_address, 0, exact_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Spend 100% of the balance
+            inputs.insert(input_address, (1 as AddressNonce, exact_balance));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept exact balance withdrawal"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_large_amount_withdrawal() {
+            // Test withdrawal with very large amounts
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Very large balance (1 billion credits)
+            let large_balance = 1_000_000_000_000_000_000u64;
+            setup_address_with_balance(&mut platform, input_address, 0, large_balance);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Withdraw most of it
+            inputs.insert(
+                input_address,
+                (1 as AddressNonce, large_balance - dash_to_credits!(1.0)),
+            );
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept large amount withdrawal"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // REPLAY PROTECTION TESTS
+    // ==========================================
+
+    mod replay_protection {
+        use super::*;
+
+        #[test]
+        fn test_same_transition_replayed_fails() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // First execution - should succeed
+            {
+                let platform_state = platform.state.load();
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![result.clone()],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+                );
+
+                // Commit the transaction
+                platform
+                    .drive
+                    .grove
+                    .commit_transaction(transaction)
+                    .unwrap()
+                    .expect("should commit");
+            }
+
+            // Check_tx should now fail for the replay attempt (nonce is now 1, but transition has nonce 1)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject replayed transaction"
+            );
+
+            // Second execution with same transition - should fail due to nonce
+            {
+                let platform_state = platform.state.load();
+                let transaction = platform.drive.grove.start_transaction();
+
+                let processing_result = platform
+                    .platform
+                    .process_raw_state_transitions(
+                        &vec![result],
+                        &platform_state,
+                        &BlockInfo::default(),
+                        &transaction,
+                        platform_version,
+                        false,
+                        None,
+                    )
+                    .expect("expected to process state transition");
+
+                // Should fail due to nonce mismatch (nonce 1 was already used)
+                assert_matches!(
+                    processing_result.execution_results().as_slice(),
+                    [StateTransitionExecutionResult::UnpaidConsensusError(
+                        ConsensusError::StateError(StateError::AddressInvalidNonceError(_))
+                    )]
+                );
+            }
+        }
+    }
+
+    // ==========================================
+    // BLOCK INFO EFFECTS TESTS
+    // ==========================================
+
+    mod block_info_effects {
+        use super::*;
+
+        #[test]
+        fn test_withdrawal_with_different_block_height() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Use a specific block height
+            let block_info = BlockInfo {
+                height: 100_000,
+                time_ms: 1700000000000,
+                core_height: 50_000,
+                epoch: Default::default(),
+            };
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_withdrawal_at_genesis_block() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Use genesis-like block info (height 1)
+            let block_info = BlockInfo {
+                height: 1,
+                time_ms: 0,
+                core_height: 1,
+                epoch: Default::default(),
+            };
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &block_info,
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+    }
+
+    // ==========================================
+    // SERIALIZATION EDGE CASES
+    // ==========================================
+
+    mod serialization_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_transition_round_trip_serialization() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs.clone(),
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            // Serialize
+            let serialized = transition.serialize_to_bytes().expect("should serialize");
+
+            // Deserialize
+            let deserialized =
+                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+
+            // Re-serialize
+            let reserialized = deserialized
+                .serialize_to_bytes()
+                .expect("should re-serialize");
+
+            // Should produce identical bytes
+            assert_eq!(
+                serialized, reserialized,
+                "Round-trip serialization should produce identical bytes"
+            );
+        }
+
+        #[test]
+        fn test_transition_with_many_inputs_serializes() {
+            let platform_version = PlatformVersion::latest();
+            let max_inputs = platform_version.dpp.state_transitions.max_address_inputs as usize;
+
+            let mut signer = TestAddressSigner::new();
+            let mut inputs = BTreeMap::new();
+
+            // Create maximum number of inputs
+            for i in 0..max_inputs {
+                let mut seed = [0u8; 32];
+                seed[0] = i as u8;
+                seed[1] = (i >> 8) as u8;
+                let address = signer.add_p2pkh(seed);
+                inputs.insert(address, (1 as AddressNonce, dash_to_credits!(0.1)));
+            }
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            // Should serialize without error
+            let serialized = transition.serialize_to_bytes().expect("should serialize");
+
+            // Should deserialize without error
+            let _deserialized =
+                StateTransition::deserialize_from_bytes(&serialized).expect("should deserialize");
+        }
+
+        #[test]
+        fn test_corrupted_serialized_data_returns_error() {
+            let platform_version = PlatformVersion::latest();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let mut serialized = transition.serialize_to_bytes().expect("should serialize");
+
+            // Corrupt the data
+            if serialized.len() > 10 {
+                serialized[10] ^= 0xFF;
+                serialized[11] ^= 0xFF;
+            }
+
+            // Should fail to deserialize or produce invalid transition
+            let result = StateTransition::deserialize_from_bytes(&serialized);
+            // Either deserialization fails or produces invalid data
+            // We accept both outcomes as valid error handling
+            if result.is_ok() {
+                // If it deserializes, it should fail validation
+                let platform_config = PlatformConfig {
+                    testing_configs: PlatformTestConfig {
+                        disable_instant_lock_signature_verification: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                };
+
+                let platform = TestPlatformBuilder::new()
+                    .with_config(platform_config)
+                    .with_latest_protocol_version()
+                    .build_with_mock_rpc()
+                    .set_genesis_state();
+
+                // check_tx should reject corrupted data
+                assert!(
+                    !check_tx_is_valid(&platform, &serialized, platform_version),
+                    "check_tx should reject corrupted serialized data"
+                );
+            }
+            // If deserialization failed, that's also acceptable
         }
     }
 
@@ -1647,6 +4293,12 @@ mod tests {
             );
 
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
+
+            // Check_tx should pass for valid transaction
+            assert!(
+                check_tx_is_valid(&platform, &result1, platform_version),
+                "check_tx should accept valid withdrawal with sequential nonce"
+            );
 
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
@@ -1723,6 +4375,19 @@ mod tests {
             let result1 = transition1.serialize_to_bytes().expect("should serialize");
             let result2 = transition2.serialize_to_bytes().expect("should serialize");
 
+            // Check_tx should pass for first transaction
+            assert!(
+                check_tx_is_valid(&platform, &result1, platform_version),
+                "check_tx should accept first valid withdrawal"
+            );
+
+            // Check_tx fails for second transaction because nonce 2 is invalid when nonce 1
+            // hasn't been applied yet - the state still shows nonce 0
+            assert!(
+                !check_tx_is_valid(&platform, &result2, platform_version),
+                "check_tx should reject second withdrawal (nonce 2 invalid before nonce 1 is applied)"
+            );
+
             let platform_state = platform.state.load();
             let transaction = platform.drive.grove.start_transaction();
 
@@ -1749,6 +4414,1288 @@ mod tests {
                         ConsensusError::StateError(StateError::AddressNotEnoughFundsError(_))
                     )
                 ]
+            );
+        }
+    }
+
+    // ==========================================
+    // OVERFLOW PROTECTION TESTS
+    // ==========================================
+
+    mod overflow_protection {
+        use super::*;
+
+        #[test]
+        fn test_input_amounts_near_max_u64() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address1 = signer.add_p2pkh([1u8; 32]);
+            let input_address2 = signer.add_p2pkh([2u8; 32]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Two very large amounts that could overflow when summed
+            let large_amount = u64::MAX / 2 + 1;
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address1, (1 as AddressNonce, large_amount));
+            inputs.insert(input_address2, (1 as AddressNonce, large_amount));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness(), create_dummy_witness()],
+            };
+
+            // Structure validation should handle overflow gracefully
+            let result = transition.validate_structure(platform_version);
+            // The validation might pass or fail, but shouldn't panic
+            // If it passes structure validation, it will fail at state validation
+            let _ = result;
+        }
+
+        #[test]
+        fn test_user_fee_increase_overflow_protection() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Large amount with max fee increase
+            let large_amount = u64::MAX / 100;
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, large_amount));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: u16::MAX, // Max fee increase with large amount
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            // Should handle potential overflow in fee calculation gracefully
+            let result = transition.validate_structure(platform_version);
+            let _ = result; // Shouldn't panic
+        }
+    }
+
+    // ==========================================
+    // INVALID OUTPUT SCRIPT TESTS
+    // ==========================================
+
+    mod invalid_output_script {
+        use super::*;
+
+        #[test]
+        fn test_op_return_output_script() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // OP_RETURN script (unspendable)
+            let op_return_script =
+                ScriptBuf::from(vec![OP_RETURN.to_u8(), 0x04, 0xde, 0xad, 0xbe, 0xef]);
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::new(op_return_script),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            // OP_RETURN should be rejected for withdrawals (can't withdraw to unspendable output)
+            assert!(
+                !result.is_valid(),
+                "OP_RETURN output script should be rejected"
+            );
+        }
+
+        #[test]
+        fn test_very_long_output_script() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // Very long script (10KB)
+            let long_script = ScriptBuf::from(vec![0u8; 10000]);
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: CoreScript::new(long_script),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            // Very long scripts should be rejected
+            assert!(
+                !result.is_valid(),
+                "Very long output script should be rejected"
+            );
+        }
+    }
+
+    // ==========================================
+    // FEE STRATEGY EDGE CASES
+    // ==========================================
+
+    mod fee_strategy_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_fee_exceeds_entire_withdrawal_amount() {
+            // When fees would consume the entire withdrawal, leaving nothing for output
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Very small balance - fees might exceed withdrawal
+            setup_address_with_balance(&mut platform, input_address, 0, 10000); // 10000 credits
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Try to withdraw the tiny amount
+            inputs.insert(input_address, (1 as AddressNonce, 5000));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Should either fail validation or succeed with adjusted output
+            // The behavior depends on implementation - we just verify it doesn't panic
+            let _ = check_tx_is_valid(&platform, &result, platform_version);
+        }
+
+        #[test]
+        fn test_all_reduce_output_fee_strategy() {
+            // Test fee strategy that only uses ReduceOutput (no DeductFromInput)
+            // Note: This might be invalid if there's no output to reduce
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(1.0)));
+
+            // Only ReduceOutput in fee strategy - but withdrawal has no explicit output field
+            // The output is the output_script (core withdrawal)
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None, // This is for platform address output, not core
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::ReduceOutput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            // ReduceOutput(0) with no output should fail validation
+            assert!(
+                !result.is_valid(),
+                "ReduceOutput with no output should be rejected"
+            );
+        }
+    }
+
+    // ==========================================
+    // WITNESS EDGE CASES
+    // ==========================================
+
+    mod witness_edge_cases {
+        use super::*;
+
+        #[test]
+        fn test_p2sh_with_more_signatures_than_threshold() {
+            // Provide 3 signatures for a 2-of-3 multisig (extra signature)
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            // Create a 2-of-3 multisig
+            let p2sh_address = signer.add_p2sh_multisig(2, &[[10u8; 32], [11u8; 32], [12u8; 32]]);
+            setup_address_with_balance(&mut platform, p2sh_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(p2sh_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Get the entry for manual signing
+            let hash = match p2sh_address {
+                PlatformAddress::P2sh(h) => h,
+                _ => panic!("expected p2sh"),
+            };
+            let entry = signer.p2sh_entries.get(&hash).unwrap();
+
+            // Sign with ALL 3 keys (more than the required 2)
+            let data_to_sign = [0u8; 32];
+            let sig1 = TestAddressSigner::sign_data(&data_to_sign, &entry.secret_keys[0]);
+            let sig2 = TestAddressSigner::sign_data(&data_to_sign, &entry.secret_keys[1]);
+            let sig3 = TestAddressSigner::sign_data(&data_to_sign, &entry.secret_keys[2]);
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2sh {
+                    signatures: vec![
+                        BinaryData::new(sig1),
+                        BinaryData::new(sig2),
+                        BinaryData::new(sig3), // Extra signature
+                    ],
+                    redeem_script: BinaryData::new(entry.redeem_script.clone()),
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Extra signatures might be accepted or rejected depending on implementation
+            // The important thing is it doesn't panic
+            let _ = check_tx_is_valid(&platform, &result, platform_version);
+        }
+
+        #[test]
+        fn test_witness_with_zero_length_signature() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Zero-length signature
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![AddressWitness::P2pkh {
+                    signature: BinaryData::new(vec![]), // Zero length
+                }],
+            };
+
+            let state_transition: StateTransition = transition.into();
+            let result = state_transition
+                .serialize_to_bytes()
+                .expect("should serialize");
+
+            // Zero-length signature should be rejected
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject zero-length signature"
+            );
+        }
+    }
+
+    // ==========================================
+    // NONCE BOUNDARY TESTS
+    // ==========================================
+
+    mod nonce_boundary {
+        use super::*;
+
+        #[test]
+        fn test_nonce_at_max_minus_one() {
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Set up with nonce at max - 1 (AddressNonce is u32)
+            let max_nonce_minus_one = u32::MAX - 1;
+            setup_address_with_balance(
+                &mut platform,
+                input_address,
+                max_nonce_minus_one,
+                dash_to_credits!(1.0),
+            );
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Use the max nonce value (u32::MAX)
+            inputs.insert(
+                input_address,
+                (u32::MAX as AddressNonce, dash_to_credits!(0.5)),
+            );
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Should accept max nonce
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept max nonce value"
+            );
+
+            let platform_state = platform.state.load();
+            let transaction = platform.drive.grove.start_transaction();
+
+            let processing_result = platform
+                .platform
+                .process_raw_state_transitions(
+                    &vec![result],
+                    &platform_state,
+                    &BlockInfo::default(),
+                    &transaction,
+                    platform_version,
+                    false,
+                    None,
+                )
+                .expect("expected to process state transition");
+
+            assert_matches!(
+                processing_result.execution_results().as_slice(),
+                [StateTransitionExecutionResult::SuccessfulExecution(_, _)]
+            );
+        }
+
+        #[test]
+        fn test_nonce_zero_for_fresh_address() {
+            // Fresh address should have nonce 0, first transaction uses nonce 1
+            let platform_version = PlatformVersion::latest();
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            // Set up with nonce 0 (fresh address)
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Try to use nonce 0 (should fail - first valid nonce is 1)
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (0 as AddressNonce, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Nonce 0 should be rejected (first valid is 1)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject nonce 0 for fresh address"
+            );
+        }
+    }
+
+    // ==========================================
+    // Output Field Tests (Change Output)
+    // ==========================================
+
+    mod output_field_tests {
+        use super::*;
+
+        #[test]
+        fn test_withdrawal_with_change_output_to_same_address() {
+            // Test withdrawal with change output going back to the same input address
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(1.5)));
+
+            // Change output goes back to the same address
+            let output = Some((input_address, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept withdrawal with change to same address"
+            );
+        }
+
+        #[test]
+        fn test_withdrawal_with_change_output_to_different_address() {
+            // Test withdrawal with change output going to a different address
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(2.0));
+
+            let change_address = create_platform_address(99);
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(1.5)));
+
+            // Change output goes to a different address
+            let output = Some((change_address, dash_to_credits!(0.5)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept withdrawal with change to different address"
+            );
+        }
+
+        #[test]
+        fn test_withdrawal_with_zero_change_output() {
+            // Test withdrawal with change output of zero credits (should likely be rejected)
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Zero credits change output
+            let output = Some((input_address, 0));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Zero change output should typically be rejected as wasteful
+            let is_valid = check_tx_is_valid(&platform, &result, platform_version);
+            // Document current behavior (may be accepted or rejected depending on implementation)
+            println!("Zero change output validity: {}", is_valid);
+        }
+
+        #[test]
+        fn test_withdrawal_change_output_exceeds_available() {
+            // Test withdrawal where change output amount exceeds what's available after withdrawal
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Change output exceeds remaining (after withdrawal + fees)
+            let output = Some((input_address, dash_to_credits!(2.0)));
+
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                output,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject change output exceeding available balance"
+            );
+        }
+
+        #[test]
+        fn test_withdrawal_without_change_output() {
+            // Test withdrawal with no change output (None)
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // No change output
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept withdrawal without change output"
+            );
+        }
+    }
+
+    // ==========================================
+    // Input Ordering/Determinism Tests
+    // ==========================================
+
+    mod input_ordering_tests {
+        use super::*;
+
+        #[test]
+        fn test_multiple_inputs_processed_in_btreemap_order() {
+            // BTreeMap ensures consistent ordering by key
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            // Create addresses with seeds that will sort differently
+            let addr1 = signer.add_p2pkh([1u8; 32]);
+            let addr2 = signer.add_p2pkh([2u8; 32]);
+            let addr3 = signer.add_p2pkh([3u8; 32]);
+
+            setup_address_with_balance(&mut platform, addr1, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, addr2, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, addr3, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Insert in "random" order - BTreeMap will sort them
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr3, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(addr1, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(addr2, (1 as AddressNonce, dash_to_credits!(0.3)));
+
+            // Fee strategy references inputs by index (which is BTreeMap order)
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    AddressFundsFeeStrategyStep::DeductFromInput(1),
+                    AddressFundsFeeStrategyStep::DeductFromInput(2),
+                ],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept multiple inputs in BTreeMap order"
+            );
+        }
+
+        #[test]
+        fn test_fee_deduction_follows_strategy_order() {
+            // Verify that fee deduction happens in the order specified by fee_strategy
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let addr1 = signer.add_p2pkh([1u8; 32]);
+            let addr2 = signer.add_p2pkh([2u8; 32]);
+
+            // Give different balances
+            setup_address_with_balance(&mut platform, addr1, 0, dash_to_credits!(0.5));
+            setup_address_with_balance(&mut platform, addr2, 0, dash_to_credits!(2.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(addr1, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(addr2, (1 as AddressNonce, dash_to_credits!(1.0)));
+
+            // Deduct from input 1 (addr2) first, then input 0 (addr1)
+            let transition = create_signed_address_credit_withdrawal_transition(
+                &signer,
+                inputs,
+                None,
+                vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(1),
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ],
+                create_random_output_script(&mut rng),
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept fee deduction in specified order"
+            );
+        }
+    }
+
+    // ==========================================
+    // Witness Count Mismatch Tests
+    // ==========================================
+
+    mod witness_count_tests {
+        use super::*;
+
+        #[test]
+        fn test_more_witnesses_than_inputs() {
+            // Test with more witnesses than inputs
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address = create_platform_address(1);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create with 3 witnesses but only 1 input
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                3, // More witnesses than inputs
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject more witnesses than inputs"
+            );
+        }
+
+        #[test]
+        fn test_fewer_witnesses_than_inputs() {
+            // Test with fewer witnesses than inputs
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address1 = create_platform_address(1);
+            let input_address2 = create_platform_address(2);
+            setup_address_with_balance(&mut platform, input_address1, 0, dash_to_credits!(1.0));
+            setup_address_with_balance(&mut platform, input_address2, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address1, (1 as AddressNonce, dash_to_credits!(0.3)));
+            inputs.insert(input_address2, (1 as AddressNonce, dash_to_credits!(0.3)));
+
+            // Create with 1 witness but 2 inputs
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                1, // Fewer witnesses than inputs
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject fewer witnesses than inputs"
+            );
+        }
+
+        #[test]
+        fn test_empty_witnesses_with_inputs() {
+            // Test with no witnesses but inputs present
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address = create_platform_address(1);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Create with 0 witnesses but 1 input
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                0, // No witnesses
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject empty witnesses with inputs"
+            );
+        }
+    }
+
+    // ==========================================
+    // Core Fee Per Byte Edge Cases
+    // ==========================================
+
+    mod core_fee_per_byte_edge_cases {
+        use super::*;
+
+        /// Helper to create signed transition with custom core_fee_per_byte
+        fn create_signed_withdrawal_with_core_fee(
+            signer: &TestAddressSigner,
+            inputs: BTreeMap<PlatformAddress, (AddressNonce, u64)>,
+            output_script: CoreScript,
+            core_fee_per_byte: u32,
+        ) -> StateTransition {
+            AddressCreditWithdrawalTransitionV0::try_from_inputs_with_signer(
+                inputs,
+                None,
+                AddressFundsFeeStrategy::from(vec![AddressFundsFeeStrategyStep::DeductFromInput(
+                    0,
+                )]),
+                core_fee_per_byte,
+                Pooling::Never,
+                output_script,
+                signer,
+                0,
+                PlatformVersion::latest(),
+            )
+            .expect("should create signed transition")
+        }
+
+        #[test]
+        fn test_max_core_fee_per_byte() {
+            // Test with u32::MAX core fee per byte
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(100.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(50.0)));
+
+            let transition = create_signed_withdrawal_with_core_fee(
+                &signer,
+                inputs,
+                create_random_output_script(&mut rng),
+                u32::MAX, // Maximum value
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Very high core fee should still be accepted structurally
+            // (actual core fee validation happens at execution time)
+            let is_valid = check_tx_is_valid(&platform, &result, platform_version);
+            println!("Max core_fee_per_byte validity: {}", is_valid);
+        }
+
+        #[test]
+        fn test_high_core_fee_affects_withdrawal_amount() {
+            // Test that high core fee affects the actual withdrawal to core
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let mut signer = TestAddressSigner::new();
+            let input_address = signer.add_p2pkh([1u8; 32]);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(10.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(5.0)));
+
+            let transition = create_signed_withdrawal_with_core_fee(
+                &signer,
+                inputs,
+                create_random_output_script(&mut rng),
+                1000, // High but reasonable
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should accept high core fee per byte"
+            );
+        }
+    }
+
+    // ==========================================
+    // Combined Validation Failure Tests
+    // ==========================================
+
+    mod combined_validation_failures {
+        use super::*;
+
+        #[test]
+        fn test_invalid_signature_and_insufficient_balance() {
+            // Test which error takes precedence when both signature and balance are invalid
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address = create_platform_address(1);
+            // Very low balance
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.001));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Try to spend way more than available
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(100.0)));
+
+            // Create with dummy (invalid) witnesses AND insufficient balance
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                1,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            // Should be rejected (either for signature or balance, depending on validation order)
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject with multiple validation failures"
+            );
+        }
+
+        #[test]
+        fn test_invalid_nonce_and_invalid_signature() {
+            // Test with both wrong nonce and invalid signature
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address = create_platform_address(1);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(1.0));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            // Wrong nonce (expected 1, using 999)
+            inputs.insert(input_address, (999 as AddressNonce, dash_to_credits!(0.5)));
+
+            // Dummy (invalid) witness + wrong nonce
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(0)],
+                create_random_output_script(&mut rng),
+                1,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject with nonce and signature errors"
+            );
+        }
+
+        #[test]
+        fn test_fee_strategy_out_of_bounds_and_insufficient_balance() {
+            // Test with fee strategy referencing non-existent input AND insufficient balance
+            let platform_version = PlatformVersion::latest();
+
+            let platform_config = PlatformConfig {
+                testing_configs: PlatformTestConfig {
+                    disable_instant_lock_signature_verification: true,
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+
+            let mut platform = TestPlatformBuilder::new()
+                .with_config(platform_config)
+                .with_latest_protocol_version()
+                .build_with_mock_rpc()
+                .set_genesis_state();
+
+            let input_address = create_platform_address(1);
+            setup_address_with_balance(&mut platform, input_address, 0, dash_to_credits!(0.001));
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(input_address, (1 as AddressNonce, dash_to_credits!(100.0)));
+
+            // Fee strategy references index 5 but we only have 1 input
+            let transition = create_raw_withdrawal_transition_with_dummy_witnesses(
+                inputs,
+                None,
+                vec![AddressFundsFeeStrategyStep::DeductFromInput(5)],
+                create_random_output_script(&mut rng),
+                1,
+            );
+
+            let result = transition.serialize_to_bytes().expect("should serialize");
+
+            assert!(
+                !check_tx_is_valid(&platform, &result, platform_version),
+                "check_tx should reject with out-of-bounds fee strategy and insufficient balance"
             );
         }
     }

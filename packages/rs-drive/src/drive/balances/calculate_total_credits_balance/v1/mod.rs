@@ -13,7 +13,7 @@ impl Drive {
     /// Verify that the sum tree identity credits + pool credits + refunds are equal to the
     /// Total credits in the system
     #[inline(always)]
-    pub(super) fn calculate_total_credits_balance_v0(
+    pub(super) fn calculate_total_credits_balance_v1(
         &self,
         transaction: TransactionArg,
         drive_version: &DriveVersion,
@@ -60,12 +60,21 @@ impl Drive {
             drive_version,
         )?;
 
+        let total_in_addresses = self.grove_get_sum_tree_total_value(
+            SubtreePath::empty(),
+            Into::<&[u8; 1]>::into(RootTree::AddressBalances),
+            DirectQueryType::StatefulDirectQuery,
+            transaction,
+            &mut drive_operations,
+            drive_version,
+        )?;
+
         Ok(TotalCreditsBalance {
             total_credits_in_platform,
             total_in_pools,
             total_identity_balances,
             total_specialized_balances,
-            total_in_addresses: 0,
+            total_in_addresses,
         })
     }
 }

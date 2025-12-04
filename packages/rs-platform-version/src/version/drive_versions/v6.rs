@@ -50,7 +50,7 @@ pub const DRIVE_VERSION_V6: DriveVersion = DriveVersion {
             add_to_system_credits_operations: 0,
             remove_from_system_credits: 0,
             remove_from_system_credits_operations: 0,
-            calculate_total_credits_balance: 0,
+            calculate_total_credits_balance: 1, // Changed because we now add the address trees
         },
         document: DRIVE_DOCUMENT_METHOD_VERSIONS_V2, // Changed
         vote: DRIVE_VOTE_METHOD_VERSIONS_V2,

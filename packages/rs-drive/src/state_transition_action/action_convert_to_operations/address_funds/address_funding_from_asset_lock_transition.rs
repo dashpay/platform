@@ -3,13 +3,10 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
-use crate::util::batch::DriveOperation::{
-    AddressFundsOperation, IdentityOperation, SystemOperation,
-};
-use crate::util::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
+use crate::util::batch::DriveOperation::{AddressFundsOperation, SystemOperation};
+use crate::util::batch::{DriveOperation, SystemOperationType};
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 use dpp::block::epoch::Epoch;
-use dpp::identity::Identity;
 use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionAction {
