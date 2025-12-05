@@ -1,5 +1,5 @@
 use clap::Args;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Replay ABCI requests captured from drive-abci logs.
 #[derive(Debug, Args, Clone)]
@@ -10,71 +10,76 @@ pub struct ReplayArgs {
     #[arg(long, value_hint = clap::ValueHint::DirPath)]
     pub db_path: Option<PathBuf>,
 
-    /// drive-abci JSON logs that contain TRACE level "received ABCI request" entries.
+    /// drive-abci JSON log that contains TRACE level "received ABCI request" entries.
     /// Relevant requests will be extracted and replayed chronologically.
     /// Other log entries are ignored.
     #[arg(long = "log", value_hint = clap::ValueHint::FilePath)]
-    pub logs: Vec<PathBuf>,
+    pub log: PathBuf,
 
     /// Log progress information at INFO level after each finalize_block.
     #[arg(short, long)]
     pub progress: bool,
 
-    /// Skip replaying specific requests (use PATH for files or PATH:LINE for log entries).
-    #[arg(long = "skip", value_name = "PATH[:LINE]", value_parser = parse_skip_request)]
-    pub skip: Vec<SkipRequest>,
+    /// Skip replaying specific log entries by their line numbers (supports ranges and comma lists).
+    #[arg(
+        long = "skip",
+        value_name = "LINE[-LINE]",
+        value_delimiter = ',',
+        value_parser = parse_skip_selector
+    )]
+    pub skip: Vec<SkipSelector>,
 
     /// Stop replay after reaching this block height (inclusive).
     #[arg(long, value_name = "HEIGHT")]
     pub stop_height: Option<u64>,
 }
 
-/// Request selector used by `--skip` flag.
-#[derive(Debug, Clone)]
-pub struct SkipRequest {
-    /// Canonicalized log path.
-    pub path: PathBuf,
-    /// Optional line number to match entries within the log.
-    pub line: Option<usize>,
+/// Selector used by `--skip` flag to filter log line numbers.
+#[derive(Debug, Clone, Copy)]
+pub enum SkipSelector {
+    Line(usize),
+    Range { start: usize, end: usize },
 }
 
-pub fn parse_skip_request(raw: &str) -> Result<SkipRequest, String> {
-    let (path_part, line_part) = match raw.rsplit_once(':') {
-        Some((path, line_str)) => match line_str.parse::<usize>() {
-            Ok(line) => (path, Some(line)),
-            Err(_) => (raw, None),
-        },
-        None => (raw, None),
-    };
+impl SkipSelector {
+    pub fn matches(&self, line: usize) -> bool {
+        match self {
+            SkipSelector::Line(target) => line == *target,
+            SkipSelector::Range { start, end } => (*start..=*end).contains(&line),
+        }
+    }
+}
 
-    let path_buf = PathBuf::from(path_part);
-    let canonical = path_buf
-        .canonicalize()
-        .unwrap_or_else(|_| PathBuf::from(path_part));
+pub fn parse_skip_selector(raw: &str) -> Result<SkipSelector, String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Err("skip value cannot be empty".to_string());
+    }
 
-    Ok(SkipRequest {
-        path: canonical,
-        line: line_part,
+    if let Some((start, end)) = trimmed.split_once('-') {
+        let start_line = parse_line_number(start)?;
+        let end_line = parse_line_number(end)?;
+        if start_line > end_line {
+            return Err(format!(
+                "invalid skip range {}-{} (start must be <= end)",
+                start_line, end_line
+            ));
+        }
+        return Ok(SkipSelector::Range {
+            start: start_line,
+            end: end_line,
+        });
+    }
+
+    let line = parse_line_number(trimmed)?;
+    Ok(SkipSelector::Line(line))
+}
+
+fn parse_line_number(raw: &str) -> Result<usize, String> {
+    raw.trim().parse::<usize>().map_err(|_| {
+        format!(
+            "invalid skip target '{}'; expected positive line number",
+            raw.trim()
+        )
     })
-}
-
-/// Check if a log path and optional line match the skip selector.
-pub fn skip_matches(path: &Path, line: Option<usize>, needle: &SkipRequest) -> bool {
-    if !paths_equal(path, &needle.path) {
-        return false;
-    }
-
-    match (line, needle.line) {
-        (_, None) => true,
-        (Some(actual), Some(expected)) => actual == expected,
-        _ => false,
-    }
-}
-
-fn paths_equal(a: &Path, b: &Path) -> bool {
-    if let (Ok(canon_a), Ok(canon_b)) = (a.canonicalize(), b.canonicalize()) {
-        canon_a == canon_b
-    } else {
-        a == b
-    }
 }

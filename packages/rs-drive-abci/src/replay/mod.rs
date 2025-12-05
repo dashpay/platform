@@ -8,7 +8,7 @@ use crate::platform_types::platform::Platform;
 use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::rpc::core::DefaultCoreRPC;
 use crate::verify;
-use cli::SkipRequest;
+use cli::SkipSelector;
 use dpp::block::extended_block_info::v0::ExtendedBlockInfoV0Getters;
 use log_ingest::LogRequestStream;
 use runner::{
@@ -37,28 +37,22 @@ pub fn run(
     tracing::info!("running database verification before replay");
     verify::run(&config, true).map_err(|e| format!("verification failed before replay: {}", e))?;
 
-    let mut log_streams = Vec::new();
-    for path in &args.logs {
-        let mut stream = LogRequestStream::open(path)?;
-        if stream.peek()?.is_some() {
-            tracing::info!("streaming ABCI requests from log {}", path.display());
-            log_streams.push(stream);
-        } else {
-            tracing::warn!("no supported ABCI requests found in log {}", path.display());
-        }
-    }
-
-    if log_streams.is_empty() {
-        return Err("no requests to replay; provide --log with relevant inputs".into());
+    let mut stream = LogRequestStream::open(&args.log)?;
+    if stream.peek()?.is_some() {
+        tracing::info!("streaming ABCI requests from log {}", args.log.display());
+    } else {
+        return Err(format!(
+            "no supported ABCI requests found in log {}; provide --log with relevant inputs",
+            args.log.display()
+        )
+        .into());
     }
 
     if db_was_created {
         let mut first_is_init_chain = false;
-        if let Some(stream) = log_streams.first_mut() {
-            advance_stream(stream, None, &args.skip)?;
-            if let Some(item) = stream.peek()? {
-                first_is_init_chain = matches!(item.request, LoadedRequest::InitChain(_));
-            }
+        advance_stream(&mut stream, None, &args.skip)?;
+        if let Some(item) = stream.peek()? {
+            first_is_init_chain = matches!(item.request, LoadedRequest::InitChain(_));
         }
 
         if !first_is_init_chain {
@@ -104,58 +98,40 @@ pub fn run(
         None
     };
     let mut cancelled = false;
-
-    for mut stream in log_streams {
+    let mut validator = RequestSequenceValidator::new(stream.path().to_path_buf());
+    let mut executed = 0usize;
+    loop {
         if cancel.is_cancelled() {
-            tracing::info!("cancellation requested; stopping remaining log streams");
+            tracing::info!(
+                "cancellation requested; stopping replay for log {}",
+                stream.path().display()
+            );
             cancelled = true;
             break;
         }
         if stop_height_reached(args.stop_height, known_height) {
             tracing::info!(
-                "stop height {} reached; skipping remaining log streams",
-                args.stop_height.unwrap()
+                "stop height {} reached; stopping replay for log {}",
+                args.stop_height.unwrap(),
+                stream.path().display()
             );
             break;
         }
-        let mut validator = RequestSequenceValidator::new(stream.path().to_path_buf());
-        let mut executed = 0usize;
-        loop {
-            if cancel.is_cancelled() {
-                tracing::info!(
-                    "cancellation requested; stopping replay for log {}",
-                    stream.path().display()
-                );
-                cancelled = true;
-                break;
-            }
-            if stop_height_reached(args.stop_height, known_height) {
-                tracing::info!(
-                    "stop height {} reached; stopping replay for log {}",
-                    args.stop_height.unwrap(),
-                    stream.path().display()
-                );
-                break;
-            }
-            advance_stream(&mut stream, known_height, &args.skip)?;
-            let Some(item) = stream.next_item()? else {
-                break;
-            };
-            validator.observe(&item)?;
-            let committed = execute_request(&app, item, progress.as_mut())?;
-            update_known_height(&mut known_height, committed);
-            executed += 1;
-        }
-        if cancelled {
+        advance_stream(&mut stream, known_height, &args.skip)?;
+        let Some(item) = stream.next_item()? else {
             break;
-        }
-        validator.finish()?;
-        tracing::info!(
-            "replayed {} ABCI requests from log {}",
-            executed,
-            stream.path().display()
-        );
+        };
+        validator.observe(&item)?;
+        let committed = execute_request(&app, item, progress.as_mut())?;
+        update_known_height(&mut known_height, committed);
+        executed += 1;
     }
+    validator.finish()?;
+    tracing::info!(
+        "replayed {} ABCI requests from log {}",
+        executed,
+        stream.path().display()
+    );
 
     if cancelled {
         tracing::info!("replay interrupted by cancellation");
@@ -167,7 +143,7 @@ pub fn run(
 fn advance_stream(
     stream: &mut LogRequestStream,
     known_height: Option<u64>,
-    skip: &[SkipRequest],
+    skip: &[SkipSelector],
 ) -> Result<(), Box<dyn Error>> {
     if let Some(height) = known_height {
         let skipped = stream.skip_processed_entries(height)?;
@@ -186,7 +162,7 @@ fn advance_stream(
 
 fn drain_skipped_entries(
     stream: &mut LogRequestStream,
-    skip: &[SkipRequest],
+    skip: &[SkipSelector],
 ) -> Result<(), Box<dyn Error>> {
     if skip.is_empty() {
         return Ok(());
@@ -212,9 +188,9 @@ fn drain_skipped_entries(
     Ok(())
 }
 
-fn should_skip_item(item: &ReplayItem, skip: &[SkipRequest]) -> bool {
-    skip.iter()
-        .any(|target| cli::skip_matches(item.source.path(), Some(item.source.line()), target))
+fn should_skip_item(item: &ReplayItem, skip: &[SkipSelector]) -> bool {
+    let line = item.source.line();
+    skip.iter().any(|selector| selector.matches(line))
 }
 
 fn update_known_height(current: &mut Option<u64>, new_height: Option<u64>) {
