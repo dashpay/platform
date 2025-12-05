@@ -6790,7 +6790,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -6964,7 +6964,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -7096,7 +7096,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()
@@ -7311,7 +7311,7 @@ mod tests {
                 ..Default::default()
             };
 
-            let mut platform = TestPlatformBuilder::new()
+            let platform = TestPlatformBuilder::new()
                 .with_config(platform_config)
                 .with_latest_protocol_version()
                 .build_with_mock_rpc()

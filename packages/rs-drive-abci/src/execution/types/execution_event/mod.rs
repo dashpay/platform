@@ -19,6 +19,7 @@ use crate::execution::types::state_transition_execution_context::{
     StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0,
 };
 use drive::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
+use drive::state_transition_action::system::bump_address_input_nonces_action::BumpAddressInputNonceActionAccessorsV0;
 use drive::state_transition_action::system::partially_use_asset_lock_action::PartiallyUseAssetLockActionAccessorsV0;
 use drive::util::batch::DriveOperation;
 
@@ -345,6 +346,54 @@ impl ExecutionEvent<'_> {
                         BTreeMap::new()
                     };
                 let fee_strategy = identity_create_from_addresses_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::IdentityTopUpFromAddressesAction(
+                identity_top_up_from_addresses_action,
+            ) => {
+                let user_fee_increase = identity_top_up_from_addresses_action.user_fee_increase();
+                let input_current_balances = identity_top_up_from_addresses_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                let added_to_balance_outputs =
+                    if let Some(output) = identity_top_up_from_addresses_action.output() {
+                        [output.clone()].into()
+                    } else {
+                        BTreeMap::new()
+                    };
+                let fee_strategy = identity_top_up_from_addresses_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
+            StateTransitionAction::BumpAddressInputNoncesAction(
+                bump_address_input_nonces_action,
+            ) => {
+                let user_fee_increase = bump_address_input_nonces_action.user_fee_increase();
+                let input_current_balances = bump_address_input_nonces_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                // BumpAddressInputNoncesAction doesn't have outputs - it only bumps nonces and pays fees
+                let added_to_balance_outputs = BTreeMap::new();
+                let fee_strategy = bump_address_input_nonces_action.fee_strategy().clone();
                 let operations =
                     action.into_high_level_drive_operations(epoch, platform_version)?;
                 Ok(ExecutionEvent::PaidFromAddressInputs {
