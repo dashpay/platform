@@ -2,33 +2,56 @@ use crate::WasmSdkError;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value as JsonValue;
 use wasm_bindgen::JsValue;
+use wasm_dpp2::serde_format;
 
+/// Serialize to JsValue with WASM format context.
+///
+/// Types like `IdentifierWasm` will serialize as bytes (Uint8Array).
 pub fn to_object<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
-    serde_wasm_bindgen::to_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
+    serde_format::to_wasm_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
+/// Deserialize from JsValue with WASM format context.
 pub fn from_object<T: DeserializeOwned>(value: JsValue) -> Result<T, WasmSdkError> {
-    serde_wasm_bindgen::from_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
+    serde_format::from_wasm_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
+/// Serialize to JsValue with JSON format context.
+///
+/// Types like `IdentifierWasm` will serialize as Base58 strings.
+/// The result is a JSON-compatible JsValue (strings instead of Uint8Array for identifiers).
 pub fn to_json_value<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
-    let json =
-        serde_json::to_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))?;
+    let json = serde_format::to_json_value(value)
+        .map_err(|e| WasmSdkError::serialization(&e.to_string()))?;
+    // Convert serde_json::Value to JsValue (this doesn't need format context)
     serde_wasm_bindgen::to_value(&json).map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
+/// Deserialize from JsValue with JSON format context.
 pub fn from_json_value<T: DeserializeOwned>(value: JsValue) -> Result<T, WasmSdkError> {
+    // Convert JsValue to serde_json::Value first
     let json: JsonValue = serde_wasm_bindgen::from_value(value)
         .map_err(|e| WasmSdkError::serialization(&e.to_string()))?;
-    serde_json::from_value(json).map_err(|e| WasmSdkError::serialization(&e.to_string()))
+    // Then deserialize with JSON format context
+    serde_format::from_json_value(json).map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
+/// Convert JsValue to serde_json::Value.
 pub fn js_to_json_value(value: JsValue) -> Result<JsonValue, WasmSdkError> {
     serde_wasm_bindgen::from_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
+/// Convert serde_json::Value to JsValue.
 pub fn json_value_to_js(value: &JsonValue) -> Result<JsValue, WasmSdkError> {
     serde_wasm_bindgen::to_value(value).map_err(|e| WasmSdkError::serialization(&e.to_string()))
+}
+
+/// Serialize to JsValue with WASM format context, keeping bytes as Uint8Array.
+///
+/// This is an alias for `to_object` - both use WASM format context which
+/// serializes byte fields as Uint8Array rather than strings.
+pub fn to_object_bytes<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
+    to_object(value)
 }
 
 #[macro_export]
@@ -56,5 +79,9 @@ macro_rules! impl_wasm_object_json {
                 $crate::serialization::from_json_value(js)
             }
         }
+    };
+    // Two-argument form: second argument is ignored (kept for compatibility)
+    ($ty:ty, $_orig:ty) => {
+        $crate::impl_wasm_object_json!($ty);
     };
 }

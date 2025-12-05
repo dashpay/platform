@@ -24,6 +24,7 @@ pub mod identity;
 pub mod mock_bls;
 pub mod private_key;
 pub mod public_key;
+pub mod serde_format;
 pub mod state_transitions;
 pub mod tokens;
 pub mod utils;
