@@ -1,5 +1,51 @@
-### [2.1.3](https://github.com/dashpay/platform/compare/v2.1.2...v2.1.3) (2025-10-29)
+## [2.2.0-dev.2](https://github.com/dashpay/platform/compare/v2.1.2...v2.2.0-dev.2) (2025-11-28)
 
+
+### ⚠ BREAKING CHANGES
+
+* use identity contract keys query (#2870)
+* **sdk:** cleanup JS SDK params and return types (#2858)
+* **sdk:** user-friendly evo sdk params (#2856)
+* **dashmate:** port conflicts with mainnet and testnet  on the same host (#2829)
+
+### Features
+
+* **dashmate:** add  prometheus service discovery labels ([#2818](https://github.com/dashpay/platform/issues/2818))
+* **drive:** add next epoch info to GetStatusResponse ([#2847](https://github.com/dashpay/platform/issues/2847))
+* **sdk:** entities for Evo SDK ([#2800](https://github.com/dashpay/platform/issues/2800))
+
+
+### Bug Fixes
+
+* **dashmate:** port conflicts with mainnet and testnet  on the same host ([#2829](https://github.com/dashpay/platform/issues/2829))
+* **dpp:** desiarilization of data contract JSON with token configuration ([#2857](https://github.com/dashpay/platform/issues/2857))
+* resolve a few issues in iOS example app ([#2843](https://github.com/dashpay/platform/issues/2843))
+* **sdk:** fail on invalid proof ([#2864](https://github.com/dashpay/platform/issues/2864))
+* **sdk:** reset SDK nonce caches after failed transitions ([#2851](https://github.com/dashpay/platform/issues/2851))
+
+
+### Tests
+
+* platform-test-suite accepts DAPI_ADDRESSES ([#2798](https://github.com/dashpay/platform/issues/2798))
+
+
+### Build System
+
+* script to configure environments for ai coding agents ([#2845](https://github.com/dashpay/platform/issues/2845))
+* **sdk:** wasm-sdk remove unmaintained wee_alloc (RUSTSEC-2022-0054) ([#2844](https://github.com/dashpay/platform/issues/2844))
+* use workspace version in Cargo.toml ([#2831](https://github.com/dashpay/platform/issues/2831))
+
+
+### Code Refactoring
+
+* **dashmate:** remove deprecated javascript dapi ([#2827](https://github.com/dashpay/platform/issues/2827))
+* **sdk:** cleanup JS SDK params and return types ([#2858](https://github.com/dashpay/platform/issues/2858))
+* **sdk:** typed identifier ([#2848](https://github.com/dashpay/platform/issues/2848))
+* **sdk:** typed wasm-sdk params ([#2849](https://github.com/dashpay/platform/issues/2849))
+* **sdk:** user-friendly evo sdk params ([#2856](https://github.com/dashpay/platform/issues/2856))
+* use identity contract keys query ([#2870](https://github.com/dashpay/platform/issues/2870))
+
+### [2.1.3](https://github.com/dashpay/platform/compare/v2.1.2...v2.1.3) (2025-10-29)
 
 ### Bug Fixes
 
