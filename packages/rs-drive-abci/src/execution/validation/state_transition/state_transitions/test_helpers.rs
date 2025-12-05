@@ -9,7 +9,7 @@ use crate::test::helpers::setup::TempPlatform;
 use dpp::address_funds::{AddressWitness, PlatformAddress};
 use dpp::dashcore::blockdata::opcodes::all::*;
 use dpp::dashcore::blockdata::script::ScriptBuf;
-use dpp::dashcore::hashes::Hash;
+use dpp::dashcore::hashes::{sha256, Hash};
 use dpp::dashcore::secp256k1::{PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey};
 use dpp::dashcore::PublicKey;
 use dpp::identity::signer::Signer;
@@ -61,7 +61,11 @@ impl TestAddressSigner {
 
     pub fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
         let secp = Secp256k1::new();
-        let secret_key = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
+        // Hash the seed to ensure it's always a valid secret key
+        // (non-zero, less than curve order). Raw seeds like [0u8; 32] are invalid.
+        let hashed_seed = sha256::Hash::hash(&seed);
+        let secret_key =
+            RawSecretKey::from_byte_array(hashed_seed.as_byte_array()).expect("valid secret key");
         let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
         let public_key = PublicKey::new(raw_public_key);
         (secret_key, public_key)

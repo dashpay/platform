@@ -21,10 +21,11 @@ use crate::state_transition::StateTransitionType;
 // ============================
 #[cfg(feature = "state-transition-signing")]
 use crate::{
+    address_funds::AddressFundsFeeStrategy,
     identity::{
         accessors::IdentityGettersV0,
         identity_public_key::accessors::v0::IdentityPublicKeyGettersV0, signer::Signer, Identity,
-        IdentityPublicKey, KeyType::ECDSA_HASH160,
+        IdentityPublicKey,
     },
     prelude::{AddressNonce, UserFeeIncrease},
     serialization::Signable,
@@ -32,26 +33,30 @@ use crate::{
         public_key_in_creation::accessors::IdentityPublicKeyInCreationV0Setters, StateTransition,
     },
     version::PlatformVersion,
-    BlsModule, ProtocolError,
+    ProtocolError,
 };
 
 impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddressesTransitionV0 {
     #[cfg(feature = "state-transition-signing")]
-    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>>(
+    fn try_from_inputs_with_signer<S: Signer<IdentityPublicKey>, WS: Signer<PlatformAddress>>(
         identity: &Identity,
         inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
-        input_private_keys: Vec<&[u8]>,
-        signer: &S,
-        bls: &impl BlsModule,
+        fee_strategy: AddressFundsFeeStrategy,
+        identity_public_key_signer: &S,
+        address_signer: &WS,
         user_fee_increase: UserFeeIncrease,
         _platform_version: &PlatformVersion,
     ) -> Result<StateTransition, ProtocolError> {
+        // Create the unsigned transition
         let mut identity_create_from_addresses_transition =
             IdentityCreateFromAddressesTransitionV0 {
-                inputs,
+                inputs: inputs.clone(),
+                fee_strategy,
                 user_fee_increase,
+                input_witnesses: Vec::new(),
                 ..Default::default()
             };
+
         let public_keys = identity
             .public_keys()
             .values()
@@ -59,34 +64,31 @@ impl IdentityCreateFromAddressesTransitionMethodsV0 for IdentityCreateFromAddres
             .collect();
         identity_create_from_addresses_transition.set_public_keys(public_keys);
 
-        //todo: remove clone
+        // Get signable bytes for the state transition
         let state_transition: StateTransition =
             identity_create_from_addresses_transition.clone().into();
+        let signable_bytes = state_transition.signable_bytes()?;
 
-        let key_signable_bytes = state_transition.signable_bytes()?;
-
-        // Sign with public keys
+        // Sign public keys with the identity public key signer (proof of possession)
         identity_create_from_addresses_transition
             .public_keys
             .iter_mut()
             .zip(identity.public_keys().iter())
             .try_for_each(|(public_key_with_witness, (_, public_key))| {
                 if public_key.key_type().is_unique_key_type() {
-                    let signature = signer.sign(public_key, &key_signable_bytes)?;
+                    let signature = identity_public_key_signer.sign(public_key, &signable_bytes)?;
                     public_key_with_witness.set_signature(signature);
                 }
                 Ok::<(), ProtocolError>(())
             })?;
 
-        let mut state_transition: StateTransition =
-            identity_create_from_addresses_transition.into();
+        // Create witnesses for each input address
+        identity_create_from_addresses_transition.input_witnesses = inputs
+            .keys()
+            .map(|address| address_signer.sign_create_witness(address, &signable_bytes))
+            .collect::<Result<Vec<_>, ProtocolError>>()?;
 
-        // Sign with input private keys
-        for input_private_key in input_private_keys {
-            state_transition.sign_by_private_key(input_private_key, ECDSA_HASH160, bls)?;
-        }
-
-        Ok(state_transition)
+        Ok(identity_create_from_addresses_transition.into())
     }
 
     /// Get State Transition type
