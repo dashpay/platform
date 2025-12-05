@@ -42,9 +42,8 @@ impl<C> Platform<C> {
             })
             .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
                 format!(
-                    "limit {} greater than max limit {} or was set as 0",
-                    limit.unwrap(),
-                    config.max_query_limit
+                    "limit {:?} greater than max limit {} or was set as 0",
+                    limit, config.max_query_limit
                 ),
             )))?;
 
