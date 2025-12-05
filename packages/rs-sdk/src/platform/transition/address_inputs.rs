@@ -30,6 +30,15 @@ pub(crate) async fn fetch_inputs_with_nonce(
     Ok(inputs_with_nonce)
 }
 
+/// Increments the nonce for each address in the provided map.
+pub(crate) fn nonce_inc(
+    data: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
+) -> BTreeMap<PlatformAddress, (AddressNonce, Credits)> {
+    data.into_iter()
+        .map(|(address, (nonce, credits))| (address, (nonce + 1, credits)))
+        .collect()
+}
+
 fn ensure_address_exists<'a>(
     infos: &'a AddressInfos,
     address: PlatformAddress,
