@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 // ============================
 // Crate: Ungated Imports
 // ============================
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::state_transition::identity_create_from_addresses_transition::accessors::IdentityCreateFromAddressesTransitionAccessorsV0;
 use crate::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
@@ -124,16 +124,6 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     /// Set the optional output
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
         self.output = output;
-    }
-
-    /// Get fee strategy
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
-        &self.fee_strategy
-    }
-
-    /// Set fee strategy
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
-        self.fee_strategy = fee_strategy;
     }
 }
 

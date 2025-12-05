@@ -16,6 +16,7 @@ use crate::execution::check_tx::CheckTxLevel;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::processor::address_witnesses::{StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0};
+use crate::execution::validation::state_transition::processor::addresses_minimum_balance::StateTransitionAddressesMinimumBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
 use crate::execution::validation::state_transition::processor::identity_balance::StateTransitionIdentityBalanceValidationV0;
@@ -164,6 +165,58 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
                 None
             };
 
+            // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
+            // processing amount and the transfer amount.
+            // For other state transitions we only check a min balance for an amount set per version.
+            // This is not done for identity create and identity top up who don't have this check here
+            if state_transition.has_identity_minimum_balance_pre_check_validation() {
+                // Validating that we have sufficient balance for a transfer or withdrawal,
+                // this must happen after validating the signature
+                let identity =
+                    maybe_identity
+                        .as_mut()
+                        .ok_or(ProtocolError::CorruptedCodeExecution(
+                            "identity must be known to validate the balance".to_string(),
+                        ))?;
+
+                let result = state_transition
+                    .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
+            // For address-based state transitions that transfer or withdraw, we have a balance pre-check
+            // that validates addresses have enough remaining balance after the input amounts to cover fees.
+            if state_transition.has_addresses_minimum_balance_pre_check_validation() {
+                // Validating that addresses have sufficient remaining balance for fees,
+                // this must happen after validating the address balances and nonces
+
+                let address_balances = remaining_address_balances.as_ref().ok_or(
+                    ProtocolError::CorruptedCodeExecution(
+                        "address balances must be known to validate the minimum balance"
+                            .to_string(),
+                    ),
+                )?;
+                let result = state_transition.validate_addresses_minimum_balance_pre_check(
+                    address_balances,
+                    platform_version,
+                )?;
+
+                if !result.is_valid() {
+                    return Ok(
+                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
+                            result.errors,
+                        ),
+                    );
+                }
+            }
+
             let action = if state_transition
                 .requires_advanced_structure_validation_with_state_on_check_tx()
             {
@@ -205,32 +258,6 @@ pub(super) fn state_transition_to_execution_event_for_check_tx_v0<'a, C: CoreRPC
             } else {
                 None
             };
-
-            // For identity credit withdrawal and identity credit transfers we have a balance pre check that includes a
-            // processing amount and the transfer amount.
-            // For other state transitions we only check a min balance for an amount set per version.
-            // This is not done for identity create and identity top up who don't have this check here
-            if state_transition.has_identity_minimum_balance_pre_check_validation() {
-                // Validating that we have sufficient balance for a transfer or withdrawal,
-                // this must happen after validating the signature
-                let identity =
-                    maybe_identity
-                        .as_mut()
-                        .ok_or(ProtocolError::CorruptedCodeExecution(
-                            "identity must be known to validate the balance".to_string(),
-                        ))?;
-
-                let result = state_transition
-                    .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
-
-                if !result.is_valid() {
-                    return Ok(
-                        ConsensusValidationResult::<Option<ExecutionEvent>>::new_with_errors(
-                            result.errors,
-                        ),
-                    );
-                }
-            }
 
             let action = if let Some(action) = action {
                 action

@@ -49,7 +49,15 @@ impl IdentityCreditTransferToAddressesTransitionBalanceValidationV0
             }
         };
 
-        if balance < amount.checked_add(platform_version.fee_version.state_transition_min_fees.credit_transfer_to_addresses).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))? {
+        let min_fees = &platform_version.fee_version.state_transition_min_fees;
+        let output_count = self.recipient_addresses().len() as u64;
+        let required_fee = min_fees.credit_transfer_to_addresses.saturating_add(
+            min_fees
+                .address_funds_transfer_output_cost
+                .saturating_mul(output_count),
+        );
+
+        if balance < amount.checked_add(required_fee).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))? {
             return Ok(SimpleConsensusValidationResult::new_with_error(
                 IdentityInsufficientBalanceError::new(self.identity_id(), balance, amount)
                     .into(),

@@ -39,6 +39,7 @@ pub mod address_credit_withdrawal;
 
 /// Module for validation of address funds transfer transitions
 pub mod address_funds_transfer;
+mod identity_top_up_from_addresses;
 
 /// The validation mode we are using
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -64,6 +65,9 @@ impl ValidationMode {
         }
     }
 }
+
+#[cfg(test)]
+pub(in crate::execution) mod test_helpers;
 
 #[cfg(test)]
 pub(in crate::execution) mod tests {

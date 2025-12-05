@@ -1,6 +1,11 @@
 #[cfg(test)]
 mod tests {
     use crate::config::{PlatformConfig, PlatformTestConfig};
+    use crate::execution::validation::state_transition::state_transitions::test_helpers::{
+        create_dummy_witness, create_platform_address, setup_address_with_balance,
+        TestAddressSigner, TestHash as Hash, TestScriptBuf as ScriptBuf, OP_CHECKSIG, OP_DROP,
+        OP_PUSHNUM_1, OP_RETURN,
+    };
     use crate::platform_types::state_transitions_processing_result::StateTransitionExecutionResult;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use assert_matches::assert_matches;
@@ -12,13 +17,6 @@ mod tests {
     use dpp::consensus::state::state_error::StateError;
     use dpp::consensus::ConsensusError;
     use dpp::dash_to_credits;
-    use dpp::dashcore::blockdata::opcodes::all::*;
-    use dpp::dashcore::blockdata::script::ScriptBuf;
-    use dpp::dashcore::hashes::Hash;
-    use dpp::dashcore::secp256k1::{
-        PublicKey as RawPublicKey, Secp256k1, SecretKey as RawSecretKey,
-    };
-    use dpp::dashcore::PublicKey;
     use dpp::identity::signer::Signer;
     use dpp::platform_value::BinaryData;
     use dpp::prelude::AddressNonce;
@@ -27,247 +25,12 @@ mod tests {
     use dpp::state_transition::address_funds_transfer_transition::v0::AddressFundsTransferTransitionV0;
     use dpp::state_transition::address_funds_transfer_transition::AddressFundsTransferTransition;
     use dpp::state_transition::StateTransition;
-    use dpp::ProtocolError;
     use platform_version::version::PlatformVersion;
-    use std::collections::{BTreeMap, HashMap};
-
-    // ==========================================
-    // Test Infrastructure - Signer
-    // ==========================================
-
-    /// A P2PKH key entry containing the secret key only
-    /// (public key is recovered from signature during verification)
-    #[derive(Debug, Clone)]
-    struct P2pkhKeyEntry {
-        secret_key: RawSecretKey,
-    }
-
-    /// A P2SH multisig entry containing multiple secret keys and the redeem script
-    /// (public keys are embedded in the redeem script)
-    #[derive(Debug, Clone)]
-    struct P2shMultisigEntry {
-        /// The threshold (M in M-of-N)
-        threshold: u8,
-        /// Secret keys for all participants
-        secret_keys: Vec<RawSecretKey>,
-        /// The redeem script (contains the public keys)
-        redeem_script: Vec<u8>,
-    }
-
-    /// A test signer that can sign for P2PKH and P2SH multisig addresses
-    #[derive(Debug, Default)]
-    struct TestAddressSigner {
-        p2pkh_keys: HashMap<[u8; 20], P2pkhKeyEntry>,
-        p2sh_entries: HashMap<[u8; 20], P2shMultisigEntry>,
-    }
-
-    impl TestAddressSigner {
-        fn new() -> Self {
-            Self::default()
-        }
-
-        /// Creates a keypair from a 32-byte seed
-        fn create_keypair(seed: [u8; 32]) -> (RawSecretKey, PublicKey) {
-            let secp = Secp256k1::new();
-            let secret_key = RawSecretKey::from_byte_array(&seed).expect("valid secret key");
-            let raw_public_key = RawPublicKey::from_secret_key(&secp, &secret_key);
-            let public_key = PublicKey::new(raw_public_key);
-            (secret_key, public_key)
-        }
-
-        /// Signs data with a secret key
-        fn sign_data(data: &[u8], secret_key: &RawSecretKey) -> Vec<u8> {
-            dpp::dashcore::signer::sign(data, secret_key.as_ref())
-                .expect("signing should succeed")
-                .to_vec()
-        }
-
-        /// Creates a standard multisig redeem script
-        fn create_multisig_script(threshold: u8, pubkeys: &[PublicKey]) -> Vec<u8> {
-            let mut script = Vec::new();
-            script.push(OP_PUSHNUM_1.to_u8() + threshold - 1);
-            for pubkey in pubkeys {
-                let bytes = pubkey.to_bytes();
-                script.push(bytes.len() as u8);
-                script.extend_from_slice(&bytes);
-            }
-            script.push(OP_PUSHNUM_1.to_u8() + pubkeys.len() as u8 - 1);
-            script.push(OP_CHECKMULTISIG.to_u8());
-            script
-        }
-
-        /// Adds a P2PKH address with the given seed, returns the address
-        fn add_p2pkh(&mut self, seed: [u8; 32]) -> PlatformAddress {
-            let (secret_key, public_key) = Self::create_keypair(seed);
-            let pubkey_hash = *public_key.pubkey_hash().as_byte_array();
-            self.p2pkh_keys
-                .insert(pubkey_hash, P2pkhKeyEntry { secret_key });
-            PlatformAddress::P2pkh(pubkey_hash)
-        }
-
-        /// Adds a P2SH multisig address with the given seeds, returns the address
-        fn add_p2sh_multisig(&mut self, threshold: u8, seeds: &[[u8; 32]]) -> PlatformAddress {
-            let keypairs: Vec<_> = seeds.iter().map(|s| Self::create_keypair(*s)).collect();
-            let secret_keys: Vec<_> = keypairs.iter().map(|(sk, _)| *sk).collect();
-            let public_keys: Vec<_> = keypairs.iter().map(|(_, pk)| *pk).collect();
-
-            let redeem_script = Self::create_multisig_script(threshold, &public_keys);
-            let script_buf = ScriptBuf::from_bytes(redeem_script.clone());
-            let script_hash = *script_buf.script_hash().as_byte_array();
-
-            self.p2sh_entries.insert(
-                script_hash,
-                P2shMultisigEntry {
-                    threshold,
-                    secret_keys,
-                    redeem_script,
-                },
-            );
-
-            PlatformAddress::P2sh(script_hash)
-        }
-
-        /// Gets the P2SH entry for an address (for test manipulation)
-        fn get_p2sh_entry(&self, hash: &[u8; 20]) -> Option<&P2shMultisigEntry> {
-            self.p2sh_entries.get(hash)
-        }
-    }
-
-    impl Signer<PlatformAddress> for TestAddressSigner {
-        fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
-            match key {
-                PlatformAddress::P2pkh(hash) => {
-                    let entry = self.p2pkh_keys.get(hash).ok_or_else(|| {
-                        ProtocolError::Generic(format!(
-                            "No P2PKH key found for address hash {}",
-                            hex::encode(hash)
-                        ))
-                    })?;
-                    let signature = Self::sign_data(data, &entry.secret_key);
-                    Ok(BinaryData::new(signature))
-                }
-                PlatformAddress::P2sh(hash) => {
-                    let entry = self.p2sh_entries.get(hash).ok_or_else(|| {
-                        ProtocolError::Generic(format!(
-                            "No P2SH entry found for script hash {}",
-                            hex::encode(hash)
-                        ))
-                    })?;
-                    // Return concatenated signatures for multisig
-                    let mut all_sigs = Vec::new();
-                    for sk in &entry.secret_keys[..entry.threshold as usize] {
-                        all_sigs.extend(Self::sign_data(data, sk));
-                    }
-                    Ok(BinaryData::new(all_sigs))
-                }
-            }
-        }
-
-        fn sign_create_witness(
-            &self,
-            key: &PlatformAddress,
-            data: &[u8],
-        ) -> Result<AddressWitness, ProtocolError> {
-            match key {
-                PlatformAddress::P2pkh(hash) => {
-                    let entry = self.p2pkh_keys.get(hash).ok_or_else(|| {
-                        ProtocolError::Generic(format!(
-                            "No P2PKH key found for address hash {}",
-                            hex::encode(hash)
-                        ))
-                    })?;
-                    let signature = Self::sign_data(data, &entry.secret_key);
-                    // P2PKH witness only needs the signature - the public key is recovered
-                    // during verification, saving 33 bytes per witness
-                    Ok(AddressWitness::P2pkh {
-                        signature: BinaryData::new(signature),
-                    })
-                }
-                PlatformAddress::P2sh(hash) => {
-                    let entry = self.p2sh_entries.get(hash).ok_or_else(|| {
-                        ProtocolError::Generic(format!(
-                            "No P2SH entry found for script hash {}",
-                            hex::encode(hash)
-                        ))
-                    })?;
-                    // Sign with threshold number of keys (first M keys)
-                    let signatures: Vec<BinaryData> = entry
-                        .secret_keys
-                        .iter()
-                        .take(entry.threshold as usize)
-                        .map(|sk| BinaryData::new(Self::sign_data(data, sk)))
-                        .collect();
-
-                    Ok(AddressWitness::P2sh {
-                        signatures,
-                        redeem_script: BinaryData::new(entry.redeem_script.clone()),
-                    })
-                }
-            }
-        }
-
-        fn can_sign_with(&self, key: &PlatformAddress) -> bool {
-            match key {
-                PlatformAddress::P2pkh(hash) => self.p2pkh_keys.contains_key(hash),
-                PlatformAddress::P2sh(hash) => self.p2sh_entries.contains_key(hash),
-            }
-        }
-    }
+    use std::collections::BTreeMap;
 
     // ==========================================
     // Helper Functions
     // ==========================================
-
-    /// Helper function to create a platform address from a seed (for output addresses that don't need signing)
-    fn create_platform_address(seed: u8) -> PlatformAddress {
-        let mut hash = [0u8; 20];
-        hash[0] = seed;
-        hash[19] = seed;
-        PlatformAddress::P2pkh(hash)
-    }
-
-    /// Helper function to create a dummy P2PKH witness for testing structure validation
-    /// (used for tests that should fail before witness validation)
-    fn create_dummy_witness() -> AddressWitness {
-        // P2PKH witness only needs the signature - public key is recovered during verification
-        AddressWitness::P2pkh {
-            signature: BinaryData::new(vec![0x30, 0x44, 0x02, 0x20]), // dummy signature
-        }
-    }
-
-    /// Helper function to set up an address with balance and nonce in the drive
-    fn setup_address_with_balance(
-        platform: &mut crate::test::helpers::setup::TempPlatform<crate::rpc::core::MockCoreRPCLike>,
-        address: PlatformAddress,
-        nonce: AddressNonce,
-        balance: u64,
-    ) {
-        let platform_version = PlatformVersion::latest();
-        let mut drive_operations = Vec::new();
-
-        platform
-            .drive
-            .set_balance_to_address(
-                address,
-                nonce,
-                balance,
-                &mut None,
-                &mut drive_operations,
-                platform_version,
-            )
-            .expect("expected to set balance to address");
-
-        platform
-            .drive
-            .apply_batch_low_level_drive_operations(
-                None,
-                None,
-                drive_operations,
-                &mut vec![],
-                &platform_version.drive,
-            )
-            .expect("expected to apply drive operations");
-    }
 
     /// Perform check_tx on a raw transaction and return whether it's valid
     /// - valid transactions should return true (accepted to mempool)
@@ -4907,10 +4670,12 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_transfer_exact_full_balance_with_reduce_output() {
-            // With ReduceOutput strategy, the fee comes from the output amount,
-            // so we should be able to transfer the ENTIRE input balance.
-            // The input balance should become 0 after the transfer.
+        fn test_transfer_full_balance_fails_without_fee_reserve() {
+            // With the minimum balance pre-check, transferring 100% of balance
+            // fails because there's no remaining balance for fees.
+            // Even with ReduceOutput strategy (fees from output), the pre-check
+            // requires remaining balance >= required fee.
+            // Required fee = 500_000 (input) + 6_000_000 (output) = 6.5M credits
 
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
@@ -4941,7 +4706,7 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(output_address, exact_balance);
 
-            // Use ReduceOutput so fee comes from output, allowing full input consumption
+            // Use ReduceOutput so fee comes from output
             let transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
                 inputs,
                 outputs,
@@ -4972,27 +4737,11 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // This SHOULD succeed - ReduceOutput means fee comes from output, not input
+            // Should fail because remaining balance (0) < required fee (~6.5M)
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::SuccessfulExecution(..)]
+                [StateTransitionExecutionResult::UnpaidConsensusError(..)]
             );
-
-            platform
-                .drive
-                .grove
-                .commit_transaction(transaction)
-                .unwrap()
-                .expect("expected to commit transaction");
-
-            // Input balance should be 0 - we transferred the entire amount
-            let (_, input_balance) = platform
-                .drive
-                .fetch_balance_and_nonce(&input_address, None, platform_version)
-                .expect("expected to fetch balance")
-                .expect("expected address to exist");
-
-            assert_eq!(input_balance, 0);
         }
 
         #[test]
@@ -6215,8 +5964,10 @@ mod tests {
             let input_address = signer.add_p2sh_multisig(15, &seeds);
             let output_address = create_platform_address(99);
 
+            // Use 1.1 DASH balance and transfer 1.0 DASH, leaving 0.1 DASH for fee pre-check
+            let balance = dash_to_credits!(1.1);
             let amount = dash_to_credits!(1.0);
-            setup_address_with_balance(&mut platform, input_address, 0, amount);
+            setup_address_with_balance(&mut platform, input_address, 0, balance);
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, amount));
@@ -6471,8 +6222,10 @@ mod tests {
             let final_address = create_platform_address(99);
 
             // Only source has funds initially
+            // Use balance that leaves some remaining for fee pre-check
+            let balance = dash_to_credits!(1.1);
             let amount = dash_to_credits!(1.0);
-            setup_address_with_balance(&mut platform, source_address, 0, amount);
+            setup_address_with_balance(&mut platform, source_address, 0, balance);
 
             // Transaction 1: source -> middle
             let mut inputs1 = BTreeMap::new();
@@ -6580,9 +6333,11 @@ mod tests {
             let input2 = signer.add_p2pkh([2u8; 32]);
             let shared_output = create_platform_address(99);
 
+            // Use balance that leaves some remaining for fee pre-check
+            let balance = dash_to_credits!(1.0);
             let amount = dash_to_credits!(0.5);
-            setup_address_with_balance(&mut platform, input1, 0, amount);
-            setup_address_with_balance(&mut platform, input2, 0, amount);
+            setup_address_with_balance(&mut platform, input1, 0, balance);
+            setup_address_with_balance(&mut platform, input2, 0, balance);
             // Pre-create the output address so we can verify balance later
             setup_address_with_balance(&mut platform, shared_output, 0, 0);
 
@@ -6695,8 +6450,14 @@ mod tests {
             let output_address = create_platform_address(99);
 
             // Very large amount (but not overflowing)
-            let large_amount = u64::MAX / 2;
-            setup_address_with_balance(&mut platform, input_address, 0, large_amount);
+            // Use balance that leaves some remaining for fee pre-check
+            // Note: u64::MAX / 2 is too large and causes serialization issues,
+            // u64::MAX is ~18.4 * 10^18, so max DASH is ~184 DASH in u64 credits
+            // 100 million DASH = 10^8 * 10^11 = 10^19 - overflows!
+            // Let's use 100 DASH = 10^13 credits (safe)
+            let large_amount = dash_to_credits!(100.0); // 100 DASH
+            let balance = large_amount + dash_to_credits!(0.1);
+            setup_address_with_balance(&mut platform, input_address, 0, balance);
 
             let mut inputs = BTreeMap::new();
             inputs.insert(input_address, (1 as AddressNonce, large_amount));

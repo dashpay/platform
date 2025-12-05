@@ -331,6 +331,32 @@ impl ExecutionEvent<'_> {
                     user_fee_increase,
                 })
             }
+            StateTransitionAction::IdentityCreateFromAddressesAction(
+                identity_create_from_addresses_action,
+            ) => {
+                let user_fee_increase = identity_create_from_addresses_action.user_fee_increase();
+                let input_current_balances = identity_create_from_addresses_action
+                    .inputs_with_remaining_balance()
+                    .clone();
+                let added_to_balance_outputs =
+                    if let Some(output) = identity_create_from_addresses_action.output() {
+                        [output.clone()].into()
+                    } else {
+                        BTreeMap::new()
+                    };
+                let fee_strategy = identity_create_from_addresses_action.fee_strategy().clone();
+                let operations =
+                    action.into_high_level_drive_operations(epoch, platform_version)?;
+                Ok(ExecutionEvent::PaidFromAddressInputs {
+                    input_current_balances,
+                    added_to_balance_outputs,
+                    fee_strategy,
+                    operations,
+                    execution_operations: execution_context.operations_consume(),
+                    additional_fixed_fee_cost: None,
+                    user_fee_increase,
+                })
+            }
             _ => {
                 let user_fee_increase = action.user_fee_increase();
                 let operations =
