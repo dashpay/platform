@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
@@ -45,20 +45,6 @@ impl IdentityCreateFromAddressesTransitionAccessorsV0 for IdentityCreateFromAddr
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
         match self {
             IdentityCreateFromAddressesTransition::V0(transition) => transition.set_output(output),
-        }
-    }
-
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => &transition.fee_strategy,
-        }
-    }
-
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
-        match self {
-            IdentityCreateFromAddressesTransition::V0(transition) => {
-                transition.fee_strategy = fee_strategy
-            }
         }
     }
 }

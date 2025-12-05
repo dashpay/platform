@@ -1,4 +1,4 @@
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use platform_value::Identifier;
 
@@ -14,10 +14,4 @@ pub trait IdentityTopUpFromAddressesTransitionAccessorsV0 {
 
     /// Set the optional output
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>);
-
-    /// Get fee strategy
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy;
-
-    /// Set fee strategy
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy);
 }

@@ -12,6 +12,12 @@ pub struct StateTransitionMinFees {
     pub contract_create: u64,
     pub contract_update: u64,
     pub masternode_vote: u64,
+    // Address-based state transitions
+    pub address_credit_withdrawal: u64,
+    pub address_funds_transfer_input_cost: u64,
+    pub address_funds_transfer_output_cost: u64,
+    pub identity_create_from_addresses: u64,
+    pub identity_topup_from_addresses: u64,
 }
 
 #[derive(Clone, Debug, Encode, Decode, Default, PartialEq, Eq)]
@@ -30,13 +36,23 @@ impl From<StateTransitionMinFeesBeforeProtocolVersion11> for StateTransitionMinF
         StateTransitionMinFees {
             credit_transfer: value.credit_transfer,
             credit_transfer_to_addresses: STATE_TRANSITION_MIN_FEES_VERSION1
-                .credit_transfer_to_addresses, // new field in v4
+                .credit_transfer_to_addresses,
             credit_withdrawal: value.credit_withdrawal,
             identity_update: value.identity_update,
             document_batch_sub_transition: value.document_batch_sub_transition,
             contract_create: value.contract_create,
             contract_update: value.contract_update,
             masternode_vote: value.masternode_vote,
+            // Address-based state transitions (new)
+            address_credit_withdrawal: STATE_TRANSITION_MIN_FEES_VERSION1.address_credit_withdrawal,
+            address_funds_transfer_input_cost: STATE_TRANSITION_MIN_FEES_VERSION1
+                .address_funds_transfer_input_cost,
+            address_funds_transfer_output_cost: STATE_TRANSITION_MIN_FEES_VERSION1
+                .address_funds_transfer_output_cost,
+            identity_create_from_addresses: STATE_TRANSITION_MIN_FEES_VERSION1
+                .identity_create_from_addresses,
+            identity_topup_from_addresses: STATE_TRANSITION_MIN_FEES_VERSION1
+                .identity_topup_from_addresses,
         }
     }
 }

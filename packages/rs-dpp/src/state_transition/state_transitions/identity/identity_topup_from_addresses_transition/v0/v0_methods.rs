@@ -1,7 +1,7 @@
 // =====================================
 // Ungated Imports
 // =====================================
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::prelude::Identifier;
 use crate::state_transition::identity_topup_from_addresses_transition::accessors::IdentityTopUpFromAddressesTransitionAccessorsV0;
@@ -41,7 +41,9 @@ impl IdentityTopUpFromAddressesTransitionMethodsV0 for IdentityTopUpFromAddresse
                 inputs: inputs.clone(),
                 output: None,
                 identity_id: identity.id(),
-                fee_strategy: AddressFundsFeeStrategy::default(),
+                fee_strategy: vec![
+                    crate::address_funds::AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ],
                 user_fee_increase,
                 input_witnesses: vec![],
             };
@@ -79,15 +81,5 @@ impl IdentityTopUpFromAddressesTransitionAccessorsV0 for IdentityTopUpFromAddres
     /// Set the optional output
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>) {
         self.output = output;
-    }
-
-    /// Get fee strategy
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
-        &self.fee_strategy
-    }
-
-    /// Set fee strategy
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
-        self.fee_strategy = fee_strategy;
     }
 }

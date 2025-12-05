@@ -1,4 +1,4 @@
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::state_transition::public_key_in_creation::IdentityPublicKeyInCreation;
 
@@ -19,10 +19,4 @@ pub trait IdentityCreateFromAddressesTransitionAccessorsV0 {
 
     /// Set the optional output
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>);
-
-    /// Get fee strategy
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy;
-
-    /// Set fee strategy
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy);
 }

@@ -1,4 +1,4 @@
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
 use crate::withdrawal::Pooling;
@@ -8,11 +8,6 @@ pub trait AddressCreditWithdrawalTransitionAccessorsV0 {
     fn output(&self) -> Option<&(PlatformAddress, Credits)>;
     /// Set optional output
     fn set_output(&mut self, output: Option<(PlatformAddress, Credits)>);
-
-    /// Get fee strategy
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy;
-    /// Set fee strategy
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy);
 
     /// Get core fee per byte
     fn core_fee_per_byte(&self) -> u32;

@@ -3,6 +3,7 @@ use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
 use crate::execution::validation::state_transition::address_funding_from_asset_lock::StateTransitionStructureKnownInStateValidationForAddressFundingFromAssetLockTransition;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0;
+use crate::execution::validation::state_transition::identity_create_from_addresses::StateTransitionStructureKnownInStateValidationForIdentityCreateFromAddressesTransitionV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
 use dpp::identity::PartialIdentity;
@@ -97,6 +98,14 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                     platform_version,
                 )
             }
+            StateTransition::IdentityCreateFromAddresses(st) => {
+                let signable_bytes = self.signable_bytes()?;
+                st.validate_advanced_structure_from_state_for_identity_create_from_addresses_transition(
+                    signable_bytes,
+                    execution_context,
+                    platform_version,
+                )
+            }
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
@@ -109,6 +118,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                 | StateTransition::IdentityCreate(_)
                 | StateTransition::MasternodeVote(_)
                 | StateTransition::AddressFundingFromAssetLock(_)
+                | StateTransition::IdentityCreateFromAddresses(_)
         )
     }
 

@@ -84,9 +84,7 @@ impl StateTransitionAdvancedStructureValidationV0 for StateTransition {
     fn has_advanced_structure_validation_without_state(&self) -> bool {
         matches!(
             self,
-            StateTransition::IdentityUpdate(_)
-                | StateTransition::DataContractCreate(_)
-                | StateTransition::IdentityCreateFromAddresses(_)
+            StateTransition::IdentityUpdate(_) | StateTransition::DataContractCreate(_)
         )
     }
 }

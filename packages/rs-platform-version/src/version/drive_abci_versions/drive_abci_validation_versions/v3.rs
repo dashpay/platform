@@ -171,7 +171,7 @@ pub const DRIVE_ABCI_VALIDATION_VERSIONS_V3: DriveAbciValidationVersions =
             identity_create_from_addresses_state_transition:
                 DriveAbciStateTransitionValidationVersion {
                     basic_structure: Some(0),
-                    advanced_structure: None,
+                    advanced_structure: Some(0),
                     identity_signatures: Some(0),
                     advanced_minimum_balance_pre_check: None,
                     nonce: Some(0),

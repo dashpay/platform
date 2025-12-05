@@ -68,6 +68,20 @@ impl IdentityCreateFromAddressesTransitionAction {
             }
         }
     }
+
+    /// Get output
+    pub fn output(&self) -> &Option<(PlatformAddress, Credits)> {
+        match self {
+            IdentityCreateFromAddressesTransitionAction::V0(transition) => &transition.output,
+        }
+    }
+
+    /// Get fee strategy
+    pub fn fee_strategy(&self) -> &dpp::address_funds::fee_strategy::AddressFundsFeeStrategy {
+        match self {
+            IdentityCreateFromAddressesTransitionAction::V0(transition) => &transition.fee_strategy,
+        }
+    }
 }
 
 impl From<IdentityCreateFromAddressesTransitionAction> for PartialIdentity {
