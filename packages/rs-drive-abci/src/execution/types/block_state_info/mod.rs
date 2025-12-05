@@ -168,7 +168,6 @@ impl BlockStateInfoV0Methods for BlockStateInfo {
         core_block_height: u32,
         proposer_pro_tx_hash: [u8; 32],
         commit_hash: I,
-        app_hash: I,
     ) -> Result<bool, Error> {
         match self {
             BlockStateInfo::V0(v0) => v0.matches_expected_block_info(
@@ -177,7 +176,6 @@ impl BlockStateInfoV0Methods for BlockStateInfo {
                 core_block_height,
                 proposer_pro_tx_hash,
                 commit_hash,
-                app_hash,
             ),
         }
     }

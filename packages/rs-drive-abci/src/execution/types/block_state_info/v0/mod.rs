@@ -100,7 +100,6 @@ pub trait BlockStateInfoV0Methods {
         core_block_height: u32,
         proposer_pro_tx_hash: [u8; 32],
         commit_hash: I,
-        app_hash: I,
     ) -> Result<bool, Error>;
 }
 
@@ -152,16 +151,10 @@ impl BlockStateInfoV0Methods for BlockStateInfoV0 {
         core_block_height: u32,
         proposer_pro_tx_hash: [u8; 32],
         commit_hash: I,
-        app_hash: I,
     ) -> Result<bool, Error> {
         let received_hash = commit_hash.try_into().map_err(|_| {
             Error::Abci(AbciError::BadRequestDataSize(
                 "can't convert hash as vec to [u8;32]".to_string(),
-            ))
-        })?;
-        let received_app_hash = app_hash.try_into().map_err(|_| {
-            Error::Abci(AbciError::BadRequestDataSize(
-                "can't convert app hash as vec to [u8;32]".to_string(),
             ))
         })?;
         // the order is important here, don't verify commit hash before height and round
@@ -172,18 +165,14 @@ impl BlockStateInfoV0Methods for BlockStateInfoV0 {
             ?core_block_height,
             proposer_pro_tx_hash = hex::encode(proposer_pro_tx_hash),
             commit_hash = hex::encode(received_hash),
-            app_hash = hex::encode(received_app_hash),
             "check if block info matches request"
         );
-        // TODO: consider app_hash verification
         Ok(self.height == height
             && self.round == round
             && self.core_chain_locked_height == core_block_height
             && self.proposer_pro_tx_hash == proposer_pro_tx_hash
             && self.block_hash.is_some()
-            && self.block_hash.unwrap() == received_hash
-            && self.app_hash.is_some()
-            && self.app_hash.unwrap_or_default() == received_app_hash)
+            && self.block_hash.unwrap() == received_hash)
     }
 }
 

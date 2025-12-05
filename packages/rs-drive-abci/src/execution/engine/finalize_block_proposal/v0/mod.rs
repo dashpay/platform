@@ -104,20 +104,17 @@ where
             block_header.core_chain_locked_height,
             block_header.proposer_pro_tx_hash,
             hash,
-            block_header.app_hash,
         )? {
             // we are on the wrong height or round
             validation_result.add_error(AbciError::WrongFinalizeBlockReceived(format!(
-                "received a block for h: {} r: {}, block hash: {}, app_hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, app_hash: {}, core height: {}",
+                "received a block for h: {} r: {}, block hash: {}, core height: {}, expected h: {} r: {}, block hash: {}, core height: {}",
                 height,
                 round,
                 hex::encode(hash),
-                hex::encode(block_header.app_hash),
                 block_header.core_chain_locked_height,
                 block_state_info.height(),
                 block_state_info.round(),
                 block_state_info.block_hash().map(hex::encode).unwrap_or("None".to_string()),
-                hex::encode(block_state_info.app_hash().unwrap_or_default()),
                 block_state_info.core_chain_locked_height()
             )));
             return Ok(validation_result.into());
