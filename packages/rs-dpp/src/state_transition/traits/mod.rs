@@ -1,3 +1,4 @@
+mod state_transition_addresses_fee_strategy;
 mod state_transition_field_types;
 mod state_transition_identity_id_from_inputs;
 mod state_transition_identity_signed;
@@ -13,6 +14,7 @@ mod state_transition_value_convert;
 mod state_transition_versioned;
 mod state_transition_witness_validation;
 
+pub use state_transition_addresses_fee_strategy::*;
 pub use state_transition_field_types::*;
 pub use state_transition_identity_id_from_inputs::*;
 pub use state_transition_identity_signed::*;

@@ -5,6 +5,7 @@ use crate::execution::validation::state_transition::processor::address_balances_
 use crate::execution::validation::state_transition::processor::address_witnesses::{
     StateTransitionAddressWitnessValidationV0, StateTransitionHasAddressWitnessValidationV0,
 };
+use crate::execution::validation::state_transition::processor::addresses_minimum_balance::StateTransitionAddressesMinimumBalanceValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_with_state::StateTransitionStructureKnownInStateValidationV0;
 use crate::execution::validation::state_transition::processor::advanced_structure_without_state::StateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::processor::basic_structure::StateTransitionBasicStructureValidationV0;
@@ -173,6 +174,26 @@ pub(super) fn process_state_transition_v0<'a, C: CoreRPCLike>(
             ))?;
         let result = state_transition
             .validate_identity_minimum_balance_pre_check(identity, platform_version)?;
+
+        if !result.is_valid() {
+            return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));
+        }
+    }
+
+    // For address-based state transitions that transfer or withdraw, we have a balance pre-check
+    // that validates addresses have enough remaining balance after the input amounts to cover fees.
+    if state_transition.has_addresses_minimum_balance_pre_check_validation() {
+        // Validating that addresses have sufficient remaining balance for fees,
+        // this must happen after validating the address balances and nonces
+
+        let address_balances =
+            remaining_address_balances
+                .as_ref()
+                .ok_or(ProtocolError::CorruptedCodeExecution(
+                    "address balances must be known to validate the minimum balance".to_string(),
+                ))?;
+        let result = state_transition
+            .validate_addresses_minimum_balance_pre_check(address_balances, platform_version)?;
 
         if !result.is_valid() {
             return Ok(ConsensusValidationResult::<ExecutionEvent>::new_with_errors(result.errors));

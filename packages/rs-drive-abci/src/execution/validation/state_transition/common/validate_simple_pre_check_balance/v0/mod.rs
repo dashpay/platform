@@ -51,13 +51,14 @@ impl ValidateSimplePreCheckBalanceV0 for StateTransition {
                     .state_transition_min_fees
                     .document_batch_sub_transition
             }
+            // These use identity balance (from asset lock) or address-based balance checks
             StateTransition::IdentityCreate(_)
             | StateTransition::IdentityTopUp(_)
             | StateTransition::MasternodeVote(_)
+            | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::IdentityCreateFromAddresses(_)
             | StateTransition::IdentityTopUpFromAddresses(_)
             | StateTransition::AddressFundsTransfer(_)
-            | StateTransition::AddressFundingFromAssetLock(_)
             | StateTransition::AddressCreditWithdrawal(_) => 0,
             StateTransition::IdentityCreditWithdrawal(_) => {
                 platform_version

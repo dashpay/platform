@@ -2,7 +2,7 @@ mod v0;
 
 use std::collections::BTreeMap;
 
-use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
+use crate::address_funds::PlatformAddress;
 use crate::fee::Credits;
 use crate::identity::state_transition::asset_lock_proof::AssetLockProof;
 use crate::prelude::AddressNonce;
@@ -55,18 +55,6 @@ impl AddressFundingFromAssetLockTransitionAccessorsV0 for AddressFundingFromAsse
     fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Option<Credits>>) {
         match self {
             AddressFundingFromAssetLockTransition::V0(v0) => v0.outputs = outputs,
-        }
-    }
-
-    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
-        match self {
-            AddressFundingFromAssetLockTransition::V0(v0) => &v0.fee_strategy,
-        }
-    }
-
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
-        match self {
-            AddressFundingFromAssetLockTransition::V0(v0) => v0.fee_strategy = fee_strategy,
         }
     }
 }

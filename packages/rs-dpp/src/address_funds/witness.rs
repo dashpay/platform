@@ -17,7 +17,7 @@ pub enum AddressWitness {
     /// saving 33 bytes per witness compared to including the public key.
     P2pkh {
         /// The recoverable ECDSA signature (65 bytes with recovery byte prefix)
-        signature: BinaryData,
+        signature: BinaryData, //todo change to [u8;65]
     },
     /// P2SH witness: signatures + redeem script
     ///
