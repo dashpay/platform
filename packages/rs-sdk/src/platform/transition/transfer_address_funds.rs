@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::address_inputs::fetch_inputs_with_nonce;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
+use crate::platform::transition::address_inputs::nonce_inc;
 use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
@@ -52,7 +53,7 @@ impl<S: Signer<PlatformAddress>> TransferAddressFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<AddressInfos, Error> {
-        let inputs_with_nonce = fetch_inputs_with_nonce(self, &inputs).await?;
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(self, &inputs).await?);
         self.transfer_address_funds_with_nonce(
             inputs_with_nonce,
             outputs,

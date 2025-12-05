@@ -4,6 +4,7 @@ use super::address_inputs::fetch_inputs_with_nonce;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
+use crate::platform::transition::address_inputs::nonce_inc;
 use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
@@ -64,7 +65,7 @@ impl<S: Signer<PlatformAddress>> WithdrawAddressFunds<S> for Sdk {
         signer: &S,
         settings: Option<PutSettings>,
     ) -> Result<AddressInfos, Error> {
-        let inputs_with_nonce = fetch_inputs_with_nonce(self, &inputs).await?;
+        let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(self, &inputs).await?);
         self.withdraw_address_funds_with_nonce(
             inputs_with_nonce,
             change_output,

@@ -1,3 +1,4 @@
+use crate::platform::transition::address_inputs::nonce_inc;
 use crate::platform::transition::broadcast_identity::BroadcastRequestForNewIdentity;
 use crate::{Error, Sdk};
 
@@ -156,7 +157,7 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
             inputs,
             input_private_keys,
         } => {
-            let inputs_with_nonce = fetch_inputs_with_nonce(sdk, &inputs).await?;
+            let inputs_with_nonce = nonce_inc(fetch_inputs_with_nonce(sdk, &inputs).await?);
             send_identity_with_addresses(
                 identity,
                 sdk,
