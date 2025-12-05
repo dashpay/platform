@@ -59,8 +59,12 @@ impl std::fmt::Debug for VTableSigner {
     }
 }
 
-impl<K: bincode::Encode> Signer<K> for VTableSigner {
-    fn sign(&self, identity_public_key: &K, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+impl Signer<IdentityPublicKey> for VTableSigner {
+    fn sign(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<BinaryData, ProtocolError> {
         unsafe {
             // Serialize the public key
             let key_bytes =
@@ -91,7 +95,18 @@ impl<K: bincode::Encode> Signer<K> for VTableSigner {
         }
     }
 
-    fn can_sign_with(&self, identity_public_key: &K) -> bool {
+    fn sign_create_witness(
+        &self,
+        identity_public_key: &IdentityPublicKey,
+        data: &[u8],
+    ) -> Result<dash_sdk::dpp::address_funds::AddressWitness, ProtocolError> {
+        // Sign the data first
+        let signature = self.sign(identity_public_key, data)?;
+        // Create P2PKH witness from signature (the most common case for single key signers)
+        Ok(dash_sdk::dpp::address_funds::AddressWitness::P2pkh { signature })
+    }
+
+    fn can_sign_with(&self, identity_public_key: &IdentityPublicKey) -> bool {
         unsafe {
             // Serialize the public key
             match bincode::encode_to_vec(identity_public_key, bincode::config::standard()) {

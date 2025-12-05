@@ -1,6 +1,7 @@
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::address_funding_from_asset_lock::StateTransitionStructureKnownInStateValidationForAddressFundingFromAssetLockTransition;
 use crate::execution::validation::state_transition::identity_create::StateTransitionStructureKnownInStateValidationForIdentityCreateTransitionV0;
 use dpp::block::block_info::BlockInfo;
 use dpp::dashcore::Network;
@@ -82,6 +83,20 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
                 execution_context,
                 platform_version,
             ),
+            StateTransition::AddressFundingFromAssetLock(st) => {
+                let StateTransitionAction::AddressFundingFromAssetLock(address_funding_action) =
+                    action.clone()
+                else {
+                    return Err(Error::Execution(ExecutionError::CorruptedCodeExecution(
+                        "action must be an address funding from asset lock action",
+                    )));
+                };
+                st.validate_advanced_structure_from_state_for_address_funding_from_asset_lock_transition(
+                    address_funding_action,
+                    execution_context,
+                    platform_version,
+                )
+            }
             _ => Ok(ConsensusValidationResult::new()),
         }
     }
@@ -93,6 +108,7 @@ impl StateTransitionStructureKnownInStateValidationV0 for StateTransition {
             StateTransition::Batch(_)
                 | StateTransition::IdentityCreate(_)
                 | StateTransition::MasternodeVote(_)
+                | StateTransition::AddressFundingFromAssetLock(_)
         )
     }
 

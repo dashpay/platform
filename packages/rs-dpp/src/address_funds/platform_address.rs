@@ -51,8 +51,12 @@ impl TryFrom<Address> for PlatformAddress {
 
     fn try_from(address: Address) -> Result<Self, Self::Error> {
         match address.payload() {
-            Payload::PubkeyHash(hash) => Ok(PlatformAddress::P2pkh(*hash.as_ref())),
-            Payload::ScriptHash(hash) => Ok(PlatformAddress::P2sh(*hash.as_ref())),
+            Payload::PubkeyHash(hash) | Payload::PlatformPubkeyHash(hash) => {
+                Ok(PlatformAddress::P2pkh(*hash.as_ref()))
+            }
+            Payload::ScriptHash(hash) | Payload::PlatformScriptHash(hash) => {
+                Ok(PlatformAddress::P2sh(*hash.as_ref()))
+            }
             _ => Err(ProtocolError::DecodingError(
                 "unsupported address type for PlatformAddress: only P2PKH and P2SH are supported"
                     .to_string(),

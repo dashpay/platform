@@ -18,12 +18,12 @@ pub trait AddressFundingFromAssetLockTransitionAccessorsV0 {
     /// Set inputs
     fn set_inputs(&mut self, inputs: BTreeMap<PlatformAddress, (AddressNonce, Credits)>);
 
-    /// Get outputs
-    fn outputs(&self) -> &BTreeMap<PlatformAddress, Credits>;
+    /// Get outputs (Some = explicit amount, None = remainder recipient)
+    fn outputs(&self) -> &BTreeMap<PlatformAddress, Option<Credits>>;
     /// Get outputs as mutable
-    fn outputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, Credits>;
+    fn outputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, Option<Credits>>;
     /// Set outputs
-    fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Credits>);
+    fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Option<Credits>>);
 
     /// Get fee strategy
     fn fee_strategy(&self) -> &AddressFundsFeeStrategy;

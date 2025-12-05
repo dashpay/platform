@@ -18,6 +18,7 @@ key-wallet-manager = { git = "https://github.com/dashpay/rust-dashcore", rev = "
 dashcore = { git = "https://github.com/dashpay/rust-dashcore", rev = "daecabc5609409a2e4ce3de657208451d59d518f" }
 
 # Standard dependencies
+async-trait = "0.1"
 serde = { version = "1.0", features = ["derive"] }
 thiserror = "1.0"
 

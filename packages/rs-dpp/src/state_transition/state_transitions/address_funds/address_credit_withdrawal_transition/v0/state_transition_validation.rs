@@ -1,9 +1,9 @@
-use crate::address_funds::AddressFundsFeeWithWithdrawalStrategyStep;
+use crate::address_funds::AddressFundsFeeStrategyStep;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
-    FeeStrategyReduceWithdrawalNotLastError, FeeStrategyTooManyStepsError, InputBelowMinimumError,
-    InputWitnessCountMismatchError, OutputAddressAlsoInputError, OutputBelowMinimumError,
-    TransitionNoInputsError, TransitionOverMaxInputsError,
+    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputWitnessCountMismatchError,
+    OutputAddressAlsoInputError, OutputBelowMinimumError, TransitionNoInputsError,
+    TransitionOverMaxInputsError,
 };
 use crate::consensus::basic::BasicError;
 use crate::state_transition::address_credit_withdrawal_transition::v0::AddressCreditWithdrawalTransitionV0;
@@ -88,29 +88,13 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
             }
         }
 
-        // Validate ReduceWithdrawal is the last step if present
-        for (i, step) in self.fee_strategy.iter().enumerate() {
-            if matches!(
-                step,
-                AddressFundsFeeWithWithdrawalStrategyStep::ReduceWithdrawal
-            ) && i != self.fee_strategy.len() - 1
-            {
-                return SimpleConsensusValidationResult::new_with_error(
-                    BasicError::FeeStrategyReduceWithdrawalNotLastError(
-                        FeeStrategyReduceWithdrawalNotLastError::new(),
-                    )
-                    .into(),
-                );
-            }
-        }
-
         // Calculate number of outputs (0 or 1 for optional output)
         let output_count = if self.output.is_some() { 1 } else { 0 };
 
         // Validate fee strategy indices are within bounds
         for step in &self.fee_strategy {
             match step {
-                AddressFundsFeeWithWithdrawalStrategyStep::DeductFromInput(index) => {
+                AddressFundsFeeStrategyStep::DeductFromInput(index) => {
                     if *index as usize >= self.inputs.len() {
                         return SimpleConsensusValidationResult::new_with_error(
                             BasicError::FeeStrategyIndexOutOfBoundsError(
@@ -124,7 +108,7 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
                         );
                     }
                 }
-                AddressFundsFeeWithWithdrawalStrategyStep::ReduceOutput(index) => {
+                AddressFundsFeeStrategyStep::ReduceOutput(index) => {
                     if *index as usize >= output_count {
                         return SimpleConsensusValidationResult::new_with_error(
                             BasicError::FeeStrategyIndexOutOfBoundsError(
@@ -137,9 +121,6 @@ impl StateTransitionStructureValidation for AddressCreditWithdrawalTransitionV0 
                             .into(),
                         );
                     }
-                }
-                AddressFundsFeeWithWithdrawalStrategyStep::ReduceWithdrawal => {
-                    // ReduceWithdrawal doesn't have an index, so no bounds checking needed
                 }
             }
         }

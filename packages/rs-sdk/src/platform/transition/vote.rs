@@ -1,6 +1,7 @@
 use crate::platform::query::VoteQuery;
 use crate::platform::transition::broadcast_request::BroadcastRequestForStateTransition;
 use crate::platform::transition::put_settings::PutSettings;
+use crate::platform::transition::validation::ensure_valid_state_transition_structure;
 use crate::platform::Fetch;
 use crate::{Error, Sdk};
 use dpp::identifier::MasternodeIdentifiers;
@@ -66,6 +67,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
 
         request
@@ -104,6 +106,7 @@ impl<S: Signer<IdentityPublicKey>> PutVote<S> for Vote {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&masternode_vote_transition, sdk.version())?;
         let request = masternode_vote_transition.broadcast_request_for_state_transition()?;
         // TODO: Implement retry logic
         let response_result = request

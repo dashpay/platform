@@ -1,6 +1,7 @@
 use crate::{Error, Sdk};
 
 use super::broadcast::BroadcastStateTransition;
+use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
 use crate::platform::transition::put_settings::PutSettings;
 use dpp::data_contract::document_type::accessors::DocumentTypeV0Getters;
@@ -80,6 +81,7 @@ impl<S: Signer<IdentityPublicKey>> UpdatePriceOfDocument<S> for Document {
             sdk.version(),
             settings.state_transition_creation_options,
         )?;
+        ensure_valid_state_transition_structure(&transition, sdk.version())?;
 
         // response is empty for a broadcast, result comes from the stream wait for state transition result
         transition.broadcast(sdk, Some(settings)).await?;

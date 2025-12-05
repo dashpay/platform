@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
+use super::validation::ensure_valid_state_transition_structure;
 use crate::platform::transition::waitable::Waitable;
 use crate::platform::{Fetch, FetchMany};
 use crate::{Error, Sdk};
@@ -65,6 +66,7 @@ impl TransferToAddresses for Identity {
             sdk.version(),
             None,
         )?;
+        ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
 
         match state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)

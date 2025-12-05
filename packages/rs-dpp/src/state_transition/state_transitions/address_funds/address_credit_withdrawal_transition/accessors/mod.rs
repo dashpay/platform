@@ -1,6 +1,6 @@
 mod v0;
 
-use crate::address_funds::{AddressFundsFeeWithWithdrawalsStrategy, PlatformAddress};
+use crate::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use crate::fee::Credits;
 use crate::identity::core_script::CoreScript;
 use crate::state_transition::address_credit_withdrawal_transition::AddressCreditWithdrawalTransition;
@@ -20,13 +20,13 @@ impl AddressCreditWithdrawalTransitionAccessorsV0 for AddressCreditWithdrawalTra
         }
     }
 
-    fn fee_strategy(&self) -> &AddressFundsFeeWithWithdrawalsStrategy {
+    fn fee_strategy(&self) -> &AddressFundsFeeStrategy {
         match self {
             AddressCreditWithdrawalTransition::V0(v0) => &v0.fee_strategy,
         }
     }
 
-    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeWithWithdrawalsStrategy) {
+    fn set_fee_strategy(&mut self, fee_strategy: AddressFundsFeeStrategy) {
         match self {
             AddressCreditWithdrawalTransition::V0(v0) => v0.fee_strategy = fee_strategy,
         }

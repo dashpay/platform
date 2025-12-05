@@ -1,3 +1,4 @@
+mod advanced_structure;
 mod tests;
 mod transform_into_action;
 
@@ -6,6 +7,8 @@ use dpp::fee::Credits;
 use dpp::prelude::AddressNonce;
 use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFundingFromAssetLockTransition;
 use dpp::validation::ConsensusValidationResult;
+use dpp::version::PlatformVersion;
+use drive::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use drive::state_transition_action::StateTransitionAction;
 use std::collections::BTreeMap;
 
@@ -14,6 +17,7 @@ use drive::grovedb::TransactionArg;
 use crate::error::execution::ExecutionError;
 use crate::error::Error;
 use crate::execution::types::state_transition_execution_context::StateTransitionExecutionContext;
+use crate::execution::validation::state_transition::address_funding_from_asset_lock::advanced_structure::v0::AddressFundingFromAssetLockStateTransitionAdvancedStructureValidationV0;
 use crate::execution::validation::state_transition::address_funding_from_asset_lock::transform_into_action::v0::AddressFundingFromAssetLockStateTransitionTransformIntoActionValidationV0;
 use crate::platform_types::platform::PlatformRef;
 use crate::rpc::core::CoreRPCLike;
@@ -70,6 +74,55 @@ impl StateTransitionAddressFundingFromAssetLockTransitionActionTransformer
                     .to_string(),
                 known_versions: vec![0],
                 received: version,
+            })),
+        }
+    }
+}
+
+/// A trait for advanced structure validation after transforming into an action
+pub trait StateTransitionStructureKnownInStateValidationForAddressFundingFromAssetLockTransition {
+    /// Validation of the advanced structure
+    fn validate_advanced_structure_from_state_for_address_funding_from_asset_lock_transition(
+        &self,
+        action: AddressFundingFromAssetLockTransitionAction,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error>;
+}
+
+impl StateTransitionStructureKnownInStateValidationForAddressFundingFromAssetLockTransition
+    for AddressFundingFromAssetLockTransition
+{
+    fn validate_advanced_structure_from_state_for_address_funding_from_asset_lock_transition(
+        &self,
+        action: AddressFundingFromAssetLockTransitionAction,
+        execution_context: &mut StateTransitionExecutionContext,
+        platform_version: &PlatformVersion,
+    ) -> Result<ConsensusValidationResult<StateTransitionAction>, Error> {
+        match platform_version
+            .drive_abci
+            .validation_and_processing
+            .state_transitions
+            .address_funds_from_asset_lock
+            .advanced_structure
+        {
+            Some(0) => self.validate_advanced_structure_from_state_v0(
+                action,
+                execution_context,
+                platform_version,
+            ),
+            Some(version) => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
+                method:
+                    "address funding from asset lock transition: validate_advanced_structure_from_state"
+                        .to_string(),
+                known_versions: vec![0],
+                received: version,
+            })),
+            None => Err(Error::Execution(ExecutionError::VersionNotActive {
+                method:
+                    "address funding from asset lock transition: validate_advanced_structure_from_state"
+                        .to_string(),
+                known_versions: vec![0],
             })),
         }
     }

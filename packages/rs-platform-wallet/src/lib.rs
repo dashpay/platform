@@ -3,6 +3,7 @@
 //! This crate provides a wallet implementation that combines traditional
 //! wallet functionality with Dash Platform identity management.
 
+use async_trait::async_trait;
 use dashcore::Address as DashAddress;
 use dashcore::Transaction;
 use dpp::async_trait;
@@ -96,7 +97,7 @@ impl PlatformWalletInfo {
     }
 }
 /// Implement WalletTransactionChecker by delegating to ManagedWalletInfo
-#[async_trait::async_trait]
+#[async_trait]
 impl WalletTransactionChecker for PlatformWalletInfo {
     async fn check_transaction(
         &mut self,
@@ -368,7 +369,8 @@ impl WalletInfoInterface for PlatformWalletInfo {
     }
 
     fn update_chain_height(&mut self, network: Network, current_height: u32) {
-        todo!()
+        self.wallet_info
+            .update_chain_height(network, current_height)
     }
 }
 

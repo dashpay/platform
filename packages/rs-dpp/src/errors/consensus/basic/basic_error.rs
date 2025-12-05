@@ -73,9 +73,9 @@ use crate::consensus::basic::identity::{
 use crate::consensus::basic::invalid_identifier_error::InvalidIdentifierError;
 use crate::consensus::basic::state_transition::{
     FeeStrategyDuplicateError, FeeStrategyEmptyError, FeeStrategyIndexOutOfBoundsError,
-    FeeStrategyReduceWithdrawalNotLastError, FeeStrategyTooManyStepsError, InputBelowMinimumError,
-    InputOutputBalanceMismatchError, InputWitnessCountMismatchError, InputsNotLessThanOutputsError,
-    InsufficientFundingAmountError, InvalidStateTransitionTypeError,
+    FeeStrategyTooManyStepsError, InputBelowMinimumError, InputOutputBalanceMismatchError,
+    InputWitnessCountMismatchError, InputsNotLessThanOutputsError, InsufficientFundingAmountError,
+    InvalidRemainderOutputCountError, InvalidStateTransitionTypeError,
     MissingStateTransitionTypeError, OutputAddressAlsoInputError, OutputBelowMinimumError,
     OutputsNotGreaterThanInputsError, StateTransitionMaxSizeExceededError,
     StateTransitionNotActiveError, TransitionNoInputsError, TransitionNoOutputsError,
@@ -618,6 +618,9 @@ pub enum BasicError {
     TransitionNoOutputsError(TransitionNoOutputsError),
 
     #[error(transparent)]
+    InvalidRemainderOutputCountError(InvalidRemainderOutputCountError),
+
+    #[error(transparent)]
     FeeStrategyEmptyError(FeeStrategyEmptyError),
 
     #[error(transparent)]
@@ -628,9 +631,6 @@ pub enum BasicError {
 
     #[error(transparent)]
     FeeStrategyTooManyStepsError(FeeStrategyTooManyStepsError),
-
-    #[error(transparent)]
-    FeeStrategyReduceWithdrawalNotLastError(FeeStrategyReduceWithdrawalNotLastError),
 
     #[error(transparent)]
     InputBelowMinimumError(InputBelowMinimumError),

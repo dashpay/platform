@@ -9,6 +9,7 @@ use dpp::consensus::basic::state_transition::{
 use dpp::consensus::state::address_funds::{AddressDoesNotExistError, AddressNotEnoughFundsError};
 use dpp::consensus::ConsensusError;
 use dpp::serialization::PlatformDeserializable;
+use dpp::validation::SimpleConsensusValidationResult;
 use dpp::version::PlatformVersionError;
 use dpp::{dashcore_rpc, ProtocolError};
 use rs_dapi_client::transport::TransportError;
@@ -200,6 +201,21 @@ impl From<TransitionNoOutputsError> for Error {
 impl From<OutputBelowMinimumError> for Error {
     fn from(value: OutputBelowMinimumError) -> Self {
         Self::Protocol(ProtocolError::ConsensusError(Box::new(value.into())))
+    }
+}
+
+impl From<SimpleConsensusValidationResult> for Error {
+    fn from(value: SimpleConsensusValidationResult) -> Self {
+        value
+            .errors
+            .into_iter()
+            .next()
+            .map(Error::from)
+            .unwrap_or_else(|| {
+                Error::Protocol(ProtocolError::CorruptedCodeExecution(
+                    "state transition structure validation failed without an error".to_string(),
+                ))
+            })
     }
 }
 

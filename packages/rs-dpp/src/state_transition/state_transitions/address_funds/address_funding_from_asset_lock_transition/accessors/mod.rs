@@ -40,19 +40,19 @@ impl AddressFundingFromAssetLockTransitionAccessorsV0 for AddressFundingFromAsse
         }
     }
 
-    fn outputs(&self) -> &BTreeMap<PlatformAddress, Credits> {
+    fn outputs(&self) -> &BTreeMap<PlatformAddress, Option<Credits>> {
         match self {
             AddressFundingFromAssetLockTransition::V0(v0) => &v0.outputs,
         }
     }
 
-    fn outputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, Credits> {
+    fn outputs_mut(&mut self) -> &mut BTreeMap<PlatformAddress, Option<Credits>> {
         match self {
             AddressFundingFromAssetLockTransition::V0(v0) => &mut v0.outputs,
         }
     }
 
-    fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Credits>) {
+    fn set_outputs(&mut self, outputs: BTreeMap<PlatformAddress, Option<Credits>>) {
         match self {
             AddressFundingFromAssetLockTransition::V0(v0) => v0.outputs = outputs,
         }

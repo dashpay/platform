@@ -3,13 +3,10 @@ use crate::error::Error;
 use crate::state_transition_action::action_convert_to_operations::DriveHighLevelOperationConverter;
 use crate::state_transition_action::address_funds::address_funding_from_asset_lock::AddressFundingFromAssetLockTransitionAction;
 use crate::util::batch::drive_op_batch::AddressFundsOperationType;
-use crate::util::batch::DriveOperation::{
-    AddressFundsOperation, IdentityOperation, SystemOperation,
-};
-use crate::util::batch::{DriveOperation, IdentityOperationType, SystemOperationType};
+use crate::util::batch::DriveOperation::{AddressFundsOperation, SystemOperation};
+use crate::util::batch::{DriveOperation, SystemOperationType};
 use dpp::asset_lock::reduced_asset_lock_value::{AssetLockValueGettersV0, AssetLockValueSettersV0};
 use dpp::block::epoch::Epoch;
-use dpp::identity::Identity;
 use platform_version::version::PlatformVersion;
 
 impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionAction {
@@ -56,8 +53,19 @@ impl DriveHighLevelOperationConverter for AddressFundingFromAssetLockTransitionA
                     ));
                 }
 
+                // Calculate the sum of explicit outputs
+                let explicit_outputs_sum: u64 = outputs.values().flatten().sum();
+
+                // Calculate remainder: initial_balance - explicit_outputs_sum
+                // Note: fees are handled separately during validation, inputs have been consumed above
+                let remainder_balance = initial_balance.saturating_sub(explicit_outputs_sum);
+
                 // Add balance to outputs
-                for (address, balance_to_add) in outputs {
+                for (address, balance_option) in outputs {
+                    let balance_to_add = match balance_option {
+                        Some(explicit_amount) => explicit_amount,
+                        None => remainder_balance, // This address receives the remainder
+                    };
                     drive_operations.push(AddressFundsOperation(
                         AddressFundsOperationType::AddBalanceToAddress {
                             address,
