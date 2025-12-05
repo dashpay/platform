@@ -68,10 +68,6 @@ impl ReplaySource {
         out
     }
 
-    pub(super) fn path(&self) -> &Path {
-        &self.path
-    }
-
     pub(super) fn line(&self) -> usize {
         self.line
     }
@@ -258,7 +254,7 @@ where
                 .unwrap_or_default();
             let actual_hex = actual_hash
                 .as_ref()
-                .map(|hash| hex::encode(hash))
+                .map(hex::encode)
                 .unwrap_or_else(|| "unknown".to_string());
             tracing::debug!(
                 "finalize_block result ({}): height={}, retain_height={}, state_app_hash=0x{}, grove_root=0x{}",
