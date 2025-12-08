@@ -57,9 +57,11 @@ impl IdentityCreditTransferToAddressesTransitionBalanceValidationV0
                 .saturating_mul(output_count),
         );
 
-        if balance < amount.checked_add(required_fee).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))? {
+        let outbound_amount = amount.checked_add(required_fee).ok_or(Error::Execution(ExecutionError::Overflow("overflow when adding amount and min_leftover_credits_before_processing in identity credit transfer")))?;
+
+        if balance < outbound_amount {
             return Ok(SimpleConsensusValidationResult::new_with_error(
-                IdentityInsufficientBalanceError::new(self.identity_id(), balance, amount)
+                IdentityInsufficientBalanceError::new(self.identity_id(), balance, outbound_amount)
                     .into(),
             ));
         }

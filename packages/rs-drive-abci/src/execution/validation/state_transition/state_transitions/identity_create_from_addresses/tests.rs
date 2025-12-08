@@ -10432,7 +10432,6 @@ mod tests {
         #[test]
         fn test_transaction_rollback_on_validation_failure() {
             let platform_version = PlatformVersion::latest();
-            let mut rng = StdRng::seed_from_u64(6900);
 
             let config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
