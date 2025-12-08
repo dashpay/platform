@@ -22,6 +22,7 @@ impl AddressCreditWithdrawalTransitionActionV0 {
         creation_time_ms: u64,
     ) -> ConsensusValidationResult<Self> {
         let AddressCreditWithdrawalTransitionV0 {
+            inputs,
             output,
             fee_strategy,
             output_script,
@@ -31,16 +32,13 @@ impl AddressCreditWithdrawalTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all remaining balances from inputs
-        let total_remaining: Credits = inputs_with_remaining_balance
-            .values()
-            .map(|(_, balance)| *balance)
-            .sum();
+        // Sum all balances from inputs
+        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
 
         // Calculate the withdrawal amount: total remaining minus output (if any)
         let amount = match output {
-            Some((_, output_amount)) => total_remaining - output_amount,
-            None => total_remaining,
+            Some((_, output_amount)) => total_inputs - output_amount,
+            None => total_inputs,
         };
 
         // Generate entropy from inputs for document ID

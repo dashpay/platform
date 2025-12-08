@@ -40,12 +40,17 @@ impl<C> Platform<C> {
                     Some(limit_value as u16)
                 }
             })
-            .ok_or(drive::error::Error::Query(QuerySyntaxError::InvalidLimit(
-                format!(
-                    "limit {:?} greater than max limit {} or was set as 0",
-                    limit, config.max_query_limit
-                ),
-            )))?;
+            .ok_or_else(|| {
+                let message = if let Some(limit) = limit {
+                    format!(
+                        "limit {} greater than max limit {}",
+                        limit, config.max_query_limit
+                    )
+                } else {
+                    "limit must be set in proposed block count by range query".to_string()
+                };
+                drive::error::Error::Query(QuerySyntaxError::InvalidLimit(message))
+            })?;
 
         let formatted_start = match start {
             None => None,
