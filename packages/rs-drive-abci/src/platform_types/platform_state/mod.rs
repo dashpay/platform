@@ -109,7 +109,8 @@ impl Debug for PlatformState {
             )
             .field("full_masternode_list", &self.full_masternode_list)
             .field("hpmn_masternode_list", &self.hpmn_masternode_list)
-            .field("initialization_information", &self.genesis_block_info)
+            .field("patched_platform_version", &self.patched_platform_version)
+            .field("previous_fee_versions", &self.previous_fee_versions)
             .field(
                 "chain_lock_validating_quorums",
                 &self.chain_lock_validating_quorums,
