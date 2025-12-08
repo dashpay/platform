@@ -239,9 +239,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
         match value {
             PlatformStateForSaving::V0(v0) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => {
-                        Ok(PlatformState::from(v0))
-                    }
+                    0 => Ok(PlatformState::from(v0)),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV0)"
@@ -253,9 +251,7 @@ impl TryFromPlatformVersioned<PlatformStateForSaving> for PlatformState {
             }
             PlatformStateForSaving::V1(v1) => {
                 match platform_version.drive_abci.structs.platform_state_structure {
-                    0 => {
-                        Ok(PlatformState::from(v1))
-                    }
+                    0 => Ok(PlatformState::from(v1)),
                     version => Err(Error::Execution(ExecutionError::UnknownVersionMismatch {
                         method:
                             "PlatformState::try_from_platform_versioned(PlatformStateForSavingV1)"
