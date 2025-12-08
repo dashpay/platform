@@ -27,6 +27,7 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
         };
 
         let IdentityCreateFromAddressesTransitionV0 {
+            inputs,
             output,
             fee_strategy,
             public_keys,
@@ -34,16 +35,13 @@ impl IdentityCreateFromAddressesTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all remaining balances from inputs
-        let total_remaining: Credits = inputs_with_remaining_balance
-            .values()
-            .map(|(_, balance)| *balance)
-            .sum();
+        // Sum all balances from inputs
+        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
 
         // Subtract the output amount if present
         let fund_identity_amount = match output {
-            Some((_, output_amount)) => total_remaining - output_amount,
-            None => total_remaining,
+            Some((_, output_amount)) => total_inputs - output_amount,
+            None => total_inputs,
         };
 
         ConsensusValidationResult::new_with_data(IdentityCreateFromAddressesTransitionActionV0 {

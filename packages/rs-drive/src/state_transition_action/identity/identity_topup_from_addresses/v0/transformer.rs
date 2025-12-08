@@ -12,6 +12,7 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
         inputs_with_remaining_balance: BTreeMap<PlatformAddress, (AddressNonce, Credits)>,
     ) -> ConsensusValidationResult<Self> {
         let IdentityTopUpFromAddressesTransitionV0 {
+            inputs,
             identity_id,
             output,
             fee_strategy,
@@ -19,16 +20,13 @@ impl IdentityTopUpFromAddressesTransitionActionV0 {
             ..
         } = value;
 
-        // Sum all remaining balances from inputs
-        let total_remaining: Credits = inputs_with_remaining_balance
-            .values()
-            .map(|(_, balance)| *balance)
-            .sum();
+        // Sum all balances from inputs
+        let total_inputs: Credits = inputs.values().map(|(_, balance)| *balance).sum();
 
         // Subtract the output amount if present to get the topup amount
         let topup_amount = match output {
-            Some((_, output_amount)) => total_remaining - output_amount,
-            None => total_remaining,
+            Some((_, output_amount)) => total_inputs - output_amount,
+            None => total_inputs,
         };
 
         ConsensusValidationResult::new_with_data(IdentityTopUpFromAddressesTransitionActionV0 {
