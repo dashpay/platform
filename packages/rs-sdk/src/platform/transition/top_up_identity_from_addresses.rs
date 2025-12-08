@@ -9,6 +9,7 @@ use crate::platform::transition::broadcast::BroadcastStateTransition;
 use crate::{Error, Sdk};
 use dpp::address_funds::PlatformAddress;
 use dpp::fee::Credits;
+use dpp::identity::accessors::IdentityGettersV0;
 use dpp::identity::signer::Signer;
 use dpp::identity::Identity;
 use dpp::prelude::AddressNonce;
@@ -80,12 +81,24 @@ impl<S: Signer<PlatformAddress>> TopUpIdentityFromAddresses<S> for Identity {
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?
         {
-            StateTransitionProofResult::VerifiedPartialIdentity(identity) => identity
-                .balance
-                .ok_or_else(|| Error::Generic("expected an identity balance".to_string())),
-            _ => Err(Error::Generic(
-                "identity proof was expected but not returned".to_string(),
-            )),
+            StateTransitionProofResult::VerifiedPartialIdentity(identity) => {
+                if identity.id != *self.id() {
+                    return Err(Error::InvalidProvedResponse(format!(
+                        "proof returned identity {} but {} was topped up",
+                        identity.id, self.id()
+                    )));
+                }
+
+                identity.balance.ok_or_else(|| {
+                    Error::InvalidProvedResponse(
+                        "identity proof did not include updated balance".to_string(),
+                    )
+                })
+            }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "identity proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
         }
     }
 }
