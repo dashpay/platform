@@ -7,16 +7,22 @@ use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{
+    AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, AddressWitness, PlatformAddress,
+};
+use dpp::dashcore::hashes::{hash160, Hash};
+use dpp::dashcore::secp256k1::{Secp256k1, SecretKey};
+use dpp::dashcore::signer;
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
-use dpp::native_bls::NativeBlsModule;
+use dpp::platform_value::BinaryData;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
+use dpp::ProtocolError;
 use std::collections::BTreeMap;
 
 /// Funding sources supported when creating an identity.
@@ -185,6 +191,106 @@ async fn send_to_identity_with_source<S: Signer<IdentityPublicKey>>(
     }
 }
 
+/// A simple signer for platform addresses that maps addresses to their private keys
+#[derive(Debug)]
+struct SimpleAddressSigner {
+    /// Maps address hash (20 bytes) to private key (32 bytes)
+    keys: BTreeMap<[u8; 20], [u8; 32]>,
+}
+
+impl SimpleAddressSigner {
+    /// Create a new address signer from addresses and their corresponding private keys
+    fn new(addresses: &[PlatformAddress], private_keys: &[Vec<u8>]) -> Result<Self, ProtocolError> {
+        if addresses.len() != private_keys.len() {
+            return Err(ProtocolError::Generic(
+                "Number of addresses must match number of private keys".to_string(),
+            ));
+        }
+
+        let secp = Secp256k1::new();
+        let mut keys = BTreeMap::new();
+
+        for (address, private_key) in addresses.iter().zip(private_keys.iter()) {
+            if private_key.len() != 32 {
+                return Err(ProtocolError::Generic(
+                    "Private key must be 32 bytes".to_string(),
+                ));
+            }
+
+            let mut key_bytes = [0u8; 32];
+            key_bytes.copy_from_slice(private_key);
+
+            // Verify the private key corresponds to this address
+            let secret_key = SecretKey::from_byte_array(&key_bytes)
+                .map_err(|e| ProtocolError::Generic(format!("Invalid private key: {}", e)))?;
+            let public_key =
+                dpp::dashcore::secp256k1::PublicKey::from_secret_key(&secp, &secret_key);
+            let pubkey_hash: [u8; 20] =
+                hash160::Hash::hash(&public_key.serialize()).to_byte_array();
+
+            let address_hash = match address {
+                PlatformAddress::P2pkh(hash) => *hash,
+                PlatformAddress::P2sh(_) => {
+                    return Err(ProtocolError::Generic(
+                        "P2SH addresses not yet supported in SimpleAddressSigner".to_string(),
+                    ));
+                }
+            };
+
+            if pubkey_hash != address_hash {
+                return Err(ProtocolError::Generic(
+                    "Private key does not match address".to_string(),
+                ));
+            }
+
+            keys.insert(address_hash, key_bytes);
+        }
+
+        Ok(Self { keys })
+    }
+}
+
+impl Signer<PlatformAddress> for SimpleAddressSigner {
+    fn sign(&self, key: &PlatformAddress, data: &[u8]) -> Result<BinaryData, ProtocolError> {
+        let hash = match key {
+            PlatformAddress::P2pkh(hash) => hash,
+            PlatformAddress::P2sh(_) => {
+                return Err(ProtocolError::Generic(
+                    "P2SH addresses not supported".to_string(),
+                ));
+            }
+        };
+
+        let private_key = self.keys.get(hash).ok_or_else(|| {
+            ProtocolError::Generic(format!("No private key found for address {:?}", key))
+        })?;
+
+        let signature = signer::sign(data, private_key)?;
+        Ok(signature.to_vec().into())
+    }
+
+    fn sign_create_witness(
+        &self,
+        key: &PlatformAddress,
+        data: &[u8],
+    ) -> Result<AddressWitness, ProtocolError> {
+        let signature = self.sign(key, data)?;
+        match key {
+            PlatformAddress::P2pkh(_) => Ok(AddressWitness::P2pkh { signature }),
+            PlatformAddress::P2sh(_) => Err(ProtocolError::Generic(
+                "P2SH addresses not supported".to_string(),
+            )),
+        }
+    }
+
+    fn can_sign_with(&self, key: &PlatformAddress) -> bool {
+        match key {
+            PlatformAddress::P2pkh(hash) => self.keys.contains_key(hash),
+            PlatformAddress::P2sh(_) => false,
+        }
+    }
+}
+
 async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
     identity: &Identity,
     sdk: &Sdk,
@@ -198,10 +304,14 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
             "input_private_keys must contain at least one key".to_string(),
         ));
     }
-    let key_refs: Vec<&[u8]> = input_private_keys
-        .iter()
-        .map(|key| key.as_slice())
-        .collect();
+
+    // Create address signer from inputs and private keys
+    let addresses: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+    let address_signer = SimpleAddressSigner::new(&addresses, input_private_keys)?;
+
+    // Default fee strategy: deduct from first input
+    let fee_strategy: AddressFundsFeeStrategy =
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
     let user_fee_increase = settings
         .as_ref()
@@ -211,9 +321,9 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
     let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
         identity,
         inputs,
-        key_refs,
+        fee_strategy,
         signer,
-        &NativeBlsModule,
+        &address_signer,
         user_fee_increase,
         sdk.version(),
     )?;
