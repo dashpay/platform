@@ -4670,13 +4670,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn test_transfer_full_balance_fails_without_fee_reserve() {
-            // With the minimum balance pre-check, transferring 100% of balance
-            // fails because there's no remaining balance for fees.
-            // Even with ReduceOutput strategy (fees from output), the pre-check
-            // requires remaining balance >= required fee.
-            // Required fee = 500_000 (input) + 6_000_000 (output) = 6.5M credits
-
+        fn test_transfer_full_balance_with_reduce_output_fee_strategy() {
             let platform_version = PlatformVersion::latest();
             let platform_config = PlatformConfig {
                 testing_configs: PlatformTestConfig {
@@ -4706,7 +4700,7 @@ mod tests {
             let mut outputs = BTreeMap::new();
             outputs.insert(output_address, exact_balance);
 
-            // Use ReduceOutput so fee comes from output
+            // Use ReduceOutput so fee comes from output - recipient gets (exact_balance - fee)
             let transition = AddressFundsTransferTransitionV0::try_from_inputs_with_signer(
                 inputs,
                 outputs,
@@ -4737,10 +4731,10 @@ mod tests {
                 )
                 .expect("expected to process state transition");
 
-            // Should fail because remaining balance (0) < required fee (~6.5M)
+            // Succeeds because ReduceOutput deducts the fee from the output amount
             assert_matches!(
                 processing_result.execution_results().as_slice(),
-                [StateTransitionExecutionResult::UnpaidConsensusError(..)]
+                [StateTransitionExecutionResult::SuccessfulExecution(..)]
             );
         }
 
