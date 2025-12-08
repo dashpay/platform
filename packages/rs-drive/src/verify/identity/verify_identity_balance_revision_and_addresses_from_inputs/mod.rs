@@ -17,6 +17,12 @@ impl Drive {
     /// This helper is primarily used by identity top-up transitions that spend balances from
     /// Platform addresses. It ensures the proof contains all expected information and that the
     /// subset verifications share the same root hash.
+    ///
+    /// Returns a tuple consisting of:
+    /// * `RootHash` – the GroveDB root hash shared by the identity and address proofs.
+    /// * `Option<(Credits, u64)>` – the identity balance (credits) and revision if the identity exists.
+    /// * `BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>` – the proved nonce/balance for
+    ///   each queried address (or `None` if the address was absent).
     pub fn verify_identity_balance_revision_and_addresses_from_inputs<
         'a,
         I: IntoIterator<Item = &'a PlatformAddress>,

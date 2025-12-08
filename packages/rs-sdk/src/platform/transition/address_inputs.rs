@@ -49,9 +49,9 @@ pub(crate) fn collect_address_infos_from_proof(
 
     if expected_addresses.len() != returned_addresses.len() {
         tracing::debug!(
-            "address proof length mismatch. expected addresses: {:?}, received addresses: {:?}",
-            expected_addresses,
-            returned_addresses
+            ?expected_addresses,
+            ?returned_addresses,
+            "address proof length mismatch",
         );
         return Err(Error::InvalidProvedResponse(format!(
             "proof returned different number of addresses. expected {}, received {}",
@@ -59,21 +59,21 @@ pub(crate) fn collect_address_infos_from_proof(
             address_infos_map.len()
         )));
     }
+
     let address_infos_keys: BTreeSet<&PlatformAddress> = address_infos_map.keys().collect();
     let expected_addresses_ref: BTreeSet<&PlatformAddress> =
         expected_addresses.iter().by_ref().collect();
 
     if address_infos_keys != expected_addresses_ref {
         tracing::debug!(
-            "address proof mismatch: expected {:?}, got {:?}",
-            expected_addresses_ref,
-            address_infos_keys
+            ?expected_addresses_ref,
+            ?address_infos_keys,
+            "address proof mismatch",
         );
         return Err(Error::InvalidProvedResponse(format!(
             "proof returned different addresses",
         )));
     }
-
     let infos: AddressInfos = address_infos_map
         .into_iter()
         .map(|(address, maybe_info)| {

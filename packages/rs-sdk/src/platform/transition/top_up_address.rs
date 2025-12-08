@@ -35,8 +35,38 @@ pub trait TopUpAddress<S: Signer<PlatformAddress>> {
     ) -> Result<AddressInfos, Error>;
 }
 
+pub type AddressWithBalance = (PlatformAddress, Option<Credits>);
+pub type AddressesWithBalances = BTreeMap<PlatformAddress, Option<Credits>>;
+
 #[async_trait::async_trait]
-impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, Option<Credits>> {
+impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressWithBalance
+where
+    BTreeMap<PlatformAddress, Option<Credits>>: TopUpAddress<S>,
+{
+    async fn top_up(
+        &self,
+        sdk: &Sdk,
+        asset_lock_proof: AssetLockProof,
+        asset_lock_private_key: PrivateKey,
+        fee_strategy: AddressFundsFeeStrategy,
+        signer: &S,
+        settings: Option<PutSettings>,
+    ) -> Result<AddressInfos, Error> {
+        BTreeMap::from([(self.0, self.1)])
+            .top_up(
+                sdk,
+                asset_lock_proof,
+                asset_lock_private_key,
+                fee_strategy,
+                signer,
+                settings,
+            )
+            .await
+    }
+}
+
+#[async_trait::async_trait]
+impl<S: Signer<PlatformAddress>> TopUpAddress<S> for AddressesWithBalances {
     async fn top_up(
         &self,
         sdk: &Sdk,
