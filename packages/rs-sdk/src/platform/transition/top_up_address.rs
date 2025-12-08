@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 
+use super::address_inputs::collect_address_infos_from_proof;
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
@@ -15,7 +16,7 @@ use dpp::state_transition::address_funding_from_asset_lock_transition::AddressFu
 use dpp::state_transition::proof_result::StateTransitionProofResult;
 use dpp::state_transition::StateTransition;
 use dpp::ProtocolError;
-use drive_proof_verifier::types::{AddressInfo, AddressInfos};
+use drive_proof_verifier::types::AddressInfos;
 
 /// Trait for topping up Platform addresses using various funding sources.
 #[async_trait::async_trait]
@@ -71,28 +72,9 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, O
             .await?;
         match st_result {
             StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
-                let requested: BTreeSet<PlatformAddress> =
-                    self.keys().copied().collect::<BTreeSet<_>>();
-                let received: BTreeSet<PlatformAddress> =
-                    address_infos.keys().copied().collect::<BTreeSet<_>>();
-                if requested != received {
-                    return Err(Error::InvalidProvedResponse(format!(
-                        "proof returned different addresses. requested: {:?}, received: {:?}",
-                        requested, received
-                    )));
-                }
-                let infos: AddressInfos = address_infos
-                    .into_iter()
-                    .map(|(address, maybe_info)| {
-                        let info = maybe_info.map(|(nonce, balance)| AddressInfo {
-                            address,
-                            nonce,
-                            balance,
-                        });
-                        (address, info)
-                    })
-                    .collect();
-                Ok(infos)
+                let expected_addresses =
+                    self.keys().copied().collect::<BTreeSet<PlatformAddress>>();
+                collect_address_infos_from_proof(address_infos, &expected_addresses)
             }
             other => Err(Error::InvalidProvedResponse(format!(
                 "address info proof was expected for {:?}, but received {:?}",

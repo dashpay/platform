@@ -1057,25 +1057,17 @@ impl Drive {
             StateTransition::AddressCreditWithdrawal(st) => {
                 // Verify balances for input addresses after withdrawal
                 use dpp::state_transition::StateTransitionWitnessSigned;
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(
-                        proof,
-                        st.inputs().keys(),
-                        false,
-                        platform_version,
-                    )?;
-                // Return the verified balances
-                // TODO: Define proper StateTransitionProofResult variant for address withdrawal
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: Identifier::default(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.inputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                Ok((root_hash, VerifiedAddressInfos(balances)))
             }
         }
     }
