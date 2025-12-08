@@ -3,7 +3,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
-use crate::platform::FetchMany;
 use crate::{Error, Sdk};
 use dpp::address_funds::{AddressFundsFeeStrategy, PlatformAddress};
 use dpp::dashcore::PrivateKey;
@@ -67,13 +66,39 @@ impl<S: Signer<PlatformAddress>> TopUpAddress<S> for BTreeMap<PlatformAddress, O
         )?;
 
         ensure_valid_state_transition_structure(&state_transition, sdk.version())?;
-        state_transition
+        let st_result = state_transition
             .broadcast_and_wait::<StateTransitionProofResult>(sdk, settings)
             .await?;
-
-        let addresses_to_refresh: BTreeSet<PlatformAddress> =
-            self.keys().copied().collect::<BTreeSet<_>>();
-        AddressInfo::fetch_many(sdk, addresses_to_refresh).await
+        match st_result {
+            StateTransitionProofResult::VerifiedAddressInfos(address_infos) => {
+                let requested: BTreeSet<PlatformAddress> =
+                    self.keys().copied().collect::<BTreeSet<_>>();
+                let received: BTreeSet<PlatformAddress> =
+                    address_infos.keys().copied().collect::<BTreeSet<_>>();
+                if requested != received {
+                    return Err(Error::InvalidProvedResponse(format!(
+                        "proof returned different addresses. requested: {:?}, received: {:?}",
+                        requested, received
+                    )));
+                }
+                let infos: AddressInfos = address_infos
+                    .into_iter()
+                    .map(|(address, maybe_info)| {
+                        let info = maybe_info.map(|(nonce, balance)| AddressInfo {
+                            address,
+                            nonce,
+                            balance,
+                        });
+                        (address, info)
+                    })
+                    .collect();
+                Ok(infos)
+            }
+            other => Err(Error::InvalidProvedResponse(format!(
+                "address info proof was expected for {:?}, but received {:?}",
+                state_transition, other
+            ))),
+        }
     }
 }
 

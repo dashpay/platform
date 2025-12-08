@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use dpp::address_funds::PlatformAddress;
 use dpp::balances::credits::TokenAmount;
 use dpp::block::block_info::BlockInfo;
 use dpp::data_contract::accessors::v0::DataContractV0Getters;
@@ -14,7 +15,7 @@ use dpp::fee::Credits;
 use dpp::group::group_action_status::GroupActionStatus;
 use dpp::identity::PartialIdentity;
 use dpp::platform_value::btreemap_extensions::BTreeValueMapHelper;
-use dpp::prelude::Identifier;
+use dpp::prelude::{AddressNonce, Identifier};
 use dpp::state_transition::data_contract_create_transition::accessors::DataContractCreateTransitionAccessorsV0;
 use dpp::state_transition::data_contract_update_transition::accessors::DataContractUpdateTransitionAccessorsV0;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
@@ -41,7 +42,7 @@ use dpp::state_transition::batch_transition::token_transfer_transition::v0::v0_m
 use dpp::state_transition::batch_transition::token_unfreeze_transition::v0::v0_methods::TokenUnfreezeTransitionV0Methods;
 use dpp::state_transition::masternode_vote_transition::accessors::MasternodeVoteTransitionAccessorsV0;
 use dpp::state_transition::proof_result::StateTransitionProofResult;
-use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
+use dpp::state_transition::proof_result::StateTransitionProofResult::{VerifiedAddressInfos, VerifiedBalanceTransfer, VerifiedDataContract, VerifiedDocuments, VerifiedIdentity, VerifiedMasternodeVote, VerifiedPartialIdentity, VerifiedTokenActionWithDocument, VerifiedTokenBalance, VerifiedTokenGroupActionWithDocument, VerifiedTokenGroupActionWithTokenBalance, VerifiedTokenGroupActionWithTokenIdentityInfo, VerifiedTokenGroupActionWithTokenPricingSchedule, VerifiedTokenIdentitiesBalances, VerifiedTokenIdentityInfo, VerifiedTokenPricingSchedule};
 use dpp::system_data_contracts::{load_system_data_contract, SystemDataContract};
 use dpp::tokens::info::v0::IdentityTokenInfoV0Accessors;
 use dpp::voting::vote_polls::VotePoll;
@@ -1041,25 +1042,17 @@ impl Drive {
             StateTransition::AddressFundingFromAssetLock(st) => {
                 // Verify balances for output addresses after funding
                 use dpp::state_transition::address_funding_from_asset_lock_transition::accessors::AddressFundingFromAssetLockTransitionAccessorsV0;
-                let (root_hash, _balances): (RootHash, BTreeMap<_, _>) =
-                    Drive::verify_addresses_infos(
-                        proof,
-                        st.outputs().keys(),
-                        false,
-                        platform_version,
-                    )?;
-                // Return the verified balances
-                // TODO: Define proper StateTransitionProofResult variant for address funding
-                Ok((
-                    root_hash,
-                    VerifiedPartialIdentity(PartialIdentity {
-                        id: Identifier::default(),
-                        loaded_public_keys: Default::default(),
-                        balance: None,
-                        revision: None,
-                        not_found_public_keys: Default::default(),
-                    }),
-                ))
+                let (root_hash, balances): (
+                    RootHash,
+                    BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                ) = Drive::verify_addresses_infos(
+                    proof,
+                    st.outputs().keys(),
+                    false,
+                    platform_version,
+                )?;
+
+                Ok((root_hash, VerifiedAddressInfos(balances)))
             }
             StateTransition::AddressCreditWithdrawal(st) => {
                 // Verify balances for input addresses after withdrawal
