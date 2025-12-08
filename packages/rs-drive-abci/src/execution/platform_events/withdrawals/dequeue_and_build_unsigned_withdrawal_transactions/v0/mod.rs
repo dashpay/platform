@@ -69,10 +69,10 @@ where
         )?;
 
         tracing::debug!(
-            "Deque {} unsigned withdrawal transactions for signing with indices from {} to {}",
+            "Deque {} unsigned withdrawal transactions for signing with indices from {:?} to {:?}",
             documents.len(),
-            transaction_indices.first().expect("must be present"),
-            transaction_indices.last().expect("must be present")
+            transaction_indices.first(),
+            transaction_indices.last()
         );
 
         let withdrawals_contract = self.drive.cache.system_data_contracts.load_withdrawals();
