@@ -6,7 +6,7 @@
 use std::ops::{Deref, DerefMut};
 
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 #[cfg(any(feature = "mocks", test))]
 use crate::rpc::core::MockCoreRPCLike;
 use crate::{config::PlatformConfig, rpc::core::DefaultCoreRPC};

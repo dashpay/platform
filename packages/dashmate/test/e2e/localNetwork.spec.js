@@ -45,7 +45,6 @@ describe('Local Network', function main() {
     if (process.env.DASHMATE_E2E_TESTS_SKIP_IMAGE_BUILD !== 'true') {
       localConfig.set('dashmate.helper.docker.build.enabled', true);
       localConfig.set('platform.drive.abci.docker.build.enabled', true);
-      localConfig.set('platform.dapi.api.docker.build.enabled', true);
       localConfig.set('platform.dapi.rsDapi.docker.build.enabled', true);
     }
 

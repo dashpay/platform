@@ -15,7 +15,7 @@ use dpp::{
     dashcore::{hashes::Hash as CoreHash, ProTxHash},
     document::{serialization_traits::DocumentCborMethodsV0, Document},
     identifier::Identifier,
-    identity::IdentityPublicKey,
+    identity::{identities_contract_keys::IdentitiesContractKeys, IdentityPublicKey},
     platform_serialization::{platform_encode_to_vec, platform_versioned_decode_from_slice},
     prelude::{DataContract, Identity},
     serialization::{
@@ -458,6 +458,21 @@ impl MockResponse for GroupActions {
                 .expect(concat!("decode ", stringify!($name)));
 
         RetrievedValues::from_iter(vec)
+    }
+}
+
+impl MockResponse for IdentitiesContractKeys {
+    fn mock_serialize(&self, _sdk: &MockDashPlatformSdk) -> Vec<u8> {
+        bincode::encode_to_vec(self, BINCODE_CONFIG).expect("encode IdentitiesContractKeys")
+    }
+
+    fn mock_deserialize(_sdk: &MockDashPlatformSdk, buf: &[u8]) -> Self
+    where
+        Self: Sized,
+    {
+        bincode::decode_from_slice(buf, BINCODE_CONFIG)
+            .expect("decode IdentitiesContractKeys")
+            .0
     }
 }
 

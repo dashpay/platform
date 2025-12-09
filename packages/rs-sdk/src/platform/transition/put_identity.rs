@@ -13,7 +13,6 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
-use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
 use simple_signer::SimpleAddressSigner;
@@ -38,7 +37,9 @@ pub enum IdentityFunding {
 /// A trait for putting an identity to platform
 #[async_trait::async_trait]
 pub trait PutIdentity<S: Signer<IdentityPublicKey>>: Waitable {
-    /// Sends a new identity to Platform using the provided funding source.
+    /// Puts an identity on platform.
+    ///
+    /// TODO: Discuss if it should not actually consume self, since it is no longer valid (eg. identity id is changed)
     async fn send_to_platform(
         &self,
         sdk: &Sdk,

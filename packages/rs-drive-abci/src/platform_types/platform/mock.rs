@@ -1,7 +1,7 @@
 use crate::config::PlatformConfig;
 use crate::error::Error;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::MockCoreRPCLike;
 use dpp::dashcore::BlockHash;
 use dpp::version::PlatformVersionCurrentVersion;

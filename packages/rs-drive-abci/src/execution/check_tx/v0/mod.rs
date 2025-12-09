@@ -7,7 +7,7 @@ use crate::platform_types::event_execution_result::EventExecutionResult;
 #[cfg(test)]
 use crate::platform_types::event_execution_result::EventExecutionResult::UnpaidConsensusExecutionError;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::rpc::core::CoreRPCLike;
 
 use dpp::consensus::ConsensusError;
@@ -204,7 +204,7 @@ mod tests {
     use crate::platform_types::event_execution_result::EventExecutionResult::{
         SuccessfulPaidExecution, UnpaidConsensusExecutionError, UnsuccessfulPaidExecution,
     };
-    use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use crate::platform_types::platform_state::PlatformStateV0Methods;
     use crate::test::helpers::setup::TestPlatformBuilder;
     use dpp::block::block_info::BlockInfo;
     use dpp::consensus::basic::BasicError;
