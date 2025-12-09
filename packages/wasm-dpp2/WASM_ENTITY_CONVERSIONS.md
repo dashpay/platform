@@ -55,7 +55,7 @@ BatchTransitionWasm now uses a unified `fromBatchedTransitions` constructor (no 
 | `DocumentTransferTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/document_transitions/transfer.rs` | toDocumentTransition | fromDocumentTransition |
 | `DocumentTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/document_transition.rs` | — | — |
 | `DocumentUpdatePriceTransitionWasm` | `packages/wasm-dpp2/src/state_transitions/batch/document_transitions/update_price.rs` | toDocumentTransition | fromDocumentTransition |
-| `DocumentWasm` | `packages/wasm-dpp2/src/data_contract/document/model.rs` | — | — |
+| ✅ `DocumentWasm` | `packages/wasm-dpp2/src/data_contract/document/model.rs` | toBase64, toBytes, toHex, toJSON, toObject | fromBase64, fromBytes, fromHex, fromJSON, fromObject |
 | 🔸 `EpochBasedDistributionWasm` (skipped) | `packages/wasm-dpp2/src/tokens/configuration/reward_distribution_type.rs` | — | — |
 | `ExtendedEpochInfoWasm` | `packages/wasm-dpp2/src/epoch/extended_epoch_info.rs` | — | — |
 | `FinalizedEpochInfoWasm` | `packages/wasm-dpp2/src/epoch/finalized_epoch_info.rs` | — | — |

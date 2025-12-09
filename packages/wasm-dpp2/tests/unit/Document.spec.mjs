@@ -37,11 +37,65 @@ describe('Document', () => {
       const dataContract = wasm.DataContract.fromJSON(dataContractValue, false);
       const documentInstance = wasm.Document.fromBytes(fromHexString(documentBytes), dataContract, 'note');
 
-      const bytes = documentInstance.bytes(dataContract, PlatformVersion.PLATFORM_V1);
+      const bytes = documentInstance.toBytes(dataContract, PlatformVersion.PLATFORM_V1);
 
       expect(documentInstance.dataContractId.toBase58()).to.equal(dataContract.id.toBase58());
       expect(bytes).to.deep.equal(fromHexString(documentBytes));
       expect(dataContract.__wbg_ptr).to.not.equal(0);
+    });
+  });
+
+  describe('toObject / fromObject', () => {
+    it('should convert to object with binary fields as Uint8Array', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const obj = documentInstance.toObject();
+
+      expect(obj.$id).to.be.instanceOf(Uint8Array);
+      expect(obj.$ownerId).to.be.instanceOf(Uint8Array);
+      expect(obj.$dataContractId).to.be.instanceOf(Uint8Array);
+      expect(obj.$type).to.equal(documentTypeName);
+      expect(obj.$revision).to.equal(Number(revision));
+    });
+
+    it('should roundtrip through toObject / fromObject', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const obj = documentInstance.toObject();
+      const restored = wasm.Document.fromObject(obj);
+
+      expect(restored.id.toBase58()).to.equal(documentInstance.id.toBase58());
+      expect(restored.ownerId.toBase58()).to.equal(documentInstance.ownerId.toBase58());
+      expect(restored.dataContractId.toBase58()).to.equal(documentInstance.dataContractId.toBase58());
+      expect(restored.documentTypeName).to.equal(documentInstance.documentTypeName);
+      expect(restored.revision).to.equal(documentInstance.revision);
+    });
+  });
+
+  describe('toJSON / fromJSON', () => {
+    it('should convert to JSON with identifiers as Base58 strings', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const json = documentInstance.toJSON();
+
+      expect(typeof json.$id).to.equal('string');
+      expect(typeof json.$ownerId).to.equal('string');
+      expect(typeof json.$dataContractId).to.equal('string');
+      expect(json.$type).to.equal(documentTypeName);
+      expect(json.$revision).to.equal(Number(revision));
+    });
+
+    it('should roundtrip through toJSON / fromJSON', () => {
+      const documentInstance = new wasm.Document(document, documentTypeName, revision, dataContractId, ownerId, id);
+
+      const json = documentInstance.toJSON();
+      const restored = wasm.Document.fromJSON(json);
+
+      expect(restored.id.toBase58()).to.equal(documentInstance.id.toBase58());
+      expect(restored.ownerId.toBase58()).to.equal(documentInstance.ownerId.toBase58());
+      expect(restored.dataContractId.toBase58()).to.equal(documentInstance.dataContractId.toBase58());
+      expect(restored.documentTypeName).to.equal(documentInstance.documentTypeName);
+      expect(restored.revision).to.equal(documentInstance.revision);
     });
   });
 

@@ -7,7 +7,9 @@ use crate::utils::ToSerdeJSONExt;
 use dpp::dashcore::hashes::serde::Serialize;
 use dpp::data_contract::JsonValue;
 use dpp::document::Document;
-use dpp::document::serialization_traits::DocumentPlatformConversionMethodsV0;
+use dpp::document::serialization_traits::{
+    DocumentJsonMethodsV0, DocumentPlatformConversionMethodsV0, DocumentPlatformValueMethodsV0,
+};
 use dpp::identifier::Identifier;
 use dpp::platform_value::Value;
 use dpp::platform_value::converter::serde_json::BTreeValueJsonConverter;
@@ -291,7 +293,213 @@ impl DocumentWasm {
         self.document_type_name = document_type_name.to_string();
     }
 
-    #[wasm_bindgen(js_name=bytes)]
+    /// Convert to a JS object with binary fields as Uint8Array.
+    #[wasm_bindgen(js_name = toObject)]
+    pub fn to_object(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
+        let _platform_version = match js_platform_version.is_undefined() {
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
+        };
+
+        let rs_document: Document = Document::from(self.clone());
+        let value = rs_document.to_object()?;
+
+        // Add document metadata that's stored in DocumentWasm but not in Document
+        let mut map = value
+            .into_btree_string_map()
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        let contract_id: Identifier = self.data_contract_id.into();
+        map.insert("$dataContractId".to_string(), Value::Identifier(contract_id.into_buffer()));
+        map.insert(
+            "$type".to_string(),
+            Value::Text(self.document_type_name.clone()),
+        );
+        if let Some(entropy) = self.entropy {
+            map.insert("$entropy".to_string(), Value::Bytes(entropy.to_vec()));
+        }
+
+        let serializer = serde_wasm_bindgen::Serializer::new().serialize_maps_as_objects(true);
+        Value::Map(
+            map.into_iter()
+                .map(|(k, v)| (Value::Text(k), v))
+                .collect(),
+        )
+        .serialize(&serializer)
+        .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    /// Create a Document from a JS object.
+    #[wasm_bindgen(js_name = fromObject)]
+    pub fn from_object(
+        js_value: JsValue,
+        js_platform_version: JsValue,
+    ) -> WasmDppResult<DocumentWasm> {
+        let platform_version = match js_platform_version.is_undefined() {
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
+        };
+
+        let value = js_value.with_serde_to_platform_value()?;
+        let map = value
+            .clone()
+            .into_btree_string_map()
+            .map_err(|e| WasmDppError::serialization(e.to_string()))?;
+
+        // Extract document metadata
+        let data_contract_id = map
+            .get("$dataContractId")
+            .and_then(|v| v.to_identifier().ok())
+            .unwrap_or_default();
+        let document_type_name = map
+            .get("$type")
+            .and_then(|v| v.as_text())
+            .unwrap_or("")
+            .to_string();
+        let entropy = map.get("$entropy").and_then(|v| {
+            v.as_bytes().and_then(|bytes| {
+                let mut arr = [0u8; 32];
+                if bytes.len() == 32 {
+                    arr.copy_from_slice(bytes);
+                    Some(arr)
+                } else {
+                    None
+                }
+            })
+        });
+
+        let rs_document =
+            Document::from_platform_value(value, &platform_version.into())?;
+
+        let mut doc = DocumentWasm::from(rs_document);
+        doc.data_contract_id = data_contract_id.into();
+        doc.document_type_name = document_type_name;
+        doc.entropy = entropy;
+
+        Ok(doc)
+    }
+
+    /// Convert to a JSON-compatible JS object with binary fields as strings.
+    #[wasm_bindgen(js_name = toJSON)]
+    pub fn to_json(&self, js_platform_version: JsValue) -> WasmDppResult<JsValue> {
+        let platform_version = match js_platform_version.is_undefined() {
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
+        };
+
+        let rs_document: Document = Document::from(self.clone());
+        let mut json = rs_document.to_json(&platform_version.into())?;
+
+        // Add document metadata that's stored in DocumentWasm but not in Document
+        if let Some(obj) = json.as_object_mut() {
+            obj.insert(
+                "$dataContractId".to_string(),
+                serde_json::Value::String(self.data_contract_id.to_base58()),
+            );
+            obj.insert(
+                "$type".to_string(),
+                serde_json::Value::String(self.document_type_name.clone()),
+            );
+            if let Some(entropy) = self.entropy {
+                obj.insert(
+                    "$entropy".to_string(),
+                    serde_json::Value::String(encode(&entropy, Base64)),
+                );
+            }
+        }
+
+        json.serialize(&serde_wasm_bindgen::Serializer::json_compatible())
+            .map_err(|e| WasmDppError::serialization(e.to_string()))
+    }
+
+    /// Create a Document from a JSON object.
+    #[wasm_bindgen(js_name = fromJSON)]
+    pub fn from_json(
+        js_value: JsValue,
+        js_platform_version: JsValue,
+    ) -> WasmDppResult<DocumentWasm> {
+        let platform_version = match js_platform_version.is_undefined() {
+            true => PlatformVersionWasm::default(),
+            false => PlatformVersionWasm::try_from(js_platform_version)?,
+        };
+
+        let mut json_value: JsonValue = js_value.with_serde_to_json_value()?;
+
+        // Extract document metadata from JSON
+        let data_contract_id: IdentifierWasm = json_value
+            .get("$dataContractId")
+            .and_then(|v| v.as_str())
+            .and_then(|s| IdentifierWasm::try_from(s).ok())
+            .unwrap_or_else(|| Identifier::default().into());
+        let document_type_name = json_value
+            .get("$type")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
+        let entropy = json_value.get("$entropy").and_then(|v| {
+            v.as_str().and_then(|s| {
+                decode(s, Base64).ok().and_then(|bytes| {
+                    if bytes.len() == 32 {
+                        let mut arr = [0u8; 32];
+                        arr.copy_from_slice(&bytes);
+                        Some(arr)
+                    } else {
+                        None
+                    }
+                })
+            })
+        });
+
+        // Convert identifier strings to byte arrays for from_platform_value
+        if let Some(obj) = json_value.as_object_mut() {
+            // Convert $id from Base58 string to byte array
+            if let Some(id_val) = obj.get("$id").and_then(|v| v.as_str()) {
+                if let Ok(id) = IdentifierWasm::try_from(id_val) {
+                    obj.insert(
+                        "$id".to_string(),
+                        serde_json::Value::Array(
+                            id.to_bytes().into_iter().map(|b| serde_json::Value::Number(b.into())).collect()
+                        ),
+                    );
+                }
+            }
+            // Convert $ownerId from Base58 string to byte array
+            if let Some(owner_val) = obj.get("$ownerId").and_then(|v| v.as_str()) {
+                if let Ok(id) = IdentifierWasm::try_from(owner_val) {
+                    obj.insert(
+                        "$ownerId".to_string(),
+                        serde_json::Value::Array(
+                            id.to_bytes().into_iter().map(|b| serde_json::Value::Number(b.into())).collect()
+                        ),
+                    );
+                }
+            }
+            // Convert $creatorId from Base58 string to byte array if present
+            if let Some(creator_val) = obj.get("$creatorId").and_then(|v| v.as_str()) {
+                if let Ok(id) = IdentifierWasm::try_from(creator_val) {
+                    obj.insert(
+                        "$creatorId".to_string(),
+                        serde_json::Value::Array(
+                            id.to_bytes().into_iter().map(|b| serde_json::Value::Number(b.into())).collect()
+                        ),
+                    );
+                }
+            }
+        }
+
+        // Convert JSON to platform value and use from_platform_value
+        let platform_value: Value = json_value.into();
+        let rs_document = Document::from_platform_value(platform_value, &platform_version.into())?;
+
+        let mut doc = DocumentWasm::from(rs_document);
+        doc.data_contract_id = data_contract_id;
+        doc.document_type_name = document_type_name;
+        doc.entropy = entropy;
+
+        Ok(doc)
+    }
+
+    #[wasm_bindgen(js_name=toBytes)]
     pub fn to_bytes(
         &self,
         data_contract: &DataContractWasm,
@@ -317,7 +525,7 @@ impl DocumentWasm {
         .map_err(Into::into)
     }
 
-    #[wasm_bindgen(js_name=hex)]
+    #[wasm_bindgen(js_name=toHex)]
     pub fn to_hex(
         &self,
         data_contract: &DataContractWasm,
@@ -330,7 +538,7 @@ impl DocumentWasm {
         ))
     }
 
-    #[wasm_bindgen(js_name=base64)]
+    #[wasm_bindgen(js_name=toBase64)]
     pub fn to_base64(
         &self,
         data_contract: &DataContractWasm,
