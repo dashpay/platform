@@ -13,7 +13,7 @@ use dpp::version::PlatformVersion;
 use drive::util::batch::DriveOperation::IdentityOperation;
 use drive::util::batch::IdentityOperationType::AddNewIdentity;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 use dpp::dashcore::hashes::Hash;
 use drive::grovedb::Transaction;
