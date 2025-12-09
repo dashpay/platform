@@ -23,8 +23,12 @@ pub fn from_object<T: DeserializeOwned>(value: JsValue) -> Result<T, WasmSdkErro
 pub fn to_json_value<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError> {
     let json = serde_format::to_json_value(value)
         .map_err(|e| WasmSdkError::serialization(&e.to_string()))?;
-    // Convert serde_json::Value to JsValue (this doesn't need format context)
-    serde_wasm_bindgen::to_value(&json).map_err(|e| WasmSdkError::serialization(&e.to_string()))
+
+    // Use json_compatible() serializer to convert serde_json::Value to JsValue
+    // This ensures proper JSON semantics (human_readable = true)
+    let serializer = serde_wasm_bindgen::Serializer::json_compatible();
+    json.serialize(&serializer)
+        .map_err(|e| WasmSdkError::serialization(&e.to_string()))
 }
 
 /// Deserialize from JsValue with JSON format context.

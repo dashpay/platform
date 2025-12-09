@@ -7594,7 +7594,7 @@ dependencies = [
  "rs-dapi-client",
  "rs-sdk-trusted-context-provider",
  "serde",
- "serde-wasm-bindgen 0.6.5",
+ "serde-wasm-bindgen 0.5.0",
  "serde_json",
  "sha2",
  "simple-signer",
