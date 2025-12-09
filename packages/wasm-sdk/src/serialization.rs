@@ -56,6 +56,7 @@ pub fn to_object_bytes<T: Serialize>(value: &T) -> Result<JsValue, WasmSdkError>
 
 #[macro_export]
 macro_rules! impl_wasm_object_json {
+    // Single-argument form: Rust type name equals JS class name
     ($ty:ty) => {
         #[wasm_bindgen]
         impl $ty {
@@ -80,8 +81,29 @@ macro_rules! impl_wasm_object_json {
             }
         }
     };
-    // Two-argument form: second argument is ignored (kept for compatibility)
-    ($ty:ty, $_orig:ty) => {
-        $crate::impl_wasm_object_json!($ty);
+    // Two-argument form: second argument is the JS class name
+    ($ty:ty, $js_class:ident) => {
+        #[wasm_bindgen(js_class = $js_class)]
+        impl $ty {
+            #[wasm_bindgen(js_name = toObject)]
+            pub fn to_object(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
+                $crate::serialization::to_object(self)
+            }
+
+            #[wasm_bindgen(js_name = fromObject)]
+            pub fn from_object(obj: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
+                $crate::serialization::from_object(obj)
+            }
+
+            #[wasm_bindgen(js_name = toJSON)]
+            pub fn to_json(&self) -> Result<wasm_bindgen::JsValue, $crate::WasmSdkError> {
+                $crate::serialization::to_json_value(self)
+            }
+
+            #[wasm_bindgen(js_name = fromJSON)]
+            pub fn from_json(js: wasm_bindgen::JsValue) -> Result<$ty, $crate::WasmSdkError> {
+                $crate::serialization::from_json_value(js)
+            }
+        }
     };
 }
