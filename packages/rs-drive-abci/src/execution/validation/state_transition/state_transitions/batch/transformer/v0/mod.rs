@@ -68,7 +68,7 @@ use drive::state_transition_action::batch::batched_transition::token_transition:
 use drive::state_transition_action::system::bump_identity_data_contract_nonce_action::BumpIdentityDataContractNonceAction;
 use crate::execution::types::execution_operation::ValidationOperation;
 use crate::execution::types::state_transition_execution_context::{StateTransitionExecutionContext, StateTransitionExecutionContextMethodsV0};
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 pub(in crate::execution::validation::state_transition::state_transitions::batch) trait BatchTransitionTransformerV0
 {

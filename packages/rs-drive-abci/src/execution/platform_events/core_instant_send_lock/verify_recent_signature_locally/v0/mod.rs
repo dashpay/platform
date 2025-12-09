@@ -8,8 +8,8 @@ use crate::error::execution::ExecutionError;
 use crate::error::Error;
 
 use crate::error::serialization::SerializationError;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::signature_verification_quorum_set::{
     SignatureVerificationQuorumSetV0Methods, SIGN_OFFSET,
 };
