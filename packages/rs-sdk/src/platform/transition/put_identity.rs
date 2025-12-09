@@ -7,7 +7,7 @@ use super::broadcast::BroadcastStateTransition;
 use super::put_settings::PutSettings;
 use super::validation::ensure_valid_state_transition_structure;
 use super::waitable::Waitable;
-use dpp::address_funds::PlatformAddress;
+use dpp::address_funds::{AddressFundsFeeStrategy, AddressFundsFeeStrategyStep, PlatformAddress};
 use dpp::dashcore::PrivateKey;
 use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
@@ -17,6 +17,7 @@ use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
 use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
+use simple_signer::SimpleAddressSigner;
 use std::collections::BTreeMap;
 
 /// Funding sources supported when creating an identity.
@@ -198,10 +199,15 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
             "input_private_keys must contain at least one key".to_string(),
         ));
     }
-    let key_refs: Vec<&[u8]> = input_private_keys
-        .iter()
-        .map(|key| key.as_slice())
-        .collect();
+
+    // Create address signer from inputs and private keys
+    let addresses: Vec<PlatformAddress> = inputs.keys().cloned().collect();
+    let address_signer =
+        SimpleAddressSigner::from_addresses_and_keys(&addresses, input_private_keys)?;
+
+    // Default fee strategy: deduct from first input
+    let fee_strategy: AddressFundsFeeStrategy =
+        vec![AddressFundsFeeStrategyStep::DeductFromInput(0)];
 
     let user_fee_increase = settings
         .as_ref()
@@ -211,7 +217,7 @@ async fn send_identity_with_addresses<S: Signer<IdentityPublicKey>>(
     let state_transition = IdentityCreateFromAddressesTransition::try_from_inputs_with_signer(
         identity,
         inputs,
-        key_refs,
+        input_private_keys,
         signer,
         &NativeBlsModule,
         user_fee_increase,
