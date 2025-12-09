@@ -37,7 +37,6 @@ pub use {
     fetch_many::FetchMany,
     fetch_unproved::FetchUnproved,
     query::{
-        IdentityKeysQuery, LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo,
-        DEFAULT_EPOCH_QUERY_LIMIT,
+        LimitQuery, ProposerBlockCountByIdsQuery, Query, QueryStartInfo, DEFAULT_EPOCH_QUERY_LIMIT,
     },
 };
