@@ -600,6 +600,297 @@ mod tests {
                 error
             );
         }
+
+        // ==========================================
+        // Withdrawal-specific validation tests
+        // ==========================================
+
+        #[test]
+        fn test_pooling_not_never_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // Pooling set to Standard instead of Never
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Standard,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::NotImplementedCreditWithdrawalTransitionPoolingError(_)
+                    )
+                ),
+                "Expected NotImplementedCreditWithdrawalTransitionPoolingError, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_core_fee_per_byte_not_fibonacci_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // core_fee_per_byte set to 4 which is not a Fibonacci number (1, 1, 2, 3, 5, 8, ...)
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 4, // Not a Fibonacci number
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(_)
+                    )
+                ),
+                "Expected InvalidCreditWithdrawalTransitionCoreFeeError, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_core_fee_per_byte_zero_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // core_fee_per_byte set to 0
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 0, // Invalid - 0 is not Fibonacci
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng),
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::InvalidCreditWithdrawalTransitionCoreFeeError(_)
+                    )
+                ),
+                "Expected InvalidCreditWithdrawalTransitionCoreFeeError, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_output_script_not_p2pkh_or_p2sh_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // Create an invalid output script (empty script is not P2PKH or P2SH)
+            let invalid_output_script = CoreScript::new(ScriptBuf::new());
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: invalid_output_script,
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(_)
+                    )
+                ),
+                "Expected InvalidCreditWithdrawalTransitionOutputScriptError, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_output_script_op_return_returns_error() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            // Create an OP_RETURN script (not P2PKH or P2SH)
+            let op_return_script = CoreScript::new(ScriptBuf::from(vec![OP_RETURN, 0x04, 0x01, 0x02, 0x03, 0x04]));
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1,
+                pooling: Pooling::Never,
+                output_script: op_return_script,
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(!result.is_valid());
+            let error = result.first_error().unwrap();
+            assert!(
+                matches!(
+                    error,
+                    ConsensusError::BasicError(
+                        BasicError::InvalidCreditWithdrawalTransitionOutputScriptError(_)
+                    )
+                ),
+                "Expected InvalidCreditWithdrawalTransitionOutputScriptError, got {:?}",
+                error
+            );
+        }
+
+        #[test]
+        fn test_valid_withdrawal_passes_structure_validation() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            let mut inputs = BTreeMap::new();
+            inputs.insert(
+                create_platform_address(1),
+                (1 as AddressNonce, dash_to_credits!(1.0)),
+            );
+
+            let transition = AddressCreditWithdrawalTransitionV0 {
+                inputs,
+                output: None,
+                fee_strategy: AddressFundsFeeStrategy::from(vec![
+                    AddressFundsFeeStrategyStep::DeductFromInput(0),
+                ]),
+                core_fee_per_byte: 1, // Valid Fibonacci number
+                pooling: Pooling::Never,
+                output_script: create_random_output_script(&mut rng), // P2PKH script
+                user_fee_increase: 0,
+                input_witnesses: vec![create_dummy_witness()],
+            };
+
+            let result = transition.validate_structure(platform_version);
+            assert!(result.is_valid(), "Expected valid result, got errors: {:?}", result.errors);
+        }
+
+        #[test]
+        fn test_valid_fibonacci_core_fees_pass_validation() {
+            use dpp::state_transition::StateTransitionStructureValidation;
+
+            let platform_version = PlatformVersion::latest();
+
+            let mut rng = StdRng::seed_from_u64(567);
+
+            // Test various valid Fibonacci numbers: 1, 2, 3, 5, 8, 13, 21
+            let fibonacci_numbers = vec![1u32, 2, 3, 5, 8, 13, 21];
+
+            for fib in fibonacci_numbers {
+                let mut inputs = BTreeMap::new();
+                inputs.insert(
+                    create_platform_address(1),
+                    (1 as AddressNonce, dash_to_credits!(1.0)),
+                );
+
+                let transition = AddressCreditWithdrawalTransitionV0 {
+                    inputs,
+                    output: None,
+                    fee_strategy: AddressFundsFeeStrategy::from(vec![
+                        AddressFundsFeeStrategyStep::DeductFromInput(0),
+                    ]),
+                    core_fee_per_byte: fib,
+                    pooling: Pooling::Never,
+                    output_script: create_random_output_script(&mut rng),
+                    user_fee_increase: 0,
+                    input_witnesses: vec![create_dummy_witness()],
+                };
+
+                let result = transition.validate_structure(platform_version);
+                assert!(
+                    result.is_valid(),
+                    "Expected valid result for Fibonacci number {}, got errors: {:?}",
+                    fib,
+                    result.errors
+                );
+            }
+        }
     }
 
     // ==========================================
