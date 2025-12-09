@@ -99,31 +99,6 @@ impl GrpcContextProvider {
         self.dump_dir = dump_dir;
     }
 
-    /// Internal implementation of get_quorum_public_key (used by both sync and async versions)
-    fn get_quorum_public_key_sync_impl(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> Result<[u8; 48], ContextProviderError> {
-        if let Some(key) = self
-            .quorum_public_keys_cache
-            .get(&(quorum_hash, quorum_type))
-        {
-            return Ok(*key);
-        };
-
-        let key = self.core.get_quorum_public_key(quorum_type, quorum_hash)?;
-
-        self.quorum_public_keys_cache
-            .put((quorum_hash, quorum_type), key);
-
-        #[cfg(feature = "mocks")]
-        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
-
-        Ok(key)
-    }
-
     /// Save quorum public key to disk.
     ///
     /// Files are named: `quorum_pubkey-<int_quorum_type>-<hex_quorum_hash>.json`
@@ -187,35 +162,28 @@ impl GrpcContextProvider {
 }
 
 impl ContextProvider for GrpcContextProvider {
-    fn get_quorum_public_key_async(
-        &self,
-        quorum_type: u32,
-        quorum_hash: [u8; 32],
-        core_chain_locked_height: u32,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<[u8; 48], ContextProviderError>>
-                + Send
-                + 'static,
-        >,
-    > {
-        // For now, we just wrap the synchronous version in an async block
-        // In the future, this can be made truly async if the core client supports it
-        let result = self.get_quorum_public_key_sync_impl(
-            quorum_type,
-            quorum_hash,
-            core_chain_locked_height,
-        );
-        Box::pin(async move { result })
-    }
-
     fn get_quorum_public_key(
         &self,
         quorum_type: u32,
         quorum_hash: [u8; 32], // quorum hash is 32 bytes
         core_chain_locked_height: u32,
     ) -> Result<[u8; 48], ContextProviderError> {
-        self.get_quorum_public_key_sync_impl(quorum_type, quorum_hash, core_chain_locked_height)
+        if let Some(key) = self
+            .quorum_public_keys_cache
+            .get(&(quorum_hash, quorum_type))
+        {
+            return Ok(*key);
+        };
+
+        let key = self.core.get_quorum_public_key(quorum_type, quorum_hash)?;
+
+        self.quorum_public_keys_cache
+            .put((quorum_hash, quorum_type), key);
+
+        #[cfg(feature = "mocks")]
+        self.dump_quorum_public_key(quorum_type, quorum_hash, core_chain_locked_height, &key);
+
+        Ok(key)
     }
 
     fn get_data_contract(
