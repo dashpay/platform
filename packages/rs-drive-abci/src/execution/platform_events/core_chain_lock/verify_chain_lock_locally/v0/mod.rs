@@ -10,8 +10,8 @@ use crate::platform_types::platform::Platform;
 use crate::rpc::core::CoreRPCLike;
 
 use crate::error::execution::ExecutionError;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::signature_verification_quorum_set::SignatureVerificationQuorumSetV0Methods;
 use dpp::version::PlatformVersion;
 

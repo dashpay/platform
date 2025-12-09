@@ -14,7 +14,7 @@ use drive::grovedb::TransactionArg;
 use crate::execution::validation::state_transition::common::asset_lock::proof::validate::AssetLockProofValidation;
 use crate::execution::validation::state_transition::common::asset_lock::proof::verify_is_not_spent::AssetLockProofVerifyIsNotSpent;
 use crate::execution::validation::state_transition::ValidationMode;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 
 // TODO: Versioning
 impl AssetLockProofValidation for ChainAssetLockProof {

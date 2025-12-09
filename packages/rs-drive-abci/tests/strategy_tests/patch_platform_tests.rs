@@ -13,7 +13,7 @@ mod tests {
         ChainLockConfig, ExecutionConfig, InstantLockConfig, PlatformConfig, PlatformTestConfig,
         ValidatorSetConfig,
     };
-    use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
+    use drive_abci::platform_types::platform_state::PlatformStateV0Methods;
     use drive_abci::test::helpers::setup::TestPlatformBuilder;
     use platform_version::version;
     use platform_version::version::mocks::v2_test::TEST_PROTOCOL_VERSION_2;
