@@ -71,6 +71,7 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::RangeInclusive;
 use transitions::create_identity_credit_transfer_transition;
 
+pub mod address_signer;
 pub mod frequency;
 pub mod operations;
 pub mod transitions;
@@ -1200,6 +1201,13 @@ impl Strategy {
                                 }
                             }
                         }
+                    }
+                    OperationType::IdentityTopUpFromAddresses(_amount_range) => {
+                        tracing::warn!(
+                            "IdentityTopUpFromAddresses operations are not supported \
+                             by the generic strategy executor"
+                        );
+                        continue;
                     }
 
                     OperationType::IdentityUpdate(update_op) if !current_identities.is_empty() => {

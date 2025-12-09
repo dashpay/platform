@@ -42,7 +42,7 @@ use drive_abci::execution::types::state_transition_execution_context::StateTrans
 use drive_abci::execution::validation::state_transition::ValidationMode;
 use drive_abci::platform_types::platform_state::v0::PlatformStateV0Methods;
 use platform_version::DefaultForPlatformVersion;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(crate) fn verify_state_transitions_were_or_were_not_executed(
     abci_app: &FullAbciApplication<MockCoreRPCLike>,
@@ -813,10 +813,77 @@ pub(crate) fn verify_state_transitions_were_or_were_not_executed(
                     // This should verify the address was funded from the asset lock
                 }
                 StateTransitionAction::AddressCreditWithdrawal(
-                    _address_credit_withdrawal_action,
+                    address_credit_withdrawal_action,
                 ) => {
-                    // TODO: Add verification for address credit withdrawal
-                    // This should verify the withdrawal document was created
+                    let mut expected_addresses: BTreeSet<PlatformAddress> =
+                        address_credit_withdrawal_action
+                            .inputs_with_remaining_balance()
+                            .keys()
+                            .copied()
+                            .collect();
+                    if let Some((change_address, _)) = address_credit_withdrawal_action.output() {
+                        expected_addresses.insert(change_address);
+                    }
+
+                    let (root_hash_addresses, address_infos): (
+                        _,
+                        BTreeMap<PlatformAddress, Option<(AddressNonce, Credits)>>,
+                    ) = Drive::verify_addresses_infos(
+                        &response_proof.grovedb_proof,
+                        expected_addresses.iter(),
+                        false,
+                        platform_version,
+                    )
+                    .expect("expected to verify addresses for withdrawal");
+
+                    assert_eq!(
+                        &root_hash_addresses,
+                        expected_root_hash,
+                        "state last block info {:?}",
+                        platform.state.last_committed_block_info()
+                    );
+
+                    let proved_addresses: BTreeSet<PlatformAddress> =
+                        address_infos.keys().copied().collect();
+                    assert_eq!(
+                        proved_addresses, expected_addresses,
+                        "proved addresses should match expected inputs and change"
+                    );
+
+                    for (address, (expected_nonce, expected_balance)) in
+                        address_credit_withdrawal_action.inputs_with_remaining_balance()
+                    {
+                        let Some(Some((returned_nonce, returned_balance))) =
+                            address_infos.get(address)
+                        else {
+                            panic!("expected address info for {:?}", address);
+                        };
+                        // TODO: put correct nonce assertion (nonce or nonce + 1?)
+                        assert_eq!(
+                            returned_nonce, expected_nonce,
+                            "nonce mismatch for withdrawal input {:?}",
+                            address
+                        );
+                        assert_eq!(
+                            returned_balance, expected_balance,
+                            "balance mismatch for withdrawal input {:?}",
+                            address
+                        );
+                    }
+                    if let Some((change_address, change_amount)) =
+                        address_credit_withdrawal_action.output()
+                    {
+                        let Some(Some((_, returned_balance))) = address_infos.get(&change_address)
+                        else {
+                            panic!("expected change address info for {:?}", change_address);
+                        };
+                        assert_eq!(
+                            *returned_balance, change_amount,
+                            "change balance mismatch for address {:?}",
+                            change_address
+                        );
+                    }
+                    // TODO: This should verify the withdrawal document was created
                 }
                 StateTransitionAction::BumpAddressInputNoncesAction(_) => {}
             }
