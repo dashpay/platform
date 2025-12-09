@@ -13,6 +13,7 @@ use dpp::fee::Credits;
 use dpp::identity::signer::Signer;
 use dpp::identity::IdentityPublicKey;
 use dpp::prelude::{AddressNonce, AssetLockProof, Identity};
+use dpp::state_transition::identity_create_from_addresses_transition::methods::IdentityCreateFromAddressesTransitionMethodsV0;
 use dpp::state_transition::identity_create_from_addresses_transition::IdentityCreateFromAddressesTransition;
 use dpp::state_transition::StateTransition;
 use simple_signer::SimpleAddressSigner;
