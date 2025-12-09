@@ -31,7 +31,7 @@ use crate::platform_types::cleaned_abci_messages::finalized_block_cleaned_reques
 use crate::platform_types::commit::Commit;
 use crate::platform_types::epoch_info::v0::EpochInfoV0Getters;
 use crate::platform_types::platform::Platform;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::platform_types::validator_set::v0::ValidatorSetV0Getters;
 use crate::rpc::core::CoreRPCLike;
 

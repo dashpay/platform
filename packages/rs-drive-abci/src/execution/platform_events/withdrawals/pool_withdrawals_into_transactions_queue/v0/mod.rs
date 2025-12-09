@@ -2,8 +2,8 @@ use dpp::block::block_info::BlockInfo;
 use dpp::version::PlatformVersion;
 use drive::grovedb::TransactionArg;
 
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use crate::{error::Error, platform_types::platform::Platform, rpc::core::CoreRPCLike};
 
 impl<C> Platform<C>

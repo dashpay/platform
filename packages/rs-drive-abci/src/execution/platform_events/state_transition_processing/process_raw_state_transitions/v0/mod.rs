@@ -1,6 +1,6 @@
 use crate::error::Error;
 use crate::platform_types::platform::{Platform, PlatformRef};
-use crate::platform_types::platform_state::PlatformState;
+use crate::platform_types::platform_state::{PlatformState, PlatformStateV0Methods};
 use crate::rpc::core::CoreRPCLike;
 use dpp::block::block_info::BlockInfo;
 use dpp::consensus::codes::ErrorWithCode;
@@ -14,7 +14,6 @@ use crate::execution::types::state_transition_container::v0::{
 use crate::execution::validation::state_transition::processor::process_state_transition;
 use crate::metrics::{state_transition_execution_histogram, HistogramTiming};
 use crate::platform_types::event_execution_result::EventExecutionResult;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
 use crate::platform_types::state_transitions_processing_result::{
     NotExecutedReason, StateTransitionExecutionResult, StateTransitionsProcessingResult,
 };

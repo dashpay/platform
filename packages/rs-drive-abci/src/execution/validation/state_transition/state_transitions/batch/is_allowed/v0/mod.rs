@@ -1,5 +1,5 @@
 use crate::platform_types::platform::PlatformRef;
-use crate::platform_types::platform_state::v0::PlatformStateV0Methods;
+use crate::platform_types::platform_state::PlatformStateV0Methods;
 use dpp::block::epoch::EpochIndex;
 use dpp::consensus::basic::document::ContestedDocumentsTemporarilyNotAllowedError;
 use dpp::state_transition::batch_transition::accessors::DocumentsBatchTransitionAccessorsV0;
