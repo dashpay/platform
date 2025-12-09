@@ -1963,7 +1963,7 @@ impl NetworkStrategy {
         let nonce_to_provide = 1 + 1;
 
         inputs.insert(address.clone(), (nonce_to_provide, spend_amount));
-        tracing::debug!(?inputs, "Preparing identity top-up transition with address");
+        tracing::warn!(?inputs, "Preparing identity top-up transition with address");
         let top_up_transition =
             IdentityTopUpFromAddressesTransitionV0::try_from_inputs_with_signer(
                 identity,
